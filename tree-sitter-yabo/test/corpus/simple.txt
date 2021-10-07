@@ -1,0 +1,83 @@
+=============
+Simple Parser
+=============
+
+parser complex = for [u8] *> {
+  real: f32_el;
+  imag: f32_el;
+}
+
+---
+
+(source_file
+  (parser_definition
+    name: (identifier)
+    from: (parser_array
+      expr: (identifier))
+    to: (parser_block
+      content: (parser_sequence
+        (parse_statement
+	       name: (identifier)
+	       parser: (identifier))
+        (parse_statement
+	       name: (identifier)
+	       parser: (identifier))))))
+
+=============
+Choice Parser
+=============
+
+parser choice = for [u8] *> {
+    if ascii;
+    return: utf8char;
+  |
+    return: utf8char;
+}
+
+---
+
+(source_file
+  (parser_definition
+    name: (identifier)
+    from: (parser_array
+      expr: (identifier))
+    to: (parser_block 
+      content: (parser_choice
+        left: (parser_sequence
+	        (parse_statement
+      	    parser: (unary_parse_expression
+             right: (identifier)))
+      	  (parse_statement
+      	    name: (identifier)
+      	    parser: (identifier)))
+	      right: (parser_sequence
+          (parse_statement
+      	    name: (identifier)
+      	    parser: (identifier)))))))
+
+=============
+Let Statement
+=============
+
+parser seven = for [u8] *> {
+  val: u8;
+  let return: u8 = 7;
+}
+
+---
+
+(source_file
+  (parser_definition
+    name: (identifier)
+    from: (parser_array
+      expr: (identifier))
+    to: (parser_block
+      content: (parser_sequence
+        (parse_statement
+  	      name: (identifier)
+        	parser: (identifier))
+        (let_statement
+        	name: (identifier)
+        	ty: (identifier)
+        	expr: (number_literal))))))
+
