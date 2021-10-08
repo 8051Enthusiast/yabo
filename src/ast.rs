@@ -10,18 +10,19 @@ use crate::{
 #[salsa::query_group(AstDatabase)]
 pub trait Asts: Files + Interner {
     fn ast(&self, fd: FileId) -> ParseResult<Arc<Module>>;
-    fn symbols(&self, fd: FileId) -> Option<Vec<Identifier>>;
-    fn top_level_statement(&self, fd: FileId, id: Identifier) -> Option<Arc<Statement>>;
+    fn symbols(&self, fd: FileId) -> Result<Vec<Identifier>, ()>;
+    fn top_level_statement(&self, fd: FileId, id: Identifier)
+        -> Result<Option<Arc<Statement>>, ()>;
 }
 
 fn ast(db: &dyn Asts, fd: FileId) -> ParseResult<Arc<Module>> {
     crate::parse::parse(db, fd).map(Arc::new)
 }
 
-fn symbols(db: &dyn Asts, fd: FileId) -> Option<Vec<Identifier>> {
-    Some(
+fn symbols(db: &dyn Asts, fd: FileId) -> Result<Vec<Identifier>, ()> {
+    Ok(
         db.ast(fd)
-            .ok()?
+            .map_err(|_| ())?
             .tl_statements
             .iter()
             .filter_map(|st| st.id())
@@ -29,13 +30,18 @@ fn symbols(db: &dyn Asts, fd: FileId) -> Option<Vec<Identifier>> {
     )
 }
 
-fn top_level_statement(db: &dyn Asts, fd: FileId, id: Identifier) -> Option<Arc<Statement>> {
-    db.ast(fd)
-        .ok()?
+fn top_level_statement(
+    db: &dyn Asts,
+    fd: FileId,
+    id: Identifier,
+) -> Result<Option<Arc<Statement>>, ()> {
+    Ok(db
+        .ast(fd)
+        .map_err(|_| ())?
         .tl_statements
         .iter()
         .find(|st| st.id() == Some(id))
-        .cloned()
+        .cloned())
 }
 
 pub trait AstNode {
@@ -289,6 +295,6 @@ parser expr1 = for [u8] *> {
         );
         let main = FileId::default();
         ctx.db.ast(main).unwrap();
-        assert_eq!(ctx.db.symbols(main), Some(vec![ctx.id("expr1")]));
+        assert_eq!(ctx.db.symbols(main), Ok(vec![ctx.id("expr1")]));
     }
 }
