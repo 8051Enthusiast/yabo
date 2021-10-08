@@ -1,5 +1,5 @@
 pub mod ast;
-mod context;
+pub mod context;
 pub mod interner;
 pub mod parse;
 pub mod source;
@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let path = Path::new(&infile);
     let fid = context.fc.add(path).expect("Could not read file");
     context.update_db();
-    let ast = match context.db.ast(fid).as_ref().clone() {
+    let ast = match context.db.ast(fid) {
         Ok(s) => s,
         Err(e) => {
             let handler = miette::GraphicalReportHandler::new();

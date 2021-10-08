@@ -9,11 +9,33 @@ use crate::{
 
 #[salsa::query_group(AstDatabase)]
 pub trait Asts: Files + Interner {
-    fn ast(&self, fd: FileId) -> Arc<ParseResult<Module>>;
+    fn ast(&self, fd: FileId) -> ParseResult<Arc<Module>>;
+    fn symbols(&self, fd: FileId) -> Option<Vec<Identifier>>;
+    fn top_level_statement(&self, fd: FileId, id: Identifier) -> Option<Arc<Statement>>;
 }
 
-fn ast(db: &dyn Asts, fd: FileId) -> Arc<ParseResult<Module>> {
-    Arc::new(crate::parse::parse(db, fd))
+fn ast(db: &dyn Asts, fd: FileId) -> ParseResult<Arc<Module>> {
+    crate::parse::parse(db, fd).map(Arc::new)
+}
+
+fn symbols(db: &dyn Asts, fd: FileId) -> Option<Vec<Identifier>> {
+    Some(
+        db.ast(fd)
+            .ok()?
+            .tl_statements
+            .iter()
+            .filter_map(|st| st.id())
+            .collect(),
+    )
+}
+
+fn top_level_statement(db: &dyn Asts, fd: FileId, id: Identifier) -> Option<Arc<Statement>> {
+    db.ast(fd)
+        .ok()?
+        .tl_statements
+        .iter()
+        .find(|st| st.id() == Some(id))
+        .cloned()
 }
 
 pub trait AstNode {
@@ -176,6 +198,16 @@ pub enum Statement {
     Let(Box<LetStatement>),
 }
 
+impl Statement {
+    fn id(&self) -> Option<Identifier> {
+        match self {
+            Statement::ParserDef(x) => Some(x.name.id),
+            Statement::Parse(x) => x.name.as_ref().map(|i| i.id),
+            Statement::Let(x) => Some(x.name.id),
+        }
+    }
+}
+
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDefinition {
     pub name: IdSpan,
@@ -255,6 +287,8 @@ parser expr1 = for [u8] *> {
 }
         "#,
         );
-        ctx.db.ast(FileId::default());
+        let main = FileId::default();
+        ctx.db.ast(main).unwrap();
+        assert_eq!(ctx.db.symbols(main), Some(vec![ctx.id("expr1")]));
     }
 }
