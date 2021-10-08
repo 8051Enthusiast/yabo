@@ -20,14 +20,15 @@ fn ast(db: &dyn Asts, fd: FileId) -> ParseResult<Arc<Module>> {
 }
 
 fn symbols(db: &dyn Asts, fd: FileId) -> Result<Vec<Identifier>, ()> {
-    Ok(
-        db.ast(fd)
-            .map_err(|_| ())?
-            .tl_statements
-            .iter()
-            .filter_map(|st| st.id())
-            .collect(),
-    )
+    let mut syms: Vec<_> = db
+        .ast(fd)
+        .map_err(|_| ())?
+        .tl_statements
+        .iter()
+        .filter_map(|st| st.id())
+        .collect();
+    syms.sort();
+    Ok(syms)
 }
 
 fn top_level_statement(

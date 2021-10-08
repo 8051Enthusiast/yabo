@@ -1,6 +1,6 @@
 use salsa::InternId;
 
-#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Identifier(InternId);
 
 impl salsa::InternKey for Identifier {
