@@ -56,15 +56,15 @@ pub struct IdSpan {
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct Spanned<T: Clone + Hash + PartialEq + Eq> {
+pub struct Spanned<T: Clone + Hash + Eq> {
     pub inner: T,
     pub span: Span,
 }
 
 pub trait ExpressionKind {
-    type BinaryOp: Clone + Hash + PartialEq + Eq;
-    type UnaryOp: Clone + Hash + PartialEq + Eq;
-    type Atom: Clone + Hash + PartialEq + Eq + From<Atom>;
+    type BinaryOp: Clone + Hash + Eq;
+    type UnaryOp: Clone + Hash + Eq;
+    type Atom: Clone + Hash + Eq + From<Atom>;
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
