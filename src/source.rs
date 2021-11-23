@@ -2,16 +2,30 @@ use std::convert::TryFrom;
 use std::io::Error;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::hash::Hash;
 
 use miette::{MietteError, MietteSpanContents, SourceCode};
 
 use crate::context::LivingInTheDatabase;
+use crate::interner::Identifier;
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Span {
     pub lo: u32,
     pub hi: u32,
     pub file: FileId,
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct Spanned<T: Clone + Hash + Eq> {
+    pub inner: T,
+    pub span: Span,
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct IdSpan {
+    pub id: Identifier,
+    pub span: Span,
 }
 
 impl From<Span> for miette::SourceSpan {

@@ -5,8 +5,10 @@ use tree_sitter::{Node, Parser, TreeCursor};
 use tree_sitter_yabo::language;
 
 use crate::ast::*;
+use crate::expr::*;
+use crate::interner::Identifier;
 use crate::interner::IdentifierName;
-use crate::source::{FileData, FileId, Span};
+use crate::source::{FileData, FileId, IdSpan, Span, Spanned};
 use thiserror::Error;
 
 macro_rules! inner_string {
@@ -162,20 +164,17 @@ fn binary_constraint_expression(
     db: &dyn Asts,
     fd: FileId,
     c: TreeCursor,
-) -> ParseResult<Spanned<ConstraintBinOp>> {
+) -> ParseResult<AstConstraintBinOp> {
     use ConstraintBinOp::*;
     let (left, op, right) = get_op(db, fd, c)?;
     let left = left.unwrap();
     let constr = |x| constraint_expression(db, fd, x);
-    let res = match op.inner.as_str() {
-        "&&" => And(constr(left)?, constr(right)?),
-        "||" => Or(constr(left)?, constr(right)?),
-        "." => Dot(constr(left)?, atom(db, fd, right)?),
+    let span = op.span;
+    Ok(match op.inner.as_str() {
+        "&&" => And(constr(left)?, constr(right)?, span),
+        "||" => Or(constr(left)?, constr(right)?, span),
+        "." => Dot(constr(left)?, atom(db, fd, right)?, span),
         otherwise => panic!("Invalid constrain operator \"{}\"", otherwise),
-    };
-    Ok(Spanned {
-        inner: res,
-        span: op.span,
     })
 }
 
@@ -183,111 +182,72 @@ fn unary_constraint_expression(
     db: &dyn Asts,
     fd: FileId,
     c: TreeCursor,
-) -> ParseResult<Spanned<ConstraintUnOp>> {
+) -> ParseResult<AstConstraintUnOp> {
     use ConstraintUnOp::*;
     let (_, op, right) = get_op(db, fd, c)?;
     let constr = |x| constraint_expression(db, fd, x);
-    let res = match op.inner.as_str() {
-        "!" => Not(constr(right)?),
+    let span = op.span;
+    Ok(match op.inner.as_str() {
+        "!" => Not(constr(right)?, span),
         otherwise => panic!("Invalid constrain operator \"{}\"", otherwise),
-    };
-    Ok(Spanned {
-        inner: res,
-        span: op.span,
     })
 }
 
-fn binary_expression(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Spanned<ValBinOp>> {
+fn binary_expression(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<AstValBinOp> {
     use ValBinOp::*;
     let (left, op, right) = get_op(db, fd, c)?;
     let left = left.unwrap();
     let val = |x| val_expression(db, fd, x);
     let parse = |x| parse_expression(db, fd, x);
+    let span = op.span;
 
-    let res = match op.inner.as_str() {
-        "&" => And(val(left)?, val(right)?),
-        "^" => Xor(val(left)?, val(right)?),
-        "|" => Or(val(left)?, val(right)?),
-        "<=" => LesserEq(val(left)?, val(right)?),
-        "<" => Lesser(val(left)?, val(right)?),
-        ">=" => GreaterEq(val(left)?, val(right)?),
-        ">" => Greater(val(left)?, val(right)?),
-        "!=" => Uneq(val(left)?, val(right)?),
-        "==" => Equals(val(left)?, val(right)?),
-        ">>" => ShiftR(val(left)?, val(right)?),
-        "<<" => ShiftL(val(left)?, val(right)?),
-        "-" => Minus(val(left)?, val(right)?),
-        "+" => Plus(val(left)?, val(right)?),
-        "/" => Div(val(left)?, val(right)?),
-        "%" => Modulo(val(left)?, val(right)?),
-        "*" => Mul(val(left)?, val(right)?),
-        "|>" => Pipe(val(left)?, parse(right)?),
-        "else" => Else(val(left)?, val(right)?),
-        "." => Dot(val(left)?, atom(db, fd, right)?),
-        otherwise => panic!("Invalid constrain operator \"{}\"", otherwise),
-    };
-
-    Ok(Spanned {
-        inner: res,
-        span: op.span,
+    Ok(match BasicValBinOp::parse_from_str(&op.inner) {
+        Ok(op) => Basic(val(left)?, op, val(right)?, span),
+        Err("|>") => Pipe(val(left)?, parse(right)?, span),
+        Err("else") => Else(val(left)?, val(right)?, span),
+        Err(".") => Dot(val(left)?, atom(db, fd, right)?, span),
+        Err(otherwise) => panic!("Invalid constrain operator \"{}\"", otherwise),
     })
 }
 
-fn unary_expression(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Spanned<ValUnOp>> {
+fn unary_expression(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<AstValUnOp> {
     use ValUnOp::*;
     let (_, op, right) = get_op(db, fd, c)?;
     let val = |x| val_expression(db, fd, x);
-    let res = match op.inner.as_str() {
-        "!" => Not(val(right)?),
-        "-" => Neg(val(right)?),
-        "+" => Pos(val(right)?),
+    let span = op.span;
+    Ok(match op.inner.as_str() {
+        "!" => Not(val(right)?, span),
+        "-" => Neg(val(right)?, span),
+        "+" => Pos(val(right)?, span),
         otherwise => panic!("Invalid constrain operator \"{}\"", otherwise),
-    };
-    Ok(Spanned {
-        inner: res,
-        span: op.span,
     })
 }
 
-fn binary_parse_expression(
-    db: &dyn Asts,
-    fd: FileId,
-    c: TreeCursor,
-) -> ParseResult<Spanned<ParseBinOp>> {
+fn binary_parse_expression(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<AstParseBinOp> {
     use ParseBinOp::*;
     let (left, op, right) = get_op(db, fd, c)?;
     let left = left.unwrap();
     let constr = |x| constraint_expression(db, fd, x);
     let parse = |x| parse_expression(db, fd, x);
+    let span = op.span;
 
-    let res = match op.inner.as_str() {
-        "|>" => Pipe(parse(left)?, parse(right)?),
-        "~" => Wiggle(parse(left)?, constr(right)?),
-        "." => Dot(parse(left)?, atom(db, fd, right)?),
+    Ok(match op.inner.as_str() {
+        "|>" => Pipe(parse(left)?, parse(right)?, span),
+        "~" => Wiggle(parse(left)?, constr(right)?, span),
+        "." => Dot(parse(left)?, atom(db, fd, right)?, span),
         otherwise => panic!("Invalid constrain operator \"{}\"", otherwise),
-    };
-    Ok(Spanned {
-        inner: res,
-        span: op.span,
     })
 }
-fn unary_parse_expression(
-    db: &dyn Asts,
-    fd: FileId,
-    c: TreeCursor,
-) -> ParseResult<Spanned<ParseUnOp>> {
+fn unary_parse_expression(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<AstParseUnOp> {
     use ParseUnOp::*;
     let (_, op, right) = get_op(db, fd, c)?;
     let parse = |x| parse_expression(db, fd, x);
+    let span = op.span;
 
-    let res = match op.inner.as_str() {
-        "if" => If(parse(right)?),
-        "try" => Try(parse(right)?),
+    Ok(match op.inner.as_str() {
+        "if" => If(parse(right)?, span),
+        "try" => Try(parse(right)?, span),
         otherwise => panic!("Invalid constrain operator \"{}\"", otherwise),
-    };
-    Ok(Spanned {
-        inner: res,
-        span: op.span,
     })
 }
 macro_rules! maybe_unwrap {
@@ -384,18 +344,18 @@ where
 
 astify! {
     struct parser_definition = ParserDefinition {
-        name: identifier!,
+        name: idspan!,
         from: parse_expression!,
         to: parse_expression!,
     };
 
     struct parse_statement = ParseStatement {
-        name: identifier?,
+        name: idspan?,
         parser: parse_expression!,
     };
 
     struct let_statement = LetStatement {
-        name: identifier!,
+        name: idspan!,
         ty: parse_expression!,
         expr: val_expression!,
     };
@@ -454,12 +414,18 @@ astify! {
     };
 }
 
-fn identifier(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<IdSpan> {
+fn identifier(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Identifier> {
+    let str = spanned(node_to_string)(db, fd, c)?;
+    let id = IdentifierName { name: str.inner };
+    Ok(db.intern_identifier(id))
+}
+
+fn idspan(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<IdSpan> {
     let str = spanned(node_to_string)(db, fd, c)?;
     let id = IdentifierName { name: str.inner };
     Ok(IdSpan {
-        span: str.span,
         id: db.intern_identifier(id),
+        span: str.span,
     })
 }
 
@@ -484,17 +450,13 @@ fn node_to_string(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Strin
     Ok(text)
 }
 
-fn array_direction(
-    db: &dyn Asts,
-    fd: FileId,
-    c: TreeCursor,
-) -> ParseResult<Spanned<ArrayDirection>> {
+fn array_direction(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Spanned<ArrayKind>> {
     let str = spanned(node_to_string)(db, fd, c)?;
     Ok(Spanned {
         inner: match str.inner.as_str() {
-            "for" => ArrayDirection::For,
-            "each" => ArrayDirection::Each,
-            "rof" => ArrayDirection::Rof,
+            "for" => ArrayKind::For,
+            "each" => ArrayKind::Each,
+            "rof" => ArrayKind::Rof,
             otherwise => panic!("Unknown loop {}", otherwise),
         },
         span: str.span,
