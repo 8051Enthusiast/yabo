@@ -1,10 +1,12 @@
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::Arc;
 
 use crate::{
+    expr::*,
     interner::{Identifier, Interner},
     parse::ParseResult,
-    source::{FileId, Files, Span},
+    source::{FileId, Files, IdSpan, Span, Spanned},
 };
 
 #[salsa::query_group(AstDatabase)]
@@ -51,66 +53,39 @@ pub trait AstNode {
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct IdSpan {
-    pub id: Identifier,
-    pub span: Span,
-}
-
+pub struct AstConstraint {}
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct Spanned<T: Clone + Hash + Eq> {
-    pub inner: T,
-    pub span: Span,
-}
-
-pub trait ExpressionKind {
-    type BinaryOp: Clone + Hash + Eq;
-    type UnaryOp: Clone + Hash + Eq;
-    type Atom: Clone + Hash + Eq + From<Atom>;
-}
-
+pub struct AstParse {}
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct Constraint {}
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct Parse {}
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct Val {}
+pub struct AstVal;
+pub type AstConstraintBinOp = ConstraintBinOp<AstConstraint, Span>;
+pub type AstConstraintUnOp = ConstraintUnOp<AstConstraint, Span>;
+pub type AstParseBinOp = ParseBinOp<AstParse, AstConstraint, Span>;
+pub type AstParseUnOp = ParseUnOp<AstParse, Span>;
+pub type AstValBinOp = ValBinOp<AstVal, AstParse, Span>;
+pub type AstValUnOp = ValUnOp<AstVal, Span>;
 
-impl ExpressionKind for Constraint {
-    type BinaryOp = ConstraintBinOp;
-    type UnaryOp = ConstraintUnOp;
-    type Atom = Atom;
+impl ExpressionKind for AstConstraint {
+    type BinaryOp = AstConstraintBinOp;
+    type UnaryOp = AstConstraintUnOp;
+    type Atom = Spanned<Atom>;
 }
 
-impl ExpressionKind for Parse {
-    type BinaryOp = ParseBinOp;
-    type UnaryOp = ParseUnOp;
-    type Atom = ParserAtom;
+impl ExpressionKind for AstParse {
+    type BinaryOp = AstParseBinOp;
+    type UnaryOp = AstParseUnOp;
+    type Atom = Spanned<ParserAtom>;
 }
 
-impl ExpressionKind for Val {
-    type BinaryOp = ValBinOp;
-    type UnaryOp = ValUnOp;
-    type Atom = Atom;
+impl ExpressionKind for AstVal {
+    type BinaryOp = AstValBinOp;
+    type UnaryOp = AstValUnOp;
+    type Atom = Spanned<Atom>;
 }
 
-pub type ParseExpression = Expression<Parse>;
-pub type ValExpression = Expression<Val>;
-pub type ConstraintExpression = Expression<Constraint>;
-
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum Expression<K: ExpressionKind> {
-    BinaryOp(Box<Spanned<K::BinaryOp>>),
-    UnaryOp(Box<Spanned<K::UnaryOp>>),
-    Atom(Spanned<K::Atom>),
-}
-
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum Atom {
-    Id(IdSpan),
-    Number(String),
-    Char(String),
-    String(String),
-}
+pub type ParseExpression = Expression<AstParse>;
+pub type ValExpression = Expression<AstVal>;
+pub type ConstraintExpression = Expression<AstConstraint>;
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum ParserAtom {
@@ -135,61 +110,6 @@ impl From<Block> for ParserAtom {
     fn from(block: Block) -> Self {
         ParserAtom::Block(block)
     }
-}
-
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum ConstraintBinOp {
-    And(Expression<Constraint>, Expression<Constraint>),
-    Or(Expression<Constraint>, Expression<Constraint>),
-    Dot(Expression<Constraint>, Atom),
-}
-
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum ConstraintUnOp {
-    Not(Expression<Constraint>),
-}
-
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum ParseBinOp {
-    Pipe(Expression<Parse>, Expression<Parse>),
-    Wiggle(Expression<Parse>, Expression<Constraint>),
-    Dot(Expression<Parse>, Atom),
-}
-
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum ParseUnOp {
-    If(Expression<Parse>),
-    Try(Expression<Parse>),
-}
-
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum ValBinOp {
-    And(Expression<Val>, Expression<Val>),
-    Xor(Expression<Val>, Expression<Val>),
-    Or(Expression<Val>, Expression<Val>),
-    LesserEq(Expression<Val>, Expression<Val>),
-    Lesser(Expression<Val>, Expression<Val>),
-    GreaterEq(Expression<Val>, Expression<Val>),
-    Greater(Expression<Val>, Expression<Val>),
-    Uneq(Expression<Val>, Expression<Val>),
-    Equals(Expression<Val>, Expression<Val>),
-    ShiftR(Expression<Val>, Expression<Val>),
-    ShiftL(Expression<Val>, Expression<Val>),
-    Minus(Expression<Val>, Expression<Val>),
-    Plus(Expression<Val>, Expression<Val>),
-    Div(Expression<Val>, Expression<Val>),
-    Modulo(Expression<Val>, Expression<Val>),
-    Mul(Expression<Val>, Expression<Val>),
-    Pipe(Expression<Val>, Expression<Parse>),
-    Else(Expression<Val>, Expression<Val>),
-    Dot(Expression<Val>, Atom),
-}
-
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum ValUnOp {
-    Not(Expression<Val>),
-    Neg(Expression<Val>),
-    Pos(Expression<Val>),
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -218,23 +138,23 @@ impl Statement {
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDefinition {
     pub name: IdSpan,
-    pub from: Expression<Parse>,
-    pub to: Expression<Parse>,
+    pub from: ParseExpression,
+    pub to: ParseExpression,
     pub span: Span,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParseStatement {
     pub name: Option<IdSpan>,
-    pub parser: Expression<Parse>,
+    pub parser: ParseExpression,
     pub span: Span,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct LetStatement {
     pub name: IdSpan,
-    pub ty: Expression<Parse>,
-    pub expr: Expression<Val>,
+    pub ty: ParseExpression,
+    pub expr: ValExpression,
     pub span: Span,
 }
 
@@ -266,17 +186,16 @@ pub struct ParserChoice {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserArray {
-    pub direction: Spanned<ArrayDirection>,
-    pub expr: Expression<Parse>,
+    pub direction: Spanned<ArrayKind>,
+    pub expr: ParseExpression,
     pub span: Span,
 }
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum ArrayDirection {
+pub enum ArrayKind {
     For,
     Each,
     Rof,
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
