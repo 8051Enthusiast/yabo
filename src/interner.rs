@@ -1,5 +1,3 @@
-use std::num::NonZeroU16;
-
 use salsa::InternId;
 
 use crate::source::FileId;
@@ -17,14 +15,6 @@ impl salsa::InternKey for Identifier {
     }
 }
 
-#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
-pub struct StructChoiceIdx(NonZeroU16);
-impl StructChoiceIdx {
-    pub fn idx(&self) -> usize {
-        usize::from(u16::from(self.0)) - 1
-    }
-}
-
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct IdentifierName {
     pub name: String,
@@ -34,7 +24,6 @@ pub struct IdentifierName {
 pub enum PathComponent {
     Named(Identifier),
     Unnamed(u32),
-    Choice(StructChoiceIdx, u32),
     File(FileId),
 }
 
@@ -43,7 +32,6 @@ impl PathComponent {
         match self {
             PathComponent::Named(n) => db.lookup_intern_identifier(*n).name,
             PathComponent::Unnamed(x) => format!("{}", x),
-            PathComponent::Choice(_, _) => todo!(),
             PathComponent::File(f) => match db.path(*f) {
                 Some(p) => p.to_string_lossy().to_string(),
                 None => String::from("file[anonymous]"),
