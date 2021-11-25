@@ -112,7 +112,7 @@ fn module(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Module> {
     let node = check_error(db, fd, c.node())?;
     let mut statements = Vec::new();
     iter_children(db, fd, c, |_, cursor| {
-        statements.push(Arc::new(statement(db, fd, cursor)?));
+        statements.push(Arc::new(parser_definition(db, fd, cursor)?));
         Ok(())
     })?;
     Ok(Module {

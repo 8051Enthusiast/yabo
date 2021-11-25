@@ -14,7 +14,7 @@ pub trait Asts: Files + Interner {
     fn ast(&self, fd: FileId) -> ParseResult<Arc<Module>>;
     fn symbols(&self, fd: FileId) -> Result<Vec<Identifier>, ()>;
     fn top_level_statement(&self, fd: FileId, id: Identifier)
-        -> Result<Option<Arc<Statement>>, ()>;
+        -> Result<Option<Arc<ParserDefinition>>, ()>;
 }
 
 fn ast(db: &dyn Asts, fd: FileId) -> ParseResult<Arc<Module>> {
@@ -27,7 +27,7 @@ fn symbols(db: &dyn Asts, fd: FileId) -> Result<Vec<Identifier>, ()> {
         .map_err(|_| ())?
         .tl_statements
         .iter()
-        .filter_map(|st| st.id())
+        .map(|st| st.name.id)
         .collect();
     syms.sort();
     Ok(syms)
@@ -37,13 +37,13 @@ fn top_level_statement(
     db: &dyn Asts,
     fd: FileId,
     id: Identifier,
-) -> Result<Option<Arc<Statement>>, ()> {
+) -> Result<Option<Arc<ParserDefinition>>, ()> {
     Ok(db
         .ast(fd)
         .map_err(|_| ())?
         .tl_statements
         .iter()
-        .find(|st| st.id() == Some(id))
+        .find(|st| st.name.id == id)
         .cloned())
 }
 
@@ -114,7 +114,7 @@ impl From<Block> for ParserAtom {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Module {
-    pub tl_statements: Vec<Arc<Statement>>,
+    pub tl_statements: Vec<Arc<ParserDefinition>>,
     pub span: Span,
 }
 
@@ -126,11 +126,18 @@ pub enum Statement {
 }
 
 impl Statement {
-    fn id(&self) -> Option<Identifier> {
+    pub fn id(&self) -> Option<Identifier> {
         match self {
             Statement::ParserDef(x) => Some(x.name.id),
             Statement::Parse(x) => x.name.as_ref().map(|i| i.id),
             Statement::Let(x) => Some(x.name.id),
+        }
+    }
+    pub fn span(&self) -> Span {
+        match self {
+            Statement::ParserDef(x) => x.span,
+            Statement::Parse(x) => x.span,
+            Statement::Let(x) => x.span,
         }
     }
 }
@@ -171,6 +178,16 @@ pub enum BlockContent {
     Choice(Box<ParserChoice>),
 }
 
+impl BlockContent {
+    pub fn span(&self) -> Span {
+        match self {
+            BlockContent::Statement(x) => x.span(),
+            BlockContent::Sequence(x) => x.span,
+            BlockContent::Choice(x) => x.span,
+        }
+    }
+}
+
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserSequence {
     pub content: Vec<BlockContent>,
@@ -190,7 +207,7 @@ pub struct ParserArray {
     pub expr: ParseExpression,
     pub span: Span,
 }
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub enum ArrayKind {
     For,
     Each,
