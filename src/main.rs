@@ -6,7 +6,8 @@ pub mod source;
 pub mod types;
 pub mod hir;
 pub mod expr;
-use crate::ast::Asts;
+use ast::Asts;
+use hir::Hirs;
 use context::Context;
 use std::{env::args_os, error::Error, path::Path};
 
@@ -30,7 +31,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
     };
-    println!("{:#?}", ast);
+
+    let expr1 = context.id("complex");
+    let collection = context.db.hir_parser_collection(fid, expr1).unwrap().unwrap();
+    let hirctx = hir::HirConversionCtx::new(collection, &context.db);
+    dot::render(&hirctx, &mut std::io::stdout());
     Ok(())
 }
 

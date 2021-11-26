@@ -1,24 +1,25 @@
-parser expr1 = for [u8] *> {
+parser complex = for [u8] *> {
+    a: u64;
     (
-    	let a: u64 = 3;
-    |
-	let a: u64 = 4;
+        c: u64;
+        d: c_string |> utf8;
+	e: u64;
+	let h: str = "asdf";
+	u64 ~ 0;
+	f: {
+		a: u64;
+		b: u64;
+		let return: u64 = 4;
+		c: u64;
+	};
+	g: u64;
+        |
+        c: u64 ~ 1 || 2;
+        let d: str = 3;
     )
-    (
-        let b: u64 ~ 1 || 2 && 3 || 4 = a | 5 | 3;
-    |
-	let _: u64 = 0;
-    )
+    b: u64;
     let x: u64 = b else a else 0 + a;
-}
-parser test = for [u8] *> {
-	let a: u64 ~ 34 && 44 = 3;
     |
-	let a: u64 = 2;
-    |
-	(
-		let a: u64 = 3;
-	|
-		let a: u64 = 7 * 5 + a;
-	)
+    a: u64;
+    let m: u64 = e * m + 3 * 5 | 4;
 }

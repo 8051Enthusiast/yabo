@@ -28,7 +28,7 @@ pub enum PathComponent {
 }
 
 impl PathComponent {
-    pub fn to_name(&self, db: &dyn Interner) -> String {
+    pub fn to_name<DB: Interner + ?Sized>(&self, db: &DB) -> String {
         match self {
             PathComponent::Named(n) => db.lookup_intern_identifier(*n).name,
             PathComponent::Unnamed(x) => format!("{}", x),
@@ -42,6 +42,12 @@ impl PathComponent {
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct HirId(InternId);
+
+impl HirId {
+    pub fn graphviz_name(&self) -> String {
+        format!("HirNode{}", self.0.as_u32())
+    }
+}
 impl salsa::InternKey for HirId {
     fn from_intern_id(v: InternId) -> Self {
         HirId(v)
