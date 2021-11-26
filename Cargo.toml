@@ -12,6 +12,7 @@ salsa = "0.16.1"
 thiserror = "1.0.29"
 tree-sitter-yabo = { path = "tree-sitter-yabo", version = "0.0.1" }
 tree-sitter = "0.20"
+dot = "0.1.4"
 
 [build-dependencies]
 cc = "1"

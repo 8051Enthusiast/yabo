@@ -1,5 +1,5 @@
 use crate::interner::Identifier;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
 pub trait ExpressionKind: Clone + Hash + Eq + Debug {
@@ -179,6 +179,30 @@ impl BasicValBinOp {
         })
     }
 }
+
+impl Display for BasicValBinOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
+            BasicValBinOp::And => "&",
+            BasicValBinOp::Xor => "^",
+            BasicValBinOp::Or => "|",
+            BasicValBinOp::LesserEq => "<=",
+            BasicValBinOp::Lesser => "<",
+            BasicValBinOp::GreaterEq => ">=",
+            BasicValBinOp::Greater => ">",
+            BasicValBinOp::Uneq => "!=",
+            BasicValBinOp::Equals => "==",
+            BasicValBinOp::ShiftR => ">>",
+            BasicValBinOp::ShiftL => "<<",
+            BasicValBinOp::Minus => "-",
+            BasicValBinOp::Plus => "+",
+            BasicValBinOp::Div => "/",
+            BasicValBinOp::Modulo => "%",
+            BasicValBinOp::Mul => "*",
+        })
+    }
+}
+
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum ValUnOp<V: ExpressionKind, T: Clone + Hash + Eq + Debug> {
     Not(Expression<V>, T),
