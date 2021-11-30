@@ -1,0 +1,8 @@
+inspirations, in no particular order:
+* Prolog
+* ACPI Source Language
+* Zig
+* Rust
+* Ada
+* oCaml
+* C

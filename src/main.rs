@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let path = Path::new(&infile);
     let fid = context.fc.add(path).expect("Could not read file");
     context.update_db();
-    let ast = match context.db.ast(fid) {
+    let _ast = match context.db.ast(fid) {
         Ok(s) => s,
         Err(e) => {
             let handler = miette::GraphicalReportHandler::new();
@@ -31,11 +31,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
     };
-
-    let expr1 = context.id("complex");
-    let collection = context.db.hir_parser_collection(fid, expr1).unwrap().unwrap();
-    let hirctx = hir::HirConversionCtx::new(collection, &context.db);
-    dot::render(&hirctx, &mut std::io::stdout());
+    let graph = hir::HirGraph(&context.db as &dyn Hirs);
+    dot::render(&graph, &mut std::io::stdout()).expect("Could not render graph");
     Ok(())
 }
 
