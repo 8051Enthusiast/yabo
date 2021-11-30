@@ -1,10 +1,10 @@
-parser complex = for [u8] *> {
+parser main = for [u8] *> {
     a: u64;
     (
         c: u64;
         d: c_string |> utf8;
 	e: u64;
-	let h: str = "asdf";
+	let h: str = 123;
 	u64 ~ 0;
 	f: {
 		a: u64;
@@ -22,4 +22,8 @@ parser complex = for [u8] *> {
     |
     a: u64;
     let m: u64 = e * m + 3 * 5 | 4;
+}
+
+parser test = for [u8] *> {
+    return: u128;
 }

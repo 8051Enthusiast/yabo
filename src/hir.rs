@@ -1,6 +1,10 @@
+mod recursion;
+
 use std::{
+    borrow::Cow,
     cell::RefCell,
-    collections::{btree_map::Entry, BTreeMap},
+    collections::{btree_map::Entry, BTreeMap, BTreeSet},
+    sync::Arc,
 };
 
 use crate::{
@@ -9,25 +13,32 @@ use crate::{
     interner::{HirId, HirPath, Identifier, PathComponent},
     source::{FileId, Span, Spanned},
 };
+
+use recursion::{mod_parser_ssc, parser_ssc, FunctionSscId};
+
 #[salsa::query_group(HirDatabase)]
 pub trait Hirs: ast::Asts {
-    fn hir_parser_collection(
-        &self,
-        file: FileId,
-        id: Identifier,
-    ) -> Result<Option<HirParserCollection>, ()>;
+    fn hir_parser_collection(&self, hid: HirId) -> Result<Option<HirParserCollection>, ()>;
     fn hir_node(&self, id: HirId) -> Result<HirNode, ()>;
+    #[salsa::interned]
+    fn intern_recursion_scc(&self, functions: Vec<ParserDefId>) -> recursion::FunctionSscId;
+    fn mod_parser_ssc(
+        &self,
+        module: ModuleId,
+    ) -> Result<Arc<BTreeMap<ParserDefId, FunctionSscId>>, ()>;
+    fn parser_ssc(&self, parser: ParserDefId) -> Result<FunctionSscId, ()>;
+    fn root_id(&self) -> ModuleId;
+    fn all_hir_ids(&self) -> Vec<HirId>;
+    fn hir_parent_block(&self, id: HirId) -> Result<Option<BlockId>, ()>;
+    fn hir_parent_module(&self, id: HirId) -> Result<ModuleId, ()>;
 }
 
-fn hir_parser_collection(
-    db: &dyn Hirs,
-    file: FileId,
-    id: Identifier,
-) -> Result<Option<HirParserCollection>, ()> {
+fn hir_parser_collection(db: &dyn Hirs, hid: HirId) -> Result<Option<HirParserCollection>, ()> {
     let collection = HirParserCollection::new();
     let ctx = HirConversionCtx::new(collection, db);
-    let path = HirPath::new(file, id);
-    let hid = db.intern_hir_path(path.clone());
+    let path = db.lookup_intern_hir_path(hid);
+    let file = path.path()[0].unwrap_file();
+    let id = path.path()[1].unwrap_named();
     let parser = match db.top_level_statement(file, id)? {
         None => return Ok(None),
         Some(x) => x,
@@ -38,25 +49,72 @@ fn hir_parser_collection(
 
 fn hir_node(db: &dyn Hirs, id: HirId) -> Result<HirNode, ()> {
     let path = db.lookup_intern_hir_path(id);
-    let file = match path.path()[0] {
-        PathComponent::File(f) => f,
-        _ => panic!("Hir path {} does not start with file id", db.path_name(id)),
-    };
-    let fid = match path.path()[1] {
-        PathComponent::Named(n) => n,
+    let file = path.path()[0].unwrap_file();
+    let fid = match path.path().get(1) {
+        Some(PathComponent::Named(n)) => n,
+        None => return module_file(db, file).map(HirNode::Module),
         _ => panic!(
             "Hir path {} does not have identifier as second element",
             db.path_name(id)
         ),
     };
+    let collection_id = db.intern_hir_path(HirPath::new_fid(file, *fid));
     let hir_ctx = db
-        .hir_parser_collection(file, fid)?
+        .hir_parser_collection(collection_id)?
         .unwrap_or_else(|| panic!("Access to inexistent HIR path {}", db.path_name(id)));
     Ok(hir_ctx
         .map
         .get(&id)
         .unwrap_or_else(|| panic!("Access to inexistent HIR path {}", db.path_name(id)))
         .clone())
+}
+
+fn root_id(db: &dyn Hirs) -> ModuleId {
+    let root_path = HirPath::new_file(FileId::default());
+    ModuleId(db.intern_hir_path(root_path))
+}
+
+fn all_hir_ids(db: &dyn Hirs) -> Vec<HirId> {
+    let root = db.root_id();
+    let module = match root.lookup(db) {
+        Ok(m) => m,
+        Err(_) => return Vec::new(),
+    };
+    let collections: Vec<_> = module
+        .defs
+        .values()
+        .map(|id| db.hir_parser_collection(id.0))
+        .collect();
+    let mut ret = vec![root.0];
+    for c in collections {
+        let collection = match c {
+            Err(_) | Ok(None) => continue,
+            Ok(Some(col)) => col,
+        };
+        ret.extend(collection.map.keys().cloned())
+    }
+    ret
+}
+
+fn hir_parent_block(db: &dyn Hirs, id: HirId) -> Result<Option<BlockId>, ()> {
+    match db.hir_node(id)? {
+        HirNode::Let(x) => hir_parent_block(db, x.context.0),
+        HirNode::Block(x) => match x.super_context {
+            None => Ok(None),
+            Some(ctx) => hir_parent_block(db, ctx.0),
+        },
+        HirNode::Choice(x) => hir_parent_block(db, x.parent_context.0),
+        HirNode::Context(x) => Ok(Some(x.block_id)),
+        HirNode::Module(_) | HirNode::ParserDef(_) => Ok(None),
+        _ => hir_parent_block(db, id.parent(db)),
+    }
+}
+
+fn hir_parent_module(db: &dyn Hirs, id: HirId) -> Result<ModuleId, ()> {
+    // todo
+    Ok(ModuleId(db.intern_hir_path(HirPath::new_file(
+        db.lookup_intern_hir_path(id).path()[0].unwrap_file(),
+    ))))
 }
 
 macro_rules! hir_id_wrapper {
@@ -92,8 +150,26 @@ pub enum HirNode {
     Array(ParserArray),
     Block(Block),
     Choice(StructChoice),
+    Module(Module),
     Context(StructCtx),
     ParserDef(ParserDef),
+}
+
+impl HirNode {
+    pub fn children(&self) -> Vec<HirId> {
+        match self {
+            HirNode::Let(x) => x.children(),
+            HirNode::Expr(x) => x.children(),
+            HirNode::PExpr(x) => x.children(),
+            HirNode::Parse(x) => x.children(),
+            HirNode::Array(x) => x.children(),
+            HirNode::Block(x) => x.children(),
+            HirNode::Choice(x) => x.children(),
+            HirNode::Module(x) => x.children(),
+            HirNode::Context(x) => x.children(),
+            HirNode::ParserDef(x) => x.children(),
+        }
+    }
 }
 
 hir_id_wrapper! {
@@ -104,6 +180,7 @@ hir_id_wrapper! {
     type ArrayId = Array(ParserArray);
     type BlockId = Block(Block);
     type ChoiceId = Choice(StructChoice);
+    type ModuleId = Module(Module);
     type ContextId = Context(StructCtx);
     type ParserDefId = ParserDef(ParserDef);
 }
@@ -157,9 +234,12 @@ impl<'a> HirConversionCtx<'a> {
     }
 }
 
-impl<'a> dot::Labeller<'a, HirId, (HirId, HirId, String, dot::Style)> for HirConversionCtx<'a> {
+#[derive(Clone)]
+pub struct HirGraph<'a>(pub &'a dyn Hirs);
+
+impl<'a> dot::Labeller<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGraph<'a> {
     fn graph_id(&'a self) -> dot::Id<'a> {
-        dot::Id::new("test").unwrap()
+        dot::Id::new("HIR").unwrap()
     }
 
     fn node_id(&'a self, n: &HirId) -> dot::Id<'a> {
@@ -167,8 +247,11 @@ impl<'a> dot::Labeller<'a, HirId, (HirId, HirId, String, dot::Style)> for HirCon
     }
 
     fn node_label(&'a self, n: &HirId) -> dot::LabelText<'a> {
-        let node = self.collection.borrow().map[n].hir_to_string(self.db);
-        dot::LabelText::label(node)
+        let text = match self.0.hir_node(*n) {
+            Ok(node) => node.hir_to_string(self.0),
+            Err(_) => String::from("error"),
+        };
+        dot::LabelText::label(text)
     }
 
     fn edge_label(&'a self, e: &(HirId, HirId, String, dot::Style)) -> dot::LabelText<'_> {
@@ -180,17 +263,17 @@ impl<'a> dot::Labeller<'a, HirId, (HirId, HirId, String, dot::Style)> for HirCon
     }
 }
 
-impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirConversionCtx<'a> {
+impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGraph<'a> {
     fn nodes(&'a self) -> dot::Nodes<'a, HirId> {
-        self.collection.borrow().map.keys().copied().collect()
+        Cow::Owned(self.0.all_hir_ids())
     }
 
     fn edges(&'a self) -> dot::Edges<'a, (HirId, HirId, String, dot::Style)> {
-        self.collection
-            .borrow()
-            .map
+        self.0
+            .all_hir_ids()
             .iter()
-            .flat_map(|(_id, node)| {
+            .flat_map(|&x| self.0.hir_node(x).ok())
+            .flat_map(|node| {
                 match node {
                     HirNode::Let(LetStatement {
                         id,
@@ -216,7 +299,7 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirCo
                         .collect(),
                     HirNode::Parse(ParseStatement { id, prev, expr }) => {
                         let p = match prev {
-                            ParserPredecessor::ChildOf(p) | ParserPredecessor::After(p) => *p,
+                            ParserPredecessor::ChildOf(p) | ParserPredecessor::After(p) => p,
                         };
                         let s = match prev {
                             ParserPredecessor::ChildOf(_) => format!("ChildOf"),
@@ -280,13 +363,13 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirCo
                             .iter()
                             .map(|p| {
                                 let last_name = self
-                                    .db
+                                    .0
                                     .lookup_intern_hir_path(*p)
                                     .path()
                                     .iter()
                                     .last()
                                     .unwrap()
-                                    .to_name(self.db);
+                                    .to_name(self.0);
                                 (id.0, *p, last_name, dot::Style::Bold)
                             })
                             .collect();
@@ -299,6 +382,25 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirCo
                         }
                         v
                     }
+                    HirNode::Module(Module { id, defs, submods }) => defs
+                        .iter()
+                        .map(|(ident, def)| {
+                            (
+                                id.0,
+                                def.0,
+                                self.0.lookup_intern_identifier(*ident).name,
+                                dot::Style::Bold,
+                            )
+                        })
+                        .chain(submods.iter().map(|(ident, module)| {
+                            (
+                                id.0,
+                                module.0,
+                                self.0.lookup_intern_identifier(*ident).name,
+                                dot::Style::Bold,
+                            )
+                        }))
+                        .collect(),
                     HirNode::ParserDef(ParserDef { id, from, to }) => {
                         vec![
                             (id.0, from.0, format!("from"), dot::Style::Bold),
@@ -330,6 +432,42 @@ pub struct IndexSpanned<T> {
     pub span: SpanIndex,
 }
 
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Module {
+    id: ModuleId,
+    defs: BTreeMap<Identifier, ParserDefId>,
+    submods: BTreeMap<Identifier, ModuleId>,
+}
+
+impl Module {
+    pub fn children(&self) -> Vec<HirId> {
+        self.defs
+            .values()
+            .map(|x| x.0)
+            .chain(self.submods.values().map(|x| x.0))
+            .collect()
+    }
+}
+
+fn module_file(db: &dyn Hirs, file: FileId) -> Result<Module, ()> {
+    let id = ModuleId(db.intern_hir_path(HirPath::new_file(file)));
+    let defs = db
+        .symbols(file)?
+        .iter()
+        .map(|sym| {
+            (
+                *sym,
+                ParserDefId(db.intern_hir_path(HirPath::new_fid(file, *sym))),
+            )
+        })
+        .collect();
+    Ok(Module {
+        id,
+        defs,
+        submods: BTreeMap::new(),
+    })
+}
+
 impl ExpressionKind for HirConstraint {
     type BinaryOp = expr::ConstraintBinOp<HirConstraint, SpanIndex>;
     type UnaryOp = expr::ConstraintUnOp<HirConstraint, SpanIndex>;
@@ -346,6 +484,12 @@ pub struct ParseExpression {
     children: Vec<HirId>,
 }
 
+impl ParseExpression {
+    fn children(&self) -> Vec<HirId> {
+        self.children.clone()
+    }
+}
+
 impl ExpressionKind for HirParse {
     type BinaryOp = expr::ParseBinOp<HirParse, HirConstraint, SpanIndex>;
     type UnaryOp = expr::ParseUnOp<HirParse, SpanIndex>;
@@ -360,6 +504,12 @@ pub struct ValExpression {
     id: ExprId,
     expr: Expression<HirVal>,
     children: Vec<HirId>,
+}
+
+impl ValExpression {
+    fn children(&self) -> Vec<HirId> {
+        self.children.clone()
+    }
 }
 
 impl ExpressionKind for HirVal {
@@ -504,6 +654,12 @@ pub struct ParserDef {
     to: PExprId,
 }
 
+impl ParserDef {
+    pub fn children(&self) -> Vec<HirId> {
+        vec![self.from.0, self.to.0]
+    }
+}
+
 fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDefId) {
     let from = PExprId(id.extend(ctx.db, PathComponent::Unnamed(0)));
     let to = PExprId(id.extend(ctx.db, PathComponent::Unnamed(1)));
@@ -526,6 +682,12 @@ pub struct Block {
     root_context: ContextId,
     super_context: Option<ContextId>,
     array: Option<ArrayKind>,
+}
+
+impl Block {
+    pub fn children(&self) -> Vec<HirId> {
+        vec![self.root_context.0]
+    }
 }
 
 fn block(
@@ -563,6 +725,12 @@ pub struct StructChoice {
     pub id: ChoiceId,
     pub parent_context: ContextId,
     pub subcontexts: Vec<ContextId>,
+}
+
+impl StructChoice {
+    pub fn children(&self) -> Vec<HirId> {
+        self.subcontexts.iter().map(|x| x.0).collect()
+    }
 }
 
 fn struct_choice(
@@ -618,6 +786,12 @@ pub struct StructCtx {
     pub children: Box<Vec<HirId>>,
 }
 
+impl StructCtx {
+    pub fn children(&self) -> Vec<HirId> {
+        self.children.as_ref().clone()
+    }
+}
+
 fn empty_struct_context(
     ctx: &HirConversionCtx,
     id: ContextId,
@@ -647,7 +821,8 @@ fn struct_context(
         ast::BlockContent::Sequence(x) => x.content.iter().collect(),
         otherwise => vec![otherwise],
     };
-    let mut children_id = Vec::new();
+    let mut children_id = BTreeSet::new();
+    let mut duplicate_ident = BTreeSet::<Identifier>::new();
     let old_parents = parents.clone();
     let parents = ParentInfo {
         parent_context: Some(id),
@@ -664,13 +839,13 @@ fn struct_context(
         let new_set = match child {
             ast::BlockContent::Choice(c) => {
                 let sub_id = ChoiceId(id.extend(ctx.db, next_index()));
-                children_id.push(sub_id.0);
+                children_id.insert(sub_id.0);
                 struct_choice(&c, ctx, sub_id, &parents)
             }
             ast::BlockContent::Statement(x) => {
                 let name = x.id().map(PathComponent::Named).unwrap_or_else(next_index);
                 let sub_id = id.extend(ctx.db, name);
-                children_id.push(sub_id);
+                children_id.insert(sub_id);
                 match x.as_ref() {
                     ast::Statement::ParserDef(_) => {
                         panic!("Nested parser definitions are not yet implemented")
@@ -687,6 +862,7 @@ fn struct_context(
             ast::BlockContent::Sequence(_) => unreachable!(),
         };
         let (result_set, duplicate) = varset.merge_product(&new_set);
+        duplicate_ident.extend(duplicate.iter());
         varset = result_set;
     }
     let context = StructCtx {
@@ -695,7 +871,7 @@ fn struct_context(
         parent_choice: old_parents.parent_choice,
         parent_context: old_parents.parent_context,
         vars: Box::new(varset.clone()),
-        children: Box::new(children_id),
+        children: Box::new(children_id.into_iter().collect()),
     };
     ctx.insert(id.0, HirNode::Context(context), vec![ast.span()]);
     varset
@@ -707,6 +883,12 @@ pub struct LetStatement {
     pub ty: PExprId,
     pub expr: ExprId,
     pub context: ContextId,
+}
+
+impl LetStatement {
+    fn children(&self) -> Vec<HirId> {
+        vec![self.ty.0, self.expr.0]
+    }
 }
 
 fn let_statement(
@@ -742,6 +924,12 @@ pub struct ParseStatement {
     pub expr: PExprId,
 }
 
+impl ParseStatement {
+    pub fn children(&self) -> Vec<HirId> {
+        vec![self.expr.0]
+    }
+}
+
 fn parse_statement(
     ast: &ast::ParseStatement,
     ctx: &HirConversionCtx,
@@ -775,6 +963,12 @@ pub struct ParserArray {
     pub id: ArrayId,
     pub direction: ArrayKind,
     pub expr: PExprId,
+}
+
+impl ParserArray {
+    pub fn children(&self) -> Vec<HirId> {
+        vec![self.expr.0]
+    }
 }
 
 fn parser_array(
@@ -901,6 +1095,7 @@ impl HirToString for HirNode {
             HirNode::Array(a) => format!("Array({:?})", a.direction),
             HirNode::Block(_) => format!("Block"),
             HirNode::Choice(_) => format!("Choice"),
+            HirNode::Module(_) => format!("Module"),
             HirNode::Context(_) => format!("Context"),
             HirNode::ParserDef(_) => format!("ParserDef"),
         }
@@ -1106,11 +1301,12 @@ impl HirToString for Expression<HirVal> {
 mod tests {
     use super::*;
     use crate::context::Context;
+    use crate::interner::Interner;
     #[test]
-    fn nested_choice() {
+    fn eval_test() {
         let ctx = Context::mock(
             r#"
-parser complex = for [u8] *> {
+parser expr1 = for [u8] *> {
     (
         a: u64;
         b: u32;
@@ -1120,10 +1316,36 @@ parser complex = for [u8] *> {
 }
         "#,
         );
-        let main = FileId::default();
-        let expr1 = ctx.id("complex");
-        let collection = ctx.db.hir_parser_collection(main, expr1).unwrap().unwrap();
-        let hirctx = HirConversionCtx::new(collection, &ctx.db);
-        dot::render(&hirctx, &mut std::io::stdout());
+        ctx.db.all_hir_ids();
+    }
+    #[test]
+    fn recursion_ssc() {
+        let ctx = Context::mock(
+            r#"
+parser a = for [u8] *> {x: c; y: {b; z: d;};}
+parser b = for [u8] *> {x: a; y: c;}
+parser c = for [u8] *> {x: c;}
+parser d = for [u8] *> {let a: u64 = 1; let b: u64 = a + 1;}
+parser e = for [u8] *> {}
+            "#,
+        );
+        let fd = FileId::default();
+        let var = |s| ParserDefId(ctx.db.intern_hir_path(HirPath::new_fid(fd, ctx.id(s))));
+        let a = var("a");
+        let b = var("b");
+        let c = var("c");
+        let d = var("d");
+        let e = var("d");
+        let get_ssc = |x| ctx.db.parser_ssc(x).unwrap();
+        let ssc_a = get_ssc(a);
+        let ssc_b = get_ssc(b);
+        let ssc_c = get_ssc(c);
+        let ssc_d = get_ssc(d);
+        let ssc_e = get_ssc(e);
+        assert!(ssc_a == ssc_b);
+        assert!(ssc_b != ssc_c);
+        assert!(ssc_c != ssc_d);
+        assert!(ssc_b != ssc_d);
+        assert!(ssc_b != ssc_e);
     }
 }

@@ -20,7 +20,7 @@ pub struct IdentifierName {
     pub name: String,
 }
 
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub enum PathComponent {
     Named(Identifier),
     Unnamed(u32),
@@ -38,6 +38,18 @@ impl PathComponent {
             },
         }
     }
+    pub fn unwrap_file(self) -> FileId {
+        match self {
+            PathComponent::File(f) => f,
+            _ => panic!("Path component should have been file")
+        }
+    }
+    pub fn unwrap_named(self) -> Identifier {
+        match self {
+            PathComponent::Named(ident) => ident,
+            _ => panic!("Path component should have been identifier")
+        }
+    }
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -46,6 +58,11 @@ pub struct HirId(InternId);
 impl HirId {
     pub fn graphviz_name(&self) -> String {
         format!("HirNode{}", self.0.as_u32())
+    }
+    pub fn parent<DB: Interner + ?Sized>(self, db: &DB) -> HirId {
+        let mut path = db.lookup_intern_hir_path(self);
+        path.pop();
+        db.intern_hir_path(path)
     }
 }
 impl salsa::InternKey for HirId {
@@ -62,7 +79,10 @@ impl salsa::InternKey for HirId {
 pub struct HirPath(Vec<PathComponent>);
 
 impl HirPath {
-    pub fn new(f: FileId, n: Identifier) -> Self {
+    pub fn new_file(f: FileId) -> Self {
+        HirPath(vec![PathComponent::File(f)])
+    }
+    pub fn new_fid(f: FileId, n: Identifier) -> Self {
         HirPath(vec![PathComponent::File(f), PathComponent::Named(n)])
     }
     pub fn path(&self) -> &[PathComponent] {
@@ -74,7 +94,7 @@ impl HirPath {
     pub fn pop(&mut self) -> Option<PathComponent> {
         self.0.pop()
     }
-    pub fn to_name(&self, db: &dyn Interner) -> String {
+    pub fn to_name<DB: Interner + ?Sized>(&self, db: &DB) -> String {
         self.path()
             .iter()
             .map(|x| x.to_name(db))
