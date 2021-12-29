@@ -3,20 +3,34 @@ use std::iter::FromIterator;
 use std::ops::{BitAnd, BitOr};
 use std::{collections::BTreeSet, hash::Hash};
 
-use crate::{interner::Identifier, source::FileId};
+use crate::interner::{HirId, Identifier};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Type {
     Int,
     Char,
-    For(Box<Type>),
-    Each(Box<Type>),
+    TypeVarRef(usize, usize),
+    InferenceVarRef(usize),
+    TypeArgs(Box<Type>, Box<Vec<VarDef>>),
+    Named(HirId),
+    Block(HirId),
     Constrained(Box<Type>, Constraint),
-    Parser(Box<Type>, Box<Type>),
-    Named(FileId, Identifier),
-    Struct(Struct),
+    ParserRef(Box<Type>, Box<Type>),
+    ParserArg(Box<Type>, Box<Type>),
+    RegularArg(Box<Type>, Vec<Type>),
 }
 
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct VarDef {
+    name: Option<Identifier>,
+    defloc: Option<HirId>,
+}
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub enum ParserName {
+    For,
+    Each,
+    Other(Identifier, HirId),
+}
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Parser {
     from: Box<Type>,
