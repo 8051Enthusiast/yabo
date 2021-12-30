@@ -1306,12 +1306,12 @@ mod tests {
     fn eval_test() {
         let ctx = Context::mock(
             r#"
-parser expr1 = for [u8] *> {
+def expr1: for [u8] *> {
     (
-        a: u64;
-        b: u32;
+        a: u64,
+        b: u32,
     |
-        a: u64;
+        a: u64,
     )
 }
         "#,
@@ -1322,11 +1322,11 @@ parser expr1 = for [u8] *> {
     fn recursion_ssc() {
         let ctx = Context::mock(
             r#"
-parser a = for [u8] *> {x: c; y: {b; z: d;};}
-parser b = for [u8] *> {x: a; y: c;}
-parser c = for [u8] *> {x: c;}
-parser d = for [u8] *> {let a: u64 = 1; let b: u64 = a + 1;}
-parser e = for [u8] *> {}
+def a: for [u8] *> {x: c, y: {b, z: d,},}
+def b: for [u8] *> {x: a, y: c,}
+def c: for [u8] *> {x: c,}
+def d: for [u8] *> {let a: u64 = 1, let b: u64 = a + 1,}
+def e: for [u8] *> {}
             "#,
         );
         let fd = FileId::default();

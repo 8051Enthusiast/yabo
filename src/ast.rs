@@ -221,11 +221,11 @@ mod tests {
     fn nested_choice() {
         let ctx = Context::mock(
             r#"
-parser expr1 = for [u8] *> {
+def expr1: for [u8] *> {
     (
-        let b: u64 = 3;
+        let b: u64 = 3,
     |
-	    let _: u64 = 0;
+	    let _: u64 = 0,
     )
 }
         "#,

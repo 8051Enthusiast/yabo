@@ -22,9 +22,9 @@ module.exports = grammar({
       $.parser_definition
     ),
     parser_definition: $ => seq(
-      'parser',
+      'def',
       field('name', $.identifier),
-      '=',
+      ':',
       field('from', $._parse_expression),
       '*>',
       field('to', $._parse_expression),
@@ -100,7 +100,7 @@ module.exports = grammar({
         )
       ),
       field('parser', $._parse_expression),
-      ';',
+      ',',
     ),
     let_statement: $ => seq(
       'let',
@@ -109,7 +109,7 @@ module.exports = grammar({
       field('ty', $._parse_expression),
       '=',
       field('expr', $._expression),
-      ';',
+      ',',
     ),
     _constraint_expression: $ => choice(
       $.binary_constraint_expression,
@@ -119,12 +119,12 @@ module.exports = grammar({
     binary_constraint_expression: $ => choice(
       prec.left(PREC.OR, seq(
         field('left', $._constraint_expression),
-        field('op', '||'),
+        field('op', 'or'),
         field('right', $._constraint_expression),
       )),
       prec.left(PREC.AND, seq(
         field('left', $._constraint_expression),
-        field('op', '&&'),
+        field('op', 'and'),
         field('right', $._constraint_expression),
       )),
     ),
@@ -190,7 +190,7 @@ module.exports = grammar({
     string_literal: $ => seq(
       '\"',
       choice(
-        token.immediate(/[^\n"]/)
+        token.immediate(/[^\n"]*/)
       ),
       '\"'
     ),

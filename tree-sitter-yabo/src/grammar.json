@@ -22,7 +22,7 @@
       "members": [
         {
           "type": "STRING",
-          "value": "parser"
+          "value": "def"
         },
         {
           "type": "FIELD",
@@ -34,7 +34,7 @@
         },
         {
           "type": "STRING",
-          "value": "="
+          "value": ":"
         },
         {
           "type": "FIELD",
@@ -424,7 +424,7 @@
         },
         {
           "type": "STRING",
-          "value": ";"
+          "value": ","
         }
       ]
     },
@@ -469,7 +469,7 @@
         },
         {
           "type": "STRING",
-          "value": ";"
+          "value": ","
         }
       ]
     },
@@ -512,7 +512,7 @@
                 "name": "op",
                 "content": {
                   "type": "STRING",
-                  "value": "||"
+                  "value": "or"
                 }
               },
               {
@@ -545,7 +545,7 @@
                 "name": "op",
                 "content": {
                   "type": "STRING",
-                  "value": "&&"
+                  "value": "and"
                 }
               },
               {
@@ -1317,7 +1317,7 @@
               "type": "IMMEDIATE_TOKEN",
               "content": {
                 "type": "PATTERN",
-                "value": "[^\\n\"]"
+                "value": "[^\\n\"]*"
               }
             }
           ]

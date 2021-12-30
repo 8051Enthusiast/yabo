@@ -2,9 +2,9 @@
 Simple Parser
 =============
 
-parser complex = for [u8] *> {
-  real: f32_el;
-  imag: f32_el;
+def complex: for [u8] *> {
+  real: f32_el,
+  imag: f32_el,
 }
 
 ---
@@ -27,11 +27,11 @@ parser complex = for [u8] *> {
 Choice Parser
 =============
 
-parser choice = for [u8] *> {
-    if ascii;
-    return: utf8char;
+def choice: for [u8] *> {
+    if ascii,
+    return: utf8char,
   |
-    return: utf8char;
+    return: utf8char,
 }
 
 ---
@@ -59,9 +59,9 @@ parser choice = for [u8] *> {
 Let Statement
 =============
 
-parser seven = for [u8] *> {
-  val: u8;
-  let return: u8 = 7;
+def seven: for [u8] *> {
+  val: u8,
+  let return: u8 = 7,
 }
 
 ---
