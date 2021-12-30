@@ -211,7 +211,6 @@ pub struct ParserArray {
 pub enum ArrayKind {
     For,
     Each,
-    Rof,
 }
 #[cfg(test)]
 mod tests {

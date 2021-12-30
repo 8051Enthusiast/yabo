@@ -456,7 +456,6 @@ fn array_direction(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Span
         inner: match str.inner.as_str() {
             "for" => ArrayKind::For,
             "each" => ArrayKind::Each,
-            "rof" => ArrayKind::Rof,
             otherwise => panic!("Unknown loop {}", otherwise),
         },
         span: str.span,
