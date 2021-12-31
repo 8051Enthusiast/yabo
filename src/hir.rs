@@ -4,29 +4,31 @@ use std::{
     borrow::Cow,
     cell::RefCell,
     collections::{btree_map::Entry, BTreeMap, BTreeSet},
+    fmt::Debug,
+    hash::Hash,
     sync::Arc,
 };
 
 use crate::{
-    ast::{self, ArrayKind, AstConstraint, AstParse, AstVal},
+    ast::{self, ArrayKind, AstConstraint, AstType, AstVal},
     expr::{self, Atom, ExprConverter, Expression, ExpressionKind},
     interner::{HirId, HirPath, Identifier, PathComponent},
     source::{FileId, Span, Spanned},
 };
 
-use recursion::{mod_parser_ssc, parser_ssc, FunctionSscId};
+//use recursion::{mod_parser_ssc, parser_ssc, FunctionSscId};
 
 #[salsa::query_group(HirDatabase)]
 pub trait Hirs: ast::Asts {
     fn hir_parser_collection(&self, hid: HirId) -> Result<Option<HirParserCollection>, ()>;
     fn hir_node(&self, id: HirId) -> Result<HirNode, ()>;
-    #[salsa::interned]
-    fn intern_recursion_scc(&self, functions: Vec<ParserDefId>) -> recursion::FunctionSscId;
-    fn mod_parser_ssc(
-        &self,
-        module: ModuleId,
-    ) -> Result<Arc<BTreeMap<ParserDefId, FunctionSscId>>, ()>;
-    fn parser_ssc(&self, parser: ParserDefId) -> Result<FunctionSscId, ()>;
+    //    #[salsa::interned]
+    //    fn intern_recursion_scc(&self, functions: Vec<ParserDefId>) -> recursion::FunctionSscId;
+    //    fn mod_parser_ssc(
+    //        &self,
+    //        module: ModuleId,
+    //    ) -> Result<Arc<BTreeMap<ParserDefId, FunctionSscId>>, ()>;
+    //    fn parser_ssc(&self, parser: ParserDefId) -> Result<FunctionSscId, ()>;
     fn root_id(&self) -> ModuleId;
     fn all_hir_ids(&self) -> Vec<HirId>;
     fn hir_parent_block(&self, id: HirId) -> Result<Option<BlockId>, ()>;
@@ -145,7 +147,7 @@ macro_rules! hir_id_wrapper {
 pub enum HirNode {
     Let(LetStatement),
     Expr(ValExpression),
-    PExpr(ParseExpression),
+    TExpr(TypeExpression),
     Parse(ParseStatement),
     Array(ParserArray),
     Block(Block),
@@ -160,7 +162,7 @@ impl HirNode {
         match self {
             HirNode::Let(x) => x.children(),
             HirNode::Expr(x) => x.children(),
-            HirNode::PExpr(x) => x.children(),
+            HirNode::TExpr(x) => x.children(),
             HirNode::Parse(x) => x.children(),
             HirNode::Array(x) => x.children(),
             HirNode::Block(x) => x.children(),
@@ -175,7 +177,7 @@ impl HirNode {
 hir_id_wrapper! {
     type LetId = Let(LetStatement);
     type ExprId = Expr(ValExpression);
-    type PExprId = PExpr(ParseExpression);
+    type TExprId = TExpr(TypeExpression);
     type ParseId = Parse(ParseStatement);
     type ArrayId = Array(ParserArray);
     type BlockId = Block(Block);
@@ -292,11 +294,7 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGr
                         .enumerate()
                         .map(|(i, p)| (id.0, *p, format!("children[{}]", i), dot::Style::Bold))
                         .collect(),
-                    HirNode::PExpr(ParseExpression { id, children, .. }) => children
-                        .iter()
-                        .enumerate()
-                        .map(|(i, p)| (id.0, *p, format!("children[{}]", i), dot::Style::Bold))
-                        .collect(),
+                    HirNode::TExpr(_) => vec![],
                     HirNode::Parse(ParseStatement { id, prev, expr }) => {
                         let p = match prev {
                             ParserPredecessor::ChildOf(p) | ParserPredecessor::After(p) => p,
@@ -424,8 +422,6 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGr
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct SpanIndex(u32);
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct HirConstraint {}
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct IndexSpanned<T> {
     pub atom: T,
@@ -468,6 +464,9 @@ fn module_file(db: &dyn Hirs, file: FileId) -> Result<Module, ()> {
     })
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct HirConstraint;
+
 impl ExpressionKind for HirConstraint {
     type BinaryOp = expr::ConstraintBinOp<HirConstraint, SpanIndex>;
     type UnaryOp = expr::ConstraintUnOp<HirConstraint, SpanIndex>;
@@ -475,30 +474,13 @@ impl ExpressionKind for HirConstraint {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct HirParse {}
+pub struct HirVal;
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct ParseExpression {
-    id: PExprId,
-    expr: Expression<HirParse>,
-    children: Vec<HirId>,
-}
-
-impl ParseExpression {
-    fn children(&self) -> Vec<HirId> {
-        self.children.clone()
-    }
-}
-
-impl ExpressionKind for HirParse {
-    type BinaryOp = expr::ParseBinOp<HirParse, HirConstraint, SpanIndex>;
-    type UnaryOp = expr::ParseUnOp<HirParse, SpanIndex>;
+impl ExpressionKind for HirVal {
+    type BinaryOp = expr::ValBinOp<HirVal, HirConstraint, SpanIndex>;
+    type UnaryOp = expr::ValUnOp<HirVal, SpanIndex>;
     type Atom = IndexSpanned<ParserAtom>;
 }
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct HirVal {}
-
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct ValExpression {
     id: ExprId,
@@ -512,10 +494,25 @@ impl ValExpression {
     }
 }
 
-impl ExpressionKind for HirVal {
-    type BinaryOp = expr::ValBinOp<HirVal, HirParse, SpanIndex>;
-    type UnaryOp = expr::ValUnOp<HirVal, SpanIndex>;
-    type Atom = IndexSpanned<Atom>;
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct HirType;
+
+impl ExpressionKind for HirType {
+    type BinaryOp = expr::TypeBinOp<HirType, HirConstraint, SpanIndex>;
+    type UnaryOp = expr::TypeUnOp<HirType, SpanIndex>;
+    type Atom = IndexSpanned<TypeAtom>;
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct TypeExpression {
+    id: TExprId,
+    expr: Expression<HirType>,
+}
+
+impl TypeExpression {
+    fn children(&self) -> Vec<HirId> {
+        Vec::new()
+    }
 }
 
 fn constraint_expression_converter<'a>(
@@ -525,7 +522,7 @@ fn constraint_expression_converter<'a>(
     let bin_fun =
         move |bop: &ast::AstConstraintBinOp, c: &Converter| bop.convert_same(c, &add_span);
     let un_fun = move |uop: &ast::AstConstraintUnOp, c: &Converter| uop.convert_same(c, &add_span);
-    let atom_fun = move |atom: &Spanned<Atom>| {
+    let atom_fun = move |atom: &Spanned<Atom>, _: &Converter| {
         let n = add_span(&atom.span);
         IndexSpanned {
             atom: atom.inner.clone(),
@@ -535,43 +532,72 @@ fn constraint_expression_converter<'a>(
     ExprConverter::new(bin_fun, un_fun, atom_fun)
 }
 
-fn parse_expression_converter<'a>(
+fn val_expression_converter<'a>(
     ctx: &'a HirConversionCtx<'a>,
     add_span: &'a impl Fn(&Span) -> SpanIndex,
     new_id: &'a impl Fn() -> HirId,
     parent_context: Option<ContextId>,
     array: Option<ArrayKind>,
-) -> ExprConverter<'a, AstParse, HirParse> {
-    let atom_fun = move |x: &Spanned<ast::ParserAtom>| -> IndexSpanned<ParserAtom> {
-        let n = add_span(&x.span);
-        let atom = match &x.inner {
-            ast::ParserAtom::Array(array) => {
-                let nid = ArrayId(new_id());
-                parser_array(array, ctx, nid, parent_context);
-                ParserAtom::Array(nid)
-            }
-            ast::ParserAtom::Atom(atom) => ParserAtom::Atom(atom.clone()),
-            ast::ParserAtom::Block(b) => {
-                let nid = BlockId(new_id());
-                block(b, ctx, nid, parent_context, array);
-                ParserAtom::Block(nid)
-            }
+) -> ExprConverter<'a, AstVal, HirVal> {
+    type VConverter<'b> = ExprConverter<'b, ast::AstVal, HirVal>;
+    let atom_fun =
+        move |x: &Spanned<ast::ParserAtom>, _: &VConverter| -> IndexSpanned<ParserAtom> {
+            let n = add_span(&x.span);
+            let atom = match &x.inner {
+                ast::ParserAtom::Array(array) => {
+                    let nid = ArrayId(new_id());
+                    parser_array(array, ctx, nid, parent_context);
+                    ParserAtom::Array(nid)
+                }
+                ast::ParserAtom::Atom(atom) => ParserAtom::Atom(atom.clone()),
+                ast::ParserAtom::Block(b) => {
+                    let nid = BlockId(new_id());
+                    block(b, ctx, nid, parent_context, array);
+                    ParserAtom::Block(nid)
+                }
+            };
+            IndexSpanned { atom, span: n }
         };
-        IndexSpanned { atom, span: n }
-    };
     let constraint_converter = constraint_expression_converter(add_span);
-    type PConverter<'b> = ExprConverter<'b, ast::AstParse, HirParse>;
-    let pbin_fun = move |bop: &ast::AstParseBinOp, c: &PConverter| {
+    let pbin_fun = move |bop: &ast::AstValBinOp, c: &VConverter| {
         bop.convert_same(c, &constraint_converter, add_span)
     };
-    let pun_fun = move |bop: &ast::AstParseUnOp, c: &PConverter| bop.convert_same(c, add_span);
+    let pun_fun = move |bop: &ast::AstValUnOp, c: &VConverter| bop.convert_same(c, add_span);
     ExprConverter::new(pbin_fun, pun_fun, atom_fun)
 }
 
-fn parse_expression(
-    ast: &ast::ParseExpression,
+fn type_expression_converter<'a>(
+    add_span: &'a impl Fn(&Span) -> SpanIndex,
+) -> ExprConverter<'a, AstType, HirType> {
+    type Converter<'b> = ExprConverter<'b, ast::AstType, HirType>;
+    let constr = constraint_expression_converter(add_span);
+    let bin_fun =
+        move |bop: &ast::AstTypeBinOp, c: &Converter| bop.convert_same(c, &constr, &add_span);
+    let un_fun = move |uop: &ast::AstTypeUnOp, c: &Converter| uop.convert_same(c, &add_span);
+    let atom_fun = move |atom: &Spanned<ast::TypeAtom>, c: &Converter| {
+        let n = add_span(&atom.span);
+        let new_atom = match &atom.inner {
+            ast::TypeAtom::Id(id) => TypeAtom::Id(*id),
+            ast::TypeAtom::Array(arr) => {
+                let new_expr = c.convert(&arr.expr);
+                TypeAtom::Array(Box::new(TypeArray {
+                    direction: arr.direction.clone(),
+                    expr: new_expr,
+                }))
+            }
+        };
+        IndexSpanned {
+            atom: new_atom,
+            span: n,
+        }
+    };
+    ExprConverter::new(bin_fun, un_fun, atom_fun)
+}
+
+fn val_expression(
+    ast: &ast::ValExpression,
     ctx: &HirConversionCtx,
-    id: PExprId,
+    id: ExprId,
     parent_context: Option<ContextId>,
     array: Option<ArrayKind>,
 ) {
@@ -589,69 +615,35 @@ fn parse_expression(
         borrow.push(new_id);
         new_id
     };
-    let pconverter = parse_expression_converter(ctx, &add_span, &new_id, parent_context, array);
-    let expr = pconverter.convert(ast);
-    drop(pconverter);
-    let pexpr = ParseExpression {
+    let vconverter = val_expression_converter(ctx, &add_span, &new_id, parent_context, array);
+    let expr = vconverter.convert(ast);
+    drop(vconverter);
+    let expr = ValExpression {
         id,
         expr,
         children: children.into_inner(),
     };
-    ctx.insert(id.0, HirNode::PExpr(pexpr), spans.into_inner())
+    ctx.insert(id.0, HirNode::Expr(expr), spans.into_inner())
 }
 
-fn val_expression_converter<'a>(
-    ctx: &'a HirConversionCtx<'a>,
-    add_span: &'a impl Fn(&Span) -> SpanIndex,
-    new_id: &'a impl Fn() -> HirId,
-) -> ExprConverter<'a, AstVal, HirVal> {
-    let parse_converter = parse_expression_converter(ctx, add_span, new_id, None, None);
-    type Converter<'b> = ExprConverter<'b, ast::AstVal, HirVal>;
-    let bin_fun = move |bop: &ast::AstValBinOp, c: &Converter| {
-        bop.convert_same(c, &parse_converter, &add_span)
-    };
-    let un_fun = move |uop: &ast::AstValUnOp, c: &Converter| uop.convert_same(c, &add_span);
-    let atom_fun = move |atom: &Spanned<Atom>| {
-        let n = add_span(&atom.span);
-        IndexSpanned {
-            atom: atom.inner.clone(),
-            span: n,
-        }
-    };
-    ExprConverter::new(bin_fun, un_fun, atom_fun)
-}
-
-fn val_expression(ast: &ast::ValExpression, ctx: &HirConversionCtx, id: ExprId) {
+fn type_expression(ast: &ast::TypeExpression, ctx: &HirConversionCtx, id: TExprId) {
     let spans = RefCell::new(Vec::new());
-    let children = RefCell::new(Vec::new());
     let add_span = |span: &Span| {
         let mut borrow = spans.borrow_mut();
         borrow.push(*span);
         SpanIndex(u32::try_from(borrow.len()).unwrap() - 1)
     };
-    let new_id = || {
-        let mut borrow = children.borrow_mut();
-        let index: u32 = u32::try_from(borrow.len()).unwrap();
-        let new_id = id.extend(ctx.db, PathComponent::Unnamed(index));
-        borrow.push(new_id);
-        new_id
-    };
-    let vconverter = val_expression_converter(ctx, &add_span, &new_id);
-    let expr = vconverter.convert(ast);
-    drop(vconverter);
-    let pexpr = ValExpression {
-        id,
-        expr,
-        children: children.into_inner(),
-    };
-    ctx.insert(id.0, HirNode::Expr(pexpr), spans.into_inner())
+    let tconverter = type_expression_converter(&add_span);
+    let texpr = tconverter.convert(ast);
+    drop(tconverter);
+    let texpr = TypeExpression { id, expr: texpr };
+    ctx.insert(id.0, HirNode::TExpr(texpr), spans.into_inner())
 }
-
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDef {
     id: ParserDefId,
-    from: PExprId,
-    to: PExprId,
+    from: TExprId,
+    to: ExprId,
 }
 
 impl ParserDef {
@@ -661,10 +653,10 @@ impl ParserDef {
 }
 
 fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDefId) {
-    let from = PExprId(id.extend(ctx.db, PathComponent::Unnamed(0)));
-    let to = PExprId(id.extend(ctx.db, PathComponent::Unnamed(1)));
-    parse_expression(&ast.from, ctx, from, None, None);
-    parse_expression(&ast.to, ctx, to, None, None);
+    let from = TExprId(id.extend(ctx.db, PathComponent::Unnamed(0)));
+    let to = ExprId(id.extend(ctx.db, PathComponent::Unnamed(1)));
+    type_expression(&ast.from, ctx, from);
+    val_expression(&ast.to, ctx, to, None, None);
     let pdef = ParserDef { id, from, to };
     ctx.insert(id.0, HirNode::ParserDef(pdef), vec![ast.span]);
 }
@@ -880,7 +872,7 @@ fn struct_context(
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct LetStatement {
     pub id: LetId,
-    pub ty: PExprId,
+    pub ty: TExprId,
     pub expr: ExprId,
     pub context: ContextId,
 }
@@ -898,9 +890,9 @@ fn let_statement(
     context: ContextId,
 ) -> VariableSet {
     let val_id = ExprId(id.extend(ctx.db, PathComponent::Unnamed(0)));
-    let ty_id = PExprId(id.extend(ctx.db, PathComponent::Unnamed(1)));
-    val_expression(&ast.expr, ctx, val_id);
-    parse_expression(&ast.ty, ctx, ty_id, None, None);
+    let ty_id = TExprId(id.extend(ctx.db, PathComponent::Unnamed(1)));
+    val_expression(&ast.expr, ctx, val_id, Some(context), None);
+    type_expression(&ast.ty, ctx, ty_id);
     let st = LetStatement {
         id,
         ty: ty_id,
@@ -921,7 +913,7 @@ pub enum ParserPredecessor {
 pub struct ParseStatement {
     pub id: ParseId,
     pub prev: ParserPredecessor,
-    pub expr: PExprId,
+    pub expr: ExprId,
 }
 
 impl ParseStatement {
@@ -937,8 +929,8 @@ fn parse_statement(
     prev: ParserPredecessor,
     parent_context: Option<ContextId>,
 ) -> VariableSet {
-    let expr = PExprId(id.extend(ctx.db, PathComponent::Unnamed(0)));
-    parse_expression(&ast.parser, ctx, expr, parent_context, None);
+    let expr = ExprId(id.extend(ctx.db, PathComponent::Unnamed(0)));
+    val_expression(&ast.parser, ctx, expr, parent_context, None);
     let pt = ParseStatement { id, prev, expr };
     let spans = match &ast.name {
         Some(s) => vec![ast.span, s.span],
@@ -952,6 +944,12 @@ fn parse_statement(
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub enum TypeAtom {
+    Id(Identifier),
+    Array(Box<TypeArray>),
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum ParserAtom {
     Atom(Atom),
     Array(ArrayId),
@@ -959,10 +957,16 @@ pub enum ParserAtom {
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct TypeArray {
+    pub direction: Spanned<ArrayKind>,
+    pub expr: Expression<HirType>,
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserArray {
     pub id: ArrayId,
     pub direction: ArrayKind,
-    pub expr: PExprId,
+    pub expr: ExprId,
 }
 
 impl ParserArray {
@@ -977,8 +981,8 @@ fn parser_array(
     id: ArrayId,
     parent_context: Option<ContextId>,
 ) {
-    let expr = PExprId(id.extend(ctx.db, PathComponent::Unnamed(0)));
-    parse_expression(
+    let expr = ExprId(id.extend(ctx.db, PathComponent::Unnamed(0)));
+    val_expression(
         &ast.expr,
         ctx,
         expr,
@@ -1090,7 +1094,7 @@ impl HirToString for HirNode {
         match self {
             HirNode::Let(_) => format!("Let"),
             HirNode::Expr(e) => format!("Expr({})", e.hir_to_string(db)),
-            HirNode::PExpr(e) => format!("PExpr({})", e.hir_to_string(db)),
+            HirNode::TExpr(e) => format!("TExpr({})", e.hir_to_string(db)),
             HirNode::Parse(_) => format!("Parse"),
             HirNode::Array(a) => format!("Array({:?})", a.direction),
             HirNode::Block(_) => format!("Block"),
@@ -1108,9 +1112,45 @@ impl HirToString for ValExpression {
     }
 }
 
-impl HirToString for ParseExpression {
+impl HirToString for TypeExpression {
     fn hir_to_string(&self, db: &dyn Hirs) -> String {
         self.expr.hir_to_string(db)
+    }
+}
+
+impl<T, S, R> HirToString for expr::TypeBinOp<T, S, R>
+where
+    T: ExpressionKind,
+    S: ExpressionKind,
+    Expression<T>: HirToString,
+    Expression<S>: HirToString,
+    R: Clone + Hash + Eq + Debug,
+{
+    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+        match self {
+            expr::TypeBinOp::Ref(a, b, _) => {
+                format!("({} &> {})", a.hir_to_string(db), b.hir_to_string(db))
+            }
+            expr::TypeBinOp::ParseArg(a, b, _) => {
+                format!("({} *> {})", a.hir_to_string(db), b.hir_to_string(db))
+            }
+            expr::TypeBinOp::Wiggle(a, b, _) => {
+                format!("({} ~ {})", a.hir_to_string(db), b.hir_to_string(db))
+            }
+        }
+    }
+}
+
+impl<T, S> HirToString for expr::TypeUnOp<T, S>
+where
+    T: ExpressionKind,
+    Expression<T>: HirToString,
+    S: Clone + Hash + Eq + Debug,
+{
+    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+        match self {
+            expr::TypeUnOp::Ref(a, _) => format!("&{}", a.hir_to_string(db)),
+        }
     }
 }
 
@@ -1120,7 +1160,7 @@ where
     S: ExpressionKind,
     Expression<T>: HirToString,
     Expression<S>: HirToString,
-    R: Clone + std::hash::Hash + Eq + std::fmt::Debug,
+    R: Clone + Hash + Eq + Debug,
 {
     fn hir_to_string(&self, db: &dyn Hirs) -> String {
         use expr::ValBinOp::*;
@@ -1128,8 +1168,8 @@ where
             Basic(a, op, b, _) => {
                 format!("({} {} {})", a.hir_to_string(db), op, b.hir_to_string(db))
             }
-            Pipe(a, b, _) => {
-                format!("({} |> {})", a.hir_to_string(db), b.hir_to_string(db))
+            Wiggle(a, b, _) => {
+                format!("({} *> {})", a.hir_to_string(db), b.hir_to_string(db))
             }
             Else(a, b, _) => {
                 format!("({} else {})", a.hir_to_string(db), b.hir_to_string(db))
@@ -1143,52 +1183,16 @@ impl<T, S> HirToString for expr::ValUnOp<T, S>
 where
     T: ExpressionKind,
     Expression<T>: HirToString,
-    S: Clone + std::hash::Hash + Eq + std::fmt::Debug,
+    S: Clone + Hash + Eq + Debug,
 {
     fn hir_to_string(&self, db: &dyn Hirs) -> String {
         let (x, op) = match self {
             expr::ValUnOp::Not(a, _) => (a, "!"),
             expr::ValUnOp::Neg(a, _) => (a, "-"),
             expr::ValUnOp::Pos(a, _) => (a, "+"),
+            expr::ValUnOp::If(a, _) => (a, "if "),
         };
         format!("{}{}", op, x.hir_to_string(db))
-    }
-}
-
-impl<T, S, R> HirToString for expr::ParseBinOp<T, S, R>
-where
-    T: ExpressionKind,
-    S: ExpressionKind,
-    Expression<T>: HirToString,
-    Expression<S>: HirToString,
-    R: Clone + std::hash::Hash + Eq + std::fmt::Debug,
-{
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
-        use expr::ParseBinOp::*;
-        match self {
-            Dot(a, b, _) => format!("{}.{}", a.hir_to_string(db), b.hir_to_string(db)),
-            Pipe(a, b, _) => {
-                format!("({} |> {})", a.hir_to_string(db), b.hir_to_string(db))
-            }
-            Wiggle(a, b, _) => {
-                format!("({} ~ {})", a.hir_to_string(db), b.hir_to_string(db))
-            }
-        }
-    }
-}
-
-impl<T, S> HirToString for expr::ParseUnOp<T, S>
-where
-    T: ExpressionKind,
-    Expression<T>: HirToString,
-    S: Clone + std::hash::Hash + Eq + std::fmt::Debug,
-{
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
-        let (x, op) = match self {
-            expr::ParseUnOp::If(a, _) => (a, "if"),
-            expr::ParseUnOp::Try(a, _) => (a, "try"),
-        };
-        format!("{} {}", op, x.hir_to_string(db))
     }
 }
 
@@ -1196,7 +1200,7 @@ impl<T, S> HirToString for expr::ConstraintBinOp<T, S>
 where
     T: ExpressionKind,
     Expression<T>: HirToString,
-    S: Clone + std::hash::Hash + Eq + std::fmt::Debug,
+    S: Clone + Hash + Eq + Debug,
 {
     fn hir_to_string(&self, db: &dyn Hirs) -> String {
         let (a, b, op) = match self {
@@ -1214,7 +1218,7 @@ impl<T, S> HirToString for expr::ConstraintUnOp<T, S>
 where
     T: ExpressionKind,
     Expression<T>: HirToString,
-    S: Clone + std::hash::Hash + Eq + std::fmt::Debug,
+    S: Clone + Hash + Eq + Debug,
 {
     fn hir_to_string(&self, db: &dyn Hirs) -> String {
         match self {
@@ -1258,6 +1262,24 @@ impl HirToString for ParserAtom {
     }
 }
 
+impl HirToString for TypeAtom {
+    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+        match self {
+            TypeAtom::Id(id) => id.hir_to_string(db),
+            TypeAtom::Array(arr) => arr.hir_to_string(db),
+        }
+    }
+}
+
+impl HirToString for TypeArray {
+    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+        match self.direction.inner {
+            ArrayKind::For => format!("for[{}]", self.expr.hir_to_string(db)),
+            ArrayKind::Each => format!("each[{}]", self.expr.hir_to_string(db)),
+        }
+    }
+}
+
 impl HirToString for Atom {
     fn hir_to_string(&self, db: &dyn Hirs) -> String {
         match self {
@@ -1267,18 +1289,14 @@ impl HirToString for Atom {
     }
 }
 
-// somehow this does not work with a blanket implementation
-// maybe because it is circular and defaults to "not implemented" instead of "implemented"
-impl HirToString for Expression<HirParse> {
+impl HirToString for Identifier {
     fn hir_to_string(&self, db: &dyn Hirs) -> String {
-        match self {
-            Expression::BinaryOp(a) => a.hir_to_string(db),
-            Expression::UnaryOp(a) => a.hir_to_string(db),
-            Expression::Atom(a) => a.hir_to_string(db),
-        }
+        db.lookup_intern_identifier(*self).name
     }
 }
 
+// somehow this does not work with a blanket implementation
+// maybe because it is circular and defaults to "not implemented" instead of "implemented"
 impl HirToString for Expression<HirConstraint> {
     fn hir_to_string(&self, db: &dyn Hirs) -> String {
         match self {
@@ -1297,6 +1315,15 @@ impl HirToString for Expression<HirVal> {
         }
     }
 }
+impl HirToString for Expression<HirType> {
+    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+        match self {
+            Expression::BinaryOp(a) => a.hir_to_string(db),
+            Expression::UnaryOp(a) => a.hir_to_string(db),
+            Expression::Atom(a) => a.hir_to_string(db),
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1306,7 +1333,7 @@ mod tests {
     fn eval_test() {
         let ctx = Context::mock(
             r#"
-def expr1: for [u8] *> {
+def for [u8] *> expr1: {
     (
         a: u64,
         b: u32,
@@ -1318,34 +1345,34 @@ def expr1: for [u8] *> {
         );
         ctx.db.all_hir_ids();
     }
-    #[test]
-    fn recursion_ssc() {
-        let ctx = Context::mock(
-            r#"
-def a: for [u8] *> {x: c, y: {b, z: d,},}
-def b: for [u8] *> {x: a, y: c,}
-def c: for [u8] *> {x: c,}
-def d: for [u8] *> {let a: u64 = 1, let b: u64 = a + 1,}
-def e: for [u8] *> {}
-            "#,
-        );
-        let fd = FileId::default();
-        let var = |s| ParserDefId(ctx.db.intern_hir_path(HirPath::new_fid(fd, ctx.id(s))));
-        let a = var("a");
-        let b = var("b");
-        let c = var("c");
-        let d = var("d");
-        let e = var("d");
-        let get_ssc = |x| ctx.db.parser_ssc(x).unwrap();
-        let ssc_a = get_ssc(a);
-        let ssc_b = get_ssc(b);
-        let ssc_c = get_ssc(c);
-        let ssc_d = get_ssc(d);
-        let ssc_e = get_ssc(e);
-        assert!(ssc_a == ssc_b);
-        assert!(ssc_b != ssc_c);
-        assert!(ssc_c != ssc_d);
-        assert!(ssc_b != ssc_d);
-        assert!(ssc_b != ssc_e);
-    }
+    //    #[test]
+    //    fn recursion_ssc() {
+    //        let ctx = Context::mock(
+    //            r#"
+    //def a: for [u8] *> {x: c, y: {b, z: d,},}
+    //def b: for [u8] *> {x: a, y: c,}
+    //def c: for [u8] *> {x: c,}
+    //def d: for [u8] *> {let a: u64 = 1, let b: u64 = a + 1,}
+    //def e: for [u8] *> {}
+    //            "#,
+    //        );
+    //        let fd = FileId::default();
+    //        let var = |s| ParserDefId(ctx.db.intern_hir_path(HirPath::new_fid(fd, ctx.id(s))));
+    //        let a = var("a");
+    //        let b = var("b");
+    //        let c = var("c");
+    //        let d = var("d");
+    //        let e = var("d");
+    //        let get_ssc = |x| ctx.db.parser_ssc(x).unwrap();
+    //        let ssc_a = get_ssc(a);
+    //        let ssc_b = get_ssc(b);
+    //        let ssc_c = get_ssc(c);
+    //        let ssc_d = get_ssc(d);
+    //        let ssc_e = get_ssc(e);
+    //        assert!(ssc_a == ssc_b);
+    //        assert!(ssc_b != ssc_c);
+    //        assert!(ssc_c != ssc_d);
+    //        assert!(ssc_b != ssc_d);
+    //        assert!(ssc_b != ssc_e);
+    //    }
 }

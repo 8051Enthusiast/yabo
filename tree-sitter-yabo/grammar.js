@@ -1,17 +1,17 @@
 const PREC = {
   DEFAULT: 0,
-  COMPARE: 3,
-  OR: 4,
-  XOR: 5,
-  AND: 6,
-  SHIFT: 7,
-  ADD: 8,
-  MULTIPLY: 9,
-  PARSE: 10,
-  UNARY: 11,
-  WIGGLE: 12,
-  ELSE: 15,
-  DOT: 16,
+  COMPARE: 1,
+  OR: 2,
+  XOR: 3,
+  AND: 4,
+  SHIFT: 5,
+  ADD: 6,
+  MULTIPLY: 7,
+  PARSE: 8,
+  UNARY: 9,
+  WIGGLE: 10,
+  ELSE: 11,
+  DOT: 12,
 };
 module.exports = grammar({
   name: 'yabo',
@@ -23,39 +23,41 @@ module.exports = grammar({
     ),
     parser_definition: $ => seq(
       'def',
+      field('from', $._type_expression),
+      '*>',
       field('name', $.identifier),
       ':',
-      field('from', $._parse_expression),
-      '*>',
-      field('to', $._parse_expression),
+      field('to', $._expression),
     ),
-    _parse_expression: $ => choice(
-      $.binary_parse_expression,
-      $.unary_parse_expression,
-      $.parser_array,
-      $.parser_block,
-      $._atom,
-      seq('(', $._parse_expression, ')'),
+    _type_expression: $ => choice(
+      $.binary_type_expression,
+      $.unary_type_expression,
+      $.type_array,
+      $._type_atom,
+      seq('(', $._type_expression, ')'),
     ),
-
-    binary_parse_expression: $ => choice(
+    binary_type_expression: $ => choice(
       prec.left(PREC.PARSE, seq(
-        field('left', $._parse_expression),
-        field('op', '|>'),
-        field('right', $._parse_expression),
+        field('left', $._type_expression),
+        field('op', '*>'),
+        field('right', $._type_expression),
+      )),
+      prec.left(PREC.PARSE, seq(
+        field('left', $._type_expression),
+        field('op', '&>'),
+        field('right', $._type_expression),
       )),
       prec.left(PREC.WIGGLE, seq(
-        field('left', $._parse_expression),
+        field('left', $._type_expression),
         field('op', '~'),
         field('right', $._constraint_expression),
       )),
     ),
-    unary_parse_expression: $ => choice(
-      seq(
-        field('op', 'if'),
-        field('right', $._parse_expression)
-      ),
-    ),
+    unary_type_expression: $ => prec(PREC.UNARY, seq(
+      field('op', choice('&')),
+      field('right', $._type_expression)
+    )),
+
     _expression: $ => choice(
       $.binary_expression,
       $.prefix_expression,
@@ -82,10 +84,16 @@ module.exports = grammar({
       '|',
       field('right', $._parser_block_content),
     )),
-    parser_array: $ => seq(
-      field('direction', choice('for', 'each', 'rof')),
+    type_array: $ => seq(
+      field('direction', choice('for', 'each')),
       '[',
-      field('expr', $._parse_expression),
+      field('expr', $._type_expression),
+      ']',
+    ),
+    parser_array: $ => seq(
+      field('direction', choice('for', 'each')),
+      '[',
+      field('expr', $._expression),
       ']',
     ),
     _statement: $ => choice(
@@ -99,14 +107,14 @@ module.exports = grammar({
           ':',
         )
       ),
-      field('parser', $._parse_expression),
+      field('parser', $._expression),
       ',',
     ),
     let_statement: $ => seq(
       'let',
       field('name', $.identifier),
       ':',
-      field('ty', $._parse_expression),
+      field('ty', $._type_expression),
       '=',
       field('expr', $._expression),
       ',',
@@ -132,13 +140,23 @@ module.exports = grammar({
     _expression: $ => choice(
       $.binary_expression,
       $.unary_expression,
+      $.parser_array,
+      $.parser_block,
       seq('(', $._expression, ')'),
       $._atom,
+    ),
+    fun_application: $ => seq(
+      $._expression,
+      '(',
+      $._expression,
+      ')',
     ),
     binary_expression: $ => {
       const table = [
         ['.', PREC.DOT],
         ['else', PREC.ELSE],
+        ['~', PREC.WIGGLE],
+        ['*>', PREC.PARSE],
         ['|>', PREC.PARSE],
         ['+', PREC.ADD],
         ['-', PREC.ADD],
@@ -162,14 +180,18 @@ module.exports = grammar({
         return prec.left(precedence, seq(
           field('left', $._expression),
           field('op', operator),
-          field('right', $._expression)
+          field('right', operator == "~" ? $._constraint_expression : $._expression)
         ))
       }));
     },
     unary_expression: $ => prec(PREC.UNARY, seq(
-      field('op', choice('-', '!', '+')),
+      field('op', choice('-', '!', '+', 'if')),
       field('right', $._expression)
     )),
+    _type_atom: $ => choice(
+      $.memory,
+      $.identifier,
+    ),
     _atom: $ => choice(
       $.identifier,
       $._literal,
@@ -178,6 +200,8 @@ module.exports = grammar({
       $.number_literal,
       $.char_literal,
     ),
+    memory: $ => seq('&', 'mem'),
+    substidentifier: $ => /\$[A-Za-z_][A-Za-z_0-9]*/,
     identifier: $ => /[A-Za-z_][A-Za-z_0-9]*/,
     number_literal: $ => /[0-9]+|0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+/,
     char_literal: $ => seq(

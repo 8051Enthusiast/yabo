@@ -160,6 +160,40 @@ fn get_op<'a>(
     let op = spanned(node_to_string)(db, fd, op.unwrap())?;
     Ok((left, op, right))
 }
+
+fn binary_type_expression(
+    db: &dyn Asts,
+    fd: FileId,
+    c: TreeCursor,
+) -> ParseResult<AstTypeBinOp> {
+    use TypeBinOp::*;
+    let (left, op, right) = get_op(db, fd, c)?;
+    let left = left.unwrap();
+    let ty = |x| type_expression(db, fd, x);
+    let constr = |x| constraint_expression(db, fd, x);
+    let span = op.span;
+    Ok(match op.inner.as_str() {
+        "&>" => Ref(ty(left)?, ty(right)?, span),
+        "*>" => ParseArg(ty(left)?, ty(right)?, span),
+        "~" => Wiggle(ty(left)?, constr(right)?, span),
+        otherwise => panic!("Invalid constrain operator \"{}\"", otherwise),
+    })
+}
+
+fn unary_type_expression(
+    db: &dyn Asts,
+    fd: FileId,
+    c: TreeCursor,
+) -> ParseResult<AstTypeUnOp> {
+    use TypeUnOp::*;
+    let (_, op, right) = get_op(db, fd, c)?;
+    let ty = |x| type_expression(db, fd, x);
+    let span = op.span;
+    Ok(match op.inner.as_str() {
+        "&" => Ref(ty(right)?, span),
+        otherwise => panic!("Invalid constrain operator \"{}\"", otherwise),
+    })
+}
 fn binary_constraint_expression(
     db: &dyn Asts,
     fd: FileId,
@@ -171,8 +205,8 @@ fn binary_constraint_expression(
     let constr = |x| constraint_expression(db, fd, x);
     let span = op.span;
     Ok(match op.inner.as_str() {
-        "&&" => And(constr(left)?, constr(right)?, span),
-        "||" => Or(constr(left)?, constr(right)?, span),
+        "and" => And(constr(left)?, constr(right)?, span),
+        "or" => Or(constr(left)?, constr(right)?, span),
         "." => Dot(constr(left)?, atom(db, fd, right)?, span),
         otherwise => panic!("Invalid constrain operator \"{}\"", otherwise),
     })
@@ -198,12 +232,12 @@ fn binary_expression(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<As
     let (left, op, right) = get_op(db, fd, c)?;
     let left = left.unwrap();
     let val = |x| val_expression(db, fd, x);
-    let parse = |x| parse_expression(db, fd, x);
+    let constr = |x| constraint_expression(db, fd, x);
     let span = op.span;
 
     Ok(match BasicValBinOp::parse_from_str(&op.inner) {
         Ok(op) => Basic(val(left)?, op, val(right)?, span),
-        Err("|>") => Pipe(val(left)?, parse(right)?, span),
+        Err("~") => Wiggle(val(left)?, constr(right)?, span),
         Err("else") => Else(val(left)?, val(right)?, span),
         Err(".") => Dot(val(left)?, atom(db, fd, right)?, span),
         Err(otherwise) => panic!("Invalid constrain operator \"{}\"", otherwise),
@@ -223,33 +257,6 @@ fn unary_expression(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Ast
     })
 }
 
-fn binary_parse_expression(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<AstParseBinOp> {
-    use ParseBinOp::*;
-    let (left, op, right) = get_op(db, fd, c)?;
-    let left = left.unwrap();
-    let constr = |x| constraint_expression(db, fd, x);
-    let parse = |x| parse_expression(db, fd, x);
-    let span = op.span;
-
-    Ok(match op.inner.as_str() {
-        "|>" => Pipe(parse(left)?, parse(right)?, span),
-        "~" => Wiggle(parse(left)?, constr(right)?, span),
-        "." => Dot(parse(left)?, atom(db, fd, right)?, span),
-        otherwise => panic!("Invalid constrain operator \"{}\"", otherwise),
-    })
-}
-fn unary_parse_expression(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<AstParseUnOp> {
-    use ParseUnOp::*;
-    let (_, op, right) = get_op(db, fd, c)?;
-    let parse = |x| parse_expression(db, fd, x);
-    let span = op.span;
-
-    Ok(match op.inner.as_str() {
-        "if" => If(parse(right)?, span),
-        "try" => Try(parse(right)?, span),
-        otherwise => panic!("Invalid constrain operator \"{}\"", otherwise),
-    })
-}
 macro_rules! maybe_unwrap {
     (?) => {
         |mut t: Vec<_>| t.pop()
@@ -345,24 +352,29 @@ where
 astify! {
     struct parser_definition = ParserDefinition {
         name: idspan!,
-        from: parse_expression!,
-        to: parse_expression!,
+        from: type_expression!,
+        to: val_expression!,
     };
 
     struct parse_statement = ParseStatement {
         name: idspan?,
-        parser: parse_expression!,
+        parser: val_expression!,
     };
 
     struct let_statement = LetStatement {
         name: idspan!,
-        ty: parse_expression!,
+        ty: type_expression!,
         expr: val_expression!,
     };
 
     struct parser_array = ParserArray {
         direction: array_direction!,
-        expr: parse_expression!,
+        expr: val_expression!,
+    };
+
+    struct type_array = TypeArray {
+        direction: array_direction!,
+        expr: type_expression!,
     };
 
     struct parser_block = Block {
@@ -393,17 +405,11 @@ astify! {
         String(string_literal),
     };
 
-    enum parse_expression = ParseExpression {
-        BinaryOp(boxed(binary_parse_expression)),
-        UnaryOp(boxed(unary_parse_expression)),
-        Atom(spanned(parser_block)),
-        Atom(spanned(parser_array)),
-        Atom(spanned(atom..)),
-    };
-
     enum val_expression = ValExpression {
         BinaryOp(boxed(binary_expression)),
         UnaryOp(boxed(unary_expression)),
+        Atom(spanned(parser_block)),
+        Atom(spanned(parser_array)),
         Atom(spanned(atom..)),
     };
 
@@ -411,6 +417,13 @@ astify! {
         BinaryOp(boxed(binary_constraint_expression)),
         UnaryOp(boxed(unary_constraint_expression)),
         Atom(spanned(atom..)),
+    };
+
+    enum type_expression = TypeExpression {
+        BinaryOp(boxed(binary_type_expression)),
+        UnaryOp(boxed(unary_type_expression)),
+        Atom(spanned(identifier)),
+        Atom(spanned(type_array)),
     };
 }
 
