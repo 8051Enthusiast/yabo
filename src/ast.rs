@@ -53,17 +53,18 @@ pub trait AstNode {
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct AstConstraint {}
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct AstParse {}
+pub struct AstConstraint;
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct AstVal;
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct AstType;
 pub type AstConstraintBinOp = ConstraintBinOp<AstConstraint, Span>;
 pub type AstConstraintUnOp = ConstraintUnOp<AstConstraint, Span>;
-pub type AstParseBinOp = ParseBinOp<AstParse, AstConstraint, Span>;
-pub type AstParseUnOp = ParseUnOp<AstParse, Span>;
-pub type AstValBinOp = ValBinOp<AstVal, AstParse, Span>;
+pub type AstValBinOp = ValBinOp<AstVal, AstConstraint, Span>;
 pub type AstValUnOp = ValUnOp<AstVal, Span>;
+pub type AstTypeBinOp = TypeBinOp<AstType, AstConstraint, Span>;
+pub type AstTypeUnOp = TypeUnOp<AstType, Span>;
 
 impl ExpressionKind for AstConstraint {
     type BinaryOp = AstConstraintBinOp;
@@ -71,21 +72,39 @@ impl ExpressionKind for AstConstraint {
     type Atom = Spanned<Atom>;
 }
 
-impl ExpressionKind for AstParse {
-    type BinaryOp = AstParseBinOp;
-    type UnaryOp = AstParseUnOp;
-    type Atom = Spanned<ParserAtom>;
-}
-
 impl ExpressionKind for AstVal {
     type BinaryOp = AstValBinOp;
     type UnaryOp = AstValUnOp;
-    type Atom = Spanned<Atom>;
+    type Atom = Spanned<ParserAtom>;
 }
 
-pub type ParseExpression = Expression<AstParse>;
+impl ExpressionKind for AstType {
+    type BinaryOp = AstTypeBinOp;
+    type UnaryOp = AstTypeUnOp;
+    type Atom = Spanned<TypeAtom>;
+}
+
+pub type TypeExpression = Expression<AstType>;
 pub type ValExpression = Expression<AstVal>;
 pub type ConstraintExpression = Expression<AstConstraint>;
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub enum TypeAtom {
+    Id(Identifier),
+    Array(Box<TypeArray>),
+}
+
+impl From<Identifier> for TypeAtom {
+    fn from(id: Identifier) -> Self {
+        TypeAtom::Id(id)
+    }
+}
+
+impl From<TypeArray> for TypeAtom {
+    fn from(arr: TypeArray) -> Self {
+        TypeAtom::Array(Box::new(arr))
+    }
+}
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum ParserAtom {
@@ -145,22 +164,22 @@ impl Statement {
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDefinition {
     pub name: IdSpan,
-    pub from: ParseExpression,
-    pub to: ParseExpression,
+    pub from: TypeExpression,
+    pub to: ValExpression,
     pub span: Span,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParseStatement {
     pub name: Option<IdSpan>,
-    pub parser: ParseExpression,
+    pub parser: ValExpression,
     pub span: Span,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct LetStatement {
     pub name: IdSpan,
-    pub ty: ParseExpression,
+    pub ty: TypeExpression,
     pub expr: ValExpression,
     pub span: Span,
 }
@@ -202,9 +221,15 @@ pub struct ParserChoice {
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct TypeArray {
+    pub direction: Spanned<ArrayKind>,
+    pub expr: TypeExpression,
+    pub span: Span,
+}
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserArray {
     pub direction: Spanned<ArrayKind>,
-    pub expr: ParseExpression,
+    pub expr: ValExpression,
     pub span: Span,
 }
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
@@ -220,7 +245,7 @@ mod tests {
     fn nested_choice() {
         let ctx = Context::mock(
             r#"
-def expr1: for [u8] *> {
+def for[u8] *> expr1: {
     (
         let b: u64 = 3,
     |

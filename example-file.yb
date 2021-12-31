@@ -1,29 +1,29 @@
-parser main = for [u8] *> {
-    a: u64;
+def for[u8] *> main: {
+    a: u64,
     (
-        c: u64;
-        d: c_string |> utf8;
-	e: u64;
-	let h: str = 123;
-	u64 ~ 0;
+	c: u64,
+	d: c_string |> utf8,
+	e: u64,
+	let h: str = 123,
+	u64 ~ 0,
 	f: {
-		a: u64;
-		b: u64;
-		let return: u64 = 4;
-		c: u64;
-	};
-	g: u64;
+		a: u64,
+		b: u64,
+		let return: u64 = 4,
+		c: u64,
+	},
+	g: u64,
         |
-        c: u64 ~ 1 || 2;
-        let d: str = 3;
+	c: u64 ~ 1 or 2,
+	let d: str = 3,
     )
-    b: u64;
-    let x: u64 = b else a else 0 + a;
+    b: u64,
+    let x: u64 = b else a else 0 + a,
     |
-    a: u64;
-    let m: u64 = e * m + 3 * 5 | 4;
+    a: u64,
+    let m: u64 = e * m + 3 * 5 | 4,
 }
 
-parser test = for [u8] *> {
-    return: u128;
+def for [u8] *> test: {
+    return: u128,
 }

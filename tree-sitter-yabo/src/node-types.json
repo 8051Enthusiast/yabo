@@ -104,6 +104,14 @@
             "named": true
           },
           {
+            "type": "parser_array",
+            "named": true
+          },
+          {
+            "type": "parser_block",
+            "named": true
+          },
+          {
             "type": "unary_expression",
             "named": true
           }
@@ -127,6 +135,10 @@
           },
           {
             "type": "*",
+            "named": false
+          },
+          {
+            "type": "*>",
             "named": false
           },
           {
@@ -188,98 +200,6 @@
           {
             "type": "|>",
             "named": false
-          }
-        ]
-      },
-      "right": {
-        "multiple": true,
-        "required": true,
-        "types": [
-          {
-            "type": "(",
-            "named": false
-          },
-          {
-            "type": ")",
-            "named": false
-          },
-          {
-            "type": "binary_expression",
-            "named": true
-          },
-          {
-            "type": "char_literal",
-            "named": true
-          },
-          {
-            "type": "identifier",
-            "named": true
-          },
-          {
-            "type": "number_literal",
-            "named": true
-          },
-          {
-            "type": "unary_expression",
-            "named": true
-          }
-        ]
-      }
-    }
-  },
-  {
-    "type": "binary_parse_expression",
-    "named": true,
-    "fields": {
-      "left": {
-        "multiple": true,
-        "required": true,
-        "types": [
-          {
-            "type": "(",
-            "named": false
-          },
-          {
-            "type": ")",
-            "named": false
-          },
-          {
-            "type": "binary_parse_expression",
-            "named": true
-          },
-          {
-            "type": "char_literal",
-            "named": true
-          },
-          {
-            "type": "identifier",
-            "named": true
-          },
-          {
-            "type": "number_literal",
-            "named": true
-          },
-          {
-            "type": "parser_array",
-            "named": true
-          },
-          {
-            "type": "parser_block",
-            "named": true
-          },
-          {
-            "type": "unary_parse_expression",
-            "named": true
-          }
-        ]
-      },
-      "op": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "|>",
-            "named": false
           },
           {
             "type": "~",
@@ -304,7 +224,7 @@
             "named": true
           },
           {
-            "type": "binary_parse_expression",
+            "type": "binary_expression",
             "named": true
           },
           {
@@ -332,7 +252,115 @@
             "named": true
           },
           {
-            "type": "unary_parse_expression",
+            "type": "unary_expression",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "binary_type_expression",
+    "named": true,
+    "fields": {
+      "left": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "(",
+            "named": false
+          },
+          {
+            "type": ")",
+            "named": false
+          },
+          {
+            "type": "binary_type_expression",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "memory",
+            "named": true
+          },
+          {
+            "type": "type_array",
+            "named": true
+          },
+          {
+            "type": "unary_type_expression",
+            "named": true
+          }
+        ]
+      },
+      "op": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "&>",
+            "named": false
+          },
+          {
+            "type": "*>",
+            "named": false
+          },
+          {
+            "type": "~",
+            "named": false
+          }
+        ]
+      },
+      "right": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "(",
+            "named": false
+          },
+          {
+            "type": ")",
+            "named": false
+          },
+          {
+            "type": "binary_constraint_expression",
+            "named": true
+          },
+          {
+            "type": "binary_type_expression",
+            "named": true
+          },
+          {
+            "type": "char_literal",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "memory",
+            "named": true
+          },
+          {
+            "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "type_array",
+            "named": true
+          },
+          {
+            "type": "unary_constraint_expression",
+            "named": true
+          },
+          {
+            "type": "unary_type_expression",
             "named": true
           }
         ]
@@ -377,6 +405,14 @@
             "named": true
           },
           {
+            "type": "parser_array",
+            "named": true
+          },
+          {
+            "type": "parser_block",
+            "named": true
+          },
+          {
             "type": "unary_expression",
             "named": true
           }
@@ -405,11 +441,7 @@
             "named": false
           },
           {
-            "type": "binary_parse_expression",
-            "named": true
-          },
-          {
-            "type": "char_literal",
+            "type": "binary_type_expression",
             "named": true
           },
           {
@@ -417,24 +449,25 @@
             "named": true
           },
           {
-            "type": "number_literal",
+            "type": "memory",
             "named": true
           },
           {
-            "type": "parser_array",
+            "type": "type_array",
             "named": true
           },
           {
-            "type": "parser_block",
-            "named": true
-          },
-          {
-            "type": "unary_parse_expression",
+            "type": "unary_type_expression",
             "named": true
           }
         ]
       }
     }
+  },
+  {
+    "type": "memory",
+    "named": true,
+    "fields": {}
   },
   {
     "type": "parse_statement",
@@ -463,7 +496,7 @@
             "named": false
           },
           {
-            "type": "binary_parse_expression",
+            "type": "binary_expression",
             "named": true
           },
           {
@@ -487,7 +520,7 @@
             "named": true
           },
           {
-            "type": "unary_parse_expression",
+            "type": "unary_expression",
             "named": true
           }
         ]
@@ -509,10 +542,6 @@
           {
             "type": "for",
             "named": false
-          },
-          {
-            "type": "rof",
-            "named": false
           }
         ]
       },
@@ -529,7 +558,7 @@
             "named": false
           },
           {
-            "type": "binary_parse_expression",
+            "type": "binary_expression",
             "named": true
           },
           {
@@ -553,7 +582,7 @@
             "named": true
           },
           {
-            "type": "unary_parse_expression",
+            "type": "unary_expression",
             "named": true
           }
         ]
@@ -631,11 +660,7 @@
             "named": false
           },
           {
-            "type": "binary_parse_expression",
-            "named": true
-          },
-          {
-            "type": "char_literal",
+            "type": "binary_type_expression",
             "named": true
           },
           {
@@ -643,19 +668,15 @@
             "named": true
           },
           {
-            "type": "number_literal",
+            "type": "memory",
             "named": true
           },
           {
-            "type": "parser_array",
+            "type": "type_array",
             "named": true
           },
           {
-            "type": "parser_block",
-            "named": true
-          },
-          {
-            "type": "unary_parse_expression",
+            "type": "unary_type_expression",
             "named": true
           }
         ]
@@ -683,7 +704,7 @@
             "named": false
           },
           {
-            "type": "binary_parse_expression",
+            "type": "binary_expression",
             "named": true
           },
           {
@@ -707,7 +728,7 @@
             "named": true
           },
           {
-            "type": "unary_parse_expression",
+            "type": "unary_expression",
             "named": true
           }
         ]
@@ -757,6 +778,60 @@
     }
   },
   {
+    "type": "type_array",
+    "named": true,
+    "fields": {
+      "direction": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "each",
+            "named": false
+          },
+          {
+            "type": "for",
+            "named": false
+          }
+        ]
+      },
+      "expr": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "(",
+            "named": false
+          },
+          {
+            "type": ")",
+            "named": false
+          },
+          {
+            "type": "binary_type_expression",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "memory",
+            "named": true
+          },
+          {
+            "type": "type_array",
+            "named": true
+          },
+          {
+            "type": "unary_type_expression",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "unary_constraint_expression",
     "named": true,
     "fields": {},
@@ -798,6 +873,10 @@
           {
             "type": "-",
             "named": false
+          },
+          {
+            "type": "if",
+            "named": false
           }
         ]
       },
@@ -830,6 +909,14 @@
             "named": true
           },
           {
+            "type": "parser_array",
+            "named": true
+          },
+          {
+            "type": "parser_block",
+            "named": true
+          },
+          {
             "type": "unary_expression",
             "named": true
           }
@@ -838,7 +925,7 @@
     }
   },
   {
-    "type": "unary_parse_expression",
+    "type": "unary_type_expression",
     "named": true,
     "fields": {
       "op": {
@@ -846,7 +933,7 @@
         "required": true,
         "types": [
           {
-            "type": "if",
+            "type": "&",
             "named": false
           }
         ]
@@ -864,11 +951,7 @@
             "named": false
           },
           {
-            "type": "binary_parse_expression",
-            "named": true
-          },
-          {
-            "type": "char_literal",
+            "type": "binary_type_expression",
             "named": true
           },
           {
@@ -876,19 +959,15 @@
             "named": true
           },
           {
-            "type": "number_literal",
+            "type": "memory",
             "named": true
           },
           {
-            "type": "parser_array",
+            "type": "type_array",
             "named": true
           },
           {
-            "type": "parser_block",
-            "named": true
-          },
-          {
-            "type": "unary_parse_expression",
+            "type": "unary_type_expression",
             "named": true
           }
         ]
@@ -913,6 +992,10 @@
   },
   {
     "type": "&",
+    "named": false
+  },
+  {
+    "type": "&>",
     "named": false
   },
   {
@@ -1036,15 +1119,15 @@
     "named": false
   },
   {
+    "type": "mem",
+    "named": false
+  },
+  {
     "type": "number_literal",
     "named": true
   },
   {
     "type": "or",
-    "named": false
-  },
-  {
-    "type": "rof",
     "named": false
   },
   {
