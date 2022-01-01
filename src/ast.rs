@@ -13,8 +13,11 @@ use crate::{
 pub trait Asts: Files + Interner {
     fn ast(&self, fd: FileId) -> ParseResult<Arc<Module>>;
     fn symbols(&self, fd: FileId) -> Result<Vec<Identifier>, ()>;
-    fn top_level_statement(&self, fd: FileId, id: Identifier)
-        -> Result<Option<Arc<ParserDefinition>>, ()>;
+    fn top_level_statement(
+        &self,
+        fd: FileId,
+        id: Identifier,
+    ) -> Result<Option<Arc<ParserDefinition>>, ()>;
 }
 
 fn ast(db: &dyn Asts, fd: FileId) -> ParseResult<Arc<Module>> {
@@ -70,6 +73,32 @@ impl ExpressionKind for AstConstraint {
     type BinaryOp = AstConstraintBinOp;
     type UnaryOp = AstConstraintUnOp;
     type Atom = Spanned<Atom>;
+}
+
+impl<K: ExpressionKind, T: ExpressionComponent<K>>
+    ExpressionComponent<K> for Spanned<T>
+{
+    fn children(&self) -> Vec<&Expression<K>> {
+        self.inner.children()
+    }
+}
+
+impl ExpressionComponent<AstVal> for ParserAtom {
+    fn children(&self) -> Vec<&Expression<AstVal>> {
+        match self {
+            ParserAtom::Atom(_) | ParserAtom::Block(_) => vec![],
+            ParserAtom::Array(a) => vec![&a.expr],
+        }
+    }
+}
+
+impl ExpressionComponent<AstType> for TypeAtom {
+    fn children(&self) -> Vec<&Expression<AstType>> {
+        match self {
+            TypeAtom::Id(_) => todo!(),
+            TypeAtom::Array(a) => vec![&a.expr],
+        }
+    }
 }
 
 impl ExpressionKind for AstVal {

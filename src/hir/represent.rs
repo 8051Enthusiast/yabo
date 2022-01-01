@@ -299,7 +299,7 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGr
                         .map(|(i, p)| (id.0, *p, format!("children[{}]", i), dot::Style::Bold))
                         .collect(),
                     HirNode::TExpr(_) => vec![],
-                    HirNode::Parse(ParseStatement { id, prev, expr }) => {
+                    HirNode::Parse(ParseStatement { id, prev, expr, ..}) => {
                         let p = match prev {
                             ParserPredecessor::ChildOf(p) | ParserPredecessor::After(p) => p,
                         };

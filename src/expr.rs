@@ -3,9 +3,9 @@ use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
 pub trait ExpressionKind: Clone + Hash + Eq + Debug {
-    type BinaryOp: Clone + Hash + Eq + Debug;
-    type UnaryOp: Clone + Hash + Eq + Debug;
-    type Atom: Clone + Hash + Eq + Debug;
+    type BinaryOp: ExpressionComponent<Self>;
+    type UnaryOp: ExpressionComponent<Self>;
+    type Atom: ExpressionComponent<Self>;
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -13,6 +13,46 @@ pub enum Expression<K: ExpressionKind> {
     BinaryOp(Box<K::BinaryOp>),
     UnaryOp(Box<K::UnaryOp>),
     Atom(K::Atom),
+}
+
+impl<K: ExpressionKind> Expression<K> {
+    pub fn children(&self) -> Vec<&Self> {
+        match self {
+            Expression::BinaryOp(a) => a.children(),
+            Expression::UnaryOp(a) => a.children(),
+            Expression::Atom(a) => a.children(),
+        }
+    }
+}
+
+pub trait ExpressionComponent<K: ExpressionKind>: Clone + Hash + Eq + Debug {
+    fn children(&self) -> Vec<&Expression<K>>;
+}
+
+pub struct ExprIter<'a, K: ExpressionKind> {
+    child_list: Vec<Vec<&'a Expression<K>>>,
+}
+
+impl<'a, K: ExpressionKind> ExprIter<'a, K> {
+    pub fn new(start: &'a Expression<K>) -> Self {
+        Self {
+            child_list: vec![vec![start]],
+        }
+    }
+}
+
+impl<'a, K: ExpressionKind> Iterator for ExprIter<'a, K> {
+    type Item = &'a Expression<K>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(&end) = self.child_list.last()?.last() {
+            self.child_list.push(end.children())
+        }
+        // pop the last empty list off the stack
+        self.child_list.pop();
+        // return the last element of the previous (non-empty) list (this should never be None)
+        self.child_list.last_mut()?.pop()
+    }
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -23,6 +63,11 @@ pub enum Atom {
     String(String),
 }
 
+impl<K: ExpressionKind> ExpressionComponent<K> for Atom {
+    fn children(&self) -> Vec<&Expression<K>> {
+        vec![]
+    }
+}
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum TypeBinOp<T: ExpressionKind, C: ExpressionKind, S: Clone + Hash + Eq + Debug> {
@@ -30,6 +75,7 @@ pub enum TypeBinOp<T: ExpressionKind, C: ExpressionKind, S: Clone + Hash + Eq + 
     ParseArg(Expression<T>, Expression<T>, S),
     Wiggle(Expression<T>, Expression<C>, S),
 }
+
 impl<T: ExpressionKind, C: ExpressionKind, S: Clone + Hash + Eq + Debug> TypeBinOp<T, C, S> {
     pub fn convert_same<
         ToT: ExpressionKind,
@@ -49,6 +95,19 @@ impl<T: ExpressionKind, C: ExpressionKind, S: Clone + Hash + Eq + Debug> TypeBin
         }
     }
 }
+
+impl<T: ExpressionKind, C: ExpressionKind, S: Clone + Hash + Eq + Debug> ExpressionComponent<T>
+    for TypeBinOp<T, C, S>
+{
+    fn children(&self) -> Vec<&Expression<T>> {
+        use TypeBinOp::*;
+        match self {
+            Ref(a, b, _) | ParseArg(a, b, _) => vec![a, b],
+            Wiggle(a, _, _) => vec![a],
+        }
+    }
+}
+
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum TypeUnOp<T: ExpressionKind, S: Clone + Hash + Eq + Debug> {
     Ref(Expression<T>, S),
@@ -63,6 +122,14 @@ impl<T: ExpressionKind, S: Clone + Hash + Eq + Debug> TypeUnOp<T, S> {
         use TypeUnOp::*;
         match self {
             Ref(a, t) => Ref(c.convert(a), f(t)),
+        }
+    }
+}
+
+impl<T: ExpressionKind, S: Clone + Hash + Eq + Debug> ExpressionComponent<T> for TypeUnOp<T, S> {
+    fn children(&self) -> Vec<&Expression<T>> {
+        match self {
+            TypeUnOp::Ref(a, _) => vec![a],
         }
     }
 }
@@ -89,6 +156,18 @@ impl<C: ExpressionKind, T: Clone + Hash + Eq + Debug> ConstraintBinOp<C, T> {
     }
 }
 
+impl<C: ExpressionKind, T: Clone + Hash + Eq + Debug> ExpressionComponent<C>
+    for ConstraintBinOp<C, T>
+{
+    fn children(&self) -> Vec<&Expression<C>> {
+        use ConstraintBinOp::*;
+        match self {
+            And(a, b, _) | Or(a, b, _) => vec![a, b],
+            Dot(a, _, _) => vec![a],
+        }
+    }
+}
+
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum ConstraintUnOp<C: ExpressionKind, T: Clone + Hash + Eq + Debug> {
     Not(Expression<C>, T),
@@ -103,6 +182,16 @@ impl<C: ExpressionKind, T: Clone + Hash + Eq + Debug> ConstraintUnOp<C, T> {
         use ConstraintUnOp::*;
         match self {
             Not(a, t) => Not(c.convert(a), f(t)),
+        }
+    }
+}
+
+impl<C: ExpressionKind, T: Clone + Hash + Eq + Debug> ExpressionComponent<C>
+    for ConstraintUnOp<C, T>
+{
+    fn children(&self) -> Vec<&Expression<C>> {
+        match self {
+            ConstraintUnOp::Not(a, _) => vec![a],
         }
     }
 }
@@ -132,6 +221,18 @@ impl<V: ExpressionKind, C: ExpressionKind, T: Clone + Hash + Eq + Debug> ValBinO
             Wiggle(a, b, t) => Wiggle(c.convert(a), c_c.convert(b), f(t)),
             Else(a, b, t) => Else(c.convert(a), c.convert(b), f(t)),
             Dot(a, b, t) => Dot(c.convert(a), b.clone(), f(t)),
+        }
+    }
+}
+
+impl<V: ExpressionKind, C: ExpressionKind, T: Clone + Hash + Eq + Debug> ExpressionComponent<V>
+    for ValBinOp<V, C, T>
+{
+    fn children(&self) -> Vec<&Expression<V>> {
+        use ValBinOp::*;
+        match self {
+            Basic(a, _, b, _) | Else(a, b, _) => vec![a, b],
+            Wiggle(a, _, _) | Dot(a, _, _) => vec![a],
         }
     }
 }
@@ -234,6 +335,15 @@ impl<P: ExpressionKind, T: Clone + Hash + Eq + Debug> ValUnOp<P, T> {
             Neg(a, t) => Neg(c.convert(a), f(t)),
             Pos(a, t) => Pos(c.convert(a), f(t)),
             If(a, t) => If(c.convert(a), f(t)),
+        }
+    }
+}
+
+impl<P: ExpressionKind, T: Clone + Hash + Eq + Debug> ExpressionComponent<P> for ValUnOp<P, T> {
+    fn children(&self) -> Vec<&Expression<P>> {
+        use ValUnOp::*;
+        match self {
+            Not(a, _) | Neg(a, _) | Pos(a, _) | If(a, _) => vec![a],
         }
     }
 }
