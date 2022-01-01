@@ -1,5 +1,7 @@
 mod recursion;
 pub mod represent;
+pub mod walk;
+pub mod refs;
 
 use std::{
     borrow::Cow,
@@ -12,27 +14,26 @@ use std::{
 
 use crate::{
     ast::{self, ArrayKind, AstConstraint, AstType, AstVal},
-    expr::{self, Atom, ExprConverter, Expression, ExpressionKind},
+    expr::{self, Atom, ExprConverter, Expression, ExpressionKind, ExpressionComponent},
     interner::{HirId, HirPath, Identifier, PathComponent},
     source::{FileId, Span, Spanned},
 };
 
-//use recursion::{mod_parser_ssc, parser_ssc, FunctionSscId};
+use recursion::{mod_parser_ssc, parser_ssc, FunctionSscId};
 
 #[salsa::query_group(HirDatabase)]
 pub trait Hirs: ast::Asts {
     fn hir_parser_collection(&self, hid: HirId) -> Result<Option<HirParserCollection>, ()>;
     fn hir_node(&self, id: HirId) -> Result<HirNode, ()>;
-    //    #[salsa::interned]
-    //    fn intern_recursion_scc(&self, functions: Vec<ParserDefId>) -> recursion::FunctionSscId;
-    //    fn mod_parser_ssc(
-    //        &self,
-    //        module: ModuleId,
-    //    ) -> Result<Arc<BTreeMap<ParserDefId, FunctionSscId>>, ()>;
-    //    fn parser_ssc(&self, parser: ParserDefId) -> Result<FunctionSscId, ()>;
+    #[salsa::interned]
+    fn intern_recursion_scc(&self, functions: Vec<ParserDefId>) -> recursion::FunctionSscId;
+    fn mod_parser_ssc(
+        &self,
+        module: ModuleId,
+    ) -> Result<Arc<BTreeMap<ParserDefId, FunctionSscId>>, ()>;
+    fn parser_ssc(&self, parser: ParserDefId) -> Result<FunctionSscId, ()>;
     fn root_id(&self) -> ModuleId;
     fn all_hir_ids(&self) -> Vec<HirId>;
-    fn hir_parent_block(&self, id: HirId) -> Result<Option<BlockId>, ()>;
     fn hir_parent_module(&self, id: HirId) -> Result<ModuleId, ()>;
 }
 
@@ -99,19 +100,6 @@ fn all_hir_ids(db: &dyn Hirs) -> Vec<HirId> {
     ret
 }
 
-fn hir_parent_block(db: &dyn Hirs, id: HirId) -> Result<Option<BlockId>, ()> {
-    match db.hir_node(id)? {
-        HirNode::Let(x) => hir_parent_block(db, x.context.0),
-        HirNode::Block(x) => match x.super_context {
-            None => Ok(None),
-            Some(ctx) => hir_parent_block(db, ctx.0),
-        },
-        HirNode::Choice(x) => hir_parent_block(db, x.parent_context.0),
-        HirNode::Context(x) => Ok(Some(x.block_id)),
-        HirNode::Module(_) | HirNode::ParserDef(_) => Ok(None),
-        _ => hir_parent_block(db, id.parent(db)),
-    }
-}
 
 fn hir_parent_module(db: &dyn Hirs, id: HirId) -> Result<ModuleId, ()> {
     // todo
@@ -284,6 +272,26 @@ fn module_file(db: &dyn Hirs, file: FileId) -> Result<Module, ()> {
     })
 }
 
+impl<K: ExpressionKind, T: ExpressionComponent<K>> ExpressionComponent<K> for IndexSpanned<T> {
+    fn children(&self) -> Vec<&Expression<K>> {
+        self.atom.children()
+    }
+}
+
+impl ExpressionComponent<HirVal> for ParserAtom {
+    fn children(&self) -> Vec<&Expression<HirVal>> {
+        vec![]
+    }
+}
+
+impl ExpressionComponent<HirType> for TypeAtom {
+    fn children(&self) -> Vec<&Expression<HirType>> {
+        match self {
+            TypeAtom::Id(_) => vec![],
+            TypeAtom::Array(a) => vec![&a.expr],
+        }
+    }
+}
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct HirConstraint;
 
@@ -714,7 +722,7 @@ fn struct_context(
                     }
                     ast::Statement::Parse(p) => {
                         let set =
-                            parse_statement(p, ctx, ParseId(sub_id), pred, parents.parent_context);
+                            parse_statement(p, ctx, ParseId(sub_id), pred, id);
                         pred = ParserPredecessor::After(sub_id);
                         set
                     }
@@ -782,6 +790,7 @@ pub enum ParserPredecessor {
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParseStatement {
     pub id: ParseId,
+    pub parent_context: ContextId,
     pub prev: ParserPredecessor,
     pub expr: ExprId,
 }
@@ -797,11 +806,11 @@ fn parse_statement(
     ctx: &HirConversionCtx,
     id: ParseId,
     prev: ParserPredecessor,
-    parent_context: Option<ContextId>,
+    parent_context: ContextId,
 ) -> VariableSet<HirId> {
     let expr = ExprId(id.extend(ctx.db, PathComponent::Unnamed(0)));
-    val_expression(&ast.parser, ctx, expr, parent_context, None);
-    let pt = ParseStatement { id, prev, expr };
+    val_expression(&ast.parser, ctx, expr, Some(parent_context), None);
+    let pt = ParseStatement { id, prev, expr, parent_context };
     let spans = match &ast.name {
         Some(s) => vec![ast.span, s.span],
         None => vec![ast.span],
@@ -836,6 +845,7 @@ pub struct TypeArray {
 pub struct ParserArray {
     pub id: ArrayId,
     pub direction: ArrayKind,
+    pub context: Option<ContextId>,
     pub expr: ExprId,
 }
 
@@ -863,6 +873,7 @@ fn parser_array(
         id,
         direction: ast.direction.inner.clone(),
         expr,
+        context: parent_context,
     };
     ctx.insert(id.0, HirNode::Array(pa), vec![ast.span, ast.direction.span]);
 }
@@ -912,6 +923,9 @@ impl<T: Clone + Hash + Eq + Debug> VariableSet<T> {
             set.insert(*k, v.map(|x| f(*k, x)));
         }
         VariableSet { set }
+    }
+    pub fn get(&self, idx: Identifier) -> Option<&VarStatus<T>> {
+        self.set.get(&idx)
     }
 }
 
@@ -1001,36 +1015,36 @@ def for [u8] *> expr1: {
 }
         "#,
         );
-        ctx.db.all_hir_ids();
+        eprintln!("{:?}", ctx.db.all_hir_ids());
     }
-    //    #[test]
-    //    fn recursion_ssc() {
-    //        let ctx = Context::mock(
-    //            r#"
-    //def a: for [u8] *> {x: c, y: {b, z: d,},}
-    //def b: for [u8] *> {x: a, y: c,}
-    //def c: for [u8] *> {x: c,}
-    //def d: for [u8] *> {let a: u64 = 1, let b: u64 = a + 1,}
-    //def e: for [u8] *> {}
-    //            "#,
-    //        );
-    //        let fd = FileId::default();
-    //        let var = |s| ParserDefId(ctx.db.intern_hir_path(HirPath::new_fid(fd, ctx.id(s))));
-    //        let a = var("a");
-    //        let b = var("b");
-    //        let c = var("c");
-    //        let d = var("d");
-    //        let e = var("d");
-    //        let get_ssc = |x| ctx.db.parser_ssc(x).unwrap();
-    //        let ssc_a = get_ssc(a);
-    //        let ssc_b = get_ssc(b);
-    //        let ssc_c = get_ssc(c);
-    //        let ssc_d = get_ssc(d);
-    //        let ssc_e = get_ssc(e);
-    //        assert!(ssc_a == ssc_b);
-    //        assert!(ssc_b != ssc_c);
-    //        assert!(ssc_c != ssc_d);
-    //        assert!(ssc_b != ssc_d);
-    //        assert!(ssc_b != ssc_e);
-    //    }
+    #[test]
+    fn recursion_ssc() {
+        let ctx = Context::mock(
+            r#"
+def for [u8] *> a: {x: c, y: {b, z: d,},}
+def for [u8] *> b: {x: a, y: c,}
+def for [u8] *> c: {x: c,}
+def for [u8] *> d: {let a: u64 = 1, let b: u64 = a + 1,}
+def for [u8] *> e: {}
+            "#,
+        );
+        let fd = FileId::default();
+        let var = |s| ParserDefId(ctx.db.intern_hir_path(HirPath::new_fid(fd, ctx.id(s))));
+        let a = var("a");
+        let b = var("b");
+        let c = var("c");
+        let d = var("d");
+        let e = var("d");
+        let get_ssc = |x| ctx.db.parser_ssc(x).unwrap();
+        let ssc_a = get_ssc(a);
+        let ssc_b = get_ssc(b);
+        let ssc_c = get_ssc(c);
+        let ssc_d = get_ssc(d);
+        let ssc_e = get_ssc(e);
+        assert!(ssc_a == ssc_b);
+        assert!(ssc_b != ssc_c);
+        assert!(ssc_c != ssc_d);
+        assert!(ssc_b != ssc_d);
+        assert!(ssc_b != ssc_e);
+    }
 }
