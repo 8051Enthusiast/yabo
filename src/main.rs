@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
     };
-    let graph = hir::HirGraph(&context.db as &dyn Hirs);
+    let graph = hir::represent::HirGraph(&context.db as &dyn Hirs);
     dot::render(&graph, &mut std::io::stdout()).expect("Could not render graph");
     Ok(())
 }
