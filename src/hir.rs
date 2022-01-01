@@ -155,6 +155,7 @@ pub enum HirNode {
     Module(Module),
     Context(StructCtx),
     ParserDef(ParserDef),
+    ChoiceIndirection(ChoiceIndirection),
 }
 
 impl HirNode {
@@ -170,6 +171,7 @@ impl HirNode {
             HirNode::Module(x) => x.children(),
             HirNode::Context(x) => x.children(),
             HirNode::ParserDef(x) => x.children(),
+            HirNode::ChoiceIndirection(x) => x.children(),
         }
     }
 }
@@ -185,6 +187,7 @@ hir_id_wrapper! {
     type ModuleId = Module(Module);
     type ContextId = Context(StructCtx);
     type ParserDefId = ParserDef(ParserDef);
+    type ChoiceIndirectId = ChoiceIndirection(ChoiceIndirection);
 }
 
 pub trait HirIdWrapper: Copy {
@@ -404,6 +407,26 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGr
                             (id.0, from.0, format!("from"), dot::Style::Bold),
                             (id.0, to.0, format!("to"), dot::Style::Bold),
                         ]
+                    }
+                    HirNode::ChoiceIndirection(ChoiceIndirection {
+                        id,
+                        target_choice,
+                        choices,
+                        ..
+                    }) => {
+                        let mut v = choices
+                            .iter()
+                            .enumerate()
+                            .flat_map(|(i, x)| x.map(|y| (i, y)))
+                            .map(|(i, nid)| (id.0, nid, format!("{}", i), dot::Style::Dotted))
+                            .collect::<Vec<_>>();
+                        v.push((
+                            id.0,
+                            target_choice.0,
+                            format!("target_choice"),
+                            dot::Style::Dotted,
+                        ));
+                        v
                     }
                 }
                 .into_iter()
@@ -713,6 +736,35 @@ fn block(
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct ChoiceIndirection {
+    pub id: ChoiceIndirectId,
+    pub parent_context: ContextId,
+    pub choices: Vec<Option<HirId>>,
+    pub target_choice: ChoiceId,
+}
+
+impl ChoiceIndirection {
+    pub fn children(&self) -> Vec<HirId> {
+        Vec::new()
+    }
+}
+
+pub fn choice_indirection(
+    subs: &[Option<HirId>],
+    ctx: &HirConversionCtx,
+    id: ChoiceIndirectId,
+    parent_context: ContextId,
+    target_choice: ChoiceId,
+) {
+    let node = ChoiceIndirection {
+        id,
+        parent_context,
+        choices: Vec::from(subs),
+        target_choice,
+    };
+    ctx.insert(id.0, HirNode::ChoiceIndirection(node), vec![]);
+}
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct StructChoice {
     pub id: ChoiceId,
     pub parent_context: ContextId,
@@ -730,7 +782,7 @@ fn struct_choice(
     ctx: &HirConversionCtx,
     id: ChoiceId,
     parents: &ParentInfo,
-) -> VariableSet {
+) -> VariableSet<Vec<Option<HirId>>> {
     let children = extract_non_choice(ast);
     let parents = ParentInfo {
         parent_choice: Some(id),
@@ -738,21 +790,30 @@ fn struct_choice(
     };
     let mut subcontexts = Vec::new();
     let mut varset = None;
+    let mut subvars = Vec::new();
     for (idx, child) in children.into_iter().enumerate() {
         let subcontext_id = ContextId(id.extend(ctx.db, PathComponent::Unnamed(idx as u32)));
         subcontexts.push(subcontext_id);
         let new_vars = struct_context(child, ctx, subcontext_id, &parents);
         varset = varset
-            .map(|x: VariableSet| x.merge_sum(&new_vars, id))
-            .or(Some(new_vars));
+            .map(|x: VariableSet<()>| x.merge_sum(&new_vars))
+            .or(Some(new_vars.without_data()));
+        subvars.push(new_vars);
     }
+    let varset = varset.unwrap_or_default().map(|id, _| {
+        subvars
+            .iter()
+            .map(|x| x.set.get(&id).map(|y| *y.inner()))
+            .collect::<Vec<Option<HirId>>>()
+    });
+
     let choice = StructChoice {
         id,
         parent_context: parents.parent_context.unwrap(),
         subcontexts,
     };
     ctx.insert(id.0, HirNode::Choice(choice), vec![ast.span]);
-    varset.unwrap_or_default()
+    varset
 }
 
 fn extract_non_choice(ast: &ast::ParserChoice) -> Vec<&ast::BlockContent> {
@@ -774,7 +835,7 @@ pub struct StructCtx {
     pub block_id: BlockId,
     pub parent_choice: Option<ChoiceId>,
     pub parent_context: Option<ContextId>,
-    pub vars: Box<VariableSet>,
+    pub vars: Box<VariableSet<HirId>>,
     pub children: Box<Vec<HirId>>,
 }
 
@@ -789,7 +850,7 @@ fn empty_struct_context(
     id: ContextId,
     parents: &ParentInfo,
     span: Span,
-) -> VariableSet {
+) -> VariableSet<HirId> {
     let varset = VariableSet::new();
     let context = StructCtx {
         id,
@@ -808,7 +869,7 @@ fn struct_context(
     ctx: &HirConversionCtx,
     id: ContextId,
     parents: &ParentInfo,
-) -> VariableSet {
+) -> VariableSet<HirId> {
     let children = match ast {
         ast::BlockContent::Sequence(x) => x.content.iter().collect(),
         otherwise => vec![otherwise],
@@ -820,24 +881,35 @@ fn struct_context(
         parent_context: Some(id),
         ..old_parents
     };
-    let mut index = 0;
+    let mut index: u32 = 0;
     let mut varset = VariableSet::new();
     let mut pred = ParserPredecessor::ChildOf(id.0);
     for child in children {
-        let mut next_index = || {
-            index += 1;
-            PathComponent::Unnamed(index - 1)
+        let mut new_id = |d: Option<Identifier>| {
+            let sub_id = match d {
+                Some(ident) => id.extend(ctx.db, PathComponent::Named(ident)),
+                None => {
+                    index = index
+                        .checked_add(1)
+                        .expect("Internal Compiler Error: overflowed variable counter");
+                    id.extend(ctx.db, PathComponent::Unnamed(index - 1))
+                }
+            };
+            children_id.insert(sub_id);
+            sub_id
         };
         let new_set = match child {
             ast::BlockContent::Choice(c) => {
-                let sub_id = ChoiceId(id.extend(ctx.db, next_index()));
-                children_id.insert(sub_id.0);
-                struct_choice(&c, ctx, sub_id, &parents)
+                let sub_id = ChoiceId(new_id(None));
+                let choice_indirect = struct_choice(&c, ctx, sub_id, &parents);
+                choice_indirect.map(|ident, b| {
+                    let chin_id = ChoiceIndirectId(new_id(Some(ident)));
+                    choice_indirection(b, ctx, chin_id, id, sub_id);
+                    chin_id.0
+                })
             }
             ast::BlockContent::Statement(x) => {
-                let name = x.id().map(PathComponent::Named).unwrap_or_else(next_index);
-                let sub_id = id.extend(ctx.db, name);
-                children_id.insert(sub_id);
+                let sub_id = new_id(x.id());
                 match x.as_ref() {
                     ast::Statement::ParserDef(_) => {
                         panic!("Nested parser definitions are not yet implemented")
@@ -888,7 +960,7 @@ fn let_statement(
     ctx: &HirConversionCtx,
     id: LetId,
     context: ContextId,
-) -> VariableSet {
+) -> VariableSet<HirId> {
     let val_id = ExprId(id.extend(ctx.db, PathComponent::Unnamed(0)));
     let ty_id = TExprId(id.extend(ctx.db, PathComponent::Unnamed(1)));
     val_expression(&ast.expr, ctx, val_id, Some(context), None);
@@ -928,7 +1000,7 @@ fn parse_statement(
     id: ParseId,
     prev: ParserPredecessor,
     parent_context: Option<ContextId>,
-) -> VariableSet {
+) -> VariableSet<HirId> {
     let expr = ExprId(id.extend(ctx.db, PathComponent::Unnamed(0)));
     val_expression(&ast.parser, ctx, expr, parent_context, None);
     let pt = ParseStatement { id, prev, expr };
@@ -998,38 +1070,20 @@ fn parser_array(
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct VariableSet {
-    set: BTreeMap<Identifier, VarStatus>,
+pub struct VariableSet<T: Clone + Hash + Eq + Debug> {
+    set: BTreeMap<Identifier, VarStatus<T>>,
 }
 
-impl VariableSet {
+impl<T: Clone + Hash + Eq + Debug> VariableSet<T> {
     pub fn new() -> Self {
         VariableSet {
             set: BTreeMap::new(),
         }
     }
-    pub fn singular(id: Identifier, hir_id: HirId) -> Self {
+    pub fn singular(id: Identifier, data: T) -> Self {
         let mut set = BTreeMap::new();
-        set.insert(id, VarStatus::Owned(hir_id));
+        set.insert(id, VarStatus::Always(data));
         VariableSet { set }
-    }
-    pub fn merge_sum(&self, other: &Self, id: ChoiceId) -> Self {
-        let id = id.0;
-        let mut new = BTreeMap::new();
-        new.extend(self.set.iter().map(|(k, v)| {
-            (*k, {
-                VarStatus::from_accessibility(v.is_accessible() && other.set.contains_key(k), id)
-            })
-        }));
-        for (k, v) in other.set.iter() {
-            let other_entry = v.is_accessible();
-            new.entry(*k)
-                .and_modify(|e| {
-                    *e = VarStatus::from_accessibility(e.is_accessible() && other_entry, id)
-                })
-                .or_insert(VarStatus::Existent(id));
-        }
-        VariableSet { set: new }
     }
     pub fn merge_product(&self, other: &Self) -> (Self, Vec<Identifier>) {
         let mut set = self.set.clone();
@@ -1037,44 +1091,90 @@ impl VariableSet {
         for (k, v) in other.set.iter() {
             match set.entry(*k) {
                 Entry::Vacant(entry) => {
-                    entry.insert(*v);
+                    entry.insert(v.clone());
                 }
                 Entry::Occupied(_) => doubled.push(*k),
             }
         }
         (VariableSet { set }, doubled)
     }
+    pub fn without_data(&self) -> VariableSet<()> {
+        let mut set = BTreeMap::new();
+        for (k, v) in self.set.iter() {
+            set.insert(*k, v.without_data());
+        }
+        VariableSet { set }
+    }
+    pub fn map<S: Clone + Eq + Debug + Hash>(
+        &self,
+        mut f: impl FnMut(Identifier, &T) -> S,
+    ) -> VariableSet<S> {
+        let mut set = BTreeMap::new();
+        for (k, v) in self.set.iter() {
+            set.insert(*k, v.map(|x| f(*k, x)));
+        }
+        VariableSet { set }
+    }
 }
 
-impl Default for VariableSet {
+impl VariableSet<()> {
+    pub fn merge_sum<T: Hash + Eq + Clone + Debug>(&self, other: &VariableSet<T>) -> Self {
+        let mut new = BTreeMap::new();
+        new.extend(self.set.iter().map(|(k, v)| {
+            (*k, {
+                VarStatus::<()>::from_accessibility(v.is_accessible() && other.set.contains_key(k))
+            })
+        }));
+        for (k, v) in other.set.iter() {
+            let other_entry = v.is_accessible();
+            new.entry(*k)
+                .and_modify(|e| {
+                    *e = VarStatus::<()>::from_accessibility(e.is_accessible() && other_entry)
+                })
+                .or_insert(VarStatus::Maybe(()));
+        }
+        VariableSet { set: new }
+    }
+}
+
+impl<T: Copy + Hash + Eq + Debug> Default for VariableSet<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub enum VarStatus {
-    /// the current contexts owns the variable
-    Owned(HirId),
-    /// the current context does not own the variable,
-    /// but every variant of a choice has it, making
-    /// it always accessible, the HirId points to the choice
-    Present(HirId),
-    /// the variable does exist somewhere under the current
-    /// context, but is not always available because it is only
-    /// in parts of a choice, the HirId points to the choice
-    Existent(HirId),
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+pub enum VarStatus<T: Clone + Eq + Debug + Hash> {
+    Always(T),
+    Maybe(T),
 }
 
-impl VarStatus {
-    fn is_accessible(self) -> bool {
-        !matches!(self, Self::Existent(_))
+impl<T: Clone + Eq + Debug + Hash> VarStatus<T> {
+    fn is_accessible(&self) -> bool {
+        matches!(self, Self::Always(_))
     }
-    fn from_accessibility(access: bool, id: HirId) -> Self {
+    fn without_data(&self) -> VarStatus<()> {
+        match self {
+            VarStatus::Always(_) => VarStatus::Always(()),
+            VarStatus::Maybe(_) => VarStatus::Maybe(()),
+        }
+    }
+    fn map<S: Clone + Eq + Debug + Hash>(&self, f: impl FnOnce(&T) -> S) -> VarStatus<S> {
+        match self {
+            VarStatus::Always(a) => VarStatus::Always(f(a)),
+            VarStatus::Maybe(a) => VarStatus::Always(f(a)),
+        }
+    }
+    fn from_accessibility(access: bool) -> VarStatus<()> {
         if access {
-            Self::Present(id)
+            VarStatus::Always(())
         } else {
-            Self::Existent(id)
+            VarStatus::Maybe(())
+        }
+    }
+    fn inner(&self) -> &T {
+        match self {
+            VarStatus::Always(a) | VarStatus::Maybe(a) => a,
         }
     }
 }
@@ -1102,6 +1202,7 @@ impl HirToString for HirNode {
             HirNode::Module(_) => format!("Module"),
             HirNode::Context(_) => format!("Context"),
             HirNode::ParserDef(_) => format!("ParserDef"),
+            HirNode::ChoiceIndirection(_) => format!("ChoiceIndirection"),
         }
     }
 }
