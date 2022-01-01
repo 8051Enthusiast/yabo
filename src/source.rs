@@ -1,8 +1,8 @@
 use std::convert::TryFrom;
+use std::hash::Hash;
 use std::io::Error;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::hash::Hash;
 
 use miette::{MietteError, MietteSpanContents, SourceCode};
 

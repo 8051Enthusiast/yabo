@@ -1,7 +1,7 @@
 mod recursion;
+pub mod refs;
 pub mod represent;
 pub mod walk;
-pub mod refs;
 
 use std::{
     borrow::Cow,
@@ -14,7 +14,7 @@ use std::{
 
 use crate::{
     ast::{self, ArrayKind, AstConstraint, AstType, AstVal},
-    expr::{self, Atom, ExprConverter, Expression, ExpressionKind, ExpressionComponent},
+    expr::{self, Atom, ExprConverter, Expression, ExpressionComponent, ExpressionKind},
     interner::{HirId, HirPath, Identifier, PathComponent},
     source::{FileId, Span, Spanned},
 };
@@ -99,7 +99,6 @@ fn all_hir_ids(db: &dyn Hirs) -> Vec<HirId> {
     }
     ret
 }
-
 
 fn hir_parent_module(db: &dyn Hirs, id: HirId) -> Result<ModuleId, ()> {
     // todo
@@ -193,7 +192,7 @@ pub trait HirIdWrapper: Copy {
     }
 }
 
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, Default)]
 pub struct HirParserCollection {
     map: BTreeMap<HirId, HirNode>,
     spans: BTreeMap<HirId, Vec<Span>>,
@@ -201,13 +200,9 @@ pub struct HirParserCollection {
 
 impl HirParserCollection {
     pub fn new() -> Self {
-        Self {
-            map: BTreeMap::new(),
-            spans: BTreeMap::new(),
-        }
+        Self::default()
     }
 }
-
 pub struct HirConversionCtx<'a> {
     collection: RefCell<HirParserCollection>,
     db: &'a dyn Hirs,
@@ -343,9 +338,9 @@ impl TypeExpression {
     }
 }
 
-fn constraint_expression_converter<'a>(
-    add_span: &'a impl Fn(&Span) -> SpanIndex,
-) -> ExprConverter<'a, AstConstraint, HirConstraint> {
+fn constraint_expression_converter(
+    add_span: &impl Fn(&Span) -> SpanIndex,
+) -> ExprConverter<AstConstraint, HirConstraint> {
     type Converter<'b> = ExprConverter<'b, ast::AstConstraint, HirConstraint>;
     let bin_fun =
         move |bop: &ast::AstConstraintBinOp, c: &Converter| bop.convert_same(c, &add_span);
@@ -394,9 +389,9 @@ fn val_expression_converter<'a>(
     ExprConverter::new(pbin_fun, pun_fun, atom_fun)
 }
 
-fn type_expression_converter<'a>(
-    add_span: &'a impl Fn(&Span) -> SpanIndex,
-) -> ExprConverter<'a, AstType, HirType> {
+fn type_expression_converter(
+    add_span: &impl Fn(&Span) -> SpanIndex,
+) -> ExprConverter<AstType, HirType> {
     type Converter<'b> = ExprConverter<'b, ast::AstType, HirType>;
     let constr = constraint_expression_converter(add_span);
     let bin_fun =
@@ -591,7 +586,7 @@ fn struct_choice(
     let children = extract_non_choice(ast);
     let parents = ParentInfo {
         parent_choice: Some(id),
-        ..parents.clone()
+        ..*parents
     };
     let mut subcontexts = Vec::new();
     let mut varset = None;
@@ -602,7 +597,7 @@ fn struct_choice(
         let new_vars = struct_context(child, ctx, subcontext_id, &parents);
         varset = varset
             .map(|x: VariableSet<()>| x.merge_sum(&new_vars))
-            .or(Some(new_vars.without_data()));
+            .or_else(|| Some(new_vars.without_data()));
         subvars.push(new_vars);
     }
     let varset = varset.unwrap_or_default().map(|id, _| {
@@ -682,7 +677,7 @@ fn struct_context(
     };
     let mut children_id = BTreeSet::new();
     let mut duplicate_ident = BTreeSet::<Identifier>::new();
-    let old_parents = parents.clone();
+    let old_parents = *parents;
     let parents = ParentInfo {
         parent_context: Some(id),
         ..old_parents
@@ -707,7 +702,7 @@ fn struct_context(
         let new_set = match child {
             ast::BlockContent::Choice(c) => {
                 let sub_id = ChoiceId(new_id(None));
-                let choice_indirect = struct_choice(&c, ctx, sub_id, &parents);
+                let choice_indirect = struct_choice(c, ctx, sub_id, &parents);
                 choice_indirect.map(|ident, b| {
                     let chin_id = ChoiceIndirectId(new_id(Some(ident)));
                     choice_indirection(b, ctx, chin_id, id, sub_id);
@@ -721,8 +716,7 @@ fn struct_context(
                         panic!("Nested parser definitions are not yet implemented")
                     }
                     ast::Statement::Parse(p) => {
-                        let set =
-                            parse_statement(p, ctx, ParseId(sub_id), pred, id);
+                        let set = parse_statement(p, ctx, ParseId(sub_id), pred, id);
                         pred = ParserPredecessor::After(sub_id);
                         set
                     }
@@ -810,7 +804,12 @@ fn parse_statement(
 ) -> VariableSet<HirId> {
     let expr = ExprId(id.extend(ctx.db, PathComponent::Unnamed(0)));
     val_expression(&ast.parser, ctx, expr, Some(parent_context), None);
-    let pt = ParseStatement { id, prev, expr, parent_context };
+    let pt = ParseStatement {
+        id,
+        prev,
+        expr,
+        parent_context,
+    };
     let spans = match &ast.name {
         Some(s) => vec![ast.span, s.span],
         None => vec![ast.span],
@@ -867,11 +866,11 @@ fn parser_array(
         ctx,
         expr,
         parent_context,
-        Some(ast.direction.inner.clone()),
+        Some(ast.direction.inner),
     );
     let pa = ParserArray {
         id,
-        direction: ast.direction.inner.clone(),
+        direction: ast.direction.inner,
         expr,
         context: parent_context,
     };

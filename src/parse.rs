@@ -161,11 +161,7 @@ fn get_op<'a>(
     Ok((left, op, right))
 }
 
-fn binary_type_expression(
-    db: &dyn Asts,
-    fd: FileId,
-    c: TreeCursor,
-) -> ParseResult<AstTypeBinOp> {
+fn binary_type_expression(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<AstTypeBinOp> {
     use TypeBinOp::*;
     let (left, op, right) = get_op(db, fd, c)?;
     let left = left.unwrap();
@@ -180,11 +176,7 @@ fn binary_type_expression(
     })
 }
 
-fn unary_type_expression(
-    db: &dyn Asts,
-    fd: FileId,
-    c: TreeCursor,
-) -> ParseResult<AstTypeUnOp> {
+fn unary_type_expression(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<AstTypeUnOp> {
     use TypeUnOp::*;
     let (_, op, right) = get_op(db, fd, c)?;
     let ty = |x| type_expression(db, fd, x);

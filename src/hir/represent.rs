@@ -6,17 +6,17 @@ pub trait HirToString {
 impl HirToString for HirNode {
     fn hir_to_string(&self, db: &dyn Hirs) -> String {
         match self {
-            HirNode::Let(_) => format!("Let"),
+            HirNode::Let(_) => "Let".to_string(),
             HirNode::Expr(e) => format!("Expr({})", e.hir_to_string(db)),
             HirNode::TExpr(e) => format!("TExpr({})", e.hir_to_string(db)),
-            HirNode::Parse(_) => format!("Parse"),
+            HirNode::Parse(_) => "Parse".to_string(),
             HirNode::Array(a) => format!("Array({:?})", a.direction),
-            HirNode::Block(_) => format!("Block"),
-            HirNode::Choice(_) => format!("Choice"),
-            HirNode::Module(_) => format!("Module"),
-            HirNode::Context(_) => format!("Context"),
-            HirNode::ParserDef(_) => format!("ParserDef"),
-            HirNode::ChoiceIndirection(_) => format!("ChoiceIndirection"),
+            HirNode::Block(_) => "Block".to_string(),
+            HirNode::Choice(_) => "Choice".to_string(),
+            HirNode::Module(_) => "Module".to_string(),
+            HirNode::Context(_) => "Context".to_string(),
+            HirNode::ParserDef(_) => "ParserDef".to_string(),
+            HirNode::ChoiceIndirection(_) => "ChoiceIndirection".to_string(),
         }
     }
 }
@@ -288,9 +288,9 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGr
                         context,
                     }) => {
                         vec![
-                            (id.0, expr.0, format!("expr"), dot::Style::Bold),
-                            (id.0, ty.0, format!("ty"), dot::Style::Bold),
-                            (id.0, context.0, format!("context"), dot::Style::Dotted),
+                            (id.0, expr.0, "expr".to_string(), dot::Style::Bold),
+                            (id.0, ty.0, "ty".to_string(), dot::Style::Bold),
+                            (id.0, context.0, "context".to_string(), dot::Style::Dotted),
                         ]
                     }
                     HirNode::Expr(ValExpression { id, children, .. }) => children
@@ -299,21 +299,21 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGr
                         .map(|(i, p)| (id.0, *p, format!("children[{}]", i), dot::Style::Bold))
                         .collect(),
                     HirNode::TExpr(_) => vec![],
-                    HirNode::Parse(ParseStatement { id, prev, expr, ..}) => {
+                    HirNode::Parse(ParseStatement { id, prev, expr, .. }) => {
                         let p = match prev {
                             ParserPredecessor::ChildOf(p) | ParserPredecessor::After(p) => p,
                         };
                         let s = match prev {
-                            ParserPredecessor::ChildOf(_) => format!("ChildOf"),
-                            ParserPredecessor::After(_) => format!("After"),
+                            ParserPredecessor::ChildOf(_) => "ChildOf".to_string(),
+                            ParserPredecessor::After(_) => "After".to_string(),
                         };
                         vec![
-                            (id.0, expr.0, format!("expr"), dot::Style::Bold),
+                            (id.0, expr.0, "expr".to_string(), dot::Style::Bold),
                             (id.0, p, s, dot::Style::Dotted),
                         ]
                     }
                     HirNode::Array(ParserArray { id, expr, .. }) => {
-                        vec![(id.0, expr.0, format!("expr"), dot::Style::Bold)]
+                        vec![(id.0, expr.0, "expr".to_string(), dot::Style::Bold)]
                     }
                     HirNode::Block(Block {
                         id,
@@ -324,12 +324,13 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGr
                         let mut v = vec![(
                             id.0,
                             root_context.0,
-                            format!("root_context"),
+                            "root_context".to_string(),
                             dot::Style::Bold,
                         )];
                         v.extend(
-                            super_context
-                                .map(|c| (id.0, c.0, format!("super_context"), dot::Style::Dotted)),
+                            super_context.map(|c| {
+                                (id.0, c.0, "super_context".to_string(), dot::Style::Dotted)
+                            }),
                         );
                         v
                     }
@@ -348,7 +349,7 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGr
                         v.push((
                             id.0,
                             parent_context.0,
-                            format!("parent_context"),
+                            "parent_context".to_string(),
                             dot::Style::Dotted,
                         ));
                         v
@@ -375,12 +376,12 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGr
                                 (id.0, *p, last_name, dot::Style::Bold)
                             })
                             .collect();
-                        v.push((id.0, block_id.0, format!("block_id"), dot::Style::Dotted));
+                        v.push((id.0, block_id.0, "block_id".to_string(), dot::Style::Dotted));
                         if let Some(p) = parent_choice {
-                            v.push((id.0, p.0, format!("parent_choice"), dot::Style::Dotted));
+                            v.push((id.0, p.0, "parent_choice".to_string(), dot::Style::Dotted));
                         }
                         if let Some(p) = parent_context {
-                            v.push((id.0, p.0, format!("parent_context"), dot::Style::Dotted));
+                            v.push((id.0, p.0, "parent_context".to_string(), dot::Style::Dotted));
                         }
                         v
                     }
@@ -405,8 +406,8 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGr
                         .collect(),
                     HirNode::ParserDef(ParserDef { id, from, to }) => {
                         vec![
-                            (id.0, from.0, format!("from"), dot::Style::Bold),
-                            (id.0, to.0, format!("to"), dot::Style::Bold),
+                            (id.0, from.0, "from".to_string(), dot::Style::Bold),
+                            (id.0, to.0, "to".to_string(), dot::Style::Bold),
                         ]
                     }
                     HirNode::ChoiceIndirection(ChoiceIndirection {
@@ -422,7 +423,7 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGr
                         v.push((
                             id.0,
                             target_choice.0,
-                            format!("target_choice"),
+                            "target_choice".to_string(),
                             dot::Style::Dotted,
                         ));
                         v
