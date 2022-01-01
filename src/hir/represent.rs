@@ -417,9 +417,7 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGr
                     }) => {
                         let mut v = choices
                             .iter()
-                            .enumerate()
-                            .flat_map(|(i, x)| x.map(|y| (i, y)))
-                            .map(|(i, nid)| (id.0, nid, format!("{}", i), dot::Style::Dotted))
+                            .map(|(i, nid)| (id.0, *nid, format!("{}", i), dot::Style::Dotted))
                             .collect::<Vec<_>>();
                         v.push((
                             id.0,

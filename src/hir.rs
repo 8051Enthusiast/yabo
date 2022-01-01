@@ -536,7 +536,7 @@ fn block(
 pub struct ChoiceIndirection {
     pub id: ChoiceIndirectId,
     pub parent_context: ContextId,
-    pub choices: Vec<Option<HirId>>,
+    pub choices: Vec<(u32, HirId)>,
     pub target_choice: ChoiceId,
 }
 
@@ -547,7 +547,7 @@ impl ChoiceIndirection {
 }
 
 pub fn choice_indirection(
-    subs: &[Option<HirId>],
+    subs: &[(u32, HirId)],
     ctx: &HirConversionCtx,
     id: ChoiceIndirectId,
     parent_context: ContextId,
@@ -579,7 +579,7 @@ fn struct_choice(
     ctx: &HirConversionCtx,
     id: ChoiceId,
     parents: &ParentInfo,
-) -> VariableSet<Vec<Option<HirId>>> {
+) -> VariableSet<Vec<(u32, HirId)>> {
     let children = extract_non_choice(ast);
     let parents = ParentInfo {
         parent_choice: Some(id),
@@ -600,8 +600,9 @@ fn struct_choice(
     let varset = varset.unwrap_or_default().map(|id, _| {
         subvars
             .iter()
-            .map(|x| x.set.get(&id).map(|y| *y.inner()))
-            .collect::<Vec<Option<HirId>>>()
+            .enumerate()
+            .flat_map(|(i, x)| x.set.get(&id).map(|y| (i as u32, *y.inner())))
+            .collect::<Vec<(u32, HirId)>>()
     });
 
     let choice = StructChoice {
