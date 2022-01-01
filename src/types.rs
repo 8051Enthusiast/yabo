@@ -97,7 +97,7 @@ impl Struct {
         let seq: Vec<_> = (&*self.existent_id() & &*other.existent_id())
             .into_iter()
             .collect();
-        if seq.len() > 0 {
+        if !seq.is_empty() {
             return Err(seq);
         }
         let info = StructInfo {
@@ -109,15 +109,15 @@ impl Struct {
                 seq.append(&mut seq_r);
                 Struct::Sequence { seq, info }
             }
-            (Struct::Sequence { mut seq, .. }, second @ _) => {
+            (Struct::Sequence { mut seq, .. }, second) => {
                 seq.push(Box::new(second));
                 Struct::Sequence { seq, info }
             }
-            (first @ _, Struct::Sequence { mut seq, .. }) => {
+            (first, Struct::Sequence { mut seq, .. }) => {
                 seq.insert(0, Box::new(first));
                 Struct::Sequence { seq, info }
             }
-            (first @ _, second @ _) => Struct::Sequence {
+            (first, second) => Struct::Sequence {
                 seq: vec![Box::new(first), Box::new(second)],
                 info,
             },
@@ -138,15 +138,15 @@ impl Struct {
                 choices.append(&mut cho_r);
                 Struct::Choice { choices, info }
             }
-            (Struct::Choice { mut choices, .. }, second @ _) => {
+            (Struct::Choice { mut choices, .. }, second) => {
                 choices.push(Box::new(second));
                 Struct::Choice { choices, info }
             }
-            (first @ _, Struct::Choice { mut choices, .. }) => {
+            (first, Struct::Choice { mut choices, .. }) => {
                 choices.insert(0, Box::new(first));
                 Struct::Choice { choices, info }
             }
-            (first @ _, second @ _) => Struct::Choice {
+            (first, second) => Struct::Choice {
                 choices: vec![Box::new(first), Box::new(second)],
                 info,
             },
@@ -156,14 +156,14 @@ impl Struct {
         match self {
             Struct::Choice { info, .. } => Cow::Borrowed(&info.existent),
             Struct::Sequence { info, .. } => Cow::Borrowed(&info.existent),
-            Struct::Field { id, .. } => Cow::Owned(BTreeSet::from_iter(id.into_iter().copied())),
+            Struct::Field { id, .. } => Cow::Owned(BTreeSet::from_iter(id.iter().copied())),
         }
     }
     pub fn present_id(&self) -> Cow<BTreeSet<Identifier>> {
         match self {
             Struct::Choice { info, .. } => Cow::Borrowed(&info.present),
             Struct::Sequence { info, .. } => Cow::Borrowed(&info.present),
-            Struct::Field { id, .. } => Cow::Owned(BTreeSet::from_iter(id.into_iter().copied())),
+            Struct::Field { id, .. } => Cow::Owned(BTreeSet::from_iter(id.iter().copied())),
         }
     }
 }

@@ -1,7 +1,7 @@
 use crate::ast::AstDatabase;
-use crate::interner::{Identifier, IdentifierName, InternerDatabase, Interner};
-use crate::source::{FileCollection, FileDatabase};
 use crate::hir::HirDatabase;
+use crate::interner::{Identifier, IdentifierName, Interner, InternerDatabase};
+use crate::source::{FileCollection, FileDatabase};
 
 #[salsa::database(InternerDatabase, AstDatabase, FileDatabase, HirDatabase)]
 #[derive(Default)]
@@ -22,7 +22,7 @@ impl Context {
     }
     pub fn id(&self, string: &str) -> Identifier {
         self.db.intern_identifier(IdentifierName {
-                name: string.to_string()
+            name: string.to_string(),
         })
     }
     #[cfg(test)]

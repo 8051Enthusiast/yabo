@@ -29,7 +29,7 @@ pub fn resolve_var_ref(
                 None => ctx
                     .parent_context
                     .map(|x| x.id())
-                    .unwrap_or(ctx.block_id.id()),
+                    .unwrap_or_else(|| ctx.block_id.id()),
             },
             n => unreachable!(
                 "Internal Compiler Error: invalid node {}",
@@ -56,7 +56,7 @@ fn expr_idents(expr: &ValExpression) -> Vec<Identifier> {
 }
 
 fn expr_parser_refs(db: &dyn Hirs, expr: &ValExpression, context: HirId) -> Vec<ParserDefId> {
-    expr_idents(&expr)
+    expr_idents(expr)
         .iter()
         .flat_map(|ident| resolve_var_ref(db, context, *ident))
         .flatten()

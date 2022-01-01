@@ -1,14 +1,14 @@
 pub mod ast;
 pub mod context;
+pub mod expr;
+pub mod hir;
 pub mod interner;
 pub mod parse;
 pub mod source;
 pub mod types;
-pub mod hir;
-pub mod expr;
 use ast::Asts;
-use hir::Hirs;
 use context::Context;
+use hir::Hirs;
 use std::{env::args_os, error::Error, path::Path};
 
 fn main() -> Result<(), Box<dyn Error>> {

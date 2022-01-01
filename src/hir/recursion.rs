@@ -22,7 +22,10 @@ pub fn parser_ssc(db: &dyn Hirs, id: ParserDefId) -> Result<FunctionSscId, ()> {
     sscs.get(&id).copied().ok_or(())
 }
 
-pub fn mod_parser_ssc(db: &dyn Hirs, module: ModuleId) -> Result<Arc<BTreeMap<ParserDefId, FunctionSscId>>, ()> {
+pub fn mod_parser_ssc(
+    db: &dyn Hirs,
+    module: ModuleId,
+) -> Result<Arc<BTreeMap<ParserDefId, FunctionSscId>>, ()> {
     let mut graph = Graph::new();
     let module = module.lookup(db)?;
     let mut index_map = HashMap::new();

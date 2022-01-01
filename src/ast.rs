@@ -75,9 +75,7 @@ impl ExpressionKind for AstConstraint {
     type Atom = Spanned<Atom>;
 }
 
-impl<K: ExpressionKind, T: ExpressionComponent<K>>
-    ExpressionComponent<K> for Spanned<T>
-{
+impl<K: ExpressionKind, T: ExpressionComponent<K>> ExpressionComponent<K> for Spanned<T> {
     fn children(&self) -> Vec<&Expression<K>> {
         self.inner.children()
     }

@@ -41,13 +41,13 @@ impl PathComponent {
     pub fn unwrap_file(self) -> FileId {
         match self {
             PathComponent::File(f) => f,
-            _ => panic!("Path component should have been file")
+            _ => panic!("Path component should have been file"),
         }
     }
     pub fn unwrap_named(self) -> Identifier {
         match self {
             PathComponent::Named(ident) => ident,
-            _ => panic!("Path component should have been identifier")
+            _ => panic!("Path component should have been identifier"),
         }
     }
 }

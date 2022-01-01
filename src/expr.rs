@@ -372,9 +372,9 @@ impl<'a, FromKind: ExpressionKind, ToKind: ExpressionKind> ExprConverter<'a, Fro
     }
     pub fn convert(&self, expr: &Expression<FromKind>) -> Expression<ToKind> {
         match expr {
-            Expression::BinaryOp(b) => Expression::BinaryOp(Box::new((self.bin_fun)(&b, self))),
-            Expression::UnaryOp(u) => Expression::UnaryOp(Box::new((self.un_fun)(&u, self))),
-            Expression::Atom(a) => Expression::Atom((self.atom_fun)(&a, self)),
+            Expression::BinaryOp(b) => Expression::BinaryOp(Box::new((self.bin_fun)(b, self))),
+            Expression::UnaryOp(u) => Expression::UnaryOp(Box::new((self.un_fun)(u, self))),
+            Expression::Atom(a) => Expression::Atom((self.atom_fun)(a, self)),
         }
     }
 }
