@@ -1415,7 +1415,7 @@
       "members": [
         {
           "type": "SYMBOL",
-          "name": "memory"
+          "name": "primitive_type"
         },
         {
           "type": "SYMBOL",
@@ -1449,16 +1449,33 @@
         }
       ]
     },
-    "memory": {
-      "type": "SEQ",
+    "primitive_type": {
+      "type": "CHOICE",
       "members": [
         {
           "type": "STRING",
-          "value": "&"
+          "value": "int"
         },
         {
           "type": "STRING",
-          "value": "mem"
+          "value": "bit"
+        },
+        {
+          "type": "STRING",
+          "value": "char"
+        },
+        {
+          "type": "SEQ",
+          "members": [
+            {
+              "type": "STRING",
+              "value": "&"
+            },
+            {
+              "type": "STRING",
+              "value": "mem"
+            }
+          ]
         }
       ]
     },

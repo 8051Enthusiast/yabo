@@ -7,6 +7,9 @@ use crate::interner::{HirId, Identifier};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Type {
+    Any,
+    Unknown,
+    Bit,
     Int,
     Char,
     TypeVarRef(usize, usize),

@@ -1,29 +1,35 @@
-def for[u8] *> main: {
-    a: u64,
+def &for[u8] *> main: {
+    a: int,
     (
-	c: u64,
+	c: i64ul,
 	d: c_string |> utf8,
-	e: u64,
+	e: u64ul,
 	let h: str = 123,
-	u64 ~ 0,
+	int ~ 0,
 	f: {
-		a: u64,
-		b: u64,
-		let return: u64 = 4,
-		c: u64,
+		a: int,
+		b: int,
+		let return: int = 4,
+		c: int,
 	},
-	g: u64,
+	g: u64ul,
         |
-	c: u64 ~ 1 or 2,
+	c: u64ul ~ 1 or 2,
 	let d: str = 3,
     )
-    b: u64,
-    let x: u64 = b else a else 0 + a,
+    b: i64ul,
+    let x: int = b else a else 0 + a,
     |
-    a: u64,
-    let m: u64 = e * m + 3 * 5 | 4,
+    a: u64ul,
+    let m: int = e * m + 3 * 5 | 4,
 }
 
-def for [u8] *> test: {
-    return: u128,
+def &for[char] *> test: {
+    return: word,
+}
+
+def &mem *> u64ul: {
+	low: u32ul,
+	hi: u32ul,
+	let return: int ~ 0 or 0xffffffffffffffff = low + hi << 32,
 }

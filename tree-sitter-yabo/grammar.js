@@ -189,7 +189,7 @@ module.exports = grammar({
       field('right', $._expression)
     )),
     _type_atom: $ => choice(
-      $.memory,
+      $.primitive_type,
       $.identifier,
     ),
     _atom: $ => choice(
@@ -200,7 +200,12 @@ module.exports = grammar({
       $.number_literal,
       $.char_literal,
     ),
-    memory: $ => seq('&', 'mem'),
+    primitive_type: $ => choice(
+      'int',
+      'bit',
+      'char',
+      seq('&', 'mem')
+    ),
     substidentifier: $ => /\$[A-Za-z_][A-Za-z_0-9]*/,
     identifier: $ => /[A-Za-z_][A-Za-z_0-9]*/,
     number_literal: $ => /[0-9]+|0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+/,
