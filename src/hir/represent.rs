@@ -84,7 +84,7 @@ where
                 format!("({} {} {})", a.hir_to_string(db), op, b.hir_to_string(db))
             }
             Wiggle(a, b, _) => {
-                format!("({} *> {})", a.hir_to_string(db), b.hir_to_string(db))
+                format!("({} ~ {})", a.hir_to_string(db), b.hir_to_string(db))
             }
             Else(a, b, _) => {
                 format!("({} else {})", a.hir_to_string(db), b.hir_to_string(db))
@@ -119,8 +119,8 @@ where
 {
     fn hir_to_string(&self, db: &dyn Hirs) -> String {
         let (a, b, op) = match self {
-            expr::ConstraintBinOp::And(a, b, _) => (a, b, "&&"),
-            expr::ConstraintBinOp::Or(a, b, _) => (a, b, "||"),
+            expr::ConstraintBinOp::And(a, b, _) => (a, b, "and"),
+            expr::ConstraintBinOp::Or(a, b, _) => (a, b, "or"),
             expr::ConstraintBinOp::Dot(a, b, _) => {
                 return format!("{}.{}", a.hir_to_string(db), b.hir_to_string(db))
             }
@@ -182,7 +182,20 @@ impl HirToString for TypeAtom {
         match self {
             TypeAtom::Id(id) => id.hir_to_string(db),
             TypeAtom::Array(arr) => arr.hir_to_string(db),
+            TypeAtom::Primitive(p) => p.hir_to_string(db),
         }
+    }
+}
+
+impl HirToString for TypePrimitive {
+    fn hir_to_string(&self, _db: &dyn Hirs) -> String {
+        match self {
+            TypePrimitive::Mem => "<&mem>",
+            TypePrimitive::Int => "<int>",
+            TypePrimitive::Bit => "<bit>",
+            TypePrimitive::Char => "<char>",
+        }
+        .into()
     }
 }
 

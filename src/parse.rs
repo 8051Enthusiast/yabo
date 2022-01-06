@@ -414,6 +414,7 @@ astify! {
     enum type_expression = TypeExpression {
         BinaryOp(boxed(binary_type_expression)),
         UnaryOp(boxed(unary_type_expression)),
+        Atom(spanned(primitive_type)),
         Atom(spanned(identifier)),
         Atom(spanned(type_array)),
     };
@@ -464,5 +465,16 @@ fn array_direction(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Span
             otherwise => panic!("Unknown loop {}", otherwise),
         },
         span: str.span,
+    })
+}
+
+fn primitive_type(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<TypePrimitive> {
+    let str = node_to_string(db, fd, c)?;
+    Ok(match str.as_ref() {
+        "&mem" => TypePrimitive::Mem,
+        "int" => TypePrimitive::Int,
+        "bit" => TypePrimitive::Bit,
+        "char" => TypePrimitive::Char,
+        otherwise => panic!("Unknown type primitive: {}", otherwise),
     })
 }

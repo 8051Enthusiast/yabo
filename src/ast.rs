@@ -93,8 +93,8 @@ impl ExpressionComponent<AstVal> for ParserAtom {
 impl ExpressionComponent<AstType> for TypeAtom {
     fn children(&self) -> Vec<&Expression<AstType>> {
         match self {
-            TypeAtom::Id(_) => todo!(),
             TypeAtom::Array(a) => vec![&a.expr],
+            _ => vec![],
         }
     }
 }
@@ -118,7 +118,16 @@ pub type ConstraintExpression = Expression<AstConstraint>;
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum TypeAtom {
     Id(Identifier),
+    Primitive(TypePrimitive),
     Array(Box<TypeArray>),
+}
+
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
+pub enum TypePrimitive {
+    Mem,
+    Int,
+    Bit,
+    Char,
 }
 
 impl From<Identifier> for TypeAtom {
@@ -130,6 +139,12 @@ impl From<Identifier> for TypeAtom {
 impl From<TypeArray> for TypeAtom {
     fn from(arr: TypeArray) -> Self {
         TypeAtom::Array(Box::new(arr))
+    }
+}
+
+impl From<TypePrimitive> for TypeAtom {
+    fn from(p: TypePrimitive) -> Self {
+        TypeAtom::Primitive(p)
     }
 }
 

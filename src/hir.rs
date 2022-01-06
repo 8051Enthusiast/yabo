@@ -282,8 +282,8 @@ impl ExpressionComponent<HirVal> for ParserAtom {
 impl ExpressionComponent<HirType> for TypeAtom {
     fn children(&self) -> Vec<&Expression<HirType>> {
         match self {
-            TypeAtom::Id(_) => vec![],
             TypeAtom::Array(a) => vec![&a.expr],
+            _ => vec![],
         }
     }
 }
@@ -408,6 +408,7 @@ fn type_expression_converter(
                     expr: new_expr,
                 }))
             }
+            ast::TypeAtom::Primitive(a) => TypeAtom::Primitive((*a).into()),
         };
         IndexSpanned {
             atom: new_atom,
@@ -823,8 +824,28 @@ fn parse_statement(
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum TypeAtom {
+    Primitive(TypePrimitive),
     Id(Identifier),
     Array(Box<TypeArray>),
+}
+
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
+pub enum TypePrimitive {
+    Mem,
+    Int,
+    Bit,
+    Char,
+}
+
+impl From<ast::TypePrimitive> for TypePrimitive {
+    fn from(p: ast::TypePrimitive) -> Self {
+        match p {
+            ast::TypePrimitive::Mem => TypePrimitive::Mem,
+            ast::TypePrimitive::Int => TypePrimitive::Int,
+            ast::TypePrimitive::Bit => TypePrimitive::Bit,
+            ast::TypePrimitive::Char => TypePrimitive::Char,
+        }
+    }
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]

@@ -284,7 +284,7 @@
             "named": true
           },
           {
-            "type": "memory",
+            "type": "primitive_type",
             "named": true
           },
           {
@@ -344,11 +344,11 @@
             "named": true
           },
           {
-            "type": "memory",
+            "type": "number_literal",
             "named": true
           },
           {
-            "type": "number_literal",
+            "type": "primitive_type",
             "named": true
           },
           {
@@ -449,7 +449,7 @@
             "named": true
           },
           {
-            "type": "memory",
+            "type": "primitive_type",
             "named": true
           },
           {
@@ -463,11 +463,6 @@
         ]
       }
     }
-  },
-  {
-    "type": "memory",
-    "named": true,
-    "fields": {}
   },
   {
     "type": "parse_statement",
@@ -668,7 +663,7 @@
             "named": true
           },
           {
-            "type": "memory",
+            "type": "primitive_type",
             "named": true
           },
           {
@@ -763,6 +758,11 @@
     }
   },
   {
+    "type": "primitive_type",
+    "named": true,
+    "fields": {}
+  },
+  {
     "type": "source_file",
     "named": true,
     "fields": {},
@@ -816,7 +816,7 @@
             "named": true
           },
           {
-            "type": "memory",
+            "type": "primitive_type",
             "named": true
           },
           {
@@ -959,7 +959,7 @@
             "named": true
           },
           {
-            "type": "memory",
+            "type": "primitive_type",
             "named": true
           },
           {
@@ -1091,6 +1091,14 @@
     "named": false
   },
   {
+    "type": "bit",
+    "named": false
+  },
+  {
+    "type": "char",
+    "named": false
+  },
+  {
     "type": "def",
     "named": false
   },
@@ -1112,6 +1120,10 @@
   },
   {
     "type": "if",
+    "named": false
+  },
+  {
+    "type": "int",
     "named": false
   },
   {
