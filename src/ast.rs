@@ -274,10 +274,20 @@ pub struct ParserArray {
     pub expr: ValExpression,
     pub span: Span,
 }
-#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Ord, Debug)]
 pub enum ArrayKind {
     For,
     Each,
+}
+
+impl PartialOrd for ArrayKind {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(match (self, other) {
+            (ArrayKind::For, ArrayKind::Each) => std::cmp::Ordering::Greater,
+            (ArrayKind::Each, ArrayKind::For) => std::cmp::Ordering::Less,
+            (ArrayKind::For, ArrayKind::For) | (ArrayKind::Each, ArrayKind::Each) => std::cmp::Ordering::Equal,
+        })
+    }
 }
 #[cfg(test)]
 mod tests {
