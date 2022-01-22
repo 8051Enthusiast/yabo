@@ -1,4 +1,4 @@
-use crate::interner::Identifier;
+use crate::interner::FieldName;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
@@ -57,7 +57,7 @@ impl<'a, K: ExpressionKind> Iterator for ExprIter<'a, K> {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum Atom {
-    Id(Identifier),
+    Field(FieldName),
     Number(String),
     Char(String),
     String(String),

@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use crate::{
     expr::*,
-    interner::{Identifier, Interner},
+    interner::{FieldName, Identifier, Interner},
     parse::ParseResult,
-    source::{FileId, Files, IdSpan, Span, Spanned},
+    source::{FieldSpan, FileId, Files, IdSpan, Span, Spanned},
 };
 
 #[salsa::query_group(AstDatabase)]
@@ -187,9 +187,9 @@ pub enum Statement {
 }
 
 impl Statement {
-    pub fn id(&self) -> Option<Identifier> {
+    pub fn field(&self) -> Option<FieldName> {
         match self {
-            Statement::ParserDef(x) => Some(x.name.id),
+            Statement::ParserDef(x) => Some(FieldName::Ident(x.name.id)),
             Statement::Parse(x) => x.name.as_ref().map(|i| i.id),
             Statement::Let(x) => Some(x.name.id),
         }
@@ -213,14 +213,14 @@ pub struct ParserDefinition {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParseStatement {
-    pub name: Option<IdSpan>,
+    pub name: Option<FieldSpan>,
     pub parser: ValExpression,
     pub span: Span,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct LetStatement {
-    pub name: IdSpan,
+    pub name: FieldSpan,
     pub ty: TypeExpression,
     pub expr: ValExpression,
     pub span: Span,
@@ -274,7 +274,7 @@ pub struct ParserArray {
     pub expr: ValExpression,
     pub span: Span,
 }
-#[derive(Clone, Copy, Hash, PartialEq, Eq, Ord, Debug)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub enum ArrayKind {
     For,
     Each,
@@ -282,11 +282,19 @@ pub enum ArrayKind {
 
 impl PartialOrd for ArrayKind {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(match (self, other) {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ArrayKind {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self, other) {
             (ArrayKind::For, ArrayKind::Each) => std::cmp::Ordering::Greater,
             (ArrayKind::Each, ArrayKind::For) => std::cmp::Ordering::Less,
-            (ArrayKind::For, ArrayKind::For) | (ArrayKind::Each, ArrayKind::Each) => std::cmp::Ordering::Equal,
-        })
+            (ArrayKind::For, ArrayKind::For) | (ArrayKind::Each, ArrayKind::Each) => {
+                std::cmp::Ordering::Equal
+            }
+        }
     }
 }
 #[cfg(test)]

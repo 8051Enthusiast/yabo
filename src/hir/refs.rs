@@ -12,7 +12,7 @@ pub enum VarType {
 pub fn resolve_var_ref(
     db: &dyn Hirs,
     context: HirId,
-    ident: Identifier,
+    ident: FieldName,
 ) -> Result<Option<(HirId, VarType)>, ()> {
     let mut current_id = context;
     loop {
@@ -22,7 +22,11 @@ pub fn resolve_var_ref(
                 None => db.hir_parent_module(current_id)?.id(),
             },
             HirNode::Module(m) => {
-                return Ok(m.defs.get(&ident).map(|s| (s.id(), VarType::ParserDef)))
+                let ident = match ident {
+                    FieldName::Ident(n) => n,
+                    FieldName::Return | FieldName::Next | FieldName::Prev => return Ok(None),
+                };
+                return Ok(m.defs.get(&ident).map(|s| (s.id(), VarType::ParserDef)));
             }
             HirNode::Context(ctx) => match ctx.vars.get(ident) {
                 Some(id) => return Ok(Some((*id.inner(), VarType::Value))),
@@ -40,12 +44,12 @@ pub fn resolve_var_ref(
 }
 
 // identifiers inside of expression
-fn expr_idents(expr: &ValExpression) -> Vec<Identifier> {
+fn expr_idents(expr: &ValExpression) -> Vec<FieldName> {
     let mut ret = Vec::new();
     for node in crate::expr::ExprIter::new(&expr.expr) {
         let ident = match node {
             Expression::Atom(a) => match a.atom {
-                ParserAtom::Atom(Atom::Id(ident)) => ident,
+                ParserAtom::Atom(Atom::Field(ident)) => ident,
                 _ => continue,
             },
             _ => continue,

@@ -1,6 +1,7 @@
 mod recursion;
 pub mod refs;
 pub mod represent;
+pub mod types;
 pub mod walk;
 
 use std::{
@@ -15,7 +16,7 @@ use std::{
 use crate::{
     ast::{self, ArrayKind, AstConstraint, AstType, AstVal},
     expr::{self, Atom, ExprConverter, Expression, ExpressionComponent, ExpressionKind},
-    interner::{HirId, HirPath, Identifier, PathComponent},
+    interner::{FieldName, HirId, HirPath, Identifier, PathComponent},
     source::{FileId, Span, Spanned},
 };
 
@@ -42,7 +43,7 @@ fn hir_parser_collection(db: &dyn Hirs, hid: HirId) -> Result<Option<HirParserCo
     let ctx = HirConversionCtx::new(collection, db);
     let path = db.lookup_intern_hir_path(hid);
     let file = path.path()[0].unwrap_file();
-    let id = path.path()[1].unwrap_named();
+    let id = path.path()[1].unwrap_ident();
     let parser = match db.top_level_statement(file, id)? {
         None => return Ok(None),
         Some(x) => x,
@@ -256,7 +257,7 @@ fn module_file(db: &dyn Hirs, file: FileId) -> Result<Module, ()> {
         .map(|sym| {
             (
                 *sym,
-                ParserDefId(db.intern_hir_path(HirPath::new_fid(file, *sym))),
+                ParserDefId(db.intern_hir_path(HirPath::new_fid(file, FieldName::Ident(*sym)))),
             )
         })
         .collect();
@@ -677,7 +678,7 @@ fn struct_context(
         otherwise => vec![otherwise],
     };
     let mut children_id = BTreeSet::new();
-    let mut duplicate_ident = BTreeSet::<Identifier>::new();
+    let mut duplicate_field = BTreeSet::<FieldName>::new();
     let old_parents = *parents;
     let parents = ParentInfo {
         parent_context: Some(id),
@@ -687,9 +688,9 @@ fn struct_context(
     let mut varset = VariableSet::new();
     let mut pred = ParserPredecessor::ChildOf(id.0);
     for child in children {
-        let mut new_id = |d: Option<Identifier>| {
+        let mut new_id = |d: Option<FieldName>| {
             let sub_id = match d {
-                Some(ident) => id.extend(ctx.db, PathComponent::Named(ident)),
+                Some(field) => id.extend(ctx.db, PathComponent::Named(field)),
                 None => {
                     index = index
                         .checked_add(1)
@@ -711,7 +712,7 @@ fn struct_context(
                 })
             }
             ast::BlockContent::Statement(x) => {
-                let sub_id = new_id(x.id());
+                let sub_id = new_id(x.field());
                 match x.as_ref() {
                     ast::Statement::ParserDef(_) => {
                         panic!("Nested parser definitions are not yet implemented")
@@ -727,7 +728,7 @@ fn struct_context(
             ast::BlockContent::Sequence(_) => unreachable!(),
         };
         let (result_set, duplicate) = varset.merge_product(&new_set);
-        duplicate_ident.extend(duplicate.iter());
+        duplicate_field.extend(duplicate.iter());
         varset = result_set;
     }
     let context = StructCtx {
@@ -900,7 +901,7 @@ fn parser_array(
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct VariableSet<T: Clone + Hash + Eq + Debug> {
-    set: BTreeMap<Identifier, VarStatus<T>>,
+    set: BTreeMap<FieldName, VarStatus<T>>,
 }
 
 impl<T: Clone + Hash + Eq + Debug> VariableSet<T> {
@@ -909,12 +910,12 @@ impl<T: Clone + Hash + Eq + Debug> VariableSet<T> {
             set: BTreeMap::new(),
         }
     }
-    pub fn singular(id: Identifier, data: T) -> Self {
+    pub fn singular(id: FieldName, data: T) -> Self {
         let mut set = BTreeMap::new();
         set.insert(id, VarStatus::Always(data));
         VariableSet { set }
     }
-    pub fn merge_product(&self, other: &Self) -> (Self, Vec<Identifier>) {
+    pub fn merge_product(&self, other: &Self) -> (Self, Vec<FieldName>) {
         let mut set = self.set.clone();
         let mut doubled = Vec::new();
         for (k, v) in other.set.iter() {
@@ -936,7 +937,7 @@ impl<T: Clone + Hash + Eq + Debug> VariableSet<T> {
     }
     pub fn map<S: Clone + Eq + Debug + Hash>(
         &self,
-        mut f: impl FnMut(Identifier, &T) -> S,
+        mut f: impl FnMut(FieldName, &T) -> S,
     ) -> VariableSet<S> {
         let mut set = BTreeMap::new();
         for (k, v) in self.set.iter() {
@@ -944,7 +945,7 @@ impl<T: Clone + Hash + Eq + Debug> VariableSet<T> {
         }
         VariableSet { set }
     }
-    pub fn get(&self, idx: Identifier) -> Option<&VarStatus<T>> {
+    pub fn get(&self, idx: FieldName) -> Option<&VarStatus<T>> {
         self.set.get(&idx)
     }
 }
@@ -1049,7 +1050,12 @@ def for [u8] *> e: {}
             "#,
         );
         let fd = FileId::default();
-        let var = |s| ParserDefId(ctx.db.intern_hir_path(HirPath::new_fid(fd, ctx.id(s))));
+        let var = |s| {
+            ParserDefId(
+                ctx.db
+                    .intern_hir_path(HirPath::new_fid(fd, FieldName::Ident(ctx.id(s)))),
+            )
+        };
         let a = var("a");
         let b = var("b");
         let c = var("c");
