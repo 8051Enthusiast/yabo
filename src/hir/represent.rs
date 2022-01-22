@@ -211,7 +211,10 @@ impl HirToString for TypeArray {
 impl HirToString for Atom {
     fn hir_to_string(&self, db: &dyn Hirs) -> String {
         match self {
-            Atom::Id(id) => db.lookup_intern_identifier(*id).name,
+            Atom::Field(FieldName::Ident(id)) => db.lookup_intern_identifier(*id).name,
+            Atom::Field(FieldName::Return) => String::from("return"),
+            Atom::Field(FieldName::Prev) => String::from("prev"),
+            Atom::Field(FieldName::Next) => String::from("next"),
             Atom::Number(a) | Atom::Char(a) | Atom::String(a) => a.clone(),
         }
     }

@@ -8,7 +8,7 @@ use salsa::InternId;
 
 use crate::{
     ast::ArrayKind,
-    interner::{HirId, Identifier},
+    interner::{HirId, Identifier, FieldName},
 };
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -91,7 +91,7 @@ pub enum InferenceType {
         result: InfTypeId,
         args: Box<Vec<InfTypeId>>,
     },
-    InferField(Identifier, InfTypeId),
+    InferField(FieldName, InfTypeId),
 }
 
 impl InferenceType {
@@ -220,7 +220,7 @@ pub trait TypingContext {
 
     fn infctx_mut(&mut self) -> &mut InferenceContext;
     fn infctx(&self) -> &InferenceContext;
-    fn field_type(&self, ty: &InferenceType, name: Identifier) -> InfTypeId;
+    fn field_type(&self, ty: &InferenceType, name: FieldName) -> InfTypeId;
     fn deref(&self, ty: &InferenceType) -> Option<InferenceType>;
     fn constrain(&mut self, lower: InfTypeId, upper: InfTypeId) -> Result<(), TypeError> {
         use InferenceType::*;
@@ -319,7 +319,7 @@ pub trait TypingContext {
             }
 
             (ref nom @ Nominal { .. }, InferField(name, fieldtype)) => {
-                let field_ty = self.field_type(&nom, name);
+                let field_ty = self.field_type(nom, name);
                 self.constrain(field_ty, fieldtype)
             }
 
@@ -341,8 +341,7 @@ pub trait TypingContext {
                 type_args1
                     .iter()
                     .zip(type_args2.iter())
-                    .map(|(&arg1, &arg2)| self.constrain(arg1, arg2))
-                    .collect()
+                    .try_for_each(|(&arg1, &arg2)| self.constrain(arg1, arg2))
             }
 
             (l @ Nominal { .. }, _) => {
@@ -353,7 +352,7 @@ pub trait TypingContext {
                 {
                     self.constrain(deref, upper)
                 } else {
-                    return Err(TypeError);
+                    Err(TypeError)
                 }
             }
 
@@ -394,7 +393,7 @@ pub trait TypingContext {
     fn access_field(
         &mut self,
         accessed: InfTypeId,
-        name: Identifier,
+        name: FieldName,
     ) -> Result<InfTypeId, TypeError> {
         let var = self.var();
         let infer_access = self
@@ -477,10 +476,10 @@ impl<From: Copy + Eq + Hash, To: Copy> Default for MemoRecursor<From, To> {
 impl<From: Copy + Eq + Hash, To: Copy> MemoRecursor<From, To> {
     fn enter_fun(&mut self, from: From) -> Option<Result<To, TypeError>> {
         if let Some(t) = self.memo.get(&from) {
-            return Some(Ok(t.clone()));
+            return Some(Ok(*t));
         }
         let depth = self.process.len();
-        if let Some(_) = self.process.insert(from, depth) {
+        if self.process.insert(from, depth).is_some() {
             return Some(Err(TypeError));
         }
         None
@@ -530,7 +529,7 @@ fn meet_inftype<'a, TCX: TypingContext + ?Sized>(
     match (lhs_ty, rhs_ty) {
         (Bot, _) | (_, Bot) => Bot,
         (InferField(..), InferField(..)) => Any,
-        (Any | InferField(..), other) | (other, Any | InferField(..)) => other.clone(),
+        (Any | InferField(..), other) | (other, Any | InferField(..)) => other,
         (Primitive(p), Primitive(q)) if p == q => Primitive(p),
         (Loop(kind1, from1, inner1), Loop(kind2, from2, inner2)) => {
             let kind = kind1.min(kind2);
@@ -586,7 +585,7 @@ fn meet_inftype<'a, TCX: TypingContext + ?Sized>(
                     .collect::<Result<_, _>>()?,
             );
             Nominal {
-                kind: kind,
+                kind,
                 def: def1,
                 type_args,
             }
@@ -630,7 +629,7 @@ fn join_inftype<'a, TCX: TypingContext + ?Sized>(
     let res = match (other, nom) {
         (Any, _) | (_, Any) => Any,
         (InferField(..), InferField(..)) => Bot,
-        (Bot | InferField(..), other) | (other, Bot | InferField(..)) => other.clone(),
+        (Bot | InferField(..), other) | (other, Bot | InferField(..)) => other,
         (Primitive(p), Primitive(q)) if p == q => Primitive(p),
         (Loop(kind1, from1, inner1), Loop(kind2, from2, inner2)) => {
             let kind = kind1.max(kind2);
@@ -686,7 +685,7 @@ fn join_inftype<'a, TCX: TypingContext + ?Sized>(
                     .collect::<Result<_, _>>()?,
             );
             Nominal {
-                kind: kind,
+                kind,
                 def: def1,
                 type_args,
             }

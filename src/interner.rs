@@ -20,9 +20,24 @@ pub struct IdentifierName {
     pub name: String,
 }
 
+
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum FieldName {
+    Ident(Identifier),
+    Return,
+    Next,
+    Prev
+}
+
+impl From<Identifier> for FieldName {
+    fn from(ident: Identifier) -> Self {
+        FieldName::Ident(ident)
+    }
+}
+
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub enum PathComponent {
-    Named(Identifier),
+    Named(FieldName),
     Unnamed(u32),
     File(FileId),
 }
@@ -30,7 +45,10 @@ pub enum PathComponent {
 impl PathComponent {
     pub fn to_name<DB: Interner + ?Sized>(&self, db: &DB) -> String {
         match self {
-            PathComponent::Named(n) => db.lookup_intern_identifier(*n).name,
+            PathComponent::Named(FieldName::Ident(n)) => db.lookup_intern_identifier(*n).name,
+            PathComponent::Named(FieldName::Return) => String::from("return"),
+            PathComponent::Named(FieldName::Next) => String::from("next"),
+            PathComponent::Named(FieldName::Prev) => String::from("prev"),
             PathComponent::Unnamed(x) => format!("{}", x),
             PathComponent::File(f) => match db.path(*f) {
                 Some(p) => p.to_string_lossy().to_string(),
@@ -44,9 +62,15 @@ impl PathComponent {
             _ => panic!("Path component should have been file"),
         }
     }
-    pub fn unwrap_named(self) -> Identifier {
+    pub fn unwrap_named(self) -> FieldName {
         match self {
-            PathComponent::Named(ident) => ident,
+            PathComponent::Named(name) => name,
+            _ => panic!("Path component should have been identifier"),
+        }
+    }
+    pub fn unwrap_ident(self) -> Identifier {
+        match self {
+            PathComponent::Named(FieldName::Ident(ident)) => ident,
             _ => panic!("Path component should have been identifier"),
         }
     }
@@ -82,7 +106,7 @@ impl HirPath {
     pub fn new_file(f: FileId) -> Self {
         HirPath(vec![PathComponent::File(f)])
     }
-    pub fn new_fid(f: FileId, n: Identifier) -> Self {
+    pub fn new_fid(f: FileId, n: FieldName) -> Self {
         HirPath(vec![PathComponent::File(f), PathComponent::Named(n)])
     }
     pub fn path(&self) -> &[PathComponent] {

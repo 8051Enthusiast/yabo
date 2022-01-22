@@ -6,8 +6,10 @@ use tree_sitter_yabo::language;
 
 use crate::ast::*;
 use crate::expr::*;
+use crate::interner::FieldName;
 use crate::interner::Identifier;
 use crate::interner::IdentifierName;
+use crate::source::FieldSpan;
 use crate::source::{FileData, FileId, IdSpan, Span, Spanned};
 use thiserror::Error;
 
@@ -349,12 +351,12 @@ astify! {
     };
 
     struct parse_statement = ParseStatement {
-        name: idspan?,
+        name: fieldspan?,
         parser: val_expression!,
     };
 
     struct let_statement = LetStatement {
-        name: idspan!,
+        name: fieldspan!,
         ty: type_expression!,
         expr: val_expression!,
     };
@@ -391,7 +393,7 @@ astify! {
     };
 
     enum atom = Atom {
-        Id(identifier),
+        Field(identifier),
         Number(number_literal),
         Char(char_literal),
         String(string_literal),
@@ -424,6 +426,13 @@ fn identifier(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Identifie
     let str = spanned(node_to_string)(db, fd, c)?;
     let id = IdentifierName { name: str.inner };
     Ok(db.intern_identifier(id))
+}
+
+fn fieldspan(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<FieldSpan> {
+    idspan(db, fd, c).map(|x| FieldSpan{
+        id: FieldName::Ident(x.id),
+        span: x.span,
+    })
 }
 
 fn idspan(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<IdSpan> {
