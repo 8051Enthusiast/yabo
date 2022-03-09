@@ -2,8 +2,9 @@ use crate::ast::AstDatabase;
 use crate::hir::HirDatabase;
 use crate::interner::{Identifier, IdentifierName, Interner, InternerDatabase};
 use crate::source::{FileCollection, FileDatabase};
+use crate::types::TypeInternerDatabase;
 
-#[salsa::database(InternerDatabase, AstDatabase, FileDatabase, HirDatabase)]
+#[salsa::database(InternerDatabase, AstDatabase, FileDatabase, HirDatabase, TypeInternerDatabase)]
 #[derive(Default)]
 pub struct LivingInTheDatabase {
     storage: salsa::Storage<LivingInTheDatabase>,

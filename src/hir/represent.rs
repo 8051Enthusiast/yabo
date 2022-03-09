@@ -201,7 +201,7 @@ impl HirToString for TypePrimitive {
 
 impl HirToString for TypeArray {
     fn hir_to_string(&self, db: &dyn Hirs) -> String {
-        match self.direction.inner {
+        match self.direction {
             ArrayKind::For => format!("for[{}]", self.expr.hir_to_string(db)),
             ArrayKind::Each => format!("each[{}]", self.expr.hir_to_string(db)),
         }
