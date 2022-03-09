@@ -23,7 +23,7 @@ use crate::{
 use recursion::{mod_parser_ssc, parser_ssc, FunctionSscId};
 
 #[salsa::query_group(HirDatabase)]
-pub trait Hirs: ast::Asts {
+pub trait Hirs: ast::Asts + crate::types::TypeInterner {
     fn hir_parser_collection(&self, hid: HirId) -> Result<Option<HirParserCollection>, ()>;
     fn hir_node(&self, id: HirId) -> Result<HirNode, ()>;
     #[salsa::interned]
@@ -405,7 +405,7 @@ fn type_expression_converter(
             ast::TypeAtom::Array(arr) => {
                 let new_expr = c.convert(&arr.expr);
                 TypeAtom::Array(Box::new(TypeArray {
-                    direction: arr.direction.clone(),
+                    direction: arr.direction.inner,
                     expr: new_expr,
                 }))
             }
@@ -858,7 +858,7 @@ pub enum ParserAtom {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct TypeArray {
-    pub direction: Spanned<ArrayKind>,
+    pub direction: ArrayKind,
     pub expr: Expression<HirType>,
 }
 
