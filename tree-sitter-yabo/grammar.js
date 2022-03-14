@@ -26,7 +26,7 @@ module.exports = grammar({
       field('from', $._type_expression),
       '*>',
       field('name', $.identifier),
-      ':',
+      '=',
       field('to', $._expression),
     ),
     _type_expression: $ => choice(
@@ -42,11 +42,6 @@ module.exports = grammar({
         field('op', '*>'),
         field('right', $._type_expression),
       )),
-      prec.left(PREC.PARSE, seq(
-        field('left', $._type_expression),
-        field('op', '&>'),
-        field('right', $._type_expression),
-      )),
       prec.left(PREC.WIGGLE, seq(
         field('left', $._type_expression),
         field('op', '~'),
@@ -54,7 +49,7 @@ module.exports = grammar({
       )),
     ),
     unary_type_expression: $ => prec(PREC.UNARY, seq(
-      field('op', choice('&')),
+      field('op', choice('*>')),
       field('right', $._type_expression)
     )),
 
@@ -190,7 +185,26 @@ module.exports = grammar({
     )),
     _type_atom: $ => choice(
       $.primitive_type,
-      $.identifier,
+      $.typevar,
+      $.parserdef_ref,
+    ),
+    parserdef_ref: $ => seq(
+      optional(
+        field('from', $._type_expression),
+      ),
+      field('name', $.identifier),
+      optional(
+        seq(
+          '[',
+          repeat(
+            seq(
+              field('args', $._type_expression),
+              ',',
+            )
+          ),
+          ']',
+        )
+      ),
     ),
     _atom: $ => choice(
       $.identifier,
@@ -204,9 +218,9 @@ module.exports = grammar({
       'int',
       'bit',
       'char',
-      seq('&', 'mem')
+      'mem',
     ),
-    substidentifier: $ => /\$[A-Za-z_][A-Za-z_0-9]*/,
+    typevar: $ => /\'[A-Za-z_][A-Za-z_0-9]*/,
     identifier: $ => /[A-Za-z_][A-Za-z_0-9]*/,
     number_literal: $ => /[0-9]+|0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+/,
     char_literal: $ => seq(
@@ -215,13 +229,6 @@ module.exports = grammar({
         token.immediate(/[^\n']/)
       ),
       '\'',
-    ),
-    string_literal: $ => seq(
-      '\"',
-      choice(
-        token.immediate(/[^\n"]*/)
-      ),
-      '\"'
     ),
   }
 });

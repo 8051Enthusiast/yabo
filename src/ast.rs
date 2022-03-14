@@ -30,7 +30,7 @@ fn symbols(db: &dyn Asts, fd: FileId) -> Result<Vec<Identifier>, ()> {
         .map_err(|_| ())?
         .tl_statements
         .iter()
-        .map(|st| st.name.id)
+        .map(|st| st.name.inner)
         .collect();
     syms.sort();
     Ok(syms)
@@ -46,7 +46,7 @@ fn top_level_statement(
         .map_err(|_| ())?
         .tl_statements
         .iter()
-        .find(|st| st.name.id == id)
+        .find(|st| st.name.inner == id)
         .cloned())
 }
 
@@ -117,7 +117,7 @@ pub type ConstraintExpression = Expression<AstConstraint>;
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum TypeAtom {
-    Id(Identifier),
+    ParserDef(Box<ParserDefRef>),
     Primitive(TypePrimitive),
     Array(Box<TypeArray>),
 }
@@ -130,9 +130,9 @@ pub enum TypePrimitive {
     Char,
 }
 
-impl From<Identifier> for TypeAtom {
-    fn from(id: Identifier) -> Self {
-        TypeAtom::Id(id)
+impl From<ParserDefRef> for TypeAtom {
+    fn from(pd: ParserDefRef) -> Self {
+        TypeAtom::ParserDef(Box::new(pd))
     }
 }
 
@@ -189,7 +189,7 @@ pub enum Statement {
 impl Statement {
     pub fn field(&self) -> Option<FieldName> {
         match self {
-            Statement::ParserDef(x) => Some(FieldName::Ident(x.name.id)),
+            Statement::ParserDef(x) => Some(FieldName::Ident(x.name.inner)),
             Statement::Parse(x) => x.name.as_ref().map(|i| i.id),
             Statement::Let(x) => Some(x.name.id),
         }
@@ -261,6 +261,13 @@ pub struct ParserChoice {
     pub right: BlockContent,
     pub span: Span,
 }
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct ParserDefRef {
+    pub from: Option<TypeExpression>,
+    pub name: IdSpan,
+    pub args: Vec<TypeExpression>,
+    pub span: Span,
+}
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct TypeArray {
@@ -305,7 +312,7 @@ mod tests {
     fn nested_choice() {
         let ctx = Context::mock(
             r#"
-def for[u8] *> expr1: {
+def for[u8] *> expr1 = {
     (
         let b: u64 = 3,
     |

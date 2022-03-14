@@ -380,6 +380,12 @@ astify! {
         right: block_content!,
     };
 
+    struct parserdef_ref = ParserDefRef {
+        from: type_expression?,
+        name: idspan!,
+        args: type_expression*,
+    };
+
     enum block_content = BlockContent {
         Sequence(boxed(parser_sequence)),
         Choice(boxed(parser_choice)),
@@ -417,7 +423,7 @@ astify! {
         BinaryOp(boxed(binary_type_expression)),
         UnaryOp(boxed(unary_type_expression)),
         Atom(spanned(primitive_type)),
-        Atom(spanned(identifier)),
+        Atom(spanned(parserdef_ref)),
         Atom(spanned(type_array)),
     };
 }
@@ -430,7 +436,7 @@ fn identifier(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Identifie
 
 fn fieldspan(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<FieldSpan> {
     idspan(db, fd, c).map(|x| FieldSpan{
-        id: FieldName::Ident(x.id),
+        id: FieldName::Ident(x.inner),
         span: x.span,
     })
 }
@@ -439,7 +445,7 @@ fn idspan(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<IdSpan> {
     let str = spanned(node_to_string)(db, fd, c)?;
     let id = IdentifierName { name: str.inner };
     Ok(IdSpan {
-        id: db.intern_identifier(id),
+        inner: db.intern_identifier(id),
         span: str.span,
     })
 }

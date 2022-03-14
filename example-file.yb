@@ -1,4 +1,4 @@
-def &for[u8] *> main: {
+def for[u8] *> main = {
     a: int,
     (
 	c: i64ul,
@@ -24,11 +24,11 @@ def &for[u8] *> main: {
     let m: int = e * m + 3 * 5 | 4,
 }
 
-def &for[char] *> test: {
+def for[char] *> test = {
     return: word,
 }
 
-def &mem *> u64ul: {
+def mem *> u64ul = {
 	low: u32ul,
 	hi: u32ul,
 	let return: int ~ 0 or 0xffffffffffffffff = low + hi << 32,

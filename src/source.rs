@@ -22,11 +22,7 @@ pub struct Spanned<T: Clone + Hash + Eq> {
     pub span: Span,
 }
 
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct IdSpan {
-    pub id: Identifier,
-    pub span: Span,
-}
+pub type IdSpan = Spanned<Identifier>;
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct FieldSpan {
