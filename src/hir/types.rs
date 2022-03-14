@@ -10,16 +10,16 @@ use crate::{
     hir::{HirIdWrapper, ParserAtom},
     interner::{FieldName, HirId, Identifier, PathComponent},
     types::{
-        InfTypeId, InferenceContext, InferenceType, NominalInfHead, PrimitiveType, TypeError,
-        TypeId, TypeInterner, TypeInternerDatabase, TypeResolver, VarDef,
+        InfTypeId, InferenceContext, InferenceType, NominalInfHead, NominalKind, PrimitiveType,
+        TypeError, TypeId, TypeInterner, TypeInternerDatabase, TypeResolver, VarDef,
     },
 };
 
 use super::{
     recursion::FunctionSscId,
     refs::{resolve_var_ref, VarType},
-    HirConstraint, HirType, HirVal, Hirs, ParserDefId, SpanIndex, TypeAtom, TypeExpression,
-    TypePrimitive, ValExpression,
+    HirConstraint, HirType, HirVal, Hirs, ParserDefId, ParserDefRef, SpanIndex, TypeAtom,
+    TypeExpression, TypePrimitive, ValExpression,
 };
 
 pub fn type_signature(db: &dyn Hirs, id: HirId) -> Result<ParserDefType, TypeError> {
@@ -47,21 +47,17 @@ fn parse_arg_type(
     name_idx: &mut FxHashMap<Identifier, usize>,
 ) -> Result<TypeId, TypeError> {
     match expr {
-        Expression::BinaryOp(b) => {
-            match b.as_ref() {
-                TypeBinOp::Ref(_, _, _) => todo!(),
-                TypeBinOp::ParseArg(_, _, _) => todo!(),
-                TypeBinOp::Wiggle(i, _, _) => {
-                    parse_arg_type(db, i, ty_vars, name_idx)
-                }
-            }
-        }
+        Expression::BinaryOp(b) => match b.as_ref() {
+            TypeBinOp::Ref(_, _, _) => todo!(),
+            TypeBinOp::ParseArg(_, _, _) => todo!(),
+            TypeBinOp::Wiggle(i, _, _) => parse_arg_type(db, i, ty_vars, name_idx),
+        },
         Expression::UnaryOp(_) => todo!(),
         Expression::Atom(a) => {
             db.intern_type(match &a.atom {
                 TypeAtom::Primitive(TypePrimitive::Bit) => todo!(),
                 TypeAtom::Primitive(_) => todo!(),
-                TypeAtom::Id(_) => todo!(),
+                TypeAtom::ParserDef(_) => todo!(),
                 TypeAtom::Array(_) => todo!(),
             });
             todo!()
@@ -102,6 +98,12 @@ pub struct TypingContext<'a> {
     infctx: InferenceContext<'a, (dyn Hirs + 'a)>,
 }
 
+pub struct TypeVarCollection {
+    defs: Vec<VarDef>,
+    names: FxHashMap<Identifier, u32>,
+    frozen: bool,
+}
+
 impl<'a> TypingContext<'a> {
     fn new(db: &'a dyn Hirs, tr: &'a dyn TypeResolver) -> Self {
         TypingContext {
@@ -110,26 +112,30 @@ impl<'a> TypingContext<'a> {
         }
     }
 
-    fn is_public_ref(&self, id: HirId) -> bool {
+    fn is_const_ref(&self, id: HirId) -> bool {
         match self.db.lookup_intern_hir_path(id).path() {
             [PathComponent::File(_), PathComponent::Named(_)] => true,
             _ => false,
         }
     }
-    fn resolve_type_ref(
-        &mut self,
-        context: HirId,
-        name: FieldName,
-    ) -> Result<InfTypeId, TypeError> {
+    fn parserdef_ref(&mut self, context: HirId, name: FieldName) -> Result<HirId, TypeError> {
         let (id, kind) = resolve_var_ref(self.db, context, name)
             .map_err(|_| TypeError)?
             .ok_or(TypeError)?;
         if let VarType::Value = kind {
             return Err(TypeError);
         }
-        if !self.is_public_ref(id) {
+        if !self.is_const_ref(id) {
             return Err(TypeError);
         }
+        Ok(id)
+    }
+    fn resolve_type_ref(
+        &mut self,
+        context: HirId,
+        name: FieldName,
+    ) -> Result<InfTypeId, TypeError> {
+        let id = self.parserdef_ref(context, name)?;
         let ntype = type_signature(self.db, id)?.ty;
         let ty = self
             .infctx
@@ -146,15 +152,11 @@ impl<'a> TypingContext<'a> {
             Expression::BinaryOp(op) => match op.as_ref() {
                 TypeBinOp::Wiggle(e, _, _) => self.resolve_type_expr(context, e)?,
                 TypeBinOp::Ref(from, inner, _) => {
-                    let from = self.resolve_type_expr(context, from)?;
-                    let inner = self.resolve_type_expr(context, inner)?;
-                    self.infctx.force_ref(from, inner)?;
-                    inner
+                    unimplemented!()
                 }
                 TypeBinOp::ParseArg(from_expr, inner, s) => {
                     let from = self.resolve_type_expr(context, from_expr)?;
                     let inner = self.resolve_type_expr(context, inner)?;
-                    self.infctx.force_ref(from, inner)?;
                     self.db.intern_inference_type(InferenceType::ParserArg {
                         result: inner,
                         arg: from,
@@ -168,7 +170,28 @@ impl<'a> TypingContext<'a> {
                 TypeAtom::Primitive(TypePrimitive::Int) => self.infctx.int(),
                 TypeAtom::Primitive(TypePrimitive::Bit) => self.infctx.bit(),
                 TypeAtom::Primitive(TypePrimitive::Char) => self.infctx.char(),
-                TypeAtom::Id(ident) => self.resolve_type_ref(context, FieldName::Ident(*ident))?,
+                TypeAtom::Primitive(TypePrimitive::Mem) => todo!(),
+                TypeAtom::ParserDef(pd) => {
+                    let parse_arg = pd
+                        .from
+                        .as_ref()
+                        .map(|x| self.resolve_type_expr(context, x))
+                        .transpose()?;
+                    let fun_args = Box::new(
+                        pd.args
+                            .iter()
+                            .map(|x| self.resolve_type_expr(context, x))
+                            .collect::<Result<Vec<_>, _>>()?,
+                    );
+                    let def = self.parserdef_ref(context, FieldName::Ident(pd.name.atom))?;
+                    self.db
+                        .intern_inference_type(InferenceType::Nominal(NominalInfHead {
+                            kind: NominalKind::Def,
+                            def,
+                            parse_arg,
+                            fun_args,
+                        }))
+                }
                 TypeAtom::Array(a) => {
                     let inner = self.resolve_type_expr(context, &a.expr)?;
                     self.db.intern_inference_type(InferenceType::Loop(
@@ -177,7 +200,6 @@ impl<'a> TypingContext<'a> {
                         self.infctx.var(),
                     ))
                 }
-                TypeAtom::Primitive(TypePrimitive::Mem) => todo!(),
             },
         };
         Ok(ret)
@@ -291,6 +313,10 @@ impl<'a> TypeResolver for PublicResolver<'a> {
     }
 
     fn deref(&self, ty: &crate::types::NominalInfHead) -> Option<InferenceType> {
+        todo!()
+    }
+
+    fn signature(&self, ty: &NominalInfHead) -> Option<crate::types::Signature> {
         todo!()
     }
 

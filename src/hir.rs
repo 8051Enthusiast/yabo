@@ -232,6 +232,16 @@ pub struct IndexSpanned<T> {
     pub span: SpanIndex,
 }
 
+impl<T: Clone + Eq + Hash + Debug> IndexSpanned<T> {
+    pub fn new(spanned: &Spanned<T>, add_span: &impl Fn(&Span) -> SpanIndex) -> Self {
+        let span = add_span(&spanned.span); // span
+        Self {
+            span,
+            atom: spanned.inner.clone(),
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Module {
     id: ModuleId,
@@ -346,13 +356,7 @@ fn constraint_expression_converter(
     let bin_fun =
         move |bop: &ast::AstConstraintBinOp, c: &Converter| bop.convert_same(c, &add_span);
     let un_fun = move |uop: &ast::AstConstraintUnOp, c: &Converter| uop.convert_same(c, &add_span);
-    let atom_fun = move |atom: &Spanned<Atom>, _: &Converter| {
-        let n = add_span(&atom.span);
-        IndexSpanned {
-            atom: atom.inner.clone(),
-            span: n,
-        }
-    };
+    let atom_fun = move |atom: &Spanned<Atom>, _: &Converter| IndexSpanned::new(atom, add_span);
     ExprConverter::new(bin_fun, un_fun, atom_fun)
 }
 
@@ -401,7 +405,12 @@ fn type_expression_converter(
     let atom_fun = move |atom: &Spanned<ast::TypeAtom>, c: &Converter| {
         let n = add_span(&atom.span);
         let new_atom = match &atom.inner {
-            ast::TypeAtom::Id(id) => TypeAtom::Id(*id),
+            ast::TypeAtom::ParserDef(pd) => {
+                let from = pd.from.as_ref().map(|x| c.convert(x));
+                let args = pd.args.iter().map(|x| c.convert(x)).collect();
+                let name = IndexSpanned::new(&pd.name, add_span);
+                TypeAtom::ParserDef(Box::new(ParserDefRef { from, name, args }))
+            }
             ast::TypeAtom::Array(arr) => {
                 let new_expr = c.convert(&arr.expr);
                 TypeAtom::Array(Box::new(TypeArray {
@@ -826,7 +835,7 @@ fn parse_statement(
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum TypeAtom {
     Primitive(TypePrimitive),
-    Id(Identifier),
+    ParserDef(Box<ParserDefRef>),
     Array(Box<TypeArray>),
 }
 
@@ -836,6 +845,12 @@ pub enum TypePrimitive {
     Int,
     Bit,
     Char,
+}
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct ParserDefRef {
+    pub from: Option<Expression<HirType>>,
+    pub name: IndexSpanned<Identifier>,
+    pub args: Vec<Expression<HirType>>,
 }
 
 impl From<ast::TypePrimitive> for TypePrimitive {
@@ -1026,7 +1041,7 @@ mod tests {
     fn eval_test() {
         let ctx = Context::mock(
             r#"
-def for [u8] *> expr1: {
+def for [u8] *> expr1 = {
     (
         a: u64,
         b: u32,
@@ -1042,11 +1057,11 @@ def for [u8] *> expr1: {
     fn recursion_ssc() {
         let ctx = Context::mock(
             r#"
-def for [u8] *> a: {x: c, y: {b, z: d,},}
-def for [u8] *> b: {x: a, y: c,}
-def for [u8] *> c: {x: c,}
-def for [u8] *> d: {let a: u64 = 1, let b: u64 = a + 1,}
-def for [u8] *> e: {}
+def for [u8] *> a = {x: c, y: {b, z: d,},}
+def for [u8] *> b = {x: a, y: c,}
+def for [u8] *> c = {x: c,}
+def for [u8] *> d = {let a: u64 = 1, let b: u64 = a + 1,}
+def for [u8] *> e = {}
             "#,
         );
         let fd = FileId::default();

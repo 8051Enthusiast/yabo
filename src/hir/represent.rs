@@ -1,4 +1,5 @@
 use super::*;
+use std::fmt::Write;
 pub trait HirToString {
     fn hir_to_string(&self, db: &dyn Hirs) -> String;
 }
@@ -180,17 +181,33 @@ impl HirToString for ParserAtom {
 impl HirToString for TypeAtom {
     fn hir_to_string(&self, db: &dyn Hirs) -> String {
         match self {
-            TypeAtom::Id(id) => id.hir_to_string(db),
+            TypeAtom::ParserDef(pd) => pd.hir_to_string(db),
             TypeAtom::Array(arr) => arr.hir_to_string(db),
             TypeAtom::Primitive(p) => p.hir_to_string(db),
         }
     }
 }
 
+impl HirToString for ParserDefRef {
+    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+        let from = self.from.as_ref().map(|x| x.hir_to_string(db));
+        let args = self.args.iter().map(|x| x.hir_to_string(db)).collect::<Vec<_>>();
+        let mut ret = String::new();
+        if let Some(f) = from {
+            write!(ret, "{f} &> ");
+        }
+        write!(ret, "{}", self.name.atom.hir_to_string(db));
+        if !args.is_empty() {
+            write!(ret, "[{}]", args.join(", "));
+        }
+        ret
+    }
+}
+
 impl HirToString for TypePrimitive {
     fn hir_to_string(&self, _db: &dyn Hirs) -> String {
         match self {
-            TypePrimitive::Mem => "<&mem>",
+            TypePrimitive::Mem => "<mem>",
             TypePrimitive::Int => "<int>",
             TypePrimitive::Bit => "<bit>",
             TypePrimitive::Char => "<char>",

@@ -2,7 +2,7 @@
 Simple Parser
 =============
 
-def for[u8] *> complex: {
+def for[u8] *> complex = {
   real: f32_el,
   imag: f32_el,
 }
@@ -11,8 +11,9 @@ def for[u8] *> complex: {
 
 (source_file
   (parser_definition
-    from: (parser_array
-      expr: (identifier))
+    from: (type_array
+      expr: (parserdef_type
+        name: (identifier)))
     name: (identifier)
     to: (parser_block
       content: (parser_sequence
@@ -27,7 +28,7 @@ def for[u8] *> complex: {
 Choice Parser
 =============
 
-def for[u8] *> choice: {
+def for[u8] *> choice = {
     if ascii,
     return: utf8char,
   |
@@ -38,8 +39,9 @@ def for[u8] *> choice: {
 
 (source_file
   (parser_definition
-    from: (parser_array
-      expr: (identifier))
+    from: (type_array
+      expr: (parserdef_type
+        name: (identifier)))
     name: (identifier)
     to: (parser_block 
       content: (parser_choice
@@ -59,7 +61,7 @@ def for[u8] *> choice: {
 Let Statement
 =============
 
-def for[u8] *> seven: {
+def for[u8] *> seven = {
   val: u8,
   let return: u8 = 7,
 }
@@ -68,8 +70,9 @@ def for[u8] *> seven: {
 
 (source_file
   (parser_definition
-    from: (parser_array
-      expr: (identifier))
+    from: (type_array
+      expr: (parserdef_type
+        name: (identifier)))
     name: (identifier)
     to: (parser_block
       content: (parser_sequence
@@ -78,6 +81,7 @@ def for[u8] *> seven: {
         	parser: (identifier))
         (let_statement
         	name: (identifier)
-        	ty: (identifier)
+        	ty: (parserdef_type
+            name: (identifier))
         	expr: (number_literal))))))
 

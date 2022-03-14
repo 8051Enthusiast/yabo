@@ -48,7 +48,7 @@ pub trait TypeInterner: crate::source::Files {
 pub struct NominalTypeHead {
     pub kind: NominalKind,
     pub def: HirId,
-    pub parse_arg: TypeId,
+    pub parse_arg: Option<TypeId>,
     pub fun_args: Arc<Vec<TypeId>>,
 }
 
@@ -78,7 +78,7 @@ impl VarId {
 pub struct NominalInfHead {
     pub kind: NominalKind,
     pub def: HirId,
-    pub parse_arg: InfTypeId,
+    pub parse_arg: Option<InfTypeId>,
     pub fun_args: Box<Vec<InfTypeId>>,
 }
 
@@ -87,6 +87,7 @@ pub enum InferenceType {
     Any,
     Bot,
     Primitive(PrimitiveType),
+    TypeVarRef(u32, u32),
     Var(VarId),
     Unknown(VarId),
     Nominal(NominalInfHead),
@@ -135,6 +136,7 @@ pub enum TypeHead {
     Any,
     Bot,
     Primitive(PrimitiveType),
+    TypeVarRef,
     Nominal(HirId),
     Loop(ArrayKind),
     ParserArg,
@@ -149,6 +151,7 @@ impl TryFrom<&InferenceType> for TypeHead {
             InferenceType::Any => TypeHead::Any,
             InferenceType::Bot => TypeHead::Bot,
             InferenceType::Primitive(p) => TypeHead::Primitive(*p),
+            InferenceType::TypeVarRef(..) => TypeHead::TypeVarRef,
             InferenceType::Nominal(NominalInfHead { def, .. }) => TypeHead::Nominal(*def),
             InferenceType::Loop(kind, _, _) => TypeHead::Loop(*kind),
             InferenceType::ParserArg { .. } => TypeHead::ParserArg,
@@ -190,17 +193,24 @@ pub enum NominalKind {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct Signature {
+    pub ty_args: Vec<VarDef>,
+    pub from: Option<TypeId>,
+    pub args: Vec<TypeId>,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct VarDef {
     name: Option<Identifier>,
 }
 
 #[derive(Clone, Default)]
-pub struct VarStore {
+struct VarStore {
     vars: Vec<InferenceVar>,
 }
 
 impl VarStore {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self::default()
     }
     fn add_var(&mut self) -> VarId {
@@ -226,6 +236,7 @@ pub struct InferenceContext<'a, DB: TypeInterner + ?Sized> {
 pub trait TypeResolver {
     fn field_type(&self, ty: &NominalInfHead, name: FieldName) -> Option<InfTypeId>;
     fn deref(&self, ty: &NominalInfHead) -> Option<InferenceType>;
+    fn signature(&self, ty: &NominalInfHead) -> Option<Signature>;
     fn lookup(&self, context: HirId, name: FieldName) -> Option<InfTypeId>;
 }
 
@@ -243,6 +254,9 @@ impl<'a, DB: TypeInterner + ?Sized> InferenceContext<'a, DB> {
     }
     pub fn deref(&self, ty: &NominalInfHead) -> Option<InferenceType> {
         self.tr.deref(ty)
+    }
+    pub fn signature(&self, ty: &NominalInfHead) -> Option<Signature> {
+        self.tr.signature(ty)
     }
     pub fn lookup(&self, context: HirId, name: FieldName) -> Option<InfTypeId> {
         self.tr.lookup(context, name)
@@ -393,9 +407,14 @@ impl<'a, DB: TypeInterner + ?Sized> InferenceContext<'a, DB> {
         self.db.intern_inference_type(bit)
     }
     pub fn parser(&self, result: InfTypeId, arg: InfTypeId) -> InfTypeId {
-        self.db.intern_inference_type(InferenceType::ParserArg{ result, arg })
+        self.db
+            .intern_inference_type(InferenceType::ParserArg { result, arg })
     }
-    pub fn array_call(&mut self, kind: ArrayKind, inner: InfTypeId) -> Result<InfTypeId, TypeError> {
+    pub fn array_call(
+        &mut self,
+        kind: ArrayKind,
+        inner: InfTypeId,
+    ) -> Result<InfTypeId, TypeError> {
         let arg = self.var();
         let result = self.parser_apply(inner, arg)?;
         let array = InferenceType::Loop(kind, arg, result);
@@ -407,12 +426,13 @@ impl<'a, DB: TypeInterner + ?Sized> InferenceContext<'a, DB> {
         let nominal = NominalInfHead {
             kind: NominalKind::Block,
             def: id,
-            parse_arg: arg,
+            parse_arg: Some(arg),
             fun_args: Box::new(vec![]),
         };
-        let result = self.db.intern_inference_type(InferenceType::Nominal(nominal));
+        let result = self
+            .db
+            .intern_inference_type(InferenceType::Nominal(nominal));
         Ok(self.parser(result, arg))
-
     }
     pub fn one_of(&mut self, those: &[InfTypeId]) -> Result<InfTypeId, TypeError> {
         let ret = self.var();
@@ -472,25 +492,6 @@ impl<'a, DB: TypeInterner + ?Sized> InferenceContext<'a, DB> {
         self.constrain(accessed, infer_access)?;
         Ok(var)
     }
-    pub fn force_ref(&mut self, ref_type: InfTypeId, inner: InfTypeId) -> Result<(), TypeError> {
-        match self.db.lookup_intern_inference_type(inner) {
-            InferenceType::Nominal(m) => {
-                self.equal(m.parse_arg, ref_type)?;
-            }
-            InferenceType::Loop(_, loop_from, _) => {
-                self.equal(loop_from, ref_type)?;
-            }
-            InferenceType::Primitive(_)
-            | InferenceType::Var(_)
-            | InferenceType::Unknown(_)
-            | InferenceType::ParserArg { .. }
-            | InferenceType::FunctionArgs { .. }
-            | InferenceType::InferField(_, _)
-            | InferenceType::Any
-            | InferenceType::Bot => return Err(TypeError),
-        };
-        Ok(())
-    }
     pub fn from_type(&mut self, ty: &Type) -> Result<InfTypeId, TypeError> {
         self.from_type_internal(ty, None)
     }
@@ -546,7 +547,7 @@ impl<'a, DB: TypeInterner + ?Sized> InferenceContext<'a, DB> {
                 parse_arg,
                 fun_args,
             }) => {
-                let parse_arg = recurse(*parse_arg)?;
+                let parse_arg = parse_arg.map(&mut recurse).transpose()?;
                 let fun_args = Box::new(
                     fun_args
                         .iter()
@@ -667,6 +668,7 @@ impl<'a, DB: TypeInterner + ?Sized> TypeConvertMemo<'a, DB> {
         match (lhs_ty, rhs_ty) {
             (Bot, _) | (_, Bot) => Bot,
             (InferField(..), InferField(..)) => Any,
+            (TypeVarRef(a1, a2), TypeVarRef(b1, b2)) if (a1, a2) == (b1, b2) => TypeVarRef(a1, a2),
             (Any | InferField(..), other) | (other, Any | InferField(..)) => other,
             (Primitive(p), Primitive(q)) if p == q => Primitive(p),
             (Loop(kind1, from1, inner1), Loop(kind2, from2, inner2)) => {
@@ -717,7 +719,11 @@ impl<'a, DB: TypeInterner + ?Sized> TypeConvertMemo<'a, DB> {
                     ..
                 }),
             ) if def1 == def2 => {
-                let parse_arg = self.meet_inftype(parse_arg1, parse_arg2)?;
+                let parse_arg = match (parse_arg1, parse_arg2) {
+                    (None, None) => None,
+                    (Some(arg1), Some(arg2)) => Some(self.meet_inftype(arg1, arg2)?),
+                    (None, Some(_)) | (Some(_), None) => return Err(TypeError),
+                };
                 let fun_args = Box::new(
                     fun_args1
                         .iter()
@@ -772,6 +778,7 @@ impl<'a, DB: TypeInterner + ?Sized> TypeConvertMemo<'a, DB> {
         let res = match (other, nom) {
             (Any, _) | (_, Any) => Any,
             (InferField(..), InferField(..)) => Bot,
+            (TypeVarRef(a1, a2), TypeVarRef(b1, b2)) if (a1, a2) == (b1, b2) => TypeVarRef(a1, a2),
             (Bot | InferField(..), other) | (other, Bot | InferField(..)) => other,
             (Primitive(p), Primitive(q)) if p == q => Primitive(p),
             (Loop(kind1, from1, inner1), Loop(kind2, from2, inner2)) => {
@@ -822,7 +829,11 @@ impl<'a, DB: TypeInterner + ?Sized> TypeConvertMemo<'a, DB> {
                     ..
                 }),
             ) if def1 == def2 => {
-                let parse_arg = self.join_inftype(parse_arg1, parse_arg2)?;
+                let parse_arg = match (parse_arg1, parse_arg2) {
+                    (None, None) => None,
+                    (Some(arg1), Some(arg2)) => Some(self.join_inftype(arg1, arg2)?),
+                    (None, Some(_)) | (Some(_), None) => return Err(TypeError),
+                };
                 let fun_args = Box::new(
                     fun_args1
                         .iter()
@@ -936,6 +947,7 @@ impl<'a, DB: TypeInterner + ?Sized> TypeConvertMemo<'a, DB> {
         let res = match inf {
             InferenceType::Any => Type::Any,
             InferenceType::Bot => Type::Bot,
+            InferenceType::TypeVarRef(depth, offset) => Type::TypeVarRef(depth, offset),
             InferenceType::Primitive(p) => Type::Primitive(p),
             InferenceType::Var(..) => {
                 panic!("Internal Compiler Error: normalized inference type contains variable");
@@ -947,7 +959,7 @@ impl<'a, DB: TypeInterner + ?Sized> TypeConvertMemo<'a, DB> {
                 parse_arg,
                 fun_args,
             }) => {
-                let parse_arg = self.to_type_internal(parse_arg, pol)?;
+                let parse_arg = parse_arg.map(|x| self.to_type_internal(x, pol)).transpose()?;
                 let type_args = fun_args
                     .iter()
                     .copied()
