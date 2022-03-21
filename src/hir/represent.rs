@@ -314,12 +314,13 @@ fn type_to_string(ty: TypeId, db: &dyn Hirs) -> String {
         }
         Type::Nominal(n) => {
             let path = db.lookup_intern_hir_path(n.def).to_name(db);
+            let from = n.parse_arg.map(|x| format!("{} &> ", type_to_string(x, db))).unwrap_or_else(String::new);
             match n.kind {
                 NominalKind::Def => {
-                    path
+                    format!("{from}{path}")
                 }
                 NominalKind::Block => {
-                    format!("<anonymous block {}>", path)
+                    format!("<anonymous block {from}{path}>")
                 }
             }
         }
