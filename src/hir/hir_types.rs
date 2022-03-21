@@ -460,7 +460,7 @@ mod tests {
         let ctx = Context::mock(
             r#"
 def for[int] *> expr1 = {}
-def for[expr1] *> expr2 = {}
+def for[for[int] &> expr1] *> expr2 = {}
 def for['x] *> expr3 = {}
         "#,
         );
@@ -474,7 +474,7 @@ def for['x] *> expr3 = {}
                 .hir_to_string(&ctx.db)
         };
         assert_eq!("for[int]", arg_type("expr1"));
-        assert_eq!("for[file[anonymous].expr1]", arg_type("expr2"));
+        assert_eq!("for[for[int] &> file[anonymous].expr1]", arg_type("expr2"));
         assert_eq!("for[<Var Ref (0, 0)>]", arg_type("expr3"));
     }
 }
