@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::{
     expr::*,
-    interner::{FieldName, Identifier, Interner},
+    interner::{FieldName, Identifier, Interner, TypeVar},
     parse::ParseResult,
     source::{FieldSpan, FileId, Files, IdSpan, Span, Spanned},
 };
@@ -120,6 +120,7 @@ pub enum TypeAtom {
     ParserDef(Box<ParserDefRef>),
     Primitive(TypePrimitive),
     Array(Box<TypeArray>),
+    TypeVar(TypeVar),
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
@@ -145,6 +146,12 @@ impl From<TypeArray> for TypeAtom {
 impl From<TypePrimitive> for TypeAtom {
     fn from(p: TypePrimitive) -> Self {
         TypeAtom::Primitive(p)
+    }
+}
+
+impl From<TypeVar> for TypeAtom {
+    fn from(v: TypeVar) -> Self {
+        TypeAtom::TypeVar(v)
     }
 }
 

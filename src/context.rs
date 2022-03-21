@@ -4,7 +4,13 @@ use crate::interner::{Identifier, IdentifierName, Interner, InternerDatabase};
 use crate::source::{FileCollection, FileDatabase};
 use crate::types::TypeInternerDatabase;
 
-#[salsa::database(InternerDatabase, AstDatabase, FileDatabase, HirDatabase, TypeInternerDatabase)]
+#[salsa::database(
+    InternerDatabase,
+    AstDatabase,
+    FileDatabase,
+    HirDatabase,
+    TypeInternerDatabase
+)]
 #[derive(Default)]
 pub struct LivingInTheDatabase {
     storage: salsa::Storage<LivingInTheDatabase>,
@@ -32,5 +38,19 @@ impl Context {
         ctx.fc.add_anon(s);
         ctx.update_db();
         ctx
+    }
+    #[cfg(test)]
+    pub fn parser(&self, s: &str) -> crate::hir::ParserDefId {
+        use crate::{
+            hir::ParserDefId,
+            interner::{FieldName, HirPath},
+            source::FileId,
+        };
+
+        let fd = FileId::default();
+        ParserDefId(
+            self.db
+                .intern_hir_path(HirPath::new_fid(fd, FieldName::Ident(self.id(s)))),
+        )
     }
 }

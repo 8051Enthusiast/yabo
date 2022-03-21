@@ -9,12 +9,31 @@ pub enum VarType {
     Value,
 }
 
+pub fn parserdef_ref(db: &dyn Hirs, loc: HirId, name: FieldName) -> Result<ParserDefId, ()> {
+    let (id, kind) = resolve_var_ref(db, loc, name)?.ok_or(())?;
+    if let VarType::Value = kind {
+        return Err(());
+    }
+    if !is_const_ref(db, id) {
+        return Err(());
+    }
+    // TODO(8051): change this when adding other types of toplevel items
+    Ok(ParserDefId(id))
+}
+
+pub fn is_const_ref(db: &dyn Hirs, id: HirId) -> bool {
+    match db.lookup_intern_hir_path(id).path() {
+        [PathComponent::File(_), PathComponent::Named(_)] => true,
+        _ => false,
+    }
+}
+
 pub fn resolve_var_ref(
     db: &dyn Hirs,
-    context: HirId,
+    loc: HirId,
     ident: FieldName,
 ) -> Result<Option<(HirId, VarType)>, ()> {
-    let mut current_id = context;
+    let mut current_id = loc;
     loop {
         current_id = match &db.hir_node(current_id)? {
             HirNode::Block(b) => match b.super_context {
