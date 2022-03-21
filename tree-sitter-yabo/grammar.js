@@ -76,7 +76,7 @@ module.exports = grammar({
     )),
     parser_choice: $ => prec.left(1, seq(
       field('left', $._parser_block_content),
-      '|',
+      ';',
       field('right', $._parser_block_content),
     )),
     type_array: $ => seq(
@@ -190,7 +190,10 @@ module.exports = grammar({
     ),
     parserdef_ref: $ => seq(
       optional(
-        field('from', $._type_expression),
+        seq(
+          field('from', $._type_expression),
+          '&>'
+        )
       ),
       field('name', $.identifier),
       optional(

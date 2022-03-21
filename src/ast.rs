@@ -322,7 +322,7 @@ mod tests {
 def for[u8] *> expr1 = {
     (
         let b: u64 = 3,
-    |
+    ;
 	    let _: u64 = 0,
     )
 }

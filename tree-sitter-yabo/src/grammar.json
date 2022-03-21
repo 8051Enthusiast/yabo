@@ -326,7 +326,7 @@
           },
           {
             "type": "STRING",
-            "value": "|"
+            "value": ";"
           },
           {
             "type": "FIELD",
@@ -1401,12 +1401,21 @@
           "type": "CHOICE",
           "members": [
             {
-              "type": "FIELD",
-              "name": "from",
-              "content": {
-                "type": "SYMBOL",
-                "name": "_type_expression"
-              }
+              "type": "SEQ",
+              "members": [
+                {
+                  "type": "FIELD",
+                  "name": "from",
+                  "content": {
+                    "type": "SYMBOL",
+                    "name": "_type_expression"
+                  }
+                },
+                {
+                  "type": "STRING",
+                  "value": "&>"
+                }
+              ]
             },
             {
               "type": "BLANK"

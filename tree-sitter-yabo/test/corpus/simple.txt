@@ -12,7 +12,7 @@ def for[u8] *> complex = {
 (source_file
   (parser_definition
     from: (type_array
-      expr: (parserdef_type
+      expr: (parserdef_ref
         name: (identifier)))
     name: (identifier)
     to: (parser_block
@@ -31,7 +31,7 @@ Choice Parser
 def for[u8] *> choice = {
     if ascii,
     return: utf8char,
-  |
+  ;
     return: utf8char,
 }
 
@@ -40,7 +40,7 @@ def for[u8] *> choice = {
 (source_file
   (parser_definition
     from: (type_array
-      expr: (parserdef_type
+      expr: (parserdef_ref
         name: (identifier)))
     name: (identifier)
     to: (parser_block 
@@ -71,7 +71,7 @@ def for[u8] *> seven = {
 (source_file
   (parser_definition
     from: (type_array
-      expr: (parserdef_type
+      expr: (parserdef_ref
         name: (identifier)))
     name: (identifier)
     to: (parser_block
@@ -81,7 +81,7 @@ def for[u8] *> seven = {
         	parser: (identifier))
         (let_statement
         	name: (identifier)
-        	ty: (parserdef_type
+        	ty: (parserdef_ref
             name: (identifier))
         	expr: (number_literal))))))
 
