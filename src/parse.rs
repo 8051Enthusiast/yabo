@@ -9,6 +9,8 @@ use crate::expr::*;
 use crate::interner::FieldName;
 use crate::interner::Identifier;
 use crate::interner::IdentifierName;
+use crate::interner::TypeVar;
+use crate::interner::TypeVarName;
 use crate::source::FieldSpan;
 use crate::source::{FileData, FileId, IdSpan, Span, Spanned};
 use thiserror::Error;
@@ -425,6 +427,7 @@ astify! {
         Atom(spanned(primitive_type)),
         Atom(spanned(parserdef_ref)),
         Atom(spanned(type_array)),
+        Atom(spanned(type_var)),
     };
 }
 
@@ -434,8 +437,14 @@ fn identifier(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Identifie
     Ok(db.intern_identifier(id))
 }
 
+fn type_var(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<TypeVar> {
+    let str = spanned(node_to_string)(db, fd, c)?;
+    let id = TypeVarName::new(str.inner);
+    Ok(db.intern_type_var(id))
+}
+
 fn fieldspan(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<FieldSpan> {
-    idspan(db, fd, c).map(|x| FieldSpan{
+    idspan(db, fd, c).map(|x| FieldSpan {
         id: FieldName::Ident(x.inner),
         span: x.span,
     })
@@ -486,7 +495,7 @@ fn array_direction(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Span
 fn primitive_type(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<TypePrimitive> {
     let str = node_to_string(db, fd, c)?;
     Ok(match str.as_ref() {
-        "&mem" => TypePrimitive::Mem,
+        "mem" => TypePrimitive::Mem,
         "int" => TypePrimitive::Int,
         "bit" => TypePrimitive::Bit,
         "char" => TypePrimitive::Char,

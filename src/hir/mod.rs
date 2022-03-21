@@ -1,7 +1,7 @@
+pub mod hir_types;
 mod recursion;
 pub mod refs;
 pub mod represent;
-pub mod types;
 pub mod walk;
 
 use std::{
@@ -16,11 +16,15 @@ use std::{
 use crate::{
     ast::{self, ArrayKind, AstConstraint, AstType, AstVal},
     expr::{self, Atom, ExprConverter, Expression, ExpressionComponent, ExpressionKind},
-    interner::{FieldName, HirId, HirPath, Identifier, PathComponent},
+    interner::{FieldName, HirId, HirPath, Identifier, PathComponent, TypeVar},
     source::{FileId, Span, Spanned},
+    types::{Signature, TypeError, TypeId},
 };
 
+use hir_types::{parser_args, parser_returns, parser_returns_ssc, public_type};
 use recursion::{mod_parser_ssc, parser_ssc, FunctionSscId};
+
+use self::hir_types::ParserDefType;
 
 #[salsa::query_group(HirDatabase)]
 pub trait Hirs: ast::Asts + crate::types::TypeInterner {
@@ -36,6 +40,12 @@ pub trait Hirs: ast::Asts + crate::types::TypeInterner {
     fn root_id(&self) -> ModuleId;
     fn all_hir_ids(&self) -> Vec<HirId>;
     fn hir_parent_module(&self, id: HirId) -> Result<ModuleId, ()>;
+
+    // types
+    fn parser_args(&self, id: ParserDefId) -> Result<Signature, TypeError>;
+    fn parser_returns(&self, id: ParserDefId) -> Result<ParserDefType, TypeError>;
+    fn parser_returns_ssc(&self, id: FunctionSscId) -> Result<Vec<ParserDefType>, TypeError>;
+    fn public_type(&self, id: HirId) -> Option<TypeId>;
 }
 
 fn hir_parser_collection(db: &dyn Hirs, hid: HirId) -> Result<Option<HirParserCollection>, ()> {
@@ -419,6 +429,7 @@ fn type_expression_converter(
                 }))
             }
             ast::TypeAtom::Primitive(a) => TypeAtom::Primitive((*a).into()),
+            ast::TypeAtom::TypeVar(v) => TypeAtom::TypeVar(*v),
         };
         IndexSpanned {
             atom: new_atom,
@@ -837,6 +848,7 @@ pub enum TypeAtom {
     Primitive(TypePrimitive),
     ParserDef(Box<ParserDefRef>),
     Array(Box<TypeArray>),
+    TypeVar(TypeVar),
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
@@ -1036,7 +1048,6 @@ fn extend_hir_id<DB: Hirs + ?Sized>(db: &DB, id: HirId, add: PathComponent) -> H
 mod tests {
     use super::*;
     use crate::context::Context;
-    use crate::interner::Interner;
     #[test]
     fn eval_test() {
         let ctx = Context::mock(
@@ -1064,18 +1075,11 @@ def for [u8] *> d = {let a: u64 = 1, let b: u64 = a + 1,}
 def for [u8] *> e = {}
             "#,
         );
-        let fd = FileId::default();
-        let var = |s| {
-            ParserDefId(
-                ctx.db
-                    .intern_hir_path(HirPath::new_fid(fd, FieldName::Ident(ctx.id(s)))),
-            )
-        };
-        let a = var("a");
-        let b = var("b");
-        let c = var("c");
-        let d = var("d");
-        let e = var("d");
+        let a = ctx.parser("a");
+        let b = ctx.parser("b");
+        let c = ctx.parser("c");
+        let d = ctx.parser("d");
+        let e = ctx.parser("d");
         let get_ssc = |x| ctx.db.parser_ssc(x).unwrap();
         let ssc_a = get_ssc(a);
         let ssc_b = get_ssc(b);

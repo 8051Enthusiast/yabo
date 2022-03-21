@@ -33,3 +33,7 @@ def mem *> u64ul = {
 	hi: u32ul,
 	let return: int ~ 0 or 0xffffffffffffffff = low + hi << 32,
 }
+
+def for['t] *> ttt = {
+    let x: 't = 4,
+}

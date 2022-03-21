@@ -8,7 +8,7 @@ use salsa::InternId;
 
 use crate::{
     ast::ArrayKind,
-    interner::{FieldName, HirId, Identifier},
+    interner::{FieldName, HirId, TypeVar},
 };
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -44,6 +44,13 @@ pub trait TypeInterner: crate::source::Files {
     fn intern_inference_type(&self, ty: InferenceType) -> InfTypeId;
 }
 
+/// In some contexts, we can not create inference variables to convert
+/// a type to an inftype, but we still want to be able to return either
+pub enum LazyInfType {
+    InfType(InfTypeId),
+    Type(TypeId),
+}
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct NominalTypeHead {
     pub kind: NominalKind,
@@ -61,7 +68,7 @@ pub enum Type {
     TypeVarRef(u32, u32),
     ForAll(TypeId, Arc<Vec<VarDef>>),
     Nominal(NominalTypeHead),
-    Loop(ArrayKind, TypeId, TypeId),
+    Loop(ArrayKind, TypeId),
     ParserArg(TypeId, TypeId),
     FunctionArg(TypeId, Arc<Vec<TypeId>>),
 }
@@ -91,7 +98,7 @@ pub enum InferenceType {
     Var(VarId),
     Unknown(VarId),
     Nominal(NominalInfHead),
-    Loop(ArrayKind, InfTypeId, InfTypeId),
+    Loop(ArrayKind, InfTypeId),
     ParserArg {
         result: InfTypeId,
         arg: InfTypeId,
@@ -106,8 +113,8 @@ pub enum InferenceType {
 impl InferenceType {
     fn children(&mut self, pol: Polarity) -> Vec<(&mut InfTypeId, Polarity)> {
         match self {
-            InferenceType::Loop(_, from, inner) => {
-                vec![(from, pol), (inner, pol)]
+            InferenceType::Loop(_, inner) => {
+                vec![(inner, pol)]
             }
             InferenceType::ParserArg { result, arg } => {
                 vec![(result, pol), (arg, pol.reverse())]
@@ -153,7 +160,7 @@ impl TryFrom<&InferenceType> for TypeHead {
             InferenceType::Primitive(p) => TypeHead::Primitive(*p),
             InferenceType::TypeVarRef(..) => TypeHead::TypeVarRef,
             InferenceType::Nominal(NominalInfHead { def, .. }) => TypeHead::Nominal(*def),
-            InferenceType::Loop(kind, _, _) => TypeHead::Loop(*kind),
+            InferenceType::Loop(kind, _) => TypeHead::Loop(*kind),
             InferenceType::ParserArg { .. } => TypeHead::ParserArg,
             InferenceType::FunctionArgs { .. } => TypeHead::FunctionArgs,
             InferenceType::Var(_) | InferenceType::Unknown(_) | InferenceType::InferField(..) => {
@@ -199,9 +206,15 @@ pub struct Signature {
     pub args: Vec<TypeId>,
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct VarDef {
-    name: Option<Identifier>,
+    pub name: Option<TypeVar>,
+}
+
+impl VarDef {
+    pub fn new(name: Option<TypeVar>) -> Self {
+        Self { name }
+    }
 }
 
 #[derive(Clone, Default)]
@@ -226,47 +239,53 @@ impl VarStore {
     }
 }
 
-pub struct InferenceContext<'a, DB: TypeInterner + ?Sized> {
+pub struct InferenceContext<TR: TypeResolver> {
     var_store: VarStore,
-    db: &'a DB,
-    tr: &'a dyn TypeResolver,
+    tr: TR,
     cache: HashSet<(InfTypeId, InfTypeId)>,
 }
 
 pub trait TypeResolver {
-    fn field_type(&self, ty: &NominalInfHead, name: FieldName) -> Option<InfTypeId>;
-    fn deref(&self, ty: &NominalInfHead) -> Option<InferenceType>;
+    type DB: TypeInterner + ?Sized;
+    fn db(&self) -> &Self::DB;
+    fn field_type(&self, ty: &NominalInfHead, name: FieldName) -> Option<LazyInfType>;
+    fn deref(&self, ty: &NominalInfHead) -> Option<LazyInfType>;
     fn signature(&self, ty: &NominalInfHead) -> Option<Signature>;
-    fn lookup(&self, context: HirId, name: FieldName) -> Option<InfTypeId>;
+    fn lookup(&self, context: HirId, name: FieldName) -> Option<LazyInfType>;
 }
 
-impl<'a, DB: TypeInterner + ?Sized> InferenceContext<'a, DB> {
-    pub fn new(db: &'a DB, tr: &'a dyn TypeResolver) -> Self {
+impl<TR: TypeResolver> InferenceContext<TR> {
+    pub fn new(tr: TR) -> Self {
         Self {
             var_store: VarStore::new(),
-            db,
             tr,
             cache: HashSet::new(),
         }
     }
-    pub fn field_type(&self, ty: &NominalInfHead, name: FieldName) -> Option<InfTypeId> {
-        self.tr.field_type(ty, name)
+    fn lookup_infty(&self, id: InfTypeId) -> InferenceType {
+        self.tr.db().lookup_intern_inference_type(id)
     }
-    pub fn deref(&self, ty: &NominalInfHead) -> Option<InferenceType> {
-        self.tr.deref(ty)
+    fn intern_infty(&self, infty: InferenceType) -> InfTypeId {
+        self.tr.db().intern_inference_type(infty)
+    }
+    pub fn field_type(&mut self, ty: &NominalInfHead, name: FieldName) -> Option<InfTypeId> {
+        Some(self.from_lazy_inftype(self.tr.field_type(ty, name)?))
+    }
+    pub fn deref(&mut self, ty: &NominalInfHead) -> Option<InfTypeId> {
+        Some(self.from_lazy_inftype(self.tr.deref(ty)?))
     }
     pub fn signature(&self, ty: &NominalInfHead) -> Option<Signature> {
         self.tr.signature(ty)
     }
-    pub fn lookup(&self, context: HirId, name: FieldName) -> Option<InfTypeId> {
-        self.tr.lookup(context, name)
+    pub fn lookup(&mut self, context: HirId, name: FieldName) -> Option<InfTypeId> {
+        Some(self.from_lazy_inftype(self.tr.lookup(context, name)?))
     }
     pub fn constrain(&mut self, lower: InfTypeId, upper: InfTypeId) -> Result<(), TypeError> {
         use InferenceType::*;
         if !self.cache.insert((lower, upper)) {
             return Ok(());
         }
-        let [lower_ty, upper_ty] = [lower, upper].map(|x| self.db.lookup_intern_inference_type(x));
+        let [lower_ty, upper_ty] = [lower, upper].map(|x| self.lookup_infty(x));
         match (lower_ty, upper_ty) {
             (_, Any) => Ok(()),
 
@@ -329,11 +348,10 @@ impl<'a, DB: TypeInterner + ?Sized> InferenceContext<'a, DB> {
                 Ok(())
             }
 
-            (Loop(kind1, from1, inner1), Loop(kind2, from2, inner2)) => {
+            (Loop(kind1, inner1), Loop(kind2, inner2)) => {
                 if matches!((kind1, kind2), (ArrayKind::For, ArrayKind::Each)) {
                     return Err(TypeError);
                 }
-                self.constrain(from1, from2)?;
                 self.constrain(inner1, inner2)
             }
 
@@ -372,7 +390,7 @@ impl<'a, DB: TypeInterner + ?Sized> InferenceContext<'a, DB> {
 
             (Nominal(l), _) => {
                 // if they are not the same head, try upcasting/dereferencing/evaluating
-                if let Some(deref) = self.deref(&l).map(|x| self.db.intern_inference_type(x)) {
+                if let Some(deref) = self.deref(&l) {
                     self.constrain(deref, upper)
                 } else {
                     Err(TypeError)
@@ -388,27 +406,26 @@ impl<'a, DB: TypeInterner + ?Sized> InferenceContext<'a, DB> {
     }
     pub fn var(&mut self) -> InfTypeId {
         let inftype = InferenceType::Var(self.var_store.add_var());
-        self.db.intern_inference_type(inftype)
+        self.intern_infty(inftype)
     }
     pub fn unknown(&mut self) -> InfTypeId {
         let inftype = InferenceType::Unknown(self.var_store.add_var());
-        self.db.intern_inference_type(inftype)
+        self.intern_infty(inftype)
     }
     pub fn int(&self) -> InfTypeId {
         let int = InferenceType::Primitive(PrimitiveType::Int);
-        self.db.intern_inference_type(int)
+        self.intern_infty(int)
     }
     pub fn char(&self) -> InfTypeId {
         let char = InferenceType::Primitive(PrimitiveType::Char);
-        self.db.intern_inference_type(char)
+        self.intern_infty(char)
     }
     pub fn bit(&self) -> InfTypeId {
         let bit = InferenceType::Primitive(PrimitiveType::Bit);
-        self.db.intern_inference_type(bit)
+        self.intern_infty(bit)
     }
     pub fn parser(&self, result: InfTypeId, arg: InfTypeId) -> InfTypeId {
-        self.db
-            .intern_inference_type(InferenceType::ParserArg { result, arg })
+        self.intern_infty(InferenceType::ParserArg { result, arg })
     }
     pub fn array_call(
         &mut self,
@@ -417,8 +434,8 @@ impl<'a, DB: TypeInterner + ?Sized> InferenceContext<'a, DB> {
     ) -> Result<InfTypeId, TypeError> {
         let arg = self.var();
         let result = self.parser_apply(inner, arg)?;
-        let array = InferenceType::Loop(kind, arg, result);
-        let array = self.db.intern_inference_type(array);
+        let array = InferenceType::Loop(kind, result);
+        let array = self.intern_infty(array);
         Ok(self.parser(array, arg))
     }
     pub fn block_call(&mut self, id: HirId) -> Result<InfTypeId, TypeError> {
@@ -429,9 +446,7 @@ impl<'a, DB: TypeInterner + ?Sized> InferenceContext<'a, DB> {
             parse_arg: Some(arg),
             fun_args: Box::new(vec![]),
         };
-        let result = self
-            .db
-            .intern_inference_type(InferenceType::Nominal(nominal));
+        let result = self.intern_infty(InferenceType::Nominal(nominal));
         Ok(self.parser(result, arg))
     }
     pub fn one_of(&mut self, those: &[InfTypeId]) -> Result<InfTypeId, TypeError> {
@@ -449,9 +464,7 @@ impl<'a, DB: TypeInterner + ?Sized> InferenceContext<'a, DB> {
         let arg = self.var();
         let between = self.parser_apply(first, arg)?;
         let result = self.parser_apply(second, between)?;
-        let new_parser = self
-            .db
-            .intern_inference_type(InferenceType::ParserArg { arg, result });
+        let new_parser = self.intern_infty(InferenceType::ParserArg { arg, result });
         Ok(new_parser)
     }
     pub fn parser_apply(
@@ -460,9 +473,7 @@ impl<'a, DB: TypeInterner + ?Sized> InferenceContext<'a, DB> {
         arg: InfTypeId,
     ) -> Result<InfTypeId, TypeError> {
         let var = self.var();
-        let new_parser = self
-            .db
-            .intern_inference_type(InferenceType::ParserArg { arg, result: var });
+        let new_parser = self.intern_infty(InferenceType::ParserArg { arg, result: var });
         self.constrain(parser, new_parser)?;
         Ok(var)
     }
@@ -476,7 +487,7 @@ impl<'a, DB: TypeInterner + ?Sized> InferenceContext<'a, DB> {
             args: Box::new(Vec::from(args)),
             result: var,
         };
-        let new_function = self.db.intern_inference_type(new_function);
+        let new_function = self.intern_infty(new_function);
         self.constrain(function, new_function)?;
         Ok(var)
     }
@@ -486,21 +497,17 @@ impl<'a, DB: TypeInterner + ?Sized> InferenceContext<'a, DB> {
         name: FieldName,
     ) -> Result<InfTypeId, TypeError> {
         let var = self.var();
-        let infer_access = self
-            .db
-            .intern_inference_type(InferenceType::InferField(name, var));
+        let infer_access = self.intern_infty(InferenceType::InferField(name, var));
         self.constrain(accessed, infer_access)?;
         Ok(var)
     }
-    pub fn from_type(&mut self, ty: &Type) -> Result<InfTypeId, TypeError> {
-        self.from_type_internal(ty, None)
+    pub fn from_type(&mut self, ty: TypeId) -> InfTypeId {
+        let ty = self.tr.db().lookup_intern_type(ty);
+        self.from_type_internal(&ty, None)
     }
-    pub fn from_type_with_args(
-        &mut self,
-        ty: &Type,
-        args: &[InfTypeId],
-    ) -> Result<InfTypeId, TypeError> {
-        match ty {
+    pub fn from_type_with_args(&mut self, ty: TypeId, args: &[InfTypeId]) -> InfTypeId {
+        let ty = self.tr.db().lookup_intern_type(ty);
+        match &ty {
             // we ignore the args here and replace with our own args
             Type::ForAll(inner, _args) => {
                 if args.len() != _args.len() {
@@ -510,27 +517,24 @@ impl<'a, DB: TypeInterner + ?Sized> InferenceContext<'a, DB> {
                     cur: args,
                     next: None,
                 };
-                let inner = self.db.lookup_intern_type(*inner);
+                let inner = self.tr.db().lookup_intern_type(*inner);
                 self.from_type_internal(&inner, Some(&vars))
             }
-            _ => self.from_type_internal(ty, None),
+            _ => self.from_type_internal(&ty, None),
         }
     }
-    fn from_type_internal(
-        &mut self,
-        ty: &Type,
-        var_stack: Option<&VarStack>,
-    ) -> Result<InfTypeId, TypeError> {
-        let mut recurse = |x| self.from_type_internal(&self.db.lookup_intern_type(x), var_stack);
+    fn from_type_internal(&mut self, ty: &Type, var_stack: Option<&VarStack>) -> InfTypeId {
+        let mut recurse =
+            |x| self.from_type_internal(&self.tr.db().lookup_intern_type(x), var_stack);
         let ret = match ty {
             Type::Any => InferenceType::Any,
             Type::Bot => InferenceType::Bot,
-            Type::Error => return Ok(self.unknown()),
+            Type::Error => return self.unknown(),
             Type::Primitive(p) => InferenceType::Primitive(*p),
             Type::TypeVarRef(level, index) => {
                 return var_stack
                     .and_then(|x| x.resolve(*level, *index))
-                    .ok_or(TypeError)
+                    .expect("Internal Compiler Error: Invalid reference to type variable in type")
             }
             Type::ForAll(inner, defvars) => {
                 let current = defvars.iter().map(|_| self.var()).collect::<Vec<_>>();
@@ -538,7 +542,7 @@ impl<'a, DB: TypeInterner + ?Sized> InferenceContext<'a, DB> {
                     cur: &current,
                     next: var_stack,
                 };
-                let inner = self.db.lookup_intern_type(*inner);
+                let inner = self.tr.db().lookup_intern_type(*inner);
                 return self.from_type_internal(&inner, Some(&new_stack));
             }
             Type::Nominal(NominalTypeHead {
@@ -547,14 +551,8 @@ impl<'a, DB: TypeInterner + ?Sized> InferenceContext<'a, DB> {
                 parse_arg,
                 fun_args,
             }) => {
-                let parse_arg = parse_arg.map(&mut recurse).transpose()?;
-                let fun_args = Box::new(
-                    fun_args
-                        .iter()
-                        .copied()
-                        .map(recurse)
-                        .collect::<Result<Vec<_>, _>>()?,
-                );
+                let parse_arg = parse_arg.map(&mut recurse);
+                let fun_args = Box::new(fun_args.iter().copied().map(recurse).collect::<Vec<_>>());
                 InferenceType::Nominal(NominalInfHead {
                     kind: *kind,
                     def: *def,
@@ -562,42 +560,42 @@ impl<'a, DB: TypeInterner + ?Sized> InferenceContext<'a, DB> {
                     fun_args,
                 })
             }
-            Type::Loop(kind, from, inner) => {
-                InferenceType::Loop(*kind, recurse(*from)?, recurse(*inner)?)
-            }
+            Type::Loop(kind, inner) => InferenceType::Loop(*kind, recurse(*inner)),
             Type::ParserArg(parser, arg) => {
-                let result = recurse(*parser)?;
-                let arg = recurse(*arg)?;
+                let result = recurse(*parser);
+                let arg = recurse(*arg);
                 InferenceType::ParserArg { result, arg }
             }
             Type::FunctionArg(function, args) => {
-                let result = recurse(*function)?;
-                let args = Box::new(
-                    args.iter()
-                        .copied()
-                        .map(recurse)
-                        .collect::<Result<Vec<_>, _>>()?,
-                );
+                let result = recurse(*function);
+                let args = Box::new(args.iter().copied().map(recurse).collect::<Vec<_>>());
                 InferenceType::FunctionArgs { result, args }
             }
         };
-        Ok(self.db.intern_inference_type(ret))
+        self.intern_infty(ret)
     }
-    pub fn to_type(&self, infty: InfTypeId, pol: Polarity) -> Result<TypeId, TypeError> {
+    pub fn from_lazy_inftype(&mut self, infty: LazyInfType) -> InfTypeId {
+        match infty {
+            LazyInfType::InfType(i) => i,
+            LazyInfType::Type(t) => self.from_type(t),
+        }
+    }
+    pub fn to_type(&mut self, infty: InfTypeId, pol: Polarity) -> Result<TypeId, TypeError> {
         let mut converter = TypeConvertMemo::new(self);
         converter.to_type_internal(infty, pol)
     }
 }
 
+#[derive(Clone, Hash, Debug, PartialEq, Eq)]
 pub struct TypeError;
 
-struct VarStack<'a> {
+pub struct VarStack<'a> {
     cur: &'a [InfTypeId],
     next: Option<&'a VarStack<'a>>,
 }
 
 impl<'a> VarStack<'a> {
-    fn resolve(&'a self, level: u32, index: u32) -> Option<InfTypeId> {
+    pub fn resolve(&'a self, level: u32, index: u32) -> Option<InfTypeId> {
         match level {
             0 => self.cur.get(index as usize).copied(),
             1.. => self.next?.resolve(level - 1, index),
@@ -638,16 +636,16 @@ impl<From: Copy + Eq + Hash, To: Copy> MemoRecursor<From, To> {
     }
 }
 
-pub struct TypeConvertMemo<'a, DB: TypeInterner + ?Sized> {
+pub struct TypeConvertMemo<'a, TR: TypeResolver> {
     convert: MemoRecursor<(InfTypeId, Polarity), TypeId>,
     normalize: MemoRecursor<(InfTypeId, Polarity), InfTypeId>,
     meet: MemoRecursor<(InfTypeId, InfTypeId), InfTypeId>,
     join: MemoRecursor<(InfTypeId, InfTypeId), InfTypeId>,
-    ctx: &'a InferenceContext<'a, DB>,
+    ctx: &'a mut InferenceContext<TR>,
 }
 
-impl<'a, DB: TypeInterner + ?Sized> TypeConvertMemo<'a, DB> {
-    pub fn new(ctx: &'a InferenceContext<'a, DB>) -> Self {
+impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
+    pub fn new(ctx: &'a mut InferenceContext<TR>) -> Self {
         fn default<T: Default>() -> T {
             T::default()
         }
@@ -664,18 +662,17 @@ impl<'a, DB: TypeInterner + ?Sized> TypeConvertMemo<'a, DB> {
         if let Some(x) = self.join.enter_fun((lhs, rhs)) {
             return x;
         }
-        let [lhs_ty, rhs_ty] = [lhs, rhs].map(|x| self.ctx.db.lookup_intern_inference_type(x));
+        let [lhs_ty, rhs_ty] = [lhs, rhs].map(|x| self.ctx.lookup_infty(x));
         match (lhs_ty, rhs_ty) {
             (Bot, _) | (_, Bot) => Bot,
             (InferField(..), InferField(..)) => Any,
             (TypeVarRef(a1, a2), TypeVarRef(b1, b2)) if (a1, a2) == (b1, b2) => TypeVarRef(a1, a2),
             (Any | InferField(..), other) | (other, Any | InferField(..)) => other,
             (Primitive(p), Primitive(q)) if p == q => Primitive(p),
-            (Loop(kind1, from1, inner1), Loop(kind2, from2, inner2)) => {
+            (Loop(kind1, inner1), Loop(kind2, inner2)) => {
                 let kind = kind1.min(kind2);
-                let from = self.meet_inftype(from1, from2)?;
                 let inner = self.meet_inftype(inner1, inner2)?;
-                Loop(kind, from, inner)
+                Loop(kind, inner)
             }
             (ParserArg { result: r1, arg: a }, ParserArg { result: r2, arg: b }) => {
                 let result = self.meet_inftype(r1, r2)?;
@@ -741,26 +738,35 @@ impl<'a, DB: TypeInterner + ?Sized> TypeConvertMemo<'a, DB> {
             (nom @ Nominal(_), other) | (other, nom @ Nominal(_)) => {
                 let nomhead = TypeHead::try_from(&nom)?;
                 let otherhead = TypeHead::try_from(&other)?;
-                let next = |ty: &_| {
+                let mut next = |ty: &_| {
                     if let InferenceType::Nominal(nom) = ty {
-                        self.ctx.deref(nom)
+                        self.ctx.deref(nom).map(|x| self.ctx.lookup_infty(x))
                     } else {
                         None
                     }
                 };
-                let mut ret = |a, b| {
-                    let [a_id, b_id] = [a, b].map(|x| self.ctx.db.intern_inference_type(x));
-                    self.meet_inftype(a_id, b_id)
-                        .and_then(|x| self.meet.leave_fun((lhs, rhs), x))
-                };
-                for nom_ty in std::iter::successors(Some(nom.clone()), next) {
+                let mut nom_ty = nom.clone();
+                loop {
                     if TypeHead::try_from(&nom_ty)? == otherhead {
-                        return ret(nom_ty, other);
+                        let [a_id, b_id] = [nom_ty, other].map(|x| self.ctx.intern_infty(x));
+                        return self.meet_inftype(a_id, b_id)
+                            .and_then(|x| self.meet.leave_fun((lhs, rhs), x))
+                    }
+                    match next(&nom_ty) {
+                        Some(n) => nom_ty = n,
+                        None => break,
                     }
                 }
-                for other_ty in std::iter::successors(Some(other), next) {
+                let mut other_ty = other;
+                loop {
                     if TypeHead::try_from(&other_ty)? == nomhead {
-                        return ret(other_ty, nom);
+                        let [a_id, b_id] = [other_ty, nom].map(|x| self.ctx.intern_infty(x));
+                        return self.meet_inftype(a_id, b_id)
+                            .and_then(|x| self.meet.leave_fun((lhs, rhs), x))
+                    }
+                    match next(&other_ty) {
+                        Some(n) => other_ty = n,
+                        None => break,
                     }
                 }
                 return Err(TypeError);
@@ -774,18 +780,17 @@ impl<'a, DB: TypeInterner + ?Sized> TypeConvertMemo<'a, DB> {
         if let Some(x) = self.join.enter_fun((lhs, rhs)) {
             return x;
         }
-        let [other, nom] = [lhs, rhs].map(|x| self.ctx.db.lookup_intern_inference_type(x));
+        let [other, nom] = [lhs, rhs].map(|x| self.ctx.lookup_infty(x));
         let res = match (other, nom) {
             (Any, _) | (_, Any) => Any,
             (InferField(..), InferField(..)) => Bot,
             (TypeVarRef(a1, a2), TypeVarRef(b1, b2)) if (a1, a2) == (b1, b2) => TypeVarRef(a1, a2),
             (Bot | InferField(..), other) | (other, Bot | InferField(..)) => other,
             (Primitive(p), Primitive(q)) if p == q => Primitive(p),
-            (Loop(kind1, from1, inner1), Loop(kind2, from2, inner2)) => {
+            (Loop(kind1, inner1), Loop(kind2, inner2)) => {
                 let kind = kind1.max(kind2);
-                let from = self.join_inftype(from1, from2)?;
                 let inner = self.join_inftype(inner1, inner2)?;
-                Loop(kind, from, inner)
+                Loop(kind, inner)
             }
             (ParserArg { result: r1, arg: a }, ParserArg { result: r2, arg: b }) => {
                 let result = self.join_inftype(r1, r2)?;
@@ -851,36 +856,44 @@ impl<'a, DB: TypeInterner + ?Sized> TypeConvertMemo<'a, DB> {
             (nom @ Nominal(NominalInfHead { .. }), other)
             | (other, nom @ Nominal(NominalInfHead { .. })) => {
                 let mut other_upset = HashMap::new();
-                let next = |ty: &_| {
+                let mut next = |ty: &_| {
                     if let InferenceType::Nominal(nom) = ty {
-                        self.ctx.deref(nom)
+                        self.ctx.deref(nom).map(|x| self.ctx.lookup_infty(x))
                     } else {
                         None
                     }
                 };
-                for other_ty in std::iter::successors(Some(other), next) {
-                    other_upset.insert(TypeHead::try_from(&other_ty)?, other_ty);
-                }
-                let mut res = None;
-                for nom_ty in std::iter::successors(Some(nom), next) {
-                    if let Some(other_ty) = other_upset.remove(&TypeHead::try_from(&nom_ty)?) {
-                        let other = self.ctx.db.intern_inference_type(other_ty);
-                        let nom = self.ctx.db.intern_inference_type(nom_ty);
-                        res = Some(self.join_inftype(other, nom)?);
-                        break;
-                    } else {
-                        res = None
+                let mut other_ty = other;
+                loop {
+                    other_upset.insert(TypeHead::try_from(&other_ty)?, other_ty.clone());
+                    match next(&other_ty) {
+                        Some(n) => other_ty = n,
+                        None => break,
                     }
                 }
-                if let Some(res) = res {
-                    self.ctx.db.lookup_intern_inference_type(res)
+                let mut res = None;
+                let mut nom_ty = nom;
+                loop {
+                    if let Some(other_ty) = other_upset.remove(&TypeHead::try_from(&nom_ty)?) {
+                        let other = self.ctx.intern_infty(other_ty);
+                        let nom = self.ctx.intern_infty(nom_ty);
+                        res = Some(self.join_inftype(other, nom)?);
+                        break;
+                    }
+                    match next(&nom_ty) {
+                        Some(n) => nom_ty = n,
+                        None => break,
+                    }
+                }
+                if let Some(r) = res {
+                    self.ctx.lookup_infty(r)
                 } else {
                     return Err(TypeError);
                 }
             }
             _ => return Err(TypeError),
         };
-        let ret = self.ctx.db.intern_inference_type(res);
+        let ret = self.ctx.intern_infty(res);
         self.join.leave_fun((lhs, rhs), ret)
     }
     fn normalize_children(
@@ -888,7 +901,7 @@ impl<'a, DB: TypeInterner + ?Sized> TypeConvertMemo<'a, DB> {
         infty: InfTypeId,
         pol: Polarity,
     ) -> Result<InfTypeId, TypeError> {
-        let mut ty = self.ctx.db.lookup_intern_inference_type(infty);
+        let mut ty = self.ctx.lookup_infty(infty);
         if let InferenceType::Var(_) | InferenceType::Unknown(_) = ty {
             ty = match pol {
                 Polarity::Positive => InferenceType::Bot,
@@ -899,7 +912,7 @@ impl<'a, DB: TypeInterner + ?Sized> TypeConvertMemo<'a, DB> {
                 *child = self.normalize_inftype(*child, pol)?;
             }
         }
-        Ok(self.ctx.db.intern_inference_type(ty))
+        Ok(self.ctx.intern_infty(ty))
     }
     fn normalize_inftype(
         &mut self,
@@ -909,26 +922,28 @@ impl<'a, DB: TypeInterner + ?Sized> TypeConvertMemo<'a, DB> {
         if let Some(x) = self.normalize.enter_fun((infty, pol)) {
             return x;
         }
-        let inf = self.ctx.db.lookup_intern_inference_type(infty);
+        let inf = self.ctx.lookup_infty(infty);
         let res = match (inf, pol) {
             (InferenceType::Var(v) | InferenceType::Unknown(v), Polarity::Positive) => {
-                let mut result = self.ctx.db.intern_inference_type(InferenceType::Bot);
-                for ty in self.ctx.var_store.get(v).lower.iter() {
+                let mut result = self.ctx.intern_infty(InferenceType::Bot);
+                let var_store = self.ctx.var_store.clone();
+                for ty in var_store.get(v).lower.iter() {
                     let normalized = self.normalize_children(*ty, pol)?;
                     result = self.join_inftype(result, normalized)?;
                 }
                 result
             }
             (InferenceType::Var(v) | InferenceType::Unknown(v), Polarity::Negative) => {
-                let mut result = self.ctx.db.intern_inference_type(InferenceType::Any);
-                for ty in self.ctx.var_store.get(v).upper.iter() {
+                let mut result = self.ctx.intern_infty(InferenceType::Any);
+                let var_store = self.ctx.var_store.clone();
+                for ty in var_store.get(v).upper.iter() {
                     let normalized = self.normalize_children(*ty, pol)?;
                     result = self.meet_inftype(result, normalized)?;
                 }
                 // the result we got upon here is the most general, however in the upper bounds there can be
                 // types like InferField which are more like type classes, so we join with the lower bounds,
                 // because the join operation still prioritizes concrete types over type classes
-                for ty in self.ctx.var_store.get(v).lower.iter() {
+                for ty in var_store.get(v).lower.iter() {
                     let normalized = self.normalize_children(*ty, pol)?;
                     result = self.join_inftype(result, normalized)?;
                 }
@@ -943,7 +958,7 @@ impl<'a, DB: TypeInterner + ?Sized> TypeConvertMemo<'a, DB> {
             return x;
         }
         let infty = self.normalize_inftype(infty, pol)?;
-        let inf = self.ctx.db.lookup_intern_inference_type(infty);
+        let inf = self.ctx.lookup_infty(infty);
         let res = match inf {
             InferenceType::Any => Type::Any,
             InferenceType::Bot => Type::Bot,
@@ -959,7 +974,9 @@ impl<'a, DB: TypeInterner + ?Sized> TypeConvertMemo<'a, DB> {
                 parse_arg,
                 fun_args,
             }) => {
-                let parse_arg = parse_arg.map(|x| self.to_type_internal(x, pol)).transpose()?;
+                let parse_arg = parse_arg
+                    .map(|x| self.to_type_internal(x, pol))
+                    .transpose()?;
                 let type_args = fun_args
                     .iter()
                     .copied()
@@ -972,11 +989,9 @@ impl<'a, DB: TypeInterner + ?Sized> TypeConvertMemo<'a, DB> {
                     fun_args: Arc::new(type_args),
                 })
             }
-            InferenceType::Loop(kind, from, inner) => Type::Loop(
-                kind,
-                self.to_type_internal(from, pol)?,
-                self.to_type_internal(inner, pol)?,
-            ),
+            InferenceType::Loop(kind, inner) => {
+                Type::Loop(kind, self.to_type_internal(inner, pol)?)
+            }
             InferenceType::ParserArg { result, arg } => Type::ParserArg(
                 self.to_type_internal(result, pol)?,
                 self.to_type_internal(arg, pol.reverse())?,
@@ -993,7 +1008,7 @@ impl<'a, DB: TypeInterner + ?Sized> TypeConvertMemo<'a, DB> {
             }
         };
         self.convert
-            .leave_fun((infty, pol), self.ctx.db.intern_type(res))
+            .leave_fun((infty, pol), self.ctx.tr.db().intern_type(res))
     }
 }
 

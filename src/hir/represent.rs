@@ -1,3 +1,5 @@
+use crate::types::{PrimitiveType, Type, NominalKind};
+
 use super::*;
 use std::fmt::Write;
 pub trait HirToString {
@@ -184,21 +186,32 @@ impl HirToString for TypeAtom {
             TypeAtom::ParserDef(pd) => pd.hir_to_string(db),
             TypeAtom::Array(arr) => arr.hir_to_string(db),
             TypeAtom::Primitive(p) => p.hir_to_string(db),
+            TypeAtom::TypeVar(v) => v.hir_to_string(db),
         }
+    }
+}
+
+impl HirToString for TypeVar {
+    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+        db.lookup_intern_type_var(*self).name
     }
 }
 
 impl HirToString for ParserDefRef {
     fn hir_to_string(&self, db: &dyn Hirs) -> String {
         let from = self.from.as_ref().map(|x| x.hir_to_string(db));
-        let args = self.args.iter().map(|x| x.hir_to_string(db)).collect::<Vec<_>>();
+        let args = self
+            .args
+            .iter()
+            .map(|x| x.hir_to_string(db))
+            .collect::<Vec<_>>();
         let mut ret = String::new();
         if let Some(f) = from {
-            write!(ret, "{f} &> ");
+            let _ = write!(ret, "{f} &> ");
         }
-        write!(ret, "{}", self.name.atom.hir_to_string(db));
+        let _ = write!(ret, "{}", self.name.atom.hir_to_string(db));
         if !args.is_empty() {
-            write!(ret, "[{}]", args.join(", "));
+            let _ = write!(ret, "[{}]", args.join(", "));
         }
         ret
     }
@@ -269,6 +282,69 @@ impl HirToString for Expression<HirType> {
             Expression::BinaryOp(a) => a.hir_to_string(db),
             Expression::UnaryOp(a) => a.hir_to_string(db),
             Expression::Atom(a) => a.hir_to_string(db),
+        }
+    }
+}
+
+impl HirToString for TypeId {
+    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+        type_to_string(*self, db)
+    }
+}
+
+fn type_to_string(ty: TypeId, db: &dyn Hirs) -> String {
+    let ty = db.lookup_intern_type(ty);
+    match ty {
+        Type::Any => String::from("any"),
+        Type::Bot => String::from("bot"),
+        Type::Error => String::from("error"),
+        Type::Primitive(p) => p.hir_to_string(db),
+        Type::TypeVarRef(level, index) => format!("<Var Ref ({}, {})>", level, index),
+        Type::ForAll(inner, vars) => {
+            let args = vars
+                .iter()
+                .map(|x| {
+                    x.name
+                        .map(|y| db.lookup_intern_type_var(y).name)
+                        .unwrap_or(String::from("'_"))
+                })
+                .collect::<Vec<String>>()
+                .join(", ");
+            format!("forall {args}. {}", type_to_string(inner, db))
+        }
+        Type::Nominal(n) => {
+            let path = db.lookup_intern_hir_path(n.def).to_name(db);
+            match n.kind {
+                NominalKind::Def => {
+                    path
+                }
+                NominalKind::Block => {
+                    format!("<anonymous block {}>", path)
+                }
+            }
+        }
+        Type::Loop(k, inner) => {
+            match k {
+                ArrayKind::For => format!("for[{}]", type_to_string(inner, db)),
+                ArrayKind::Each => format!("each[{}]", type_to_string(inner, db)),
+            }
+        }
+        Type::ParserArg(from, to) => {
+            format!("{} *> {}", type_to_string(from, db), type_to_string(to, db))
+        }
+        Type::FunctionArg(res, args) => {
+            let args = args.iter().map(|x| type_to_string(*x, db)).collect::<Vec<String>>().join(", ");
+            format!("{}({})", type_to_string(res, db), args)
+        }
+    }
+}
+
+impl HirToString for PrimitiveType {
+    fn hir_to_string(&self, _db: &dyn Hirs) -> String {
+        match self {
+            PrimitiveType::Bit => String::from("bit"),
+            PrimitiveType::Int => String::from("int"),
+            PrimitiveType::Char => String::from("char"),
         }
     }
 }

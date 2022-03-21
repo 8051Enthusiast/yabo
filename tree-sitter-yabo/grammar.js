@@ -185,7 +185,7 @@ module.exports = grammar({
     )),
     _type_atom: $ => choice(
       $.primitive_type,
-      $.typevar,
+      $.type_var,
       $.parserdef_ref,
     ),
     parserdef_ref: $ => seq(
@@ -220,7 +220,7 @@ module.exports = grammar({
       'char',
       'mem',
     ),
-    typevar: $ => /\'[A-Za-z_][A-Za-z_0-9]*/,
+    type_var: $ => /\'[A-Za-z_][A-Za-z_0-9]*/,
     identifier: $ => /[A-Za-z_][A-Za-z_0-9]*/,
     number_literal: $ => /[0-9]+|0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+/,
     char_literal: $ => seq(

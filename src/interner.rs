@@ -20,13 +20,38 @@ pub struct IdentifierName {
     pub name: String,
 }
 
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub struct TypeVar(InternId);
+
+impl salsa::InternKey for TypeVar {
+    fn from_intern_id(v: InternId) -> Self {
+        TypeVar(v)
+    }
+
+    fn as_intern_id(&self) -> InternId {
+        self.0
+    }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct TypeVarName {
+    pub name: String,
+}
+
+impl TypeVarName {
+    pub fn new(name: String) -> Self {
+        Self {
+            name,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum FieldName {
     Ident(Identifier),
     Return,
     Next,
-    Prev
+    Prev,
 }
 
 impl From<Identifier> for FieldName {
@@ -139,6 +164,8 @@ fn path_name(db: &dyn Interner, id: HirId) -> String {
 pub trait Interner: crate::source::Files {
     #[salsa::interned]
     fn intern_identifier(&self, identifier: IdentifierName) -> Identifier;
+    #[salsa::interned]
+    fn intern_type_var(&self, identifier: TypeVarName) -> TypeVar;
     #[salsa::interned]
     fn intern_hir_path(&self, path: HirPath) -> HirId;
 

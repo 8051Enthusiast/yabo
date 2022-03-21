@@ -292,7 +292,7 @@
             "named": true
           },
           {
-            "type": "typevar",
+            "type": "type_var",
             "named": true
           },
           {
@@ -360,7 +360,7 @@
             "named": true
           },
           {
-            "type": "typevar",
+            "type": "type_var",
             "named": true
           },
           {
@@ -465,7 +465,7 @@
             "named": true
           },
           {
-            "type": "typevar",
+            "type": "type_var",
             "named": true
           },
           {
@@ -683,7 +683,7 @@
             "named": true
           },
           {
-            "type": "typevar",
+            "type": "type_var",
             "named": true
           },
           {
@@ -806,7 +806,7 @@
             "named": true
           },
           {
-            "type": "typevar",
+            "type": "type_var",
             "named": true
           },
           {
@@ -844,7 +844,7 @@
             "named": true
           },
           {
-            "type": "typevar",
+            "type": "type_var",
             "named": true
           },
           {
@@ -932,7 +932,7 @@
             "named": true
           },
           {
-            "type": "typevar",
+            "type": "type_var",
             "named": true
           },
           {
@@ -1079,7 +1079,7 @@
             "named": true
           },
           {
-            "type": "typevar",
+            "type": "type_var",
             "named": true
           },
           {
@@ -1251,7 +1251,7 @@
     "named": false
   },
   {
-    "type": "typevar",
+    "type": "type_var",
     "named": true
   },
   {

@@ -1386,7 +1386,7 @@
         },
         {
           "type": "SYMBOL",
-          "name": "typevar"
+          "name": "type_var"
         },
         {
           "type": "SYMBOL",
@@ -1511,7 +1511,7 @@
         }
       ]
     },
-    "typevar": {
+    "type_var": {
       "type": "PATTERN",
       "value": "\\'[A-Za-z_][A-Za-z_0-9]*"
     },
