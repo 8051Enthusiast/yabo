@@ -56,6 +56,7 @@ pub fn parser_returns_ssc(
         let mut context = TypingLocation {
             vars: TypeVarCollection::at_id(db, def.id)?,
             loc: db.hir_parent_module(def.id.0).map_err(|_| TypeError)?.0,
+            pd: def.id,
         };
         let ty = ctx.val_expression_type(&mut context, &expr)?.root_inftype();
         let sig = db.parser_args(def.id)?;
@@ -80,6 +81,7 @@ pub fn parser_args(db: &dyn Hirs, id: ParserDefId) -> Result<Signature, TypeErro
     let mut context = TypingLocation {
         vars: TypeVarCollection::new_empty(),
         loc: db.hir_parent_module(id.0).map_err(|_| TypeError)?.0,
+        pd: id,
     };
     let arg_resolver = ArgResolver(db);
     let mut tcx = TypingContext::new(db, arg_resolver);
@@ -175,6 +177,7 @@ impl TypeVarCollection {
 pub struct TypingLocation {
     vars: TypeVarCollection,
     loc: HirId,
+    pd: ParserDefId,
 }
 
 impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
@@ -258,8 +261,11 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                 }
                 TypeAtom::TypeVar(v) => {
                     let var_idx = context.vars.get_var(Some(*v)).ok_or(TypeError)?;
-                    self.db
-                        .intern_inference_type(InferenceType::TypeVarRef(0, var_idx))
+                    self.db.intern_inference_type(InferenceType::TypeVarRef(
+                        context.pd.0,
+                        0,
+                        var_idx,
+                    ))
                 }
             },
         };
@@ -560,7 +566,7 @@ def for[int] *> expr1 = {}
 def for[for[int] &> expr1] *> expr2 = {}
 def for['x] *> expr3 = {}
 def each[for[int] *> expr2] *> expr4 = {}
-        "#,
+            "#,
         );
         let arg_type = |name| {
             let p = ctx.parser(name);
@@ -575,5 +581,33 @@ def each[for[int] *> expr2] *> expr4 = {}
         assert_eq!("for[for[int] &> file[anonymous].expr1]", arg_type("expr2"));
         assert_eq!("for[<Var Ref (0, 0)>]", arg_type("expr3"));
         assert_eq!("each[file[anonymous].expr2]", arg_type("expr4"));
+    }
+    #[test]
+    fn return_types() {
+        let ctx = Context::mock(
+            r#"
+def for['t] *> nil = {}
+def int &> nil *> expr1 = {}
+            "#,
+        );
+        let return_type = |name| {
+            let p = ctx.parser(name);
+            ctx.db
+                .parser_returns(p)
+                .unwrap()
+                .deref
+                .hir_to_string(&ctx.db)
+        };
+        let arg_type = |name| {
+            let p = ctx.parser(name);
+            ctx.db
+                .parser_args(p)
+                .unwrap()
+                .thunk
+                .hir_to_string(&ctx.db)
+        };
+        eprintln!("{}", return_type("nil"));
+        eprintln!("{}", arg_type("expr1"));
+        eprintln!("{}", return_type("expr1"));
     }
 }

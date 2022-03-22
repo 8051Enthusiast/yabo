@@ -65,7 +65,7 @@ pub enum Type {
     Bot,
     Error,
     Primitive(PrimitiveType),
-    TypeVarRef(u32, u32),
+    TypeVarRef(HirId, u32, u32),
     ForAll(TypeId, Arc<Vec<VarDef>>),
     Nominal(NominalTypeHead),
     Loop(ArrayKind, TypeId),
@@ -94,7 +94,7 @@ pub enum InferenceType {
     Any,
     Bot,
     Primitive(PrimitiveType),
-    TypeVarRef(u32, u32),
+    TypeVarRef(HirId, u32, u32),
     Var(VarId),
     Unknown(VarId),
     Nominal(NominalInfHead),
@@ -468,11 +468,7 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         let new_parser = self.intern_infty(InferenceType::ParserArg { arg, result });
         Ok(new_parser)
     }
-    pub fn parser_create(
-        &mut self,
-        result: InfTypeId,
-        arg: InfTypeId,
-    ) -> InfTypeId {
+    pub fn parser_create(&mut self, result: InfTypeId, arg: InfTypeId) -> InfTypeId {
         self.intern_infty(InferenceType::ParserArg { result, arg })
     }
     pub fn parser_apply(
@@ -539,10 +535,11 @@ impl<TR: TypeResolver> InferenceContext<TR> {
             Type::Bot => InferenceType::Bot,
             Type::Error => return self.unknown(),
             Type::Primitive(p) => InferenceType::Primitive(*p),
-            Type::TypeVarRef(level, index) => {
-                return var_stack
-                    .and_then(|x| x.resolve(*level, *index))
-                    .expect("Internal Compiler Error: Invalid reference to type variable in type")
+            Type::TypeVarRef(loc, level, index) => {
+                match var_stack.and_then(|x| x.resolve(*level, *index)) {
+                    Some(x) => return x,
+                    None => InferenceType::TypeVarRef(*loc, *level, *index),
+                }
             }
             Type::ForAll(inner, defvars) => {
                 let current = defvars.iter().map(|_| self.var()).collect::<Vec<_>>();
@@ -674,7 +671,9 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
         match (lhs_ty, rhs_ty) {
             (Bot, _) | (_, Bot) => Bot,
             (InferField(..), InferField(..)) => Any,
-            (TypeVarRef(a1, a2), TypeVarRef(b1, b2)) if (a1, a2) == (b1, b2) => TypeVarRef(a1, a2),
+            (TypeVarRef(a0, a1, a2), TypeVarRef(b0, b1, b2)) if (a0, a1, a2) == (b0, b1, b2) => {
+                TypeVarRef(a0, a1, a2)
+            }
             (Any | InferField(..), other) | (other, Any | InferField(..)) => other,
             (Primitive(p), Primitive(q)) if p == q => Primitive(p),
             (Loop(kind1, inner1), Loop(kind2, inner2)) => {
@@ -757,8 +756,9 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                 loop {
                     if TypeHead::try_from(&nom_ty)? == otherhead {
                         let [a_id, b_id] = [nom_ty, other].map(|x| self.ctx.intern_infty(x));
-                        return self.meet_inftype(a_id, b_id)
-                            .and_then(|x| self.meet.leave_fun((lhs, rhs), x))
+                        return self
+                            .meet_inftype(a_id, b_id)
+                            .and_then(|x| self.meet.leave_fun((lhs, rhs), x));
                     }
                     match next(&nom_ty) {
                         Some(n) => nom_ty = n,
@@ -769,8 +769,9 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                 loop {
                     if TypeHead::try_from(&other_ty)? == nomhead {
                         let [a_id, b_id] = [other_ty, nom].map(|x| self.ctx.intern_infty(x));
-                        return self.meet_inftype(a_id, b_id)
-                            .and_then(|x| self.meet.leave_fun((lhs, rhs), x))
+                        return self
+                            .meet_inftype(a_id, b_id)
+                            .and_then(|x| self.meet.leave_fun((lhs, rhs), x));
                     }
                     match next(&other_ty) {
                         Some(n) => other_ty = n,
@@ -792,7 +793,9 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
         let res = match (other, nom) {
             (Any, _) | (_, Any) => Any,
             (InferField(..), InferField(..)) => Bot,
-            (TypeVarRef(a1, a2), TypeVarRef(b1, b2)) if (a1, a2) == (b1, b2) => TypeVarRef(a1, a2),
+            (TypeVarRef(a0, a1, a2), TypeVarRef(b0, b1, b2)) if (a0, a1, a2) == (b0, b1, b2) => {
+                TypeVarRef(a0, a1, a2)
+            }
             (Bot | InferField(..), other) | (other, Bot | InferField(..)) => other,
             (Primitive(p), Primitive(q)) if p == q => Primitive(p),
             (Loop(kind1, inner1), Loop(kind2, inner2)) => {
@@ -970,7 +973,7 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
         let res = match inf {
             InferenceType::Any => Type::Any,
             InferenceType::Bot => Type::Bot,
-            InferenceType::TypeVarRef(depth, offset) => Type::TypeVarRef(depth, offset),
+            InferenceType::TypeVarRef(loc, level, index) => Type::TypeVarRef(loc, level, index),
             InferenceType::Primitive(p) => Type::Primitive(p),
             InferenceType::Var(..) => {
                 panic!("Internal Compiler Error: normalized inference type contains variable");
