@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use fxhash::FxHashMap;
 
@@ -11,7 +11,7 @@ use crate::{
     interner::{FieldName, HirId, TypeVar},
     types::{
         InfTypeId, InferenceContext, InferenceType, LazyInfType, NominalInfHead, NominalKind,
-        Polarity, Signature, TypeError, TypeId, TypeResolver, VarDef,
+        NominalTypeHead, Polarity, Signature, Type, TypeError, TypeId, TypeResolver, VarDef,
     },
 };
 
@@ -34,14 +34,45 @@ pub fn parser_returns_ssc(
     db: &dyn Hirs,
     id: FunctionSscId,
 ) -> Result<Vec<ParserDefType>, TypeError> {
-    let funs = db.lookup_intern_recursion_scc(id);
-    let _defs = funs
+    let def_ids = db.lookup_intern_recursion_scc(id);
+    let defs = def_ids
         .iter()
         .map(|fun: &ParserDefId| fun.lookup(db))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| TypeError)?;
 
-    todo!()
+    let resolv = ReturnResolver::new(db);
+    let mut ctx = TypingContext::new(db, resolv);
+
+    for def in defs.iter() {
+        // in this loop we do not directly the inference variables we are creating yet
+        let deref = ctx.infctx.var();
+        let retinf = ParserDefTypeInf { id: def.id, deref };
+        ctx.infctx.tr.return_infs.insert(retinf.id.0, retinf);
+    }
+    for def in defs.iter() {
+        // in this separate loop we do the actual type inference
+        let expr = def.to.lookup(db).map_err(|_| TypeError)?.expr;
+        let mut context = TypingLocation {
+            vars: TypeVarCollection::at_id(db, def.id)?,
+            loc: db.hir_parent_module(def.id.0).map_err(|_| TypeError)?.0,
+        };
+        let ty = ctx.val_expression_type(&mut context, &expr)?.root_inftype();
+        let sig = db.parser_args(def.id)?;
+        if let Some(from) = sig.from {
+            let inffrom = ctx.infctx.from_type(from);
+            let deref = ctx.infctx.tr.return_infs[&def.id.0].deref;
+            let parser_ty = ctx.infctx.parser_create(deref, inffrom);
+            ctx.infctx.constrain(ty, parser_ty)?;
+        };
+    }
+    let mut ret = Vec::new();
+    for def in defs.iter() {
+        // here we are finished with inference so we can convert to actual types
+        let deref = ctx.to_concrete_type(ctx.infctx.tr.return_infs[&def.id.0].deref)?;
+        ret.push(ParserDefType { id: def.id, deref })
+    }
+    Ok(ret)
 }
 
 pub fn parser_args(db: &dyn Hirs, id: ParserDefId) -> Result<Signature, TypeError> {
@@ -55,24 +86,30 @@ pub fn parser_args(db: &dyn Hirs, id: ParserDefId) -> Result<Signature, TypeErro
     let from_expr = pd.from.lookup(db).map_err(|_| TypeError)?;
     let from_infty = tcx.resolve_type_expr(&mut context, &from_expr.expr)?;
     let from_ty = tcx.to_concrete_type(from_infty)?;
+    let args = Arc::new(vec![]);
+    let thunk = db.intern_type(Type::Nominal(NominalTypeHead {
+        kind: NominalKind::Def,
+        def: id.0,
+        parse_arg: Some(from_ty),
+        fun_args: args.clone(),
+    }));
     Ok(Signature {
         ty_args: context.vars.defs,
         from: Some(from_ty),
-        args: vec![],
+        args,
+        thunk,
     })
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDefType {
     pub id: ParserDefId,
-    pub ty: TypeId,
     pub deref: TypeId,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDefTypeInf {
     pub id: ParserDefId,
-    pub ty: InfTypeId,
     pub deref: InfTypeId,
 }
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -123,6 +160,15 @@ impl TypeVarCollection {
     }
     pub fn freeze(&mut self) {
         self.frozen = true
+    }
+    pub fn at_id(db: &dyn Hirs, id: ParserDefId) -> Result<Self, TypeError> {
+        let tys = db.parser_args(id)?.ty_args;
+        let mut ret = Self::new_empty();
+        for ty in tys.iter() {
+            ret.get_var(ty.name);
+        }
+        ret.freeze();
+        Ok(ret)
     }
 }
 
@@ -321,6 +367,53 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
     }
 }
 
+pub struct ReturnResolver<'a> {
+    db: &'a dyn Hirs,
+    return_infs: FxHashMap<HirId, ParserDefTypeInf>,
+}
+
+impl<'a> ReturnResolver<'a> {
+    #[must_use]
+    pub fn new(db: &'a dyn Hirs) -> Self {
+        Self {
+            db,
+            return_infs: Default::default(),
+        }
+    }
+}
+
+impl<'a> TypeResolver for ReturnResolver<'a> {
+    type DB = dyn Hirs + 'a;
+
+    fn db(&self) -> &Self::DB {
+        self.db
+    }
+
+    fn field_type(&self, _: &NominalInfHead, _: FieldName) -> Option<LazyInfType> {
+        None
+    }
+
+    fn deref(&self, ty: &NominalInfHead) -> Option<LazyInfType> {
+        if let Some(x) = self.return_infs.get(&ty.def) {
+            Some(LazyInfType::InfType(x.deref))
+        } else {
+            let id = match NominalId::from_nominal_head(ty) {
+                NominalId::Def(d) => d,
+                NominalId::Block(_) => return None,
+            };
+            Some(LazyInfType::Type(self.db.parser_returns(id).ok()?.deref))
+        }
+    }
+
+    fn signature(&self, ty: &NominalInfHead) -> Option<Signature> {
+        get_signature(self.db, ty)
+    }
+
+    fn lookup(&self, context: HirId, name: FieldName) -> Option<LazyInfType> {
+        get_thunk(self.db, context, name)
+    }
+}
+
 pub struct PublicResolver<'a> {
     db: &'a dyn Hirs,
 }
@@ -339,16 +432,11 @@ impl<'a> TypeResolver for PublicResolver<'a> {
     }
 
     fn signature(&self, ty: &NominalInfHead) -> Option<Signature> {
-        let id = match NominalId::from_nominal_head(ty) {
-            NominalId::Def(d) => d,
-            NominalId::Block(_) => panic!("Attempting to extract signature directly from block"),
-        };
-        parser_args(self.db, id).ok()
+        get_signature(self.db, ty)
     }
 
     fn lookup(&self, context: HirId, name: FieldName) -> Option<LazyInfType> {
-        let pd = parserdef_ref(self.db, context, name).ok()?;
-        Some(LazyInfType::Type(self.db.parser_returns(pd).ok()?.ty))
+        get_thunk(self.db, context, name)
     }
 
     type DB = dyn Hirs + 'a;
@@ -376,11 +464,7 @@ impl<'a> TypeResolver for ArgResolver<'a> {
     }
 
     fn signature(&self, ty: &NominalInfHead) -> Option<Signature> {
-        let id = match NominalId::from_nominal_head(ty) {
-            NominalId::Def(d) => d,
-            NominalId::Block(_) => panic!("attempted to extract signature directly from block"),
-        };
-        parser_args(self.0, id).ok()
+        get_signature(self.0, ty)
     }
 
     fn lookup(&self, _context: HirId, _name: FieldName) -> Option<LazyInfType> {
@@ -392,6 +476,19 @@ impl<'a> TypeResolver for ArgResolver<'a> {
     fn db(&self) -> &Self::DB {
         self.0
     }
+}
+
+fn get_thunk(db: &dyn Hirs, context: HirId, name: FieldName) -> Option<LazyInfType> {
+    let pd = parserdef_ref(db, context, name).ok()?;
+    Some(LazyInfType::Type(db.parser_args(pd).ok()?.thunk))
+}
+
+fn get_signature(db: &dyn Hirs, ty: &NominalInfHead) -> Option<Signature> {
+    let id = match NominalId::from_nominal_head(ty) {
+        NominalId::Def(d) => d,
+        NominalId::Block(_) => panic!("attempted to extract signature directly from block"),
+    };
+    db.parser_args(id).ok()
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
@@ -462,6 +559,7 @@ mod tests {
 def for[int] *> expr1 = {}
 def for[for[int] &> expr1] *> expr2 = {}
 def for['x] *> expr3 = {}
+def each[for[int] *> expr2] *> expr4 = {}
         "#,
         );
         let arg_type = |name| {
@@ -476,5 +574,6 @@ def for['x] *> expr3 = {}
         assert_eq!("for[int]", arg_type("expr1"));
         assert_eq!("for[for[int] &> file[anonymous].expr1]", arg_type("expr2"));
         assert_eq!("for[<Var Ref (0, 0)>]", arg_type("expr3"));
+        assert_eq!("each[file[anonymous].expr2]", arg_type("expr4"));
     }
 }

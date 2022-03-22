@@ -203,7 +203,8 @@ pub enum NominalKind {
 pub struct Signature {
     pub ty_args: Vec<VarDef>,
     pub from: Option<TypeId>,
-    pub args: Vec<TypeId>,
+    pub args: Arc<Vec<TypeId>>,
+    pub thunk: TypeId,
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -241,7 +242,7 @@ impl VarStore {
 
 pub struct InferenceContext<TR: TypeResolver> {
     var_store: VarStore,
-    tr: TR,
+    pub tr: TR,
     cache: HashSet<(InfTypeId, InfTypeId)>,
 }
 
@@ -466,6 +467,13 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         let result = self.parser_apply(second, between)?;
         let new_parser = self.intern_infty(InferenceType::ParserArg { arg, result });
         Ok(new_parser)
+    }
+    pub fn parser_create(
+        &mut self,
+        result: InfTypeId,
+        arg: InfTypeId,
+    ) -> InfTypeId {
+        self.intern_infty(InferenceType::ParserArg { result, arg })
     }
     pub fn parser_apply(
         &mut self,

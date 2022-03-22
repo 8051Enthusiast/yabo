@@ -13,13 +13,13 @@ def for[u8] *> main = {
 		c: int,
 	},
 	g: u64ul,
-        |
+        ;
 	c: u64ul ~ 1 or 2,
 	let d: str = 3,
     )
     b: i64ul,
     let x: int = b else a else 0 + a,
-    |
+    ;
     a: u64ul,
     let m: int = e * m + 3 * 5 | 4,
 }
