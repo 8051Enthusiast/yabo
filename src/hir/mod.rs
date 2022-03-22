@@ -40,6 +40,7 @@ pub trait Hirs: ast::Asts + crate::types::TypeInterner {
     fn root_id(&self) -> ModuleId;
     fn all_hir_ids(&self) -> Vec<HirId>;
     fn hir_parent_module(&self, id: HirId) -> Result<ModuleId, ()>;
+    fn hir_parent_parserdef(&self, id: HirId) -> Result<ParserDefId, ()>;
 
     // types
     fn parser_args(&self, id: ParserDefId) -> Result<Signature, TypeError>;
@@ -115,6 +116,15 @@ fn hir_parent_module(db: &dyn Hirs, id: HirId) -> Result<ModuleId, ()> {
     // todo
     Ok(ModuleId(db.intern_hir_path(HirPath::new_file(
         db.lookup_intern_hir_path(id).path()[0].unwrap_file(),
+    ))))
+}
+
+fn hir_parent_parserdef(db: &dyn Hirs, id: HirId) -> Result<ParserDefId, ()> {
+    let path = db.lookup_intern_hir_path(id);
+    // todo
+    Ok(ParserDefId(db.intern_hir_path(HirPath::new_fid(
+        path.path()[0].unwrap_file(),
+        path.path()[1].unwrap_named(),
     ))))
 }
 

@@ -1,4 +1,4 @@
-use crate::types::{PrimitiveType, Type, NominalKind};
+use crate::types::{NominalKind, PrimitiveType, Type};
 
 use super::*;
 use std::fmt::Write;
@@ -299,7 +299,12 @@ fn type_to_string(ty: TypeId, db: &dyn Hirs) -> String {
         Type::Bot => String::from("bot"),
         Type::Error => String::from("error"),
         Type::Primitive(p) => p.hir_to_string(db),
-        Type::TypeVarRef(level, index) => format!("<Var Ref ({}, {})>", level, index),
+        Type::TypeVarRef(loc, level, index) => format!(
+            "<Var Ref ({}, {}, {})>",
+            db.lookup_intern_hir_path(loc).to_name(db),
+            level,
+            index
+        ),
         Type::ForAll(inner, vars) => {
             let args = vars
                 .iter()
@@ -314,7 +319,10 @@ fn type_to_string(ty: TypeId, db: &dyn Hirs) -> String {
         }
         Type::Nominal(n) => {
             let path = db.lookup_intern_hir_path(n.def).to_name(db);
-            let from = n.parse_arg.map(|x| format!("{} &> ", type_to_string(x, db))).unwrap_or_else(String::new);
+            let from = n
+                .parse_arg
+                .map(|x| format!("{} &> ", type_to_string(x, db)))
+                .unwrap_or_else(String::new);
             match n.kind {
                 NominalKind::Def => {
                     format!("{from}{path}")
@@ -324,17 +332,19 @@ fn type_to_string(ty: TypeId, db: &dyn Hirs) -> String {
                 }
             }
         }
-        Type::Loop(k, inner) => {
-            match k {
-                ArrayKind::For => format!("for[{}]", type_to_string(inner, db)),
-                ArrayKind::Each => format!("each[{}]", type_to_string(inner, db)),
-            }
-        }
+        Type::Loop(k, inner) => match k {
+            ArrayKind::For => format!("for[{}]", type_to_string(inner, db)),
+            ArrayKind::Each => format!("each[{}]", type_to_string(inner, db)),
+        },
         Type::ParserArg(from, to) => {
             format!("{} *> {}", type_to_string(from, db), type_to_string(to, db))
         }
         Type::FunctionArg(res, args) => {
-            let args = args.iter().map(|x| type_to_string(*x, db)).collect::<Vec<String>>().join(", ");
+            let args = args
+                .iter()
+                .map(|x| type_to_string(*x, db))
+                .collect::<Vec<String>>()
+                .join(", ");
             format!("{}({})", type_to_string(res, db), args)
         }
     }
