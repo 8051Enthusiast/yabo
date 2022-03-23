@@ -42,6 +42,7 @@ pub trait TypeInterner: crate::source::Files {
     fn intern_type(&self, ty: Type) -> TypeId;
     #[salsa::interned]
     fn intern_inference_type(&self, ty: InferenceType) -> InfTypeId;
+    fn type_contains_unknown(&self, ty: TypeId) -> bool;
 }
 
 /// In some contexts, we can not create inference variables to convert
@@ -63,7 +64,7 @@ pub struct NominalTypeHead {
 pub enum Type {
     Any,
     Bot,
-    Error,
+    Unknown,
     Primitive(PrimitiveType),
     TypeVarRef(HirId, u32, u32),
     ForAll(TypeId, Arc<Vec<VarDef>>),
@@ -71,6 +72,33 @@ pub enum Type {
     Loop(ArrayKind, TypeId),
     ParserArg(TypeId, TypeId),
     FunctionArg(TypeId, Arc<Vec<TypeId>>),
+}
+
+impl TypeId {
+    fn contains_unknown(self, db: &dyn TypeInterner) -> bool {
+        match db.lookup_intern_type(self) {
+            Type::Any | Type::Bot | Type::Primitive(_) | Type::TypeVarRef(_, _, _) => false,
+            Type::Unknown => true,
+            Type::ForAll(inner, _) => inner.contains_unknown(db),
+            Type::Nominal(NominalTypeHead {
+                parse_arg,
+                fun_args,
+                ..
+            }) => {
+                parse_arg.map_or(false, |x| x.contains_unknown(db))
+                    || fun_args.iter().any(|x| x.contains_unknown(db))
+            }
+            Type::Loop(_, inner) => inner.contains_unknown(db),
+            Type::ParserArg(a, b) => a.contains_unknown(db) || b.contains_unknown(db),
+            Type::FunctionArg(a, b) => {
+                a.contains_unknown(db) || b.iter().any(|x| x.contains_unknown(db))
+            }
+        }
+    }
+}
+
+pub fn type_contains_unknown(db: &dyn TypeInterner, id: TypeId) -> bool {
+    id.contains_unknown(db)
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -96,7 +124,7 @@ pub enum InferenceType {
     Primitive(PrimitiveType),
     TypeVarRef(HirId, u32, u32),
     Var(VarId),
-    Unknown(VarId),
+    Unknown,
     Nominal(NominalInfHead),
     Loop(ArrayKind, InfTypeId),
     ParserArg {
@@ -130,7 +158,7 @@ impl InferenceType {
             InferenceType::InferField(_, inner) => {
                 vec![(inner, pol)]
             }
-            InferenceType::Var(..) | InferenceType::Unknown(..) => {
+            InferenceType::Var(..) => {
                 panic!("Internal Compiler Error: taking children of variable");
             }
             _ => vec![],
@@ -148,6 +176,7 @@ pub enum TypeHead {
     Loop(ArrayKind),
     ParserArg,
     FunctionArgs,
+    Unknown,
 }
 
 impl TryFrom<&InferenceType> for TypeHead {
@@ -163,9 +192,8 @@ impl TryFrom<&InferenceType> for TypeHead {
             InferenceType::Loop(kind, _) => TypeHead::Loop(*kind),
             InferenceType::ParserArg { .. } => TypeHead::ParserArg,
             InferenceType::FunctionArgs { .. } => TypeHead::FunctionArgs,
-            InferenceType::Var(_) | InferenceType::Unknown(_) | InferenceType::InferField(..) => {
-                return Err(TypeError)
-            }
+            InferenceType::Unknown => TypeHead::Unknown,
+            InferenceType::Var(_) | InferenceType::InferField(..) => return Err(TypeError),
         })
     }
 }
@@ -327,7 +355,7 @@ impl<TR: TypeResolver> InferenceContext<TR> {
                 self.constrain(arg2, arg1)
             }
 
-            (Var(var_id) | Unknown(var_id), _) => {
+            (Var(var_id), _) => {
                 self.var_store.get_mut(var_id).upper.push(upper);
                 // idx is needed because var.lower may change during the loop
                 let mut idx = 0;
@@ -338,7 +366,7 @@ impl<TR: TypeResolver> InferenceContext<TR> {
                 Ok(())
             }
 
-            (_, Var(var_id) | Unknown(var_id)) => {
+            (_, Var(var_id)) => {
                 self.var_store.get_mut(var_id).lower.push(lower);
                 // idx is needed because var.lower may change during the loop
                 let mut idx = 0;
@@ -348,6 +376,8 @@ impl<TR: TypeResolver> InferenceContext<TR> {
                 }
                 Ok(())
             }
+
+            (Unknown, _) | (_, Unknown) => Ok(()),
 
             (Loop(kind1, inner1), Loop(kind2, inner2)) => {
                 if matches!((kind1, kind2), (ArrayKind::For, ArrayKind::Each)) {
@@ -409,8 +439,8 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         let inftype = InferenceType::Var(self.var_store.add_var());
         self.intern_infty(inftype)
     }
-    pub fn unknown(&mut self) -> InfTypeId {
-        let inftype = InferenceType::Unknown(self.var_store.add_var());
+    pub fn unknown(&self) -> InfTypeId {
+        let inftype = InferenceType::Unknown;
         self.intern_infty(inftype)
     }
     pub fn int(&self) -> InfTypeId {
@@ -533,7 +563,7 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         let ret = match ty {
             Type::Any => InferenceType::Any,
             Type::Bot => InferenceType::Bot,
-            Type::Error => return self.unknown(),
+            Type::Unknown => InferenceType::Unknown,
             Type::Primitive(p) => InferenceType::Primitive(*p),
             Type::TypeVarRef(loc, level, index) => {
                 match var_stack.and_then(|x| x.resolve(*level, *index)) {
@@ -669,6 +699,7 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
         }
         let [lhs_ty, rhs_ty] = [lhs, rhs].map(|x| self.ctx.lookup_infty(x));
         match (lhs_ty, rhs_ty) {
+            (Unknown, _) | (_, Unknown) => Unknown,
             (Bot, _) | (_, Bot) => Bot,
             (InferField(..), InferField(..)) => Any,
             (TypeVarRef(a0, a1, a2), TypeVarRef(b0, b1, b2)) if (a0, a1, a2) == (b0, b1, b2) => {
@@ -791,6 +822,7 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
         }
         let [other, nom] = [lhs, rhs].map(|x| self.ctx.lookup_infty(x));
         let res = match (other, nom) {
+            (Unknown, _) | (_, Unknown) => Unknown,
             (Any, _) | (_, Any) => Any,
             (InferField(..), InferField(..)) => Bot,
             (TypeVarRef(a0, a1, a2), TypeVarRef(b0, b1, b2)) if (a0, a1, a2) == (b0, b1, b2) => {
@@ -913,7 +945,7 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
         pol: Polarity,
     ) -> Result<InfTypeId, TypeError> {
         let mut ty = self.ctx.lookup_infty(infty);
-        if let InferenceType::Var(_) | InferenceType::Unknown(_) = ty {
+        if let InferenceType::Var(_) = ty {
             ty = match pol {
                 Polarity::Positive => InferenceType::Bot,
                 Polarity::Negative => InferenceType::Any,
@@ -935,7 +967,7 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
         }
         let inf = self.ctx.lookup_infty(infty);
         let res = match (inf, pol) {
-            (InferenceType::Var(v) | InferenceType::Unknown(v), Polarity::Positive) => {
+            (InferenceType::Var(v), Polarity::Positive) => {
                 let mut result = self.ctx.intern_infty(InferenceType::Bot);
                 let var_store = self.ctx.var_store.clone();
                 for ty in var_store.get(v).lower.iter() {
@@ -944,7 +976,7 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                 }
                 result
             }
-            (InferenceType::Var(v) | InferenceType::Unknown(v), Polarity::Negative) => {
+            (InferenceType::Var(v), Polarity::Negative) => {
                 let mut result = self.ctx.intern_infty(InferenceType::Any);
                 let var_store = self.ctx.var_store.clone();
                 for ty in var_store.get(v).upper.iter() {
@@ -978,7 +1010,7 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
             InferenceType::Var(..) => {
                 panic!("Internal Compiler Error: normalized inference type contains variable");
             }
-            InferenceType::Unknown(_) => Type::Error,
+            InferenceType::Unknown => Type::Unknown,
             InferenceType::Nominal(NominalInfHead {
                 kind,
                 def,

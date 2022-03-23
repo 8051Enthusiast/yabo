@@ -297,7 +297,6 @@ fn type_to_string(ty: TypeId, db: &dyn Hirs) -> String {
     match ty {
         Type::Any => String::from("any"),
         Type::Bot => String::from("bot"),
-        Type::Error => String::from("error"),
         Type::Primitive(p) => p.hir_to_string(db),
         Type::TypeVarRef(loc, level, index) => format!(
             "<Var Ref ({}, {}, {})>",
@@ -347,6 +346,7 @@ fn type_to_string(ty: TypeId, db: &dyn Hirs) -> String {
                 .join(", ");
             format!("{}({})", type_to_string(res, db), args)
         }
+        Type::Unknown => String::from("<unknown>"),
     }
 }
 
