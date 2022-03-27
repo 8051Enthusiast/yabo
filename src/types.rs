@@ -45,19 +45,13 @@ pub trait TypeInterner: crate::source::Files {
     fn type_contains_unknown(&self, ty: TypeId) -> bool;
 }
 
-/// In some contexts, we can not create inference variables to convert
-/// a type to an inftype, but we still want to be able to return either
-pub enum LazyInfType {
-    InfType(InfTypeId),
-    Type(TypeId),
-}
-
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct NominalTypeHead {
     pub kind: NominalKind,
     pub def: HirId,
     pub parse_arg: Option<TypeId>,
     pub fun_args: Arc<Vec<TypeId>>,
+    pub ty_args: Arc<Vec<TypeId>>,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -88,7 +82,9 @@ pub fn type_contains_unknown(db: &dyn TypeInterner, id: TypeId) -> bool {
                 || fun_args.iter().any(|x| db.type_contains_unknown(*x))
         }
         Type::Loop(_, inner) => db.type_contains_unknown(inner),
-        Type::ParserArg { result, arg } => db.type_contains_unknown(result) || db.type_contains_unknown(arg),
+        Type::ParserArg { result, arg } => {
+            db.type_contains_unknown(result) || db.type_contains_unknown(arg)
+        }
         Type::FunctionArg(a, b) => {
             db.type_contains_unknown(a) || b.iter().any(|x| db.type_contains_unknown(*x))
         }
@@ -109,6 +105,7 @@ pub struct NominalInfHead {
     pub def: HirId,
     pub parse_arg: Option<InfTypeId>,
     pub fun_args: Box<Vec<InfTypeId>>,
+    pub ty_args: Box<Vec<InfTypeId>>,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -271,10 +268,10 @@ pub struct InferenceContext<TR: TypeResolver> {
 pub trait TypeResolver {
     type DB: TypeInterner + ?Sized;
     fn db(&self) -> &Self::DB;
-    fn field_type(&self, ty: &NominalInfHead, name: FieldName) -> Result<LazyInfType, ()>;
-    fn deref(&self, ty: &NominalInfHead) -> Result<Option<LazyInfType>, ()>;
+    fn field_type(&self, ty: &NominalInfHead, name: FieldName) -> Result<TypeId, ()>;
+    fn deref(&self, ty: &NominalInfHead) -> Result<Option<TypeId>, ()>;
     fn signature(&self, ty: &NominalInfHead) -> Result<Signature, ()>;
-    fn lookup(&self, context: HirId, name: FieldName) -> Result<LazyInfType, ()>;
+    fn lookup(&self, context: HirId, name: FieldName) -> Result<TypeId, ()>;
 }
 
 impl<TR: TypeResolver> InferenceContext<TR> {
@@ -291,17 +288,25 @@ impl<TR: TypeResolver> InferenceContext<TR> {
     fn intern_infty(&self, infty: InferenceType) -> InfTypeId {
         self.tr.db().intern_inference_type(infty)
     }
-    pub fn field_type(&mut self, ty: &NominalInfHead, name: FieldName) -> Result<InfTypeId, TypeError> {
-        Ok(self.from_lazy_inftype(self.tr.field_type(ty, name).map_err(|()| TypeError)?))
+    pub fn field_type(
+        &mut self,
+        ty: &NominalInfHead,
+        name: FieldName,
+    ) -> Result<InfTypeId, TypeError> {
+        Ok(self.from_type(self.tr.field_type(ty, name).map_err(|()| TypeError)?))
     }
     pub fn deref(&mut self, ty: &NominalInfHead) -> Result<Option<InfTypeId>, TypeError> {
-        Ok(self.tr.deref(ty).map_err(|()| TypeError)?.map(|x| self.from_lazy_inftype(x)))
+        Ok(self
+            .tr
+            .deref(ty)
+            .map_err(|()| TypeError)?
+            .map(|x| self.from_type(x)))
     }
     pub fn signature(&self, ty: &NominalInfHead) -> Result<Signature, TypeError> {
         self.tr.signature(ty).map_err(|()| TypeError)
     }
     pub fn lookup(&mut self, context: HirId, name: FieldName) -> Result<InfTypeId, TypeError> {
-        Ok(self.from_lazy_inftype(self.tr.lookup(context, name).map_err(|()| TypeError)?))
+        Ok(self.from_type(self.tr.lookup(context, name).map_err(|()| TypeError)?))
     }
     pub fn constrain(&mut self, lower: InfTypeId, upper: InfTypeId) -> Result<(), TypeError> {
         use InferenceType::*;
@@ -372,7 +377,6 @@ impl<TR: TypeResolver> InferenceContext<TR> {
                 self.constrain(res1, res2)?;
                 self.constrain(arg2, arg1)
             }
-
 
             (Loop(kind1, inner1), Loop(kind2, inner2)) => {
                 if matches!((kind1, kind2), (ArrayKind::For, ArrayKind::Each)) {
@@ -470,7 +474,8 @@ impl<TR: TypeResolver> InferenceContext<TR> {
             kind: NominalKind::Block,
             def: id,
             parse_arg: Some(arg),
-            fun_args: Box::new(vec![]),
+            fun_args: Box::default(),
+            ty_args: Box::default(),
         };
         let result = self.intern_infty(InferenceType::Nominal(nominal));
         Ok(self.parser(result, arg))
@@ -580,14 +585,29 @@ impl<TR: TypeResolver> InferenceContext<TR> {
                 def,
                 parse_arg,
                 fun_args,
+                ty_args,
             }) => {
                 let parse_arg = parse_arg.map(&mut recurse);
-                let fun_args = Box::new(fun_args.iter().copied().map(recurse).collect::<Vec<_>>());
+                let fun_args = Box::new(
+                    fun_args
+                        .iter()
+                        .copied()
+                        .map(&mut recurse)
+                        .collect::<Vec<_>>(),
+                );
+                let ty_args = Box::new(
+                    ty_args
+                        .iter()
+                        .copied()
+                        .map(&mut recurse)
+                        .collect::<Vec<_>>(),
+                );
                 InferenceType::Nominal(NominalInfHead {
                     kind: *kind,
                     def: *def,
                     parse_arg,
                     fun_args,
+                    ty_args,
                 })
             }
             Type::Loop(kind, inner) => InferenceType::Loop(*kind, recurse(*inner)),
@@ -603,12 +623,6 @@ impl<TR: TypeResolver> InferenceContext<TR> {
             }
         };
         self.intern_infty(ret)
-    }
-    pub fn from_lazy_inftype(&mut self, infty: LazyInfType) -> InfTypeId {
-        match infty {
-            LazyInfType::InfType(i) => i,
-            LazyInfType::Type(t) => self.from_type(t),
-        }
     }
     pub fn to_type(&mut self, infty: InfTypeId, pol: Polarity) -> Result<TypeId, TypeError> {
         let mut converter = TypeConvertMemo::new(self);
@@ -741,11 +755,13 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                     def: def1,
                     parse_arg: parse_arg1,
                     fun_args: fun_args1,
+                    ty_args: ty_args1,
                 }),
                 Nominal(NominalInfHead {
                     def: def2,
                     parse_arg: parse_arg2,
                     fun_args: fun_args2,
+                    ty_args: ty_args2,
                     ..
                 }),
             ) if def1 == def2 => {
@@ -761,11 +777,19 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                         .map(|(arg1, arg2)| self.meet_inftype(*arg1, *arg2))
                         .collect::<Result<_, _>>()?,
                 );
+                let ty_args = Box::new(
+                    ty_args1
+                        .iter()
+                        .zip(ty_args2.iter())
+                        .map(|(arg1, arg2)| self.join_inftype(*arg1, *arg2))
+                        .collect::<Result<_, _>>()?,
+                );
                 Nominal(NominalInfHead {
                     kind,
                     def: def1,
                     parse_arg,
                     fun_args,
+                    ty_args,
                 })
             }
             (nom @ Nominal(_), other) | (other, nom @ Nominal(_)) => {
@@ -864,11 +888,13 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                     def: def1,
                     parse_arg: parse_arg1,
                     fun_args: fun_args1,
+                    ty_args: ty_args1,
                 }),
                 Nominal(NominalInfHead {
                     def: def2,
                     parse_arg: parse_arg2,
                     fun_args: fun_args2,
+                    ty_args: ty_args2,
                     ..
                 }),
             ) if def1 == def2 => {
@@ -884,11 +910,19 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                         .map(|(arg1, arg2)| self.join_inftype(*arg1, *arg2))
                         .collect::<Result<_, _>>()?,
                 );
+                let ty_args = Box::new(
+                    ty_args1
+                        .iter()
+                        .zip(ty_args2.iter())
+                        .map(|(arg1, arg2)| self.join_inftype(*arg1, *arg2))
+                        .collect::<Result<_, _>>()?,
+                );
                 Nominal(NominalInfHead {
                     kind,
                     def: def1,
                     parse_arg,
                     fun_args,
+                    ty_args,
                 })
             }
             (nom @ Nominal(NominalInfHead { .. }), other)
@@ -1011,11 +1045,17 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                 def,
                 parse_arg,
                 fun_args,
+                ty_args,
             }) => {
                 let parse_arg = parse_arg
                     .map(|x| self.to_type_internal(x, pol))
                     .transpose()?;
-                let type_args = fun_args
+                let fun_args = fun_args
+                    .iter()
+                    .copied()
+                    .map(|x| self.to_type_internal(x, pol))
+                    .collect::<Result<_, _>>()?;
+                let ty_args = ty_args
                     .iter()
                     .copied()
                     .map(|x| self.to_type_internal(x, pol))
@@ -1024,13 +1064,17 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                     kind,
                     def,
                     parse_arg,
-                    fun_args: Arc::new(type_args),
+                    fun_args: Arc::new(fun_args),
+                    ty_args: Arc::new(ty_args),
                 })
             }
             InferenceType::Loop(kind, inner) => {
                 Type::Loop(kind, self.to_type_internal(inner, pol)?)
             }
-            InferenceType::ParserArg { result, arg } => Type::ParserArg { result: self.to_type_internal(result, pol)?, arg: self.to_type_internal(arg, pol.reverse())? },
+            InferenceType::ParserArg { result, arg } => Type::ParserArg {
+                result: self.to_type_internal(result, pol)?,
+                arg: self.to_type_internal(arg, pol.reverse())?,
+            },
             InferenceType::FunctionArgs { result, args } => {
                 let args = args
                     .iter()
