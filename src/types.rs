@@ -70,35 +70,29 @@ pub enum Type {
     ForAll(TypeId, Arc<Vec<VarDef>>),
     Nominal(NominalTypeHead),
     Loop(ArrayKind, TypeId),
-    ParserArg(TypeId, TypeId),
+    ParserArg { result: TypeId, arg: TypeId },
     FunctionArg(TypeId, Arc<Vec<TypeId>>),
 }
 
-impl TypeId {
-    fn contains_unknown(self, db: &dyn TypeInterner) -> bool {
-        match db.lookup_intern_type(self) {
-            Type::Any | Type::Bot | Type::Primitive(_) | Type::TypeVarRef(_, _, _) => false,
-            Type::Unknown => true,
-            Type::ForAll(inner, _) => inner.contains_unknown(db),
-            Type::Nominal(NominalTypeHead {
-                parse_arg,
-                fun_args,
-                ..
-            }) => {
-                parse_arg.map_or(false, |x| x.contains_unknown(db))
-                    || fun_args.iter().any(|x| x.contains_unknown(db))
-            }
-            Type::Loop(_, inner) => inner.contains_unknown(db),
-            Type::ParserArg(a, b) => a.contains_unknown(db) || b.contains_unknown(db),
-            Type::FunctionArg(a, b) => {
-                a.contains_unknown(db) || b.iter().any(|x| x.contains_unknown(db))
-            }
+pub fn type_contains_unknown(db: &dyn TypeInterner, id: TypeId) -> bool {
+    match db.lookup_intern_type(id) {
+        Type::Any | Type::Bot | Type::Primitive(_) | Type::TypeVarRef(_, _, _) => false,
+        Type::Unknown => true,
+        Type::ForAll(inner, _) => db.type_contains_unknown(inner),
+        Type::Nominal(NominalTypeHead {
+            parse_arg,
+            fun_args,
+            ..
+        }) => {
+            parse_arg.map_or(false, |x| db.type_contains_unknown(x))
+                || fun_args.iter().any(|x| db.type_contains_unknown(*x))
+        }
+        Type::Loop(_, inner) => db.type_contains_unknown(inner),
+        Type::ParserArg { result, arg } => db.type_contains_unknown(result) || db.type_contains_unknown(arg),
+        Type::FunctionArg(a, b) => {
+            db.type_contains_unknown(a) || b.iter().any(|x| db.type_contains_unknown(*x))
         }
     }
-}
-
-pub fn type_contains_unknown(db: &dyn TypeInterner, id: TypeId) -> bool {
-    id.contains_unknown(db)
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -277,10 +271,10 @@ pub struct InferenceContext<TR: TypeResolver> {
 pub trait TypeResolver {
     type DB: TypeInterner + ?Sized;
     fn db(&self) -> &Self::DB;
-    fn field_type(&self, ty: &NominalInfHead, name: FieldName) -> Option<LazyInfType>;
-    fn deref(&self, ty: &NominalInfHead) -> Option<LazyInfType>;
-    fn signature(&self, ty: &NominalInfHead) -> Option<Signature>;
-    fn lookup(&self, context: HirId, name: FieldName) -> Option<LazyInfType>;
+    fn field_type(&self, ty: &NominalInfHead, name: FieldName) -> Result<LazyInfType, ()>;
+    fn deref(&self, ty: &NominalInfHead) -> Result<Option<LazyInfType>, ()>;
+    fn signature(&self, ty: &NominalInfHead) -> Result<Signature, ()>;
+    fn lookup(&self, context: HirId, name: FieldName) -> Result<LazyInfType, ()>;
 }
 
 impl<TR: TypeResolver> InferenceContext<TR> {
@@ -297,17 +291,17 @@ impl<TR: TypeResolver> InferenceContext<TR> {
     fn intern_infty(&self, infty: InferenceType) -> InfTypeId {
         self.tr.db().intern_inference_type(infty)
     }
-    pub fn field_type(&mut self, ty: &NominalInfHead, name: FieldName) -> Option<InfTypeId> {
-        Some(self.from_lazy_inftype(self.tr.field_type(ty, name)?))
+    pub fn field_type(&mut self, ty: &NominalInfHead, name: FieldName) -> Result<InfTypeId, TypeError> {
+        Ok(self.from_lazy_inftype(self.tr.field_type(ty, name).map_err(|()| TypeError)?))
     }
-    pub fn deref(&mut self, ty: &NominalInfHead) -> Option<InfTypeId> {
-        Some(self.from_lazy_inftype(self.tr.deref(ty)?))
+    pub fn deref(&mut self, ty: &NominalInfHead) -> Result<Option<InfTypeId>, TypeError> {
+        Ok(self.tr.deref(ty).map_err(|()| TypeError)?.map(|x| self.from_lazy_inftype(x)))
     }
-    pub fn signature(&self, ty: &NominalInfHead) -> Option<Signature> {
-        self.tr.signature(ty)
+    pub fn signature(&self, ty: &NominalInfHead) -> Result<Signature, TypeError> {
+        self.tr.signature(ty).map_err(|()| TypeError)
     }
-    pub fn lookup(&mut self, context: HirId, name: FieldName) -> Option<InfTypeId> {
-        Some(self.from_lazy_inftype(self.tr.lookup(context, name)?))
+    pub fn lookup(&mut self, context: HirId, name: FieldName) -> Result<InfTypeId, TypeError> {
+        Ok(self.from_lazy_inftype(self.tr.lookup(context, name).map_err(|()| TypeError)?))
     }
     pub fn constrain(&mut self, lower: InfTypeId, upper: InfTypeId) -> Result<(), TypeError> {
         use InferenceType::*;
@@ -319,6 +313,30 @@ impl<TR: TypeResolver> InferenceContext<TR> {
             (_, Any) => Ok(()),
 
             (Bot, _) => Ok(()),
+
+            (Var(var_id), _) => {
+                self.var_store.get_mut(var_id).upper.push(upper);
+                // idx is needed because var.lower may change during the loop
+                let mut idx = 0;
+                while let Some(&lower_bound) = self.var_store.get(var_id).lower.get(idx) {
+                    idx += 1;
+                    self.constrain(lower_bound, upper)?;
+                }
+                Ok(())
+            }
+
+            (_, Var(var_id)) => {
+                self.var_store.get_mut(var_id).lower.push(lower);
+                // idx is needed because var.lower may change during the loop
+                let mut idx = 0;
+                while let Some(&upper_bound) = self.var_store.get(var_id).upper.get(idx) {
+                    idx += 1;
+                    self.constrain(upper_bound, lower)?;
+                }
+                Ok(())
+            }
+
+            (Unknown, _) | (_, Unknown) => Ok(()),
 
             (Primitive(l), Primitive(u)) if l == u => Ok(()),
             (
@@ -355,29 +373,6 @@ impl<TR: TypeResolver> InferenceContext<TR> {
                 self.constrain(arg2, arg1)
             }
 
-            (Var(var_id), _) => {
-                self.var_store.get_mut(var_id).upper.push(upper);
-                // idx is needed because var.lower may change during the loop
-                let mut idx = 0;
-                while let Some(&lower_bound) = self.var_store.get(var_id).lower.get(idx) {
-                    idx += 1;
-                    self.constrain(lower_bound, upper)?;
-                }
-                Ok(())
-            }
-
-            (_, Var(var_id)) => {
-                self.var_store.get_mut(var_id).lower.push(lower);
-                // idx is needed because var.lower may change during the loop
-                let mut idx = 0;
-                while let Some(&upper_bound) = self.var_store.get(var_id).upper.get(idx) {
-                    idx += 1;
-                    self.constrain(upper_bound, lower)?;
-                }
-                Ok(())
-            }
-
-            (Unknown, _) | (_, Unknown) => Ok(()),
 
             (Loop(kind1, inner1), Loop(kind2, inner2)) => {
                 if matches!((kind1, kind2), (ArrayKind::For, ArrayKind::Each)) {
@@ -394,7 +389,7 @@ impl<TR: TypeResolver> InferenceContext<TR> {
             }
 
             (Nominal(ref nom), InferField(name, fieldtype)) => {
-                let field_ty = self.field_type(nom, name).ok_or(TypeError)?;
+                let field_ty = self.field_type(nom, name)?;
                 self.constrain(field_ty, fieldtype)
             }
 
@@ -421,7 +416,7 @@ impl<TR: TypeResolver> InferenceContext<TR> {
 
             (Nominal(l), _) => {
                 // if they are not the same head, try upcasting/dereferencing/evaluating
-                if let Some(deref) = self.deref(&l) {
+                if let Some(deref) = self.deref(&l)? {
                     self.constrain(deref, upper)
                 } else {
                     Err(TypeError)
@@ -596,8 +591,8 @@ impl<TR: TypeResolver> InferenceContext<TR> {
                 })
             }
             Type::Loop(kind, inner) => InferenceType::Loop(*kind, recurse(*inner)),
-            Type::ParserArg(parser, arg) => {
-                let result = recurse(*parser);
+            Type::ParserArg { result, arg } => {
+                let result = recurse(*result);
                 let arg = recurse(*arg);
                 InferenceType::ParserArg { result, arg }
             }
@@ -776,11 +771,11 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
             (nom @ Nominal(_), other) | (other, nom @ Nominal(_)) => {
                 let nomhead = TypeHead::try_from(&nom)?;
                 let otherhead = TypeHead::try_from(&other)?;
-                let mut next = |ty: &_| {
+                let mut next = |ty: &_| -> Result<Option<InferenceType>, TypeError> {
                     if let InferenceType::Nominal(nom) = ty {
-                        self.ctx.deref(nom).map(|x| self.ctx.lookup_infty(x))
+                        Ok(self.ctx.deref(nom)?.map(|x| self.ctx.lookup_infty(x)))
                     } else {
-                        None
+                        Ok(None)
                     }
                 };
                 let mut nom_ty = nom.clone();
@@ -791,7 +786,7 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                             .meet_inftype(a_id, b_id)
                             .and_then(|x| self.meet.leave_fun((lhs, rhs), x));
                     }
-                    match next(&nom_ty) {
+                    match next(&nom_ty)? {
                         Some(n) => nom_ty = n,
                         None => break,
                     }
@@ -804,7 +799,7 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                             .meet_inftype(a_id, b_id)
                             .and_then(|x| self.meet.leave_fun((lhs, rhs), x));
                     }
-                    match next(&other_ty) {
+                    match next(&other_ty)? {
                         Some(n) => other_ty = n,
                         None => break,
                     }
@@ -901,15 +896,15 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                 let mut other_upset = HashMap::new();
                 let mut next = |ty: &_| {
                     if let InferenceType::Nominal(nom) = ty {
-                        self.ctx.deref(nom).map(|x| self.ctx.lookup_infty(x))
+                        Ok(self.ctx.deref(nom)?.map(|x| self.ctx.lookup_infty(x)))
                     } else {
-                        None
+                        Ok(None)
                     }
                 };
                 let mut other_ty = other;
                 loop {
                     other_upset.insert(TypeHead::try_from(&other_ty)?, other_ty.clone());
-                    match next(&other_ty) {
+                    match next(&other_ty)? {
                         Some(n) => other_ty = n,
                         None => break,
                     }
@@ -923,7 +918,7 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                         res = Some(self.join_inftype(other, nom)?);
                         break;
                     }
-                    match next(&nom_ty) {
+                    match next(&nom_ty)? {
                         Some(n) => nom_ty = n,
                         None => break,
                     }
@@ -1035,10 +1030,7 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
             InferenceType::Loop(kind, inner) => {
                 Type::Loop(kind, self.to_type_internal(inner, pol)?)
             }
-            InferenceType::ParserArg { result, arg } => Type::ParserArg(
-                self.to_type_internal(result, pol)?,
-                self.to_type_internal(arg, pol.reverse())?,
-            ),
+            InferenceType::ParserArg { result, arg } => Type::ParserArg { result: self.to_type_internal(result, pol)?, arg: self.to_type_internal(arg, pol.reverse())? },
             InferenceType::FunctionArgs { result, args } => {
                 let args = args
                     .iter()

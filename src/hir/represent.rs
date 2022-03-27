@@ -335,8 +335,8 @@ fn type_to_string(ty: TypeId, db: &dyn Hirs) -> String {
             ArrayKind::For => format!("for[{}]", type_to_string(inner, db)),
             ArrayKind::Each => format!("each[{}]", type_to_string(inner, db)),
         },
-        Type::ParserArg(from, to) => {
-            format!("{} *> {}", type_to_string(from, db), type_to_string(to, db))
+        Type::ParserArg { result, arg } => {
+            format!("{} *> {}", type_to_string(arg, db), type_to_string(result, db))
         }
         Type::FunctionArg(res, args) => {
             let args = args
@@ -351,15 +351,14 @@ fn type_to_string(ty: TypeId, db: &dyn Hirs) -> String {
 }
 
 impl HirToString for PrimitiveType {
-    fn hir_to_string(&self, _db: &dyn Hirs) -> String {
+    fn hir_to_string(&self, _: &dyn Hirs) -> String {
         match self {
-            PrimitiveType::Bit => String::from("bit"),
             PrimitiveType::Int => String::from("int"),
+            PrimitiveType::Bit => String::from("bit"),
             PrimitiveType::Char => String::from("char"),
         }
     }
 }
-
 #[derive(Clone)]
 pub struct HirGraph<'a>(pub &'a dyn Hirs);
 
