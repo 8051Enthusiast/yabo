@@ -204,7 +204,7 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
     }
     */
     pub fn resolve_type_expr(
-        &self,
+        &mut self,
         context: &mut TypingLocation,
         expr: &Expression<HirType>,
     ) -> Result<InfTypeId, TypeError> {
@@ -351,7 +351,7 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                     ParserAtom::Atom(Atom::Number(_)) => self.infctx.int(),
                     ParserAtom::Atom(Atom::String(_)) => todo!(),
                     ParserAtom::Atom(Atom::Field(f)) => {
-                        self.infctx.lookup(context.loc, *f).ok_or(TypeError)?
+                        self.infctx.lookup(context.loc, *f)?
                     }
                     ParserAtom::Array(a) => {
                         let array = a.lookup(self.db).map_err(|_| TypeError)?;
@@ -395,27 +395,27 @@ impl<'a> TypeResolver for ReturnResolver<'a> {
         self.db
     }
 
-    fn field_type(&self, _: &NominalInfHead, _: FieldName) -> Option<LazyInfType> {
-        None
+    fn field_type(&self, _: &NominalInfHead, _: FieldName) -> Result<LazyInfType, ()> {
+        Ok(LazyInfType::Type(self.db.intern_type(Type::Unknown)))
     }
 
-    fn deref(&self, ty: &NominalInfHead) -> Option<LazyInfType> {
-        if let Some(x) = self.return_infs.get(&ty.def) {
-            Some(LazyInfType::InfType(x.deref))
+    fn deref(&self, ty: &NominalInfHead) -> Result<Option<LazyInfType>, ()> {
+        if self.return_infs.get(&ty.def).is_some() {
+            Ok(Some(LazyInfType::Type(self.db.intern_type(Type::Unknown))))
         } else {
             let id = match NominalId::from_nominal_head(ty) {
                 NominalId::Def(d) => d,
-                NominalId::Block(_) => return None,
+                NominalId::Block(_) => return Ok(None),
             };
-            Some(LazyInfType::Type(self.db.parser_returns(id).ok()?.deref))
+            Ok(Some(LazyInfType::Type(self.db.parser_returns(id).map_err(|_| ())?.deref)))
         }
     }
 
-    fn signature(&self, ty: &NominalInfHead) -> Option<Signature> {
+    fn signature(&self, ty: &NominalInfHead) -> Result<Signature, ()> {
         get_signature(self.db, ty)
     }
 
-    fn lookup(&self, context: HirId, name: FieldName) -> Option<LazyInfType> {
+    fn lookup(&self, context: HirId, name: FieldName) -> Result<LazyInfType, ()> {
         get_thunk(self.db, context, name)
     }
 }
@@ -425,23 +425,23 @@ pub struct PublicResolver<'a> {
 }
 
 impl<'a> TypeResolver for PublicResolver<'a> {
-    fn field_type(&self, _ty: &NominalInfHead, _name: FieldName) -> Option<LazyInfType> {
-        None
+    fn field_type(&self, _ty: &NominalInfHead, _name: FieldName) -> Result<LazyInfType, ()> {
+        Ok(LazyInfType::Type(self.db.intern_type(Type::Unknown)))
     }
 
-    fn deref(&self, ty: &NominalInfHead) -> Option<LazyInfType> {
+    fn deref(&self, ty: &NominalInfHead) -> Result<Option<LazyInfType>, ()> {
         let id = match NominalId::from_nominal_head(ty) {
             NominalId::Def(d) => d,
-            NominalId::Block(_) => return None,
+            NominalId::Block(_) => return Ok(None)
         };
-        Some(LazyInfType::Type(self.db.parser_returns(id).ok()?.deref))
+        Ok(Some(LazyInfType::Type(self.db.parser_returns(id).map_err(|_| ())?.deref)))
     }
 
-    fn signature(&self, ty: &NominalInfHead) -> Option<Signature> {
+    fn signature(&self, ty: &NominalInfHead) -> Result<Signature, ()> {
         get_signature(self.db, ty)
     }
 
-    fn lookup(&self, context: HirId, name: FieldName) -> Option<LazyInfType> {
+    fn lookup(&self, context: HirId, name: FieldName) -> Result<LazyInfType, ()> {
         get_thunk(self.db, context, name)
     }
 
@@ -461,20 +461,20 @@ impl<'a> ArgResolver<'a> {
 }
 
 impl<'a> TypeResolver for ArgResolver<'a> {
-    fn field_type(&self, _ty: &NominalInfHead, _name: FieldName) -> Option<LazyInfType> {
-        None
+    fn field_type(&self, _ty: &NominalInfHead, _name: FieldName) -> Result<LazyInfType, ()> {
+        Ok(LazyInfType::Type(self.0.intern_type(Type::Unknown)))
     }
 
-    fn deref(&self, _ty: &NominalInfHead) -> Option<LazyInfType> {
-        None
+    fn deref(&self, _ty: &NominalInfHead) -> Result<Option<LazyInfType>, ()> {
+        Ok(Some(LazyInfType::Type(self.0.intern_type(Type::Unknown))))
     }
 
-    fn signature(&self, ty: &NominalInfHead) -> Option<Signature> {
+    fn signature(&self, ty: &NominalInfHead) -> Result<Signature, ()> {
         get_signature(self.0, ty)
     }
 
-    fn lookup(&self, _context: HirId, _name: FieldName) -> Option<LazyInfType> {
-        None
+    fn lookup(&self, _context: HirId, _name: FieldName) -> Result<LazyInfType, ()> {
+        Ok(LazyInfType::Type(self.0.intern_type(Type::Unknown)))
     }
 
     type DB = dyn Hirs + 'a;
@@ -484,17 +484,25 @@ impl<'a> TypeResolver for ArgResolver<'a> {
     }
 }
 
-fn get_thunk(db: &dyn Hirs, context: HirId, name: FieldName) -> Option<LazyInfType> {
-    let pd = parserdef_ref(db, context, name).ok()?;
-    Some(LazyInfType::Type(db.parser_args(pd).ok()?.thunk))
+fn get_thunk(db: &dyn Hirs, context: HirId, name: FieldName) -> Result<LazyInfType, ()> {
+    let pd = parserdef_ref(db, context, name).map_err(|_| ())?;
+    let args = db.parser_args(pd).map_err(|_| ())?;
+    let mut ret = args.thunk;
+    if let Some(from) = args.from {
+        ret = db.intern_type(Type::ParserArg { result: ret, arg: from })
+    }
+    if !args.args.is_empty() {
+        ret = db.intern_type(Type::FunctionArg(ret, args.args.clone()))
+    }
+    Ok(LazyInfType::Type(ret))
 }
 
-fn get_signature(db: &dyn Hirs, ty: &NominalInfHead) -> Option<Signature> {
+fn get_signature(db: &dyn Hirs, ty: &NominalInfHead) -> Result<Signature, ()> {
     let id = match NominalId::from_nominal_head(ty) {
         NominalId::Def(d) => d,
         NominalId::Block(_) => panic!("attempted to extract signature directly from block"),
     };
-    db.parser_args(id).ok()
+    db.parser_args(id).map_err(|_| ())
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
@@ -579,15 +587,15 @@ def each[for[int] *> expr2] *> expr4 = {}
         };
         assert_eq!("for[int]", arg_type("expr1"));
         assert_eq!("for[for[int] &> file[anonymous].expr1]", arg_type("expr2"));
-        assert_eq!("for[<Var Ref (0, 0)>]", arg_type("expr3"));
-        assert_eq!("each[file[anonymous].expr2]", arg_type("expr4"));
+        assert_eq!("for[<Var Ref (file[anonymous].expr3, 0, 0)>]", arg_type("expr3"));
+        assert_eq!("each[for[int] *> file[anonymous].expr2]", arg_type("expr4"));
     }
     #[test]
     fn return_types() {
         let ctx = Context::mock(
             r#"
 def for['t] *> nil = {}
-def int &> nil *> expr1 = {}
+def nil *> expr1 = {}
             "#,
         );
         let return_type = |name| {
@@ -598,16 +606,7 @@ def int &> nil *> expr1 = {}
                 .deref
                 .hir_to_string(&ctx.db)
         };
-        let arg_type = |name| {
-            let p = ctx.parser(name);
-            ctx.db
-                .parser_args(p)
-                .unwrap()
-                .thunk
-                .hir_to_string(&ctx.db)
-        };
         eprintln!("{}", return_type("nil"));
-        eprintln!("{}", arg_type("expr1"));
         eprintln!("{}", return_type("expr1"));
     }
 }
