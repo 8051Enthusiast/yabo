@@ -113,6 +113,14 @@ impl HirId {
         path.pop();
         db.intern_hir_path(path)
     }
+    pub fn child<DB: Interner + ?Sized>(self, db: &DB, name: PathComponent) -> HirId {
+        let mut path = db.lookup_intern_hir_path(self);
+        path.push(name);
+        db.intern_hir_path(path)
+    }
+    pub fn child_field<DB: Interner + ?Sized>(self, db: &DB, name: FieldName) -> HirId {
+        self.child(db, PathComponent::Named(name))
+    }
 }
 impl salsa::InternKey for HirId {
     fn from_intern_id(v: InternId) -> Self {

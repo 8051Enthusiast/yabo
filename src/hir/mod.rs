@@ -21,10 +21,12 @@ use crate::{
     types::{Signature, TypeError, TypeId},
 };
 
-use hir_types::{parser_args, parser_returns, parser_returns_ssc, public_type};
+use hir_types::{
+    ambient_type, parser_args, parser_returns, parser_returns_ssc, public_expr_type, public_type,
+};
 use recursion::{mod_parser_ssc, parser_ssc, FunctionSscId};
 
-use self::hir_types::ParserDefType;
+use self::hir_types::{ParserDefType, TypedHirVal};
 
 #[salsa::query_group(HirDatabase)]
 pub trait Hirs: ast::Asts + crate::types::TypeInterner {
@@ -46,7 +48,12 @@ pub trait Hirs: ast::Asts + crate::types::TypeInterner {
     fn parser_args(&self, id: ParserDefId) -> Result<Signature, TypeError>;
     fn parser_returns(&self, id: ParserDefId) -> Result<ParserDefType, TypeError>;
     fn parser_returns_ssc(&self, id: FunctionSscId) -> Result<Vec<ParserDefType>, TypeError>;
-    fn public_type(&self, id: HirId) -> Option<TypeId>;
+    fn public_type(&self, loc: HirId) -> Result<TypeId, ()>;
+    fn public_expr_type(
+        &self,
+        loc: ExprId,
+    ) -> Result<(Expression<TypedHirVal<TypeId>>, TypeId), ()>;
+    fn ambient_type(&self, id: HirId) -> Result<TypeId, ()>;
 }
 
 fn hir_parser_collection(db: &dyn Hirs, hid: HirId) -> Result<Option<HirParserCollection>, ()> {
