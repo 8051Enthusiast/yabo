@@ -498,9 +498,6 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         let new_parser = self.intern_infty(InferenceType::ParserArg { arg, result });
         Ok(new_parser)
     }
-    pub fn parser_create(&mut self, result: InfTypeId, arg: InfTypeId) -> InfTypeId {
-        self.intern_infty(InferenceType::ParserArg { result, arg })
-    }
     pub fn parser_apply(
         &mut self,
         parser: InfTypeId,
