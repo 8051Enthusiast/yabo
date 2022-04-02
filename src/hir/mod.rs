@@ -741,7 +741,7 @@ fn struct_context(
         let new_set = match child {
             ast::BlockContent::Choice(c) => {
                 let sub_id = ChoiceId(new_id(None));
-                let choice_indirect = struct_choice(c, ctx, sub_id, &parents);
+                let choice_indirect = struct_choice(&c, ctx, sub_id, &parents);
                 choice_indirect.map(|ident, b| {
                     let chin_id = ChoiceIndirectId(new_id(Some(ident)));
                     choice_indirection(b, ctx, chin_id, id, sub_id);
