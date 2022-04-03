@@ -98,7 +98,7 @@ pub fn parser_args(db: &dyn Hirs, id: ParserDefId) -> Result<Signature, TypeErro
         ty_args: Arc::new(vec![]),
     }));
     Ok(Signature {
-        ty_args: context.vars.defs,
+        ty_args: Arc::new(context.vars.defs),
         from: Some(from_ty),
         args,
         thunk,
@@ -712,6 +712,9 @@ fn get_thunk(db: &dyn Hirs, context: HirId, name: FieldName) -> Result<TypeId, (
     if !args.args.is_empty() {
         ret = db.intern_type(Type::FunctionArg(ret, args.args.clone()))
     }
+    if !args.ty_args.is_empty() {
+        ret = db.intern_type(Type::ForAll(ret, args.ty_args.clone()))
+    }
     Ok(ret)
 }
 
@@ -829,5 +832,13 @@ def nil *> expr1 = {}
         };
         eprintln!("{}", return_type("nil"));
         eprintln!("{}", return_type("expr1"));
+    }
+    #[test]
+    fn public_types() {
+        let ctx = Context::mock(
+            r#"
+
+            "#,
+        );
     }
 }

@@ -220,7 +220,7 @@ pub enum NominalKind {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Signature {
-    pub ty_args: Vec<VarDef>,
+    pub ty_args: Arc<Vec<VarDef>>,
     pub from: Option<TypeId>,
     pub args: Arc<Vec<TypeId>>,
     pub thunk: TypeId,
@@ -293,14 +293,14 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         ty: &NominalInfHead,
         name: FieldName,
     ) -> Result<InfTypeId, TypeError> {
-        Ok(self.from_type(self.tr.field_type(ty, name).map_err(|()| TypeError)?))
+        Ok(self.from_type_with_args(self.tr.field_type(ty, name).map_err(|()| TypeError)?, &ty.ty_args))
     }
     pub fn deref(&mut self, ty: &NominalInfHead) -> Result<Option<InfTypeId>, TypeError> {
         Ok(self
             .tr
             .deref(ty)
             .map_err(|()| TypeError)?
-            .map(|x| self.from_type(x)))
+            .map(|x| self.from_type_with_args(x, &ty.ty_args)))
     }
     pub fn signature(&self, ty: &NominalInfHead) -> Result<Signature, TypeError> {
         self.tr.signature(ty).map_err(|()| TypeError)
