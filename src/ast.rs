@@ -84,7 +84,7 @@ impl<K: ExpressionKind, T: ExpressionComponent<K>> ExpressionComponent<K> for Sp
 impl ExpressionComponent<AstVal> for ParserAtom {
     fn children(&self) -> Vec<&Expression<AstVal>> {
         match self {
-            ParserAtom::Atom(_) | ParserAtom::Block(_) => vec![],
+            ParserAtom::Atom(_) | ParserAtom::Single | ParserAtom::Block(_) => vec![],
             ParserAtom::Array(a) => vec![&a.expr],
         }
     }
@@ -158,6 +158,7 @@ impl From<TypeVar> for TypeAtom {
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum ParserAtom {
     Atom(Atom),
+    Single,
     Array(Box<ParserArray>),
     Block(Block),
 }

@@ -412,6 +412,7 @@ astify! {
         UnaryOp(boxed(unary_expression)),
         Atom(spanned(parser_block)),
         Atom(spanned(parser_array)),
+        Atom(spanned(single)),
         Atom(spanned(atom..)),
     };
 
@@ -429,6 +430,10 @@ astify! {
         Atom(spanned(type_array)),
         Atom(spanned(type_var)),
     };
+}
+
+fn single(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ParserAtom> {
+    Ok(ParserAtom::Single)
 }
 
 fn identifier(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Identifier> {

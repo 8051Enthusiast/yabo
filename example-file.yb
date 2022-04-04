@@ -1,5 +1,5 @@
 def for[u8] *> main = {
-    a: int,
+    n: ~ ,
     (
 	c: i64ul,
 	d: c_string |> utf8,

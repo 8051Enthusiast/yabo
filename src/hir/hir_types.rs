@@ -64,8 +64,8 @@ pub fn parser_returns_ssc(
         if let Some(from) = sig.from {
             let inffrom = ctx.infctx.from_type(from);
             let deref = ctx.infctx.tr.return_infs[&def.id.0].deref;
-            let parser_ty = ctx.infctx.parser(deref, inffrom);
-            ctx.infctx.constrain(ty, parser_ty)?;
+            let ret = ctx.infctx.parser_apply(ty, inffrom)?;
+            ctx.infctx.constrain(ret, deref)?;
         };
     }
     let mut ret = Vec::new();
@@ -129,7 +129,7 @@ pub fn public_expr_type(
         root
     };
     let ret = if let Some(real_ret) = surrounding_types.root_type {
-        ctx.infctx.constrain(real_ret, into_ret).map_err(|_| ())?;
+        ctx.infctx.constrain(into_ret, real_ret).map_err(|_| ())?;
         real_ret
     } else {
         into_ret
@@ -142,16 +142,14 @@ pub fn public_type(db: &dyn Hirs, loc: HirId) -> Result<TypeId, ()> {
     let node = db.hir_node(loc)?;
     let ret = match node {
         HirNode::Let(l) => public_expr_type(db, l.expr)?.1,
-        HirNode::Parse(p) => {
-            db.public_expr_type(p.expr).map_err(|_| ())?.1
-        }
+        HirNode::Parse(p) => db.public_expr_type(p.expr).map_err(|_| ())?.1,
         HirNode::ChoiceIndirection(ind) => {
             let mut ctx = PublicResolver::new_typing_context_and_loc(db, ind.parent_context.0)?;
             let ret = ctx.infctx.var();
             for (_, choice_id) in ind.choices.iter() {
                 let choice_ty = db.public_type(*choice_id)?;
                 let intfy = ctx.infctx.from_type(choice_ty);
-                ctx.infctx.constrain(ret, intfy).map_err(|_| ())?;
+                ctx.infctx.constrain(intfy, ret).map_err(|_| ())?;
             }
             ctx.inftype_to_concrete_type(ret).map_err(|_| ())?
         }
@@ -451,6 +449,7 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                     ParserAtom::Atom(Atom::Number(_)) => self.infctx.int(),
                     ParserAtom::Atom(Atom::String(_)) => todo!(),
                     ParserAtom::Atom(Atom::Field(f)) => self.infctx.lookup(context.loc, *f)?,
+                    ParserAtom::Single => self.infctx.single(),
                     ParserAtom::Array(a) => {
                         let array = a.lookup(self.db).map_err(|_| TypeError)?;
                         let inner = array.expr.lookup(self.db).map_err(|_| TypeError)?.expr;
@@ -820,6 +819,7 @@ def each[for[int] *> expr2] *> expr4 = {}
             r#"
 def for['t] *> nil = {}
 def nil *> expr1 = {}
+def for[int] *> single = ~
             "#,
         );
         let return_type = |name| {
@@ -832,6 +832,7 @@ def nil *> expr1 = {}
         };
         eprintln!("{}", return_type("nil"));
         eprintln!("{}", return_type("expr1"));
+        eprintln!("{}", return_type("single"));
     }
     #[test]
     fn public_types() {

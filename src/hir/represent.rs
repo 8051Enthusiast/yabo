@@ -158,6 +158,7 @@ impl HirToString for ParserAtom {
     fn hir_to_string(&self, db: &dyn Hirs) -> String {
         match self {
             ParserAtom::Atom(atom) => atom.hir_to_string(db),
+            ParserAtom::Single => "~".to_string(),
             ParserAtom::Array(id) => format!(
                 "array({})",
                 db.lookup_intern_hir_path(id.0)

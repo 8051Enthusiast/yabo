@@ -217,6 +217,10 @@
           "name": "parser_block"
         },
         {
+          "type": "SYMBOL",
+          "name": "single"
+        },
+        {
           "type": "SEQ",
           "members": [
             {
@@ -1519,6 +1523,10 @@
           "value": "mem"
         }
       ]
+    },
+    "single": {
+      "type": "STRING",
+      "value": "~"
     },
     "type_var": {
       "type": "PATTERN",
