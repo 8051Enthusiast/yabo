@@ -404,6 +404,7 @@ fn val_expression_converter<'a>(
                     parser_array(array, ctx, nid, parent_context);
                     ParserAtom::Array(nid)
                 }
+                ast::ParserAtom::Single => ParserAtom::Single,
                 ast::ParserAtom::Atom(atom) => ParserAtom::Atom(atom.clone()),
                 ast::ParserAtom::Block(b) => {
                     let nid = BlockId(new_id());
@@ -896,6 +897,7 @@ impl From<ast::TypePrimitive> for TypePrimitive {
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum ParserAtom {
     Atom(Atom),
+    Single,
     Array(ArrayId),
     Block(BlockId),
 }

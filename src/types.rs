@@ -1,3 +1,5 @@
+mod represent;
+
 use std::{
     collections::{HashMap, HashSet},
     hash::Hash,
@@ -8,7 +10,7 @@ use salsa::InternId;
 
 use crate::{
     ast::ArrayKind,
-    interner::{FieldName, HirId, TypeVar},
+    interner::{FieldName, HirId, TypeVar, Interner}, types::represent::print_inftype,
 };
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -152,7 +154,12 @@ impl InferenceType {
             InferenceType::Var(..) => {
                 panic!("Internal Compiler Error: taking children of variable");
             }
-            _ => vec![],
+            InferenceType::Nominal(nom) => nom.ty_args.iter_mut().map(|x| (x, pol)).collect(),
+            InferenceType::Any
+            | InferenceType::Bot
+            | InferenceType::Primitive(_)
+            | InferenceType::TypeVarRef(_, _, _)
+            | InferenceType::Unknown => vec![],
         }
     }
 }
@@ -266,7 +273,7 @@ pub struct InferenceContext<TR: TypeResolver> {
 }
 
 pub trait TypeResolver {
-    type DB: TypeInterner + ?Sized;
+    type DB: TypeInterner + Interner + ?Sized;
     fn db(&self) -> &Self::DB;
     fn field_type(&self, ty: &NominalInfHead, name: FieldName) -> Result<TypeId, ()>;
     fn deref(&self, ty: &NominalInfHead) -> Result<Option<TypeId>, ()>;
@@ -293,7 +300,10 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         ty: &NominalInfHead,
         name: FieldName,
     ) -> Result<InfTypeId, TypeError> {
-        Ok(self.from_type_with_args(self.tr.field_type(ty, name).map_err(|()| TypeError)?, &ty.ty_args))
+        Ok(self.from_type_with_args(
+            self.tr.field_type(ty, name).map_err(|()| TypeError)?,
+            &ty.ty_args,
+        ))
     }
     pub fn deref(&mut self, ty: &NominalInfHead) -> Result<Option<InfTypeId>, TypeError> {
         Ok(self
@@ -313,6 +323,11 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         if !self.cache.insert((lower, upper)) {
             return Ok(());
         }
+        let mut debug_out = String::new();
+        print_inftype(self.tr.db(), lower, &mut debug_out);
+        debug_out.push_str(" <= ");
+        print_inftype(self.tr.db(), upper, &mut debug_out);
+        println!("{}", debug_out);
         let [lower_ty, upper_ty] = [lower, upper].map(|x| self.lookup_infty(x));
         match (lower_ty, upper_ty) {
             (_, Any) => Ok(()),
@@ -336,7 +351,7 @@ impl<TR: TypeResolver> InferenceContext<TR> {
                 let mut idx = 0;
                 while let Some(&upper_bound) = self.var_store.get(var_id).upper.get(idx) {
                     idx += 1;
-                    self.constrain(upper_bound, lower)?;
+                    self.constrain(lower, upper_bound)?;
                 }
                 Ok(())
             }
@@ -453,6 +468,14 @@ impl<TR: TypeResolver> InferenceContext<TR> {
     pub fn bit(&self) -> InfTypeId {
         let bit = InferenceType::Primitive(PrimitiveType::Bit);
         self.intern_infty(bit)
+    }
+    pub fn single(&mut self) -> InfTypeId {
+        let ty_var = self.var();
+        let for_loop = self.intern_infty(InferenceType::Loop(ArrayKind::For, ty_var));
+        self.intern_infty(InferenceType::ParserArg {
+            result: ty_var,
+            arg: for_loop,
+        })
     }
     pub fn parser(&self, result: InfTypeId, arg: InfTypeId) -> InfTypeId {
         self.intern_infty(InferenceType::ParserArg { result, arg })

@@ -112,6 +112,10 @@
             "named": true
           },
           {
+            "type": "single",
+            "named": true
+          },
+          {
             "type": "unary_expression",
             "named": true
           }
@@ -245,6 +249,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "single",
             "named": true
           },
           {
@@ -421,6 +429,10 @@
             "named": true
           },
           {
+            "type": "single",
+            "named": true
+          },
+          {
             "type": "unary_expression",
             "named": true
           }
@@ -527,6 +539,10 @@
             "named": true
           },
           {
+            "type": "single",
+            "named": true
+          },
+          {
             "type": "unary_expression",
             "named": true
           }
@@ -586,6 +602,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "single",
             "named": true
           },
           {
@@ -739,6 +759,10 @@
             "named": true
           },
           {
+            "type": "single",
+            "named": true
+          },
+          {
             "type": "unary_expression",
             "named": true
           }
@@ -867,6 +891,11 @@
   },
   {
     "type": "primitive_type",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "single",
     "named": true,
     "fields": {}
   },
@@ -1026,6 +1055,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "single",
             "named": true
           },
           {
