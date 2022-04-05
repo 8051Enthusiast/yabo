@@ -20,6 +20,12 @@ pub struct IdentifierName {
     pub name: String,
 }
 
+impl IdentifierName {
+    pub fn new(name: String) -> Self {
+        Self { name }
+    }
+}
+
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct TypeVar(InternId);
 
@@ -40,9 +46,7 @@ pub struct TypeVarName {
 
 impl TypeVarName {
     pub fn new(name: String) -> Self {
-        Self {
-            name,
-        }
+        Self { name }
     }
 }
 

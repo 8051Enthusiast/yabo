@@ -1,4 +1,7 @@
-use crate::types::{NominalKind, PrimitiveType, Type};
+use crate::{
+    hir::hir_types::TypeVarCollection,
+    types::{NominalKind, PrimitiveType, Type},
+};
 
 use super::*;
 use std::fmt::Write;
@@ -299,12 +302,20 @@ fn type_to_string(ty: TypeId, db: &dyn Hirs) -> String {
         Type::Any => String::from("any"),
         Type::Bot => String::from("bot"),
         Type::Primitive(p) => p.hir_to_string(db),
-        Type::TypeVarRef(loc, level, index) => format!(
-            "<Var Ref ({}, {}, {})>",
-            db.lookup_intern_hir_path(loc).to_name(db),
-            level,
-            index
-        ),
+        Type::TypeVarRef(loc, level, index) => {
+            let vars = TypeVarCollection::at_id(db, ParserDefId(loc));
+            if let Ok(v) = vars {
+                if let Some(x) = v.defs[index as usize].name {
+                    return db.lookup_intern_type_var(x).name;
+                }
+            }
+            format!(
+                "<Var Ref ({}, {}, {})>",
+                db.lookup_intern_hir_path(loc).to_name(db),
+                level,
+                index
+            )
+        }
         Type::ForAll(inner, vars) => {
             let args = vars
                 .iter()
@@ -337,7 +348,11 @@ fn type_to_string(ty: TypeId, db: &dyn Hirs) -> String {
             ArrayKind::Each => format!("each[{}]", type_to_string(inner, db)),
         },
         Type::ParserArg { result, arg } => {
-            format!("{} *> {}", type_to_string(arg, db), type_to_string(result, db))
+            format!(
+                "{} *> {}",
+                type_to_string(arg, db),
+                type_to_string(result, db)
+            )
         }
         Type::FunctionArg(res, args) => {
             let args = args

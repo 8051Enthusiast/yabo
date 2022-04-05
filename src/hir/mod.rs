@@ -53,7 +53,7 @@ pub trait Hirs: ast::Asts + crate::types::TypeInterner {
         &self,
         loc: ExprId,
     ) -> Result<(Expression<TypedHirVal<TypeId>>, TypeId), ()>;
-    fn ambient_type(&self, id: HirId) -> Result<TypeId, ()>;
+    fn ambient_type(&self, id: ParseId) -> Result<TypeId, ()>;
 }
 
 fn hir_parser_collection(db: &dyn Hirs, hid: HirId) -> Result<Option<HirParserCollection>, ()> {
@@ -392,6 +392,7 @@ fn val_expression_converter<'a>(
     add_span: &'a impl Fn(&Span) -> SpanIndex,
     new_id: &'a impl Fn() -> HirId,
     parent_context: Option<ContextId>,
+    enclosing_expr: ExprId,
     array: Option<ArrayKind>,
 ) -> ExprConverter<'a, AstVal, HirVal> {
     type VConverter<'b> = ExprConverter<'b, ast::AstVal, HirVal>;
@@ -401,14 +402,14 @@ fn val_expression_converter<'a>(
             let atom = match &x.inner {
                 ast::ParserAtom::Array(array) => {
                     let nid = ArrayId(new_id());
-                    parser_array(array, ctx, nid, parent_context);
+                    parser_array(array, ctx, nid, parent_context, enclosing_expr);
                     ParserAtom::Array(nid)
                 }
                 ast::ParserAtom::Single => ParserAtom::Single,
                 ast::ParserAtom::Atom(atom) => ParserAtom::Atom(atom.clone()),
                 ast::ParserAtom::Block(b) => {
                     let nid = BlockId(new_id());
-                    block(b, ctx, nid, parent_context, array);
+                    block(b, ctx, nid, parent_context, enclosing_expr, array);
                     ParserAtom::Block(nid)
                 }
             };
@@ -478,7 +479,7 @@ fn val_expression(
         borrow.push(new_id);
         new_id
     };
-    let vconverter = val_expression_converter(ctx, &add_span, &new_id, parent_context, array);
+    let vconverter = val_expression_converter(ctx, &add_span, &new_id, parent_context, id, array);
     let expr = vconverter.convert(ast);
     drop(vconverter);
     let expr = ValExpression {
@@ -536,6 +537,7 @@ pub struct Block {
     id: BlockId,
     root_context: ContextId,
     super_context: Option<ContextId>,
+    enclosing_expr: ExprId,
     array: Option<ArrayKind>,
 }
 
@@ -550,6 +552,7 @@ fn block(
     ctx: &HirConversionCtx,
     id: BlockId,
     super_context: Option<ContextId>,
+    enclosing_expr: ExprId,
     array: Option<ArrayKind>,
 ) {
     let context_id = ContextId(id.extend(ctx.db, PathComponent::Unnamed(0)));
@@ -570,6 +573,7 @@ fn block(
         id,
         root_context: context_id,
         super_context,
+        enclosing_expr,
         array,
     };
     ctx.insert(id.0, HirNode::Block(block), vec![ast.span]);
@@ -914,6 +918,7 @@ pub struct ParserArray {
     pub direction: ArrayKind,
     pub context: Option<ContextId>,
     pub expr: ExprId,
+    pub enclosing_expr: ExprId,
 }
 
 impl ParserArray {
@@ -927,6 +932,7 @@ fn parser_array(
     ctx: &HirConversionCtx,
     id: ArrayId,
     parent_context: Option<ContextId>,
+    enclosing_expr: ExprId,
 ) {
     let expr = ExprId(id.extend(ctx.db, PathComponent::Unnamed(0)));
     val_expression(
@@ -941,6 +947,7 @@ fn parser_array(
         direction: ast.direction.inner,
         expr,
         context: parent_context,
+        enclosing_expr,
     };
     ctx.insert(id.0, HirNode::Array(pa), vec![ast.span, ast.direction.span]);
 }
