@@ -108,6 +108,7 @@ pub struct NominalInfHead {
     pub parse_arg: Option<InfTypeId>,
     pub fun_args: Box<Vec<InfTypeId>>,
     pub ty_args: Box<Vec<InfTypeId>>,
+    pub internal: bool,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -275,10 +276,10 @@ pub struct InferenceContext<TR: TypeResolver> {
 pub trait TypeResolver {
     type DB: TypeInterner + Interner + ?Sized;
     fn db(&self) -> &Self::DB;
-    fn field_type(&self, ty: &NominalInfHead, name: FieldName) -> Result<TypeId, ()>;
+    fn field_type(&self, ty: &NominalInfHead, name: FieldName) -> Result<EitherType, ()>;
     fn deref(&self, ty: &NominalInfHead) -> Result<Option<TypeId>, ()>;
     fn signature(&self, ty: &NominalInfHead) -> Result<Signature, ()>;
-    fn lookup(&self, context: HirId, name: FieldName) -> Result<TypeId, ()>;
+    fn lookup(&self, context: HirId, name: FieldName) -> Result<EitherType, ()>;
 }
 
 impl<TR: TypeResolver> InferenceContext<TR> {
@@ -300,10 +301,14 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         ty: &NominalInfHead,
         name: FieldName,
     ) -> Result<InfTypeId, TypeError> {
-        Ok(self.from_type_with_args(
-            self.tr.field_type(ty, name).map_err(|()| TypeError)?,
-            &ty.ty_args,
-        ))
+        Ok(
+            match self.tr.field_type(ty, name).map_err(|()| TypeError)? {
+                EitherType::Regular(result_type) => {
+                    self.from_type_with_args(result_type, &ty.ty_args)
+                }
+                EitherType::Inference(infty) => infty,
+            },
+        )
     }
     pub fn deref(&mut self, ty: &NominalInfHead) -> Result<Option<InfTypeId>, TypeError> {
         Ok(self
@@ -316,7 +321,12 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         self.tr.signature(ty).map_err(|()| TypeError)
     }
     pub fn lookup(&mut self, context: HirId, name: FieldName) -> Result<InfTypeId, TypeError> {
-        Ok(self.from_type(self.tr.lookup(context, name).map_err(|()| TypeError)?))
+        Ok(
+            match self.tr.lookup(context, name).map_err(|()| TypeError)? {
+                EitherType::Regular(result_type) => self.from_type(result_type),
+                EitherType::Inference(infty) => infty,
+            },
+        )
     }
     pub fn constrain(&mut self, lower: InfTypeId, upper: InfTypeId) -> Result<(), TypeError> {
         use InferenceType::*;
@@ -407,7 +417,15 @@ impl<TR: TypeResolver> InferenceContext<TR> {
                 self.constrain(inner1, inner2)
             }
 
-            (Nominal(ref nom), InferField(name, fieldtype)) => {
+            (
+                Nominal(
+                    ref nom @ NominalInfHead {
+                        kind: NominalKind::Block,
+                        ..
+                    },
+                ),
+                InferField(name, fieldtype),
+            ) => {
                 let field_ty = self.field_type(nom, name)?;
                 self.constrain(field_ty, fieldtype)
             }
@@ -499,6 +517,7 @@ impl<TR: TypeResolver> InferenceContext<TR> {
             parse_arg: Some(arg),
             fun_args: Box::default(),
             ty_args: Box::default(),
+            internal: true,
         };
         let result = self.intern_infty(InferenceType::Nominal(nominal));
         Ok(self.parser(result, arg))
@@ -628,6 +647,7 @@ impl<TR: TypeResolver> InferenceContext<TR> {
                     parse_arg,
                     fun_args,
                     ty_args,
+                    internal: false,
                 })
             }
             Type::Loop(kind, inner) => InferenceType::Loop(*kind, recurse(*inner)),
@@ -776,12 +796,14 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                     parse_arg: parse_arg1,
                     fun_args: fun_args1,
                     ty_args: ty_args1,
+                    internal: internal1,
                 }),
                 Nominal(NominalInfHead {
                     def: def2,
                     parse_arg: parse_arg2,
                     fun_args: fun_args2,
                     ty_args: ty_args2,
+                    internal: internal2,
                     ..
                 }),
             ) if def1 == def2 => {
@@ -810,6 +832,7 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                     parse_arg,
                     fun_args,
                     ty_args,
+                    internal: internal1 || internal2,
                 })
             }
             (nom @ Nominal(_), other) | (other, nom @ Nominal(_)) => {
@@ -910,12 +933,14 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                     parse_arg: parse_arg1,
                     fun_args: fun_args1,
                     ty_args: ty_args1,
+                    internal: internal1,
                 }),
                 Nominal(NominalInfHead {
                     def: def2,
                     parse_arg: parse_arg2,
                     fun_args: fun_args2,
                     ty_args: ty_args2,
+                    internal: internal2,
                     ..
                 }),
             ) if def1 == def2 => {
@@ -944,6 +969,7 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                     parse_arg,
                     fun_args,
                     ty_args,
+                    internal: internal1 && internal2,
                 })
             }
             (nom @ Nominal(NominalInfHead { .. }), other)
@@ -1067,6 +1093,7 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                 parse_arg,
                 fun_args,
                 ty_args,
+                internal: _,
             }) => {
                 let parse_arg = parse_arg
                     .map(|x| self.to_type_internal(x, pol))
@@ -1124,5 +1151,23 @@ impl Polarity {
             Polarity::Positive => Polarity::Negative,
             Polarity::Negative => Polarity::Positive,
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum EitherType {
+    Regular(TypeId),
+    Inference(InfTypeId),
+}
+
+impl From<InfTypeId> for EitherType {
+    fn from(x: InfTypeId) -> Self {
+        EitherType::Inference(x)
+    }
+}
+
+impl From<TypeId> for EitherType {
+    fn from(x: TypeId) -> Self {
+        EitherType::Regular(x)
     }
 }

@@ -1,4 +1,4 @@
-use crate::{ast::ArrayKind, interner::Interner};
+use crate::{ast::ArrayKind, interner::Interner, databased_display::DatabasedDisplay};
 use std::fmt::Write;
 
 use super::{InfTypeId, InferenceType, NominalKind, TypeInterner};
@@ -78,5 +78,13 @@ pub fn print_inftype<DB: TypeInterner + Interner + ?Sized>(
             print_inftype(db, inner_type, out);
             out.push_str(">");
         }
+    }
+}
+
+impl<DB: TypeInterner + Interner + ?Sized> DatabasedDisplay<DB> for InfTypeId {
+    fn to_db_string(&self, db: &DB) -> String {
+        let mut out = String::new();
+        print_inftype(db, *self, &mut out);
+        out
     }
 }

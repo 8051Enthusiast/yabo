@@ -1,11 +1,11 @@
 use super::*;
-pub struct ChildIter<'a> {
+pub struct ChildIter<'a, DB: Hirs + ?Sized> {
     child_list: Vec<HirId>,
-    db: &'a dyn Hirs,
+    db: &'a DB,
 }
 
-impl<'a> ChildIter<'a> {
-    pub fn new(id: HirId, db: &'a dyn Hirs) -> Self {
+impl<'a, DB: Hirs + ?Sized> ChildIter<'a, DB> {
+    pub fn new(id: HirId, db: &'a DB) -> Self {
         Self {
             child_list: vec![id],
             db,
@@ -13,7 +13,7 @@ impl<'a> ChildIter<'a> {
     }
 }
 
-impl<'a> Iterator for ChildIter<'a> {
+impl<'a, DB: Hirs + ?Sized> Iterator for ChildIter<'a, DB> {
     type Item = HirNode;
 
     fn next(&mut self) -> Option<Self::Item> {
