@@ -1,4 +1,4 @@
-mod represent;
+pub mod represent;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -10,7 +10,7 @@ use salsa::InternId;
 
 use crate::{
     ast::ArrayKind,
-    interner::{FieldName, HirId, TypeVar, Interner}, types::represent::print_inftype,
+    interner::{FieldName, HirId, Interner, TypeVar},
 };
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -323,11 +323,11 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         if !self.cache.insert((lower, upper)) {
             return Ok(());
         }
-        let mut debug_out = String::new();
-        print_inftype(self.tr.db(), lower, &mut debug_out);
-        debug_out.push_str(" <= ");
-        print_inftype(self.tr.db(), upper, &mut debug_out);
-        println!("{}", debug_out);
+        //let mut debug_out = String::new();
+        //print_inftype(self.tr.db(), lower, &mut debug_out);
+        //debug_out.push_str(" <= ");
+        //print_inftype(self.tr.db(), upper, &mut debug_out);
+        //println!("{}", debug_out);
         let [lower_ty, upper_ty] = [lower, upper].map(|x| self.lookup_infty(x));
         match (lower_ty, upper_ty) {
             (_, Any) => Ok(()),
@@ -727,7 +727,7 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
             return x;
         }
         let [lhs_ty, rhs_ty] = [lhs, rhs].map(|x| self.ctx.lookup_infty(x));
-        match (lhs_ty, rhs_ty) {
+        let res = match (lhs_ty, rhs_ty) {
             (Unknown, _) | (_, Unknown) => Unknown,
             (Bot, _) | (_, Bot) => Bot,
             (InferField(..), InferField(..)) => Any,
@@ -852,7 +852,8 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
             }
             _ => return Err(TypeError),
         };
-        todo!()
+        let ret = self.ctx.intern_infty(res);
+        self.meet.leave_fun((lhs, rhs), ret)
     }
     fn join_inftype(&mut self, lhs: InfTypeId, rhs: InfTypeId) -> Result<InfTypeId, TypeError> {
         use InferenceType::*;

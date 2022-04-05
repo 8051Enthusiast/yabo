@@ -16,9 +16,9 @@ use crate::{
 };
 
 use super::{
-    recursion::FunctionSscId, refs::parserdef_ref, BlockId, ExprId, HirConstraint, HirNode,
-    HirType, HirVal, Hirs, LetStatement, ParserDef, ParserDefId, SpanIndex, TypeAtom,
-    TypePrimitive,
+    recursion::FunctionSscId, refs::parserdef_ref, BlockId, ExprId,
+    HirConstraint, HirNode, HirType, HirVal, Hirs, LetStatement, ParseId, ParserArray, ParserDef,
+    ParserDefId, SpanIndex, TypeAtom, TypePrimitive,
 };
 
 pub fn parser_returns(db: &dyn Hirs, id: ParserDefId) -> Result<ParserDefType, TypeError> {
@@ -116,6 +116,7 @@ pub fn public_expr_type(
         HirNode::ParserDef(pd) => ctx.parserdef_types(&pd).map_err(|_| ())?,
         HirNode::Let(l) => ctx.let_statement_types(&l).map_err(|_| ())?,
         HirNode::Parse(p) => ctx.parse_statement_types(&p)?,
+        HirNode::Array(a) => ctx.array_types(&a).map_err(|_| ())?,
         _ => panic!("expected parse statement, let statement or parser def"),
     };
     let expr = loc.lookup(db)?;
@@ -159,43 +160,37 @@ pub fn public_type(db: &dyn Hirs, loc: HirId) -> Result<TypeId, ()> {
 }
 
 /// finds the public ambient type (ie the type that gets applied as the from argument
-/// to the parser) for the parser at loc, which is either inside a block, inside an array
-/// or at the toplevel on a parserdef.
-pub fn ambient_type(db: &dyn Hirs, loc: HirId) -> Result<TypeId, ()> {
-    let parent_id = loc.parent(db);
-    let expr = match db.hir_node(parent_id)? {
-        HirNode::ParserDef(pd) => {
-            let sig = db.parser_args(pd.id).map_err(|_| ())?;
-            return Ok(sig.from.expect("parserdef has no from type"));
-        }
-        HirNode::Block(block) => match db.hir_node(block.id.0.parent(db))? {
-            HirNode::Expr(e) => e,
-            _ => panic!("expected parent of block to be an expr"),
-        },
-        HirNode::Array(array) => match db.hir_node(array.id.0.parent(db))? {
-            HirNode::Expr(e) => e,
-            _ => panic!("expected parent of array to be an expr"),
-        },
-        _ => panic!("unexpected node type"),
+/// to the parser) for the parser at loc, which is inside a block
+pub fn ambient_type(db: &dyn Hirs, loc: ParseId) -> Result<TypeId, ()> {
+    let block = loc
+        .lookup(db)?
+        .parent_context
+        .lookup(db)?
+        .block_id
+        .lookup(db)?;
+    let (typed_expr, _) = db.public_expr_type(block.enclosing_expr).map_err(|_| ())?;
+    let block_ty = ExprIter::new(&typed_expr)
+        .find_map(|x| match x {
+            Expression::Atom(TypedAtom {
+                ty,
+                atom: ParserAtom::Block(b),
+                ..
+            }) if *b == block.id => Some(ty),
+            _ => None,
+        })
+        .ok_or(())?;
+    let block_type = match db.lookup_intern_type(*block_ty) {
+        Type::ParserArg { result, .. } => result,
+        _ => panic!("expected parser arg"),
     };
-    let ty_expr = db.public_expr_type(expr.id)?.0;
-
-    let mut ty = None;
-    for part in ExprIter::new(&ty_expr) {
-        ty = Some(match part {
-            Expression::Atom(a) => match &a.atom {
-                ParserAtom::Block(block) if block.0 == loc => a.ty,
-                ParserAtom::Array(array) if array.0 == loc => a.ty,
-                _ => continue,
-            },
-            _ => continue,
-        });
+    match db.lookup_intern_type(block_type) {
+        Type::Nominal(NominalTypeHead {
+            kind: NominalKind::Block,
+            parse_arg: Some(parse_ty),
+            ..
+        }) => Ok(parse_ty),
+        _ => panic!("expected block"),
     }
-    let ty = db.lookup_intern_type(ty.ok_or(())?);
-    Ok(match ty {
-        Type::ParserArg { arg, .. } => arg,
-        _ => panic!("unexpected type"),
-    })
 }
 
 pub struct ExpressionTypeConstraints {
@@ -226,7 +221,7 @@ pub struct TypingContext<'a, TR: TypeResolver> {
 
 #[derive(Clone)]
 pub struct TypeVarCollection {
-    defs: Vec<VarDef>,
+    pub defs: Vec<VarDef>,
     names: FxHashMap<TypeVar, u32>,
     frozen: bool,
 }
@@ -534,11 +529,11 @@ impl<'a> TypingContext<'a, PublicResolver<'a>> {
         &mut self,
         parse: &ParseStatement,
     ) -> Result<ExpressionTypeConstraints, ()> {
-        let from = self.db.ambient_type(parse.id.0)?;
+        let from = self.db.ambient_type(parse.id)?;
         let infty = self.infctx.from_type(from);
         Ok(ExpressionTypeConstraints {
-            root_type: Some(infty),
-            from_type: None,
+            from_type: Some(infty),
+            root_type: None,
         })
     }
     pub fn let_statement_types(
@@ -565,6 +560,33 @@ impl<'a> TypingContext<'a, PublicResolver<'a>> {
             root_type: None,
             from_type: Some(from),
         })
+    }
+    pub fn array_types(
+        &mut self,
+        _parser_array: &ParserArray,
+    ) -> Result<ExpressionTypeConstraints, ()> {
+        todo!();
+        //        let (expr, _) = self.db.public_expr_type(parser_array.enclosing_expr)?;
+        //        let array_ty = ExprIter::new(&expr)
+        //            .find_map(|x| match x {
+        //                Expression::Atom(TypedAtom {
+        //                    ty,
+        //                    atom: ParserAtom::Array(a),
+        //                    ..
+        //                }) if *a == parser_array.id => Some(ty),
+        //                _ => None,
+        //            })
+        //            .ok_or(())?;
+        //        match self.db.lookup_intern_type(*array_ty) {
+        //            Type::ParserArg { arg, .. } => {
+        //                let infty = self.infctx.from_type(arg);
+        //                Ok(ExpressionTypeConstraints {
+        //                    root_type: Some(infty),
+        //                    from_type: None,
+        //                })
+        //            }
+        //            _ => panic!("expected parser arg"),
+        //        }
     }
 }
 
@@ -598,7 +620,7 @@ impl<'a> TypeResolver for ReturnResolver<'a> {
         if self.return_infs.get(&ty.def).is_some() {
             Ok(Some(self.db.intern_type(Type::Unknown)))
         } else {
-            let id = match NominalId::from_nominal_head(ty) {
+            let id = match NominalId::from_nominal_inf_head(ty) {
                 NominalId::Def(d) => d,
                 NominalId::Block(_) => return Ok(None),
             };
@@ -644,7 +666,7 @@ impl<'a> TypeResolver for PublicResolver<'a> {
     }
 
     fn deref(&self, ty: &NominalInfHead) -> Result<Option<TypeId>, ()> {
-        let id = match NominalId::from_nominal_head(ty) {
+        let id = match NominalId::from_nominal_inf_head(ty) {
             NominalId::Def(d) => d,
             NominalId::Block(_) => return Ok(None),
         };
@@ -718,7 +740,7 @@ fn get_thunk(db: &dyn Hirs, context: HirId, name: FieldName) -> Result<TypeId, (
 }
 
 fn get_signature(db: &dyn Hirs, ty: &NominalInfHead) -> Result<Signature, ()> {
-    let id = match NominalId::from_nominal_head(ty) {
+    let id = match NominalId::from_nominal_inf_head(ty) {
         NominalId::Def(d) => d,
         NominalId::Block(_) => panic!("attempted to extract signature directly from block"),
     };
@@ -773,7 +795,7 @@ enum NominalId {
 }
 
 impl NominalId {
-    fn from_nominal_head(head: &NominalInfHead) -> Self {
+    pub fn from_nominal_inf_head(head: &NominalInfHead) -> Self {
         match head.kind {
             NominalKind::Def => NominalId::Def(ParserDefId(head.def)),
             NominalKind::Block => NominalId::Block(BlockId(head.def)),
@@ -783,7 +805,7 @@ impl NominalId {
 #[cfg(test)]
 mod tests {
     use super::super::represent::HirToString;
-    use crate::context::Context;
+    use crate::{context::Context, interner::PathComponent, types::TypeInterner};
 
     use super::*;
     #[test]
@@ -807,10 +829,7 @@ def each[for[int] *> expr2] *> expr4 = {}
         };
         assert_eq!("for[int]", arg_type("expr1"));
         assert_eq!("for[for[int] &> file[anonymous].expr1]", arg_type("expr2"));
-        assert_eq!(
-            "for[<Var Ref (file[anonymous].expr3, 0, 0)>]",
-            arg_type("expr3")
-        );
+        assert_eq!("for['x]", arg_type("expr3"));
         assert_eq!("each[for[int] *> file[anonymous].expr2]", arg_type("expr4"));
     }
     #[test]
@@ -838,8 +857,67 @@ def for[int] *> single = ~
     fn public_types() {
         let ctx = Context::mock(
             r#"
-
+def for['t] *> expr1 = {
+    a: ~,
+    b: ~,
+    c: {
+        let d: int = 2,
+        e: ~,
+        ;
+        let d: int = 1,
+    },
+}
+def each[int] *> expr2 = {
+    x: expr1,
+    (let y: int = 3,; y: ~,)
+}
+def for[int] *> expr3 = ~
+def for[int] *> expr4 = {
+    x: expr3,
+    ;
+    let x: int = 3,
+}
+def for[for[int]] *> expr5 = {
+    x: ~ |> expr3,
+}
             "#,
+        );
+        let public_type = |name: &str, fields: &[&str]| {
+            let p = ctx.parser(name);
+            let mut ret = ctx.db.parser_returns(p).unwrap().deref;
+            for x in fields {
+                let block = ctx.db.lookup_intern_type(ret);
+                let hir_id = match &block {
+                    Type::Nominal(n) => n.def,
+                    _ => panic!("expected nominal type"),
+                };
+                let block = BlockId::extract(ctx.db.hir_node(hir_id).unwrap());
+                let root_context = block.root_context;
+                let ident_field = ctx.id(x);
+                let child = root_context
+                    .0
+                    .child(&ctx.db, PathComponent::Named(FieldName::Ident(ident_field)));
+                ret = ctx.db.public_type(child).unwrap();
+            }
+            ret.hir_to_string(&ctx.db)
+        };
+        assert_eq!("'t", public_type("expr1", &["a"]));
+        assert_eq!("'t", public_type("expr1", &["b"]));
+        assert_eq!(
+            "<anonymous block for['t] &> file[anonymous].expr1.1.0.0.c.0.0>",
+            public_type("expr1", &["c"])
+        );
+        assert_eq!("int", public_type("expr1", &["c", "d"]));
+        assert_eq!("'t", public_type("expr1", &["c", "e"]));
+        assert_eq!(
+            "for[int] &> file[anonymous].expr1",
+            public_type("expr2", &["x"])
+        );
+        assert_eq!("int", public_type("expr2", &["y"]));
+        assert_eq!("int", public_type("expr4", &["x"]));
+        assert_eq!(
+            "for[int] &> file[anonymous].expr3",
+            public_type("expr5", &["x"])
         );
     }
 }

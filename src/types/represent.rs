@@ -3,7 +3,11 @@ use std::fmt::Write;
 
 use super::{InfTypeId, InferenceType, NominalKind, TypeInterner};
 
-pub fn print_inftype<DB: TypeInterner + Interner + ?Sized>(db: &DB, inftype: InfTypeId, out: &mut String) {
+pub fn print_inftype<DB: TypeInterner + Interner + ?Sized>(
+    db: &DB,
+    inftype: InfTypeId,
+    out: &mut String,
+) {
     match db.lookup_intern_inference_type(inftype) {
         InferenceType::Any => out.push_str("any"),
         InferenceType::Bot => out.push_str("bot"),
@@ -28,7 +32,10 @@ pub fn print_inftype<DB: TypeInterner + Interner + ?Sized>(db: &DB, inftype: Inf
                 }
                 NominalKind::Def => (),
             }
-            let from = n.parse_arg.map(|x| print_inftype(db, x, out));
+            n.parse_arg.map(|x| {
+                print_inftype(db, x, out);
+                out.push_str(" &> ")
+            });
             write!(out, "{}", path).unwrap();
             match n.kind {
                 NominalKind::Block => {
@@ -70,7 +77,6 @@ pub fn print_inftype<DB: TypeInterner + Interner + ?Sized>(db: &DB, inftype: Inf
             write!(out, "<InferField {:?}: ", field_name).unwrap();
             print_inftype(db, inner_type, out);
             out.push_str(">");
-        },
-        
+        }
     }
 }
