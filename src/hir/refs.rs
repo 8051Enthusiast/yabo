@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::hir::represent::HirToString;
+use crate::databased_display::DatabasedDisplay;
 
 use super::*;
 
@@ -9,7 +9,11 @@ pub enum VarType {
     Value,
 }
 
-pub fn parserdef_ref(db: &dyn Hirs, loc: HirId, name: FieldName) -> Result<ParserDefId, ()> {
+pub fn parserdef_ref(
+    db: &(impl Hirs + ?Sized),
+    loc: HirId,
+    name: FieldName,
+) -> Result<ParserDefId, ()> {
     let (id, kind) = resolve_var_ref(db, loc, name)?.ok_or(())?;
     if let VarType::Value = kind {
         return Err(());
@@ -21,7 +25,7 @@ pub fn parserdef_ref(db: &dyn Hirs, loc: HirId, name: FieldName) -> Result<Parse
     Ok(ParserDefId(id))
 }
 
-pub fn is_const_ref(db: &dyn Hirs, id: HirId) -> bool {
+pub fn is_const_ref(db: &(impl Hirs + ?Sized), id: HirId) -> bool {
     match db.lookup_intern_hir_path(id).path() {
         [PathComponent::File(_), PathComponent::Named(_)] => true,
         _ => false,
@@ -29,7 +33,7 @@ pub fn is_const_ref(db: &dyn Hirs, id: HirId) -> bool {
 }
 
 pub fn resolve_var_ref(
-    db: &dyn Hirs,
+    db: &(impl Hirs + ?Sized),
     loc: HirId,
     ident: FieldName,
 ) -> Result<Option<(HirId, VarType)>, ()> {
@@ -55,8 +59,8 @@ pub fn resolve_var_ref(
                     .unwrap_or_else(|| ctx.block_id.id()),
             },
             n => unreachable!(
-                "Internal Compiler Error: invalid node {}",
-                n.hir_to_string(db)
+                "Internal Compiler Error: invalid node {:?}",
+                n.to_db_string(db)
             ),
         }
     }
@@ -78,7 +82,11 @@ fn expr_idents(expr: &ValExpression) -> Vec<FieldName> {
     ret
 }
 
-fn expr_parser_refs(db: &dyn Hirs, expr: &ValExpression, context: HirId) -> Vec<ParserDefId> {
+fn expr_parser_refs(
+    db: &(impl Hirs + ?Sized),
+    expr: &ValExpression,
+    context: HirId,
+) -> Vec<ParserDefId> {
     expr_idents(expr)
         .iter()
         .flat_map(|ident| resolve_var_ref(db, context, *ident))
@@ -87,7 +95,7 @@ fn expr_parser_refs(db: &dyn Hirs, expr: &ValExpression, context: HirId) -> Vec<
         .collect::<Vec<_>>()
 }
 
-pub fn find_parser_refs(db: &dyn Hirs, id: HirId) -> Result<Vec<ParserDefId>, ()> {
+pub fn find_parser_refs(db: &(impl Hirs + ?Sized), id: HirId) -> Result<Vec<ParserDefId>, ()> {
     let mut refs = HashSet::new();
     for node in walk::ChildIter::new(id, db) {
         let (expr, context) = match node {

@@ -1,5 +1,6 @@
 use crate::ast::AstDatabase;
 use crate::hir::HirDatabase;
+use crate::hir_types::HirTypesDatabase;
 use crate::interner::{Identifier, IdentifierName, Interner, InternerDatabase};
 use crate::source::{FileCollection, FileDatabase};
 use crate::types::TypeInternerDatabase;
@@ -9,7 +10,8 @@ use crate::types::TypeInternerDatabase;
     AstDatabase,
     FileDatabase,
     HirDatabase,
-    TypeInternerDatabase
+    TypeInternerDatabase,
+    HirTypesDatabase,
 )]
 #[derive(Default)]
 pub struct LivingInTheDatabase {

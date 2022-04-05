@@ -1,5 +1,4 @@
-pub mod hir_types;
-mod recursion;
+pub mod recursion;
 pub mod refs;
 pub mod represent;
 pub mod walk;
@@ -18,15 +17,9 @@ use crate::{
     expr::{self, Atom, ExprConverter, Expression, ExpressionComponent, ExpressionKind},
     interner::{FieldName, HirId, HirPath, Identifier, PathComponent, TypeVar},
     source::{FileId, Span, Spanned},
-    types::{Signature, TypeError, TypeId},
 };
 
-use hir_types::{
-    ambient_type, parser_args, parser_returns, parser_returns_ssc, public_expr_type, public_type,
-};
 use recursion::{mod_parser_ssc, parser_ssc, FunctionSscId};
-
-use self::hir_types::{ParserDefType, TypedHirVal};
 
 #[salsa::query_group(HirDatabase)]
 pub trait Hirs: ast::Asts + crate::types::TypeInterner {
@@ -43,17 +36,6 @@ pub trait Hirs: ast::Asts + crate::types::TypeInterner {
     fn all_hir_ids(&self) -> Vec<HirId>;
     fn hir_parent_module(&self, id: HirId) -> Result<ModuleId, ()>;
     fn hir_parent_parserdef(&self, id: HirId) -> Result<ParserDefId, ()>;
-
-    // types
-    fn parser_args(&self, id: ParserDefId) -> Result<Signature, TypeError>;
-    fn parser_returns(&self, id: ParserDefId) -> Result<ParserDefType, TypeError>;
-    fn parser_returns_ssc(&self, id: FunctionSscId) -> Result<Vec<ParserDefType>, TypeError>;
-    fn public_type(&self, loc: HirId) -> Result<TypeId, ()>;
-    fn public_expr_type(
-        &self,
-        loc: ExprId,
-    ) -> Result<(Expression<TypedHirVal<TypeId>>, TypeId), ()>;
-    fn ambient_type(&self, id: ParseId) -> Result<TypeId, ()>;
 }
 
 fn hir_parser_collection(db: &dyn Hirs, hid: HirId) -> Result<Option<HirParserCollection>, ()> {
@@ -271,9 +253,9 @@ impl<T: Clone + Eq + Hash + Debug> IndexSpanned<T> {
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Module {
-    id: ModuleId,
-    defs: BTreeMap<Identifier, ParserDefId>,
-    submods: BTreeMap<Identifier, ModuleId>,
+    pub id: ModuleId,
+    pub defs: BTreeMap<Identifier, ParserDefId>,
+    pub submods: BTreeMap<Identifier, ModuleId>,
 }
 
 impl Module {
@@ -344,9 +326,9 @@ impl ExpressionKind for HirVal {
 }
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct ValExpression {
-    id: ExprId,
-    expr: Expression<HirVal>,
-    children: Vec<HirId>,
+    pub id: ExprId,
+    pub expr: Expression<HirVal>,
+    pub children: Vec<HirId>,
 }
 
 impl ValExpression {
@@ -366,8 +348,8 @@ impl ExpressionKind for HirType {
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct TypeExpression {
-    id: TExprId,
-    expr: Expression<HirType>,
+    pub id: TExprId,
+    pub expr: Expression<HirType>,
 }
 
 impl TypeExpression {
@@ -505,9 +487,9 @@ fn type_expression(ast: &ast::TypeExpression, ctx: &HirConversionCtx, id: TExprI
 }
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDef {
-    id: ParserDefId,
-    from: TExprId,
-    to: ExprId,
+    pub id: ParserDefId,
+    pub from: TExprId,
+    pub to: ExprId,
 }
 
 impl ParserDef {
@@ -534,11 +516,11 @@ struct ParentInfo {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Block {
-    id: BlockId,
-    root_context: ContextId,
-    super_context: Option<ContextId>,
-    enclosing_expr: ExprId,
-    array: Option<ArrayKind>,
+    pub id: BlockId,
+    pub root_context: ContextId,
+    pub super_context: Option<ContextId>,
+    pub enclosing_expr: ExprId,
+    pub array: Option<ArrayKind>,
 }
 
 impl Block {

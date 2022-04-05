@@ -1,20 +1,14 @@
-use crate::{
-    hir::hir_types::TypeVarCollection,
-    types::{NominalKind, PrimitiveType, Type},
-};
+use crate::databased_display::DatabasedDisplay;
 
 use super::*;
 use std::fmt::Write;
-pub trait HirToString {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String;
-}
 
-impl HirToString for HirNode {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for HirNode {
+    fn to_db_string(&self, db: &DB) -> String {
         match self {
             HirNode::Let(_) => "Let".to_string(),
-            HirNode::Expr(e) => format!("Expr({})", e.hir_to_string(db)),
-            HirNode::TExpr(e) => format!("TExpr({})", e.hir_to_string(db)),
+            HirNode::Expr(e) => format!("Expr({})", e.to_db_string(db)),
+            HirNode::TExpr(e) => format!("TExpr({})", e.to_db_string(db)),
             HirNode::Parse(_) => "Parse".to_string(),
             HirNode::Array(a) => format!("Array({:?})", a.direction),
             HirNode::Block(_) => "Block".to_string(),
@@ -27,140 +21,140 @@ impl HirToString for HirNode {
     }
 }
 
-impl HirToString for ValExpression {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
-        self.expr.hir_to_string(db)
+impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for ValExpression {
+    fn to_db_string(&self, db: &DB) -> String {
+        self.expr.to_db_string(db)
     }
 }
 
-impl HirToString for TypeExpression {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
-        self.expr.hir_to_string(db)
+impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for TypeExpression {
+    fn to_db_string(&self, db: &DB) -> String {
+        self.expr.to_db_string(db)
     }
 }
 
-impl<T, S, R> HirToString for expr::TypeBinOp<T, S, R>
+impl<T, S, R, DB: Hirs + ?Sized> DatabasedDisplay<DB> for expr::TypeBinOp<T, S, R>
 where
     T: ExpressionKind,
     S: ExpressionKind,
-    Expression<T>: HirToString,
-    Expression<S>: HirToString,
+    Expression<T>: DatabasedDisplay<DB>,
+    Expression<S>: DatabasedDisplay<DB>,
     R: Clone + Hash + Eq + Debug,
 {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+    fn to_db_string(&self, db: &DB) -> String {
         match self {
             expr::TypeBinOp::Ref(a, b, _) => {
-                format!("({} &> {})", a.hir_to_string(db), b.hir_to_string(db))
+                format!("({} &> {})", a.to_db_string(db), b.to_db_string(db))
             }
             expr::TypeBinOp::ParseArg(a, b, _) => {
-                format!("({} *> {})", a.hir_to_string(db), b.hir_to_string(db))
+                format!("({} *> {})", a.to_db_string(db), b.to_db_string(db))
             }
             expr::TypeBinOp::Wiggle(a, b, _) => {
-                format!("({} ~ {})", a.hir_to_string(db), b.hir_to_string(db))
+                format!("({} ~ {})", a.to_db_string(db), b.to_db_string(db))
             }
         }
     }
 }
 
-impl<T, S> HirToString for expr::TypeUnOp<T, S>
+impl<T, S, DB: Hirs + ?Sized> DatabasedDisplay<DB> for expr::TypeUnOp<T, S>
 where
     T: ExpressionKind,
-    Expression<T>: HirToString,
+    Expression<T>: DatabasedDisplay<DB>,
     S: Clone + Hash + Eq + Debug,
 {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+    fn to_db_string(&self, db: &DB) -> String {
         match self {
-            expr::TypeUnOp::Ref(a, _) => format!("&{}", a.hir_to_string(db)),
+            expr::TypeUnOp::Ref(a, _) => format!("&{}", a.to_db_string(db)),
         }
     }
 }
 
-impl<T, S, R> HirToString for expr::ValBinOp<T, S, R>
+impl<T, S, R, DB: Hirs + ?Sized> DatabasedDisplay<DB> for expr::ValBinOp<T, S, R>
 where
     T: ExpressionKind,
     S: ExpressionKind,
-    Expression<T>: HirToString,
-    Expression<S>: HirToString,
+    Expression<T>: DatabasedDisplay<DB>,
+    Expression<S>: DatabasedDisplay<DB>,
     R: Clone + Hash + Eq + Debug,
 {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+    fn to_db_string(&self, db: &DB) -> String {
         use expr::ValBinOp::*;
         match self {
             Basic(a, op, b, _) => {
-                format!("({} {} {})", a.hir_to_string(db), op, b.hir_to_string(db))
+                format!("({} {} {})", a.to_db_string(db), op, b.to_db_string(db))
             }
             Wiggle(a, b, _) => {
-                format!("({} ~ {})", a.hir_to_string(db), b.hir_to_string(db))
+                format!("({} ~ {})", a.to_db_string(db), b.to_db_string(db))
             }
             Else(a, b, _) => {
-                format!("({} else {})", a.hir_to_string(db), b.hir_to_string(db))
+                format!("({} else {})", a.to_db_string(db), b.to_db_string(db))
             }
-            Dot(a, b, _) => format!("{}.{}", a.hir_to_string(db), b.hir_to_string(db)),
+            Dot(a, b, _) => format!("{}.{}", a.to_db_string(db), b.to_db_string(db)),
         }
     }
 }
 
-impl<T, S> HirToString for expr::ValUnOp<T, S>
+impl<T, S, DB: Hirs + ?Sized> DatabasedDisplay<DB> for expr::ValUnOp<T, S>
 where
     T: ExpressionKind,
-    Expression<T>: HirToString,
+    Expression<T>: DatabasedDisplay<DB>,
     S: Clone + Hash + Eq + Debug,
 {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+    fn to_db_string(&self, db: &DB) -> String {
         let (x, op) = match self {
             expr::ValUnOp::Not(a, _) => (a, "!"),
             expr::ValUnOp::Neg(a, _) => (a, "-"),
             expr::ValUnOp::Pos(a, _) => (a, "+"),
             expr::ValUnOp::If(a, _) => (a, "if "),
         };
-        format!("{}{}", op, x.hir_to_string(db))
+        format!("{}{}", op, x.to_db_string(db))
     }
 }
 
-impl<T, S> HirToString for expr::ConstraintBinOp<T, S>
+impl<T, S, DB: Hirs + ?Sized> DatabasedDisplay<DB> for expr::ConstraintBinOp<T, S>
 where
     T: ExpressionKind,
-    Expression<T>: HirToString,
+    Expression<T>: DatabasedDisplay<DB>,
     S: Clone + Hash + Eq + Debug,
 {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+    fn to_db_string(&self, db: &DB) -> String {
         let (a, b, op) = match self {
             expr::ConstraintBinOp::And(a, b, _) => (a, b, "and"),
             expr::ConstraintBinOp::Or(a, b, _) => (a, b, "or"),
             expr::ConstraintBinOp::Dot(a, b, _) => {
-                return format!("{}.{}", a.hir_to_string(db), b.hir_to_string(db))
+                return format!("{}.{}", a.to_db_string(db), b.to_db_string(db))
             }
         };
-        format!("{} {} {}", a.hir_to_string(db), op, b.hir_to_string(db))
+        format!("{} {} {}", a.to_db_string(db), op, b.to_db_string(db))
     }
 }
 
-impl<T, S> HirToString for expr::ConstraintUnOp<T, S>
+impl<T, S, DB: Hirs + ?Sized> DatabasedDisplay<DB> for expr::ConstraintUnOp<T, S>
 where
     T: ExpressionKind,
-    Expression<T>: HirToString,
+    Expression<T>: DatabasedDisplay<DB>,
     S: Clone + Hash + Eq + Debug,
 {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+    fn to_db_string(&self, db: &DB) -> String {
         match self {
-            expr::ConstraintUnOp::Not(a, _) => format!("!{}", a.hir_to_string(db)),
+            expr::ConstraintUnOp::Not(a, _) => format!("!{}", a.to_db_string(db)),
         }
     }
 }
 
-impl<T> HirToString for IndexSpanned<T>
+impl<T, DB: Hirs + ?Sized> DatabasedDisplay<DB> for IndexSpanned<T>
 where
-    T: HirToString,
+    T: DatabasedDisplay<DB>,
 {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
-        self.atom.hir_to_string(db)
+    fn to_db_string(&self, db: &DB) -> String {
+        self.atom.to_db_string(db)
     }
 }
 
-impl HirToString for ParserAtom {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for ParserAtom {
+    fn to_db_string(&self, db: &DB) -> String {
         match self {
-            ParserAtom::Atom(atom) => atom.hir_to_string(db),
+            ParserAtom::Atom(atom) => atom.to_db_string(db),
             ParserAtom::Single => "~".to_string(),
             ParserAtom::Array(id) => format!(
                 "array({})",
@@ -184,36 +178,36 @@ impl HirToString for ParserAtom {
     }
 }
 
-impl HirToString for TypeAtom {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for TypeAtom {
+    fn to_db_string(&self, db: &DB) -> String {
         match self {
-            TypeAtom::ParserDef(pd) => pd.hir_to_string(db),
-            TypeAtom::Array(arr) => arr.hir_to_string(db),
-            TypeAtom::Primitive(p) => p.hir_to_string(db),
-            TypeAtom::TypeVar(v) => v.hir_to_string(db),
+            TypeAtom::ParserDef(pd) => pd.to_db_string(db),
+            TypeAtom::Array(arr) => arr.to_db_string(db),
+            TypeAtom::Primitive(p) => p.to_db_string(db),
+            TypeAtom::TypeVar(v) => v.to_db_string(db),
         }
     }
 }
 
-impl HirToString for TypeVar {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for TypeVar {
+    fn to_db_string(&self, db: &DB) -> String {
         db.lookup_intern_type_var(*self).name
     }
 }
 
-impl HirToString for ParserDefRef {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
-        let from = self.from.as_ref().map(|x| x.hir_to_string(db));
+impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for ParserDefRef {
+    fn to_db_string(&self, db: &DB) -> String {
+        let from = self.from.as_ref().map(|x| x.to_db_string(db));
         let args = self
             .args
             .iter()
-            .map(|x| x.hir_to_string(db))
+            .map(|x| x.to_db_string(db))
             .collect::<Vec<_>>();
         let mut ret = String::new();
         if let Some(f) = from {
             let _ = write!(ret, "{f} &> ");
         }
-        let _ = write!(ret, "{}", self.name.atom.hir_to_string(db));
+        let _ = write!(ret, "{}", self.name.atom.to_db_string(db));
         if !args.is_empty() {
             let _ = write!(ret, "[{}]", args.join(", "));
         }
@@ -221,8 +215,8 @@ impl HirToString for ParserDefRef {
     }
 }
 
-impl HirToString for TypePrimitive {
-    fn hir_to_string(&self, _db: &dyn Hirs) -> String {
+impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for TypePrimitive {
+    fn to_db_string(&self, _db: &DB) -> String {
         match self {
             TypePrimitive::Mem => "<mem>",
             TypePrimitive::Int => "<int>",
@@ -233,17 +227,17 @@ impl HirToString for TypePrimitive {
     }
 }
 
-impl HirToString for TypeArray {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for TypeArray {
+    fn to_db_string(&self, db: &DB) -> String {
         match self.direction {
-            ArrayKind::For => format!("for[{}]", self.expr.hir_to_string(db)),
-            ArrayKind::Each => format!("each[{}]", self.expr.hir_to_string(db)),
+            ArrayKind::For => format!("for[{}]", self.expr.to_db_string(db)),
+            ArrayKind::Each => format!("each[{}]", self.expr.to_db_string(db)),
         }
     }
 }
 
-impl HirToString for Atom {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Atom {
+    fn to_db_string(&self, db: &DB) -> String {
         match self {
             Atom::Field(FieldName::Ident(id)) => db.lookup_intern_identifier(*id).name,
             Atom::Field(FieldName::Return) => String::from("return"),
@@ -254,127 +248,42 @@ impl HirToString for Atom {
     }
 }
 
-impl HirToString for Identifier {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Identifier {
+    fn to_db_string(&self, db: &DB) -> String {
         db.lookup_intern_identifier(*self).name
     }
 }
 
 // somehow this does not work with a blanket implementation
 // maybe because it is circular and defaults to "not implemented" instead of "implemented"
-impl HirToString for Expression<HirConstraint> {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Expression<HirConstraint> {
+    fn to_db_string(&self, db: &DB) -> String {
         match self {
-            Expression::BinaryOp(a) => a.hir_to_string(db),
-            Expression::UnaryOp(a) => a.hir_to_string(db),
-            Expression::Atom(a) => a.hir_to_string(db),
+            Expression::BinaryOp(a) => a.to_db_string(db),
+            Expression::UnaryOp(a) => a.to_db_string(db),
+            Expression::Atom(a) => a.to_db_string(db),
         }
     }
 }
-impl HirToString for Expression<HirVal> {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Expression<HirVal> {
+    fn to_db_string(&self, db: &DB) -> String {
         match self {
-            Expression::BinaryOp(a) => a.hir_to_string(db),
-            Expression::UnaryOp(a) => a.hir_to_string(db),
-            Expression::Atom(a) => a.hir_to_string(db),
+            Expression::BinaryOp(a) => a.to_db_string(db),
+            Expression::UnaryOp(a) => a.to_db_string(db),
+            Expression::Atom(a) => a.to_db_string(db),
         }
     }
 }
-impl HirToString for Expression<HirType> {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
+impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Expression<HirType> {
+    fn to_db_string(&self, db: &DB) -> String {
         match self {
-            Expression::BinaryOp(a) => a.hir_to_string(db),
-            Expression::UnaryOp(a) => a.hir_to_string(db),
-            Expression::Atom(a) => a.hir_to_string(db),
+            Expression::BinaryOp(a) => a.to_db_string(db),
+            Expression::UnaryOp(a) => a.to_db_string(db),
+            Expression::Atom(a) => a.to_db_string(db),
         }
     }
 }
 
-impl HirToString for TypeId {
-    fn hir_to_string(&self, db: &dyn Hirs) -> String {
-        type_to_string(*self, db)
-    }
-}
-
-fn type_to_string(ty: TypeId, db: &dyn Hirs) -> String {
-    let ty = db.lookup_intern_type(ty);
-    match ty {
-        Type::Any => String::from("any"),
-        Type::Bot => String::from("bot"),
-        Type::Primitive(p) => p.hir_to_string(db),
-        Type::TypeVarRef(loc, level, index) => {
-            let vars = TypeVarCollection::at_id(db, ParserDefId(loc));
-            if let Ok(v) = vars {
-                if let Some(x) = v.defs[index as usize].name {
-                    return db.lookup_intern_type_var(x).name;
-                }
-            }
-            format!(
-                "<Var Ref ({}, {}, {})>",
-                db.lookup_intern_hir_path(loc).to_name(db),
-                level,
-                index
-            )
-        }
-        Type::ForAll(inner, vars) => {
-            let args = vars
-                .iter()
-                .map(|x| {
-                    x.name
-                        .map(|y| db.lookup_intern_type_var(y).name)
-                        .unwrap_or(String::from("'_"))
-                })
-                .collect::<Vec<String>>()
-                .join(", ");
-            format!("forall {args}. {}", type_to_string(inner, db))
-        }
-        Type::Nominal(n) => {
-            let path = db.lookup_intern_hir_path(n.def).to_name(db);
-            let from = n
-                .parse_arg
-                .map(|x| format!("{} &> ", type_to_string(x, db)))
-                .unwrap_or_else(String::new);
-            match n.kind {
-                NominalKind::Def => {
-                    format!("{from}{path}")
-                }
-                NominalKind::Block => {
-                    format!("<anonymous block {from}{path}>")
-                }
-            }
-        }
-        Type::Loop(k, inner) => match k {
-            ArrayKind::For => format!("for[{}]", type_to_string(inner, db)),
-            ArrayKind::Each => format!("each[{}]", type_to_string(inner, db)),
-        },
-        Type::ParserArg { result, arg } => {
-            format!(
-                "{} *> {}",
-                type_to_string(arg, db),
-                type_to_string(result, db)
-            )
-        }
-        Type::FunctionArg(res, args) => {
-            let args = args
-                .iter()
-                .map(|x| type_to_string(*x, db))
-                .collect::<Vec<String>>()
-                .join(", ");
-            format!("{}({})", type_to_string(res, db), args)
-        }
-        Type::Unknown => String::from("<unknown>"),
-    }
-}
-
-impl HirToString for PrimitiveType {
-    fn hir_to_string(&self, _: &dyn Hirs) -> String {
-        match self {
-            PrimitiveType::Int => String::from("int"),
-            PrimitiveType::Bit => String::from("bit"),
-            PrimitiveType::Char => String::from("char"),
-        }
-    }
-}
 #[derive(Clone)]
 pub struct HirGraph<'a>(pub &'a dyn Hirs);
 
@@ -389,7 +298,7 @@ impl<'a> dot::Labeller<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGra
 
     fn node_label(&'a self, n: &HirId) -> dot::LabelText<'a> {
         let text = match self.0.hir_node(*n) {
-            Ok(node) => node.hir_to_string(self.0),
+            Ok(node) => node.to_db_string(self.0),
             Err(_) => String::from("error"),
         };
         dot::LabelText::label(text)
