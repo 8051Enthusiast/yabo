@@ -47,7 +47,7 @@ pub fn resolve_var_ref(
             HirNode::Module(m) => {
                 let ident = match ident {
                     FieldName::Ident(n) => n,
-                    FieldName::Return | FieldName::Next | FieldName::Prev => return Ok(None),
+                    FieldName::Return => return Ok(None),
                 };
                 return Ok(m.defs.get(&ident).map(|s| (s.id(), VarType::ParserDef)));
             }

@@ -1,35 +1,34 @@
-use crate::databased_display::DatabasedDisplay;
+use crate::{databased_display::DatabasedDisplay, dbwrite};
 
 use super::*;
-use std::fmt::Write;
 
 impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for HirNode {
-    fn to_db_string(&self, db: &DB) -> String {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
-            HirNode::Let(_) => "Let".to_string(),
-            HirNode::Expr(e) => format!("Expr({})", e.to_db_string(db)),
-            HirNode::TExpr(e) => format!("TExpr({})", e.to_db_string(db)),
-            HirNode::Parse(_) => "Parse".to_string(),
-            HirNode::Array(a) => format!("Array({:?})", a.direction),
-            HirNode::Block(_) => "Block".to_string(),
-            HirNode::Choice(_) => "Choice".to_string(),
-            HirNode::Module(_) => "Module".to_string(),
-            HirNode::Context(_) => "Context".to_string(),
-            HirNode::ParserDef(_) => "ParserDef".to_string(),
-            HirNode::ChoiceIndirection(_) => "ChoiceIndirection".to_string(),
+            HirNode::Let(_) => write!(f, "Let"),
+            HirNode::Expr(e) => dbwrite!(f, db, "Expr({})", e),
+            HirNode::TExpr(e) => dbwrite!(f, db, "TExpr({})", e),
+            HirNode::Parse(_) => write!(f, "Parse"),
+            HirNode::Array(a) => write!(f, "Array({:?})", a.direction),
+            HirNode::Block(_) => write!(f, "Block"),
+            HirNode::Choice(_) => write!(f, "Choice"),
+            HirNode::Module(_) => write!(f, "Module"),
+            HirNode::Context(_) => write!(f, "Context"),
+            HirNode::ParserDef(_) => write!(f, "ParserDef"),
+            HirNode::ChoiceIndirection(_) => write!(f, "ChoiceIndirection"),
         }
     }
 }
 
 impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for ValExpression {
-    fn to_db_string(&self, db: &DB) -> String {
-        self.expr.to_db_string(db)
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
+        self.expr.db_fmt(f, db)
     }
 }
 
 impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for TypeExpression {
-    fn to_db_string(&self, db: &DB) -> String {
-        self.expr.to_db_string(db)
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
+        self.expr.db_fmt(f, db)
     }
 }
 
@@ -41,17 +40,11 @@ where
     Expression<S>: DatabasedDisplay<DB>,
     R: Clone + Hash + Eq + Debug,
 {
-    fn to_db_string(&self, db: &DB) -> String {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
-            expr::TypeBinOp::Ref(a, b, _) => {
-                format!("({} &> {})", a.to_db_string(db), b.to_db_string(db))
-            }
-            expr::TypeBinOp::ParseArg(a, b, _) => {
-                format!("({} *> {})", a.to_db_string(db), b.to_db_string(db))
-            }
-            expr::TypeBinOp::Wiggle(a, b, _) => {
-                format!("({} ~ {})", a.to_db_string(db), b.to_db_string(db))
-            }
+            expr::TypeBinOp::Ref(a, b, _) => dbwrite!(f, db, "({} &> {})", a, b),
+            expr::TypeBinOp::ParseArg(a, b, _) => dbwrite!(f, db, "({} *> {})", a, b),
+            expr::TypeBinOp::Wiggle(a, b, _) => dbwrite!(f, db, "({} ~ {})", a, b),
         }
     }
 }
@@ -62,9 +55,9 @@ where
     Expression<T>: DatabasedDisplay<DB>,
     S: Clone + Hash + Eq + Debug,
 {
-    fn to_db_string(&self, db: &DB) -> String {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
-            expr::TypeUnOp::Ref(a, _) => format!("&{}", a.to_db_string(db)),
+            expr::TypeUnOp::Ref(a, _) => dbwrite!(f, db, "&{}", a),
         }
     }
 }
@@ -77,19 +70,13 @@ where
     Expression<S>: DatabasedDisplay<DB>,
     R: Clone + Hash + Eq + Debug,
 {
-    fn to_db_string(&self, db: &DB) -> String {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         use expr::ValBinOp::*;
         match self {
-            Basic(a, op, b, _) => {
-                format!("({} {} {})", a.to_db_string(db), op, b.to_db_string(db))
-            }
-            Wiggle(a, b, _) => {
-                format!("({} ~ {})", a.to_db_string(db), b.to_db_string(db))
-            }
-            Else(a, b, _) => {
-                format!("({} else {})", a.to_db_string(db), b.to_db_string(db))
-            }
-            Dot(a, b, _) => format!("{}.{}", a.to_db_string(db), b.to_db_string(db)),
+            Basic(a, op, b, _) => dbwrite!(f, db, "({} {} {})", a, op, b),
+            Wiggle(a, b, _) => dbwrite!(f, db, "({} ~ {})", a, b),
+            Else(a, b, _) => dbwrite!(f, db, "({} else {})", a, b),
+            Dot(a, b, _) => dbwrite!(f, db, "{}.{}", a, b),
         }
     }
 }
@@ -100,14 +87,14 @@ where
     Expression<T>: DatabasedDisplay<DB>,
     S: Clone + Hash + Eq + Debug,
 {
-    fn to_db_string(&self, db: &DB) -> String {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         let (x, op) = match self {
             expr::ValUnOp::Not(a, _) => (a, "!"),
             expr::ValUnOp::Neg(a, _) => (a, "-"),
             expr::ValUnOp::Pos(a, _) => (a, "+"),
             expr::ValUnOp::If(a, _) => (a, "if "),
         };
-        format!("{}{}", op, x.to_db_string(db))
+        dbwrite!(f, db, "{}{}", &op, x)
     }
 }
 
@@ -117,15 +104,13 @@ where
     Expression<T>: DatabasedDisplay<DB>,
     S: Clone + Hash + Eq + Debug,
 {
-    fn to_db_string(&self, db: &DB) -> String {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         let (a, b, op) = match self {
             expr::ConstraintBinOp::And(a, b, _) => (a, b, "and"),
             expr::ConstraintBinOp::Or(a, b, _) => (a, b, "or"),
-            expr::ConstraintBinOp::Dot(a, b, _) => {
-                return format!("{}.{}", a.to_db_string(db), b.to_db_string(db))
-            }
+            expr::ConstraintBinOp::Dot(a, b, _) => return dbwrite!(f, db, "{}.{}", a, b),
         };
-        format!("{} {} {}", a.to_db_string(db), op, b.to_db_string(db))
+        dbwrite!(f, db, "{} {} {}", a, &op, b)
     }
 }
 
@@ -135,9 +120,9 @@ where
     Expression<T>: DatabasedDisplay<DB>,
     S: Clone + Hash + Eq + Debug,
 {
-    fn to_db_string(&self, db: &DB) -> String {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
-            expr::ConstraintUnOp::Not(a, _) => format!("!{}", a.to_db_string(db)),
+            expr::ConstraintUnOp::Not(a, _) => dbwrite!(f, db, "!{}", a),
         }
     }
 }
@@ -146,140 +131,127 @@ impl<T, DB: Hirs + ?Sized> DatabasedDisplay<DB> for IndexSpanned<T>
 where
     T: DatabasedDisplay<DB>,
 {
-    fn to_db_string(&self, db: &DB) -> String {
-        self.atom.to_db_string(db)
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
+        self.atom.db_fmt(f, db)
     }
 }
 
 impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for ParserAtom {
-    fn to_db_string(&self, db: &DB) -> String {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
-            ParserAtom::Atom(atom) => atom.to_db_string(db),
-            ParserAtom::Single => "~".to_string(),
-            ParserAtom::Array(id) => format!(
+            ParserAtom::Atom(atom) => atom.db_fmt(f, db),
+            ParserAtom::Single => dbwrite!(f, db, "~"),
+            ParserAtom::Array(id) => dbwrite!(
+                f,
+                db,
                 "array({})",
                 db.lookup_intern_hir_path(id.0)
                     .path()
                     .iter()
                     .last()
                     .unwrap()
-                    .to_name(db)
             ),
-            ParserAtom::Block(id) => format!(
+            ParserAtom::Block(id) => dbwrite!(
+                f,
+                db,
                 "block({})",
                 db.lookup_intern_hir_path(id.0)
                     .path()
                     .iter()
                     .last()
                     .unwrap()
-                    .to_name(db)
             ),
         }
     }
 }
 
 impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for TypeAtom {
-    fn to_db_string(&self, db: &DB) -> String {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
-            TypeAtom::ParserDef(pd) => pd.to_db_string(db),
-            TypeAtom::Array(arr) => arr.to_db_string(db),
-            TypeAtom::Primitive(p) => p.to_db_string(db),
-            TypeAtom::TypeVar(v) => v.to_db_string(db),
+            TypeAtom::ParserDef(pd) => pd.db_fmt(f, db),
+            TypeAtom::Array(arr) => arr.db_fmt(f, db),
+            TypeAtom::Primitive(p) => p.db_fmt(f, db),
+            TypeAtom::TypeVar(v) => v.db_fmt(f, db),
         }
-    }
-}
-
-impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for TypeVar {
-    fn to_db_string(&self, db: &DB) -> String {
-        db.lookup_intern_type_var(*self).name
     }
 }
 
 impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for ParserDefRef {
-    fn to_db_string(&self, db: &DB) -> String {
-        let from = self.from.as_ref().map(|x| x.to_db_string(db));
-        let args = self
-            .args
-            .iter()
-            .map(|x| x.to_db_string(db))
-            .collect::<Vec<_>>();
-        let mut ret = String::new();
-        if let Some(f) = from {
-            let _ = write!(ret, "{f} &> ");
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
+        if let Some(fr) = self.from.as_ref() {
+            dbwrite!(f, db, "{} &> ", fr)?;
         }
-        let _ = write!(ret, "{}", self.name.atom.to_db_string(db));
-        if !args.is_empty() {
-            let _ = write!(ret, "[{}]", args.join(", "));
+        dbwrite!(f, db, "{}", &self.name.atom)?;
+        if !self.args.is_empty() {
+            write!(f, "[")?;
+            for (i, arg) in self.args.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                dbwrite!(f, db, "{}", arg)?;
+            }
+            write!(f, "]")?;
         }
-        ret
+        Ok(())
     }
 }
 
 impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for TypePrimitive {
-    fn to_db_string(&self, _db: &DB) -> String {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, _db: &DB) -> std::fmt::Result {
         match self {
-            TypePrimitive::Mem => "<mem>",
-            TypePrimitive::Int => "<int>",
-            TypePrimitive::Bit => "<bit>",
-            TypePrimitive::Char => "<char>",
+            TypePrimitive::Mem => write!(f, "<mem>"),
+            TypePrimitive::Int => write!(f, "<int>"),
+            TypePrimitive::Bit => write!(f, "<bit>"),
+            TypePrimitive::Char => write!(f, "<char>"),
         }
-        .into()
     }
 }
 
 impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for TypeArray {
-    fn to_db_string(&self, db: &DB) -> String {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self.direction {
-            ArrayKind::For => format!("for[{}]", self.expr.to_db_string(db)),
-            ArrayKind::Each => format!("each[{}]", self.expr.to_db_string(db)),
+            ArrayKind::For => dbwrite!(f, db, "for[{}]", &self.expr),
+            ArrayKind::Each => dbwrite!(f, db, "each[{}]", &self.expr),
         }
     }
 }
 
 impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Atom {
-    fn to_db_string(&self, db: &DB) -> String {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
-            Atom::Field(FieldName::Ident(id)) => db.lookup_intern_identifier(*id).name,
-            Atom::Field(FieldName::Return) => String::from("return"),
-            Atom::Field(FieldName::Prev) => String::from("prev"),
-            Atom::Field(FieldName::Next) => String::from("next"),
-            Atom::Number(a) | Atom::Char(a) | Atom::String(a) => a.clone(),
+            Atom::Field(FieldName::Ident(id)) => dbwrite!(f, db, "{}", id),
+            Atom::Field(FieldName::Return) => write!(f, "return"),
+            Atom::Number(a) | Atom::Char(a) | Atom::String(a) => write!(f, "{}", a),
         }
-    }
-}
-
-impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Identifier {
-    fn to_db_string(&self, db: &DB) -> String {
-        db.lookup_intern_identifier(*self).name
     }
 }
 
 // somehow this does not work with a blanket implementation
 // maybe because it is circular and defaults to "not implemented" instead of "implemented"
 impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Expression<HirConstraint> {
-    fn to_db_string(&self, db: &DB) -> String {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
-            Expression::BinaryOp(a) => a.to_db_string(db),
-            Expression::UnaryOp(a) => a.to_db_string(db),
-            Expression::Atom(a) => a.to_db_string(db),
+            Expression::BinaryOp(a) => a.db_fmt(f, db),
+            Expression::UnaryOp(a) => a.db_fmt(f, db),
+            Expression::Atom(a) => a.db_fmt(f, db),
         }
     }
 }
 impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Expression<HirVal> {
-    fn to_db_string(&self, db: &DB) -> String {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
-            Expression::BinaryOp(a) => a.to_db_string(db),
-            Expression::UnaryOp(a) => a.to_db_string(db),
-            Expression::Atom(a) => a.to_db_string(db),
+            Expression::BinaryOp(a) => a.db_fmt(f, db),
+            Expression::UnaryOp(a) => a.db_fmt(f, db),
+            Expression::Atom(a) => a.db_fmt(f, db),
         }
     }
 }
 impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Expression<HirType> {
-    fn to_db_string(&self, db: &DB) -> String {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
-            Expression::BinaryOp(a) => a.to_db_string(db),
-            Expression::UnaryOp(a) => a.to_db_string(db),
-            Expression::Atom(a) => a.to_db_string(db),
+            Expression::BinaryOp(a) => a.db_fmt(f, db),
+            Expression::UnaryOp(a) => a.db_fmt(f, db),
+            Expression::Atom(a) => a.db_fmt(f, db),
         }
     }
 }
