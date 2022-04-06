@@ -388,7 +388,7 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGr
                                     .iter()
                                     .last()
                                     .unwrap()
-                                    .to_name(self.0);
+                                    .to_db_string(self.0);
                                 (id.0, *p, last_name, dot::Style::Bold)
                             })
                             .collect();
