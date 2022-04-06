@@ -90,17 +90,6 @@ pub enum PathComponent {
 }
 
 impl PathComponent {
-    pub fn to_name<DB: Interner + ?Sized>(&self, db: &DB) -> String {
-        match self {
-            PathComponent::Named(FieldName::Ident(n)) => db.lookup_intern_identifier(*n).name,
-            PathComponent::Named(FieldName::Return) => String::from("return"),
-            PathComponent::Unnamed(x) => format!("{}", x),
-            PathComponent::File(f) => match db.path(*f) {
-                Some(p) => p.to_string_lossy().to_string(),
-                None => String::from("file[anonymous]"),
-            },
-        }
-    }
     pub fn unwrap_file(self) -> FileId {
         match self {
             PathComponent::File(f) => f,
@@ -184,13 +173,6 @@ impl HirPath {
     }
     pub fn pop(&mut self) -> Option<PathComponent> {
         self.0.pop()
-    }
-    pub fn to_name<DB: Interner + ?Sized>(&self, db: &DB) -> String {
-        self.path()
-            .iter()
-            .map(|x| x.to_name(db))
-            .collect::<Vec<_>>()
-            .join(".")
     }
 }
 
