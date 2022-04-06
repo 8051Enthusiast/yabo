@@ -17,7 +17,7 @@ use crate::{
     interner::{FieldName, HirId, TypeVar},
     types::{
         EitherType, InfTypeId, InferenceContext, InferenceType, NominalInfHead, NominalKind,
-        NominalTypeHead, Polarity, Signature, Type, TypeError, TypeId, TypeResolver, VarDef,
+        NominalTypeHead, Signature, Type, TypeError, TypeId, TypeResolver, VarDef,
     },
 };
 
@@ -27,10 +27,10 @@ use crate::hir::{
     TypeAtom, TypePrimitive,
 };
 
+use full::{parser_full_types, ParserFullTypes};
 use public::{ambient_type, public_expr_type, public_type};
 use returns::{parser_returns, parser_returns_ssc, ParserDefType};
 use signature::{get_signature, get_thunk, parser_args};
-use full::{parser_full_types, ParserFullTypes};
 
 #[salsa::query_group(HirTypesDatabase)]
 pub trait TyHirs: Hirs + crate::types::TypeInterner {
@@ -43,9 +43,7 @@ pub trait TyHirs: Hirs + crate::types::TypeInterner {
         loc: ExprId,
     ) -> Result<(Expression<TypedHirVal<TypeId>>, TypeId), ()>;
     fn ambient_type(&self, id: ParseId) -> Result<TypeId, ()>;
-    fn parser_full_types(&self,
-    id: ParserDefId,
-) -> Result<Arc<ParserFullTypes>, TypeError>;
+    fn parser_full_types(&self, id: ParserDefId) -> Result<Arc<ParserFullTypes>, TypeError>;
 }
 
 type TypedExpression = Expression<TypedHirVal<TypeId>>;
@@ -237,7 +235,7 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
         })
     }
     fn inftype_to_concrete_type(&mut self, infty: InfTypeId) -> Result<TypeId, TypeError> {
-        self.infctx.to_type(infty, Polarity::Positive)
+        self.infctx.to_type(infty)
     }
     fn expr_to_concrete_type(
         &mut self,
