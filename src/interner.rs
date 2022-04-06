@@ -1,6 +1,6 @@
 use salsa::InternId;
 
-use crate::source::FileId;
+use crate::{databased_display::DatabasedDisplay, dbwrite, source::FileId};
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Identifier(InternId);
@@ -26,6 +26,12 @@ impl IdentifierName {
     }
 }
 
+impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for Identifier {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
+        write!(f, "{}", db.lookup_intern_identifier(*self).name)
+    }
+}
+
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct TypeVar(InternId);
 
@@ -39,6 +45,11 @@ impl salsa::InternKey for TypeVar {
     }
 }
 
+impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for TypeVar {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
+        dbwrite!(f, db, "{}", &db.lookup_intern_type_var(*self).name)
+    }
+}
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct TypeVarName {
     pub name: String,
@@ -54,13 +65,20 @@ impl TypeVarName {
 pub enum FieldName {
     Ident(Identifier),
     Return,
-    Next,
-    Prev,
 }
 
 impl From<Identifier> for FieldName {
     fn from(ident: Identifier) -> Self {
         FieldName::Ident(ident)
+    }
+}
+
+impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for FieldName {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
+        match self {
+            FieldName::Ident(ident) => ident.db_fmt(f, db),
+            FieldName::Return => write!(f, "return"),
+        }
     }
 }
 
@@ -76,8 +94,6 @@ impl PathComponent {
         match self {
             PathComponent::Named(FieldName::Ident(n)) => db.lookup_intern_identifier(*n).name,
             PathComponent::Named(FieldName::Return) => String::from("return"),
-            PathComponent::Named(FieldName::Next) => String::from("next"),
-            PathComponent::Named(FieldName::Prev) => String::from("prev"),
             PathComponent::Unnamed(x) => format!("{}", x),
             PathComponent::File(f) => match db.path(*f) {
                 Some(p) => p.to_string_lossy().to_string(),
@@ -101,6 +117,20 @@ impl PathComponent {
         match self {
             PathComponent::Named(FieldName::Ident(ident)) => ident,
             _ => panic!("Path component should have been identifier"),
+        }
+    }
+}
+
+impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for PathComponent {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
+        match self {
+            PathComponent::Named(FieldName::Ident(n)) => n.db_fmt(f, db),
+            PathComponent::Named(FieldName::Return) => write!(f, "return"),
+            PathComponent::Unnamed(x) => write!(f, "{}", x),
+            PathComponent::File(fid) => match db.path(*fid) {
+                Some(p) => write!(f, "{}", p.to_string_lossy()),
+                None => write!(f, "file[anonymous]"),
+            },
         }
     }
 }
@@ -164,14 +194,24 @@ impl HirPath {
     }
 }
 
-fn path_name(db: &dyn Interner, id: HirId) -> String {
-    let path = db.lookup_intern_hir_path(id);
-    path.path()
-        .iter()
-        .map(|x| x.to_name(db))
-        .collect::<Vec<_>>()
-        .join(".")
+impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for HirPath {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
+        for (i, component) in self.path().iter().enumerate() {
+            if i > 0 {
+                write!(f, ".")?;
+            }
+            dbwrite!(f, db, "{}", component)?;
+        }
+        Ok(())
+    }
 }
+
+impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for HirId {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
+        dbwrite!(f, db, "{}", &db.lookup_intern_hir_path(*self))
+    }
+}
+
 #[salsa::query_group(InternerDatabase)]
 pub trait Interner: crate::source::Files {
     #[salsa::interned]
@@ -180,6 +220,4 @@ pub trait Interner: crate::source::Files {
     fn intern_type_var(&self, identifier: TypeVarName) -> TypeVar;
     #[salsa::interned]
     fn intern_hir_path(&self, path: HirPath) -> HirId;
-
-    fn path_name(&self, id: HirId) -> String;
 }

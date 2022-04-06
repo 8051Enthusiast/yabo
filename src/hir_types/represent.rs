@@ -1,6 +1,7 @@
 use crate::{
     ast::ArrayKind,
     databased_display::DatabasedDisplay,
+    dbwrite,
     hir::ParserDefId,
     hir_types::TypeVarCollection,
     types::{NominalKind, PrimitiveType, Type, TypeId},
@@ -9,87 +10,80 @@ use crate::{
 use super::TyHirs;
 
 impl<DB: TyHirs + ?Sized> DatabasedDisplay<DB> for TypeId {
-    fn to_db_string(&self, db: &DB) -> String {
-        type_to_string(*self, db)
-    }
-}
-
-fn type_to_string(ty: TypeId, db: &(impl TyHirs + ?Sized)) -> String {
-    let ty = db.lookup_intern_type(ty);
-    match ty {
-        Type::Any => String::from("any"),
-        Type::Bot => String::from("bot"),
-        Type::Primitive(p) => p.to_db_string(db),
-        Type::TypeVarRef(loc, level, index) => {
-            let vars = TypeVarCollection::at_id(db, ParserDefId(loc));
-            if let Ok(v) = vars {
-                if let Some(x) = v.defs[index as usize].name {
-                    return db.lookup_intern_type_var(x).name;
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
+        let ty = db.lookup_intern_type(*self);
+        match ty {
+            Type::Any => write!(f, "any"),
+            Type::Bot => write!(f, "bot"),
+            Type::Primitive(p) => p.db_fmt(f, db),
+            Type::TypeVarRef(loc, level, index) => {
+                let vars = TypeVarCollection::at_id(db, ParserDefId(loc));
+                if let Ok(v) = vars {
+                    if let Some(x) = v.defs[index as usize].name {
+                        return dbwrite!(f, db, "{}", &x);
+                    }
                 }
+                dbwrite!(f, db, "<Var Ref ({}, {}, {})>", &loc, &level, &index)
             }
-            format!(
-                "<Var Ref ({}, {}, {})>",
-                db.lookup_intern_hir_path(loc).to_name(db),
-                level,
-                index
-            )
-        }
-        Type::ForAll(inner, vars) => {
-            let args = vars
-                .iter()
-                .map(|x| {
-                    x.name
-                        .map(|y| db.lookup_intern_type_var(y).name)
-                        .unwrap_or(String::from("'_"))
-                })
-                .collect::<Vec<String>>()
-                .join(", ");
-            format!("forall {args}. {}", type_to_string(inner, db))
-        }
-        Type::Nominal(n) => {
-            let path = db.lookup_intern_hir_path(n.def).to_name(db);
-            let from = n
-                .parse_arg
-                .map(|x| format!("{} &> ", type_to_string(x, db)))
-                .unwrap_or_else(String::new);
-            match n.kind {
-                NominalKind::Def => {
-                    format!("{from}{path}")
+            Type::ForAll(inner, vars) => {
+                write!(f, "forall ")?;
+                for (i, arg) in vars.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    if let Some(x) = arg.name {
+                        dbwrite!(f, db, "{}", &x)?;
+                    } else {
+                        write!(f, "'_")?;
+                    }
                 }
-                NominalKind::Block => {
-                    format!("<anonymous block {from}{path}>")
-                }
+                dbwrite!(f, db, ". {}", &inner)
             }
+            Type::Nominal(n) => {
+                if let NominalKind::Block = n.kind {
+                    write!(f, "<anonymous block ")?;
+                }
+                if let Some(x) = n.parse_arg {
+                    dbwrite!(f, db, "{} &> {}", &x, &n.def)?;
+                } else {
+                    dbwrite!(f, db, "{}", &n.def)?;
+                }
+                if let NominalKind::Block = n.kind {
+                    write!(f, ">")?;
+                }
+                Ok(())
+            }
+            Type::Loop(k, inner) => {
+                match k {
+                    ArrayKind::For => write!(f, "for")?,
+                    ArrayKind::Each => write!(f, "each")?,
+                };
+                dbwrite!(f, db, "[{}]", &inner)
+            }
+            Type::ParserArg { result, arg } => {
+                dbwrite!(f, db, "{} *> {}", &arg, &result)
+            }
+            Type::FunctionArg(result, args) => {
+                dbwrite!(f, db, "{}(", &result)?;
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    dbwrite!(f, db, "{}", arg)?;
+                }
+                write!(f, ")")
+            }
+            Type::Unknown => write!(f, "<unknown>"),
         }
-        Type::Loop(k, inner) => match k {
-            ArrayKind::For => format!("for[{}]", type_to_string(inner, db)),
-            ArrayKind::Each => format!("each[{}]", type_to_string(inner, db)),
-        },
-        Type::ParserArg { result, arg } => {
-            format!(
-                "{} *> {}",
-                type_to_string(arg, db),
-                type_to_string(result, db)
-            )
-        }
-        Type::FunctionArg(res, args) => {
-            let args = args
-                .iter()
-                .map(|x| type_to_string(*x, db))
-                .collect::<Vec<String>>()
-                .join(", ");
-            format!("{}({})", type_to_string(res, db), args)
-        }
-        Type::Unknown => String::from("<unknown>"),
     }
 }
 
 impl<DB: ?Sized> DatabasedDisplay<DB> for PrimitiveType {
-    fn to_db_string(&self, _: &DB) -> String {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, _: &DB) -> std::fmt::Result {
         match self {
-            PrimitiveType::Int => String::from("int"),
-            PrimitiveType::Bit => String::from("bit"),
-            PrimitiveType::Char => String::from("char"),
+            PrimitiveType::Int => write!(f, "int"),
+            PrimitiveType::Bit => write!(f, "bit"),
+            PrimitiveType::Char => write!(f, "char"),
         }
     }
 }

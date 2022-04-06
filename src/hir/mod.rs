@@ -14,6 +14,7 @@ use std::{
 
 use crate::{
     ast::{self, ArrayKind, AstConstraint, AstType, AstVal},
+    dbpanic,
     expr::{self, Atom, ExprConverter, Expression, ExpressionComponent, ExpressionKind},
     interner::{FieldName, HirId, HirPath, Identifier, PathComponent, TypeVar},
     source::{FileId, Span, Spanned},
@@ -58,19 +59,20 @@ fn hir_node(db: &dyn Hirs, id: HirId) -> Result<HirNode, ()> {
     let fid = match path.path().get(1) {
         Some(PathComponent::Named(n)) => n,
         None => return module_file(db, file).map(HirNode::Module),
-        _ => panic!(
+        _ => dbpanic!(
+            db,
             "Hir path {} does not have identifier as second element",
-            db.path_name(id)
+            &id
         ),
     };
     let collection_id = db.intern_hir_path(HirPath::new_fid(file, *fid));
     let hir_ctx = db
         .hir_parser_collection(collection_id)?
-        .unwrap_or_else(|| panic!("Access to inexistent HIR path {}", db.path_name(id)));
+        .unwrap_or_else(|| dbpanic!(db, "Access to inexistent HIR path {}", &id));
     Ok(hir_ctx
         .map
         .get(&id)
-        .unwrap_or_else(|| panic!("Access to inexistent HIR path {}", db.path_name(id)))
+        .unwrap_or_else(|| dbpanic!(db, "Access to inexistent HIR path {}", &id))
         .clone())
 }
 
