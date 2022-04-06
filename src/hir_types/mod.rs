@@ -1,8 +1,8 @@
+mod full;
 mod public;
 pub mod represent;
 mod returns;
 mod signature;
-//mod full;
 
 use std::{collections::BTreeMap, fmt::Debug, hash::Hash, marker::PhantomData, sync::Arc};
 
@@ -30,6 +30,7 @@ use crate::hir::{
 use public::{ambient_type, public_expr_type, public_type};
 use returns::{parser_returns, parser_returns_ssc, ParserDefType};
 use signature::{get_signature, get_thunk, parser_args};
+use full::{parser_full_types, ParserFullTypes};
 
 #[salsa::query_group(HirTypesDatabase)]
 pub trait TyHirs: Hirs + crate::types::TypeInterner {
@@ -42,6 +43,9 @@ pub trait TyHirs: Hirs + crate::types::TypeInterner {
         loc: ExprId,
     ) -> Result<(Expression<TypedHirVal<TypeId>>, TypeId), ()>;
     fn ambient_type(&self, id: ParseId) -> Result<TypeId, ()>;
+    fn parser_full_types(&self,
+    id: ParserDefId,
+) -> Result<Arc<ParserFullTypes>, TypeError>;
 }
 
 type TypedExpression = Expression<TypedHirVal<TypeId>>;
@@ -65,21 +69,6 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
         }
     }
 
-    /*
-    fn resolve_type_ref(
-        &mut self,
-        context: &mut TypingLocation,
-        name: FieldName,
-    ) -> Result<InfTypeId, TypeError> {
-        let id = self.parserdef_ref(context, name)?;
-        let ntype = parser_returns(self.db, id)?.ty;
-        let ty = self
-            .infctx
-            .from_type(&self.db.lookup_intern_type(ntype))
-            .map_err(|_| TypeError)?;
-        Ok(ty)
-    }
-    */
     pub fn resolve_type_expr(
         &mut self,
         context: &mut TypingLocation,

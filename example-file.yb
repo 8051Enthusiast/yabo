@@ -25,7 +25,6 @@ def for[u8] *> main = {
 }
 
 def for[char] *> test = {
-    x: for(~),
     return: word,
 }
 
@@ -37,5 +36,4 @@ def mem *> u64ul = {
 
 def for['t] *> ttt = {
     let x: 't = 4,
-    t: 
 }

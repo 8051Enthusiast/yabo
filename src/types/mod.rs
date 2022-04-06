@@ -522,12 +522,22 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         let result = self.intern_infty(InferenceType::Nominal(nominal));
         Ok(self.parser(result, arg))
     }
-    pub fn one_of(&mut self, those: &[InfTypeId]) -> Result<InfTypeId, TypeError> {
+    pub fn one_of(&mut self, these: &[InfTypeId]) -> Result<InfTypeId, TypeError> {
         let ret = self.var();
-        for &inftype in those {
-            self.constrain(ret, inftype)?;
+        for &inftype in these {
+            self.constrain(inftype, ret)?;
         }
         Ok(ret)
+    }
+    pub fn reuse_parser_arg(
+        &mut self,
+        parser: InfTypeId,
+    ) -> Result<InfTypeId, TypeError> {
+        let result = self.var();
+        let arg = self.var();
+        let other_parser = self.parser(result, arg);
+        self.constrain(other_parser, parser)?;
+        Ok(arg)
     }
     pub fn parser_compose(
         &mut self,
