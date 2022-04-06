@@ -133,29 +133,28 @@ pub enum InferenceType {
 }
 
 impl InferenceType {
-    fn children(&mut self, pol: Polarity) -> Vec<(&mut InfTypeId, Polarity)> {
+    fn children(&mut self) -> Vec<&mut InfTypeId> {
         match self {
             InferenceType::Loop(_, inner) => {
-                vec![(inner, pol)]
+                vec![inner]
             }
             InferenceType::ParserArg { result, arg } => {
-                vec![(result, pol), (arg, pol.reverse())]
+                vec![result, arg]
             }
             InferenceType::FunctionArgs { result, args } => {
                 let mut ret = args
                     .iter_mut()
-                    .map(|x| (x, pol.reverse()))
                     .collect::<Vec<_>>();
-                ret.push((result, pol));
+                ret.push(result);
                 ret
             }
             InferenceType::InferField(_, inner) => {
-                vec![(inner, pol)]
+                vec![inner]
             }
             InferenceType::Var(..) => {
                 panic!("Internal Compiler Error: taking children of variable");
             }
-            InferenceType::Nominal(nom) => nom.ty_args.iter_mut().map(|x| (x, pol)).collect(),
+            InferenceType::Nominal(nom) => nom.ty_args.iter_mut().collect(),
             InferenceType::Any
             | InferenceType::Bot
             | InferenceType::Primitive(_)
@@ -674,9 +673,9 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         };
         self.intern_infty(ret)
     }
-    pub fn to_type(&mut self, infty: InfTypeId, pol: Polarity) -> Result<TypeId, TypeError> {
+    pub fn to_type(&mut self, infty: InfTypeId) -> Result<TypeId, TypeError> {
         let mut converter = TypeConvertMemo::new(self);
-        converter.to_type_internal(infty, pol)
+        converter.to_type_internal(infty)
     }
 }
 
@@ -731,8 +730,8 @@ impl<From: Copy + Eq + Hash, To: Copy> MemoRecursor<From, To> {
 }
 
 pub struct TypeConvertMemo<'a, TR: TypeResolver> {
-    convert: MemoRecursor<(InfTypeId, Polarity), TypeId>,
-    normalize: MemoRecursor<(InfTypeId, Polarity), InfTypeId>,
+    convert: MemoRecursor<InfTypeId, TypeId>,
+    normalize: MemoRecursor<InfTypeId, InfTypeId>,
     meet: MemoRecursor<(InfTypeId, InfTypeId), InfTypeId>,
     join: MemoRecursor<(InfTypeId, InfTypeId), InfTypeId>,
     ctx: &'a mut InferenceContext<TR>,
@@ -1028,17 +1027,11 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
     fn normalize_children(
         &mut self,
         infty: InfTypeId,
-        pol: Polarity,
     ) -> Result<InfTypeId, TypeError> {
         let mut ty = self.ctx.lookup_infty(infty);
-        if let InferenceType::Var(_) = ty {
-            ty = match pol {
-                Polarity::Positive => InferenceType::Bot,
-                Polarity::Negative => InferenceType::Any,
-            };
-        } else {
-            for (child, pol) in ty.children(pol) {
-                *child = self.normalize_inftype(*child, pol)?;
+        if !matches!(ty, InferenceType::Var(_)) {
+            for child in ty.children() {
+                *child = self.normalize_inftype(*child)?;
             }
         }
         Ok(self.ctx.intern_infty(ty))
@@ -1046,47 +1039,30 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
     fn normalize_inftype(
         &mut self,
         infty: InfTypeId,
-        pol: Polarity,
     ) -> Result<InfTypeId, TypeError> {
-        if let Some(x) = self.normalize.enter_fun((infty, pol)) {
+        if let Some(x) = self.normalize.enter_fun(infty) {
             return x;
         }
         let inf = self.ctx.lookup_infty(infty);
-        let res = match (inf, pol) {
-            (InferenceType::Var(v), Polarity::Positive) => {
+        let res = match inf {
+            InferenceType::Var(v) => {
                 let mut result = self.ctx.intern_infty(InferenceType::Bot);
                 let var_store = self.ctx.var_store.clone();
                 for ty in var_store.get(v).lower.iter() {
-                    let normalized = self.normalize_children(*ty, pol)?;
+                    let normalized = self.normalize_children(*ty)?;
                     result = self.join_inftype(result, normalized)?;
                 }
                 result
             }
-            (InferenceType::Var(v), Polarity::Negative) => {
-                let mut result = self.ctx.intern_infty(InferenceType::Any);
-                let var_store = self.ctx.var_store.clone();
-                for ty in var_store.get(v).upper.iter() {
-                    let normalized = self.normalize_children(*ty, pol)?;
-                    result = self.meet_inftype(result, normalized)?;
-                }
-                // the result we got upon here is the most general, however in the upper bounds there can be
-                // types like InferField which are more like type classes, so we join with the lower bounds,
-                // because the join operation still prioritizes concrete types over type classes
-                for ty in var_store.get(v).lower.iter() {
-                    let normalized = self.normalize_children(*ty, pol)?;
-                    result = self.join_inftype(result, normalized)?;
-                }
-                result
-            }
-            (_, _) => self.normalize_children(infty, pol)?,
+            _ => self.normalize_children(infty)?,
         };
-        self.normalize.leave_fun((infty, pol), res)
+        self.normalize.leave_fun(infty, res)
     }
-    fn to_type_internal(&mut self, infty: InfTypeId, pol: Polarity) -> Result<TypeId, TypeError> {
-        if let Some(x) = self.convert.enter_fun((infty, pol)) {
+    fn to_type_internal(&mut self, infty: InfTypeId) -> Result<TypeId, TypeError> {
+        if let Some(x) = self.convert.enter_fun(infty) {
             return x;
         }
-        let infty = self.normalize_inftype(infty, pol)?;
+        let infty = self.normalize_inftype(infty)?;
         let inf = self.ctx.lookup_infty(infty);
         let res = match inf {
             InferenceType::Any => Type::Any,
@@ -1106,17 +1082,17 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                 internal: _,
             }) => {
                 let parse_arg = parse_arg
-                    .map(|x| self.to_type_internal(x, pol))
+                    .map(|x| self.to_type_internal(x))
                     .transpose()?;
                 let fun_args = fun_args
                     .iter()
                     .copied()
-                    .map(|x| self.to_type_internal(x, pol))
+                    .map(|x| self.to_type_internal(x))
                     .collect::<Result<_, _>>()?;
                 let ty_args = ty_args
                     .iter()
                     .copied()
-                    .map(|x| self.to_type_internal(x, pol))
+                    .map(|x| self.to_type_internal(x))
                     .collect::<Result<_, _>>()?;
                 Type::Nominal(NominalTypeHead {
                     kind,
@@ -1127,40 +1103,25 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                 })
             }
             InferenceType::Loop(kind, inner) => {
-                Type::Loop(kind, self.to_type_internal(inner, pol)?)
+                Type::Loop(kind, self.to_type_internal(inner)?)
             }
             InferenceType::ParserArg { result, arg } => Type::ParserArg {
-                result: self.to_type_internal(result, pol)?,
-                arg: self.to_type_internal(arg, pol.reverse())?,
+                result: self.to_type_internal(result)?,
+                arg: self.to_type_internal(arg)?,
             },
             InferenceType::FunctionArgs { result, args } => {
                 let args = args
                     .iter()
-                    .map(|&x| self.to_type_internal(x, pol.reverse()))
+                    .map(|&x| self.to_type_internal(x))
                     .collect::<Result<_, _>>()?;
-                Type::FunctionArg(self.to_type_internal(result, pol)?, Arc::new(args))
+                Type::FunctionArg(self.to_type_internal(result)?, Arc::new(args))
             }
             InferenceType::InferField(_, _) => {
                 panic!("Internal Compiler Error: InferField in normalized inference type")
             }
         };
         self.convert
-            .leave_fun((infty, pol), self.ctx.tr.db().intern_type(res))
-    }
-}
-
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-pub enum Polarity {
-    Positive,
-    Negative,
-}
-
-impl Polarity {
-    fn reverse(self) -> Self {
-        match self {
-            Polarity::Positive => Polarity::Negative,
-            Polarity::Negative => Polarity::Positive,
-        }
+            .leave_fun(infty, self.ctx.tr.db().intern_type(res))
     }
 }
 
