@@ -1,17 +1,17 @@
 pub mod represent;
+mod to_type;
 
-use std::{
-    collections::{HashMap, HashSet},
-    hash::Hash,
-    sync::Arc,
-};
+use std::{collections::HashSet, hash::Hash, sync::Arc};
 
 use salsa::InternId;
 
 use crate::{
     ast::ArrayKind,
+    dbeprintln, dbformat,
     interner::{FieldName, HirId, Interner, TypeVar},
 };
+
+use self::to_type::{TypeConvertMemo, VarStack};
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct TypeId(InternId);
@@ -45,6 +45,7 @@ pub trait TypeInterner: crate::source::Files {
     #[salsa::interned]
     fn intern_inference_type(&self, ty: InferenceType) -> InfTypeId;
     fn type_contains_unknown(&self, ty: TypeId) -> bool;
+    fn type_contains_typevar(&self, ty: TypeId) -> bool;
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -63,7 +64,7 @@ pub enum Type {
     Unknown,
     Primitive(PrimitiveType),
     TypeVarRef(HirId, u32, u32),
-    ForAll(TypeId, Arc<Vec<VarDef>>),
+    ForAll(TypeId, Arc<Vec<TypeVar>>),
     Nominal(NominalTypeHead),
     Loop(ArrayKind, TypeId),
     ParserArg { result: TypeId, arg: TypeId },
@@ -89,6 +90,29 @@ pub fn type_contains_unknown(db: &dyn TypeInterner, id: TypeId) -> bool {
         }
         Type::FunctionArg(a, b) => {
             db.type_contains_unknown(a) || b.iter().any(|x| db.type_contains_unknown(*x))
+        }
+    }
+}
+
+pub fn type_contains_typevar(db: &dyn TypeInterner, id: TypeId) -> bool {
+    match db.lookup_intern_type(id) {
+        Type::Any | Type::Bot | Type::Unknown | Type::Primitive(_) => false,
+        Type::TypeVarRef(_, _, _) => true,
+        Type::ForAll(inner, _) => db.type_contains_typevar(inner),
+        Type::Nominal(NominalTypeHead {
+            parse_arg,
+            fun_args,
+            ..
+        }) => {
+            parse_arg.map_or(false, |x| db.type_contains_typevar(x))
+                || fun_args.iter().any(|x| db.type_contains_typevar(*x))
+        }
+        Type::Loop(_, inner) => db.type_contains_typevar(inner),
+        Type::ParserArg { result, arg } => {
+            db.type_contains_typevar(result) || db.type_contains_typevar(arg)
+        }
+        Type::FunctionArg(a, b) => {
+            db.type_contains_typevar(a) || b.iter().any(|x| db.type_contains_typevar(*x))
         }
     }
 }
@@ -142,9 +166,7 @@ impl InferenceType {
                 vec![result, arg]
             }
             InferenceType::FunctionArgs { result, args } => {
-                let mut ret = args
-                    .iter_mut()
-                    .collect::<Vec<_>>();
+                let mut ret = args.iter_mut().collect::<Vec<_>>();
                 ret.push(result);
                 ret
             }
@@ -227,21 +249,10 @@ pub enum NominalKind {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Signature {
-    pub ty_args: Arc<Vec<VarDef>>,
+    pub ty_args: Arc<Vec<TypeVar>>,
     pub from: Option<TypeId>,
     pub args: Arc<Vec<TypeId>>,
     pub thunk: TypeId,
-}
-
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-pub struct VarDef {
-    pub name: Option<TypeVar>,
-}
-
-impl VarDef {
-    pub fn new(name: Option<TypeVar>) -> Self {
-        Self { name }
-    }
 }
 
 #[derive(Clone, Default)]
@@ -270,6 +281,7 @@ pub struct InferenceContext<TR: TypeResolver> {
     var_store: VarStore,
     pub tr: TR,
     cache: HashSet<(InfTypeId, InfTypeId)>,
+    trace: bool,
 }
 
 pub trait TypeResolver {
@@ -279,7 +291,10 @@ pub trait TypeResolver {
     fn deref(&self, ty: &NominalInfHead) -> Result<Option<TypeId>, ()>;
     fn signature(&self, ty: &NominalInfHead) -> Result<Signature, ()>;
     fn lookup(&self, context: HirId, name: FieldName) -> Result<EitherType, ()>;
+    fn name(&self) -> String;
 }
+
+const TRACING_ENABLED: bool = false;
 
 impl<TR: TypeResolver> InferenceContext<TR> {
     pub fn new(tr: TR) -> Self {
@@ -287,6 +302,7 @@ impl<TR: TypeResolver> InferenceContext<TR> {
             var_store: VarStore::new(),
             tr,
             cache: HashSet::new(),
+            trace: TRACING_ENABLED,
         }
     }
     fn lookup_infty(&self, id: InfTypeId) -> InferenceType {
@@ -300,43 +316,78 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         ty: &NominalInfHead,
         name: FieldName,
     ) -> Result<InfTypeId, TypeError> {
-        Ok(
-            match self.tr.field_type(ty, name).map_err(|()| TypeError)? {
-                EitherType::Regular(result_type) => {
-                    self.from_type_with_args(result_type, &ty.ty_args)
-                }
-                EitherType::Inference(infty) => infty,
-            },
-        )
+        let ret = match self.tr.field_type(ty, name).map_err(|()| TypeError)? {
+            EitherType::Regular(result_type) => self.from_type_with_args(result_type, &ty.ty_args),
+            EitherType::Inference(infty) => infty,
+        };
+        if self.trace {
+            dbeprintln!(
+                self.tr.db(),
+                "[{}] field_type {} of {}: {}",
+                &self.tr.name(),
+                &name,
+                &ty.def,
+                &ret
+            );
+        }
+        Ok(ret)
     }
     pub fn deref(&mut self, ty: &NominalInfHead) -> Result<Option<InfTypeId>, TypeError> {
-        Ok(self
+        let ret = self
             .tr
             .deref(ty)
             .map_err(|()| TypeError)?
-            .map(|x| self.from_type_with_args(x, &ty.ty_args)))
+            .map(|x| self.from_type_with_args(x, &ty.ty_args));
+        if self.trace {
+            if let Some(x) = ret {
+                dbeprintln!(
+                    self.tr.db(),
+                    "[{}] deref {}: {}",
+                    &self.tr.name(),
+                    &ty.def,
+                    &x
+                );
+            }
+        }
+        Ok(ret)
     }
     pub fn signature(&self, ty: &NominalInfHead) -> Result<Signature, TypeError> {
         self.tr.signature(ty).map_err(|()| TypeError)
     }
     pub fn lookup(&mut self, context: HirId, name: FieldName) -> Result<InfTypeId, TypeError> {
-        Ok(
-            match self.tr.lookup(context, name).map_err(|()| TypeError)? {
-                EitherType::Regular(result_type) => self.from_type(result_type),
-                EitherType::Inference(infty) => infty,
-            },
-        )
+        let ret = match self.tr.lookup(context, name).map_err(|()| TypeError)? {
+            EitherType::Regular(result_type) => {
+                let ret = self.from_type(result_type);
+                if self.trace {
+                    dbeprintln!(
+                        self.tr.db(),
+                        "[{}] lookup {} at {}: {}",
+                        &self.tr.name(),
+                        &name,
+                        &context,
+                        &ret
+                    );
+                }
+                ret
+            }
+            EitherType::Inference(infty) => infty,
+        };
+        Ok(ret)
     }
     pub fn constrain(&mut self, lower: InfTypeId, upper: InfTypeId) -> Result<(), TypeError> {
         use InferenceType::*;
         if !self.cache.insert((lower, upper)) {
             return Ok(());
         }
-        //let mut debug_out = String::new();
-        //print_inftype(self.tr.db(), lower, &mut debug_out);
-        //debug_out.push_str(" <= ");
-        //print_inftype(self.tr.db(), upper, &mut debug_out);
-        //println!("{}", debug_out);
+        if self.trace {
+            dbeprintln!(
+                self.tr.db(),
+                "[{}] constrain: {} :< {}",
+                &self.tr.name(),
+                &lower,
+                &upper
+            );
+        }
         let [lower_ty, upper_ty] = [lower, upper].map(|x| self.lookup_infty(x));
         match (lower_ty, upper_ty) {
             (_, Any) => Ok(()),
@@ -433,20 +484,26 @@ impl<TR: TypeResolver> InferenceContext<TR> {
                 Nominal(NominalInfHead {
                     def: def1,
                     fun_args: type_args1,
+                    parse_arg: parse_arg1,
                     ..
                 }),
                 Nominal(NominalInfHead {
                     def: def2,
                     fun_args: type_args2,
+                    parse_arg: parse_arg2,
                     ..
                 }),
             ) if def1 == def2 => {
                 if type_args1.len() != type_args2.len() {
                     panic!("Internal Compiler Error: compared same nominal types do not have same number of type args");
                 }
+                if parse_arg1.is_some() != parse_arg2.is_some() {
+                    panic!("Internal Compiler Error: compared same nominal types do not have same number of from args");
+                }
                 type_args1
                     .iter()
-                    .zip(type_args2.iter())
+                    .chain(parse_arg1.iter())
+                    .zip(type_args2.iter().chain(parse_arg2.iter()))
                     .try_for_each(|(&arg1, &arg2)| self.constrain(arg1, arg2))
             }
 
@@ -456,6 +513,14 @@ impl<TR: TypeResolver> InferenceContext<TR> {
                     self.constrain(deref, upper)
                 } else {
                     Err(TypeError)
+                }
+            }
+
+            (TypeVarRef(loc, level, index), TypeVarRef(loc2, level2, index2)) => {
+                if loc != loc2 || level != level2 || index != index2 {
+                    Err(TypeError)
+                } else {
+                    Ok(())
                 }
             }
 
@@ -508,14 +573,14 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         let array = self.intern_infty(array);
         Ok(self.parser(array, arg))
     }
-    pub fn block_call(&mut self, id: HirId) -> Result<InfTypeId, TypeError> {
+    pub fn block_call(&mut self, id: HirId, ty_args: &[InfTypeId]) -> Result<InfTypeId, TypeError> {
         let arg = self.var();
         let nominal = NominalInfHead {
             kind: NominalKind::Block,
             def: id,
             parse_arg: Some(arg),
             fun_args: Box::default(),
-            ty_args: Box::default(),
+            ty_args: Box::new(ty_args.to_vec()),
             internal: true,
         };
         let result = self.intern_infty(InferenceType::Nominal(nominal));
@@ -528,10 +593,7 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         }
         Ok(ret)
     }
-    pub fn reuse_parser_arg(
-        &mut self,
-        parser: InfTypeId,
-    ) -> Result<InfTypeId, TypeError> {
+    pub fn reuse_parser_arg(&mut self, parser: InfTypeId) -> Result<InfTypeId, TypeError> {
         let result = self.var();
         let arg = self.var();
         let other_parser = self.parser(result, arg);
@@ -588,21 +650,32 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         self.from_type_internal(&ty, None)
     }
     pub fn from_type_with_args(&mut self, ty: TypeId, args: &[InfTypeId]) -> InfTypeId {
+        if self.trace {
+            let args = args
+                .iter()
+                .map(|id| dbformat!(self.tr.db(), "{}, ", id))
+                .collect::<String>();
+            eprintln!(
+                "[{}] from_type_with_args: forall [{}]",
+                &self.tr.name(),
+                &args
+            );
+        }
         let ty = self.tr.db().lookup_intern_type(ty);
+        let vars = VarStack {
+            cur: args,
+            next: None,
+        };
         match &ty {
             // we ignore the args here and replace with our own args
             Type::ForAll(inner, _args) => {
                 if args.len() != _args.len() {
                     panic!("Internal Compiler Error: forall args has different length from substituted args!");
                 }
-                let vars = VarStack {
-                    cur: args,
-                    next: None,
-                };
                 let inner = self.tr.db().lookup_intern_type(*inner);
                 self.from_type_internal(&inner, Some(&vars))
             }
-            _ => self.from_type_internal(&ty, None),
+            _ => self.from_type_internal(&ty, Some(&vars)),
         }
     }
     fn from_type_internal(&mut self, ty: &Type, var_stack: Option<&VarStack>) -> InfTypeId {
@@ -677,453 +750,25 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         let mut converter = TypeConvertMemo::new(self);
         converter.to_type_internal(infty)
     }
+    pub fn to_types_with_vars(
+        &mut self,
+        inftys: &[InfTypeId],
+        mut n_vars: u32,
+        at: HirId,
+    ) -> Result<(Vec<TypeId>, u32), TypeError> {
+        let mut converter = TypeConvertMemo::new(self);
+        let mut ret = Vec::new();
+        for infty in inftys {
+            let (new_ty, new_n) = converter.to_type_internal_with_vars(*infty, n_vars, at)?;
+            n_vars = new_n;
+            ret.push(new_ty);
+        }
+        Ok((ret, n_vars))
+    }
 }
 
 #[derive(Clone, Hash, Debug, PartialEq, Eq)]
 pub struct TypeError;
-
-pub struct VarStack<'a> {
-    cur: &'a [InfTypeId],
-    next: Option<&'a VarStack<'a>>,
-}
-
-impl<'a> VarStack<'a> {
-    pub fn resolve(&'a self, level: u32, index: u32) -> Option<InfTypeId> {
-        match level {
-            0 => self.cur.get(index as usize).copied(),
-            1.. => self.next?.resolve(level - 1, index),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct MemoRecursor<From: Copy + Eq + Hash, To: Copy> {
-    process: HashMap<From, usize>,
-    memo: HashMap<From, To>,
-}
-
-impl<From: Copy + Eq + Hash, To: Copy> Default for MemoRecursor<From, To> {
-    fn default() -> Self {
-        Self {
-            process: Default::default(),
-            memo: Default::default(),
-        }
-    }
-}
-
-impl<From: Copy + Eq + Hash, To: Copy> MemoRecursor<From, To> {
-    fn enter_fun(&mut self, from: From) -> Option<Result<To, TypeError>> {
-        if let Some(t) = self.memo.get(&from) {
-            return Some(Ok(*t));
-        }
-        let depth = self.process.len();
-        if self.process.insert(from, depth).is_some() {
-            return Some(Err(TypeError));
-        }
-        None
-    }
-    fn leave_fun(&mut self, from: From, to: To) -> Result<To, TypeError> {
-        self.memo.insert(from, to);
-        self.process.remove(&from);
-        Ok(to)
-    }
-}
-
-pub struct TypeConvertMemo<'a, TR: TypeResolver> {
-    convert: MemoRecursor<InfTypeId, TypeId>,
-    normalize: MemoRecursor<InfTypeId, InfTypeId>,
-    meet: MemoRecursor<(InfTypeId, InfTypeId), InfTypeId>,
-    join: MemoRecursor<(InfTypeId, InfTypeId), InfTypeId>,
-    ctx: &'a mut InferenceContext<TR>,
-}
-
-impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
-    pub fn new(ctx: &'a mut InferenceContext<TR>) -> Self {
-        fn default<T: Default>() -> T {
-            T::default()
-        }
-        TypeConvertMemo {
-            convert: default(),
-            normalize: default(),
-            meet: default(),
-            join: default(),
-            ctx,
-        }
-    }
-    fn meet_inftype(&mut self, lhs: InfTypeId, rhs: InfTypeId) -> Result<InfTypeId, TypeError> {
-        use InferenceType::*;
-        if let Some(x) = self.join.enter_fun((lhs, rhs)) {
-            return x;
-        }
-        let [lhs_ty, rhs_ty] = [lhs, rhs].map(|x| self.ctx.lookup_infty(x));
-        let res = match (lhs_ty, rhs_ty) {
-            (Unknown, _) | (_, Unknown) => Unknown,
-            (Bot, _) | (_, Bot) => Bot,
-            (InferField(..), InferField(..)) => Any,
-            (TypeVarRef(a0, a1, a2), TypeVarRef(b0, b1, b2)) if (a0, a1, a2) == (b0, b1, b2) => {
-                TypeVarRef(a0, a1, a2)
-            }
-            (Any | InferField(..), other) | (other, Any | InferField(..)) => other,
-            (Primitive(p), Primitive(q)) if p == q => Primitive(p),
-            (Loop(kind1, inner1), Loop(kind2, inner2)) => {
-                let kind = kind1.min(kind2);
-                let inner = self.meet_inftype(inner1, inner2)?;
-                Loop(kind, inner)
-            }
-            (ParserArg { result: r1, arg: a }, ParserArg { result: r2, arg: b }) => {
-                let result = self.meet_inftype(r1, r2)?;
-                let arg = self.join_inftype(a, b)?;
-                ParserArg { result, arg }
-            }
-            (
-                FunctionArgs {
-                    result: result1,
-                    args: args1,
-                },
-                FunctionArgs {
-                    result: result2,
-                    args: args2,
-                },
-            ) => {
-                let result = self.meet_inftype(result1, result2)?;
-                if args1.len() != args2.len() {
-                    return Err(TypeError);
-                }
-                let args = Box::new(
-                    args1
-                        .iter()
-                        .zip(args2.iter())
-                        .map(|(arg1, arg2)| self.join_inftype(*arg1, *arg2))
-                        .collect::<Result<_, _>>()?,
-                );
-                FunctionArgs { result, args }
-            }
-            (
-                Nominal(NominalInfHead {
-                    kind,
-                    def: def1,
-                    parse_arg: parse_arg1,
-                    fun_args: fun_args1,
-                    ty_args: ty_args1,
-                    internal: internal1,
-                }),
-                Nominal(NominalInfHead {
-                    def: def2,
-                    parse_arg: parse_arg2,
-                    fun_args: fun_args2,
-                    ty_args: ty_args2,
-                    internal: internal2,
-                    ..
-                }),
-            ) if def1 == def2 => {
-                let parse_arg = match (parse_arg1, parse_arg2) {
-                    (None, None) => None,
-                    (Some(arg1), Some(arg2)) => Some(self.meet_inftype(arg1, arg2)?),
-                    (None, Some(_)) | (Some(_), None) => return Err(TypeError),
-                };
-                let fun_args = Box::new(
-                    fun_args1
-                        .iter()
-                        .zip(fun_args2.iter())
-                        .map(|(arg1, arg2)| self.meet_inftype(*arg1, *arg2))
-                        .collect::<Result<_, _>>()?,
-                );
-                let ty_args = Box::new(
-                    ty_args1
-                        .iter()
-                        .zip(ty_args2.iter())
-                        .map(|(arg1, arg2)| self.join_inftype(*arg1, *arg2))
-                        .collect::<Result<_, _>>()?,
-                );
-                Nominal(NominalInfHead {
-                    kind,
-                    def: def1,
-                    parse_arg,
-                    fun_args,
-                    ty_args,
-                    internal: internal1 || internal2,
-                })
-            }
-            (nom @ Nominal(_), other) | (other, nom @ Nominal(_)) => {
-                let nomhead = TypeHead::try_from(&nom)?;
-                let otherhead = TypeHead::try_from(&other)?;
-                let mut next = |ty: &_| -> Result<Option<InferenceType>, TypeError> {
-                    if let InferenceType::Nominal(nom) = ty {
-                        Ok(self.ctx.deref(nom)?.map(|x| self.ctx.lookup_infty(x)))
-                    } else {
-                        Ok(None)
-                    }
-                };
-                let mut nom_ty = nom.clone();
-                loop {
-                    if TypeHead::try_from(&nom_ty)? == otherhead {
-                        let [a_id, b_id] = [nom_ty, other].map(|x| self.ctx.intern_infty(x));
-                        return self
-                            .meet_inftype(a_id, b_id)
-                            .and_then(|x| self.meet.leave_fun((lhs, rhs), x));
-                    }
-                    match next(&nom_ty)? {
-                        Some(n) => nom_ty = n,
-                        None => break,
-                    }
-                }
-                let mut other_ty = other;
-                loop {
-                    if TypeHead::try_from(&other_ty)? == nomhead {
-                        let [a_id, b_id] = [other_ty, nom].map(|x| self.ctx.intern_infty(x));
-                        return self
-                            .meet_inftype(a_id, b_id)
-                            .and_then(|x| self.meet.leave_fun((lhs, rhs), x));
-                    }
-                    match next(&other_ty)? {
-                        Some(n) => other_ty = n,
-                        None => break,
-                    }
-                }
-                return Err(TypeError);
-            }
-            _ => return Err(TypeError),
-        };
-        let ret = self.ctx.intern_infty(res);
-        self.meet.leave_fun((lhs, rhs), ret)
-    }
-    fn join_inftype(&mut self, lhs: InfTypeId, rhs: InfTypeId) -> Result<InfTypeId, TypeError> {
-        use InferenceType::*;
-        if let Some(x) = self.join.enter_fun((lhs, rhs)) {
-            return x;
-        }
-        let [other, nom] = [lhs, rhs].map(|x| self.ctx.lookup_infty(x));
-        let res = match (other, nom) {
-            (Unknown, _) | (_, Unknown) => Unknown,
-            (Any, _) | (_, Any) => Any,
-            (InferField(..), InferField(..)) => Bot,
-            (TypeVarRef(a0, a1, a2), TypeVarRef(b0, b1, b2)) if (a0, a1, a2) == (b0, b1, b2) => {
-                TypeVarRef(a0, a1, a2)
-            }
-            (Bot | InferField(..), other) | (other, Bot | InferField(..)) => other,
-            (Primitive(p), Primitive(q)) if p == q => Primitive(p),
-            (Loop(kind1, inner1), Loop(kind2, inner2)) => {
-                let kind = kind1.max(kind2);
-                let inner = self.join_inftype(inner1, inner2)?;
-                Loop(kind, inner)
-            }
-            (ParserArg { result: r1, arg: a }, ParserArg { result: r2, arg: b }) => {
-                let result = self.join_inftype(r1, r2)?;
-                let arg = self.meet_inftype(a, b)?;
-                ParserArg { result, arg }
-            }
-            (
-                FunctionArgs {
-                    result: result1,
-                    args: args1,
-                },
-                FunctionArgs {
-                    result: result2,
-                    args: args2,
-                },
-            ) => {
-                let result = self.join_inftype(result1, result2)?;
-                if args1.len() != args2.len() {
-                    return Err(TypeError);
-                }
-                let args = Box::new(
-                    args1
-                        .iter()
-                        .zip(args2.iter())
-                        .map(|(arg1, arg2)| self.meet_inftype(*arg1, *arg2))
-                        .collect::<Result<_, _>>()?,
-                );
-                FunctionArgs { result, args }
-            }
-            (
-                Nominal(NominalInfHead {
-                    kind,
-                    def: def1,
-                    parse_arg: parse_arg1,
-                    fun_args: fun_args1,
-                    ty_args: ty_args1,
-                    internal: internal1,
-                }),
-                Nominal(NominalInfHead {
-                    def: def2,
-                    parse_arg: parse_arg2,
-                    fun_args: fun_args2,
-                    ty_args: ty_args2,
-                    internal: internal2,
-                    ..
-                }),
-            ) if def1 == def2 => {
-                let parse_arg = match (parse_arg1, parse_arg2) {
-                    (None, None) => None,
-                    (Some(arg1), Some(arg2)) => Some(self.join_inftype(arg1, arg2)?),
-                    (None, Some(_)) | (Some(_), None) => return Err(TypeError),
-                };
-                let fun_args = Box::new(
-                    fun_args1
-                        .iter()
-                        .zip(fun_args2.iter())
-                        .map(|(arg1, arg2)| self.join_inftype(*arg1, *arg2))
-                        .collect::<Result<_, _>>()?,
-                );
-                let ty_args = Box::new(
-                    ty_args1
-                        .iter()
-                        .zip(ty_args2.iter())
-                        .map(|(arg1, arg2)| self.join_inftype(*arg1, *arg2))
-                        .collect::<Result<_, _>>()?,
-                );
-                Nominal(NominalInfHead {
-                    kind,
-                    def: def1,
-                    parse_arg,
-                    fun_args,
-                    ty_args,
-                    internal: internal1 && internal2,
-                })
-            }
-            (nom @ Nominal(NominalInfHead { .. }), other)
-            | (other, nom @ Nominal(NominalInfHead { .. })) => {
-                let mut other_upset = HashMap::new();
-                let mut next = |ty: &_| {
-                    if let InferenceType::Nominal(nom) = ty {
-                        Ok(self.ctx.deref(nom)?.map(|x| self.ctx.lookup_infty(x)))
-                    } else {
-                        Ok(None)
-                    }
-                };
-                let mut other_ty = other;
-                loop {
-                    other_upset.insert(TypeHead::try_from(&other_ty)?, other_ty.clone());
-                    match next(&other_ty)? {
-                        Some(n) => other_ty = n,
-                        None => break,
-                    }
-                }
-                let mut res = None;
-                let mut nom_ty = nom;
-                loop {
-                    if let Some(other_ty) = other_upset.remove(&TypeHead::try_from(&nom_ty)?) {
-                        let other = self.ctx.intern_infty(other_ty);
-                        let nom = self.ctx.intern_infty(nom_ty);
-                        res = Some(self.join_inftype(other, nom)?);
-                        break;
-                    }
-                    match next(&nom_ty)? {
-                        Some(n) => nom_ty = n,
-                        None => break,
-                    }
-                }
-                if let Some(r) = res {
-                    self.ctx.lookup_infty(r)
-                } else {
-                    return Err(TypeError);
-                }
-            }
-            _ => return Err(TypeError),
-        };
-        let ret = self.ctx.intern_infty(res);
-        self.join.leave_fun((lhs, rhs), ret)
-    }
-    fn normalize_children(
-        &mut self,
-        infty: InfTypeId,
-    ) -> Result<InfTypeId, TypeError> {
-        let mut ty = self.ctx.lookup_infty(infty);
-        if !matches!(ty, InferenceType::Var(_)) {
-            for child in ty.children() {
-                *child = self.normalize_inftype(*child)?;
-            }
-        }
-        Ok(self.ctx.intern_infty(ty))
-    }
-    fn normalize_inftype(
-        &mut self,
-        infty: InfTypeId,
-    ) -> Result<InfTypeId, TypeError> {
-        if let Some(x) = self.normalize.enter_fun(infty) {
-            return x;
-        }
-        let inf = self.ctx.lookup_infty(infty);
-        let res = match inf {
-            InferenceType::Var(v) => {
-                let mut result = self.ctx.intern_infty(InferenceType::Bot);
-                let var_store = self.ctx.var_store.clone();
-                for ty in var_store.get(v).lower.iter() {
-                    let normalized = self.normalize_children(*ty)?;
-                    result = self.join_inftype(result, normalized)?;
-                }
-                result
-            }
-            _ => self.normalize_children(infty)?,
-        };
-        self.normalize.leave_fun(infty, res)
-    }
-    fn to_type_internal(&mut self, infty: InfTypeId) -> Result<TypeId, TypeError> {
-        if let Some(x) = self.convert.enter_fun(infty) {
-            return x;
-        }
-        let infty = self.normalize_inftype(infty)?;
-        let inf = self.ctx.lookup_infty(infty);
-        let res = match inf {
-            InferenceType::Any => Type::Any,
-            InferenceType::Bot => Type::Bot,
-            InferenceType::TypeVarRef(loc, level, index) => Type::TypeVarRef(loc, level, index),
-            InferenceType::Primitive(p) => Type::Primitive(p),
-            InferenceType::Var(..) => {
-                panic!("Internal Compiler Error: normalized inference type contains variable");
-            }
-            InferenceType::Unknown => Type::Unknown,
-            InferenceType::Nominal(NominalInfHead {
-                kind,
-                def,
-                parse_arg,
-                fun_args,
-                ty_args,
-                internal: _,
-            }) => {
-                let parse_arg = parse_arg
-                    .map(|x| self.to_type_internal(x))
-                    .transpose()?;
-                let fun_args = fun_args
-                    .iter()
-                    .copied()
-                    .map(|x| self.to_type_internal(x))
-                    .collect::<Result<_, _>>()?;
-                let ty_args = ty_args
-                    .iter()
-                    .copied()
-                    .map(|x| self.to_type_internal(x))
-                    .collect::<Result<_, _>>()?;
-                Type::Nominal(NominalTypeHead {
-                    kind,
-                    def,
-                    parse_arg,
-                    fun_args: Arc::new(fun_args),
-                    ty_args: Arc::new(ty_args),
-                })
-            }
-            InferenceType::Loop(kind, inner) => {
-                Type::Loop(kind, self.to_type_internal(inner)?)
-            }
-            InferenceType::ParserArg { result, arg } => Type::ParserArg {
-                result: self.to_type_internal(result)?,
-                arg: self.to_type_internal(arg)?,
-            },
-            InferenceType::FunctionArgs { result, args } => {
-                let args = args
-                    .iter()
-                    .map(|&x| self.to_type_internal(x))
-                    .collect::<Result<_, _>>()?;
-                Type::FunctionArg(self.to_type_internal(result)?, Arc::new(args))
-            }
-            InferenceType::InferField(_, _) => {
-                panic!("Internal Compiler Error: InferField in normalized inference type")
-            }
-        };
-        self.convert
-            .leave_fun(infty, self.ctx.tr.db().intern_type(res))
-    }
-}
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum EitherType {

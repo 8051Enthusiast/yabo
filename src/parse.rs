@@ -91,7 +91,6 @@ fn iter_children<'a, F: FnMut(Node<'a>, TreeCursor<'a>) -> ParseResult<()>>(
     let mut ret = Ok(());
     if c.goto_first_child() {
         loop {
-            //            eprintln!("{:?}", c.node());
             let node = match check_error(db, fd, c.node()) {
                 Ok(n) => n,
                 e @ Err(_) => {
@@ -152,9 +151,11 @@ fn get_op<'a>(
     iter_children(db, fd, c, |_, cursor| {
         let field = cursor.field_name();
         match field {
-            Some("left") => left = Some(cursor),
-            Some("right") => right = Some(cursor),
+            // hack: we want to skip parens
+            Some("left") if cursor.node().is_named() => left = Some(cursor),
+            Some("right") if cursor.node().is_named() => right = Some(cursor),
             Some("op") => op = Some(cursor),
+            Some("left" | "right") => (),
             Some(other) => panic!("Unknown field {}", other),
             None => (),
         }

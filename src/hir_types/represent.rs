@@ -19,8 +19,8 @@ impl<DB: TyHirs + ?Sized> DatabasedDisplay<DB> for TypeId {
             Type::TypeVarRef(loc, level, index) => {
                 let vars = TypeVarCollection::at_id(db, ParserDefId(loc));
                 if let Ok(v) = vars {
-                    if let Some(x) = v.defs[index as usize].name {
-                        return dbwrite!(f, db, "{}", &x);
+                    if let Some(x) = v.defs.get(index as usize) {
+                        return dbwrite!(f, db, "{}", x);
                     }
                 }
                 dbwrite!(f, db, "<Var Ref ({}, {}, {})>", &loc, &level, &index)
@@ -31,11 +31,7 @@ impl<DB: TyHirs + ?Sized> DatabasedDisplay<DB> for TypeId {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    if let Some(x) = arg.name {
-                        dbwrite!(f, db, "{}", &x)?;
-                    } else {
-                        write!(f, "'_")?;
-                    }
+                    dbwrite!(f, db, "{}", arg)?;
                 }
                 dbwrite!(f, db, ". {}", &inner)
             }

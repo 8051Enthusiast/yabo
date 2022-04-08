@@ -118,7 +118,7 @@ impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for PathComponent {
             PathComponent::Unnamed(x) => write!(f, "{}", x),
             PathComponent::File(fid) => match db.path(*fid) {
                 Some(p) => write!(f, "{}", p.to_string_lossy()),
-                None => write!(f, "file[anonymous]"),
+                None => write!(f, "file[_]"),
             },
         }
     }

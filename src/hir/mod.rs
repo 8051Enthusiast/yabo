@@ -985,6 +985,9 @@ impl<T: Clone + Hash + Eq + Debug> VariableSet<T> {
     pub fn get(&self, idx: FieldName) -> Option<&VarStatus<T>> {
         self.set.get(&idx)
     }
+    pub fn iter(&self) -> impl Iterator<Item = (&FieldName, &VarStatus<T>)> {
+        self.set.iter()
+    }
 }
 
 impl VariableSet<()> {
@@ -1020,7 +1023,7 @@ pub enum VarStatus<T: Clone + Eq + Debug + Hash> {
 }
 
 impl<T: Clone + Eq + Debug + Hash> VarStatus<T> {
-    fn is_accessible(&self) -> bool {
+    pub fn is_accessible(&self) -> bool {
         matches!(self, Self::Always(_))
     }
     fn without_data(&self) -> VarStatus<()> {
@@ -1042,7 +1045,7 @@ impl<T: Clone + Eq + Debug + Hash> VarStatus<T> {
             VarStatus::Maybe(())
         }
     }
-    fn inner(&self) -> &T {
+    pub fn inner(&self) -> &T {
         match self {
             VarStatus::Always(a) | VarStatus::Maybe(a) => a,
         }

@@ -10,19 +10,23 @@ pub fn parser_args(db: &dyn TyHirs, id: ParserDefId) -> Result<Signature, TypeEr
     let arg_resolver = ArgResolver::new(db);
     let mut tcx = TypingContext::new(db, arg_resolver);
     let from_expr = pd.from.lookup(db).map_err(|_| TypeError)?;
-    let from_infty = tcx.resolve_type_expr(&mut context, &from_expr.expr)?;
-    let from_ty = tcx.inftype_to_concrete_type(from_infty)?;
     let args = Arc::new(vec![]);
+    let from_infty = tcx.resolve_type_expr(&mut context, &from_expr.expr)?;
+    let (from_tys, count) =
+        tcx.infctx
+            .to_types_with_vars(&[from_infty][..], context.vars.defs.len() as u32, id.0)?;
+    context.vars.fill_anon_vars(db, count);
+    let ty_args = context.vars.var_types(db, id);
     let thunk = db.intern_type(Type::Nominal(NominalTypeHead {
         kind: NominalKind::Def,
         def: id.0,
-        parse_arg: Some(from_ty),
+        parse_arg: from_tys.last().copied(),
         fun_args: args.clone(),
-        ty_args: Arc::new(vec![]),
+        ty_args: Arc::new(ty_args),
     }));
     Ok(Signature {
         ty_args: Arc::new(context.vars.defs),
-        from: Some(from_ty),
+        from: from_tys.last().copied(),
         args,
         thunk,
     })
@@ -58,6 +62,10 @@ impl<'a> TypeResolver for ArgResolver<'a> {
     fn db(&self) -> &Self::DB {
         self.0
     }
+
+    fn name(&self) -> String {
+        String::from("signature")
+    }
 }
 
 pub fn get_signature(db: &dyn TyHirs, ty: &NominalInfHead) -> Result<Signature, ()> {
@@ -81,10 +89,15 @@ pub fn get_thunk(db: &dyn TyHirs, context: HirId, name: FieldName) -> Result<Eit
     if !args.args.is_empty() {
         ret = db.intern_type(Type::FunctionArg(ret, args.args.clone()))
     }
-    if !args.ty_args.is_empty() {
-        ret = db.intern_type(Type::ForAll(ret, args.ty_args.clone()))
-    }
+    ret = attach_forall(db, ret, &args.ty_args);
     Ok(ret.into())
+}
+
+pub fn attach_forall(db: &dyn TyHirs, ty: TypeId, ty_args: &Arc<Vec<TypeVar>>) -> TypeId {
+    if !db.type_contains_typevar(ty) {
+        return ty;
+    }
+    db.intern_type(Type::ForAll(ty, ty_args.clone()))
 }
 
 #[cfg(test)]
@@ -99,7 +112,8 @@ mod tests {
 def for[int] *> expr1 = {}
 def for[for[int] &> expr1] *> expr2 = {}
 def for['x] *> expr3 = {}
-def each[for[int] *> expr2] *> expr4 = {}
+def each[for[expr1] *> expr2] *> expr4 = {}
+def each[expr3] *> expr5 = {}
             "#,
         );
         let arg_type = |name| {
@@ -112,8 +126,9 @@ def each[for[int] *> expr2] *> expr4 = {}
                 .to_db_string(&ctx.db)
         };
         assert_eq!("for[int]", arg_type("expr1"));
-        assert_eq!("for[for[int] &> file[anonymous].expr1]", arg_type("expr2"));
+        assert_eq!("for[for[int] &> file[_].expr1]", arg_type("expr2"));
         assert_eq!("for['x]", arg_type("expr3"));
-        assert_eq!("each[for[int] *> file[anonymous].expr2]", arg_type("expr4"));
+        assert_eq!("each[for[for[int] &> file[_].expr1] *> for[for[int] &> file[_].expr1] &> file[_].expr2]", arg_type("expr4"));
+        assert_eq!("each[for['1] &> file[_].expr3]", arg_type("expr5"));
     }
 }

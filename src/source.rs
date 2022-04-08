@@ -7,7 +7,7 @@ use std::sync::Arc;
 use miette::{MietteError, MietteSpanContents, SourceCode};
 
 use crate::context::LivingInTheDatabase;
-use crate::interner::{Identifier, FieldName};
+use crate::interner::{FieldName, Identifier};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Span {

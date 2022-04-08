@@ -1,7 +1,5 @@
 use std::collections::HashSet;
 
-use crate::databased_display::DatabasedDisplay;
-
 use super::*;
 
 pub enum VarType {
@@ -58,10 +56,7 @@ pub fn resolve_var_ref(
                     .map(|x| x.id())
                     .unwrap_or_else(|| ctx.block_id.id()),
             },
-            n => unreachable!(
-                "Internal Compiler Error: invalid node {:?}",
-                n.to_db_string(db)
-            ),
+            _ => current_id.parent(db),
         }
     }
 }

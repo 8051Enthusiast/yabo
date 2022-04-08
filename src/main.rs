@@ -1,13 +1,13 @@
 pub mod ast;
 pub mod context;
+pub mod databased_display;
 pub mod expr;
 pub mod hir;
+pub mod hir_types;
 pub mod interner;
 pub mod parse;
 pub mod source;
 pub mod types;
-pub mod hir_types;
-pub mod databased_display;
 use ast::Asts;
 use context::Context;
 use hir::Hirs;

@@ -1,3 +1,5 @@
+use crate::dbformat;
+
 use super::*;
 
 pub fn public_expr_type(db: &dyn TyHirs, loc: ExprId) -> Result<(TypedExpression, TypeId), ()> {
@@ -151,7 +153,6 @@ impl<'a> TypingContext<'a, PublicResolver<'a>> {
     }
 }
 
-
 pub struct PublicResolver<'a> {
     db: &'a dyn TyHirs,
     tloc: TypingLocation,
@@ -167,7 +168,7 @@ impl<'a> PublicResolver<'a> {
     ) -> Result<TypingContext<Self>, ()> {
         let typeloc = TypingLocation {
             vars: TypeVarCollection::new_empty(),
-            loc: db.hir_parent_module(loc)?.0,
+            loc,
             pd: db.hir_parent_parserdef(loc)?,
         };
         let public_resolver = Self::new(db, typeloc);
@@ -200,6 +201,10 @@ impl<'a> TypeResolver for PublicResolver<'a> {
 
     fn db(&self) -> &Self::DB {
         self.db
+    }
+
+    fn name(&self) -> String {
+        dbformat!(self.db, "public at {}", &self.tloc.pd.0)
     }
 }
 
@@ -262,20 +267,14 @@ def for[for[int]] *> expr5 = {
         assert_eq!("'t", public_type("expr1", &["a"]));
         assert_eq!("'t", public_type("expr1", &["b"]));
         assert_eq!(
-            "<anonymous block for['t] &> file[anonymous].expr1.1.0.0.c.0.0>",
+            "<anonymous block for['t] &> file[_].expr1.1.0.0.c.0.0>",
             public_type("expr1", &["c"])
         );
         assert_eq!("int", public_type("expr1", &["c", "d"]));
         assert_eq!("'t", public_type("expr1", &["c", "e"]));
-        assert_eq!(
-            "for[int] &> file[anonymous].expr1",
-            public_type("expr2", &["x"])
-        );
+        assert_eq!("for[int] &> file[_].expr1", public_type("expr2", &["x"]));
         assert_eq!("int", public_type("expr2", &["y"]));
         assert_eq!("int", public_type("expr4", &["x"]));
-        assert_eq!(
-            "for[int] &> file[anonymous].expr3",
-            public_type("expr5", &["x"])
-        );
+        assert_eq!("for[int] &> file[_].expr3", public_type("expr5", &["x"]));
     }
 }
