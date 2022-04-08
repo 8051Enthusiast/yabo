@@ -30,6 +30,26 @@ macro_rules! dbpanic {
     };
 }
 
+#[macro_export]
+macro_rules! dbprintln {
+    ($db:expr, $st:literal, $($arg:expr),*$(,)?) => {
+        println!($st, $($crate::databased_display::DatabasedDisplay::db_wrap($arg, $db)),*)
+    };
+    ($db:expr, $st:literal) => {
+        println!($st)
+    };
+}
+
+#[macro_export]
+macro_rules! dbeprintln {
+    ($db:expr, $st:literal, $($arg:expr),*$(,)?) => {
+        eprintln!($st, $($crate::databased_display::DatabasedDisplay::db_wrap($arg, $db)),*)
+    };
+    ($db:expr, $st:literal) => {
+        eprintln!($st)
+    };
+}
+
 pub trait DatabasedDisplay<DB: ?Sized> {
     fn to_db_string(&self, db: &DB) -> String {
         dbformat!(db, "{}", self)

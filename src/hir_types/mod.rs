@@ -13,11 +13,11 @@ use crate::{
         Atom, BasicValBinOp, ExprIter, Expression, ExpressionComponent, ExpressionKind, TypeBinOp,
         TypeUnOp, ValBinOp, ValUnOp,
     },
-    hir::{HirIdWrapper, ParseStatement, ParserAtom},
-    interner::{FieldName, HirId, TypeVar},
+    hir::{HirIdWrapper, IndexSpanned, ParseStatement, ParserAtom, ParserDefRef},
+    interner::{FieldName, HirId, TypeVar, TypeVarName},
     types::{
         EitherType, InfTypeId, InferenceContext, InferenceType, NominalInfHead, NominalKind,
-        NominalTypeHead, Signature, Type, TypeError, TypeId, TypeResolver, VarDef,
+        NominalTypeHead, Signature, Type, TypeError, TypeId, TypeResolver,
     },
 };
 
@@ -27,7 +27,7 @@ use crate::hir::{
     TypeAtom, TypePrimitive,
 };
 
-use full::{parser_full_types, ParserFullTypes};
+use full::{parser_full_types, parser_type_at, ParserFullTypes};
 use public::{ambient_type, public_expr_type, public_type};
 use returns::{parser_returns, parser_returns_ssc, ParserDefType};
 use signature::{get_signature, get_thunk, parser_args};
@@ -38,6 +38,7 @@ pub trait TyHirs: Hirs + crate::types::TypeInterner {
     fn parser_returns(&self, id: ParserDefId) -> Result<ParserDefType, TypeError>;
     fn parser_returns_ssc(&self, id: FunctionSscId) -> Result<Vec<ParserDefType>, TypeError>;
     fn public_type(&self, loc: HirId) -> Result<TypeId, ()>;
+    fn parser_type_at(&self, loc: HirId) -> Result<TypeId, TypeError>;
     fn public_expr_type(
         &self,
         loc: ExprId,
@@ -52,11 +53,6 @@ type InfTypedExpression = Expression<TypedHirVal<InfTypeId>>;
 pub struct ExpressionTypeConstraints {
     pub root_type: Option<InfTypeId>,
     pub from_type: Option<InfTypeId>,
-}
-
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-struct BlockType {
-    fields: BTreeMap<FieldName, TypeId>,
 }
 
 impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
@@ -78,9 +74,15 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                 TypeBinOp::Ref(_, _, _) => {
                     unimplemented!()
                 }
-                TypeBinOp::ParseArg(from_expr, inner, _) => {
+                TypeBinOp::ParseArg(from_expr, inner_expr, _) => {
                     let from = self.resolve_type_expr(context, from_expr)?;
-                    let inner = self.resolve_type_expr(context, inner)?;
+                    let inner = match inner_expr {
+                        Expression::Atom(IndexSpanned {
+                            atom: TypeAtom::ParserDef(pd),
+                            ..
+                        }) => self.resolve_type_expr_parserdef_ref(context, pd, Some(from))?,
+                        _ => self.resolve_type_expr(context, inner_expr)?,
+                    };
                     self.db.intern_inference_type(InferenceType::ParserArg {
                         result: inner,
                         arg: from,
@@ -96,29 +98,7 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                 TypeAtom::Primitive(TypePrimitive::Char) => self.infctx.char(),
                 TypeAtom::Primitive(TypePrimitive::Mem) => todo!(),
                 TypeAtom::ParserDef(pd) => {
-                    let parse_arg = pd
-                        .from
-                        .as_ref()
-                        .map(|x| self.resolve_type_expr(context, x))
-                        .transpose()?;
-                    let fun_args = Box::new(
-                        pd.args
-                            .iter()
-                            .map(|x| self.resolve_type_expr(context, x))
-                            .collect::<Result<Vec<_>, _>>()?,
-                    );
-                    let def = parserdef_ref(self.db, context.loc, FieldName::Ident(pd.name.atom))
-                        .map_err(|_| TypeError)?
-                        .0;
-                    self.db
-                        .intern_inference_type(InferenceType::Nominal(NominalInfHead {
-                            kind: NominalKind::Def,
-                            def,
-                            parse_arg,
-                            fun_args,
-                            ty_args: Box::default(),
-                            internal: false,
-                        }))
+                    return self.resolve_type_expr_parserdef_ref(context, pd, None)
                 }
                 TypeAtom::Array(a) => {
                     let inner = self.resolve_type_expr(context, &a.expr)?;
@@ -126,7 +106,7 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                         .intern_inference_type(InferenceType::Loop(a.direction, inner))
                 }
                 TypeAtom::TypeVar(v) => {
-                    let var_idx = context.vars.get_var(Some(*v)).ok_or(TypeError)?;
+                    let var_idx = context.vars.get_var(*v).ok_or(TypeError)?;
                     self.db.intern_inference_type(InferenceType::TypeVarRef(
                         context.pd.0,
                         0,
@@ -135,6 +115,62 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                 }
             },
         };
+        Ok(ret)
+    }
+    fn resolve_type_expr_parserdef_ref(
+        &mut self,
+        context: &mut TypingLocation,
+        pd: &ParserDefRef,
+        parserarg_from: Option<InfTypeId>,
+    ) -> Result<InfTypeId, TypeError> {
+        let mut parse_arg = pd
+            .from
+            .as_ref()
+            .map(|x| self.resolve_type_expr(context, x))
+            .transpose()?
+            .or(parserarg_from);
+        let mut fun_args = Box::new(
+            pd.args
+                .iter()
+                .map(|x| self.resolve_type_expr(context, x))
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+        let def = parserdef_ref(self.db, context.loc, FieldName::Ident(pd.name.atom))
+            .map_err(|_| TypeError)?;
+        let definition = self.db.parser_args(def)?;
+        match (parse_arg, definition.from) {
+            (None, Some(_)) => parse_arg = Some(self.infctx.var()),
+            (Some(_), None) => return Err(TypeError),
+            _ => {}
+        }
+        if fun_args.len() > definition.args.len() {
+            return Err(TypeError);
+        }
+        while fun_args.len() < definition.args.len() {
+            fun_args.push(self.infctx.var());
+        }
+        let ty_args = (0..definition.ty_args.len())
+            .map(|_| self.infctx.var())
+            .collect::<Vec<InfTypeId>>();
+        let def_type = self.db.intern_type(Type::Nominal(NominalTypeHead {
+            kind: NominalKind::Def,
+            def: def.0,
+            parse_arg: definition.from,
+            fun_args: definition.args,
+            ty_args: Arc::new(n_type_vars(self.db, def, definition.ty_args.len() as u32)),
+        }));
+        let inferred_def = self.infctx.from_type_with_args(def_type, &ty_args);
+        let ret = self
+            .db
+            .intern_inference_type(InferenceType::Nominal(NominalInfHead {
+                kind: NominalKind::Def,
+                def: def.0,
+                parse_arg,
+                fun_args,
+                ty_args: Box::new(ty_args),
+                internal: false,
+            }));
+        self.infctx.equal(ret, inferred_def)?;
         Ok(ret)
     }
     pub fn val_expression_type(
@@ -224,7 +260,16 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                         let inner_ty = self.val_expression_type(context, &inner)?.root_type();
                         self.infctx.array_call(array.direction, inner_ty)?
                     }
-                    ParserAtom::Block(b) => self.infctx.block_call(b.0)?,
+                    ParserAtom::Block(b) => {
+                        let pd = self.db.hir_parent_parserdef(b.0).map_err(|_| TypeError)?;
+                        let ty_vars = (0..context.vars.defs.len() as u32)
+                            .map(|i| {
+                                self.db
+                                    .intern_inference_type(InferenceType::TypeVarRef(pd.0, 0, i))
+                            })
+                            .collect::<Vec<_>>();
+                        self.infctx.block_call(b.0, &ty_vars)?
+                    }
                 };
                 Expression::Atom(TypedAtom {
                     atom: a.atom.clone(),
@@ -302,9 +347,9 @@ pub struct TypingContext<'a, TR: TypeResolver> {
     infctx: InferenceContext<TR>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TypeVarCollection {
-    pub defs: Vec<VarDef>,
+    pub defs: Vec<TypeVar>,
     names: FxHashMap<TypeVar, u32>,
     frozen: bool,
 }
@@ -317,21 +362,16 @@ impl TypeVarCollection {
             frozen: false,
         }
     }
-    pub fn get_var(&mut self, var_name: Option<TypeVar>) -> Option<u32> {
-        if let Some(name) = var_name {
-            if let Some(idx) = self.names.get(&name) {
-                return Some(*idx);
-            }
+    pub fn get_var(&mut self, var_name: TypeVar) -> Option<u32> {
+        if let Some(idx) = self.names.get(&var_name) {
+            return Some(*idx);
         }
         if self.frozen {
             return None;
         }
-        let var_def = VarDef::new(var_name);
         let new_index = self.defs.len() as u32;
-        self.defs.push(var_def);
-        if let Some(name) = var_name {
-            self.names.insert(name, new_index);
-        }
+        self.defs.push(var_name);
+        self.names.insert(var_name, new_index);
         Some(new_index)
     }
     pub fn freeze(&mut self) {
@@ -341,11 +381,27 @@ impl TypeVarCollection {
         let tys = db.parser_args(id)?.ty_args;
         let mut ret = Self::new_empty();
         for ty in tys.iter() {
-            ret.get_var(ty.name);
+            ret.get_var(*ty);
         }
         ret.freeze();
         Ok(ret)
     }
+    pub fn var_types(&self, db: &(impl TyHirs + ?Sized), id: ParserDefId) -> Vec<TypeId> {
+        n_type_vars(db, id, self.defs.len() as u32)
+    }
+    pub fn fill_anon_vars(&mut self, db: &(impl TyHirs + ?Sized), target_count: u32) {
+        for i in 1..=(target_count - self.defs.len() as u32) {
+            let nth_name = format!("'{}", i);
+            let tvar = db.intern_type_var(TypeVarName::new(nth_name));
+            self.defs.push(tvar);
+        }
+    }
+}
+
+fn n_type_vars(db: &(impl TyHirs + ?Sized), id: ParserDefId, n: u32) -> Vec<TypeId> {
+    (0..n)
+        .map(|i| db.intern_type(Type::TypeVarRef(id.0, 0, i)))
+        .collect()
 }
 
 #[derive(Clone)]

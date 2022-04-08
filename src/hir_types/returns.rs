@@ -1,3 +1,5 @@
+use crate::dbformat;
+
 use super::*;
 
 pub fn parser_returns(db: &dyn TyHirs, id: ParserDefId) -> Result<ParserDefType, TypeError> {
@@ -56,7 +58,6 @@ pub fn parser_returns_ssc(
     Ok(ret)
 }
 
-
 pub struct ReturnResolver<'a> {
     db: &'a dyn TyHirs,
     return_infs: FxHashMap<HirId, ParserDefTypeInf>,
@@ -102,6 +103,18 @@ impl<'a> TypeResolver for ReturnResolver<'a> {
     fn lookup(&self, context: HirId, name: FieldName) -> Result<EitherType, ()> {
         get_thunk(self.db, context, name)
     }
+
+    fn name(&self) -> String {
+        let mut ret = String::from("returns for (");
+        for (i, id) in self.return_infs.keys().enumerate() {
+            if i > 0 {
+                ret.push_str(", ");
+            }
+            ret.push_str(&dbformat!(self.db, "{}, ", id));
+        }
+        ret.push_str(")");
+        ret
+    }
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -115,7 +128,6 @@ pub struct ParserDefTypeInf {
     pub id: ParserDefId,
     pub deref: InfTypeId,
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -139,8 +151,14 @@ def for[int] *> single = ~
                 .deref
                 .to_db_string(&ctx.db)
         };
-        eprintln!("{}", return_type("nil"));
-        eprintln!("{}", return_type("expr1"));
-        eprintln!("{}", return_type("single"));
+        assert_eq!(
+            return_type("nil"),
+            "<anonymous block for['t] &> file[_].nil.1.0>"
+        );
+        assert_eq!(
+            return_type("expr1"),
+            "<anonymous block for['1] &> file[_].nil &> file[_].expr1.1.0>"
+        );
+        assert_eq!(return_type("single"), "int");
     }
 }

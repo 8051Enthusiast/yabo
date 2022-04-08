@@ -11,7 +11,7 @@ use crate::types::TypeInternerDatabase;
     FileDatabase,
     HirDatabase,
     TypeInternerDatabase,
-    HirTypesDatabase,
+    HirTypesDatabase
 )]
 #[derive(Default)]
 pub struct LivingInTheDatabase {
