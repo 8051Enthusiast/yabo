@@ -12,14 +12,14 @@ use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ParserFullTypes {
-    pub id: ParserDefId,
+    pub id: hir::ParserDefId,
     pub types: Arc<BTreeMap<HirId, TypeId>>,
-    pub exprs: Arc<BTreeMap<ExprId, TypedExpression>>,
+    pub exprs: Arc<BTreeMap<hir::ExprId, TypedExpression>>,
 }
 
 pub fn parser_full_types(
     db: &dyn TyHirs,
-    id: ParserDefId,
+    id: hir::ParserDefId,
 ) -> Result<Arc<ParserFullTypes>, TypeError> {
     let resolver = FullResolver::new(db, id.0).map_err(|_| TypeError)?;
     let mut ctx = TypingContext::new(db, resolver);
@@ -57,7 +57,7 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
     }
     fn let_statement_types(
         &mut self,
-        let_statement: &LetStatement,
+        let_statement: &hir::LetStatement,
     ) -> Result<ExpressionTypeConstraints, TypeError> {
         let ty = let_statement.ty;
         let ty_expr = ty.lookup(self.db).map_err(|_| TypeError)?.expr;
@@ -78,7 +78,7 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
         let pd = self.infctx.tr.loc.pd;
         for child in ChildIter::new(pd.0, self.db) {
             let ty = match child {
-                HirNode::Let(l) => {
+                hir::HirNode::Let(l) => {
                     self.set_current_loc(l.id.0);
                     if let Some(ty) = self
                         .let_statement_types(&l)
@@ -90,11 +90,11 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
                         self.infctx.var()
                     }
                 }
-                HirNode::Parse(parse) => {
+                hir::HirNode::Parse(parse) => {
                     self.set_current_loc(parse.id.0);
                     self.infctx.var()
                 }
-                HirNode::ChoiceIndirection(choice) => {
+                hir::HirNode::ChoiceIndirection(choice) => {
                     self.set_current_loc(choice.id.0);
                     self.infctx.var()
                 }
@@ -108,7 +108,7 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
         let pd = self.infctx.tr.loc.pd;
         for child_node in ChildIter::new(pd.0, self.db) {
             let block = match child_node {
-                HirNode::Block(block) => block,
+                hir::HirNode::Block(block) => block,
                 _ => continue,
             };
             let root_ctx = block.root_context.lookup(self.db).map_err(|_| TypeError)?;
@@ -149,7 +149,7 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
         self.infctx.tr.loc.loc = old_loc;
         ret
     }
-    fn type_parserdef(&mut self, pd: ParserDefId) -> Result<(), TypeError> {
+    fn type_parserdef(&mut self, pd: hir::ParserDefId) -> Result<(), TypeError> {
         let parserdef = pd.lookup(self.db).map_err(|_| TypeError)?;
         let sig = self.db.parser_args(pd)?;
         let ambient = sig.from.map(|ty| self.infctx.from_type(ty));
@@ -205,7 +205,7 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
         let root_ctx = block.root_context.lookup(self.db).map_err(|_| TypeError)?;
         self.type_context(&root_ctx)
     }
-    fn type_array(&mut self, array: &ParserArray) -> Result<(), TypeError> {
+    fn type_array(&mut self, array: &hir::ParserArray) -> Result<(), TypeError> {
         let expr = array.expr.lookup(self.db).map_err(|_| TypeError)?;
         self.type_expr(&expr)?;
         Ok(())
@@ -220,11 +220,11 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
     }
     fn type_block_component(&mut self, id: HirId) -> Result<(), TypeError> {
         match self.db.hir_node(id).map_err(|_| TypeError)? {
-            HirNode::Let(l) => self.type_let(&l),
-            HirNode::Parse(parse) => self.type_parse(&parse),
-            HirNode::Choice(choice) => self.type_choice(&choice),
-            HirNode::Context(context) => self.type_context(&context),
-            HirNode::ChoiceIndirection(ci) => self.type_choice_indirection(&ci),
+            hir::HirNode::Let(l) => self.type_let(&l),
+            hir::HirNode::Parse(parse) => self.type_parse(&parse),
+            hir::HirNode::Choice(choice) => self.type_choice(&choice),
+            hir::HirNode::Context(context) => self.type_context(&context),
+            hir::HirNode::ChoiceIndirection(ci) => self.type_choice_indirection(&ci),
             _ => unreachable!("Invalid type block component"),
         }
     }
@@ -249,7 +249,7 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
         let self_ty = self.infty_at(parse.id.0);
         self.infctx.constrain(ty, self_ty)
     }
-    fn type_let(&mut self, let_statement: &LetStatement) -> Result<(), TypeError> {
+    fn type_let(&mut self, let_statement: &hir::LetStatement) -> Result<(), TypeError> {
         let expr = let_statement.expr.lookup(self.db).map_err(|_| TypeError)?;
         let ty = self.with_ambient_type(None, |ctx| ctx.type_expr(&expr))?;
         let self_ty = self.infty_at(let_statement.id.0);
@@ -260,7 +260,7 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
 pub struct FullResolver<'a> {
     db: &'a dyn TyHirs,
     inftypes: FxHashMap<HirId, InfTypeId>,
-    inf_expressions: FxHashMap<ExprId, InfTypedExpression>,
+    inf_expressions: FxHashMap<hir::ExprId, InfTypedExpression>,
     loc: TypingLocation,
     current_ambient: Option<InfTypeId>,
 }
@@ -334,6 +334,7 @@ impl<'a> TypeResolver for FullResolver<'a> {
 #[cfg(test)]
 mod tests {
     use crate::databased_display::DatabasedDisplay;
+    use crate::hir::Hirs;
     use crate::{context::Context, types::TypeInterner};
 
     use super::*;
@@ -386,7 +387,7 @@ def each[int] *> expr6 = {
                     Type::Nominal(n) => n.def,
                     _ => panic!("expected nominal type"),
                 };
-                let block = BlockId::extract(ctx.db.hir_node(hir_id).unwrap());
+                let block = hir::BlockId::extract(ctx.db.hir_node(hir_id).unwrap());
                 let root_context = block.root_context;
                 let ident_field = ctx.id(x);
                 let child = root_context

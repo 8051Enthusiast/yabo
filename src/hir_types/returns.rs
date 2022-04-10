@@ -1,8 +1,8 @@
-use crate::dbformat;
+use crate::{dbformat, hir::recursion::FunctionSscId};
 
 use super::*;
 
-pub fn parser_returns(db: &dyn TyHirs, id: ParserDefId) -> Result<ParserDefType, TypeError> {
+pub fn parser_returns(db: &dyn TyHirs, id: hir::ParserDefId) -> Result<ParserDefType, TypeError> {
     let rets = db.parser_returns_ssc(db.parser_ssc(id).map_err(|_| TypeError)?)?;
     for def in rets {
         if def.id.0 == id.0 {
@@ -19,7 +19,7 @@ pub fn parser_returns_ssc(
     let def_ids = db.lookup_intern_recursion_scc(id);
     let defs = def_ids
         .iter()
-        .map(|fun: &ParserDefId| fun.lookup(db))
+        .map(|fun: &hir::ParserDefId| fun.lookup(db))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| TypeError)?;
 
@@ -119,13 +119,13 @@ impl<'a> TypeResolver for ReturnResolver<'a> {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDefType {
-    pub id: ParserDefId,
+    pub id: hir::ParserDefId,
     pub deref: TypeId,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDefTypeInf {
-    pub id: ParserDefId,
+    pub id: hir::ParserDefId,
     pub deref: InfTypeId,
 }
 

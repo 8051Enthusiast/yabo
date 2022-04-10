@@ -21,11 +21,7 @@ use crate::{
     },
 };
 
-use crate::hir::{
-    recursion::FunctionSscId, refs::parserdef_ref, BlockId, ExprId, HirConstraint, HirNode,
-    HirType, HirVal, Hirs, LetStatement, ParseId, ParserArray, ParserDef, ParserDefId, SpanIndex,
-    TypeAtom, TypePrimitive,
-};
+use crate::hir::{self, Hirs};
 
 use full::{parser_full_types, parser_type_at, ParserFullTypes};
 use public::{ambient_type, public_expr_type, public_type};
@@ -34,17 +30,20 @@ use signature::{get_signature, get_thunk, parser_args};
 
 #[salsa::query_group(HirTypesDatabase)]
 pub trait TyHirs: Hirs + crate::types::TypeInterner {
-    fn parser_args(&self, id: ParserDefId) -> Result<Signature, TypeError>;
-    fn parser_returns(&self, id: ParserDefId) -> Result<ParserDefType, TypeError>;
-    fn parser_returns_ssc(&self, id: FunctionSscId) -> Result<Vec<ParserDefType>, TypeError>;
+    fn parser_args(&self, id: hir::ParserDefId) -> Result<Signature, TypeError>;
+    fn parser_returns(&self, id: hir::ParserDefId) -> Result<ParserDefType, TypeError>;
+    fn parser_returns_ssc(
+        &self,
+        id: hir::recursion::FunctionSscId,
+    ) -> Result<Vec<ParserDefType>, TypeError>;
     fn public_type(&self, loc: HirId) -> Result<TypeId, ()>;
     fn parser_type_at(&self, loc: HirId) -> Result<TypeId, TypeError>;
     fn public_expr_type(
         &self,
-        loc: ExprId,
+        loc: hir::ExprId,
     ) -> Result<(Expression<TypedHirVal<TypeId>>, TypeId), ()>;
-    fn ambient_type(&self, id: ParseId) -> Result<TypeId, ()>;
-    fn parser_full_types(&self, id: ParserDefId) -> Result<Arc<ParserFullTypes>, TypeError>;
+    fn ambient_type(&self, id: hir::ParseId) -> Result<TypeId, ()>;
+    fn parser_full_types(&self, id: hir::ParserDefId) -> Result<Arc<ParserFullTypes>, TypeError>;
 }
 
 type TypedExpression = Expression<TypedHirVal<TypeId>>;
@@ -66,7 +65,7 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
     pub fn resolve_type_expr(
         &mut self,
         context: &mut TypingLocation,
-        expr: &Expression<HirType>,
+        expr: &Expression<hir::HirType>,
     ) -> Result<InfTypeId, TypeError> {
         let ret = match expr {
             Expression::BinaryOp(op) => match op.as_ref() {
@@ -78,7 +77,7 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                     let from = self.resolve_type_expr(context, from_expr)?;
                     let inner = match inner_expr {
                         Expression::Atom(IndexSpanned {
-                            atom: TypeAtom::ParserDef(pd),
+                            atom: hir::TypeAtom::ParserDef(pd),
                             ..
                         }) => self.resolve_type_expr_parserdef_ref(context, pd, Some(from))?,
                         _ => self.resolve_type_expr(context, inner_expr)?,
@@ -93,19 +92,19 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                 TypeUnOp::Ref(e, _) => self.resolve_type_expr(context, e)?,
             },
             Expression::Atom(a) => match &a.atom {
-                TypeAtom::Primitive(TypePrimitive::Int) => self.infctx.int(),
-                TypeAtom::Primitive(TypePrimitive::Bit) => self.infctx.bit(),
-                TypeAtom::Primitive(TypePrimitive::Char) => self.infctx.char(),
-                TypeAtom::Primitive(TypePrimitive::Mem) => todo!(),
-                TypeAtom::ParserDef(pd) => {
+                hir::TypeAtom::Primitive(hir::TypePrimitive::Int) => self.infctx.int(),
+                hir::TypeAtom::Primitive(hir::TypePrimitive::Bit) => self.infctx.bit(),
+                hir::TypeAtom::Primitive(hir::TypePrimitive::Char) => self.infctx.char(),
+                hir::TypeAtom::Primitive(hir::TypePrimitive::Mem) => todo!(),
+                hir::TypeAtom::ParserDef(pd) => {
                     return self.resolve_type_expr_parserdef_ref(context, pd, None)
                 }
-                TypeAtom::Array(a) => {
+                hir::TypeAtom::Array(a) => {
                     let inner = self.resolve_type_expr(context, &a.expr)?;
                     self.db
                         .intern_inference_type(InferenceType::Loop(a.direction, inner))
                 }
-                TypeAtom::TypeVar(v) => {
+                hir::TypeAtom::TypeVar(v) => {
                     let var_idx = context.vars.get_var(*v).ok_or(TypeError)?;
                     self.db.intern_inference_type(InferenceType::TypeVarRef(
                         context.pd.0,
@@ -135,7 +134,7 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                 .map(|x| self.resolve_type_expr(context, x))
                 .collect::<Result<Vec<_>, _>>()?,
         );
-        let def = parserdef_ref(self.db, context.loc, FieldName::Ident(pd.name.atom))
+        let def = hir::refs::parserdef_ref(self.db, context.loc, FieldName::Ident(pd.name.atom))
             .map_err(|_| TypeError)?;
         let definition = self.db.parser_args(def)?;
         match (parse_arg, definition.from) {
@@ -176,10 +175,10 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
     pub fn val_expression_type(
         &mut self,
         context: &mut TypingLocation,
-        expr: &Expression<HirVal>,
+        expr: &Expression<hir::HirVal>,
     ) -> Result<InfTypedExpression, TypeError> {
         use BasicValBinOp::*;
-        let mut ty_and_subexpr = |expr: &Expression<HirVal>| {
+        let mut ty_and_subexpr = |expr: &Expression<hir::HirVal>| {
             self.val_expression_type(context, expr)
                 .map(|e| (e.root_type(), e))
         };
@@ -377,7 +376,7 @@ impl TypeVarCollection {
     pub fn freeze(&mut self) {
         self.frozen = true
     }
-    pub fn at_id(db: &(impl TyHirs + ?Sized), id: ParserDefId) -> Result<Self, TypeError> {
+    pub fn at_id(db: &(impl TyHirs + ?Sized), id: hir::ParserDefId) -> Result<Self, TypeError> {
         let tys = db.parser_args(id)?.ty_args;
         let mut ret = Self::new_empty();
         for ty in tys.iter() {
@@ -386,7 +385,7 @@ impl TypeVarCollection {
         ret.freeze();
         Ok(ret)
     }
-    pub fn var_types(&self, db: &(impl TyHirs + ?Sized), id: ParserDefId) -> Vec<TypeId> {
+    pub fn var_types(&self, db: &(impl TyHirs + ?Sized), id: hir::ParserDefId) -> Vec<TypeId> {
         n_type_vars(db, id, self.defs.len() as u32)
     }
     pub fn fill_anon_vars(&mut self, db: &(impl TyHirs + ?Sized), target_count: u32) {
@@ -398,7 +397,7 @@ impl TypeVarCollection {
     }
 }
 
-fn n_type_vars(db: &(impl TyHirs + ?Sized), id: ParserDefId, n: u32) -> Vec<TypeId> {
+fn n_type_vars(db: &(impl TyHirs + ?Sized), id: hir::ParserDefId, n: u32) -> Vec<TypeId> {
     (0..n)
         .map(|i| db.intern_type(Type::TypeVarRef(id.0, 0, i)))
         .collect()
@@ -408,7 +407,7 @@ fn n_type_vars(db: &(impl TyHirs + ?Sized), id: ParserDefId, n: u32) -> Vec<Type
 pub struct TypingLocation {
     vars: TypeVarCollection,
     loc: HirId,
-    pd: ParserDefId,
+    pd: hir::ParserDefId,
 }
 
 impl TypingLocation {
@@ -425,13 +424,13 @@ pub struct TypedHirVal<T>(PhantomData<T>);
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct TypedAtom<Id> {
     ty: Id,
-    span_index: SpanIndex,
+    span_index: hir::SpanIndex,
     atom: ParserAtom,
 }
 
 impl<T: Debug + Hash + Copy + Ord> ExpressionKind for TypedHirVal<T> {
-    type BinaryOp = ValBinOp<Self, HirConstraint, (T, SpanIndex)>;
-    type UnaryOp = ValUnOp<Self, (T, SpanIndex)>;
+    type BinaryOp = ValBinOp<Self, hir::HirConstraint, (T, hir::SpanIndex)>;
+    type UnaryOp = ValUnOp<Self, (T, hir::SpanIndex)>;
     type Atom = TypedAtom<T>;
 }
 
@@ -462,15 +461,15 @@ impl<T: Debug + std::hash::Hash + Copy + Ord> ExpressionComponent<TypedHirVal<T>
 }
 
 enum NominalId {
-    Def(ParserDefId),
-    Block(BlockId),
+    Def(hir::ParserDefId),
+    Block(hir::BlockId),
 }
 
 impl NominalId {
     pub fn from_nominal_inf_head(head: &NominalInfHead) -> Self {
         match head.kind {
-            NominalKind::Def => NominalId::Def(ParserDefId(head.def)),
-            NominalKind::Block => NominalId::Block(BlockId(head.def)),
+            NominalKind::Def => NominalId::Def(hir::ParserDefId(head.def)),
+            NominalKind::Block => NominalId::Block(hir::BlockId(head.def)),
         }
     }
 }
