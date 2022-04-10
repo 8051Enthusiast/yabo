@@ -1,6 +1,8 @@
+use crate::hir::refs::parserdef_ref;
+
 use super::*;
 
-pub fn parser_args(db: &dyn TyHirs, id: ParserDefId) -> Result<Signature, TypeError> {
+pub fn parser_args(db: &dyn TyHirs, id: hir::ParserDefId) -> Result<Signature, TypeError> {
     let pd = id.lookup(db).map_err(|_| TypeError)?;
     let mut context = TypingLocation {
         vars: TypeVarCollection::new_empty(),
