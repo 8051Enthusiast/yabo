@@ -112,12 +112,12 @@ impl TryFrom<&InferenceType> for TypeHead {
         Ok(match value {
             InferenceType::Any => TypeHead::Any,
             InferenceType::Bot => TypeHead::Bot,
-            InferenceType::Primitive(p) => TypeHead::Primitive(*p),
-            InferenceType::TypeVarRef(..) => TypeHead::TypeVarRef,
+            &InferenceType::Primitive(p) => TypeHead::Primitive(p),
+            &InferenceType::TypeVarRef(id, lvl, idx) => TypeHead::TypeVarRef(id, lvl, idx),
             InferenceType::Nominal(NominalInfHead { def, .. }) => TypeHead::Nominal(*def),
             InferenceType::Loop(kind, _) => TypeHead::Loop(*kind),
             InferenceType::ParserArg { .. } => TypeHead::ParserArg,
-            InferenceType::FunctionArgs { .. } => TypeHead::FunctionArgs,
+            InferenceType::FunctionArgs { args, .. } => TypeHead::FunctionArgs(args.len()),
             InferenceType::Unknown => TypeHead::Unknown,
             InferenceType::Var(_) | InferenceType::InferField(..) => return Err(TypeError),
         })
