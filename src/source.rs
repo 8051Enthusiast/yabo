@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -9,7 +10,7 @@ use ariadne::{Cache, FnCache};
 
 use crate::context::LivingInTheDatabase;
 use crate::databased_display::DatabasedDisplay;
-use crate::interner::{FieldName, Identifier};
+use crate::interner::{FieldName, Identifier, HirId};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Span {
@@ -200,5 +201,52 @@ impl<DB: Files + ?Sized> DatabasedDisplay<DB> for FileId {
         } else {
             write!(f, "file[_]")
         }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct SpanIndex(u32);
+impl SpanIndex {
+    pub fn add_span(spans: &RefCell<Vec<Span>>) -> impl Fn(&Span) -> Self + '_ {
+        |span: &Span| {
+            let mut borrow = spans.borrow_mut();
+            borrow.push(*span);
+            SpanIndex(u32::try_from(borrow.len()).unwrap() - 1)
+        }
+    }
+
+    pub fn new(n: usize) -> Vec<Self> {
+        (0..n)
+            .map(|i| SpanIndex(i.try_into().expect("overflow adding spans")))
+            .collect()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct IndexSpanned<T> {
+    pub atom: T,
+    pub span: SpanIndex,
+}
+
+impl<T: Clone + Eq + Hash + Debug> IndexSpanned<T> {
+    pub fn new(spanned: &Spanned<T>, add_span: &impl Fn(&Span) -> SpanIndex) -> Self {
+        let span = add_span(&spanned.span); // span
+        Self {
+            span,
+            atom: spanned.inner.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct IndirectSpan(HirId, SpanIndex);
+
+impl IndirectSpan {
+    pub fn new(id: HirId, span: SpanIndex) -> Self {
+        Self(id, span)
+    }
+
+    pub fn first(id: HirId) -> Self {
+        Self(id, SpanIndex(0))
     }
 }

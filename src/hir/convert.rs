@@ -123,11 +123,7 @@ fn val_expression(
 ) {
     let spans = RefCell::new(Vec::new());
     let children = RefCell::new(Vec::new());
-    let add_span = |span: &Span| {
-        let mut borrow = spans.borrow_mut();
-        borrow.push(*span);
-        SpanIndex(u32::try_from(borrow.len()).unwrap() - 1)
-    };
+    let add_span = SpanIndex::add_span(&spans);
     let new_id = || {
         let mut borrow = children.borrow_mut();
         let index: u32 = u32::try_from(borrow.len()).unwrap();
@@ -138,6 +134,7 @@ fn val_expression(
     let vconverter = val_expression_converter(ctx, &add_span, &new_id, parent_context, id, array);
     let expr = vconverter.convert(ast);
     drop(vconverter);
+    drop(add_span);
     let expr = ValExpression {
         id,
         expr,
@@ -148,14 +145,11 @@ fn val_expression(
 
 fn type_expression(ast: &ast::TypeExpression, ctx: &HirConversionCtx, id: TExprId) {
     let spans = RefCell::new(Vec::new());
-    let add_span = |span: &Span| {
-        let mut borrow = spans.borrow_mut();
-        borrow.push(*span);
-        SpanIndex(u32::try_from(borrow.len()).unwrap() - 1)
-    };
+    let add_span = SpanIndex::add_span(&spans);
     let tconverter = type_expression_converter(&add_span);
     let texpr = tconverter.convert(ast);
     drop(tconverter);
+    drop(add_span);
     let texpr = TypeExpression { id, expr: texpr };
     ctx.insert(id.0, HirNode::TExpr(texpr), spans.into_inner())
 }
