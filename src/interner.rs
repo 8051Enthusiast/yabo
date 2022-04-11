@@ -116,10 +116,7 @@ impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for PathComponent {
             PathComponent::Named(FieldName::Ident(n)) => n.db_fmt(f, db),
             PathComponent::Named(FieldName::Return) => write!(f, "return"),
             PathComponent::Unnamed(x) => write!(f, "{}", x),
-            PathComponent::File(fid) => match db.path(*fid) {
-                Some(p) => write!(f, "{}", p.to_string_lossy()),
-                None => write!(f, "file[_]"),
-            },
+            PathComponent::File(fid) => dbwrite!(f, db, "{}", fid),
         }
     }
 }

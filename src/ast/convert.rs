@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use miette::{Diagnostic, SourceSpan};
 use tree_sitter::{Node, Parser, TreeCursor};
 use tree_sitter_yabo::language;
 
@@ -13,8 +12,7 @@ use crate::interner::IdentifierName;
 use crate::interner::TypeVar;
 use crate::interner::TypeVarName;
 use crate::source::FieldSpan;
-use crate::source::{FileData, FileId, IdSpan, Span, Spanned};
-use thiserror::Error;
+use crate::source::{FileId, IdSpan, Span, Spanned};
 
 macro_rules! inner_string {
     ($n:ident) => {stringify!($n)};
@@ -22,17 +20,9 @@ macro_rules! inner_string {
     ($f:ident $n:tt) => {inner_string!$n};
 }
 
-#[derive(Clone, Error, Debug, Diagnostic, PartialEq, Eq)]
-#[error("Generic Parser Error")]
-#[diagnostic(
-    code(error::parse::generic),
-    help("This would not have happened if you simply wrote correct code")
-)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GenericParseError {
-    #[source_code]
-    code: Arc<FileData>,
-    #[label("Error occured here")]
-    location: SourceSpan,
+    pub(super) loc: Span,
 }
 
 impl Into<SilencedError> for GenericParseError {
@@ -77,13 +67,10 @@ fn span_from_node(fd: FileId, node: &Node) -> Span {
     }
 }
 
-fn check_error<'a>(db: &dyn Asts, fd: FileId, node: Node<'a>) -> ParseResult<Node<'a>> {
+fn check_error<'a>(_: &dyn Asts, fd: FileId, node: Node<'a>) -> ParseResult<Node<'a>> {
     if node.is_error() {
-        let span = span_from_node(fd, &node).into();
-        Err(vec![GenericParseError {
-            code: db.input_file(fd),
-            location: span,
-        }])
+        let span = span_from_node(fd, &node);
+        Err(vec![GenericParseError { loc: span }])
     } else {
         Ok(node)
     }

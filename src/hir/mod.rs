@@ -1,10 +1,10 @@
 mod convert;
+pub mod error;
 pub mod recursion;
 pub mod refs;
 pub mod represent;
 pub mod variable_set;
 pub mod walk;
-pub mod error;
 
 use std::{
     borrow::Cow,
@@ -29,7 +29,7 @@ use variable_set::VariableSet;
 use convert::hir_parser_collection;
 use recursion::{mod_parser_ssc, parser_ssc, FunctionSscId};
 
-use self::convert::{HirConversionError, HirConversionErrors};
+use self::convert::HirConversionErrors;
 
 #[salsa::query_group(HirDatabase)]
 pub trait Hirs: crate::ast::Asts + crate::types::TypeInterner {
@@ -47,7 +47,6 @@ pub trait Hirs: crate::ast::Asts + crate::types::TypeInterner {
     fn all_parserdefs(&self) -> Vec<ParserDefId>;
     fn hir_parent_module(&self, id: HirId) -> SResult<ModuleId>;
     fn hir_parent_parserdef(&self, id: HirId) -> SResult<ParserDefId>;
-    fn hir_errors(&self) -> BTreeSet<HirConversionError>;
 }
 
 fn hir_node(db: &dyn Hirs, id: HirId) -> SResult<HirNode> {
@@ -106,11 +105,7 @@ fn all_parserdefs(db: &dyn Hirs) -> Vec<ParserDefId> {
         Ok(m) => m,
         Err(_) => return Vec::new(),
     };
-    let ret: Vec<_> = module
-        .defs
-        .values()
-        .cloned()
-        .collect();
+    let ret: Vec<_> = module.defs.values().cloned().collect();
     ret
 }
 
@@ -128,19 +123,6 @@ fn hir_parent_parserdef(db: &dyn Hirs, id: HirId) -> SResult<ParserDefId> {
         path.path()[0].unwrap_file(),
         path.path()[1].unwrap_named(),
     ))))
-}
-
-fn hir_errors(db: &dyn Hirs) -> BTreeSet<HirConversionError> {
-    let mut ret = BTreeSet::<HirConversionError>::new();
-    for id in db.all_parserdefs() {
-        let x = match db.hir_parser_collection(id.0) {
-            Err(_) => continue,
-            Ok(None) => continue,
-            Ok(Some(x)) => x
-        };
-        ret.append(&mut x.errors.use_error());
-    }
-    ret
 }
 
 macro_rules! hir_id_wrapper {

@@ -1,12 +1,14 @@
 use std::convert::TryFrom;
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::io::Error;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use miette::{MietteError, MietteSpanContents, SourceCode};
+use ariadne::{Cache, FnCache};
 
 use crate::context::LivingInTheDatabase;
+use crate::databased_display::DatabasedDisplay;
 use crate::interner::{FieldName, Identifier};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -30,11 +32,19 @@ pub struct FieldSpan {
     pub span: Span,
 }
 
-impl From<Span> for miette::SourceSpan {
-    fn from(s: Span) -> Self {
-        let length = miette::SourceOffset::from((s.hi - s.lo) as usize);
-        let start = miette::SourceOffset::from(s.lo as usize);
-        Self::new(start, length)
+impl ariadne::Span for Span {
+    type SourceId = FileId;
+
+    fn source(&self) -> &Self::SourceId {
+        &self.file
+    }
+
+    fn start(&self) -> usize {
+        self.lo as usize
+    }
+
+    fn end(&self) -> usize {
+        self.hi as usize
     }
 }
 
@@ -55,7 +65,7 @@ impl FileId {
     fn inc(self) -> Self {
         FileId(self.0.checked_add(1).expect("too many files"))
     }
-    fn to_usize(self) -> usize {
+    pub fn to_usize(self) -> usize {
         self.0 as usize
     }
 }
@@ -65,36 +75,6 @@ pub struct FileData {
     pub id: FileId,
     pub path: Option<PathBuf>,
     pub content: Arc<String>,
-}
-
-impl SourceCode for FileData {
-    fn read_span<'a>(
-        &'a self,
-        span: &miette::SourceSpan,
-        context_lines_before: usize,
-        context_lines_after: usize,
-    ) -> Result<Box<dyn miette::SpanContents<'a> + 'a>, MietteError> {
-        let span_content =
-            self.content
-                .read_span(span, context_lines_before, context_lines_after)?;
-        Ok(Box::new(match &self.path {
-            Some(path) => MietteSpanContents::new_named(
-                path.to_string_lossy().to_string(),
-                span_content.data(),
-                span_content.span().clone(),
-                span_content.line(),
-                span_content.column(),
-                span_content.line_count(),
-            ),
-            None => MietteSpanContents::new(
-                span_content.data(),
-                span_content.span().clone(),
-                span_content.line(),
-                span_content.column(),
-                span_content.line_count(),
-            ),
-        }))
-    }
 }
 
 impl FileData {
@@ -160,6 +140,38 @@ impl FileCollection {
     }
 }
 
+type CacheFn<'a> = Box<dyn for<'b> Fn(&'b usize) -> Result<String, Box<dyn Debug>> + 'a>;
+
+pub struct AriadneCache<'a, DB: ?Sized> {
+    db: &'a DB,
+    fncache: FnCache<usize, CacheFn<'a>>,
+}
+
+impl<'a, DB: ?Sized> AriadneCache<'a, DB> {
+    pub fn new(db: &'a DB) -> AriadneCache<'a, DB>
+    where
+        DB: Files,
+    {
+        let fun = Box::new(move |id: &usize| Ok(db.file_content(FileId(*id as u32)).to_string()))
+            as CacheFn<'a>;
+        let fncache = FnCache::new(fun);
+        AriadneCache { db, fncache }
+    }
+}
+
+impl<'a, DB> Cache<FileId> for AriadneCache<'a, DB>
+where
+    DB: Files + ?Sized,
+{
+    fn fetch(&mut self, id: &FileId) -> Result<&ariadne::Source, Box<dyn std::fmt::Debug + '_>> {
+        self.fncache.fetch(&id.to_usize())
+    }
+
+    fn display<'b>(&self, id: &'b FileId) -> Option<Box<dyn std::fmt::Display + 'b>> {
+        Some(Box::new(id.to_db_string(self.db)))
+    }
+}
+
 #[salsa::query_group(FileDatabase)]
 pub trait Files: salsa::Database {
     #[salsa::input]
@@ -178,4 +190,15 @@ fn file_content(db: &dyn Files, id: FileId) -> Arc<String> {
 fn path(db: &dyn Files, id: FileId) -> Option<PathBuf> {
     let fd = db.input_file(id);
     fd.path.clone()
+}
+
+impl<DB: Files + ?Sized> DatabasedDisplay<DB> for FileId {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
+        let fd = db.input_file(*self);
+        if let Some(path) = &fd.path {
+            write!(f, "{}", path.display())
+        } else {
+            write!(f, "file[_]")
+        }
+    }
 }
