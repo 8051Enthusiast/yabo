@@ -2,12 +2,13 @@ use std::{collections::HashMap, hash::Hash, sync::Arc};
 
 use crate::{
     interner::HirId,
-    types::{InferenceType, NominalInfHead, TypeHead},
+    types::{inference::NominalInfHead, InferenceType, TypeHead},
 };
 
 use super::{
-    InfTypeId, InferenceContext, NominalTypeHead, Type, TypeError, TypeId, TypeInterner,
-    TypeResolver,
+    inference::InfTypeId,
+    inference::{InferenceContext, TypeResolver},
+    NominalTypeHead, Type, TypeError, TypeId, TypeInterner,
 };
 
 pub struct VarStack<'a> {
@@ -369,7 +370,7 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
                 let mut result = self.ctx.intern_infty(InferenceType::Bot);
                 let var_store = self.ctx.var_store.clone();
                 let mut contains_non_var = false;
-                for ty in var_store.get(v).lower.iter() {
+                for ty in var_store.get(v).lower().iter() {
                     let mut inference_type = self.ctx.lookup_infty(*ty);
                     if !matches!(inference_type, InferenceType::Var(_)) {
                         contains_non_var = true;

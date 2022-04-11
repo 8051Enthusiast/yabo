@@ -7,6 +7,7 @@ use crate::{
         Block, ChoiceIndirection, StructChoice, StructCtx, ValExpression,
     },
     interner::PathComponent,
+    types::inference::{InfTypeId, NominalInfHead, TypeResolver},
 };
 
 use super::*;

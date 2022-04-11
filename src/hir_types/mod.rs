@@ -17,8 +17,8 @@ use crate::{
     hir::{HirIdWrapper, IndexSpanned, ParseStatement, ParserAtom, ParserDefRef},
     interner::{FieldName, HirId, TypeVar, TypeVarName},
     types::{
-        EitherType, InfTypeId, InferenceContext, InferenceType, NominalInfHead, NominalKind,
-        NominalTypeHead, Signature, Type, TypeError, TypeId, TypeResolver,
+        inference::{InfTypeId, InferenceContext, InferenceType, NominalInfHead, TypeResolver},
+        EitherType, NominalKind, NominalTypeHead, Signature, Type, TypeError, TypeId,
     },
 };
 
