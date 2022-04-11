@@ -1,3 +1,4 @@
+mod convert;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::Arc;
@@ -6,9 +7,10 @@ use crate::{
     error::{SResult, Silencable},
     expr::*,
     interner::{FieldName, Identifier, Interner, TypeVar},
-    parse::ParseResult,
     source::{FieldSpan, FileId, Files, IdSpan, Span, Spanned},
 };
+
+use convert::ParseResult;
 
 #[derive(Clone, Debug)]
 pub struct Test {
@@ -43,7 +45,7 @@ fn test(db: &dyn Asts) -> Test {
 }
 
 fn ast(db: &dyn Asts, fd: FileId) -> ParseResult<Arc<Module>> {
-    crate::parse::parse(db, fd).map(Arc::new)
+    convert::parse(db, fd).map(Arc::new)
 }
 
 fn symbols(db: &dyn Asts, fd: FileId) -> SResult<Vec<Identifier>> {
