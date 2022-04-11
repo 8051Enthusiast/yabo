@@ -26,6 +26,9 @@ pub struct Context {
     pub db: LivingInTheDatabase,
 }
 
+const ERROR_FNS: &[fn(&LivingInTheDatabase) -> Vec<Report>] =
+    &[crate::ast::error::errors, crate::hir::error::errors];
+
 impl Context {
     pub fn update_db(&mut self) {
         self.fc.insert_into_db(&mut self.db);
@@ -58,14 +61,15 @@ impl Context {
     }
     pub fn diagnostics(&self) -> Vec<Report> {
         let mut ret = Vec::new();
-        ret.append(&mut crate::ast::error::errors(&self.db));
-        ret.append(&mut crate::hir::error::errors(&self.db));
+        ERROR_FNS.iter().for_each(|f| {
+            ret.extend(f(&self.db));
+        });
         ret
     }
     pub fn print_diagnostics(&self) -> bool {
         let diagnostics = self.diagnostics();
         if diagnostics.is_empty() {
-            return false
+            return false;
         }
         for e in diagnostics {
             e.eprint(AriadneCache::new(&self.db))
