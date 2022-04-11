@@ -15,7 +15,7 @@ pub fn errors(db: &(impl Asts + ?Sized)) -> Vec<Report> {
 
 fn parse_error_report(f: GenericParseError) -> Report {
     Report::build(ReportKind::Error, f.loc.file, 0)
-        .with_code(1)
+        .with_code(100)
         .with_message("Parse error")
         .with_label(Label::new(f.loc).with_message("error occured here"))
         .finish()

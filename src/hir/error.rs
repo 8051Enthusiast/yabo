@@ -27,7 +27,7 @@ fn conversion_report(error: HirConversionError) -> Option<Report> {
     };
     Some(
         Report::build(ReportKind::Error, duplicate.file, 0)
-            .with_code(2)
+            .with_code(201)
             .with_message("Duplicate field in block")
             .with_label(
                 Label::new(duplicate).with_message("This field already appeared in this block"),

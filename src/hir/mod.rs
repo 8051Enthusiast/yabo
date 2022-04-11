@@ -24,6 +24,8 @@ use crate::{
     source::{FileId, Span, Spanned},
 };
 
+use crate::source::IndexSpanned;
+use crate::source::SpanIndex;
 use variable_set::VariableSet;
 
 use convert::hir_parser_collection;
@@ -219,23 +221,6 @@ pub struct HirParserCollection {
 impl HirParserCollection {
     pub fn new() -> Self {
         Self::default()
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct SpanIndex(u32);
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct IndexSpanned<T> {
-    pub atom: T,
-    pub span: SpanIndex,
-}
-
-impl<T: Clone + Eq + Hash + Debug> IndexSpanned<T> {
-    pub fn new(spanned: &Spanned<T>, add_span: &impl Fn(&Span) -> SpanIndex) -> Self {
-        let span = add_span(&spanned.span); // span
-        Self {
-            span,
-            atom: spanned.inner.clone(),
-        }
     }
 }
 

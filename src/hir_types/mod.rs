@@ -14,8 +14,9 @@ use crate::{
         Atom, BasicValBinOp, ExprIter, Expression, ExpressionComponent, ExpressionKind, TypeBinOp,
         TypeUnOp, ValBinOp, ValUnOp,
     },
-    hir::{HirIdWrapper, IndexSpanned, ParseStatement, ParserAtom, ParserDefRef},
+    hir::{HirIdWrapper, ParseStatement, ParserAtom, ParserDefRef},
     interner::{FieldName, HirId, TypeVar, TypeVarName},
+    source::{IndexSpanned, SpanIndex},
     types::{
         inference::{InfTypeId, InferenceContext, InferenceType, NominalInfHead, TypeResolver},
         EitherType, NominalKind, NominalTypeHead, Signature, Type, TypeError, TypeId,
@@ -422,13 +423,13 @@ pub struct TypedHirVal<T>(PhantomData<T>);
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct TypedAtom<Id> {
     ty: Id,
-    span_index: hir::SpanIndex,
+    span_index: SpanIndex,
     atom: ParserAtom,
 }
 
 impl<T: Debug + Hash + Copy + Ord> ExpressionKind for TypedHirVal<T> {
-    type BinaryOp = ValBinOp<Self, hir::HirConstraint, (T, hir::SpanIndex)>;
-    type UnaryOp = ValUnOp<Self, (T, hir::SpanIndex)>;
+    type BinaryOp = ValBinOp<Self, hir::HirConstraint, (T, SpanIndex)>;
+    type UnaryOp = ValUnOp<Self, (T, SpanIndex)>;
     type Atom = TypedAtom<T>;
 }
 
