@@ -114,11 +114,11 @@ pub enum TypeHead {
     Any,
     Bot,
     Primitive(PrimitiveType),
-    TypeVarRef,
+    TypeVarRef(HirId, u32, u32),
     Nominal(HirId),
     Loop(ArrayKind),
     ParserArg,
-    FunctionArgs,
+    FunctionArgs(usize),
     Unknown,
 }
 
