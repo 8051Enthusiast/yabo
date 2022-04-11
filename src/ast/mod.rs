@@ -1,4 +1,5 @@
 mod convert;
+pub mod error;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::Arc;

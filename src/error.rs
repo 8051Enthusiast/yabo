@@ -1,5 +1,7 @@
 use std::{collections::HashSet, error::Error};
 
+use crate::source::Span;
+
 pub type SResult<T> = Result<T, SilencedError>;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct SilencedError;
@@ -101,3 +103,5 @@ macro_rules! error_type {
         }
     }
 }
+
+pub type Report = ariadne::Report<Span>;

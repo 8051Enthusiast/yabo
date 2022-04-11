@@ -1,8 +1,9 @@
 use crate::ast::AstDatabase;
+use crate::error::Report;
 use crate::hir::HirDatabase;
 use crate::hir_types::HirTypesDatabase;
 use crate::interner::{Identifier, IdentifierName, Interner, InternerDatabase};
-use crate::source::{FileCollection, FileDatabase};
+use crate::source::{AriadneCache, FileCollection, FileDatabase};
 use crate::types::TypeInternerDatabase;
 
 #[salsa::database(
@@ -54,5 +55,22 @@ impl Context {
             self.db
                 .intern_hir_path(HirPath::new_fid(fd, FieldName::Ident(self.id(s)))),
         )
+    }
+    pub fn diagnostics(&self) -> Vec<Report> {
+        let mut ret = Vec::new();
+        ret.append(&mut crate::ast::error::errors(&self.db));
+        ret.append(&mut crate::hir::error::errors(&self.db));
+        ret
+    }
+    pub fn print_diagnostics(&self) -> bool {
+        let diagnostics = self.diagnostics();
+        if diagnostics.is_empty() {
+            return false
+        }
+        for e in diagnostics {
+            e.eprint(AriadneCache::new(&self.db))
+                .expect("Error while printing errors")
+        }
+        true
     }
 }
