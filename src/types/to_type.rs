@@ -311,7 +311,7 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
             (nom @ Nominal(NominalInfHead { .. }), other)
             | (other, nom @ Nominal(NominalInfHead { .. })) => {
                 let mut other_upset = HashMap::new();
-                let mut next = |ty: &_| {
+                let mut next = |ty: &_| -> Result<_, TypeError> {
                     if let InferenceType::Nominal(nom) = ty {
                         Ok(self.ctx.deref(nom)?.map(|x| self.ctx.lookup_infty(x)))
                     } else {

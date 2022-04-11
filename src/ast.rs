@@ -3,31 +3,53 @@ use std::hash::Hash;
 use std::sync::Arc;
 
 use crate::{
+    error::{SResult, Silencable},
     expr::*,
     interner::{FieldName, Identifier, Interner, TypeVar},
     parse::ParseResult,
     source::{FieldSpan, FileId, Files, IdSpan, Span, Spanned},
 };
 
+#[derive(Clone, Debug)]
+pub struct Test {
+    x: u8,
+    #[forbid(dead_code)]
+    used: (),
+}
+
+impl PartialEq for Test {
+    fn eq(&self, other: &Self) -> bool {
+        self.x == other.x
+    }
+}
+
+impl Eq for Test {}
+
 #[salsa::query_group(AstDatabase)]
 pub trait Asts: Files + Interner {
     fn ast(&self, fd: FileId) -> ParseResult<Arc<Module>>;
-    fn symbols(&self, fd: FileId) -> Result<Vec<Identifier>, ()>;
+    fn symbols(&self, fd: FileId) -> SResult<Vec<Identifier>>;
+    fn test(&self) -> Test;
     fn top_level_statement(
         &self,
         fd: FileId,
         id: Identifier,
-    ) -> Result<Option<Arc<ParserDefinition>>, ()>;
+    ) -> SResult<Option<Arc<ParserDefinition>>>;
+}
+
+fn test(db: &dyn Asts) -> Test {
+    let _ = db.test().used;
+    Test { x: 42, used: () }
 }
 
 fn ast(db: &dyn Asts, fd: FileId) -> ParseResult<Arc<Module>> {
     crate::parse::parse(db, fd).map(Arc::new)
 }
 
-fn symbols(db: &dyn Asts, fd: FileId) -> Result<Vec<Identifier>, ()> {
+fn symbols(db: &dyn Asts, fd: FileId) -> SResult<Vec<Identifier>> {
     let mut syms: Vec<_> = db
         .ast(fd)
-        .map_err(|_| ())?
+        .silence()?
         .tl_statements
         .iter()
         .map(|st| st.name.inner)
@@ -40,10 +62,10 @@ fn top_level_statement(
     db: &dyn Asts,
     fd: FileId,
     id: Identifier,
-) -> Result<Option<Arc<ParserDefinition>>, ()> {
+) -> SResult<Option<Arc<ParserDefinition>>> {
     Ok(db
         .ast(fd)
-        .map_err(|_| ())?
+        .silence()?
         .tl_statements
         .iter()
         .find(|st| st.name.inner == id)

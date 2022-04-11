@@ -1,5 +1,6 @@
 use crate::{
     dbformat, dbpanic,
+    error::{SResult, Silencable, SilencedError},
     hir::{
         refs::{resolve_var_ref, VarType},
         walk::ChildIter,
@@ -21,7 +22,7 @@ pub fn parser_full_types(
     db: &dyn TyHirs,
     id: hir::ParserDefId,
 ) -> Result<Arc<ParserFullTypes>, TypeError> {
-    let resolver = FullResolver::new(db, id.0).map_err(|_| TypeError)?;
+    let resolver = FullResolver::new(db, id.0)?;
     let mut ctx = TypingContext::new(db, resolver);
     ctx.initialize_vars()?;
     ctx.type_parserdef(id)?;
@@ -42,10 +43,10 @@ pub fn parser_full_types(
     }))
 }
 
-pub fn parser_type_at(db: &dyn TyHirs, id: HirId) -> Result<TypeId, TypeError> {
-    let parent_pd = db.hir_parent_parserdef(id).map_err(|_| TypeError)?;
-    let types = db.parser_full_types(parent_pd)?;
-    types.types.get(&id).copied().ok_or_else(|| TypeError)
+pub fn parser_type_at(db: &dyn TyHirs, id: HirId) -> SResult<TypeId> {
+    let parent_pd = db.hir_parent_parserdef(id)?;
+    let types = db.parser_full_types(parent_pd).silence()?;
+    types.types.get(&id).copied().ok_or(SilencedError)
 }
 
 impl<'a> TypingContext<'a, FullResolver<'a>> {
@@ -60,7 +61,7 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
         let_statement: &hir::LetStatement,
     ) -> Result<ExpressionTypeConstraints, TypeError> {
         let ty = let_statement.ty;
-        let ty_expr = ty.lookup(self.db).map_err(|_| TypeError)?.expr;
+        let ty_expr = ty.lookup(self.db)?.expr;
         let mut typeloc = self.infctx.tr.loc.clone();
         let infty = self.resolve_type_expr(&mut typeloc, &ty_expr)?;
         Ok(ExpressionTypeConstraints {
@@ -80,11 +81,7 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
             let ty = match child {
                 hir::HirNode::Let(l) => {
                     self.set_current_loc(l.id.0);
-                    if let Some(ty) = self
-                        .let_statement_types(&l)
-                        .map_err(|_| TypeError)?
-                        .root_type
-                    {
+                    if let Some(ty) = self.let_statement_types(&l)?.root_type {
                         ty
                     } else {
                         self.infctx.var()
@@ -111,12 +108,12 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
                 hir::HirNode::Block(block) => block,
                 _ => continue,
             };
-            let root_ctx = block.root_context.lookup(self.db).map_err(|_| TypeError)?;
+            let root_ctx = block.root_context.lookup(self.db)?;
             for (_, child) in root_ctx.vars.iter() {
                 let child = child.inner();
                 let public_type = match self.db.public_type(*child) {
                     Ok(ty) => ty,
-                    Err(()) => continue,
+                    Err(_) => continue,
                 };
                 let public_inftype = self.infctx.from_type(public_type);
                 let current_inftype = self.infctx.tr.inftypes[child];
@@ -150,12 +147,12 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
         ret
     }
     fn type_parserdef(&mut self, pd: hir::ParserDefId) -> Result<(), TypeError> {
-        let parserdef = pd.lookup(self.db).map_err(|_| TypeError)?;
+        let parserdef = pd.lookup(self.db)?;
         let sig = self.db.parser_args(pd)?;
         let ambient = sig.from.map(|ty| self.infctx.from_type(ty));
         self.set_ambient_type(ambient);
 
-        let expr = parserdef.to.lookup(self.db).map_err(|_| TypeError)?;
+        let expr = parserdef.to.lookup(self.db)?;
         let ret = self.type_expr(&expr)?;
         let previous_ret = self
             .infctx
@@ -180,7 +177,7 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
                     ..
                 }) => {
                     let ambient = self.infctx.reuse_parser_arg(*ty)?;
-                    let block = block_id.lookup(self.db).map_err(|_| TypeError)?;
+                    let block = block_id.lookup(self.db)?;
                     self.with_ambient_type(Some(ambient), |ctx| ctx.type_block(&block))?;
                 }
                 Expression::Atom(TypedAtom {
@@ -189,7 +186,7 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
                     ..
                 }) => {
                     let ambient = self.infctx.reuse_parser_arg(*ty)?;
-                    let array = array_id.lookup(self.db).map_err(|_| TypeError)?;
+                    let array = array_id.lookup(self.db)?;
                     self.with_ambient_type(Some(ambient), |ctx| ctx.type_array(&array))?;
                 }
                 _ => continue,
@@ -202,11 +199,11 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
         Ok(ret)
     }
     fn type_block(&mut self, block: &Block) -> Result<(), TypeError> {
-        let root_ctx = block.root_context.lookup(self.db).map_err(|_| TypeError)?;
+        let root_ctx = block.root_context.lookup(self.db)?;
         self.type_context(&root_ctx)
     }
     fn type_array(&mut self, array: &hir::ParserArray) -> Result<(), TypeError> {
-        let expr = array.expr.lookup(self.db).map_err(|_| TypeError)?;
+        let expr = array.expr.lookup(self.db)?;
         self.type_expr(&expr)?;
         Ok(())
     }
@@ -219,7 +216,7 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
         })
     }
     fn type_block_component(&mut self, id: HirId) -> Result<(), TypeError> {
-        match self.db.hir_node(id).map_err(|_| TypeError)? {
+        match self.db.hir_node(id)? {
             hir::HirNode::Let(l) => self.type_let(&l),
             hir::HirNode::Parse(parse) => self.type_parse(&parse),
             hir::HirNode::Choice(choice) => self.type_choice(&choice),
@@ -230,7 +227,7 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
     }
     fn type_choice(&mut self, choice: &StructChoice) -> Result<(), TypeError> {
         for child in choice.subcontexts.iter() {
-            let context = child.lookup(self.db).map_err(|_| TypeError)?;
+            let context = child.lookup(self.db)?;
             self.type_context(&context)?;
         }
         Ok(())
@@ -244,13 +241,13 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
         Ok(())
     }
     fn type_parse(&mut self, parse: &ParseStatement) -> Result<(), TypeError> {
-        let expr = parse.expr.lookup(self.db).map_err(|_| TypeError)?;
+        let expr = parse.expr.lookup(self.db)?;
         let ty = self.type_expr(&expr)?;
         let self_ty = self.infty_at(parse.id.0);
         self.infctx.constrain(ty, self_ty)
     }
     fn type_let(&mut self, let_statement: &hir::LetStatement) -> Result<(), TypeError> {
-        let expr = let_statement.expr.lookup(self.db).map_err(|_| TypeError)?;
+        let expr = let_statement.expr.lookup(self.db)?;
         let ty = self.with_ambient_type(None, |ctx| ctx.type_expr(&expr))?;
         let self_ty = self.infty_at(let_statement.id.0);
         self.infctx.constrain(ty, self_ty)
@@ -266,7 +263,7 @@ pub struct FullResolver<'a> {
 }
 
 impl<'a> FullResolver<'a> {
-    pub fn new(db: &'a dyn TyHirs, loc: HirId) -> Result<Self, ()> {
+    pub fn new(db: &'a dyn TyHirs, loc: HirId) -> SResult<Self> {
         Ok(Self {
             db,
             inftypes: Default::default(),
@@ -283,7 +280,7 @@ impl<'a> TypeResolver for FullResolver<'a> {
         self.db
     }
 
-    fn field_type(&self, ty: &NominalInfHead, name: FieldName) -> Result<EitherType, ()> {
+    fn field_type(&self, ty: &NominalInfHead, name: FieldName) -> Result<EitherType, TypeError> {
         let block = match NominalId::from_nominal_inf_head(ty) {
             NominalId::Def(pd) => {
                 dbpanic!(self.db, "field_type called on parser def {}", &pd.0)
@@ -296,29 +293,30 @@ impl<'a> TypeResolver for FullResolver<'a> {
             .0
             .child(self.db, PathComponent::Named(name));
         if ty.internal {
-            self.inftypes.get(&child_id).map(|&id| id.into()).ok_or(())
+            self.inftypes
+                .get(&child_id)
+                .map(|&id| id.into())
+                .ok_or(TypeError)
         } else {
-            self.db
-                .public_type(child_id)
-                .map_err(|_| ())
-                .map(|t| t.into())
+            Ok(self.db.public_type(child_id).map(|t| t.into())?)
         }
     }
 
-    fn deref(&self, ty: &NominalInfHead) -> Result<Option<TypeId>, ()> {
+    fn deref(&self, ty: &NominalInfHead) -> Result<Option<TypeId>, TypeError> {
         let id = match NominalId::from_nominal_inf_head(ty) {
             NominalId::Def(d) => d,
             NominalId::Block(_) => return Ok(None),
         };
-        Ok(Some(self.db.parser_returns(id).map_err(|_| ())?.deref))
+        Ok(Some(self.db.parser_returns(id)?.deref))
     }
 
-    fn signature(&self, ty: &NominalInfHead) -> Result<Signature, ()> {
+    fn signature(&self, ty: &NominalInfHead) -> Result<Signature, TypeError> {
         get_signature(self.db, ty)
     }
 
-    fn lookup(&self, context: HirId, name: FieldName) -> Result<EitherType, ()> {
-        let (resolved_ref, ref_type) = resolve_var_ref(self.db, context, name)?.ok_or(())?;
+    fn lookup(&self, context: HirId, name: FieldName) -> Result<EitherType, TypeError> {
+        let (resolved_ref, ref_type) =
+            resolve_var_ref(self.db, context, name)?.ok_or(SilencedError)?;
         if let VarType::ParserDef = ref_type {
             get_thunk(self.db, context, name)
         } else {

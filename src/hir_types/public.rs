@@ -1,52 +1,65 @@
-use crate::dbformat;
+use crate::{
+    dbformat,
+    error::{SResult, Silencable, SilencedError},
+};
 
 use super::*;
 
-pub fn public_expr_type(db: &dyn TyHirs, loc: hir::ExprId) -> Result<(TypedExpression, TypeId), ()> {
+pub fn public_expr_type(db: &dyn TyHirs, loc: hir::ExprId) -> SResult<(TypedExpression, TypeId)> {
+    public_expr_type_impl(db, loc).silence()
+}
+
+fn public_expr_type_impl(
+    db: &dyn TyHirs,
+    loc: hir::ExprId,
+) -> Result<(TypedExpression, TypeId), TypeError> {
     let mut ctx = PublicResolver::new_typing_context_and_loc(db, loc.0)?;
     let mut typeloc = ctx.infctx.tr.tloc.clone();
     let parent = loc.0.parent(db);
     let surrounding_types = match db.hir_node(parent)? {
-        hir::HirNode::ParserDef(pd) => ctx.parserdef_types(&pd).map_err(|_| ())?,
-        hir::HirNode::Let(l) => ctx.let_statement_types(&l).map_err(|_| ())?,
+        hir::HirNode::ParserDef(pd) => ctx.parserdef_types(&pd)?,
+        hir::HirNode::Let(l) => ctx.let_statement_types(&l)?,
         hir::HirNode::Parse(p) => ctx.parse_statement_types(&p)?,
-        hir::HirNode::Array(a) => ctx.array_types(&a).map_err(|_| ())?,
+        hir::HirNode::Array(a) => ctx.array_types(&a)?,
         _ => panic!("expected parse statement, let statement or parser def"),
     };
     let expr = loc.lookup(db)?;
-    let expr = ctx
-        .val_expression_type(&mut typeloc, &expr.expr)
-        .map_err(|_| ())?;
+    let expr = ctx.val_expression_type(&mut typeloc, &expr.expr)?;
     let root = expr.root_type();
     let into_ret = if let Some(ty) = surrounding_types.from_type {
-        ctx.infctx.parser_apply(root, ty).map_err(|_| ())?
+        ctx.infctx.parser_apply(root, ty)?
     } else {
         root
     };
     let ret = if let Some(real_ret) = surrounding_types.root_type {
-        ctx.infctx.constrain(into_ret, real_ret).map_err(|_| ())?;
+        ctx.infctx.constrain(into_ret, real_ret)?;
         real_ret
     } else {
         into_ret
     };
-    let ret = ctx.inftype_to_concrete_type(ret).map_err(|_| ())?;
-    Ok((ctx.expr_to_concrete_type(&expr).map_err(|_| ())?, ret))
+    let ret = ctx.inftype_to_concrete_type(ret)?;
+    Ok((ctx.expr_to_concrete_type(&expr)?, ret))
 }
 
-pub fn public_type(db: &dyn TyHirs, loc: HirId) -> Result<TypeId, ()> {
+pub fn public_type(db: &dyn TyHirs, loc: HirId) -> SResult<TypeId> {
+    public_type_impl(db, loc).silence()
+}
+
+fn public_type_impl(db: &dyn TyHirs, loc: HirId) -> Result<TypeId, TypeError> {
     let node = db.hir_node(loc)?;
     let ret = match node {
         hir::HirNode::Let(l) => public_expr_type(db, l.expr)?.1,
-        hir::HirNode::Parse(p) => db.public_expr_type(p.expr).map_err(|_| ())?.1,
+        hir::HirNode::Parse(p) => db.public_expr_type(p.expr)?.1,
         hir::HirNode::ChoiceIndirection(ind) => {
             let mut ctx = PublicResolver::new_typing_context_and_loc(db, ind.parent_context.0)?;
             let ret = ctx.infctx.var();
             for (_, choice_id) in ind.choices.iter() {
+                // todo
                 let choice_ty = db.public_type(*choice_id)?;
                 let intfy = ctx.infctx.from_type(choice_ty);
-                ctx.infctx.constrain(intfy, ret).map_err(|_| ())?;
+                ctx.infctx.constrain(intfy, ret)?;
             }
-            ctx.inftype_to_concrete_type(ret).map_err(|_| ())?
+            ctx.inftype_to_concrete_type(ret)?
         }
         _ => panic!("unexpected node type"),
     };
@@ -55,14 +68,18 @@ pub fn public_type(db: &dyn TyHirs, loc: HirId) -> Result<TypeId, ()> {
 
 /// finds the public ambient type (ie the type that gets applied as the from argument
 /// to the parser) for the parser at loc, which is inside a block
-pub fn ambient_type(db: &dyn TyHirs, loc: hir::ParseId) -> Result<TypeId, ()> {
+pub fn ambient_type(db: &dyn TyHirs, loc: hir::ParseId) -> SResult<TypeId> {
+    ambient_type_impl(db, loc).silence()
+}
+
+fn ambient_type_impl(db: &dyn TyHirs, loc: hir::ParseId) -> Result<TypeId, TypeError> {
     let block = loc
         .lookup(db)?
         .parent_context
         .lookup(db)?
         .block_id
         .lookup(db)?;
-    let (typed_expr, _) = db.public_expr_type(block.enclosing_expr).map_err(|_| ())?;
+    let (typed_expr, _) = db.public_expr_type(block.enclosing_expr)?;
     let block_ty = ExprIter::new(&typed_expr)
         .find_map(|x| match x {
             Expression::Atom(TypedAtom {
@@ -72,7 +89,7 @@ pub fn ambient_type(db: &dyn TyHirs, loc: hir::ParseId) -> Result<TypeId, ()> {
             }) if *b == block.id => Some(ty),
             _ => None,
         })
-        .ok_or(())?;
+        .ok_or(SilencedError)?;
     let block_type = match db.lookup_intern_type(*block_ty) {
         Type::ParserArg { result, .. } => result,
         _ => panic!("expected parser arg"),
@@ -87,11 +104,12 @@ pub fn ambient_type(db: &dyn TyHirs, loc: hir::ParseId) -> Result<TypeId, ()> {
     }
 }
 
+
 impl<'a> TypingContext<'a, PublicResolver<'a>> {
     pub fn parse_statement_types(
         &mut self,
         parse: &ParseStatement,
-    ) -> Result<ExpressionTypeConstraints, ()> {
+    ) -> Result<ExpressionTypeConstraints, TypeError> {
         let from = self.db.ambient_type(parse.id)?;
         let infty = self.infctx.from_type(from);
         Ok(ExpressionTypeConstraints {
@@ -104,7 +122,7 @@ impl<'a> TypingContext<'a, PublicResolver<'a>> {
         let_statement: &hir::LetStatement,
     ) -> Result<ExpressionTypeConstraints, TypeError> {
         let ty = let_statement.ty;
-        let ty_expr = ty.lookup(self.db).map_err(|_| TypeError)?.expr;
+        let ty_expr = ty.lookup(self.db)?.expr;
         let mut typeloc = self.infctx.tr.tloc.clone();
         let infty = self.resolve_type_expr(&mut typeloc, &ty_expr)?;
         Ok(ExpressionTypeConstraints {
@@ -116,7 +134,7 @@ impl<'a> TypingContext<'a, PublicResolver<'a>> {
         &mut self,
         parserdef: &hir::ParserDef,
     ) -> Result<ExpressionTypeConstraints, TypeError> {
-        let ty_expr = parserdef.from.lookup(self.db).map_err(|_| TypeError)?.expr;
+        let ty_expr = parserdef.from.lookup(self.db)?.expr;
         let mut typeloc = self.infctx.tr.tloc.clone();
         let from = self.resolve_type_expr(&mut typeloc, &ty_expr)?;
         Ok(ExpressionTypeConstraints {
@@ -127,7 +145,7 @@ impl<'a> TypingContext<'a, PublicResolver<'a>> {
     pub fn array_types(
         &mut self,
         _parser_array: &hir::ParserArray,
-    ) -> Result<ExpressionTypeConstraints, ()> {
+    ) -> SResult<ExpressionTypeConstraints> {
         todo!();
         //        let (expr, _) = self.db.public_expr_type(parser_array.enclosing_expr)?;
         //        let array_ty = ExprIter::new(&expr)
@@ -165,7 +183,7 @@ impl<'a> PublicResolver<'a> {
     pub fn new_typing_context_and_loc(
         db: &'a dyn TyHirs,
         loc: HirId,
-    ) -> Result<TypingContext<Self>, ()> {
+    ) -> SResult<TypingContext<Self>> {
         let typeloc = TypingLocation {
             vars: TypeVarCollection::new_empty(),
             loc,
@@ -177,23 +195,23 @@ impl<'a> PublicResolver<'a> {
 }
 
 impl<'a> TypeResolver for PublicResolver<'a> {
-    fn field_type(&self, _ty: &NominalInfHead, _name: FieldName) -> Result<EitherType, ()> {
+    fn field_type(&self, _ty: &NominalInfHead, _name: FieldName) -> Result<EitherType, TypeError> {
         Ok(self.db.intern_type(Type::Unknown).into())
     }
 
-    fn deref(&self, ty: &NominalInfHead) -> Result<Option<TypeId>, ()> {
+    fn deref(&self, ty: &NominalInfHead) -> Result<Option<TypeId>, TypeError> {
         let id = match NominalId::from_nominal_inf_head(ty) {
             NominalId::Def(d) => d,
             NominalId::Block(_) => return Ok(None),
         };
-        Ok(Some(self.db.parser_returns(id).map_err(|_| ())?.deref))
+        Ok(Some(self.db.parser_returns(id)?.deref))
     }
 
-    fn signature(&self, ty: &NominalInfHead) -> Result<Signature, ()> {
+    fn signature(&self, ty: &NominalInfHead) -> Result<Signature, TypeError> {
         get_signature(self.db, ty)
     }
 
-    fn lookup(&self, context: HirId, name: FieldName) -> Result<EitherType, ()> {
+    fn lookup(&self, context: HirId, name: FieldName) -> Result<EitherType, TypeError> {
         get_thunk(self.db, context, name)
     }
 

@@ -4,6 +4,7 @@ pub mod refs;
 pub mod represent;
 pub mod variable_set;
 pub mod walk;
+pub mod error;
 
 use std::{
     borrow::Cow,
@@ -17,6 +18,7 @@ use std::{
 use crate::{
     ast::ArrayKind,
     dbpanic,
+    error::{SResult, SilencedError},
     expr::{self, Atom, ExprConverter, Expression, ExpressionComponent, ExpressionKind},
     interner::{FieldName, HirId, HirPath, Identifier, PathComponent, TypeVar},
     source::{FileId, Span, Spanned},
@@ -27,24 +29,28 @@ use variable_set::VariableSet;
 use convert::hir_parser_collection;
 use recursion::{mod_parser_ssc, parser_ssc, FunctionSscId};
 
+use self::convert::{HirConversionError, HirConversionErrors};
+
 #[salsa::query_group(HirDatabase)]
 pub trait Hirs: crate::ast::Asts + crate::types::TypeInterner {
-    fn hir_parser_collection(&self, hid: HirId) -> Result<Option<HirParserCollection>, ()>;
-    fn hir_node(&self, id: HirId) -> Result<HirNode, ()>;
+    fn hir_parser_collection(&self, hid: HirId) -> SResult<Option<HirParserCollection>>;
+    fn hir_node(&self, id: HirId) -> SResult<HirNode>;
     #[salsa::interned]
     fn intern_recursion_scc(&self, functions: Vec<ParserDefId>) -> recursion::FunctionSscId;
     fn mod_parser_ssc(
         &self,
         module: ModuleId,
-    ) -> Result<Arc<BTreeMap<ParserDefId, FunctionSscId>>, ()>;
-    fn parser_ssc(&self, parser: ParserDefId) -> Result<FunctionSscId, ()>;
+    ) -> SResult<Arc<BTreeMap<ParserDefId, FunctionSscId>>>;
+    fn parser_ssc(&self, parser: ParserDefId) -> SResult<FunctionSscId>;
     fn root_id(&self) -> ModuleId;
     fn all_hir_ids(&self) -> Vec<HirId>;
-    fn hir_parent_module(&self, id: HirId) -> Result<ModuleId, ()>;
-    fn hir_parent_parserdef(&self, id: HirId) -> Result<ParserDefId, ()>;
+    fn all_parserdefs(&self) -> Vec<ParserDefId>;
+    fn hir_parent_module(&self, id: HirId) -> SResult<ModuleId>;
+    fn hir_parent_parserdef(&self, id: HirId) -> SResult<ParserDefId>;
+    fn hir_errors(&self) -> BTreeSet<HirConversionError>;
 }
 
-fn hir_node(db: &dyn Hirs, id: HirId) -> Result<HirNode, ()> {
+fn hir_node(db: &dyn Hirs, id: HirId) -> SResult<HirNode> {
     let path = db.lookup_intern_hir_path(id);
     let file = path.path()[0].unwrap_file();
     let fid = match path.path().get(1) {
@@ -94,20 +100,47 @@ fn all_hir_ids(db: &dyn Hirs) -> Vec<HirId> {
     ret
 }
 
-fn hir_parent_module(db: &dyn Hirs, id: HirId) -> Result<ModuleId, ()> {
+fn all_parserdefs(db: &dyn Hirs) -> Vec<ParserDefId> {
+    let root = db.root_id();
+    let module = match root.lookup(db) {
+        Ok(m) => m,
+        Err(_) => return Vec::new(),
+    };
+    let ret: Vec<_> = module
+        .defs
+        .values()
+        .cloned()
+        .collect();
+    ret
+}
+
+fn hir_parent_module(db: &dyn Hirs, id: HirId) -> SResult<ModuleId> {
     // todo
     Ok(ModuleId(db.intern_hir_path(HirPath::new_file(
         db.lookup_intern_hir_path(id).path()[0].unwrap_file(),
     ))))
 }
 
-fn hir_parent_parserdef(db: &dyn Hirs, id: HirId) -> Result<ParserDefId, ()> {
+fn hir_parent_parserdef(db: &dyn Hirs, id: HirId) -> SResult<ParserDefId> {
     let path = db.lookup_intern_hir_path(id);
     // todo
     Ok(ParserDefId(db.intern_hir_path(HirPath::new_fid(
         path.path()[0].unwrap_file(),
         path.path()[1].unwrap_named(),
     ))))
+}
+
+fn hir_errors(db: &dyn Hirs) -> BTreeSet<HirConversionError> {
+    let mut ret = BTreeSet::<HirConversionError>::new();
+    for id in db.all_parserdefs() {
+        let x = match db.hir_parser_collection(id.0) {
+            Err(_) => continue,
+            Ok(None) => continue,
+            Ok(Some(x)) => x
+        };
+        ret.append(&mut x.errors.use_error());
+    }
+    ret
 }
 
 macro_rules! hir_id_wrapper {
@@ -188,7 +221,7 @@ pub trait HirIdWrapper: Copy {
     fn child<DB: Hirs + ?Sized>(self, db: &DB, add: PathComponent) -> HirId {
         self.id().child(db, add)
     }
-    fn lookup<DB: Hirs + ?Sized>(self, db: &DB) -> Result<Self::Inner, ()> {
+    fn lookup<DB: Hirs + ?Sized>(self, db: &DB) -> SResult<Self::Inner> {
         let id = self.id();
         Ok(Self::extract(db.hir_node(id)?))
     }
@@ -198,6 +231,7 @@ pub trait HirIdWrapper: Copy {
 pub struct HirParserCollection {
     map: BTreeMap<HirId, HirNode>,
     spans: BTreeMap<HirId, Vec<Span>>,
+    errors: HirConversionErrors,
 }
 
 impl HirParserCollection {
@@ -240,7 +274,7 @@ impl Module {
     }
 }
 
-fn module_file(db: &dyn Hirs, file: FileId) -> Result<Module, ()> {
+fn module_file(db: &dyn Hirs, file: FileId) -> Result<Module, SilencedError> {
     let id = ModuleId(db.intern_hir_path(HirPath::new_file(file)));
     let defs = db
         .symbols(file)?

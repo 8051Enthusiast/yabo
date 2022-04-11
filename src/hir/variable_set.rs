@@ -13,6 +13,8 @@ pub struct VariableSet<T: Clone + Hash + Eq + Debug> {
     pub(crate) set: BTreeMap<FieldName, VarStatus<T>>,
 }
 
+type DuplicateList<T> = Vec<(FieldName, VarStatus<T>, VarStatus<T>)>;
+
 impl<T: Clone + Hash + Eq + Debug> VariableSet<T> {
     pub fn new() -> Self {
         VariableSet {
@@ -24,7 +26,7 @@ impl<T: Clone + Hash + Eq + Debug> VariableSet<T> {
         set.insert(id, VarStatus::Always(data));
         VariableSet { set }
     }
-    pub fn merge_product(&self, other: &Self) -> (Self, Vec<FieldName>) {
+    pub fn merge_product(&self, other: &Self) -> (Self, DuplicateList<T>) {
         let mut set = self.set.clone();
         let mut doubled = Vec::new();
         for (k, v) in other.set.iter() {
@@ -32,7 +34,7 @@ impl<T: Clone + Hash + Eq + Debug> VariableSet<T> {
                 Entry::Vacant(entry) => {
                     entry.insert(v.clone());
                 }
-                Entry::Occupied(_) => doubled.push(*k),
+                Entry::Occupied(entry) => doubled.push((*k, v.clone(), entry.get().clone())),
             }
         }
         (VariableSet { set }, doubled)
@@ -104,7 +106,10 @@ impl<T: Clone + Eq + Debug + Hash> VarStatus<T> {
             VarStatus::Maybe(_) => VarStatus::Maybe(()),
         }
     }
-    pub(crate) fn map<S: Clone + Eq + Debug + Hash>(&self, f: impl FnOnce(&T) -> S) -> VarStatus<S> {
+    pub(crate) fn map<S: Clone + Eq + Debug + Hash>(
+        &self,
+        f: impl FnOnce(&T) -> S,
+    ) -> VarStatus<S> {
         match self {
             VarStatus::Always(a) => VarStatus::Always(f(a)),
             VarStatus::Maybe(a) => VarStatus::Always(f(a)),

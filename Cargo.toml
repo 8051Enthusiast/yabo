@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 fxhash = "0.2.1"
-miette = { version = "3.1", features = ["fancy"] }
+miette = { version = "4.3", features = ["fancy"] }
 salsa = "0.16.1"
 thiserror = "1.0.29"
 tree-sitter-yabo = { path = "tree-sitter-yabo", version = "0.0.1" }
