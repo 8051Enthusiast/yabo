@@ -12,36 +12,15 @@ use crate::{
 
 use convert::ParseResult;
 
-#[derive(Clone, Debug)]
-pub struct Test {
-    x: u8,
-    #[forbid(dead_code)]
-    used: (),
-}
-
-impl PartialEq for Test {
-    fn eq(&self, other: &Self) -> bool {
-        self.x == other.x
-    }
-}
-
-impl Eq for Test {}
-
 #[salsa::query_group(AstDatabase)]
 pub trait Asts: Files + Interner {
     fn ast(&self, fd: FileId) -> ParseResult<Arc<Module>>;
     fn symbols(&self, fd: FileId) -> SResult<Vec<Identifier>>;
-    fn test(&self) -> Test;
     fn top_level_statement(
         &self,
         fd: FileId,
         id: Identifier,
     ) -> SResult<Option<Arc<ParserDefinition>>>;
-}
-
-fn test(db: &dyn Asts) -> Test {
-    let _ = db.test().used;
-    Test { x: 42, used: () }
 }
 
 fn ast(db: &dyn Asts, fd: FileId) -> ParseResult<Arc<Module>> {
