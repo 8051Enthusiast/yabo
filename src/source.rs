@@ -9,7 +9,7 @@ use miette::{MietteError, MietteSpanContents, SourceCode};
 use crate::context::LivingInTheDatabase;
 use crate::interner::{FieldName, Identifier};
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Span {
     pub lo: u32,
     pub hi: u32,
@@ -48,7 +48,7 @@ impl Span {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FileId(u32);
 
 impl FileId {

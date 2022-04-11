@@ -1,5 +1,36 @@
+use std::collections::HashMap;
+
 use super::*;
-use crate::ast::{self, AstConstraint, AstType, AstVal};
+use crate::{
+    ast::{self, AstConstraint, AstType, AstVal},
+    error::Silencable,
+    error_type,
+};
+
+#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum HirConversionError {
+    DuplicateField {
+        first: Span,
+        duplicate: Span,
+        name: FieldName,
+    },
+    Silenced,
+}
+
+impl From<SilencedError> for HirConversionError {
+    fn from(_: SilencedError) -> Self {
+        HirConversionError::Silenced
+    }
+}
+
+impl Silencable for HirConversionError {
+    type Out = SilencedError;
+    fn silence(self) -> Self::Out {
+        SilencedError
+    }
+}
+
+error_type!(HirConversionErrors(BTreeSet<HirConversionError>) in crate::hir);
 
 fn constraint_expression_converter(
     add_span: &impl Fn(&Span) -> SpanIndex,
@@ -175,7 +206,7 @@ fn struct_choice(
     ctx: &HirConversionCtx,
     id: ChoiceId,
     parents: &ParentInfo,
-) -> VariableSet<Vec<(u32, HirId)>> {
+) -> VariableSet<Vec<(u32, HirId, Span)>> {
     let children = extract_non_choice(ast);
     let parents = ParentInfo {
         parent_choice: Some(id),
@@ -197,8 +228,8 @@ fn struct_choice(
         subvars
             .iter()
             .enumerate()
-            .flat_map(|(i, x)| x.set.get(&id).map(|y| (i as u32, *y.inner())))
-            .collect::<Vec<(u32, HirId)>>()
+            .flat_map(|(i, x)| x.set.get(&id).map(|y| (i as u32, y.inner().0, y.inner().1)))
+            .collect::<Vec<(u32, HirId, Span)>>()
     });
 
     let choice = StructChoice {
@@ -247,13 +278,13 @@ fn struct_context(
     ctx: &HirConversionCtx,
     id: ContextId,
     parents: &ParentInfo,
-) -> VariableSet<HirId> {
+) -> VariableSet<(HirId, Span)> {
     let children = match ast {
         ast::BlockContent::Sequence(x) => x.content.iter().collect(),
         otherwise => vec![otherwise],
     };
     let mut children_id = BTreeSet::new();
-    let mut duplicate_field = BTreeSet::<FieldName>::new();
+    let mut duplicate_field = HashMap::<FieldName, HirConversionError>::new();
     let old_parents = *parents;
     let parents = ParentInfo {
         parent_context: Some(id),
@@ -279,11 +310,11 @@ fn struct_context(
         let new_set = match child {
             ast::BlockContent::Choice(c) => {
                 let sub_id = ChoiceId(new_id(None));
-                let choice_indirect = struct_choice(&c, ctx, sub_id, &parents);
+                let choice_indirect = struct_choice(c, ctx, sub_id, &parents);
                 choice_indirect.map(|ident, b| {
                     let chin_id = ChoiceIndirectId(new_id(Some(ident)));
                     choice_indirection(b, ctx, chin_id, id, sub_id);
-                    chin_id.0
+                    (chin_id.0, b[0].2)
                 })
             }
             ast::BlockContent::Statement(x) => {
@@ -303,7 +334,17 @@ fn struct_context(
             ast::BlockContent::Sequence(_) => unreachable!(),
         };
         let (result_set, duplicate) = varset.merge_product(&new_set);
-        duplicate_field.extend(duplicate.iter());
+        duplicate_field.extend(duplicate.into_iter().map(|(name, first, duplicate)| {
+            (
+                name,
+                HirConversionError::DuplicateField {
+                    name,
+                    first: first.inner().1,
+                    duplicate: duplicate.inner().1,
+                },
+            )
+        }));
+        ctx.add_errors(duplicate_field.values().cloned());
         varset = result_set;
     }
     let context = StructCtx {
@@ -311,7 +352,7 @@ fn struct_context(
         block_id: old_parents.block_id,
         parent_choice: old_parents.parent_choice,
         parent_context: old_parents.parent_context,
-        vars: Box::new(varset.clone()),
+        vars: Box::new(varset.map(|_, (id, _)| *id)),
         children: Box::new(children_id.into_iter().collect()),
     };
     ctx.insert(id.0, HirNode::Context(context), vec![ast.span()]);
@@ -323,7 +364,7 @@ fn let_statement(
     ctx: &HirConversionCtx,
     id: LetId,
     context: ContextId,
-) -> VariableSet<HirId> {
+) -> VariableSet<(HirId, Span)> {
     let val_id = ExprId(id.child(ctx.db, PathComponent::Unnamed(0)));
     let ty_id = TExprId(id.child(ctx.db, PathComponent::Unnamed(1)));
     val_expression(&ast.expr, ctx, val_id, Some(context), None);
@@ -335,7 +376,7 @@ fn let_statement(
         context,
     };
     ctx.insert(id.0, HirNode::Let(st), vec![ast.span, ast.name.span]);
-    VariableSet::singular(ast.name.id, id.0)
+    VariableSet::singular(ast.name.id, (id.0, ast.name.span))
 }
 
 fn parse_statement(
@@ -344,7 +385,7 @@ fn parse_statement(
     id: ParseId,
     prev: ParserPredecessor,
     parent_context: ContextId,
-) -> VariableSet<HirId> {
+) -> VariableSet<(HirId, Span)> {
     let expr = ExprId(id.child(ctx.db, PathComponent::Unnamed(0)));
     val_expression(&ast.parser, ctx, expr, Some(parent_context), None);
     let pt = ParseStatement {
@@ -360,7 +401,7 @@ fn parse_statement(
     ctx.insert(id.0, HirNode::Parse(pt), spans);
     ast.name
         .as_ref()
-        .map(|name| VariableSet::singular(name.id, id.0))
+        .map(|name| VariableSet::singular(name.id, (id.0, name.span)))
         .unwrap_or_default()
 }
 
@@ -390,7 +431,7 @@ fn parser_array(
 }
 
 pub fn choice_indirection(
-    subs: &[(u32, HirId)],
+    subs: &[(u32, HirId, Span)],
     ctx: &HirConversionCtx,
     id: ChoiceIndirectId,
     parent_context: ContextId,
@@ -399,7 +440,7 @@ pub fn choice_indirection(
     let node = ChoiceIndirection {
         id,
         parent_context,
-        choices: Vec::from(subs),
+        choices: subs.iter().map(|(a, b, _)| (*a, *b)).collect(),
         target_choice,
     };
     ctx.insert(id.0, HirNode::ChoiceIndirection(node), vec![]);
@@ -434,9 +475,19 @@ impl<'a> HirConversionCtx<'a> {
         borrow.map.insert(id, node);
         borrow.spans.insert(id, span);
     }
+
+    fn add_errors(&self, errors: impl IntoIterator<Item = HirConversionError>) {
+        let mut borrow = self.collection.borrow_mut();
+        for error in errors {
+            borrow.errors.inner.insert(error);
+        }
+    }
 }
 
-pub fn hir_parser_collection(db: &dyn Hirs, hid: HirId) -> Result<Option<HirParserCollection>, ()> {
+pub fn hir_parser_collection(
+    db: &dyn Hirs,
+    hid: HirId,
+) -> Result<Option<HirParserCollection>, SilencedError> {
     let collection = HirParserCollection::new();
     let ctx = HirConversionCtx::new(collection, db);
     let path = db.lookup_intern_hir_path(hid);

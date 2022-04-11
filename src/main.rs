@@ -8,6 +8,7 @@ pub mod interner;
 pub mod parse;
 pub mod source;
 pub mod types;
+pub mod error;
 use ast::Asts;
 use context::Context;
 use hir::Hirs;

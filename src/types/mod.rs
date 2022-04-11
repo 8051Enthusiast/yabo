@@ -8,6 +8,7 @@ use salsa::InternId;
 use crate::{
     ast::ArrayKind,
     dbeprintln, dbformat,
+    error::{Silencable, SilencedError},
     interner::{FieldName, HirId, Interner, TypeVar},
 };
 
@@ -287,10 +288,10 @@ pub struct InferenceContext<TR: TypeResolver> {
 pub trait TypeResolver {
     type DB: TypeInterner + Interner + ?Sized;
     fn db(&self) -> &Self::DB;
-    fn field_type(&self, ty: &NominalInfHead, name: FieldName) -> Result<EitherType, ()>;
-    fn deref(&self, ty: &NominalInfHead) -> Result<Option<TypeId>, ()>;
-    fn signature(&self, ty: &NominalInfHead) -> Result<Signature, ()>;
-    fn lookup(&self, context: HirId, name: FieldName) -> Result<EitherType, ()>;
+    fn field_type(&self, ty: &NominalInfHead, name: FieldName) -> Result<EitherType, TypeError>;
+    fn deref(&self, ty: &NominalInfHead) -> Result<Option<TypeId>, TypeError>;
+    fn signature(&self, ty: &NominalInfHead) -> Result<Signature, TypeError>;
+    fn lookup(&self, context: HirId, name: FieldName) -> Result<EitherType, TypeError>;
     fn name(&self) -> String;
 }
 
@@ -316,7 +317,7 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         ty: &NominalInfHead,
         name: FieldName,
     ) -> Result<InfTypeId, TypeError> {
-        let ret = match self.tr.field_type(ty, name).map_err(|()| TypeError)? {
+        let ret = match self.tr.field_type(ty, name)? {
             EitherType::Regular(result_type) => self.from_type_with_args(result_type, &ty.ty_args),
             EitherType::Inference(infty) => infty,
         };
@@ -335,8 +336,7 @@ impl<TR: TypeResolver> InferenceContext<TR> {
     pub fn deref(&mut self, ty: &NominalInfHead) -> Result<Option<InfTypeId>, TypeError> {
         let ret = self
             .tr
-            .deref(ty)
-            .map_err(|()| TypeError)?
+            .deref(ty)?
             .map(|x| self.from_type_with_args(x, &ty.ty_args));
         if self.trace {
             if let Some(x) = ret {
@@ -352,10 +352,10 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         Ok(ret)
     }
     pub fn signature(&self, ty: &NominalInfHead) -> Result<Signature, TypeError> {
-        self.tr.signature(ty).map_err(|()| TypeError)
+        self.tr.signature(ty)
     }
     pub fn lookup(&mut self, context: HirId, name: FieldName) -> Result<InfTypeId, TypeError> {
-        let ret = match self.tr.lookup(context, name).map_err(|()| TypeError)? {
+        let ret = match self.tr.lookup(context, name)? {
             EitherType::Regular(result_type) => {
                 let ret = self.from_type(result_type);
                 if self.trace {
@@ -769,6 +769,20 @@ impl<TR: TypeResolver> InferenceContext<TR> {
 
 #[derive(Clone, Hash, Debug, PartialEq, Eq)]
 pub struct TypeError;
+
+impl Silencable for TypeError {
+    type Out = SilencedError;
+
+    fn silence(self) -> Self::Out {
+        SilencedError
+    }
+}
+
+impl From<SilencedError> for TypeError {
+    fn from(_: SilencedError) -> Self {
+        TypeError
+    }
+}
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum EitherType {

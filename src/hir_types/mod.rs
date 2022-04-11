@@ -9,6 +9,7 @@ use std::{collections::BTreeMap, fmt::Debug, hash::Hash, marker::PhantomData, sy
 use fxhash::FxHashMap;
 
 use crate::{
+    error::{SResult, Silencable},
     expr::{
         Atom, BasicValBinOp, ExprIter, Expression, ExpressionComponent, ExpressionKind, TypeBinOp,
         TypeUnOp, ValBinOp, ValUnOp,
@@ -30,19 +31,16 @@ use signature::{get_signature, get_thunk, parser_args};
 
 #[salsa::query_group(HirTypesDatabase)]
 pub trait TyHirs: Hirs + crate::types::TypeInterner {
-    fn parser_args(&self, id: hir::ParserDefId) -> Result<Signature, TypeError>;
-    fn parser_returns(&self, id: hir::ParserDefId) -> Result<ParserDefType, TypeError>;
-    fn parser_returns_ssc(
-        &self,
-        id: hir::recursion::FunctionSscId,
-    ) -> Result<Vec<ParserDefType>, TypeError>;
-    fn public_type(&self, loc: HirId) -> Result<TypeId, ()>;
-    fn parser_type_at(&self, loc: HirId) -> Result<TypeId, TypeError>;
+    fn parser_args(&self, id: hir::ParserDefId) -> SResult<Signature>;
+    fn parser_returns(&self, id: hir::ParserDefId) -> SResult<ParserDefType>;
+    fn parser_returns_ssc(&self, id: hir::recursion::FunctionSscId) -> Vec<ParserDefType>;
+    fn public_type(&self, loc: HirId) -> SResult<TypeId>;
+    fn parser_type_at(&self, loc: HirId) -> SResult<TypeId>;
     fn public_expr_type(
         &self,
         loc: hir::ExprId,
-    ) -> Result<(Expression<TypedHirVal<TypeId>>, TypeId), ()>;
-    fn ambient_type(&self, id: hir::ParseId) -> Result<TypeId, ()>;
+    ) -> SResult<(Expression<TypedHirVal<TypeId>>, TypeId)>;
+    fn ambient_type(&self, id: hir::ParseId) -> SResult<TypeId>;
     fn parser_full_types(&self, id: hir::ParserDefId) -> Result<Arc<ParserFullTypes>, TypeError>;
 }
 
@@ -134,8 +132,8 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                 .map(|x| self.resolve_type_expr(context, x))
                 .collect::<Result<Vec<_>, _>>()?,
         );
-        let def = hir::refs::parserdef_ref(self.db, context.loc, FieldName::Ident(pd.name.atom))
-            .map_err(|_| TypeError)?;
+        let def = hir::refs::parserdef_ref(self.db, context.loc, FieldName::Ident(pd.name.atom))?
+            .ok_or(TypeError)?;
         let definition = self.db.parser_args(def)?;
         match (parse_arg, definition.from) {
             (None, Some(_)) => parse_arg = Some(self.infctx.var()),
@@ -254,13 +252,13 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                     ParserAtom::Atom(Atom::Field(f)) => self.infctx.lookup(context.loc, *f)?,
                     ParserAtom::Single => self.infctx.single(),
                     ParserAtom::Array(a) => {
-                        let array = a.lookup(self.db).map_err(|_| TypeError)?;
-                        let inner = array.expr.lookup(self.db).map_err(|_| TypeError)?.expr;
+                        let array = a.lookup(self.db)?;
+                        let inner = array.expr.lookup(self.db)?.expr;
                         let inner_ty = self.val_expression_type(context, &inner)?.root_type();
                         self.infctx.array_call(array.direction, inner_ty)?
                     }
                     ParserAtom::Block(b) => {
-                        let pd = self.db.hir_parent_parserdef(b.0).map_err(|_| TypeError)?;
+                        let pd = self.db.hir_parent_parserdef(b.0)?;
                         let ty_vars = (0..context.vars.defs.len() as u32)
                             .map(|i| {
                                 self.db
@@ -291,7 +289,7 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                     let lhs = self.expr_to_concrete_type(lhs)?;
                     let rhs = self.expr_to_concrete_type(rhs)?;
                     let data = (self.inftype_to_concrete_type(data.0)?, data.1);
-                    Box::new(ValBinOp::Basic(lhs, op.clone(), rhs, data))
+                    Box::new(ValBinOp::Basic(lhs, *op, rhs, data))
                 }
                 ValBinOp::Wiggle(lhs, rhs, data) => {
                     let lhs = self.expr_to_concrete_type(lhs)?;
@@ -334,7 +332,7 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
             }),
             Expression::Atom(a) => Expression::Atom(TypedAtom {
                 atom: a.atom.clone(),
-                span_index: a.span_index.clone(),
+                span_index: a.span_index,
                 ty: self.inftype_to_concrete_type(a.ty)?,
             }),
         })
@@ -376,7 +374,7 @@ impl TypeVarCollection {
     pub fn freeze(&mut self) {
         self.frozen = true
     }
-    pub fn at_id(db: &(impl TyHirs + ?Sized), id: hir::ParserDefId) -> Result<Self, TypeError> {
+    pub fn at_id(db: &(impl TyHirs + ?Sized), id: hir::ParserDefId) -> SResult<Self> {
         let tys = db.parser_args(id)?.ty_args;
         let mut ret = Self::new_empty();
         for ty in tys.iter() {
@@ -411,9 +409,9 @@ pub struct TypingLocation {
 }
 
 impl TypingLocation {
-    pub fn at_id(db: &(impl TyHirs + ?Sized), loc: HirId) -> Result<Self, ()> {
+    pub fn at_id(db: &(impl TyHirs + ?Sized), loc: HirId) -> SResult<Self> {
         let pd = db.hir_parent_parserdef(loc)?;
-        let vars = TypeVarCollection::at_id(db, pd).map_err(|_| ())?;
+        let vars = TypeVarCollection::at_id(db, pd)?;
         Ok(TypingLocation { vars, loc, pd })
     }
 }

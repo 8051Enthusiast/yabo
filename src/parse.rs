@@ -5,6 +5,7 @@ use tree_sitter::{Node, Parser, TreeCursor};
 use tree_sitter_yabo::language;
 
 use crate::ast::*;
+use crate::error::SilencedError;
 use crate::expr::*;
 use crate::interner::FieldName;
 use crate::interner::Identifier;
@@ -32,6 +33,12 @@ pub struct GenericParseError {
     code: Arc<FileData>,
     #[label("Error occured here")]
     location: SourceSpan,
+}
+
+impl Into<SilencedError> for GenericParseError {
+    fn into(self) -> SilencedError {
+        SilencedError
+    }
 }
 
 pub type ParseResult<T> = Result<T, Vec<GenericParseError>>;

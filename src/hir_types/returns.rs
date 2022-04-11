@@ -1,61 +1,62 @@
-use crate::{dbformat, hir::recursion::FunctionSscId};
+use crate::{
+    dbformat,
+    error::{SResult, SilencedError},
+    hir::recursion::FunctionSscId,
+};
 
 use super::*;
 
-pub fn parser_returns(db: &dyn TyHirs, id: hir::ParserDefId) -> Result<ParserDefType, TypeError> {
-    let rets = db.parser_returns_ssc(db.parser_ssc(id).map_err(|_| TypeError)?)?;
-    for def in rets {
-        if def.id.0 == id.0 {
-            return Ok(def);
-        }
-    }
-    panic!("Not included in ssc even though it should")
+pub fn parser_returns(db: &dyn TyHirs, id: hir::ParserDefId) -> SResult<ParserDefType> {
+    db.parser_returns_ssc(db.parser_ssc(id)?)
+        .into_iter()
+        .find(|x| x.id.0 == id.0)
+        .ok_or(SilencedError)
 }
 
-pub fn parser_returns_ssc(
-    db: &dyn TyHirs,
-    id: FunctionSscId,
-) -> Result<Vec<ParserDefType>, TypeError> {
+pub fn parser_returns_ssc(db: &dyn TyHirs, id: FunctionSscId) -> Vec<ParserDefType> {
     let def_ids = db.lookup_intern_recursion_scc(id);
     let defs = def_ids
         .iter()
-        .map(|fun: &hir::ParserDefId| fun.lookup(db))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| TypeError)?;
+        .flat_map(|fun: &hir::ParserDefId| fun.lookup(db))
+        .collect::<Vec<_>>();
 
     let resolver = ReturnResolver::new(db);
     let mut ctx = TypingContext::new(db, resolver);
 
-    for def in defs.iter() {
+    for def in def_ids.iter() {
         // in this loop we do not directly the inference variables we are creating yet
         let deref = ctx.infctx.var();
-        let retinf = ParserDefTypeInf { id: def.id, deref };
+        let retinf = ParserDefTypeInf { id: *def, deref };
         ctx.infctx.tr.return_infs.insert(retinf.id.0, retinf);
     }
-    for def in defs.iter() {
-        // in this separate loop we do the actual type inference
-        let expr = def.to.lookup(db).map_err(|_| TypeError)?.expr;
-        let mut context = TypingLocation {
-            vars: TypeVarCollection::at_id(db, def.id)?,
-            loc: db.hir_parent_module(def.id.0).map_err(|_| TypeError)?.0,
-            pd: def.id,
-        };
-        let ty = ctx.val_expression_type(&mut context, &expr)?.root_type();
-        let sig = db.parser_args(def.id)?;
-        if let Some(from) = sig.from {
-            let inffrom = ctx.infctx.from_type(from);
-            let deref = ctx.infctx.tr.return_infs[&def.id.0].deref;
-            let ret = ctx.infctx.parser_apply(ty, inffrom)?;
-            ctx.infctx.constrain(ret, deref)?;
-        };
-    }
-    let mut ret = Vec::new();
-    for def in defs.iter() {
-        // here we are finished with inference so we can convert to actual types
-        let deref = ctx.inftype_to_concrete_type(ctx.infctx.tr.return_infs[&def.id.0].deref)?;
-        ret.push(ParserDefType { id: def.id, deref })
-    }
-    Ok(ret)
+    let defs = defs
+        .into_iter()
+        .flat_map(|def| -> Result<hir::ParserDef, TypeError> {
+            // in this separate loop we do the actual type inference
+            let expr = def.to.lookup(db)?.expr;
+            let mut context = TypingLocation {
+                vars: TypeVarCollection::at_id(db, def.id)?,
+                loc: db.hir_parent_module(def.id.0)?.0,
+                pd: def.id,
+            };
+            let ty = ctx.val_expression_type(&mut context, &expr)?.root_type();
+            let sig = db.parser_args(def.id)?;
+            if let Some(from) = sig.from {
+                let inffrom = ctx.infctx.from_type(from);
+                let deref = ctx.infctx.tr.return_infs[&def.id.0].deref;
+                let ret = ctx.infctx.parser_apply(ty, inffrom)?;
+                ctx.infctx.constrain(ret, deref)?;
+            };
+            Ok(def)
+        })
+        .collect::<Vec<_>>();
+    defs.into_iter()
+        .flat_map(|def| -> Result<ParserDefType, TypeError> {
+            // here we are finished with inference so we can convert to actual types
+            let deref = ctx.inftype_to_concrete_type(ctx.infctx.tr.return_infs[&def.id.0].deref)?;
+            Ok(ParserDefType { id: def.id, deref })
+        })
+        .collect()
 }
 
 pub struct ReturnResolver<'a> {
@@ -80,11 +81,11 @@ impl<'a> TypeResolver for ReturnResolver<'a> {
         self.db
     }
 
-    fn field_type(&self, _: &NominalInfHead, _: FieldName) -> Result<EitherType, ()> {
+    fn field_type(&self, _: &NominalInfHead, _: FieldName) -> Result<EitherType, TypeError> {
         Ok(self.db.intern_type(Type::Unknown).into())
     }
 
-    fn deref(&self, ty: &NominalInfHead) -> Result<Option<TypeId>, ()> {
+    fn deref(&self, ty: &NominalInfHead) -> Result<Option<TypeId>, TypeError> {
         if self.return_infs.get(&ty.def).is_some() {
             Ok(Some(self.db.intern_type(Type::Unknown)))
         } else {
@@ -92,15 +93,15 @@ impl<'a> TypeResolver for ReturnResolver<'a> {
                 NominalId::Def(d) => d,
                 NominalId::Block(_) => return Ok(None),
             };
-            Ok(Some(self.db.parser_returns(id).map_err(|_| ())?.deref))
+            Ok(Some(self.db.parser_returns(id)?.deref))
         }
     }
 
-    fn signature(&self, ty: &NominalInfHead) -> Result<Signature, ()> {
+    fn signature(&self, ty: &NominalInfHead) -> Result<Signature, TypeError> {
         get_signature(self.db, ty)
     }
 
-    fn lookup(&self, context: HirId, name: FieldName) -> Result<EitherType, ()> {
+    fn lookup(&self, context: HirId, name: FieldName) -> Result<EitherType, TypeError> {
         get_thunk(self.db, context, name)
     }
 
@@ -112,7 +113,7 @@ impl<'a> TypeResolver for ReturnResolver<'a> {
             }
             ret.push_str(&dbformat!(self.db, "{}, ", id));
         }
-        ret.push_str(")");
+        ret.push(')');
         ret
     }
 }

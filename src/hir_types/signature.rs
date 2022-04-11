@@ -1,17 +1,21 @@
-use crate::hir::refs::parserdef_ref;
+use crate::{error::SilencedError, hir::refs::parserdef_ref};
 
 use super::*;
 
-pub fn parser_args(db: &dyn TyHirs, id: hir::ParserDefId) -> Result<Signature, TypeError> {
-    let pd = id.lookup(db).map_err(|_| TypeError)?;
+pub fn parser_args(db: &dyn TyHirs, id: hir::ParserDefId) -> SResult<Signature> {
+    parser_args_impl(db, id).silence()
+}
+
+pub(super) fn parser_args_impl(db: &dyn TyHirs, id: hir::ParserDefId) -> Result<Signature, TypeError> {
+    let pd = id.lookup(db)?;
     let mut context = TypingLocation {
         vars: TypeVarCollection::new_empty(),
-        loc: db.hir_parent_module(id.0).map_err(|_| TypeError)?.0,
+        loc: db.hir_parent_module(id.0)?.0,
         pd: id,
     };
     let arg_resolver = ArgResolver::new(db);
     let mut tcx = TypingContext::new(db, arg_resolver);
-    let from_expr = pd.from.lookup(db).map_err(|_| TypeError)?;
+    let from_expr = pd.from.lookup(db)?;
     let args = Arc::new(vec![]);
     let from_infty = tcx.resolve_type_expr(&mut context, &from_expr.expr)?;
     let (from_tys, count) =
@@ -43,19 +47,19 @@ impl<'a> ArgResolver<'a> {
 }
 
 impl<'a> TypeResolver for ArgResolver<'a> {
-    fn field_type(&self, _ty: &NominalInfHead, _name: FieldName) -> Result<EitherType, ()> {
+    fn field_type(&self, _ty: &NominalInfHead, _name: FieldName) -> Result<EitherType, TypeError> {
         Ok(self.0.intern_type(Type::Unknown).into())
     }
 
-    fn deref(&self, _ty: &NominalInfHead) -> Result<Option<TypeId>, ()> {
+    fn deref(&self, _ty: &NominalInfHead) -> Result<Option<TypeId>, TypeError> {
         Ok(Some(self.0.intern_type(Type::Unknown)))
     }
 
-    fn signature(&self, ty: &NominalInfHead) -> Result<Signature, ()> {
+    fn signature(&self, ty: &NominalInfHead) -> Result<Signature, TypeError> {
         get_signature(self.0, ty)
     }
 
-    fn lookup(&self, _context: HirId, _name: FieldName) -> Result<EitherType, ()> {
+    fn lookup(&self, _context: HirId, _name: FieldName) -> Result<EitherType, TypeError> {
         Ok(self.0.intern_type(Type::Unknown).into())
     }
 
@@ -70,17 +74,21 @@ impl<'a> TypeResolver for ArgResolver<'a> {
     }
 }
 
-pub fn get_signature(db: &dyn TyHirs, ty: &NominalInfHead) -> Result<Signature, ()> {
+pub fn get_signature(db: &dyn TyHirs, ty: &NominalInfHead) -> Result<Signature, TypeError> {
     let id = match NominalId::from_nominal_inf_head(ty) {
         NominalId::Def(d) => d,
         NominalId::Block(_) => panic!("attempted to extract signature directly from block"),
     };
-    db.parser_args(id).map_err(|_| ())
+    Ok(db.parser_args(id)?)
 }
 
-pub fn get_thunk(db: &dyn TyHirs, context: HirId, name: FieldName) -> Result<EitherType, ()> {
-    let pd = parserdef_ref(db, context, name).map_err(|_| ())?;
-    let args = db.parser_args(pd).map_err(|_| ())?;
+pub fn get_thunk(
+    db: &dyn TyHirs,
+    context: HirId,
+    name: FieldName,
+) -> Result<EitherType, TypeError> {
+    let pd = parserdef_ref(db, context, name)?.ok_or(SilencedError)?;
+    let args = db.parser_args(pd)?;
     let mut ret = args.thunk;
     if let Some(from) = args.from {
         ret = db.intern_type(Type::ParserArg {

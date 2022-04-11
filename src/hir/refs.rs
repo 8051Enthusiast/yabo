@@ -11,30 +11,27 @@ pub fn parserdef_ref(
     db: &(impl Hirs + ?Sized),
     loc: HirId,
     name: FieldName,
-) -> Result<ParserDefId, ()> {
-    let (id, kind) = resolve_var_ref(db, loc, name)?.ok_or(())?;
+) -> SResult<Option<ParserDefId>> {
+    let (id, kind) = resolve_var_ref(db, loc, name)?.ok_or(SilencedError)?;
     if let VarType::Value = kind {
-        return Err(());
+        return Ok(None);
     }
     if !is_const_ref(db, id) {
-        return Err(());
+        return Ok(None);
     }
     // TODO(8051): change this when adding other types of toplevel items
-    Ok(ParserDefId(id))
+    Ok(Some(ParserDefId(id)))
 }
 
 pub fn is_const_ref(db: &(impl Hirs + ?Sized), id: HirId) -> bool {
-    match db.lookup_intern_hir_path(id).path() {
-        [PathComponent::File(_), PathComponent::Named(_)] => true,
-        _ => false,
-    }
+    matches!(db.lookup_intern_hir_path(id).path(), [PathComponent::File(_), PathComponent::Named(_)])
 }
 
 pub fn resolve_var_ref(
     db: &(impl Hirs + ?Sized),
     loc: HirId,
     ident: FieldName,
-) -> Result<Option<(HirId, VarType)>, ()> {
+) -> SResult<Option<(HirId, VarType)>> {
     let mut current_id = loc;
     loop {
         current_id = match &db.hir_node(current_id)? {
@@ -90,7 +87,7 @@ fn expr_parser_refs(
         .collect::<Vec<_>>()
 }
 
-pub fn find_parser_refs(db: &(impl Hirs + ?Sized), id: HirId) -> Result<Vec<ParserDefId>, ()> {
+pub fn find_parser_refs(db: &(impl Hirs + ?Sized), id: HirId) -> SResult<Vec<ParserDefId>> {
     let mut refs = HashSet::new();
     for node in walk::ChildIter::new(id, db) {
         let (expr, context) = match node {

@@ -16,16 +16,16 @@ impl salsa::InternKey for FunctionSscId {
     }
 }
 
-pub fn parser_ssc(db: &dyn Hirs, id: ParserDefId) -> Result<FunctionSscId, ()> {
+pub fn parser_ssc(db: &dyn Hirs, id: ParserDefId) -> SResult<FunctionSscId> {
     let module = db.hir_parent_module(id.0)?;
     let sscs = db.mod_parser_ssc(module)?;
-    sscs.get(&id).copied().ok_or(())
+    sscs.get(&id).copied().ok_or(SilencedError)
 }
 
 pub fn mod_parser_ssc(
     db: &dyn Hirs,
     module: ModuleId,
-) -> Result<Arc<BTreeMap<ParserDefId, FunctionSscId>>, ()> {
+) -> SResult<Arc<BTreeMap<ParserDefId, FunctionSscId>>> {
     let mut graph = Graph::new();
     let module = module.lookup(db)?;
     let mut index_map = HashMap::new();
