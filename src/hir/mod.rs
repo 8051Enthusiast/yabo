@@ -26,6 +26,7 @@ use crate::{
 
 use crate::source::IndexSpanned;
 use crate::source::SpanIndex;
+use enumflags2::{bitflags, BitFlags};
 use variable_set::VariableSet;
 
 use convert::hir_parser_collection;
@@ -151,36 +152,49 @@ macro_rules! hir_id_wrapper {
         $(hir_id_wrapper!{type $name= $id($ty);})*
     };
 }
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum HirNode {
-    Let(LetStatement),
-    Expr(ValExpression),
-    TExpr(TypeExpression),
-    Parse(ParseStatement),
-    Array(ParserArray),
-    Block(Block),
-    Choice(StructChoice),
-    Module(Module),
-    Context(StructCtx),
-    ParserDef(ParserDef),
-    ChoiceIndirection(ChoiceIndirection),
+
+macro_rules! hir_node_enum {
+    {pub enum HirNode {$($variant:ident($inner:ty)),*$(,)?}} => {
+        #[derive(Clone, Hash, PartialEq, Eq, Debug)]
+        pub enum HirNode {
+            $($variant($inner)),*
+        }
+
+        #[bitflags]
+        #[repr(u32)]
+        #[derive(Clone, Copy, Debug, PartialEq)]
+        pub enum HirNodeKind {
+            $($variant),*
+        }
+
+        impl HirNode {
+            pub fn children(&self) -> Vec<HirId> {
+                match self {
+                    $(HirNode::$variant(x) => x.children()),*
+                }
+            }
+            pub fn is_kind(&self, kind: BitFlags<HirNodeKind>) -> bool {
+                match self {
+                    $(HirNode::$variant(_) => kind.contains(HirNodeKind::$variant)),*
+                }
+            }
+        }
+    };
 }
 
-impl HirNode {
-    pub fn children(&self) -> Vec<HirId> {
-        match self {
-            HirNode::Let(x) => x.children(),
-            HirNode::Expr(x) => x.children(),
-            HirNode::TExpr(x) => x.children(),
-            HirNode::Parse(x) => x.children(),
-            HirNode::Array(x) => x.children(),
-            HirNode::Block(x) => x.children(),
-            HirNode::Choice(x) => x.children(),
-            HirNode::Module(x) => x.children(),
-            HirNode::Context(x) => x.children(),
-            HirNode::ParserDef(x) => x.children(),
-            HirNode::ChoiceIndirection(x) => x.children(),
-        }
+hir_node_enum! {
+    pub enum HirNode {
+        Let(LetStatement),
+        Expr(ValExpression),
+        TExpr(TypeExpression),
+        Parse(ParseStatement),
+        Array(ParserArray),
+        Block(Block),
+        Choice(StructChoice),
+        Module(Module),
+        Context(StructCtx),
+        ParserDef(ParserDef),
+        ChoiceIndirection(ChoiceIndirection),
     }
 }
 
