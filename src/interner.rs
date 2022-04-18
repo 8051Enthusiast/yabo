@@ -141,6 +141,11 @@ impl HirId {
     pub fn child_field<DB: Interner + ?Sized>(self, db: &DB, name: FieldName) -> HirId {
         self.child(db, PathComponent::Named(name))
     }
+    pub fn is_ancestor_of<DB: Interner + ?Sized>(self, db: &DB, other: HirId) -> bool {
+        let other_path = db.lookup_intern_hir_path(other);
+        let self_path = db.lookup_intern_hir_path(self);
+        other_path.0.starts_with(&self_path.0)
+    }
 }
 impl salsa::InternKey for HirId {
     fn from_intern_id(v: InternId) -> Self {

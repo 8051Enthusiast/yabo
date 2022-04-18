@@ -178,6 +178,11 @@ macro_rules! hir_node_enum {
                     $(HirNode::$variant(_) => kind.contains(HirNodeKind::$variant)),*
                 }
             }
+            pub fn id(&self) -> HirId {
+                match self {
+                    $(HirNode::$variant(x) => x.id.id()),*
+                }
+            }
         }
     };
 }
@@ -235,6 +240,9 @@ pub struct HirParserCollection {
 impl HirParserCollection {
     pub fn new() -> Self {
         Self::default()
+    }
+    pub fn default_span(&self, id: HirId) -> Option<Span> {
+        self.spans.get(&id)?.last().copied()
     }
 }
 
@@ -398,6 +406,8 @@ impl ChoiceIndirection {
 pub struct StructChoice {
     pub id: ChoiceId,
     pub parent_context: ContextId,
+    pub front: ParserPredecessor,
+    pub back: ParserPredecessor,
     pub subcontexts: Vec<ContextId>,
 }
 
@@ -415,6 +425,7 @@ pub struct StructCtx {
     pub parent_context: Option<ContextId>,
     pub vars: Box<VariableSet<HirId>>,
     pub children: Box<Vec<HirId>>,
+    pub endpoints: Option<(HirId, HirId)>,
 }
 
 impl StructCtx {
@@ -436,17 +447,27 @@ impl LetStatement {
     }
 }
 
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub enum ParserPredecessor {
-    ChildOf(HirId),
+    ChildOf(ContextId),
     After(HirId),
+}
+
+impl ParserPredecessor {
+    pub fn id(self) -> HirId {
+        match self {
+            ParserPredecessor::ChildOf(id) => id.0,
+            ParserPredecessor::After(id) => id,
+        }
+    }
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParseStatement {
     pub id: ParseId,
     pub parent_context: ContextId,
-    pub prev: ParserPredecessor,
+    pub front: ParserPredecessor,
+    pub back: ParserPredecessor,
     pub expr: ExprId,
 }
 

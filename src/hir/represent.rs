@@ -1,4 +1,4 @@
-use crate::{databased_display::DatabasedDisplay, dbwrite, ast::ArrayKind};
+use crate::{ast::ArrayKind, databased_display::DatabasedDisplay, dbwrite};
 
 use super::*;
 
@@ -285,6 +285,14 @@ impl<'a> dot::Labeller<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGra
     }
 }
 
+fn parser_pred(pp: &ParserPredecessor) -> String {
+    match pp {
+        ParserPredecessor::ChildOf(_) => "ChildOf",
+        ParserPredecessor::After(_) => "After",
+    }
+    .to_string()
+}
+
 impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGraph<'a> {
     fn nodes(&'a self) -> dot::Nodes<'a, HirId> {
         Cow::Owned(self.0.all_hir_ids())
@@ -315,17 +323,20 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGr
                         .map(|(i, p)| (id.0, *p, format!("children[{}]", i), dot::Style::Bold))
                         .collect(),
                     HirNode::TExpr(_) => vec![],
-                    HirNode::Parse(ParseStatement { id, prev, expr, .. }) => {
-                        let p = match prev {
-                            ParserPredecessor::ChildOf(p) | ParserPredecessor::After(p) => p,
-                        };
-                        let s = match prev {
-                            ParserPredecessor::ChildOf(_) => "ChildOf".to_string(),
-                            ParserPredecessor::After(_) => "After".to_string(),
-                        };
+                    HirNode::Parse(ParseStatement {
+                        id,
+                        front,
+                        back,
+                        expr,
+                        ..
+                    }) => {
+                        let [f, b] = [front.id(), back.id()];
+                        let fs = parser_pred(&front);
+                        let bs = parser_pred(&back);
                         vec![
                             (id.0, expr.0, "expr".to_string(), dot::Style::Bold),
-                            (id.0, p, s, dot::Style::Dotted),
+                            (id.0, f, fs, dot::Style::Dotted),
+                            (id.0, b, bs, dot::Style::Dotted),
                         ]
                     }
                     HirNode::Array(ParserArray { id, expr, .. }) => {
@@ -354,6 +365,8 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGr
                         id,
                         parent_context,
                         subcontexts,
+                        front,
+                        back,
                     }) => {
                         let mut v: Vec<_> = subcontexts
                             .iter()
@@ -368,6 +381,10 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGr
                             "parent_context".to_string(),
                             dot::Style::Dotted,
                         ));
+                        let [f, b] = [front.id(), back.id()];
+                        let [fs, bs] = [parser_pred(&front), parser_pred(&back)];
+                        v.push((id.0, f, fs, dot::Style::Dotted));
+                        v.push((id.0, b, bs, dot::Style::Dotted));
                         v
                     }
                     HirNode::Context(StructCtx {
@@ -376,6 +393,7 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGr
                         parent_choice,
                         parent_context,
                         children,
+                        endpoints,
                         ..
                     }) => {
                         let mut v: Vec<_> = children
@@ -398,6 +416,10 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGr
                         }
                         if let Some(p) = parent_context {
                             v.push((id.0, p.0, "parent_context".to_string(), dot::Style::Dotted));
+                        }
+                        if let Some((front, back)) = endpoints {
+                            v.push((id.0, front, "front".to_string(), dot::Style::Dotted));
+                            v.push((id.0, back, "back".to_string(), dot::Style::Dotted));
                         }
                         v
                     }

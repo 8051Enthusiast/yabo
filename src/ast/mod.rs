@@ -193,7 +193,6 @@ pub struct Module {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum Statement {
-    ParserDef(Box<ParserDefinition>),
     Parse(Box<ParseStatement>),
     Let(Box<LetStatement>),
 }
@@ -201,14 +200,12 @@ pub enum Statement {
 impl Statement {
     pub fn field(&self) -> Option<FieldName> {
         match self {
-            Statement::ParserDef(x) => Some(FieldName::Ident(x.name.inner)),
             Statement::Parse(x) => x.name.as_ref().map(|i| i.id),
             Statement::Let(x) => Some(x.name.id),
         }
     }
     pub fn span(&self) -> Span {
         match self {
-            Statement::ParserDef(x) => x.span,
             Statement::Parse(x) => x.span,
             Statement::Let(x) => x.span,
         }
