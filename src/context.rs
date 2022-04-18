@@ -3,6 +3,7 @@ use crate::error::Report;
 use crate::hir::HirDatabase;
 use crate::hir_types::HirTypesDatabase;
 use crate::interner::{Identifier, IdentifierName, Interner, InternerDatabase};
+use crate::order::OrdersDatabase;
 use crate::source::{AriadneCache, FileCollection, FileDatabase};
 use crate::types::TypeInternerDatabase;
 
@@ -12,7 +13,8 @@ use crate::types::TypeInternerDatabase;
     FileDatabase,
     HirDatabase,
     TypeInternerDatabase,
-    HirTypesDatabase
+    HirTypesDatabase,
+    OrdersDatabase
 )]
 #[derive(Default)]
 pub struct LivingInTheDatabase {
@@ -26,8 +28,11 @@ pub struct Context {
     pub db: LivingInTheDatabase,
 }
 
-const ERROR_FNS: &[fn(&LivingInTheDatabase) -> Vec<Report>] =
-    &[crate::ast::error::errors, crate::hir::error::errors];
+const ERROR_FNS: &[fn(&LivingInTheDatabase) -> Vec<Report>] = &[
+    crate::ast::error::errors,
+    crate::hir::error::errors,
+    crate::order::error::errors,
+];
 
 impl Context {
     pub fn update_db(&mut self) {

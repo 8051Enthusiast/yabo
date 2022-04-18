@@ -1,13 +1,14 @@
 pub mod ast;
 pub mod context;
 pub mod databased_display;
+pub mod error;
 pub mod expr;
 pub mod hir;
 pub mod hir_types;
 pub mod interner;
+pub mod order;
 pub mod source;
 pub mod types;
-pub mod error;
 use context::Context;
 use hir::Hirs;
 use std::{env::args_os, error::Error, path::Path};
