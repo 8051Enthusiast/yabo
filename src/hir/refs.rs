@@ -24,7 +24,10 @@ pub fn parserdef_ref(
 }
 
 pub fn is_const_ref(db: &(impl Hirs + ?Sized), id: HirId) -> bool {
-    matches!(db.lookup_intern_hir_path(id).path(), [PathComponent::File(_), PathComponent::Named(_)])
+    matches!(
+        db.lookup_intern_hir_path(id).path(),
+        [PathComponent::File(_), PathComponent::Named(_)]
+    )
 }
 
 pub fn resolve_var_ref(
@@ -59,7 +62,7 @@ pub fn resolve_var_ref(
 }
 
 // identifiers inside of expression
-fn expr_idents(expr: &ValExpression) -> Vec<FieldName> {
+pub fn expr_idents(expr: &ValExpression) -> Vec<FieldName> {
     let mut ret = Vec::new();
     for node in crate::expr::ExprIter::new(&expr.expr) {
         let ident = match node {
@@ -74,17 +77,26 @@ fn expr_idents(expr: &ValExpression) -> Vec<FieldName> {
     ret
 }
 
-fn expr_parser_refs(
-    db: &(impl Hirs + ?Sized),
+pub fn expr_parser_refs<'a>(
+    db: &'a (impl Hirs + ?Sized),
     expr: &ValExpression,
     context: HirId,
-) -> Vec<ParserDefId> {
+) -> impl Iterator<Item = ParserDefId> + 'a {
     expr_idents(expr)
-        .iter()
-        .flat_map(|ident| resolve_var_ref(db, context, *ident))
-        .flatten()
+        .into_iter()
+        .flat_map(move |ident| resolve_var_ref(db, context, ident).ok()?)
         .flat_map(|(id, ty)| matches!(ty, VarType::ParserDef).then(|| ParserDefId(id)))
-        .collect::<Vec<_>>()
+}
+
+pub fn expr_value_refs<'a>(
+    db: &'a (impl Hirs + ?Sized),
+    expr: &ValExpression,
+    context: HirId,
+) -> impl Iterator<Item = HirId> + 'a {
+    expr_idents(expr)
+        .into_iter()
+        .flat_map(move |ident| resolve_var_ref(db, context, ident).ok()?)
+        .flat_map(|(id, ty)| matches!(ty, VarType::Value).then(|| id))
 }
 
 pub fn find_parser_refs(db: &(impl Hirs + ?Sized), id: HirId) -> SResult<Vec<ParserDefId>> {

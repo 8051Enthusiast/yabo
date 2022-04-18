@@ -199,6 +199,7 @@ fn struct_choice(
     ast: &ast::ParserChoice,
     ctx: &HirConversionCtx,
     id: ChoiceId,
+    pred: ParserPredecessor,
     parents: &ParentInfo,
 ) -> VariableSet<Vec<(u32, HirId, Span)>> {
     let children = extract_non_choice(ast);
@@ -229,6 +230,8 @@ fn struct_choice(
     let choice = StructChoice {
         id,
         parent_context: parents.parent_context.unwrap(),
+        front: pred,
+        back: ParserPredecessor::ChildOf(parents.parent_context.unwrap()),
         subcontexts,
     };
     ctx.insert(id.0, HirNode::Choice(choice), vec![ast.span]);
@@ -261,7 +264,8 @@ fn empty_struct_context(
         parent_choice: parents.parent_choice,
         parent_context: parents.parent_context,
         vars: Box::new(varset.clone()),
-        children: Box::new(Vec::new()),
+        children: Default::default(),
+        endpoints: None,
     };
     ctx.insert(id.0, HirNode::Context(context), vec![span]);
     varset
@@ -286,25 +290,42 @@ fn struct_context(
     };
     let mut index: u32 = 0;
     let mut varset = VariableSet::new();
-    let mut pred = ParserPredecessor::ChildOf(id.0);
-    for child in children {
-        let mut new_id = |d: Option<FieldName>| {
-            let sub_id = match d {
-                Some(field) => id.child(ctx.db, PathComponent::Named(field)),
-                None => {
-                    index = index
-                        .checked_add(1)
-                        .expect("Internal Compiler Error: overflowed variable counter");
-                    id.child(ctx.db, PathComponent::Unnamed(index - 1))
-                }
-            };
-            children_id.insert(sub_id);
-            sub_id
+    let mut pred = ParserPredecessor::ChildOf(id);
+    let mut endpoints = None;
+    let mut update_pred = |new| {
+        let old = pred;
+        let new_pred = ParserPredecessor::After(new);
+        endpoints = Some(
+            endpoints
+                .map(|(front, _)| (front, new))
+                .unwrap_or((new, new)),
+        );
+        match pred {
+            ParserPredecessor::After(id) => ctx.modify_back_predecessor(id, new_pred),
+            ParserPredecessor::ChildOf(_) => (),
+        }
+        pred = new_pred;
+        old
+    };
+    let mut new_id = |d: Option<FieldName>| {
+        let sub_id = match d {
+            Some(field) => id.child(ctx.db, PathComponent::Named(field)),
+            None => {
+                index = index
+                    .checked_add(1)
+                    .expect("Internal Compiler Error: overflowed variable counter");
+                id.child(ctx.db, PathComponent::Unnamed(index - 1))
+            }
         };
+        children_id.insert(sub_id);
+        sub_id
+    };
+    for child in children {
         let new_set = match child {
             ast::BlockContent::Choice(c) => {
                 let sub_id = ChoiceId(new_id(None));
-                let choice_indirect = struct_choice(c, ctx, sub_id, &parents);
+                let choice_indirect =
+                    struct_choice(c, ctx, sub_id, update_pred(sub_id.0), &parents);
                 choice_indirect.map(|ident, b| {
                     let chin_id = ChoiceIndirectId(new_id(Some(ident)));
                     choice_indirection(b, ctx, chin_id, id, sub_id);
@@ -314,12 +335,8 @@ fn struct_context(
             ast::BlockContent::Statement(x) => {
                 let sub_id = new_id(x.field());
                 match x.as_ref() {
-                    ast::Statement::ParserDef(_) => {
-                        panic!("Nested parser definitions are not yet implemented")
-                    }
                     ast::Statement::Parse(p) => {
-                        let set = parse_statement(p, ctx, ParseId(sub_id), pred, id);
-                        pred = ParserPredecessor::After(sub_id);
+                        let set = parse_statement(p, ctx, ParseId(sub_id), update_pred(sub_id), id);
                         set
                     }
                     ast::Statement::Let(l) => let_statement(l, ctx, LetId(sub_id), id),
@@ -328,7 +345,7 @@ fn struct_context(
             ast::BlockContent::Sequence(_) => unreachable!(),
         };
         let (result_set, duplicate) = varset.merge_product(&new_set);
-        duplicate_field.extend(duplicate.into_iter().map(|(name, first, duplicate)| {
+        duplicate_field.extend(duplicate.into_iter().map(|(name, duplicate, first)| {
             (
                 name,
                 HirConversionError::DuplicateField {
@@ -348,6 +365,7 @@ fn struct_context(
         parent_context: old_parents.parent_context,
         vars: Box::new(varset.map(|_, (id, _)| *id)),
         children: Box::new(children_id.into_iter().collect()),
+        endpoints,
     };
     ctx.insert(id.0, HirNode::Context(context), vec![ast.span()]);
     varset
@@ -384,7 +402,8 @@ fn parse_statement(
     val_expression(&ast.parser, ctx, expr, Some(parent_context), None);
     let pt = ParseStatement {
         id,
-        prev,
+        front: prev,
+        back: ParserPredecessor::ChildOf(parent_context),
         expr,
         parent_context,
     };
@@ -475,6 +494,26 @@ impl<'a> HirConversionCtx<'a> {
         for error in errors {
             borrow.errors.inner.insert(error);
         }
+    }
+
+    fn modify_back_predecessor(&self, id: HirId, pred: ParserPredecessor) {
+        let mut borrow = self.collection.borrow_mut();
+        let node = match borrow
+            .map
+            .remove(&id)
+            .expect("try to modify back predecessor of non-existent node")
+        {
+            HirNode::Parse(mut p) => {
+                p.back = pred;
+                HirNode::Parse(p)
+            }
+            HirNode::Choice(mut c) => {
+                c.back = pred;
+                HirNode::Choice(c)
+            }
+            _ => panic!("cannot set predecessor of non-parsing hir node"),
+        };
+        borrow.map.insert(id, node);
     }
 }
 

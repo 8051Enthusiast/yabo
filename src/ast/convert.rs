@@ -390,7 +390,6 @@ astify! {
     };
 
     enum statement = Statement {
-        ParserDef(boxed(parser_definition)),
         Parse(boxed(parse_statement)),
         Let(boxed(let_statement)),
     };
