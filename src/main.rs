@@ -3,6 +3,7 @@ pub mod context;
 pub mod databased_display;
 pub mod error;
 pub mod expr;
+pub mod expr2;
 pub mod hir;
 pub mod hir_types;
 pub mod interner;
