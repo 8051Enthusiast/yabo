@@ -153,6 +153,18 @@ impl<K: ExpressionKind> Expression<K> {
     }
 }
 
+impl<K: ExpressionKind> From<Monadic<K::MonadicOp, Box<Self>>> for Expression<K> {
+    fn from(monadic: Monadic<K::MonadicOp, Box<Self>>) -> Self {
+        Self(ExpressionHead::Monadic(monadic))
+    }
+}
+
+impl<K: ExpressionKind> From<Dyadic<K::DyadicOp, Box<Self>>> for Expression<K> {
+    fn from(dyadic: Dyadic<K::DyadicOp, Box<Self>>) -> Self {
+        Self(ExpressionHead::Dyadic(dyadic))
+    }
+}
+
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct OpWithData<T, Op> {
     pub data: T,
