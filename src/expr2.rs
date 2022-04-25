@@ -19,22 +19,49 @@ impl<'a, K: ExpressionKind> ExpressionKind for OpRef<'a, K> {
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct Monadic<Op, Inner> {
+    pub op: Op,
+    pub inner: Inner,
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct Dyadic<Op, Inner> {
+    pub op: Op,
+    pub inner: [Inner; 2],
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum ExpressionHead<K: ExpressionKind, Inner> {
     Niladic(K::NiladicOp),
-    Monadic(K::MonadicOp, Inner),
-    Dyadic(K::DyadicOp, [Inner; 2]),
+    Monadic(Monadic<K::MonadicOp, Inner>),
+    Dyadic(Dyadic<K::DyadicOp, Inner>),
 }
 
 impl<K: ExpressionKind, Inner> ExpressionHead<K, Inner> {
+    #[inline]
+    pub fn new_niladic(op: K::NiladicOp) -> Self {
+        Self::Niladic(op)
+    }
+
+    #[inline]
+    pub fn new_monadic(op: K::MonadicOp, inner: Inner) -> Self {
+        Self::Monadic(Monadic { op, inner })
+    }
+
+    #[inline]
+    pub fn new_dyadic(op: K::DyadicOp, inner: [Inner; 2]) -> Self {
+        Self::Dyadic(Dyadic { op, inner })
+    }
+
     #[inline]
     pub fn map_inner<NewInner>(
         self,
         mut f: impl FnMut(Inner) -> NewInner,
     ) -> ExpressionHead<K, NewInner> {
         match self {
-            Self::Niladic(op) => ExpressionHead::Niladic(op),
-            Self::Monadic(op, inner) => ExpressionHead::Monadic(op, f(inner)),
-            Self::Dyadic(op, inner) => ExpressionHead::Dyadic(op, inner.map(f)),
+            Self::Niladic(op) => ExpressionHead::new_niladic(op),
+            Self::Monadic(Monadic { op, inner }) => ExpressionHead::new_monadic(op, f(inner)),
+            Self::Dyadic(Dyadic { op, inner }) => ExpressionHead::new_dyadic(op, inner.map(f)),
         }
     }
 
@@ -46,18 +73,20 @@ impl<K: ExpressionKind, Inner> ExpressionHead<K, Inner> {
         dyadic: impl FnOnce(K::DyadicOp) -> NewKind::DyadicOp,
     ) -> ExpressionHead<NewKind, Inner> {
         match self {
-            Self::Niladic(op) => ExpressionHead::Niladic(niladic(op)),
-            Self::Monadic(op, inner) => ExpressionHead::Monadic(monadic(op), inner),
-            Self::Dyadic(op, inner) => ExpressionHead::Dyadic(dyadic(op), inner),
+            Self::Niladic(op) => ExpressionHead::new_niladic(niladic(op)),
+            Self::Monadic(Monadic { op, inner }) => ExpressionHead::new_monadic(monadic(op), inner),
+            Self::Dyadic(Dyadic { op, inner }) => ExpressionHead::new_dyadic(dyadic(op), inner),
         }
     }
 
     #[inline]
     pub fn as_ref(&self) -> ExpressionHead<OpRef<K>, &Inner> {
         match self {
-            Self::Niladic(op) => ExpressionHead::Niladic(op),
-            Self::Monadic(op, inner) => ExpressionHead::Monadic(op, inner),
-            Self::Dyadic(op, inner) => ExpressionHead::Dyadic(op, [&inner[0], &inner[1]]),
+            Self::Niladic(op) => ExpressionHead::new_niladic(op),
+            Self::Monadic(Monadic { op, inner }) => ExpressionHead::new_monadic(op, inner),
+            Self::Dyadic(Dyadic { op, inner }) => {
+                ExpressionHead::new_dyadic(op, [&inner[0], &inner[1]])
+            }
         }
     }
 }
@@ -70,25 +99,25 @@ impl<K: ExpressionKind> Expression<K> {
     pub fn children(&self) -> Vec<&Self> {
         match &self.0 {
             ExpressionHead::Niladic(_) => vec![],
-            ExpressionHead::Monadic(_, inner) => vec![&inner],
-            ExpressionHead::Dyadic(_, [inner0, inner1]) => vec![&inner0, &inner1],
+            ExpressionHead::Monadic(m) => vec![&m.inner],
+            ExpressionHead::Dyadic(d) => vec![&d.inner[0], &d.inner[1]],
         }
     }
 
     #[inline]
     pub fn new_niladic(op: K::NiladicOp) -> Self {
-        Self(ExpressionHead::Niladic(op))
+        Self(ExpressionHead::new_niladic(op))
     }
 
     #[inline]
     pub fn new_monadic(op: K::MonadicOp, inner: Self) -> Self {
-        Self(ExpressionHead::Monadic(op, Box::new(inner)))
+        Self(ExpressionHead::new_monadic(op, Box::new(inner)))
     }
 
     #[inline]
     pub fn new_dyadic(op: K::DyadicOp, inner: [Self; 2]) -> Self {
         let [inner0, inner1] = inner;
-        Self(ExpressionHead::Dyadic(
+        Self(ExpressionHead::new_dyadic(
             op,
             [Box::new(inner0), Box::new(inner1)],
         ))
@@ -111,11 +140,11 @@ impl<K: ExpressionKind> Expression<K> {
     ) -> Expression<ToKind> {
         match &self.0 {
             ExpressionHead::Niladic(op) => Expression::new_niladic(niladic(op)),
-            ExpressionHead::Monadic(op, inner) => {
+            ExpressionHead::Monadic(Monadic { op, inner }) => {
                 let val = inner.convert(niladic, monadic, dyadic);
                 Expression::new_monadic(monadic(op, &val), val)
             }
-            ExpressionHead::Dyadic(op, inner) => {
+            ExpressionHead::Dyadic(Dyadic { op, inner }) => {
                 let val0 = inner[0].convert(niladic, monadic, dyadic);
                 let val1 = inner[1].convert(niladic, monadic, dyadic);
                 Expression::new_dyadic(dyadic(op, &val0, &val1), [val0, val1])
@@ -151,8 +180,8 @@ impl<K: ExpressionKind, T: Clone + Hash + Eq + Debug, Inner>
     fn root_data(&self) -> &T {
         match self {
             ExpressionHead::Niladic(op) => &op.data,
-            ExpressionHead::Monadic(op, _) => &op.data,
-            ExpressionHead::Dyadic(op, _) => &op.data,
+            ExpressionHead::Monadic(head) => &head.op.data,
+            ExpressionHead::Dyadic(head) => &head.op.data,
         }
     }
 }
@@ -166,10 +195,10 @@ impl<T: Clone + Hash + Eq + Debug, K: ExpressionKind> Expression<KindWithData<K,
             ExpressionHead::Niladic(op) => {
                 Expression::new_niladic(OpWithData::new(f(&op.data), op.inner.clone()))
             }
-            ExpressionHead::Monadic(op, inner) => {
+            ExpressionHead::Monadic(Monadic { op, inner }) => {
                 Expression::new_monadic(OpWithData::new(f(&op.data), op.inner.clone()), inner)
             }
-            ExpressionHead::Dyadic(op, inner) => {
+            ExpressionHead::Dyadic(Dyadic { op, inner }) => {
                 Expression::new_dyadic(OpWithData::new(f(&op.data), op.inner.clone()), inner)
             }
         }
@@ -180,18 +209,18 @@ impl<T: Clone + Hash + Eq + Debug, K: ExpressionKind> Expression<KindWithData<K,
     ) -> Expression<KindWithData<K, ToT>> {
         match &self.0 {
             ExpressionHead::Niladic(op) => Expression::new_niladic(OpWithData::new(
-                f(ExpressionHead::Niladic(op)),
+                f(ExpressionHead::new_niladic(op)),
                 op.inner.clone(),
             )),
-            ExpressionHead::Monadic(op, inner) => {
+            ExpressionHead::Monadic(Monadic { op, inner }) => {
                 let inner = inner.scan(f);
-                let new_op = f(ExpressionHead::Monadic(op, inner.0.root_data()));
+                let new_op = f(ExpressionHead::new_monadic(op, inner.0.root_data()));
                 Expression::new_monadic(OpWithData::new(new_op, op.inner.clone()), inner)
             }
-            ExpressionHead::Dyadic(op, inner) => {
+            ExpressionHead::Dyadic(Dyadic { op, inner }) => {
                 let inner0 = inner[0].scan(f);
                 let inner1 = inner[1].scan(f);
-                let new_op = f(ExpressionHead::Dyadic(
+                let new_op = f(ExpressionHead::new_dyadic(
                     op,
                     [inner0.0.root_data(), inner1.0.root_data()],
                 ));
@@ -205,21 +234,21 @@ impl<T: Clone + Hash + Eq + Debug, K: ExpressionKind> Expression<KindWithData<K,
     ) -> Result<Expression<KindWithData<K, ToT>>, E> {
         match &self.0 {
             ExpressionHead::Niladic(op) => Ok(Expression::new_niladic(OpWithData::new(
-                f(ExpressionHead::Niladic(op)).map_err(|e| e)?,
+                f(ExpressionHead::new_niladic(op)).map_err(|e| e)?,
                 op.inner.clone(),
             ))),
-            ExpressionHead::Monadic(op, inner) => {
+            ExpressionHead::Monadic(Monadic { op, inner }) => {
                 let inner = inner.try_scan(f)?;
-                let new_op = f(ExpressionHead::Monadic(op, inner.0.root_data()))?;
+                let new_op = f(ExpressionHead::new_monadic(op, inner.0.root_data()))?;
                 Ok(Expression::new_monadic(
                     OpWithData::new(new_op, op.inner.clone()),
                     inner,
                 ))
             }
-            ExpressionHead::Dyadic(op, inner) => {
+            ExpressionHead::Dyadic(Dyadic { op, inner }) => {
                 let inner0 = inner[0].try_scan(f)?;
                 let inner1 = inner[1].try_scan(f)?;
-                let new_op = f(ExpressionHead::Dyadic(
+                let new_op = f(ExpressionHead::new_dyadic(
                     op,
                     [inner0.0.root_data(), inner1.0.root_data()],
                 ))?;
