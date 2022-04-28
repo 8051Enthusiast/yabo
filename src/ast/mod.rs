@@ -61,63 +61,48 @@ pub trait AstNode {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct AstConstraint;
+pub type AstConstraintSpanned = KindWithData<AstConstraint, Span>;
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct AstVal;
+pub type AstValSpanned = KindWithData<AstVal, Span>;
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct AstType;
-pub type AstConstraintBinOp = ConstraintBinOp<AstConstraint, Span>;
-pub type AstConstraintUnOp = ConstraintUnOp<AstConstraint, Span>;
-pub type AstValBinOp = ValBinOp<AstVal, AstConstraint, Span>;
-pub type AstValUnOp = ValUnOp<AstVal, Span>;
-pub type AstTypeBinOp = TypeBinOp<AstType, AstConstraint, Span>;
-pub type AstTypeUnOp = TypeUnOp<AstType, Span>;
+pub type AstTypeSpanned = KindWithData<AstType, Span>;
+
+pub type AstConstraintBinOp = OpWithData<ConstraintBinOp, Span>;
+pub type AstConstraintUnOp = OpWithData<ConstraintUnOp, Span>;
+pub type AstValBinOp = OpWithData<ValBinOp, Span>;
+pub type AstValUnOp = OpWithData<ValUnOp<AstConstraintSpanned>, Span>;
+pub type AstTypeBinOp = OpWithData<TypeBinOp, Span>;
+pub type AstTypeUnOp = OpWithData<TypeUnOp<AstConstraintSpanned>, Span>;
 
 impl ExpressionKind for AstConstraint {
-    type BinaryOp = AstConstraintBinOp;
-    type UnaryOp = AstConstraintUnOp;
-    type Atom = Spanned<Atom>;
-}
-
-impl<K: ExpressionKind, T: ExpressionComponent<K>> ExpressionComponent<K> for Spanned<T> {
-    fn children(&self) -> Vec<&Expression<K>> {
-        self.inner.children()
-    }
-}
-
-impl ExpressionComponent<AstVal> for ParserAtom {
-    fn children(&self) -> Vec<&Expression<AstVal>> {
-        match self {
-            ParserAtom::Atom(_) | ParserAtom::Single | ParserAtom::Block(_) => vec![],
-            ParserAtom::Array(a) => vec![&a.expr],
-        }
-    }
-}
-
-impl ExpressionComponent<AstType> for TypeAtom {
-    fn children(&self) -> Vec<&Expression<AstType>> {
-        match self {
-            TypeAtom::Array(a) => vec![&a.expr],
-            _ => vec![],
-        }
-    }
+    type NiladicOp = Atom;
+    type MonadicOp = ConstraintUnOp;
+    type DyadicOp = ConstraintBinOp;
 }
 
 impl ExpressionKind for AstVal {
-    type BinaryOp = AstValBinOp;
-    type UnaryOp = AstValUnOp;
-    type Atom = Spanned<ParserAtom>;
+    type NiladicOp = ParserAtom;
+    type MonadicOp = ValUnOp<AstConstraintSpanned>;
+    type DyadicOp = ValBinOp;
 }
 
 impl ExpressionKind for AstType {
-    type BinaryOp = AstTypeBinOp;
-    type UnaryOp = AstTypeUnOp;
-    type Atom = Spanned<TypeAtom>;
+    type NiladicOp = TypeAtom;
+    type MonadicOp = TypeUnOp<AstConstraintSpanned>;
+    type DyadicOp = TypeBinOp;
 }
 
-pub type TypeExpression = Expression<AstType>;
-pub type ValExpression = Expression<AstVal>;
-pub type ConstraintExpression = Expression<AstConstraint>;
+pub type TypeExpression = Expression<AstTypeSpanned>;
+pub type ValExpression = Expression<AstValSpanned>;
+pub type ConstraintExpression = Expression<AstConstraintSpanned>;
+
+pub type TypeExpressionInner = ExpressionHead<AstTypeSpanned, Box<TypeExpression>>;
+pub type ValExpressionInner = ExpressionHead<AstValSpanned, Box<ValExpression>>;
+pub type ConstraintExpressionInner =
+    ExpressionHead<AstConstraintSpanned, Box<ConstraintExpression>>;
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum TypeAtom {
@@ -163,19 +148,12 @@ impl From<TypeVar> for TypeAtom {
 pub enum ParserAtom {
     Atom(Atom),
     Single,
-    Array(Box<ParserArray>),
     Block(Block),
 }
 
 impl From<Atom> for ParserAtom {
     fn from(atom: Atom) -> Self {
         ParserAtom::Atom(atom)
-    }
-}
-
-impl From<ParserArray> for ParserAtom {
-    fn from(pa: ParserArray) -> Self {
-        ParserAtom::Array(Box::new(pa))
     }
 }
 
@@ -282,12 +260,6 @@ pub struct ParserDefRef {
 pub struct TypeArray {
     pub direction: Spanned<ArrayKind>,
     pub expr: TypeExpression,
-    pub span: Span,
-}
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct ParserArray {
-    pub direction: Spanned<ArrayKind>,
-    pub expr: ValExpression,
     pub span: Span,
 }
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]

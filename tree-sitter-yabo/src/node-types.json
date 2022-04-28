@@ -96,6 +96,10 @@
             "named": true
           },
           {
+            "type": "constraint_apply",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -117,6 +121,10 @@
           },
           {
             "type": "unary_expression",
+            "named": true
+          },
+          {
+            "type": "val_dot",
             "named": true
           }
         ]
@@ -151,10 +159,6 @@
           },
           {
             "type": "-",
-            "named": false
-          },
-          {
-            "type": ".",
             "named": false
           },
           {
@@ -204,10 +208,6 @@
           {
             "type": "|>",
             "named": false
-          },
-          {
-            "type": "~",
-            "named": false
           }
         ]
       },
@@ -224,15 +224,15 @@
             "named": false
           },
           {
-            "type": "binary_constraint_expression",
-            "named": true
-          },
-          {
             "type": "binary_expression",
             "named": true
           },
           {
             "type": "char_literal",
+            "named": true
+          },
+          {
+            "type": "constraint_apply",
             "named": true
           },
           {
@@ -256,11 +256,11 @@
             "named": true
           },
           {
-            "type": "unary_constraint_expression",
+            "type": "unary_expression",
             "named": true
           },
           {
-            "type": "unary_expression",
+            "type": "val_dot",
             "named": true
           }
         ]
@@ -300,6 +300,10 @@
             "named": true
           },
           {
+            "type": "type_constraint",
+            "named": true
+          },
+          {
             "type": "type_var",
             "named": true
           },
@@ -315,10 +319,6 @@
         "types": [
           {
             "type": "*>",
-            "named": false
-          },
-          {
-            "type": "~",
             "named": false
           }
         ]
@@ -336,23 +336,7 @@
             "named": false
           },
           {
-            "type": "binary_constraint_expression",
-            "named": true
-          },
-          {
             "type": "binary_type_expression",
-            "named": true
-          },
-          {
-            "type": "char_literal",
-            "named": true
-          },
-          {
-            "type": "identifier",
-            "named": true
-          },
-          {
-            "type": "number_literal",
             "named": true
           },
           {
@@ -368,11 +352,11 @@
             "named": true
           },
           {
-            "type": "type_var",
+            "type": "type_constraint",
             "named": true
           },
           {
-            "type": "unary_constraint_expression",
+            "type": "type_var",
             "named": true
           },
           {
@@ -387,6 +371,110 @@
     "type": "char_literal",
     "named": true,
     "fields": {}
+  },
+  {
+    "type": "constraint_apply",
+    "named": true,
+    "fields": {
+      "left": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "(",
+            "named": false
+          },
+          {
+            "type": ")",
+            "named": false
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "char_literal",
+            "named": true
+          },
+          {
+            "type": "constraint_apply",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parser_array",
+            "named": true
+          },
+          {
+            "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "single",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          },
+          {
+            "type": "val_dot",
+            "named": true
+          }
+        ]
+      },
+      "op": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "if",
+            "named": false
+          },
+          {
+            "type": "try",
+            "named": false
+          },
+          {
+            "type": "~",
+            "named": false
+          }
+        ]
+      },
+      "right": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "binary_constraint_expression",
+            "named": true
+          },
+          {
+            "type": "char_literal",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "unary_constraint_expression",
+            "named": true
+          }
+        ]
+      }
+    }
   },
   {
     "type": "let_statement",
@@ -413,6 +501,10 @@
             "named": true
           },
           {
+            "type": "constraint_apply",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -434,6 +526,10 @@
           },
           {
             "type": "unary_expression",
+            "named": true
+          },
+          {
+            "type": "val_dot",
             "named": true
           }
         ]
@@ -474,6 +570,10 @@
           },
           {
             "type": "type_array",
+            "named": true
+          },
+          {
+            "type": "type_constraint",
             "named": true
           },
           {
@@ -523,6 +623,10 @@
             "named": true
           },
           {
+            "type": "constraint_apply",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -544,6 +648,10 @@
           },
           {
             "type": "unary_expression",
+            "named": true
+          },
+          {
+            "type": "val_dot",
             "named": true
           }
         ]
@@ -589,6 +697,10 @@
             "named": true
           },
           {
+            "type": "constraint_apply",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -610,6 +722,10 @@
           },
           {
             "type": "unary_expression",
+            "named": true
+          },
+          {
+            "type": "val_dot",
             "named": true
           }
         ]
@@ -703,6 +819,10 @@
             "named": true
           },
           {
+            "type": "type_constraint",
+            "named": true
+          },
+          {
             "type": "type_var",
             "named": true
           },
@@ -743,6 +863,10 @@
             "named": true
           },
           {
+            "type": "constraint_apply",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -764,6 +888,10 @@
           },
           {
             "type": "unary_expression",
+            "named": true
+          },
+          {
+            "type": "val_dot",
             "named": true
           }
         ]
@@ -830,6 +958,10 @@
             "named": true
           },
           {
+            "type": "type_constraint",
+            "named": true
+          },
+          {
             "type": "type_var",
             "named": true
           },
@@ -865,6 +997,10 @@
           },
           {
             "type": "type_array",
+            "named": true
+          },
+          {
+            "type": "type_constraint",
             "named": true
           },
           {
@@ -961,11 +1097,99 @@
             "named": true
           },
           {
+            "type": "type_constraint",
+            "named": true
+          },
+          {
             "type": "type_var",
             "named": true
           },
           {
             "type": "unary_type_expression",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "type_constraint",
+    "named": true,
+    "fields": {
+      "left": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "(",
+            "named": false
+          },
+          {
+            "type": ")",
+            "named": false
+          },
+          {
+            "type": "binary_type_expression",
+            "named": true
+          },
+          {
+            "type": "parserdef_ref",
+            "named": true
+          },
+          {
+            "type": "primitive_type",
+            "named": true
+          },
+          {
+            "type": "type_array",
+            "named": true
+          },
+          {
+            "type": "type_constraint",
+            "named": true
+          },
+          {
+            "type": "type_var",
+            "named": true
+          },
+          {
+            "type": "unary_type_expression",
+            "named": true
+          }
+        ]
+      },
+      "op": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "~",
+            "named": false
+          }
+        ]
+      },
+      "right": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "binary_constraint_expression",
+            "named": true
+          },
+          {
+            "type": "char_literal",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "unary_constraint_expression",
             "named": true
           }
         ]
@@ -1042,6 +1266,10 @@
             "named": true
           },
           {
+            "type": "constraint_apply",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -1063,6 +1291,10 @@
           },
           {
             "type": "unary_expression",
+            "named": true
+          },
+          {
+            "type": "val_dot",
             "named": true
           }
         ]
@@ -1112,11 +1344,103 @@
             "named": true
           },
           {
+            "type": "type_constraint",
+            "named": true
+          },
+          {
             "type": "type_var",
             "named": true
           },
           {
             "type": "unary_type_expression",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "val_dot",
+    "named": true,
+    "fields": {
+      "left": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "(",
+            "named": false
+          },
+          {
+            "type": ")",
+            "named": false
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "char_literal",
+            "named": true
+          },
+          {
+            "type": "constraint_apply",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parser_array",
+            "named": true
+          },
+          {
+            "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "single",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          },
+          {
+            "type": "val_dot",
+            "named": true
+          }
+        ]
+      },
+      "op": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": ".",
+            "named": false
+          }
+        ]
+      },
+      "right": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "char_literal",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "number_literal",
             "named": true
           }
         ]
@@ -1289,6 +1613,10 @@
   },
   {
     "type": "or",
+    "named": false
+  },
+  {
+    "type": "try",
     "named": false
   },
   {

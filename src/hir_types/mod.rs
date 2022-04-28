@@ -4,19 +4,19 @@ pub mod represent;
 mod returns;
 mod signature;
 
-use std::{collections::BTreeMap, fmt::Debug, hash::Hash, marker::PhantomData, sync::Arc};
+use std::{collections::BTreeMap, fmt::Debug, hash::Hash, sync::Arc};
 
 use fxhash::FxHashMap;
 
 use crate::{
     error::{SResult, Silencable},
     expr::{
-        Atom, BasicValBinOp, ExprIter, Expression, ExpressionComponent, ExpressionKind, TypeBinOp,
+        self, Atom, Dyadic, ExprIter, Expression, ExpressionHead, Monadic, OpWithData, TypeBinOp,
         TypeUnOp, ValBinOp, ValUnOp,
     },
     hir::{HirIdWrapper, ParseStatement, ParserAtom, ParserDefRef},
     interner::{FieldName, HirId, TypeVar, TypeVarName},
-    source::{IndexSpanned, SpanIndex},
+    source::SpanIndex,
     types::{
         inference::{InfTypeId, InferenceContext, InferenceType, NominalInfHead, TypeResolver},
         EitherType, NominalKind, NominalTypeHead, Signature, Type, TypeError, TypeId,
@@ -64,22 +64,24 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
     pub fn resolve_type_expr(
         &mut self,
         context: &mut TypingLocation,
-        expr: &Expression<hir::HirType>,
+        expr: &Expression<hir::HirTypeSpanned>,
     ) -> Result<InfTypeId, TypeError> {
-        let ret = match expr {
-            Expression::BinaryOp(op) => match op.as_ref() {
-                TypeBinOp::Wiggle(e, _, _) => self.resolve_type_expr(context, e)?,
-                TypeBinOp::Ref(_, _, _) => {
+        let ret = match &expr.0 {
+            ExpressionHead::Dyadic(Dyadic {
+                op,
+                inner: [left, right],
+            }) => match &op.inner {
+                TypeBinOp::Ref => {
                     unimplemented!()
                 }
-                TypeBinOp::ParseArg(from_expr, inner_expr, _) => {
-                    let from = self.resolve_type_expr(context, from_expr)?;
-                    let inner = match inner_expr {
-                        Expression::Atom(IndexSpanned {
-                            atom: hir::TypeAtom::ParserDef(pd),
+                TypeBinOp::ParseArg => {
+                    let from = self.resolve_type_expr(context, left)?;
+                    let inner = match &right.0 {
+                        ExpressionHead::Niladic(OpWithData {
+                            inner: hir::TypeAtom::ParserDef(pd),
                             ..
                         }) => self.resolve_type_expr_parserdef_ref(context, pd, Some(from))?,
-                        _ => self.resolve_type_expr(context, inner_expr)?,
+                        _ => self.resolve_type_expr(context, right)?,
                     };
                     self.db.intern_inference_type(InferenceType::ParserArg {
                         result: inner,
@@ -87,10 +89,10 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                     })
                 }
             },
-            Expression::UnaryOp(op) => match op.as_ref() {
-                TypeUnOp::Ref(e, _) => self.resolve_type_expr(context, e)?,
+            ExpressionHead::Monadic(Monadic { op, inner }) => match &op.inner {
+                TypeUnOp::Ref | TypeUnOp::Wiggle(_) => self.resolve_type_expr(context, inner)?,
             },
-            Expression::Atom(a) => match &a.atom {
+            ExpressionHead::Niladic(op) => match &op.inner {
                 hir::TypeAtom::Primitive(hir::TypePrimitive::Int) => self.infctx.int(),
                 hir::TypeAtom::Primitive(hir::TypePrimitive::Bit) => self.infctx.bit(),
                 hir::TypeAtom::Primitive(hir::TypePrimitive::Char) => self.infctx.char(),
@@ -174,90 +176,50 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
     pub fn val_expression_type(
         &mut self,
         context: &mut TypingLocation,
-        expr: &Expression<hir::HirVal>,
+        expr: &Expression<hir::HirValSpanned>,
     ) -> Result<InfTypedExpression, TypeError> {
-        use BasicValBinOp::*;
-        let mut ty_and_subexpr = |expr: &Expression<hir::HirVal>| {
-            self.val_expression_type(context, expr)
-                .map(|e| (e.root_type(), e))
-        };
-        Ok(match expr {
-            Expression::BinaryOp(op) => Expression::BinaryOp(Box::new(match op.as_ref() {
-                ValBinOp::Basic(
-                    l,
-                    op @ (And | Or | Xor | Minus | Plus | Mul | Div | Modulo | Lesser | LesserEq
-                    | Greater | GreaterEq | ShiftR | ShiftL),
-                    r,
-                    s,
-                ) => {
-                    let (lhs_ty, lhs) = ty_and_subexpr(l)?;
-                    let (rhs_ty, rhs) = ty_and_subexpr(r)?;
-                    let int = self.infctx.int();
-                    self.infctx.constrain(lhs_ty, int)?;
-                    self.infctx.constrain(rhs_ty, int)?;
-                    ValBinOp::Basic(lhs, *op, rhs, (int, *s))
-                }
-                ValBinOp::Basic(_, Equals | Uneq, _, _) => todo!(),
-                ValBinOp::Basic(l, Compose, r, s) => {
-                    let (lhs_ty, lhs) = ty_and_subexpr(l)?;
-                    let (rhs_ty, rhs) = ty_and_subexpr(r)?;
-                    let ret = self.infctx.parser_compose(lhs_ty, rhs_ty)?;
-                    ValBinOp::Basic(lhs, Compose, rhs, (ret, *s))
-                }
-                ValBinOp::Basic(l, ParserApply, r, s) => {
-                    let (lhs_ty, lhs) = ty_and_subexpr(l)?;
-                    let (rhs_ty, rhs) = ty_and_subexpr(r)?;
-                    let ret = self.infctx.parser_apply(rhs_ty, lhs_ty)?;
-                    ValBinOp::Basic(lhs, ParserApply, rhs, (ret, *s))
-                }
-                ValBinOp::Wiggle(inner, r, s) => {
-                    let (inner_ty, inner) = ty_and_subexpr(inner)?;
-                    ValBinOp::Wiggle(inner, r.clone(), (inner_ty, *s))
-                }
-                ValBinOp::Else(l, r, s) => {
-                    let (lhs_ty, lhs) = ty_and_subexpr(l)?;
-                    let (rhs_ty, rhs) = ty_and_subexpr(r)?;
-                    let ret = self.infctx.one_of(&[lhs_ty, rhs_ty])?;
-                    ValBinOp::Else(lhs, rhs, (ret, *s))
-                }
-                ValBinOp::Dot(from, name, s) => match name {
-                    Atom::Field(f) => {
-                        let (from_ty, from) = ty_and_subexpr(from)?;
-                        let ret = self.infctx.access_field(from_ty, *f)?;
-                        ValBinOp::Dot(from, name.clone(), (ret, *s))
+        use ValBinOp::*;
+        expr.try_scan(&mut |expr| {
+            Ok(match expr {
+                ExpressionHead::Dyadic(Dyadic {
+                    op,
+                    inner: [&left, &right],
+                }) => match op.inner {
+                    And | Xor | Or | ShiftR | ShiftL | Minus | Plus | Div | Modulo | Mul => {
+                        let int = self.infctx.int();
+                        self.infctx.constrain(left, int)?;
+                        self.infctx.constrain(right, int)?;
+                        int
                     }
-                    Atom::Number(_) | Atom::Char(_) | Atom::String(_) => return Err(TypeError),
+                    LesserEq | Lesser | GreaterEq | Greater => {
+                        let bit = self.infctx.bit();
+                        self.infctx.constrain(left, bit)?;
+                        self.infctx.constrain(right, bit)?;
+                        bit
+                    }
+                    Else => self.infctx.one_of(&[left, right])?,
+                    Compose => self.infctx.parser_compose(left, right)?,
+                    ParserApply => self.infctx.parser_apply(right, left)?,
+                    Uneq | Equals => todo!(),
                 },
-            })),
-            Expression::UnaryOp(op) => Expression::UnaryOp(Box::new(match op.as_ref() {
-                v @ (ValUnOp::Not(i, s) | ValUnOp::Neg(i, s) | ValUnOp::Pos(i, s)) => {
-                    let (inner_ty, inner) = ty_and_subexpr(i)?;
-                    self.infctx.constrain(inner_ty, self.infctx.int())?;
-                    match v {
-                        ValUnOp::Not(_, _) => ValUnOp::Not(inner, (inner_ty, *s)),
-                        ValUnOp::Neg(_, _) => ValUnOp::Neg(inner, (inner_ty, *s)),
-                        ValUnOp::Pos(_, _) => ValUnOp::Pos(inner, (inner_ty, *s)),
-                        ValUnOp::If(_, _) => unreachable!(),
+                ExpressionHead::Monadic(Monadic { op, inner: &inner }) => match &op.inner {
+                    ValUnOp::Neg | ValUnOp::Pos | ValUnOp::Not => {
+                        let int = self.infctx.int();
+                        self.infctx.constrain(inner, int)?;
+                        int
                     }
-                }
-                ValUnOp::If(i, s) => {
-                    let (inner_ty, inner) = ty_and_subexpr(i)?;
-                    ValUnOp::If(inner, (inner_ty, *s))
-                }
-            })),
-            Expression::Atom(a) => {
-                let inftype = match &a.atom {
+                    ValUnOp::Wiggle(_, _) => inner,
+                    ValUnOp::Dot(name) => match name {
+                        Atom::Field(f) => self.infctx.access_field(inner, *f)?,
+                        Atom::Number(_) | Atom::Char(_) | Atom::String(_) => return Err(TypeError),
+                    },
+                },
+                ExpressionHead::Niladic(a) => match &a.inner {
                     ParserAtom::Atom(Atom::Char(_)) => self.infctx.char(),
                     ParserAtom::Atom(Atom::Number(_)) => self.infctx.int(),
                     ParserAtom::Atom(Atom::String(_)) => todo!(),
                     ParserAtom::Atom(Atom::Field(f)) => self.infctx.lookup(context.loc, *f)?,
                     ParserAtom::Single => self.infctx.single(),
-                    ParserAtom::Array(a) => {
-                        let array = a.lookup(self.db)?;
-                        let inner = array.expr.lookup(self.db)?.expr;
-                        let inner_ty = self.val_expression_type(context, &inner)?.root_type();
-                        self.infctx.array_call(array.direction, inner_ty)?
-                    }
                     ParserAtom::Block(b) => {
                         let pd = self.db.hir_parent_parserdef(b.0)?;
                         let ty_vars = (0..context.vars.defs.len() as u32)
@@ -268,13 +230,8 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                             .collect::<Vec<_>>();
                         self.infctx.block_call(b.0, &ty_vars)?
                     }
-                };
-                Expression::Atom(TypedAtom {
-                    atom: a.atom.clone(),
-                    span_index: a.span,
-                    ty: inftype,
-                })
-            }
+                },
+            })
         })
     }
     fn inftype_to_concrete_type(&mut self, infty: InfTypeId) -> Result<TypeId, TypeError> {
@@ -284,59 +241,7 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
         &mut self,
         expr: &InfTypedExpression,
     ) -> Result<TypedExpression, TypeError> {
-        Ok(match expr {
-            Expression::BinaryOp(b) => Expression::BinaryOp(match b.as_ref() {
-                ValBinOp::Basic(lhs, op, rhs, data) => {
-                    let lhs = self.expr_to_concrete_type(lhs)?;
-                    let rhs = self.expr_to_concrete_type(rhs)?;
-                    let data = (self.inftype_to_concrete_type(data.0)?, data.1);
-                    Box::new(ValBinOp::Basic(lhs, *op, rhs, data))
-                }
-                ValBinOp::Wiggle(lhs, rhs, data) => {
-                    let lhs = self.expr_to_concrete_type(lhs)?;
-                    let data = (self.inftype_to_concrete_type(data.0)?, data.1);
-                    Box::new(ValBinOp::Wiggle(lhs, rhs.clone(), data))
-                }
-                ValBinOp::Else(lhs, rhs, data) => {
-                    let lhs = self.expr_to_concrete_type(lhs)?;
-                    let rhs = self.expr_to_concrete_type(rhs)?;
-                    let data = (self.inftype_to_concrete_type(data.0)?, data.1);
-                    Box::new(ValBinOp::Else(lhs, rhs, data))
-                }
-                ValBinOp::Dot(lhs, name, data) => {
-                    let lhs = self.expr_to_concrete_type(lhs)?;
-                    let data = (self.inftype_to_concrete_type(data.0)?, data.1);
-                    Box::new(ValBinOp::Dot(lhs, name.clone(), data))
-                }
-            }),
-            Expression::UnaryOp(u) => Expression::UnaryOp(match u.as_ref() {
-                ValUnOp::Not(inner, data) => {
-                    let inner = self.expr_to_concrete_type(inner)?;
-                    let data = (self.inftype_to_concrete_type(data.0)?, data.1);
-                    Box::new(ValUnOp::Not(inner, data))
-                }
-                ValUnOp::Neg(inner, data) => {
-                    let inner = self.expr_to_concrete_type(inner)?;
-                    let data = (self.inftype_to_concrete_type(data.0)?, data.1);
-                    Box::new(ValUnOp::Neg(inner, data))
-                }
-                ValUnOp::Pos(inner, data) => {
-                    let inner = self.expr_to_concrete_type(inner)?;
-                    let data = (self.inftype_to_concrete_type(data.0)?, data.1);
-                    Box::new(ValUnOp::Pos(inner, data))
-                }
-                ValUnOp::If(inner, data) => {
-                    let inner = self.expr_to_concrete_type(inner)?;
-                    let data = (self.inftype_to_concrete_type(data.0)?, data.1);
-                    Box::new(ValUnOp::If(inner, data))
-                }
-            }),
-            Expression::Atom(a) => Expression::Atom(TypedAtom {
-                atom: a.atom.clone(),
-                span_index: a.span_index,
-                ty: self.inftype_to_concrete_type(a.ty)?,
-            }),
-        })
+        expr.try_map(&mut |x| self.inftype_to_concrete_type(*x))
     }
 }
 
@@ -417,46 +322,12 @@ impl TypingLocation {
     }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
-pub struct TypedHirVal<T>(PhantomData<T>);
+type TypedHirVal<T> = expr::KindWithData<hir::HirVal, T>;
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
-pub struct TypedAtom<Id> {
+pub struct TypeInfo<Id> {
     ty: Id,
     span_index: SpanIndex,
-    atom: ParserAtom,
-}
-
-impl<T: Debug + Hash + Copy + Ord> ExpressionKind for TypedHirVal<T> {
-    type BinaryOp = ValBinOp<Self, hir::HirConstraint, (T, SpanIndex)>;
-    type UnaryOp = ValUnOp<Self, (T, SpanIndex)>;
-    type Atom = TypedAtom<T>;
-}
-
-impl<T: Debug + Hash + Copy + Ord> Expression<TypedHirVal<T>> {
-    pub fn root_type(&self) -> T {
-        match self {
-            Expression::BinaryOp(b) => match b.as_ref() {
-                ValBinOp::Basic(_, _, _, t)
-                | ValBinOp::Wiggle(_, _, t)
-                | ValBinOp::Else(_, _, t)
-                | ValBinOp::Dot(_, _, t) => t.0,
-            },
-            Expression::UnaryOp(u) => match u.as_ref() {
-                ValUnOp::Not(_, t)
-                | ValUnOp::Neg(_, t)
-                | ValUnOp::Pos(_, t)
-                | ValUnOp::If(_, t) => t.0,
-            },
-            Expression::Atom(a) => a.ty,
-        }
-    }
-}
-
-impl<T: Debug + std::hash::Hash + Copy + Ord> ExpressionComponent<TypedHirVal<T>> for TypedAtom<T> {
-    fn children(&self) -> Vec<&Expression<TypedHirVal<T>>> {
-        Vec::new()
-    }
 }
 
 enum NominalId {

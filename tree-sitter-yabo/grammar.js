@@ -12,6 +12,7 @@ const PREC = {
   WIGGLE: 10,
   ELSE: 11,
   DOT: 12,
+  ARGS: 13,
 };
 module.exports = grammar({
   name: 'yabo',
@@ -32,6 +33,7 @@ module.exports = grammar({
     _type_expression: $ => choice(
       $.binary_type_expression,
       $.unary_type_expression,
+      $.type_constraint,
       $.type_array,
       $._type_atom,
       seq('(', $._type_expression, ')'),
@@ -42,23 +44,11 @@ module.exports = grammar({
         field('op', '*>'),
         field('right', $._type_expression),
       )),
-      prec.left(PREC.WIGGLE, seq(
-        field('left', $._type_expression),
-        field('op', '~'),
-        field('right', $._constraint_expression),
-      )),
     ),
     unary_type_expression: $ => prec(PREC.UNARY, seq(
       field('op', choice('*>')),
       field('right', $._type_expression)
     )),
-
-    _expression: $ => choice(
-      $.binary_expression,
-      $.prefix_expression,
-      seq('(', $._expression, ')'),
-      $._atom,
-    ),
     parser_block: $ => seq(
       '{',
       optional(
@@ -91,6 +81,16 @@ module.exports = grammar({
       field('expr', $._expression),
       ']',
     ),
+    constraint_apply: $ => prec.left(PREC.WIGGLE, seq(
+      field('left', $._expression),
+      field('op', choice('~', 'if', 'try')),
+      field('right', $._constraint_expression),
+    )),
+    type_constraint: $ => prec.left(PREC.WIGGLE, seq(
+      field('left', $._type_expression),
+      field('op', '~'),
+      field('right', $._constraint_expression),
+    )),
     _statement: $ => choice(
       $.parse_statement,
       $.let_statement,
@@ -135,6 +135,8 @@ module.exports = grammar({
     _expression: $ => choice(
       $.binary_expression,
       $.unary_expression,
+      $.val_dot,
+      $.constraint_apply,
       $.parser_array,
       $.parser_block,
       $.single,
@@ -149,9 +151,7 @@ module.exports = grammar({
     ),
     binary_expression: $ => {
       const table = [
-        ['.', PREC.DOT],
         ['else', PREC.ELSE],
-        ['~', PREC.WIGGLE],
         ['*>', PREC.PARSE],
         ['|>', PREC.PARSE],
         ['+', PREC.ADD],
@@ -176,7 +176,7 @@ module.exports = grammar({
         return prec.left(precedence, seq(
           field('left', $._expression),
           field('op', operator),
-          field('right', operator == "~" ? $._constraint_expression : $._expression)
+          field('right', $._expression)
         ))
       }));
     },
@@ -189,7 +189,12 @@ module.exports = grammar({
       $.type_var,
       $.parserdef_ref,
     ),
-    parserdef_ref: $ => seq(
+    val_dot: $ => prec.left(PREC.DOT, seq(
+      field('left', $._expression),
+      field('op', '.'),
+      field('right', $._atom),
+    )),
+    parserdef_ref: $ => prec.left(PREC.ARGS, seq(
       optional(
         seq(
           field('from', $._type_expression),
@@ -209,7 +214,7 @@ module.exports = grammar({
           ']',
         )
       ),
-    ),
+    )),
     _atom: $ => choice(
       $.identifier,
       $._literal,

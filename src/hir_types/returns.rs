@@ -39,7 +39,7 @@ pub fn parser_returns_ssc(db: &dyn TyHirs, id: FunctionSscId) -> Vec<ParserDefTy
                 loc: db.hir_parent_module(def.id.0)?.0,
                 pd: def.id,
             };
-            let ty = ctx.val_expression_type(&mut context, &expr)?.root_type();
+            let ty = *ctx.val_expression_type(&mut context, &expr)?.0.root_data();
             let sig = db.parser_args(def.id)?;
             if let Some(from) = sig.from {
                 let inffrom = ctx.infctx.from_type(from);
