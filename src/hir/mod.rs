@@ -16,12 +16,12 @@ use std::{
 };
 
 use crate::{
-    ast::ArrayKind,
+    ast::{ArrayKind, AstConstraint},
     dbpanic,
     error::{SResult, SilencedError},
-    expr::{self, Atom, ExprConverter, Expression, ExpressionComponent, ExpressionKind},
+    expr::{self, Atom, Expression, ExpressionKind},
     interner::{FieldName, HirId, HirPath, Identifier, PathComponent, TypeVar},
-    source::{FileId, Span, Spanned},
+    source::{FileId, Span},
 };
 
 use crate::source::IndexSpanned;
@@ -282,47 +282,36 @@ fn module_file(db: &dyn Hirs, file: FileId) -> Result<Module, SilencedError> {
     })
 }
 
-impl<K: ExpressionKind, T: ExpressionComponent<K>> ExpressionComponent<K> for IndexSpanned<T> {
-    fn children(&self) -> Vec<&Expression<K>> {
-        self.atom.children()
-    }
-}
+pub type HirConstraint = AstConstraint;
 
-impl ExpressionComponent<HirVal> for ParserAtom {
-    fn children(&self) -> Vec<&Expression<HirVal>> {
-        vec![]
-    }
-}
-
-impl ExpressionComponent<HirType> for TypeAtom {
-    fn children(&self) -> Vec<&Expression<HirType>> {
-        match self {
-            TypeAtom::Array(a) => vec![&a.expr],
-            _ => vec![],
-        }
-    }
-}
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct HirConstraint;
-
-impl ExpressionKind for HirConstraint {
-    type BinaryOp = expr::ConstraintBinOp<HirConstraint, SpanIndex>;
-    type UnaryOp = expr::ConstraintUnOp<HirConstraint, SpanIndex>;
-    type Atom = IndexSpanned<Atom>;
-}
+pub type HirConstraintSpanned = expr::KindWithData<HirConstraint, SpanIndex>;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct HirVal;
 
 impl ExpressionKind for HirVal {
-    type BinaryOp = expr::ValBinOp<HirVal, HirConstraint, SpanIndex>;
-    type UnaryOp = expr::ValUnOp<HirVal, SpanIndex>;
-    type Atom = IndexSpanned<ParserAtom>;
+    type DyadicOp = expr::ValBinOp;
+    type MonadicOp = expr::ValUnOp<HirConstraintSpanned>;
+    type NiladicOp = ParserAtom;
 }
+
+pub type HirValSpanned = expr::KindWithData<HirVal, SpanIndex>;
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct HirType;
+
+impl ExpressionKind for HirType {
+    type DyadicOp = expr::TypeBinOp;
+    type MonadicOp = expr::TypeUnOp<HirConstraintSpanned>;
+    type NiladicOp = TypeAtom;
+}
+
+pub type HirTypeSpanned = expr::KindWithData<HirType, SpanIndex>;
+
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct ValExpression {
     pub id: ExprId,
-    pub expr: Expression<HirVal>,
+    pub expr: Expression<HirValSpanned>,
     pub children: Vec<HirId>,
 }
 
@@ -332,19 +321,10 @@ impl ValExpression {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct HirType;
-
-impl ExpressionKind for HirType {
-    type BinaryOp = expr::TypeBinOp<HirType, HirConstraint, SpanIndex>;
-    type UnaryOp = expr::TypeUnOp<HirType, SpanIndex>;
-    type Atom = IndexSpanned<TypeAtom>;
-}
-
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct TypeExpression {
     pub id: TExprId,
-    pub expr: Expression<HirType>,
+    pub expr: Expression<HirTypeSpanned>,
 }
 
 impl TypeExpression {
@@ -494,23 +474,22 @@ pub enum TypePrimitive {
 }
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDefRef {
-    pub from: Option<Expression<HirType>>,
+    pub from: Option<Expression<HirTypeSpanned>>,
     pub name: IndexSpanned<Identifier>,
-    pub args: Vec<Expression<HirType>>,
+    pub args: Vec<Expression<HirTypeSpanned>>,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum ParserAtom {
     Atom(Atom),
     Single,
-    Array(ArrayId),
     Block(BlockId),
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct TypeArray {
     pub direction: ArrayKind,
-    pub expr: Expression<HirType>,
+    pub expr: Expression<HirTypeSpanned>,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]

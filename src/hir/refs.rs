@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use crate::expr::ExpressionHead;
+
 use super::*;
 
 pub enum VarType {
@@ -65,8 +67,8 @@ pub fn resolve_var_ref(
 pub fn expr_idents(expr: &ValExpression) -> Vec<FieldName> {
     let mut ret = Vec::new();
     for node in crate::expr::ExprIter::new(&expr.expr) {
-        let ident = match node {
-            Expression::Atom(a) => match a.atom {
+        let ident = match &node.0 {
+            ExpressionHead::Niladic(a) => match a.inner {
                 ParserAtom::Atom(Atom::Field(ident)) => ident,
                 _ => continue,
             },

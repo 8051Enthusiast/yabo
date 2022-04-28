@@ -2,31 +2,347 @@ use crate::interner::FieldName;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
+use std::sync::Arc;
 pub trait ExpressionKind: Clone + Hash + Eq + Debug {
-    type BinaryOp: ExpressionComponent<Self>;
-    type UnaryOp: ExpressionComponent<Self>;
-    type Atom: ExpressionComponent<Self>;
+    type NiladicOp: Clone + Hash + Eq + Debug;
+    type MonadicOp: Clone + Hash + Eq + Debug;
+    type DyadicOp: Clone + Hash + Eq + Debug;
+}
+
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
+pub struct OpRef<'a, K: ExpressionKind>(PhantomData<&'a K>);
+
+impl<'a, K: ExpressionKind> ExpressionKind for OpRef<'a, K> {
+    type NiladicOp = &'a K::NiladicOp;
+    type MonadicOp = &'a K::MonadicOp;
+    type DyadicOp = &'a K::DyadicOp;
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum Expression<K: ExpressionKind> {
-    BinaryOp(Box<K::BinaryOp>),
-    UnaryOp(Box<K::UnaryOp>),
-    Atom(K::Atom),
+pub struct Monadic<Op, Inner> {
+    pub op: Op,
+    pub inner: Inner,
 }
 
-impl<K: ExpressionKind> Expression<K> {
-    pub fn children(&self) -> Vec<&Self> {
+pub type MonadicExpr<K> = Monadic<<K as ExpressionKind>::MonadicOp, Box<Expression<K>>>;
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct Dyadic<Op, Inner> {
+    pub op: Op,
+    pub inner: [Inner; 2],
+}
+
+pub type DyadicExpr<K> = Dyadic<<K as ExpressionKind>::DyadicOp, Box<Expression<K>>>;
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub enum ExpressionHead<K: ExpressionKind, Inner> {
+    Niladic(K::NiladicOp),
+    Monadic(Monadic<K::MonadicOp, Inner>),
+    Dyadic(Dyadic<K::DyadicOp, Inner>),
+}
+
+impl<K: ExpressionKind, Inner> ExpressionHead<K, Inner> {
+    #[inline]
+    pub fn new_niladic(op: K::NiladicOp) -> Self {
+        Self::Niladic(op)
+    }
+
+    #[inline]
+    pub fn new_monadic(op: K::MonadicOp, inner: Inner) -> Self {
+        Self::Monadic(Monadic { op, inner })
+    }
+
+    #[inline]
+    pub fn new_dyadic(op: K::DyadicOp, inner: [Inner; 2]) -> Self {
+        Self::Dyadic(Dyadic { op, inner })
+    }
+
+    #[inline]
+    pub fn map_inner<NewInner>(
+        self,
+        mut f: impl FnMut(Inner) -> NewInner,
+    ) -> ExpressionHead<K, NewInner> {
         match self {
-            Expression::BinaryOp(a) => a.children(),
-            Expression::UnaryOp(a) => a.children(),
-            Expression::Atom(a) => a.children(),
+            Self::Niladic(op) => ExpressionHead::new_niladic(op),
+            Self::Monadic(Monadic { op, inner }) => ExpressionHead::new_monadic(op, f(inner)),
+            Self::Dyadic(Dyadic { op, inner }) => ExpressionHead::new_dyadic(op, inner.map(f)),
+        }
+    }
+
+    #[inline]
+    pub fn map_op<NewKind: ExpressionKind>(
+        self,
+        niladic: impl FnOnce(K::NiladicOp) -> NewKind::NiladicOp,
+        monadic: impl FnOnce(K::MonadicOp) -> NewKind::MonadicOp,
+        dyadic: impl FnOnce(K::DyadicOp) -> NewKind::DyadicOp,
+    ) -> ExpressionHead<NewKind, Inner> {
+        match self {
+            Self::Niladic(op) => ExpressionHead::new_niladic(niladic(op)),
+            Self::Monadic(Monadic { op, inner }) => ExpressionHead::new_monadic(monadic(op), inner),
+            Self::Dyadic(Dyadic { op, inner }) => ExpressionHead::new_dyadic(dyadic(op), inner),
+        }
+    }
+
+    #[inline]
+    pub fn as_ref(&self) -> ExpressionHead<OpRef<K>, &Inner> {
+        match self {
+            Self::Niladic(op) => ExpressionHead::new_niladic(op),
+            Self::Monadic(Monadic { op, inner }) => ExpressionHead::new_monadic(op, inner),
+            Self::Dyadic(Dyadic { op, inner }) => {
+                ExpressionHead::new_dyadic(op, [&inner[0], &inner[1]])
+            }
         }
     }
 }
 
-pub trait ExpressionComponent<K: ExpressionKind>: Clone + Hash + Eq + Debug {
-    fn children(&self) -> Vec<&Expression<K>>;
+impl<K: ExpressionKind, T, E> ExpressionHead<K, Result<T, E>> {
+    #[inline]
+    pub fn transpose(self) -> Result<ExpressionHead<K, T>, E> {
+        match self {
+            ExpressionHead::Niladic(f) => Ok(ExpressionHead::new_niladic(f)),
+            ExpressionHead::Monadic(Monadic { op, inner }) => {
+                Ok(ExpressionHead::new_monadic(op, inner?))
+            }
+            ExpressionHead::Dyadic(Dyadic {
+                op,
+                inner: [inner0, inner1],
+            }) => Ok(ExpressionHead::new_dyadic(op, [inner0?, inner1?])),
+        }
+    }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[repr(transparent)]
+pub struct Expression<K: ExpressionKind>(pub ExpressionHead<K, Box<Self>>);
+
+impl<K: ExpressionKind> Expression<K> {
+    pub fn children(&self) -> Vec<&Self> {
+        match &self.0 {
+            ExpressionHead::Niladic(_) => vec![],
+            ExpressionHead::Monadic(m) => vec![&m.inner],
+            ExpressionHead::Dyadic(d) => vec![&d.inner[0], &d.inner[1]],
+        }
+    }
+
+    #[inline]
+    pub fn new_niladic(op: K::NiladicOp) -> Self {
+        Self(ExpressionHead::new_niladic(op))
+    }
+
+    #[inline]
+    pub fn new_monadic(op: K::MonadicOp, inner: Self) -> Self {
+        Self(ExpressionHead::new_monadic(op, Box::new(inner)))
+    }
+
+    #[inline]
+    pub fn new_dyadic(op: K::DyadicOp, inner: [Self; 2]) -> Self {
+        let [inner0, inner1] = inner;
+        Self(ExpressionHead::new_dyadic(
+            op,
+            [Box::new(inner0), Box::new(inner1)],
+        ))
+    }
+    pub fn fold<T>(&self, f: &mut impl FnMut(ExpressionHead<OpRef<K>, T>) -> T) -> T {
+        let inner_folded = self.0.as_ref().map_inner(|inner| inner.fold(f));
+        f(inner_folded)
+    }
+    pub fn try_fold<T, E>(
+        &self,
+        f: &mut impl FnMut(ExpressionHead<OpRef<K>, T>) -> Result<T, E>,
+    ) -> Result<T, E> {
+        let inner_folded = self
+            .0
+            .as_ref()
+            .map_inner(|inner| inner.try_fold(f))
+            .transpose()?;
+        f(inner_folded)
+    }
+    pub fn convert<ToKind: ExpressionKind>(
+        &self,
+        niladic: &mut impl FnMut(&K::NiladicOp) -> ToKind::NiladicOp,
+        monadic: &mut impl FnMut(&K::MonadicOp, &Expression<ToKind>) -> ToKind::MonadicOp,
+        dyadic: &mut impl FnMut(
+            &K::DyadicOp,
+            &Expression<ToKind>,
+            &Expression<ToKind>,
+        ) -> ToKind::DyadicOp,
+    ) -> Expression<ToKind> {
+        match &self.0 {
+            ExpressionHead::Niladic(op) => Expression::new_niladic(niladic(op)),
+            ExpressionHead::Monadic(Monadic { op, inner }) => {
+                let val = inner.convert(niladic, monadic, dyadic);
+                Expression::new_monadic(monadic(op, &val), val)
+            }
+            ExpressionHead::Dyadic(Dyadic { op, inner }) => {
+                let val0 = inner[0].convert(niladic, monadic, dyadic);
+                let val1 = inner[1].convert(niladic, monadic, dyadic);
+                Expression::new_dyadic(dyadic(op, &val0, &val1), [val0, val1])
+            }
+        }
+    }
+}
+
+impl<K: ExpressionKind> From<MonadicExpr<K>> for Expression<K> {
+    fn from(monadic: MonadicExpr<K>) -> Self {
+        Self(ExpressionHead::Monadic(monadic))
+    }
+}
+
+impl<K: ExpressionKind, T> From<Monadic<K::MonadicOp, T>> for ExpressionHead<K, T> {
+    fn from(monadic: Monadic<K::MonadicOp, T>) -> Self {
+        ExpressionHead::Monadic(monadic)
+    }
+}
+
+impl<K: ExpressionKind> From<DyadicExpr<K>> for Expression<K> {
+    fn from(dyadic: DyadicExpr<K>) -> Self {
+        Self(ExpressionHead::Dyadic(dyadic))
+    }
+}
+
+impl<K: ExpressionKind, T> From<Dyadic<K::DyadicOp, T>> for ExpressionHead<K, T> {
+    fn from(dyadic: Dyadic<K::DyadicOp, T>) -> Self {
+        ExpressionHead::Dyadic(dyadic)
+    }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct OpWithData<Op, T> {
+    pub data: T,
+    pub inner: Op,
+}
+
+impl<Op, T> OpWithData<Op, T> {
+    pub fn new(data: T, inner: Op) -> Self {
+        Self { data, inner }
+    }
+    pub fn map_data<NewT, F: FnOnce(T) -> NewT>(self, f: F) -> OpWithData<Op, NewT> {
+        OpWithData {
+            data: f(self.data),
+            inner: self.inner,
+        }
+    }
+    pub fn map_inner<NewOp, F: FnOnce(Op) -> NewOp>(self, f: F) -> OpWithData<NewOp, T> {
+        OpWithData {
+            data: self.data,
+            inner: f(self.inner),
+        }
+    }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct KindWithData<K: ExpressionKind, T>(PhantomData<(T, K)>);
+
+impl<T: Clone + Hash + Eq + Debug, K: ExpressionKind> ExpressionKind for KindWithData<K, T> {
+    type NiladicOp = OpWithData<K::NiladicOp, T>;
+    type MonadicOp = OpWithData<K::MonadicOp, T>;
+    type DyadicOp = OpWithData<K::DyadicOp, T>;
+}
+
+impl<K: ExpressionKind, T: Clone + Hash + Eq + Debug, Inner>
+    ExpressionHead<KindWithData<K, T>, Inner>
+{
+    pub fn root_data(&self) -> &T {
+        match self {
+            ExpressionHead::Niladic(op) => &op.data,
+            ExpressionHead::Monadic(head) => &head.op.data,
+            ExpressionHead::Dyadic(head) => &head.op.data,
+        }
+    }
+}
+
+impl<T: Clone + Hash + Eq + Debug, K: ExpressionKind> Expression<KindWithData<K, T>> {
+    pub fn map<ToT: Clone + Hash + Eq + Debug>(
+        &self,
+        f: &impl Fn(&T) -> ToT,
+    ) -> Expression<KindWithData<K, ToT>> {
+        match self.0.as_ref().map_inner(|inner| inner.map(f)) {
+            ExpressionHead::Niladic(op) => {
+                Expression::new_niladic(OpWithData::new(f(&op.data), op.inner.clone()))
+            }
+            ExpressionHead::Monadic(Monadic { op, inner }) => {
+                Expression::new_monadic(OpWithData::new(f(&op.data), op.inner.clone()), inner)
+            }
+            ExpressionHead::Dyadic(Dyadic { op, inner }) => {
+                Expression::new_dyadic(OpWithData::new(f(&op.data), op.inner.clone()), inner)
+            }
+        }
+    }
+    pub fn try_map<ToT: Clone + Hash + Eq + Debug, E>(
+        &self,
+        f: &mut impl FnMut(&T) -> Result<ToT, E>,
+    ) -> Result<Expression<KindWithData<K, ToT>>, E> {
+        match self.0.as_ref().map_inner(|inner| inner.try_map(f)).transpose()? {
+            ExpressionHead::Niladic(op) => Ok(Expression::new_niladic(OpWithData::new(
+                f(&op.data)?,
+                op.inner.clone(),
+            ))),
+            ExpressionHead::Monadic(Monadic { op, inner }) => Ok(Expression::new_monadic(
+                OpWithData::new(f(&op.data)?, op.inner.clone()),
+                inner,
+            )),
+            ExpressionHead::Dyadic(Dyadic { op, inner }) => Ok(Expression::new_dyadic(
+                OpWithData::new(f(&op.data)?, op.inner.clone()),
+                inner,
+            )),
+        }
+    }
+    pub fn scan<ToT: Clone + Hash + Eq + Debug>(
+        &self,
+        f: &mut impl FnMut(ExpressionHead<OpRef<KindWithData<K, T>>, &ToT>) -> ToT,
+    ) -> Expression<KindWithData<K, ToT>> {
+        match &self.0 {
+            ExpressionHead::Niladic(op) => Expression::new_niladic(OpWithData::new(
+                f(ExpressionHead::new_niladic(op)),
+                op.inner.clone(),
+            )),
+            ExpressionHead::Monadic(Monadic { op, inner }) => {
+                let inner = inner.scan(f);
+                let new_op = f(ExpressionHead::new_monadic(op, inner.0.root_data()));
+                Expression::new_monadic(OpWithData::new(new_op, op.inner.clone()), inner)
+            }
+            ExpressionHead::Dyadic(Dyadic { op, inner }) => {
+                let inner0 = inner[0].scan(f);
+                let inner1 = inner[1].scan(f);
+                let new_op = f(ExpressionHead::new_dyadic(
+                    op,
+                    [inner0.0.root_data(), inner1.0.root_data()],
+                ));
+                Expression::new_dyadic(OpWithData::new(new_op, op.inner.clone()), [inner0, inner1])
+            }
+        }
+    }
+    pub fn try_scan<ToT: Clone + Hash + Eq + Debug, E>(
+        &self,
+        f: &mut impl FnMut(ExpressionHead<OpRef<KindWithData<K, T>>, &ToT>) -> Result<ToT, E>,
+    ) -> Result<Expression<KindWithData<K, ToT>>, E> {
+        match &self.0 {
+            ExpressionHead::Niladic(op) => Ok(Expression::new_niladic(OpWithData::new(
+                f(ExpressionHead::new_niladic(op)).map_err(|e| e)?,
+                op.inner.clone(),
+            ))),
+            ExpressionHead::Monadic(Monadic { op, inner }) => {
+                let inner = inner.try_scan(f)?;
+                let new_op = f(ExpressionHead::new_monadic(op, inner.0.root_data()))?;
+                Ok(Expression::new_monadic(
+                    OpWithData::new(new_op, op.inner.clone()),
+                    inner,
+                ))
+            }
+            ExpressionHead::Dyadic(Dyadic { op, inner }) => {
+                let inner0 = inner[0].try_scan(f)?;
+                let inner1 = inner[1].try_scan(f)?;
+                let new_op = f(ExpressionHead::new_dyadic(
+                    op,
+                    [inner0.0.root_data(), inner1.0.root_data()],
+                ))?;
+                Ok(Expression::new_dyadic(
+                    OpWithData::new(new_op, op.inner.clone()),
+                    [inner0, inner1],
+                ))
+            }
+        }
+    }
 }
 
 pub struct ExprIter<'a, K: ExpressionKind> {
@@ -63,182 +379,8 @@ pub enum Atom {
     String(String),
 }
 
-impl<K: ExpressionKind> ExpressionComponent<K> for Atom {
-    fn children(&self) -> Vec<&Expression<K>> {
-        vec![]
-    }
-}
-
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum TypeBinOp<T: ExpressionKind, C: ExpressionKind, S: Clone + Hash + Eq + Debug> {
-    Ref(Expression<T>, Expression<T>, S),
-    ParseArg(Expression<T>, Expression<T>, S),
-    Wiggle(Expression<T>, Expression<C>, S),
-}
-
-impl<T: ExpressionKind, C: ExpressionKind, S: Clone + Hash + Eq + Debug> TypeBinOp<T, C, S> {
-    pub fn convert_same<
-        ToT: ExpressionKind,
-        ToC: ExpressionKind,
-        ToS: Clone + Hash + Eq + Debug,
-    >(
-        &self,
-        c: &ExprConverter<T, ToT>,
-        c_c: &ExprConverter<C, ToC>,
-        mut f: impl FnMut(&S) -> ToS,
-    ) -> TypeBinOp<ToT, ToC, ToS> {
-        use TypeBinOp::*;
-        match self {
-            Ref(a, b, t) => Ref(c.convert(a), c.convert(b), f(t)),
-            ParseArg(a, b, t) => ParseArg(c.convert(a), c.convert(b), f(t)),
-            Wiggle(a, b, t) => Wiggle(c.convert(a), c_c.convert(b), f(t)),
-        }
-    }
-}
-
-impl<T: ExpressionKind, C: ExpressionKind, S: Clone + Hash + Eq + Debug> ExpressionComponent<T>
-    for TypeBinOp<T, C, S>
-{
-    fn children(&self) -> Vec<&Expression<T>> {
-        use TypeBinOp::*;
-        match self {
-            Ref(a, b, _) | ParseArg(a, b, _) => vec![a, b],
-            Wiggle(a, _, _) => vec![a],
-        }
-    }
-}
-
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum TypeUnOp<T: ExpressionKind, S: Clone + Hash + Eq + Debug> {
-    Ref(Expression<T>, S),
-}
-
-impl<T: ExpressionKind, S: Clone + Hash + Eq + Debug> TypeUnOp<T, S> {
-    pub fn convert_same<ToT: ExpressionKind, ToS: Clone + Hash + Eq + Debug>(
-        &self,
-        c: &ExprConverter<T, ToT>,
-        mut f: impl FnMut(&S) -> ToS,
-    ) -> TypeUnOp<ToT, ToS> where {
-        use TypeUnOp::*;
-        match self {
-            Ref(a, t) => Ref(c.convert(a), f(t)),
-        }
-    }
-}
-
-impl<T: ExpressionKind, S: Clone + Hash + Eq + Debug> ExpressionComponent<T> for TypeUnOp<T, S> {
-    fn children(&self) -> Vec<&Expression<T>> {
-        match self {
-            TypeUnOp::Ref(a, _) => vec![a],
-        }
-    }
-}
-
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum ConstraintBinOp<C: ExpressionKind, T: Clone + Hash + Eq + Debug> {
-    And(Expression<C>, Expression<C>, T),
-    Or(Expression<C>, Expression<C>, T),
-    Dot(Expression<C>, Atom, T),
-}
-
-impl<C: ExpressionKind, T: Clone + Hash + Eq + Debug> ConstraintBinOp<C, T> {
-    pub fn convert_same<ToC: ExpressionKind, ToT: Clone + Hash + Eq + Debug>(
-        &self,
-        c: &ExprConverter<C, ToC>,
-        mut f: impl FnMut(&T) -> ToT,
-    ) -> ConstraintBinOp<ToC, ToT> {
-        use ConstraintBinOp::*;
-        match self {
-            And(a, b, t) => And(c.convert(a), c.convert(b), f(t)),
-            Or(a, b, t) => Or(c.convert(a), c.convert(b), f(t)),
-            Dot(a, b, t) => Dot(c.convert(a), b.clone(), f(t)),
-        }
-    }
-}
-
-impl<C: ExpressionKind, T: Clone + Hash + Eq + Debug> ExpressionComponent<C>
-    for ConstraintBinOp<C, T>
-{
-    fn children(&self) -> Vec<&Expression<C>> {
-        use ConstraintBinOp::*;
-        match self {
-            And(a, b, _) | Or(a, b, _) => vec![a, b],
-            Dot(a, _, _) => vec![a],
-        }
-    }
-}
-
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum ConstraintUnOp<C: ExpressionKind, T: Clone + Hash + Eq + Debug> {
-    Not(Expression<C>, T),
-}
-
-impl<C: ExpressionKind, T: Clone + Hash + Eq + Debug> ConstraintUnOp<C, T> {
-    pub fn convert_same<ToC: ExpressionKind, ToT: Clone + Hash + Eq + Debug>(
-        &self,
-        c: &ExprConverter<C, ToC>,
-        mut f: impl FnMut(&T) -> ToT,
-    ) -> ConstraintUnOp<ToC, ToT> where {
-        use ConstraintUnOp::*;
-        match self {
-            Not(a, t) => Not(c.convert(a), f(t)),
-        }
-    }
-}
-
-impl<C: ExpressionKind, T: Clone + Hash + Eq + Debug> ExpressionComponent<C>
-    for ConstraintUnOp<C, T>
-{
-    fn children(&self) -> Vec<&Expression<C>> {
-        match self {
-            ConstraintUnOp::Not(a, _) => vec![a],
-        }
-    }
-}
-
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum ValBinOp<V: ExpressionKind, C: ExpressionKind, T: Clone + Hash + Eq + Debug> {
-    Basic(Expression<V>, BasicValBinOp, Expression<V>, T),
-    Wiggle(Expression<V>, Expression<C>, T),
-    Else(Expression<V>, Expression<V>, T),
-    Dot(Expression<V>, Atom, T),
-}
-
-impl<V: ExpressionKind, C: ExpressionKind, T: Clone + Hash + Eq + Debug> ValBinOp<V, C, T> {
-    pub fn convert_same<
-        ToV: ExpressionKind,
-        ToC: ExpressionKind,
-        ToT: Clone + Hash + Eq + Debug,
-    >(
-        &self,
-        c: &ExprConverter<V, ToV>,
-        c_c: &ExprConverter<C, ToC>,
-        mut f: impl FnMut(&T) -> ToT,
-    ) -> ValBinOp<ToV, ToC, ToT> {
-        use ValBinOp::*;
-        match self {
-            Basic(a, op, b, t) => Basic(c.convert(a), *op, c.convert(b), f(t)),
-            Wiggle(a, b, t) => Wiggle(c.convert(a), c_c.convert(b), f(t)),
-            Else(a, b, t) => Else(c.convert(a), c.convert(b), f(t)),
-            Dot(a, b, t) => Dot(c.convert(a), b.clone(), f(t)),
-        }
-    }
-}
-
-impl<V: ExpressionKind, C: ExpressionKind, T: Clone + Hash + Eq + Debug> ExpressionComponent<V>
-    for ValBinOp<V, C, T>
-{
-    fn children(&self) -> Vec<&Expression<V>> {
-        use ValBinOp::*;
-        match self {
-            Basic(a, _, b, _) | Else(a, b, _) => vec![a, b],
-            Wiggle(a, _, _) | Dot(a, _, _) => vec![a],
-        }
-    }
-}
-
-#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
-pub enum BasicValBinOp {
+pub enum ValBinOp {
     And,
     Xor,
     Or,
@@ -257,11 +399,12 @@ pub enum BasicValBinOp {
     Mul,
     Compose,
     ParserApply,
+    Else,
 }
 
-impl BasicValBinOp {
+impl ValBinOp {
     pub fn parse_from_str(s: &str) -> Result<Self, &str> {
-        use BasicValBinOp::*;
+        use ValBinOp::*;
         Ok(match s {
             "&" => And,
             "^" => Xor,
@@ -281,100 +424,195 @@ impl BasicValBinOp {
             "*" => Mul,
             "|>" => Compose,
             "*>" => ParserApply,
+            "else" => Else,
             otherwise => return Err(otherwise),
         })
     }
 }
 
-impl Display for BasicValBinOp {
+impl Display for ValBinOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                BasicValBinOp::And => "&",
-                BasicValBinOp::Xor => "^",
-                BasicValBinOp::Or => "|",
-                BasicValBinOp::LesserEq => "<=",
-                BasicValBinOp::Lesser => "<",
-                BasicValBinOp::GreaterEq => ">=",
-                BasicValBinOp::Greater => ">",
-                BasicValBinOp::Uneq => "!=",
-                BasicValBinOp::Equals => "==",
-                BasicValBinOp::ShiftR => ">>",
-                BasicValBinOp::ShiftL => "<<",
-                BasicValBinOp::Minus => "-",
-                BasicValBinOp::Plus => "+",
-                BasicValBinOp::Div => "/",
-                BasicValBinOp::Modulo => "%",
-                BasicValBinOp::Mul => "*",
-                BasicValBinOp::Compose => "|>",
-                BasicValBinOp::ParserApply => "*>",
+                ValBinOp::And => "&",
+                ValBinOp::Xor => "^",
+                ValBinOp::Or => "|",
+                ValBinOp::LesserEq => "<=",
+                ValBinOp::Lesser => "<",
+                ValBinOp::GreaterEq => ">=",
+                ValBinOp::Greater => ">",
+                ValBinOp::Uneq => "!=",
+                ValBinOp::Equals => "==",
+                ValBinOp::ShiftR => ">>",
+                ValBinOp::ShiftL => "<<",
+                ValBinOp::Minus => "-",
+                ValBinOp::Plus => "+",
+                ValBinOp::Div => "/",
+                ValBinOp::Modulo => "%",
+                ValBinOp::Mul => "*",
+                ValBinOp::Compose => "|>",
+                ValBinOp::ParserApply => "*>",
+                ValBinOp::Else => "else",
             }
         )
     }
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum ValUnOp<V: ExpressionKind, T: Clone + Hash + Eq + Debug> {
-    Not(Expression<V>, T),
-    Neg(Expression<V>, T),
-    Pos(Expression<V>, T),
-    If(Expression<V>, T),
+pub enum ValUnOp<C: ExpressionKind> {
+    Not,
+    Neg,
+    Pos,
+    Wiggle(Arc<Expression<C>>, WiggleKind),
+    Dot(Atom),
 }
 
-impl<P: ExpressionKind, T: Clone + Hash + Eq + Debug> ValUnOp<P, T> {
-    pub fn convert_same<ToP: ExpressionKind, ToT: Clone + Hash + Eq + Debug>(
+impl<C: ExpressionKind> ValUnOp<C> {
+    pub fn parse_from_str(s: &str) -> Result<Self, &str> {
+        use ValUnOp::*;
+        Ok(match s {
+            "!" => Not,
+            "-" => Neg,
+            "+" => Pos,
+            otherwise => return Err(otherwise),
+        })
+    }
+    pub fn map_expr<D: ExpressionKind>(
         &self,
-        c: &ExprConverter<P, ToP>,
-        mut f: impl FnMut(&T) -> ToT,
-    ) -> ValUnOp<ToP, ToT> {
+        f: impl FnOnce(&Expression<C>) -> Expression<D>,
+    ) -> ValUnOp<D> {
         use ValUnOp::*;
         match self {
-            Not(a, t) => Not(c.convert(a), f(t)),
-            Neg(a, t) => Neg(c.convert(a), f(t)),
-            Pos(a, t) => Pos(c.convert(a), f(t)),
-            If(a, t) => If(c.convert(a), f(t)),
+            Not => Not,
+            Neg => Neg,
+            Pos => Pos,
+            Wiggle(expr, kind) => Wiggle(Arc::new(f(expr)), kind.clone()),
+            Dot(atom) => Dot(atom.clone()),
         }
     }
 }
 
-impl<P: ExpressionKind, T: Clone + Hash + Eq + Debug> ExpressionComponent<P> for ValUnOp<P, T> {
-    fn children(&self) -> Vec<&Expression<P>> {
-        use ValUnOp::*;
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub enum WiggleKind {
+    If,
+    Try,
+    Wiggly,
+}
+
+impl Display for WiggleKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                WiggleKind::If => "if",
+                WiggleKind::Try => "try",
+                WiggleKind::Wiggly => "~",
+            }
+        )
+    }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub enum TypeBinOp {
+    Ref,
+    ParseArg,
+}
+
+impl TypeBinOp {
+    pub fn parse_from_str(s: &str) -> Result<Self, &str> {
+        use TypeBinOp::*;
+        Ok(match s {
+            "&>" => Ref,
+            "*>" => ParseArg,
+            otherwise => return Err(otherwise),
+        })
+    }
+}
+
+impl Display for TypeBinOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                TypeBinOp::Ref => "&>",
+                TypeBinOp::ParseArg => "*>",
+            }
+        )
+    }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub enum TypeUnOp<C: ExpressionKind> {
+    Wiggle(Arc<Expression<C>>),
+    Ref,
+}
+
+impl<C: ExpressionKind> TypeUnOp<C> {
+    pub fn parse_from_str(s: &str) -> Result<Self, &str> {
+        use TypeUnOp::*;
+        Ok(match s {
+            "&>" => Ref,
+            otherwise => return Err(otherwise),
+        })
+    }
+    pub fn map_expr<D: ExpressionKind>(
+        &self,
+        f: impl FnOnce(&Expression<C>) -> Expression<D>,
+    ) -> TypeUnOp<D> {
+        use TypeUnOp::*;
         match self {
-            Not(a, _) | Neg(a, _) | Pos(a, _) | If(a, _) => vec![a],
+            Wiggle(expr) => Wiggle(Arc::new(f(expr))),
+            Ref => Ref,
         }
     }
 }
 
-pub struct ExprConverter<'a, FromKind: ExpressionKind, ToKind: ExpressionKind> {
-    bin_fun: Box<dyn 'a + Fn(&FromKind::BinaryOp, &Self) -> ToKind::BinaryOp>,
-    un_fun: Box<dyn 'a + Fn(&FromKind::UnaryOp, &Self) -> ToKind::UnaryOp>,
-    atom_fun: Box<dyn 'a + Fn(&FromKind::Atom, &Self) -> ToKind::Atom>,
-    _from: PhantomData<FromKind>,
-    _to: PhantomData<ToKind>,
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub enum ConstraintBinOp {
+    And,
+    Or,
 }
 
-impl<'a, FromKind: ExpressionKind, ToKind: ExpressionKind> ExprConverter<'a, FromKind, ToKind> {
-    pub fn new(
-        bin_fun: impl 'a + Fn(&FromKind::BinaryOp, &Self) -> ToKind::BinaryOp,
-        un_fun: impl 'a + Fn(&FromKind::UnaryOp, &Self) -> ToKind::UnaryOp,
-        atom_fun: impl 'a + Fn(&FromKind::Atom, &Self) -> ToKind::Atom,
-    ) -> Self {
-        Self {
-            bin_fun: Box::new(bin_fun),
-            un_fun: Box::new(un_fun),
-            atom_fun: Box::new(atom_fun),
-            _from: PhantomData,
-            _to: PhantomData,
-        }
+impl ConstraintBinOp {
+    pub fn parse_from_str(s: &str) -> Result<Self, &str> {
+        use ConstraintBinOp::*;
+        Ok(match s {
+            "and" => And,
+            "or" => Or,
+            otherwise => return Err(otherwise),
+        })
     }
-    pub fn convert(&self, expr: &Expression<FromKind>) -> Expression<ToKind> {
-        match expr {
-            Expression::BinaryOp(b) => Expression::BinaryOp(Box::new((self.bin_fun)(b, self))),
-            Expression::UnaryOp(u) => Expression::UnaryOp(Box::new((self.un_fun)(u, self))),
-            Expression::Atom(a) => Expression::Atom((self.atom_fun)(a, self)),
-        }
+}
+
+impl Display for ConstraintBinOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ConstraintBinOp::And => "and",
+                ConstraintBinOp::Or => "or",
+            }
+        )
+    }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub enum ConstraintUnOp {
+    Not,
+    Dot(Atom),
+}
+
+impl ConstraintUnOp {
+    pub fn parse_from_str(s: &str) -> Result<Self, &str> {
+        use ConstraintUnOp::*;
+        Ok(match s {
+            "!" => Not,
+            otherwise => return Err(otherwise),
+        })
     }
 }

@@ -1,11 +1,7 @@
 use std::collections::HashMap;
 
 use super::*;
-use crate::{
-    ast::{self, AstConstraint, AstType, AstVal},
-    error::Silencable,
-    error_type,
-};
+use crate::{ast, error::Silencable, error_type, expr::OpWithData};
 
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum HirConversionError {
@@ -32,125 +28,101 @@ impl Silencable for HirConversionError {
 
 error_type!(HirConversionErrors(BTreeSet<HirConversionError>) in crate::hir);
 
-fn constraint_expression_converter(
-    add_span: &impl Fn(&Span) -> SpanIndex,
-) -> ExprConverter<AstConstraint, HirConstraint> {
-    type Converter<'b> = ExprConverter<'b, ast::AstConstraint, HirConstraint>;
-    let bin_fun =
-        move |bop: &ast::AstConstraintBinOp, c: &Converter| bop.convert_same(c, &add_span);
-    let un_fun = move |uop: &ast::AstConstraintUnOp, c: &Converter| uop.convert_same(c, &add_span);
-    let atom_fun = move |atom: &Spanned<Atom>, _: &Converter| IndexSpanned::new(atom, add_span);
-    ExprConverter::new(bin_fun, un_fun, atom_fun)
-}
-
-fn val_expression_converter<'a>(
-    ctx: &'a HirConversionCtx<'a>,
-    add_span: &'a impl Fn(&Span) -> SpanIndex,
-    new_id: &'a impl Fn() -> HirId,
-    parent_context: Option<ContextId>,
-    enclosing_expr: ExprId,
-    array: Option<ArrayKind>,
-) -> ExprConverter<'a, AstVal, HirVal> {
-    type VConverter<'b> = ExprConverter<'b, ast::AstVal, HirVal>;
-    let atom_fun =
-        move |x: &Spanned<ast::ParserAtom>, _: &VConverter| -> IndexSpanned<ParserAtom> {
-            let n = add_span(&x.span);
-            let atom = match &x.inner {
-                ast::ParserAtom::Array(array) => {
-                    let nid = ArrayId(new_id());
-                    parser_array(array, ctx, nid, parent_context, enclosing_expr);
-                    ParserAtom::Array(nid)
-                }
-                ast::ParserAtom::Single => ParserAtom::Single,
-                ast::ParserAtom::Atom(atom) => ParserAtom::Atom(atom.clone()),
-                ast::ParserAtom::Block(b) => {
-                    let nid = BlockId(new_id());
-                    block(b, ctx, nid, parent_context, enclosing_expr, array);
-                    ParserAtom::Block(nid)
-                }
-            };
-            IndexSpanned { atom, span: n }
-        };
-    let constraint_converter = constraint_expression_converter(add_span);
-    let pbin_fun = move |bop: &ast::AstValBinOp, c: &VConverter| {
-        bop.convert_same(c, &constraint_converter, add_span)
-    };
-    let pun_fun = move |bop: &ast::AstValUnOp, c: &VConverter| bop.convert_same(c, add_span);
-    ExprConverter::new(pbin_fun, pun_fun, atom_fun)
-}
-
-fn type_expression_converter(
-    add_span: &impl Fn(&Span) -> SpanIndex,
-) -> ExprConverter<AstType, HirType> {
-    type Converter<'b> = ExprConverter<'b, ast::AstType, HirType>;
-    let constr = constraint_expression_converter(add_span);
-    let bin_fun =
-        move |bop: &ast::AstTypeBinOp, c: &Converter| bop.convert_same(c, &constr, &add_span);
-    let un_fun = move |uop: &ast::AstTypeUnOp, c: &Converter| uop.convert_same(c, &add_span);
-    let atom_fun = move |atom: &Spanned<ast::TypeAtom>, c: &Converter| {
-        let n = add_span(&atom.span);
-        let new_atom = match &atom.inner {
-            ast::TypeAtom::ParserDef(pd) => {
-                let from = pd.from.as_ref().map(|x| c.convert(x));
-                let args = pd.args.iter().map(|x| c.convert(x)).collect();
-                let name = IndexSpanned::new(&pd.name, add_span);
-                TypeAtom::ParserDef(Box::new(ParserDefRef { from, name, args }))
-            }
-            ast::TypeAtom::Array(arr) => {
-                let new_expr = c.convert(&arr.expr);
-                TypeAtom::Array(Box::new(TypeArray {
-                    direction: arr.direction.inner,
-                    expr: new_expr,
-                }))
-            }
-            ast::TypeAtom::Primitive(a) => TypeAtom::Primitive((*a).into()),
-            ast::TypeAtom::TypeVar(v) => TypeAtom::TypeVar(*v),
-        };
-        IndexSpanned {
-            atom: new_atom,
-            span: n,
-        }
-    };
-    ExprConverter::new(bin_fun, un_fun, atom_fun)
-}
-
 fn val_expression(
     ast: &ast::ValExpression,
     ctx: &HirConversionCtx,
     id: ExprId,
     parent_context: Option<ContextId>,
-    array: Option<ArrayKind>,
 ) {
     let spans = RefCell::new(Vec::new());
-    let children = RefCell::new(Vec::new());
-    let add_span = SpanIndex::add_span(&spans);
-    let new_id = || {
-        let mut borrow = children.borrow_mut();
-        let index: u32 = u32::try_from(borrow.len()).unwrap();
+    let mut children = Vec::new();
+    let mut add_span = SpanIndex::add_span(&spans);
+    let mut new_id = || {
+        let index: u32 = u32::try_from(children.len()).unwrap();
         let new_id = id.child(ctx.db, PathComponent::Unnamed(index));
-        borrow.push(new_id);
+        children.push(new_id);
         new_id
     };
-    let vconverter = val_expression_converter(ctx, &add_span, &new_id, parent_context, id, array);
-    let expr = vconverter.convert(ast);
-    drop(vconverter);
+    let expr: Expression<HirValSpanned> = ast.map(&mut add_span).convert(
+        &mut |niladic| {
+            let inner = match &niladic.inner {
+                ast::ParserAtom::Atom(atom) => ParserAtom::Atom(atom.clone()),
+                ast::ParserAtom::Single => ParserAtom::Single,
+                ast::ParserAtom::Block(b) => {
+                    let nid = BlockId(new_id());
+                    block(b, ctx, nid, parent_context, id);
+                    ParserAtom::Block(nid)
+                }
+            };
+            expr::OpWithData {
+                data: niladic.data,
+                inner,
+            }
+        },
+        &mut |monadic, _| OpWithData {
+            data: monadic.data,
+            inner: monadic.inner.map_expr(|x| x.map(&mut add_span)),
+        },
+        &mut |dyadic, _, _| dyadic.clone(),
+    );
+    let expr = ValExpression { id, expr, children };
     drop(add_span);
-    let expr = ValExpression {
-        id,
-        expr,
-        children: children.into_inner(),
-    };
-    ctx.insert(id.0, HirNode::Expr(expr), spans.into_inner())
+    ctx.insert(id.0, HirNode::Expr(expr), spans.into_inner());
+}
+
+fn convert_type_expression(
+    expr: &ast::TypeExpression,
+    mut add_span: &impl Fn(&Span) -> SpanIndex,
+) -> Expression<HirTypeSpanned> {
+    let expr = expr.map(add_span);
+    expr.convert(
+        &mut |niladic| {
+            let new_atom = match &niladic.inner {
+                ast::TypeAtom::ParserDef(pd) => {
+                    let from = pd
+                        .from
+                        .as_ref()
+                        .map(|x| convert_type_expression(x, add_span));
+                    let args = pd
+                        .args
+                        .iter()
+                        .map(|x| convert_type_expression(x, add_span))
+                        .collect();
+                    let name = IndexSpanned {
+                        span: add_span(&pd.name.span),
+                        atom: pd.name.inner,
+                    };
+                    TypeAtom::ParserDef(Box::new(ParserDefRef { from, name, args }))
+                }
+                ast::TypeAtom::Array(arr) => {
+                    let new_expr = convert_type_expression(&arr.expr, add_span);
+                    TypeAtom::Array(Box::new(TypeArray {
+                        direction: arr.direction.inner,
+                        expr: new_expr,
+                    }))
+                }
+                ast::TypeAtom::Primitive(a) => TypeAtom::Primitive((*a).into()),
+                ast::TypeAtom::TypeVar(v) => TypeAtom::TypeVar(*v),
+            };
+            OpWithData {
+                data: niladic.data,
+                inner: new_atom,
+            }
+        },
+        &mut |monadic, _| OpWithData {
+            data: monadic.data,
+            inner: monadic.inner.map_expr(|x| x.map(&mut add_span)),
+        },
+        &mut |dyadic, _, _| dyadic.clone(),
+    )
 }
 
 fn type_expression(ast: &ast::TypeExpression, ctx: &HirConversionCtx, id: TExprId) {
     let spans = RefCell::new(Vec::new());
-    let add_span = SpanIndex::add_span(&spans);
-    let tconverter = type_expression_converter(&add_span);
-    let texpr = tconverter.convert(ast);
-    drop(tconverter);
-    drop(add_span);
+    let mut add_span = SpanIndex::add_span(&spans);
+    let texpr = convert_type_expression(ast, &mut add_span);
     let texpr = TypeExpression { id, expr: texpr };
+    drop(add_span);
     ctx.insert(id.0, HirNode::TExpr(texpr), spans.into_inner())
 }
 
@@ -158,7 +130,7 @@ fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDef
     let from = TExprId(id.child(ctx.db, PathComponent::Unnamed(0)));
     let to = ExprId(id.child(ctx.db, PathComponent::Unnamed(1)));
     type_expression(&ast.from, ctx, from);
-    val_expression(&ast.to, ctx, to, None, None);
+    val_expression(&ast.to, ctx, to, None);
     let pdef = ParserDef { id, from, to };
     ctx.insert(id.0, HirNode::ParserDef(pdef), vec![ast.span]);
 }
@@ -169,7 +141,6 @@ fn block(
     id: BlockId,
     super_context: Option<ContextId>,
     enclosing_expr: ExprId,
-    array: Option<ArrayKind>,
 ) {
     let context_id = ContextId(id.child(ctx.db, PathComponent::Unnamed(0)));
     let parents = ParentInfo {
@@ -190,7 +161,7 @@ fn block(
         root_context: context_id,
         super_context,
         enclosing_expr,
-        array,
+        array: None,
     };
     ctx.insert(id.0, HirNode::Block(block), vec![ast.span]);
 }
@@ -379,7 +350,7 @@ fn let_statement(
 ) -> VariableSet<(HirId, Span)> {
     let val_id = ExprId(id.child(ctx.db, PathComponent::Unnamed(0)));
     let ty_id = TExprId(id.child(ctx.db, PathComponent::Unnamed(1)));
-    val_expression(&ast.expr, ctx, val_id, Some(context), None);
+    val_expression(&ast.expr, ctx, val_id, Some(context));
     type_expression(&ast.ty, ctx, ty_id);
     let st = LetStatement {
         id,
@@ -399,7 +370,7 @@ fn parse_statement(
     parent_context: ContextId,
 ) -> VariableSet<(HirId, Span)> {
     let expr = ExprId(id.child(ctx.db, PathComponent::Unnamed(0)));
-    val_expression(&ast.parser, ctx, expr, Some(parent_context), None);
+    val_expression(&ast.parser, ctx, expr, Some(parent_context));
     let pt = ParseStatement {
         id,
         front: prev,
@@ -416,31 +387,6 @@ fn parse_statement(
         .as_ref()
         .map(|name| VariableSet::singular(name.id, (id.0, name.span)))
         .unwrap_or_default()
-}
-
-fn parser_array(
-    ast: &ast::ParserArray,
-    ctx: &HirConversionCtx,
-    id: ArrayId,
-    parent_context: Option<ContextId>,
-    enclosing_expr: ExprId,
-) {
-    let expr = ExprId(id.child(ctx.db, PathComponent::Unnamed(0)));
-    val_expression(
-        &ast.expr,
-        ctx,
-        expr,
-        parent_context,
-        Some(ast.direction.inner),
-    );
-    let pa = ParserArray {
-        id,
-        direction: ast.direction.inner,
-        expr,
-        context: parent_context,
-        enclosing_expr,
-    };
-    ctx.insert(id.0, HirNode::Array(pa), vec![ast.span, ast.direction.span]);
 }
 
 pub fn choice_indirection(

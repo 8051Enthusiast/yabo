@@ -1,6 +1,7 @@
 use crate::{
     dbformat,
     error::{SResult, Silencable, SilencedError},
+    expr::ExpressionHead,
 };
 
 use super::*;
@@ -25,7 +26,7 @@ fn public_expr_type_impl(
     };
     let expr = loc.lookup(db)?;
     let expr = ctx.val_expression_type(&mut typeloc, &expr.expr)?;
-    let root = expr.root_type();
+    let root = *expr.0.root_data();
     let into_ret = if let Some(ty) = surrounding_types.from_type {
         ctx.infctx.parser_apply(root, ty)?
     } else {
@@ -81,16 +82,15 @@ fn ambient_type_impl(db: &dyn TyHirs, loc: hir::ParseId) -> Result<TypeId, TypeE
         .lookup(db)?;
     let (typed_expr, _) = db.public_expr_type(block.enclosing_expr)?;
     let block_ty = ExprIter::new(&typed_expr)
-        .find_map(|x| match x {
-            Expression::Atom(TypedAtom {
-                ty,
-                atom: ParserAtom::Block(b),
-                ..
-            }) if *b == block.id => Some(ty),
+        .find_map(|x| match &x.0 {
+            ExpressionHead::Niladic(expr::OpWithData {
+                inner: ParserAtom::Block(b),
+                data
+            }) if *b == block.id => Some(*data),
             _ => None,
         })
         .ok_or(SilencedError)?;
-    let block_type = match db.lookup_intern_type(*block_ty) {
+    let block_type = match db.lookup_intern_type(block_ty) {
         Type::ParserArg { result, .. } => result,
         _ => panic!("expected parser arg"),
     };
@@ -103,7 +103,6 @@ fn ambient_type_impl(db: &dyn TyHirs, loc: hir::ParseId) -> Result<TypeId, TypeE
         _ => panic!("expected block"),
     }
 }
-
 
 impl<'a> TypingContext<'a, PublicResolver<'a>> {
     pub fn parse_statement_types(

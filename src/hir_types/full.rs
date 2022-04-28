@@ -1,6 +1,7 @@
 use crate::{
     dbformat, dbpanic,
     error::{SResult, Silencable, SilencedError},
+    expr::{ExpressionHead, OpWithData},
     hir::{
         refs::{resolve_var_ref, VarType},
         walk::ChildIter,
@@ -164,31 +165,21 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
     fn type_expr(&mut self, expr: &ValExpression) -> Result<InfTypeId, TypeError> {
         let mut typeloc = self.infctx.tr.loc.clone();
         let inf_expression = self.val_expression_type(&mut typeloc, &expr.expr)?;
-        let root = inf_expression.root_type();
+        let root = *inf_expression.0.root_data();
         let ret = if let Some(ambient) = self.ambient_type() {
             self.infctx.parser_apply(root, ambient)?
         } else {
             root
         };
         for part in ExprIter::new(&inf_expression) {
-            match part {
-                Expression::Atom(TypedAtom {
-                    ty,
-                    atom: ParserAtom::Block(block_id),
-                    ..
+            match &part.0 {
+                ExpressionHead::Niladic(OpWithData {
+                    data,
+                    inner: ParserAtom::Block(block_id),
                 }) => {
-                    let ambient = self.infctx.reuse_parser_arg(*ty)?;
+                    let ambient = self.infctx.reuse_parser_arg(*data)?;
                     let block = block_id.lookup(self.db)?;
                     self.with_ambient_type(Some(ambient), |ctx| ctx.type_block(&block))?;
-                }
-                Expression::Atom(TypedAtom {
-                    ty,
-                    atom: ParserAtom::Array(array_id),
-                    ..
-                }) => {
-                    let ambient = self.infctx.reuse_parser_arg(*ty)?;
-                    let array = array_id.lookup(self.db)?;
-                    self.with_ambient_type(Some(ambient), |ctx| ctx.type_array(&array))?;
                 }
                 _ => continue,
             }
@@ -202,11 +193,6 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
     fn type_block(&mut self, block: &Block) -> Result<(), TypeError> {
         let root_ctx = block.root_context.lookup(self.db)?;
         self.type_context(&root_ctx)
-    }
-    fn type_array(&mut self, array: &hir::ParserArray) -> Result<(), TypeError> {
-        let expr = array.expr.lookup(self.db)?;
-        self.type_expr(&expr)?;
-        Ok(())
     }
     fn type_context(&mut self, context: &StructCtx) -> Result<(), TypeError> {
         self.with_loc(context.id.0, |ctx| {

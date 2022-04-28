@@ -5,7 +5,6 @@ use tree_sitter_yabo::language;
 
 use crate::ast::*;
 use crate::error::SilencedError;
-use crate::expr::*;
 use crate::interner::FieldName;
 use crate::interner::Identifier;
 use crate::interner::IdentifierName;
@@ -160,92 +159,116 @@ fn get_op<'a>(
     Ok((left, op, right))
 }
 
-fn binary_type_expression(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<AstTypeBinOp> {
-    use TypeBinOp::*;
-    let (left, op, right) = get_op(db, fd, c)?;
-    let left = left.unwrap();
-    let ty = |x| type_expression(db, fd, x);
-    let constr = |x| constraint_expression(db, fd, x);
-    let span = op.span;
-    Ok(match op.inner.as_str() {
-        "&>" => Ref(ty(left)?, ty(right)?, span),
-        "*>" => ParseArg(ty(left)?, ty(right)?, span),
-        "~" => Wiggle(ty(left)?, constr(right)?, span),
-        otherwise => panic!("Invalid constrain operator \"{}\"", otherwise),
-    })
+fn binary_type_expression(
+    db: &dyn Asts,
+    fd: FileId,
+    c: TreeCursor,
+) -> ParseResult<DyadicExpr<AstTypeSpanned>> {
+    dyadic(
+        |x| TypeBinOp::parse_from_str(x).unwrap(),
+        expression(type_expression),
+    )(db, fd, c)
 }
 
-fn unary_type_expression(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<AstTypeUnOp> {
-    use TypeUnOp::*;
-    let (_, op, right) = get_op(db, fd, c)?;
-    let ty = |x| type_expression(db, fd, x);
-    let span = op.span;
-    Ok(match op.inner.as_str() {
-        "&" => Ref(ty(right)?, span),
-        otherwise => panic!("Invalid constrain operator \"{}\"", otherwise),
-    })
+fn unary_type_expression(
+    db: &dyn Asts,
+    fd: FileId,
+    c: TreeCursor,
+) -> ParseResult<MonadicExpr<AstTypeSpanned>> {
+    monadic(
+        |x| TypeUnOp::parse_from_str(x).unwrap(),
+        expression(type_expression),
+    )(db, fd, c)
 }
 fn binary_constraint_expression(
     db: &dyn Asts,
     fd: FileId,
     c: TreeCursor,
-) -> ParseResult<AstConstraintBinOp> {
-    use ConstraintBinOp::*;
-    let (left, op, right) = get_op(db, fd, c)?;
-    let left = left.unwrap();
-    let constr = |x| constraint_expression(db, fd, x);
-    let span = op.span;
-    Ok(match op.inner.as_str() {
-        "and" => And(constr(left)?, constr(right)?, span),
-        "or" => Or(constr(left)?, constr(right)?, span),
-        "." => Dot(constr(left)?, atom(db, fd, right)?, span),
-        otherwise => panic!("Invalid constrain operator \"{}\"", otherwise),
-    })
+) -> ParseResult<DyadicExpr<AstConstraintSpanned>> {
+    dyadic(
+        |x| ConstraintBinOp::parse_from_str(x).unwrap(),
+        expression(constraint_expression),
+    )(db, fd, c)
 }
 
 fn unary_constraint_expression(
     db: &dyn Asts,
     fd: FileId,
     c: TreeCursor,
-) -> ParseResult<AstConstraintUnOp> {
-    use ConstraintUnOp::*;
-    let (_, op, right) = get_op(db, fd, c)?;
-    let constr = |x| constraint_expression(db, fd, x);
-    let span = op.span;
-    Ok(match op.inner.as_str() {
-        "!" => Not(constr(right)?, span),
-        otherwise => panic!("Invalid constrain operator \"{}\"", otherwise),
-    })
+) -> ParseResult<MonadicExpr<AstConstraintSpanned>> {
+    monadic(
+        |x| ConstraintUnOp::parse_from_str(x).unwrap(),
+        expression(constraint_expression),
+    )(db, fd, c)
 }
 
-fn binary_expression(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<AstValBinOp> {
-    use ValBinOp::*;
-    let (left, op, right) = get_op(db, fd, c)?;
-    let left = left.unwrap();
-    let val = |x| val_expression(db, fd, x);
-    let constr = |x| constraint_expression(db, fd, x);
-    let span = op.span;
-
-    Ok(match BasicValBinOp::parse_from_str(&op.inner) {
-        Ok(op) => Basic(val(left)?, op, val(right)?, span),
-        Err("~") => Wiggle(val(left)?, constr(right)?, span),
-        Err("else") => Else(val(left)?, val(right)?, span),
-        Err(".") => Dot(val(left)?, atom(db, fd, right)?, span),
-        Err(otherwise) => panic!("Invalid constrain operator \"{}\"", otherwise),
-    })
+fn binary_expression(
+    db: &dyn Asts,
+    fd: FileId,
+    c: TreeCursor,
+) -> ParseResult<DyadicExpr<AstValSpanned>> {
+    dyadic(
+        |x| ValBinOp::parse_from_str(x).unwrap(),
+        expression(val_expression),
+    )(db, fd, c)
 }
 
-fn unary_expression(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<AstValUnOp> {
-    use ValUnOp::*;
-    let (_, op, right) = get_op(db, fd, c)?;
-    let val = |x| val_expression(db, fd, x);
-    let span = op.span;
-    Ok(match op.inner.as_str() {
-        "!" => Not(val(right)?, span),
-        "-" => Neg(val(right)?, span),
-        "+" => Pos(val(right)?, span),
-        otherwise => panic!("Invalid constrain operator \"{}\"", otherwise),
-    })
+fn unary_expression(
+    db: &dyn Asts,
+    fd: FileId,
+    c: TreeCursor,
+) -> ParseResult<MonadicExpr<AstValSpanned>> {
+    monadic(
+        |x| ValUnOp::parse_from_str(x).unwrap(),
+        expression(val_expression),
+    )(db, fd, c)
+}
+
+fn dyadic<Kind: ExpressionKind>(
+    mut f: impl FnMut(&str) -> Kind::DyadicOp,
+    mut sub_expr: impl FnMut(
+        &dyn Asts,
+        FileId,
+        TreeCursor,
+    ) -> ParseResult<Expression<KindWithData<Kind, Span>>>,
+) -> impl FnMut(&dyn Asts, FileId, TreeCursor) -> ParseResult<DyadicExpr<KindWithData<Kind, Span>>>
+{
+    move |db, fd, c| {
+        let (left, op, right) = get_op(db, fd, c)?;
+        let left = left.unwrap();
+        let span = op.span;
+
+        Ok(Dyadic {
+            op: OpWithData {
+                data: span,
+                inner: f(&op.inner),
+            },
+            inner: [sub_expr(db, fd, left)?, sub_expr(db, fd, right)?].map(Box::new),
+        })
+    }
+}
+
+fn monadic<Kind: ExpressionKind>(
+    mut f: impl FnMut(&str) -> Kind::MonadicOp,
+    mut sub_expr: impl FnMut(
+        &dyn Asts,
+        FileId,
+        TreeCursor,
+    ) -> ParseResult<Expression<KindWithData<Kind, Span>>>,
+) -> impl FnOnce(&dyn Asts, FileId, TreeCursor) -> ParseResult<MonadicExpr<KindWithData<Kind, Span>>>
+{
+    move |db, fd, c| {
+        let (_, op, right) = get_op(db, fd, c)?;
+        let span = op.span;
+
+        Ok(Monadic {
+            op: OpWithData {
+                data: span,
+                inner: f(&op.inner),
+            },
+            inner: Box::new(sub_expr(db, fd, right)?),
+        })
+    }
 }
 
 macro_rules! maybe_unwrap {
@@ -267,7 +290,7 @@ macro_rules! callable {
 }
 
 macro_rules! astify {
-    {struct $new:ident = $node:ident {$($name:ident: $fun:ident $require:tt),+$(,)?};} => {
+    {struct $new:ident = $node:ident {$($name:ident: $fun:ident$(($fun_inner:tt))? [$require:tt]),+$(,)?};} => {
         fn $new(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<$node> {
 //            eprintln!("Enter {}", stringify!($new));
             let node = c.node();
@@ -275,7 +298,7 @@ macro_rules! astify {
             iter_children(db, fd, c, |_, cursor| {
                 let field = cursor.field_name();
                 match field {
-                    $(Some(stringify!($name)) => $name.push($fun(db, fd, cursor.clone())?)),+,
+                    $(Some(stringify!($name)) => $name.push($fun$(($fun_inner))?(db, fd, cursor.clone())?)),+,
                     Some(other) => panic!("Unknown field {} in struct {}", other, stringify!($new)),
                     None => (),
                 }
@@ -305,25 +328,25 @@ macro_rules! astify {
             ret
         }
     };
-    {$($t:tt $new:ident = $node:ident $rest:tt;)+} => {
-        $(astify!{
-            $t $new = $node $rest;
-        })+
-    };
 }
 
+#[inline]
 fn boxed<T, F: FnMut(&'_ dyn Asts, FileId, TreeCursor) -> ParseResult<T>>(
     mut f: F,
 ) -> impl FnMut(&'_ dyn Asts, FileId, TreeCursor) -> ParseResult<Box<T>> {
+    #[inline]
     move |db: &dyn Asts, fd: FileId, c: TreeCursor| f(db, fd, c).map(Box::new)
 }
 
-fn into<T, U: From<T>, F: FnMut(&'_ dyn Asts, FileId, TreeCursor) -> ParseResult<T>>(
+#[inline]
+fn into<T: Into<U>, U, F: FnMut(&'_ dyn Asts, FileId, TreeCursor) -> ParseResult<T>>(
     mut f: F,
 ) -> impl FnMut(&'_ dyn Asts, FileId, TreeCursor) -> ParseResult<U> {
-    move |db: &dyn Asts, fd: FileId, c: TreeCursor| f(db, fd, c).map(U::from)
+    #[inline]
+    move |db: &dyn Asts, fd: FileId, c: TreeCursor| f(db, fd, c).map(T::into)
 }
 
+#[inline]
 fn spanned<T, F>(
     mut f: F,
 ) -> impl FnMut(&'_ dyn Asts, FileId, TreeCursor) -> ParseResult<Spanned<T>>
@@ -340,90 +363,236 @@ where
     }
 }
 
+#[inline]
+fn expression<K: ExpressionKind, F>(
+    mut f: F,
+) -> impl FnMut(&'_ dyn Asts, FileId, TreeCursor) -> ParseResult<Expression<K>>
+where
+    F: FnMut(
+        &'_ dyn Asts,
+        FileId,
+        TreeCursor,
+    ) -> ParseResult<ExpressionHead<K, Box<Expression<K>>>>,
+{
+    #[inline]
+    move |db: &dyn Asts, fd: FileId, c: TreeCursor| f(db, fd, c).map(Expression)
+}
+
+fn with_span_data<T, F>(
+    mut f: F,
+) -> impl FnMut(&'_ dyn Asts, FileId, TreeCursor) -> ParseResult<OpWithData<T, Span>>
+where
+    T: Clone + core::hash::Hash + Eq,
+    F: FnMut(&'_ dyn Asts, FileId, TreeCursor) -> ParseResult<T>,
+{
+    move |db: &dyn Asts, fd: FileId, c: TreeCursor| {
+        let node = c.node();
+        f(db, fd, c).map(|o| OpWithData {
+            inner: o,
+            data: span_from_node(fd, &node),
+        })
+    }
+}
+
 astify! {
     struct parser_definition = ParserDefinition {
-        name: idspan!,
-        from: type_expression!,
-        to: val_expression!,
+        name: idspan[!],
+        from: expression(type_expression)[!],
+        to: expression(val_expression)[!],
     };
+}
 
+astify! {
     struct parse_statement = ParseStatement {
-        name: fieldspan?,
-        parser: val_expression!,
+        name: fieldspan[?],
+        parser: expression(val_expression)[!],
     };
+}
 
+astify! {
     struct let_statement = LetStatement {
-        name: fieldspan!,
-        ty: type_expression!,
-        expr: val_expression!,
+        name: fieldspan[!],
+        ty: expression(type_expression)[!],
+        expr: expression(val_expression)[!],
     };
+}
 
-    struct parser_array = ParserArray {
-        direction: array_direction!,
-        expr: val_expression!,
-    };
-
+astify! {
     struct type_array = TypeArray {
-        direction: array_direction!,
-        expr: type_expression!,
+        direction: array_direction[!],
+        expr: expression(type_expression)[!],
     };
+}
 
+astify! {
     struct parser_block = Block {
-        content: block_content?,
+        content: block_content[?],
     };
+}
 
+astify! {
     struct parser_choice = ParserChoice {
-        left: block_content!,
-        right: block_content!,
+        left: block_content[!],
+        right: block_content[!],
     };
+}
 
+astify! {
     struct parserdef_ref = ParserDefRef {
-        from: type_expression?,
-        name: idspan!,
-        args: type_expression*,
+        from: expression(type_expression)[?],
+        name: idspan[!],
+        args: expression(type_expression)[*],
     };
+}
 
+astify! {
     enum block_content = BlockContent {
         Sequence(boxed(parser_sequence)),
         Choice(boxed(parser_choice)),
         Statement(statement..),
     };
+}
 
+astify! {
     enum statement = Statement {
         Parse(boxed(parse_statement)),
         Let(boxed(let_statement)),
     };
+}
 
+astify! {
     enum atom = Atom {
         Field(identifier),
         Number(number_literal),
         Char(char_literal),
         String(string_literal),
     };
+}
 
-    enum val_expression = ValExpression {
-        BinaryOp(boxed(binary_expression)),
-        UnaryOp(boxed(unary_expression)),
-        Atom(spanned(parser_block)),
-        Atom(spanned(parser_array)),
-        Atom(spanned(single)),
-        Atom(spanned(atom..)),
+astify! {
+    enum val_expression = ValExpressionInner {
+        Dyadic(binary_expression),
+        Monadic(unary_expression),
+        Monadic(constraint_apply),
+        Monadic(val_dot),
+        Niladic(with_span_data(parser_block)),
+        Niladic(with_span_data(single)),
+        Niladic(with_span_data(atom..)),
     };
+}
 
-    enum constraint_expression = ConstraintExpression {
-        BinaryOp(boxed(binary_constraint_expression)),
-        UnaryOp(boxed(unary_constraint_expression)),
-        Atom(spanned(atom..)),
+astify! {
+    enum constraint_expression = ConstraintExpressionInner {
+        Dyadic(binary_constraint_expression),
+        Monadic(unary_constraint_expression),
+        Niladic(with_span_data(atom..)),
     };
+}
 
-    enum type_expression = TypeExpression {
-        BinaryOp(boxed(binary_type_expression)),
-        UnaryOp(boxed(unary_type_expression)),
-        Atom(spanned(primitive_type)),
-        Atom(spanned(parserdef_ref)),
-        Atom(spanned(type_array)),
-        Atom(spanned(type_var)),
+astify! {
+    enum type_expression = TypeExpressionInner {
+        Dyadic(binary_type_expression),
+        Monadic(unary_type_expression),
+        Monadic(type_constraint),
+        Niladic(with_span_data(primitive_type)),
+        Niladic(with_span_data(parserdef_ref)),
+        Niladic(with_span_data(type_array)),
+        Niladic(with_span_data(type_var)),
     };
+}
+
+struct ConstraintApply {
+    left: ValExpression,
+    op: Spanned<WiggleKind>,
+    right: ConstraintExpression,
+    #[allow(dead_code)]
+    span: Span,
+}
+
+astify! {
+    struct constraint_apply = ConstraintApply {
+        left: expression(val_expression)[!],
+        op: spanned(wiggle_kind)[!],
+        right: expression(constraint_expression)[!],
+    };
+}
+
+impl Into<MonadicExpr<AstValSpanned>> for ConstraintApply {
+    fn into(self) -> MonadicExpr<AstValSpanned> {
+        Monadic {
+            op: OpWithData {
+                data: self.op.span,
+                inner: ValUnOp::Wiggle(Arc::new(self.right), self.op.inner),
+            },
+            inner: Box::new(self.left),
+        }
+    }
+}
+
+struct TypeConstraint {
+    left: TypeExpression,
+    op: Spanned<String>,
+    right: ConstraintExpression,
+    #[allow(dead_code)]
+    span: Span,
+}
+
+astify! {
+    struct type_constraint = TypeConstraint {
+        left: expression(type_expression)[!],
+        op: spanned(node_to_string)[!],
+        right: expression(constraint_expression)[!],
+    };
+}
+
+impl Into<MonadicExpr<AstTypeSpanned>> for TypeConstraint {
+    fn into(self) -> MonadicExpr<AstTypeSpanned> {
+        Monadic {
+            op: OpWithData {
+                data: self.op.span,
+                inner: TypeUnOp::Wiggle(Arc::new(self.right)),
+            },
+            inner: Box::new(self.left),
+        }
+    }
+}
+
+struct ValDot {
+    left: ValExpression,
+    op: Spanned<String>,
+    right: Atom,
+    #[allow(dead_code)]
+    span: Span,
+}
+
+astify! {
+    struct val_dot = ValDot {
+        left: expression(val_expression)[!],
+        op: spanned(node_to_string)[!],
+        right: atom[!],
+    };
+}
+
+impl Into<MonadicExpr<AstValSpanned>> for ValDot {
+    fn into(self) -> MonadicExpr<AstValSpanned> {
+        Monadic {
+            op: OpWithData {
+                data: self.op.span,
+                inner: ValUnOp::Dot(self.right),
+            },
+            inner: Box::new(self.left),
+        }
+    }
+}
+
+fn wiggle_kind(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<WiggleKind> {
+    let str = node_to_string(db, fd, c)?;
+    match &*str {
+        "~" => Ok(WiggleKind::Wiggly),
+        "if" => Ok(WiggleKind::If),
+        "try" => Ok(WiggleKind::Try),
+        _ => panic!("unknown wiggle kind: {}", str),
+    }
 }
 
 fn single(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ParserAtom> {

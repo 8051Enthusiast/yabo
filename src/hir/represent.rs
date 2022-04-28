@@ -1,4 +1,9 @@
-use crate::{ast::ArrayKind, databased_display::DatabasedDisplay, dbwrite};
+use crate::{
+    ast::ArrayKind,
+    databased_display::DatabasedDisplay,
+    dbwrite,
+    expr::{Dyadic, ExpressionHead, Monadic},
+};
 
 use super::*;
 
@@ -32,101 +37,6 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for TypeExpression {
     }
 }
 
-impl<T, S, R, DB: Hirs + ?Sized> DatabasedDisplay<DB> for expr::TypeBinOp<T, S, R>
-where
-    T: ExpressionKind,
-    S: ExpressionKind,
-    Expression<T>: DatabasedDisplay<DB>,
-    Expression<S>: DatabasedDisplay<DB>,
-    R: Clone + Hash + Eq + Debug,
-{
-    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
-        match self {
-            expr::TypeBinOp::Ref(a, b, _) => dbwrite!(f, db, "({} &> {})", a, b),
-            expr::TypeBinOp::ParseArg(a, b, _) => dbwrite!(f, db, "({} *> {})", a, b),
-            expr::TypeBinOp::Wiggle(a, b, _) => dbwrite!(f, db, "({} ~ {})", a, b),
-        }
-    }
-}
-
-impl<T, S, DB: Hirs + ?Sized> DatabasedDisplay<DB> for expr::TypeUnOp<T, S>
-where
-    T: ExpressionKind,
-    Expression<T>: DatabasedDisplay<DB>,
-    S: Clone + Hash + Eq + Debug,
-{
-    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
-        match self {
-            expr::TypeUnOp::Ref(a, _) => dbwrite!(f, db, "&{}", a),
-        }
-    }
-}
-
-impl<T, S, R, DB: Hirs + ?Sized> DatabasedDisplay<DB> for expr::ValBinOp<T, S, R>
-where
-    T: ExpressionKind,
-    S: ExpressionKind,
-    Expression<T>: DatabasedDisplay<DB>,
-    Expression<S>: DatabasedDisplay<DB>,
-    R: Clone + Hash + Eq + Debug,
-{
-    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
-        use expr::ValBinOp::*;
-        match self {
-            Basic(a, op, b, _) => dbwrite!(f, db, "({} {} {})", a, op, b),
-            Wiggle(a, b, _) => dbwrite!(f, db, "({} ~ {})", a, b),
-            Else(a, b, _) => dbwrite!(f, db, "({} else {})", a, b),
-            Dot(a, b, _) => dbwrite!(f, db, "{}.{}", a, b),
-        }
-    }
-}
-
-impl<T, S, DB: Hirs + ?Sized> DatabasedDisplay<DB> for expr::ValUnOp<T, S>
-where
-    T: ExpressionKind,
-    Expression<T>: DatabasedDisplay<DB>,
-    S: Clone + Hash + Eq + Debug,
-{
-    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
-        let (x, op) = match self {
-            expr::ValUnOp::Not(a, _) => (a, "!"),
-            expr::ValUnOp::Neg(a, _) => (a, "-"),
-            expr::ValUnOp::Pos(a, _) => (a, "+"),
-            expr::ValUnOp::If(a, _) => (a, "if "),
-        };
-        dbwrite!(f, db, "{}{}", &op, x)
-    }
-}
-
-impl<T, S, DB: Hirs + ?Sized> DatabasedDisplay<DB> for expr::ConstraintBinOp<T, S>
-where
-    T: ExpressionKind,
-    Expression<T>: DatabasedDisplay<DB>,
-    S: Clone + Hash + Eq + Debug,
-{
-    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
-        let (a, b, op) = match self {
-            expr::ConstraintBinOp::And(a, b, _) => (a, b, "and"),
-            expr::ConstraintBinOp::Or(a, b, _) => (a, b, "or"),
-            expr::ConstraintBinOp::Dot(a, b, _) => return dbwrite!(f, db, "{}.{}", a, b),
-        };
-        dbwrite!(f, db, "{} {} {}", a, &op, b)
-    }
-}
-
-impl<T, S, DB: Hirs + ?Sized> DatabasedDisplay<DB> for expr::ConstraintUnOp<T, S>
-where
-    T: ExpressionKind,
-    Expression<T>: DatabasedDisplay<DB>,
-    S: Clone + Hash + Eq + Debug,
-{
-    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
-        match self {
-            expr::ConstraintUnOp::Not(a, _) => dbwrite!(f, db, "!{}", a),
-        }
-    }
-}
-
 impl<T, DB: Hirs + ?Sized> DatabasedDisplay<DB> for IndexSpanned<T>
 where
     T: DatabasedDisplay<DB>,
@@ -141,16 +51,6 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for ParserAtom {
         match self {
             ParserAtom::Atom(atom) => atom.db_fmt(f, db),
             ParserAtom::Single => dbwrite!(f, db, "~"),
-            ParserAtom::Array(id) => dbwrite!(
-                f,
-                db,
-                "array({})",
-                db.lookup_intern_hir_path(id.0)
-                    .path()
-                    .iter()
-                    .last()
-                    .unwrap()
-            ),
             ParserAtom::Block(id) => dbwrite!(
                 f,
                 db,
@@ -226,32 +126,50 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Atom {
     }
 }
 
-// somehow this does not work with a blanket implementation
-// maybe because it is circular and defaults to "not implemented" instead of "implemented"
-impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Expression<HirConstraint> {
+impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Expression<HirConstraintSpanned> {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
-        match self {
-            Expression::BinaryOp(a) => a.db_fmt(f, db),
-            Expression::UnaryOp(a) => a.db_fmt(f, db),
-            Expression::Atom(a) => a.db_fmt(f, db),
+        match &self.0 {
+            ExpressionHead::Niladic(a) => a.inner.db_fmt(f, db),
+            ExpressionHead::Monadic(Monadic { op, inner }) => match &op.inner {
+                expr::ConstraintUnOp::Not => dbwrite!(f, db, "!{}", &**inner),
+                expr::ConstraintUnOp::Dot(a) => dbwrite!(f, db, "{}.{}", &**inner, a),
+            },
+            ExpressionHead::Dyadic(Dyadic { op, inner }) => {
+                dbwrite!(f, db, "{} {} {}", &*inner[0], &op.inner, &*inner[1])
+            }
         }
     }
 }
-impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Expression<HirVal> {
+impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Expression<HirValSpanned> {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
-        match self {
-            Expression::BinaryOp(a) => a.db_fmt(f, db),
-            Expression::UnaryOp(a) => a.db_fmt(f, db),
-            Expression::Atom(a) => a.db_fmt(f, db),
+        match &self.0 {
+            ExpressionHead::Niladic(a) => a.inner.db_fmt(f, db),
+            ExpressionHead::Monadic(Monadic { op, inner }) => match &op.inner {
+                expr::ValUnOp::Not => dbwrite!(f, db, "!{}", &**inner),
+                expr::ValUnOp::Neg => dbwrite!(f, db, "-{}", &**inner),
+                expr::ValUnOp::Pos => dbwrite!(f, db, "+{}", &**inner),
+                expr::ValUnOp::Wiggle(right, kind) => {
+                    dbwrite!(f, db, "{} {} {}", &**inner, kind, &**right)
+                }
+                expr::ValUnOp::Dot(a) => dbwrite!(f, db, "{}.{}", &**inner, a),
+            },
+            ExpressionHead::Dyadic(Dyadic { op, inner }) => {
+                dbwrite!(f, db, "{} {} {}", &*inner[0], &op.inner, &*inner[1])
+            }
         }
     }
 }
-impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Expression<HirType> {
+impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Expression<HirTypeSpanned> {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
-        match self {
-            Expression::BinaryOp(a) => a.db_fmt(f, db),
-            Expression::UnaryOp(a) => a.db_fmt(f, db),
-            Expression::Atom(a) => a.db_fmt(f, db),
+        match &self.0 {
+            ExpressionHead::Niladic(a) => a.inner.db_fmt(f, db),
+            ExpressionHead::Monadic(Monadic { op, inner }) => match &op.inner {
+                expr::TypeUnOp::Wiggle(right) => dbwrite!(f, db, "{} ~ {}", &**inner, &**right),
+                expr::TypeUnOp::Ref => dbwrite!(f, db, "&{}", &**inner),
+            },
+            ExpressionHead::Dyadic(Dyadic { op, inner }) => {
+                dbwrite!(f, db, "{} {} {}", &*inner[0], &op.inner, &*inner[1])
+            }
         }
     }
 }
