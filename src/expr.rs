@@ -9,10 +9,7 @@ pub trait ExpressionKind: Clone + Hash + Eq + Debug {
     type DyadicOp: Clone + Hash + Eq + Debug;
 }
 
-#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
-pub struct OpRef<'a, K: ExpressionKind>(PhantomData<&'a K>);
-
-impl<'a, K: ExpressionKind> ExpressionKind for OpRef<'a, K> {
+impl<'a, K: ExpressionKind> ExpressionKind for &'a K {
     type NiladicOp = &'a K::NiladicOp;
     type MonadicOp = &'a K::MonadicOp;
     type DyadicOp = &'a K::DyadicOp;
@@ -84,7 +81,7 @@ impl<K: ExpressionKind, Inner> ExpressionHead<K, Inner> {
     }
 
     #[inline]
-    pub fn as_ref(&self) -> ExpressionHead<OpRef<K>, &Inner> {
+    pub fn as_ref(&self) -> ExpressionHead<&K, &Inner> {
         match self {
             Self::Niladic(op) => ExpressionHead::new_niladic(op),
             Self::Monadic(Monadic { op, inner }) => ExpressionHead::new_monadic(op, inner),
@@ -107,6 +104,20 @@ impl<K: ExpressionKind, T, E> ExpressionHead<K, Result<T, E>> {
                 op,
                 inner: [inner0, inner1],
             }) => Ok(ExpressionHead::new_dyadic(op, [inner0?, inner1?])),
+        }
+    }
+}
+
+impl<'a, K: ExpressionKind, Inner: Clone> ExpressionHead<&K, &Inner> {
+    pub fn make_owned(&self) -> ExpressionHead<K, Inner> {
+        match self {
+            Self::Niladic(op) => ExpressionHead::new_niladic((*op).clone()),
+            Self::Monadic(Monadic { op, inner }) => {
+                ExpressionHead::new_monadic((*op).clone(), (*inner).clone())
+            }
+            Self::Dyadic(Dyadic { op, inner }) => {
+                ExpressionHead::new_dyadic((*op).clone(), [inner[0].clone(), inner[1].clone()])
+            }
         }
     }
 }
@@ -142,13 +153,13 @@ impl<K: ExpressionKind> Expression<K> {
             [Box::new(inner0), Box::new(inner1)],
         ))
     }
-    pub fn fold<T>(&self, f: &mut impl FnMut(ExpressionHead<OpRef<K>, T>) -> T) -> T {
+    pub fn fold<T>(&self, f: &mut impl FnMut(ExpressionHead<&K, T>) -> T) -> T {
         let inner_folded = self.0.as_ref().map_inner(|inner| inner.fold(f));
         f(inner_folded)
     }
     pub fn try_fold<T, E>(
         &self,
-        f: &mut impl FnMut(ExpressionHead<OpRef<K>, T>) -> Result<T, E>,
+        f: &mut impl FnMut(ExpressionHead<&K, T>) -> Result<T, E>,
     ) -> Result<T, E> {
         let inner_folded = self
             .0
@@ -177,6 +188,26 @@ impl<K: ExpressionKind> Expression<K> {
                 let val0 = inner[0].convert(niladic, monadic, dyadic);
                 let val1 = inner[1].convert(niladic, monadic, dyadic);
                 Expression::new_dyadic(dyadic(op, &val0, &val1), [val0, val1])
+            }
+        }
+    }
+    pub fn convert_niladic<
+        ToKind: ExpressionKind<MonadicOp = K::MonadicOp, DyadicOp = K::DyadicOp>,
+        E,
+    >(
+        &self,
+        niladic: &mut impl FnMut(&K::NiladicOp) -> Result<ToKind::NiladicOp, E>,
+    ) -> Result<Expression<ToKind>, E> {
+        match &self.0 {
+            ExpressionHead::Niladic(op) => Ok(Expression::new_niladic(niladic(op)?)),
+            ExpressionHead::Monadic(Monadic { op, inner }) => {
+                let val = inner.convert_niladic(niladic)?;
+                Ok(Expression::new_monadic(op.clone(), val))
+            }
+            ExpressionHead::Dyadic(Dyadic { op, inner }) => {
+                let val0 = inner[0].convert_niladic(niladic)?;
+                let val1 = inner[1].convert_niladic(niladic)?;
+                Ok(Expression::new_dyadic(op.clone(), [val0, val1]))
             }
         }
     }
@@ -230,6 +261,27 @@ impl<Op, T> OpWithData<Op, T> {
     }
 }
 
+impl<K: ExpressionKind, T: Clone + Hash + Eq + Debug, I> ExpressionHead<KindWithData<K, T>, I> {
+    pub fn map_data<NewT, F: FnOnce(T) -> NewT>(
+        self,
+        f: F,
+    ) -> ExpressionHead<KindWithData<K, NewT>, I>
+    where
+        K: ExpressionKind,
+        NewT: Clone + Hash + Eq + Debug,
+    {
+        match self {
+            ExpressionHead::Niladic(op) => ExpressionHead::Niladic(op.map_data(f)),
+            ExpressionHead::Monadic(Monadic { op, inner }) => {
+                ExpressionHead::new_monadic(op.map_data(f), inner)
+            }
+            ExpressionHead::Dyadic(Dyadic { op, inner }) => {
+                ExpressionHead::new_dyadic(op.map_data(f), inner)
+            }
+        }
+    }
+}
+
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct KindWithData<K: ExpressionKind, T>(PhantomData<(T, K)>);
 
@@ -272,7 +324,12 @@ impl<T: Clone + Hash + Eq + Debug, K: ExpressionKind> Expression<KindWithData<K,
         &self,
         f: &mut impl FnMut(&T) -> Result<ToT, E>,
     ) -> Result<Expression<KindWithData<K, ToT>>, E> {
-        match self.0.as_ref().map_inner(|inner| inner.try_map(f)).transpose()? {
+        match self
+            .0
+            .as_ref()
+            .map_inner(|inner| inner.try_map(f))
+            .transpose()?
+        {
             ExpressionHead::Niladic(op) => Ok(Expression::new_niladic(OpWithData::new(
                 f(&op.data)?,
                 op.inner.clone(),
@@ -289,7 +346,7 @@ impl<T: Clone + Hash + Eq + Debug, K: ExpressionKind> Expression<KindWithData<K,
     }
     pub fn scan<ToT: Clone + Hash + Eq + Debug>(
         &self,
-        f: &mut impl FnMut(ExpressionHead<OpRef<KindWithData<K, T>>, &ToT>) -> ToT,
+        f: &mut impl FnMut(ExpressionHead<&KindWithData<K, T>, &ToT>) -> ToT,
     ) -> Expression<KindWithData<K, ToT>> {
         match &self.0 {
             ExpressionHead::Niladic(op) => Expression::new_niladic(OpWithData::new(
@@ -314,7 +371,7 @@ impl<T: Clone + Hash + Eq + Debug, K: ExpressionKind> Expression<KindWithData<K,
     }
     pub fn try_scan<ToT: Clone + Hash + Eq + Debug, E>(
         &self,
-        f: &mut impl FnMut(ExpressionHead<OpRef<KindWithData<K, T>>, &ToT>) -> Result<ToT, E>,
+        f: &mut impl FnMut(ExpressionHead<&KindWithData<K, T>, &ToT>) -> Result<ToT, E>,
     ) -> Result<Expression<KindWithData<K, ToT>>, E> {
         match &self.0 {
             ExpressionHead::Niladic(op) => Ok(Expression::new_niladic(OpWithData::new(
@@ -376,7 +433,6 @@ pub enum Atom {
     Field(FieldName),
     Number(String),
     Char(String),
-    String(String),
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]

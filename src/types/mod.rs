@@ -38,6 +38,7 @@ pub trait TypeInterner: crate::source::Files {
     fn intern_inference_type(&self, ty: InferenceType) -> InfTypeId;
     fn type_contains_unknown(&self, ty: TypeId) -> bool;
     fn type_contains_typevar(&self, ty: TypeId) -> bool;
+    fn substitute_typevar(&self, ty: TypeId, replacements: Arc<Vec<TypeId>>) -> TypeId;
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -175,5 +176,56 @@ impl From<InfTypeId> for EitherType {
 impl From<TypeId> for EitherType {
     fn from(x: TypeId) -> Self {
         EitherType::Regular(x)
+    }
+}
+
+pub fn substitute_typevar(
+    db: &dyn TypeInterner,
+    ty: TypeId,
+    replacements: Arc<Vec<TypeId>>,
+) -> TypeId {
+    match db.lookup_intern_type(ty) {
+        Type::TypeVarRef(_, _, i) => replacements[i as usize],
+        Type::Nominal(mut nom) => {
+            let parse_arg = nom
+                .parse_arg
+                .map(|x| substitute_typevar(db, x, replacements.clone()));
+            let fun_args = Arc::new(
+                nom.fun_args
+                    .iter()
+                    .map(|x| substitute_typevar(db, *x, replacements.clone()))
+                    .collect::<Vec<_>>(),
+            );
+            let ty_args = Arc::new(
+                nom.ty_args
+                    .iter()
+                    .map(|x| substitute_typevar(db, *x, replacements.clone()))
+                    .collect::<Vec<_>>(),
+            );
+            nom.parse_arg = parse_arg;
+            nom.fun_args = fun_args;
+            nom.ty_args = ty_args;
+            db.intern_type(Type::Nominal(nom))
+        }
+        Type::Loop(kind, inner) => {
+            let inner = substitute_typevar(db, inner, replacements.clone());
+            db.intern_type(Type::Loop(kind, inner))
+        }
+        Type::ParserArg { result, arg } => {
+            let result = substitute_typevar(db, result, replacements.clone());
+            let arg = substitute_typevar(db, arg, replacements.clone());
+            db.intern_type(Type::ParserArg { result, arg })
+        }
+        Type::FunctionArg(result, args) => {
+            let result = substitute_typevar(db, result, replacements.clone());
+            let args = Arc::new(
+                args.iter()
+                    .map(|x| substitute_typevar(db, *x, replacements.clone()))
+                    .collect::<Vec<_>>(),
+            );
+            db.intern_type(Type::FunctionArg(result, args))
+        }
+        Type::ForAll(inner, _) => return inner,
+        Type::Any | Type::Bot | Type::Unknown | Type::Primitive(_) => return ty,
     }
 }

@@ -51,6 +51,12 @@ pub fn parser_type_at(db: &dyn TyHirs, id: HirId) -> SResult<TypeId> {
     types.types.get(&id).copied().ok_or(SilencedError)
 }
 
+pub fn parser_expr_at(db: &dyn TyHirs, id: hir::ExprId) -> SResult<TypedExpression> {
+    let parent_pd = db.hir_parent_parserdef(id.0)?;
+    let types = db.parser_full_types(parent_pd).silence()?;
+    types.exprs.get(&id).cloned().ok_or(SilencedError)
+}
+
 impl<'a> TypingContext<'a, FullResolver<'a>> {
     fn set_current_loc(&mut self, loc: HirId) {
         self.infctx.tr.loc.loc = loc;

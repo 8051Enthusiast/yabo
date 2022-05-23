@@ -21,7 +21,7 @@ fn public_expr_type_impl(
         hir::HirNode::ParserDef(pd) => ctx.parserdef_types(&pd)?,
         hir::HirNode::Let(l) => ctx.let_statement_types(&l)?,
         hir::HirNode::Parse(p) => ctx.parse_statement_types(&p)?,
-        hir::HirNode::Array(a) => ctx.array_types(&a)?,
+        hir::HirNode::Array(_) => unimplemented!(),
         _ => panic!("expected parse statement, let statement or parser def"),
     };
     let expr = loc.lookup(db)?;
@@ -85,7 +85,7 @@ fn ambient_type_impl(db: &dyn TyHirs, loc: hir::ParseId) -> Result<TypeId, TypeE
         .find_map(|x| match &x.0 {
             ExpressionHead::Niladic(expr::OpWithData {
                 inner: ParserAtom::Block(b),
-                data
+                data,
             }) if *b == block.id => Some(*data),
             _ => None,
         })
@@ -140,33 +140,6 @@ impl<'a> TypingContext<'a, PublicResolver<'a>> {
             root_type: None,
             from_type: Some(from),
         })
-    }
-    pub fn array_types(
-        &mut self,
-        _parser_array: &hir::ParserArray,
-    ) -> SResult<ExpressionTypeConstraints> {
-        todo!();
-        //        let (expr, _) = self.db.public_expr_type(parser_array.enclosing_expr)?;
-        //        let array_ty = ExprIter::new(&expr)
-        //            .find_map(|x| match x {
-        //                Expression::Atom(TypedAtom {
-        //                    ty,
-        //                    atom: ParserAtom::Array(a),
-        //                    ..
-        //                }) if *a == parser_array.id => Some(ty),
-        //                _ => None,
-        //            })
-        //            .ok_or(())?;
-        //        match self.db.lookup_intern_type(*array_ty) {
-        //            Type::ParserArg { arg, .. } => {
-        //                let infty = self.infctx.from_type(arg);
-        //                Ok(ExpressionTypeConstraints {
-        //                    root_type: Some(infty),
-        //                    from_type: None,
-        //                })
-        //            }
-        //            _ => panic!("expected parser arg"),
-        //        }
     }
 }
 

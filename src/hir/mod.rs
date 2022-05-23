@@ -50,6 +50,7 @@ pub trait Hirs: crate::ast::Asts + crate::types::TypeInterner {
     fn all_parserdefs(&self) -> Vec<ParserDefId>;
     fn hir_parent_module(&self, id: HirId) -> SResult<ModuleId>;
     fn hir_parent_parserdef(&self, id: HirId) -> SResult<ParserDefId>;
+    fn hir_parent_block(&self, id: HirId) -> SResult<Option<BlockId>>;
 }
 
 fn hir_node(db: &dyn Hirs, id: HirId) -> SResult<HirNode> {
@@ -127,6 +128,20 @@ fn hir_parent_parserdef(db: &dyn Hirs, id: HirId) -> SResult<ParserDefId> {
         path.path()[1].unwrap_named(),
     ))))
 }
+
+fn hir_parent_block(db: &dyn Hirs, id: HirId) -> SResult<Option<BlockId>> {
+    match db.hir_node(id)? {
+        HirNode::Block(b) => return Ok(Some(b.id)),
+        _ => {}
+    }
+    let mut path = db.lookup_intern_hir_path(id);
+    if path.pop().is_none() {
+        return Ok(None);
+    }
+    db.intern_hir_path(path);
+    db.hir_parent_block(id)
+}
+
 
 macro_rules! hir_id_wrapper {
     {type $name:ident = $id:ident ($ty:ty);} => {

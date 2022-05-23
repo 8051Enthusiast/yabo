@@ -465,7 +465,6 @@ astify! {
         Field(identifier),
         Number(number_literal),
         Char(char_literal),
-        String(string_literal),
     };
 }
 
@@ -632,10 +631,6 @@ fn number_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Strin
 }
 
 fn char_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<String> {
-    node_to_string(db, fd, c)
-}
-
-fn string_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<String> {
     node_to_string(db, fd, c)
 }
 

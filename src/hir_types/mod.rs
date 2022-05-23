@@ -25,9 +25,10 @@ use crate::{
 
 use crate::hir::{self, Hirs};
 
-use full::{parser_full_types, parser_type_at, ParserFullTypes};
+use full::{parser_expr_at, parser_full_types, parser_type_at, ParserFullTypes};
 use public::{ambient_type, public_expr_type, public_type};
-use returns::{parser_returns, parser_returns_ssc, ParserDefType};
+use returns::{parser_returns, parser_returns_ssc, indirection_level, ParserDefType};
+pub use returns::IndirectionLevel;
 use signature::{get_signature, get_thunk, parser_args};
 
 #[salsa::query_group(HirTypesDatabase)]
@@ -36,7 +37,9 @@ pub trait TyHirs: Hirs + crate::types::TypeInterner {
     fn parser_returns(&self, id: hir::ParserDefId) -> SResult<ParserDefType>;
     fn parser_returns_ssc(&self, id: hir::recursion::FunctionSscId) -> Vec<ParserDefType>;
     fn public_type(&self, loc: HirId) -> SResult<TypeId>;
+    fn indirection_level(&self, ty: TypeId) -> SResult<IndirectionLevel>;
     fn parser_type_at(&self, loc: HirId) -> SResult<TypeId>;
+    fn parser_expr_at(&self, loc: hir::ExprId) -> SResult<TypedExpression>;
     fn public_expr_type(
         &self,
         loc: hir::ExprId,
@@ -211,13 +214,12 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                     ValUnOp::Wiggle(_, _) => inner,
                     ValUnOp::Dot(name) => match name {
                         Atom::Field(f) => self.infctx.access_field(inner, *f)?,
-                        Atom::Number(_) | Atom::Char(_) | Atom::String(_) => return Err(TypeError),
+                        Atom::Number(_) | Atom::Char(_) => return Err(TypeError),
                     },
                 },
                 ExpressionHead::Niladic(a) => match &a.inner {
                     ParserAtom::Atom(Atom::Char(_)) => self.infctx.char(),
                     ParserAtom::Atom(Atom::Number(_)) => self.infctx.int(),
-                    ParserAtom::Atom(Atom::String(_)) => todo!(),
                     ParserAtom::Atom(Atom::Field(f)) => self.infctx.lookup(context.loc, *f)?,
                     ParserAtom::Single => self.infctx.single(),
                     ParserAtom::Block(b) => {
@@ -337,6 +339,12 @@ enum NominalId {
 
 impl NominalId {
     pub fn from_nominal_inf_head(head: &NominalInfHead) -> Self {
+        match head.kind {
+            NominalKind::Def => NominalId::Def(hir::ParserDefId(head.def)),
+            NominalKind::Block => NominalId::Block(hir::BlockId(head.def)),
+        }
+    }
+    pub fn from_nominal_head(head: &NominalTypeHead) -> Self {
         match head.kind {
             NominalKind::Def => NominalId::Def(hir::ParserDefId(head.def)),
             NominalKind::Block => NominalId::Block(hir::BlockId(head.def)),
