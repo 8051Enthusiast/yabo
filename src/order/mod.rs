@@ -1,5 +1,6 @@
 pub mod captures;
 pub mod error;
+mod expr;
 mod represent;
 
 use std::{collections::BTreeSet, sync::Arc};
@@ -8,22 +9,26 @@ use crate::{
     dbpanic,
     error::{SResult, SilencedError},
     error_type,
-    hir::{self, HirIdWrapper, Hirs, ParserPredecessor},
+    hir::{self, HirIdWrapper, ParserPredecessor},
+    hir_types::TyHirs,
     interner::HirId,
 };
 
 use petgraph::{graph::NodeIndex, Graph};
 
 use captures::captures;
+use expr::resolve_expr;
+pub use expr::{ResolvedExpr, TypedResolvedExpr};
 use fxhash::{FxHashMap, FxHashSet};
 
 #[salsa::query_group(OrdersDatabase)]
-pub trait Orders: Hirs {
+pub trait Orders: TyHirs {
     fn captures(&self, id: hir::BlockId) -> Arc<BTreeSet<HirId>>;
     fn block_serialization(
         &self,
         id: hir::BlockId,
     ) -> Result<BlockSerialization, BlockSerializationError>;
+    fn resolve_expr(&self, expr_id: hir::ExprId) -> SResult<TypedResolvedExpr>;
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -188,7 +193,7 @@ fn inner_parser_refs(db: &dyn Orders, node: &hir::HirNode) -> SResult<FxHashSet<
                         .endpoints
                         .map(|(_, x)| SubValue::new_back(x))
                         .into_iter()
-                        .chain(std::iter::once(SubValue::new_val(c.id.id())))
+                        .chain(std::iter::once(SubValue::new_val(c.id.id()))),
                 );
             }
             Ok(ret)
@@ -279,7 +284,7 @@ pub struct BlockSlot(u32);
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct BlockSerialization {
-    eval_order: Arc<Vec<SubValue>>,
+    pub eval_order: Arc<Vec<SubValue>>,
 }
 
 error_type!(BlockSerializationError(Arc<Vec<Vec<SubValue>>>) in self);
@@ -332,22 +337,26 @@ mod tests {
 
     #[test]
     fn simple_cycle() {
-        let ctx = Context::mock(r#"
+        let ctx = Context::mock(
+            r#"
 def for[u8] *> cycle = {
     let x: int = y,
     let y: int = x + 1,
 }
-        "#);
+        "#,
+        );
         assert!(!error::errors(&ctx.db).is_empty());
     }
     #[test]
     fn parser_cycle() {
-        let ctx = Context::mock(r#"
+        let ctx = Context::mock(
+            r#"
 def for[u8] *> cycle = {
     (let x: int = y,; x: ~,)
     y: ~,
 }
-        "#);
+        "#,
+        );
         assert!(!error::errors(&ctx.db).is_empty());
     }
 }

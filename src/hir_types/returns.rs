@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use crate::{
     dbformat,
     error::{SResult, SilencedError},
@@ -5,6 +7,40 @@ use crate::{
 };
 
 use super::*;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum IndirectionLevel {
+    Opaque,
+    Indirect(NonZeroU32),
+}
+
+pub fn indirection_level(db: &dyn TyHirs, ty: TypeId) -> SResult<IndirectionLevel> {
+    match db.lookup_intern_type(ty) {
+        Type::ForAll(inner, _) => db.indirection_level(inner),
+        Type::TypeVarRef(_, _, _) => Ok(IndirectionLevel::Opaque),
+        Type::Nominal(nom) => {
+            let id = match NominalId::from_nominal_head(&nom) {
+                NominalId::Def(id) => id,
+                NominalId::Block(_) => {
+                    return Ok(IndirectionLevel::Indirect(NonZeroU32::new(1).unwrap()))
+                }
+            };
+            let deref_ty = db.parser_returns(id)?.deref;
+            let deref_level = db.indirection_level(deref_ty)?;
+            match deref_level {
+                IndirectionLevel::Opaque => Ok(IndirectionLevel::Opaque),
+                IndirectionLevel::Indirect(level) => Ok(IndirectionLevel::Indirect(
+                    u32::from(level)
+                        .checked_add(1)
+                        .map(|x| NonZeroU32::new(x))
+                        .flatten()
+                        .unwrap(),
+                )),
+            }
+        }
+        _ => Ok(IndirectionLevel::Indirect(NonZeroU32::new(1).unwrap())),
+    }
+}
 
 pub fn parser_returns(db: &dyn TyHirs, id: hir::ParserDefId) -> SResult<ParserDefType> {
     db.parser_returns_ssc(db.parser_ssc(id)?)
