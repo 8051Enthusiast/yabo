@@ -480,7 +480,7 @@ pub enum TypeAtom {
     TypeVar(TypeVar),
 }
 
-#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum TypePrimitive {
     Mem,
     Int,

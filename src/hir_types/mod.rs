@@ -332,7 +332,7 @@ pub struct TypeInfo<Id> {
     span_index: SpanIndex,
 }
 
-enum NominalId {
+pub enum NominalId {
     Def(hir::ParserDefId),
     Block(hir::BlockId),
 }

@@ -123,7 +123,7 @@ pub enum TypeHead {
     Unknown,
 }
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PrimitiveType {
     Bit,
     Int,
