@@ -1,0 +1,405 @@
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, BTreeSet};
+
+use fxhash::FxHashMap;
+
+use crate::absint::{AbsIntCall, AbsIntCtx, AbstractDomain, Arg};
+use crate::expr::{self, ExpressionHead, ValBinOp, ValUnOp};
+use crate::hir;
+use crate::hir_types::NominalId;
+use crate::interner::{FieldName, HirId};
+use crate::low_effort_interner::{Interner, Uniq};
+use crate::order::expr::ResolvedAtom;
+use crate::order::ResolvedExpr;
+use crate::types::{PrimitiveType, Type, TypeId};
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Layout<Inner> {
+    Mono(MonoLayout<Inner>, TypeId),
+    Multi(MultiLayout<Inner>),
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum MonoLayout<Inner> {
+    Primitive(PrimitiveType),
+    Pointer,
+    Single,
+    Nominal(hir::ParserDefId, BTreeMap<Arg, Inner>),
+    NominalParser(hir::ParserDefId),
+    Block(hir::BlockId, BTreeMap<FieldName, Inner>),
+    BlockParser(hir::BlockId, BTreeMap<HirId, Inner>),
+    ComposedParser(Inner, Inner),
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct MultiLayout<Inner> {
+    pub layouts: Vec<Inner>,
+}
+
+type ILayout<'a> = &'a Uniq<InternerLayout<'a>>;
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug, PartialOrd, Ord)]
+pub struct InternerLayout<'a> {
+    pub layout: Layout<&'a Uniq<Self>>,
+}
+
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct IMonoLayout<'a>(&'a Uniq<InternerLayout<'a>>);
+
+impl<'a> IMonoLayout<'a> {
+    pub fn mono_layout(self) -> (&'a MonoLayout<ILayout<'a>>, TypeId) {
+        match self.0.layout {
+            Layout::Mono(ref mono, ty) => (mono, ty),
+            _ => unreachable!("Expected mono layout"),
+        }
+    }
+    pub fn inner(self) -> ILayout<'a> {
+        self.0
+    }
+}
+
+impl<'a> Uniq<InternerLayout<'a>> {
+    fn flat_layout_list(&'a self) -> Vec<IMonoLayout<'a>> {
+        match &self.layout {
+            Layout::Mono(_, _) => vec![IMonoLayout(self)],
+            Layout::Multi(l) => {
+                let mut res = vec![];
+                for l in &l.layouts {
+                    match &l.layout {
+                        Layout::Mono(_, _) => res.push(IMonoLayout(l)),
+                        Layout::Multi(_) => panic!("MultiLayout inside MultiLayout not supported"),
+                    }
+                }
+                res
+            }
+        }
+    }
+
+    fn map(
+        &'a self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+        mut f: impl FnMut(IMonoLayout<'a>, &mut AbsIntCtx<'a, ILayout<'a>>) -> ILayout<'a>,
+    ) -> ILayout<'a> {
+        let mut acc = BTreeSet::new();
+        let layouts = self.flat_layout_list();
+        for layout in layouts {
+            let result_layout = f(layout, ctx);
+            match &result_layout.layout {
+                Layout::Mono(_, _) => {
+                    acc.insert(result_layout);
+                }
+                Layout::Multi(l) => {
+                    acc.extend(l.layouts.iter().copied());
+                }
+            }
+        }
+        let acc_vec = acc.into_iter().collect::<Vec<_>>();
+        if acc_vec.len() == 1 {
+            acc_vec[0]
+        } else {
+            ctx.dcx.intern(InternerLayout {
+                layout: Layout::Multi(MultiLayout { layouts: acc_vec }),
+            })
+        }
+    }
+
+    fn try_map(
+        &'a self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+        mut f: impl FnMut(
+            IMonoLayout<'a>,
+            &mut AbsIntCtx<'a, ILayout<'a>>,
+        ) -> Result<ILayout<'a>, LayoutError>,
+    ) -> Result<ILayout<'a>, LayoutError> {
+        let mut acc = BTreeSet::new();
+        let layouts = self.flat_layout_list();
+        for layout in layouts {
+            let result_layout = f(layout, ctx)?;
+            match &result_layout.layout {
+                Layout::Mono(_, _) => {
+                    acc.insert(result_layout);
+                }
+                Layout::Multi(l) => {
+                    acc.extend(l.layouts.iter().copied());
+                }
+            }
+        }
+        let acc_vec = acc.into_iter().collect::<Vec<_>>();
+        if acc_vec.len() == 1 {
+            Ok(acc_vec[0])
+        } else {
+            Ok(ctx.dcx.intern(InternerLayout {
+                layout: Layout::Multi(MultiLayout { layouts: acc_vec }),
+            }))
+        }
+    }
+
+    fn typecast_impl(
+        &'a self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+        target: Option<hir::ParserDefId>,
+    ) -> Result<ILayout<'a>, LayoutError> {
+        self.try_map(ctx, |layout, ctx| {
+            Ok(match layout.mono_layout().0 {
+                MonoLayout::Nominal(pd, _) if Some(*pd) == target => layout.0,
+                MonoLayout::Nominal(pd, _) => {
+                    let abscall = AbsIntCall {
+                        pd: *pd,
+                        pd_ty: layout.mono_layout().1,
+                    };
+                    ctx.eval(abscall, layout.inner())?
+                        .typecast_impl(ctx, target)?
+                }
+                _ => layout.0,
+            })
+        })
+    }
+
+    fn get_captured(&'a self, id: HirId) -> Option<ILayout<'a>> {
+        match match &self.layout {
+            Layout::Mono(m, _) => m,
+            Layout::Multi(_) => {
+                panic!("Attempting to get captured variable inside multi layout block")
+            }
+        } {
+            MonoLayout::BlockParser(_, captures) => captures,
+            _ => panic!("Attempting to get captured variable outside block"),
+        }
+        .get(&id)
+        .copied()
+    }
+
+    fn apply_arg(
+        &'a self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+        from: ILayout<'a>,
+    ) -> Result<ILayout<'a>, LayoutError> {
+        self.try_map(ctx, |layout, ctx| {
+            let result_type = match ctx.db.lookup_intern_type(layout.mono_layout().1) {
+                Type::ParserArg { result, .. } => result,
+                _ => panic!("Attempting to apply argument to non-parser type"),
+            };
+            match layout.mono_layout().0 {
+                MonoLayout::NominalParser(pd) => ctx.apply_thunk_arg(*pd, result_type, from),
+                MonoLayout::BlockParser(block_id, _) => {
+                    ctx.eval_block(*block_id, result_type, from, self)
+                }
+                MonoLayout::ComposedParser(first, second) => {
+                    let first_result = first.apply_arg(ctx, from)?;
+                    second.apply_arg(ctx, first_result)
+                }
+                _ => panic!("Attempting to apply argument to non-parser layout"),
+            }
+        })
+    }
+}
+
+pub struct LayoutError;
+
+impl From<crate::error::SilencedError> for LayoutError {
+    fn from(_: crate::error::SilencedError) -> Self {
+        LayoutError
+    }
+}
+
+impl<'a> AbstractDomain<'a> for ILayout<'a> {
+    type Err = LayoutError;
+    type DomainContext = Interner<'a, InternerLayout<'a>>;
+
+    fn make_block(
+        ctx: &mut AbsIntCtx<'a, Self>,
+        id: hir::BlockId,
+        ty: TypeId,
+        fields: &FxHashMap<FieldName, Self>,
+    ) -> Result<Self, Self::Err> {
+        let new_layout = InternerLayout {
+            layout: Layout::Mono(
+                MonoLayout::Block(id, fields.iter().map(|(a, b)| (*a, *b)).collect()),
+                ty,
+            ),
+        };
+        Ok(ctx.dcx.intern(new_layout))
+    }
+
+    fn join(self, ctx: &mut AbsIntCtx<'a, Self>, other: Self) -> Result<(Self, bool), Self::Err> {
+        if self == other {
+            return Ok((self, false));
+        }
+        let layouts = match (&self.layout, &other.layout) {
+            (Layout::Mono(_, _), Layout::Mono(_, _)) => vec![self, other],
+            (Layout::Multi(first), Layout::Mono(_, _)) => match first.layouts.binary_search(&other)
+            {
+                Ok(_) => return Ok((self, false)),
+                Err(i) => {
+                    let mut new_layouts = first.layouts.clone();
+                    new_layouts.insert(i, other);
+                    new_layouts
+                }
+            },
+            (Layout::Mono(_, _), Layout::Multi(second)) => {
+                match second.layouts.binary_search(&self) {
+                    Ok(_) => return Ok((other, true)),
+                    Err(i) => {
+                        let mut new_layouts = second.layouts.clone();
+                        new_layouts.insert(i, self);
+                        new_layouts
+                    }
+                }
+            }
+            (Layout::Multi(first), Layout::Multi(second)) => {
+                let mut first_index = 0;
+                let mut second_index = 0;
+                let mut new_layouts = Vec::new();
+                loop {
+                    if first_index == first.layouts.len() {
+                        new_layouts.extend(second.layouts[second_index..].iter().cloned());
+                        break;
+                    }
+                    if second_index == second.layouts.len() {
+                        new_layouts.extend(first.layouts[first_index..].iter().cloned());
+                        break;
+                    }
+                    match first.layouts[first_index].cmp(&second.layouts[second_index]) {
+                        Ordering::Less => {
+                            new_layouts.push(first.layouts[first_index]);
+                            first_index += 1;
+                        }
+                        Ordering::Greater => {
+                            new_layouts.push(second.layouts[second_index]);
+                            second_index += 1;
+                        }
+                        Ordering::Equal => {
+                            new_layouts.push(first.layouts[first_index]);
+                            first_index += 1;
+                            second_index += 1;
+                        }
+                    }
+                }
+                new_layouts
+            }
+        };
+        let new_layout = InternerLayout {
+            layout: Layout::Multi(MultiLayout { layouts }),
+        };
+        Ok((ctx.dcx.intern(new_layout), true))
+    }
+
+    fn widen(self, ctx: &mut AbsIntCtx<'a, Self>, other: Self) -> Result<(Self, bool), Self::Err> {
+        self.join(ctx, other)
+    }
+
+    fn eval_expr(
+        ctx: &mut AbsIntCtx<'a, Self>,
+        expr: ExpressionHead<expr::KindWithData<ResolvedExpr, TypeId>, Self>,
+    ) -> Result<Self, Self::Err> {
+        let ret_type = *expr.root_data();
+        let mut make_layout = |x| {
+            ctx.dcx.intern(InternerLayout {
+                layout: Layout::Mono(x, ret_type),
+            })
+        };
+        Ok(match expr {
+            ExpressionHead::Niladic(n) => match n.inner {
+                ResolvedAtom::Char(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Char)),
+                ResolvedAtom::Number(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Int)),
+                ResolvedAtom::Val(id) => ctx.var_by_id(id),
+                ResolvedAtom::Single => make_layout(MonoLayout::Single),
+                ResolvedAtom::ParserDef(pd) => make_layout(MonoLayout::NominalParser(pd)),
+                ResolvedAtom::Block(block_id) => {
+                    let mut captures = BTreeMap::new();
+                    for capture in ctx.db.captures(block_id).iter() {
+                        let capture_value = ctx
+                            .active_block()
+                            .and_then(|s| s.get_captured(*capture))
+                            .unwrap_or_else(|| ctx.var_by_id(*capture));
+                        captures.insert(*capture, capture_value);
+                    }
+                    ctx.dcx.intern(InternerLayout {
+                        layout: Layout::Mono(MonoLayout::BlockParser(block_id, captures), ret_type),
+                    })
+                }
+                ResolvedAtom::Captured(capture) => {
+                    let capture_value = ctx
+                        .active_block()
+                        .and_then(|s| s.get_captured(capture))
+                        .expect("Captured variable outside block");
+                    capture_value
+                }
+            },
+            ExpressionHead::Monadic(m) => match m.op.inner {
+                ValUnOp::Not | ValUnOp::Neg | ValUnOp::Pos => {
+                    make_layout(MonoLayout::Primitive(PrimitiveType::Int))
+                }
+                ValUnOp::Wiggle(_, _) => m.inner,
+                ValUnOp::Dot(a) => match a {
+                    expr::Atom::Field(f) => m.inner.map(ctx, |x, _| match x.mono_layout().0 {
+                        MonoLayout::Block(_, fields) => fields[&f],
+                        _ => panic!("Field access on non-block"),
+                    }),
+                    expr::Atom::Number(_) | expr::Atom::Char(_) => panic!("Invalid field name"),
+                },
+            },
+            ExpressionHead::Dyadic(d) => match d.op.inner {
+                ValBinOp::ParserApply => d.inner[1].apply_arg(ctx, d.inner[0])?,
+                ValBinOp::Compose => {
+                    make_layout(MonoLayout::ComposedParser(d.inner[0], d.inner[1]))
+                }
+                ValBinOp::Else => d.inner[0].join(ctx, d.inner[1])?.0,
+                ValBinOp::LesserEq
+                | ValBinOp::Lesser
+                | ValBinOp::GreaterEq
+                | ValBinOp::Greater
+                | ValBinOp::Uneq
+                | ValBinOp::Equals => make_layout(MonoLayout::Primitive(PrimitiveType::Bit)),
+                ValBinOp::And
+                | ValBinOp::Xor
+                | ValBinOp::Or
+                | ValBinOp::ShiftR
+                | ValBinOp::ShiftL
+                | ValBinOp::Minus
+                | ValBinOp::Plus
+                | ValBinOp::Div
+                | ValBinOp::Modulo
+                | ValBinOp::Mul => make_layout(MonoLayout::Primitive(PrimitiveType::Int)),
+            },
+        })
+    }
+
+    fn typecast(self, ctx: &mut AbsIntCtx<'a, Self>, ty: TypeId) -> Result<Self, Self::Err> {
+        let non_derefed_pd_id = match ctx.db.lookup_intern_type(ty) {
+            Type::Nominal(nom) => match NominalId::from_nominal_head(&nom) {
+                NominalId::Def(id) => Some(id),
+                NominalId::Block(_) => None,
+            },
+            _ => None,
+        };
+        self.typecast_impl(ctx, non_derefed_pd_id)
+    }
+
+    fn get_arg(
+        self,
+        ctx: &mut AbsIntCtx<'a, Self>,
+        arg: crate::absint::Arg,
+    ) -> Result<Self, Self::Err> {
+        Ok(self.map(ctx, |l, _| match l.mono_layout().0 {
+            MonoLayout::Nominal(_, args) => &args[&arg],
+            _ => panic!("get_arg called on non-nominal layout"),
+        }))
+    }
+
+    fn make_thunk(
+        ctx: &mut AbsIntCtx<'a, Self>,
+        id: hir::ParserDefId,
+        ty: TypeId,
+        fields: &FxHashMap<Arg, Self>,
+    ) -> Result<Self, Self::Err> {
+        let new_layout = InternerLayout {
+            layout: Layout::Mono(
+                MonoLayout::Nominal(id, fields.iter().map(|(a, b)| (a.clone(), *b)).collect()),
+                ty,
+            ),
+        };
+        Ok(ctx.dcx.intern(new_layout))
+    }
+}

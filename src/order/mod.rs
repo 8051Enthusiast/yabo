@@ -1,6 +1,6 @@
 pub mod captures;
 pub mod error;
-mod expr;
+pub mod expr;
 mod represent;
 
 use std::{collections::BTreeSet, sync::Arc};

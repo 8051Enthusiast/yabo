@@ -4,7 +4,6 @@ use crate::{
     dbpanic,
     error::{Silencable, SilencedError},
     hir::HirIdWrapper,
-    hir_types::IndirectionLevel,
     interner::HirId,
     order::{ResolvedExpr, SubValue, SubValueKind},
     types::Type,
@@ -15,15 +14,15 @@ use fxhash::{FxHashMap, FxHashSet};
 use crate::{
     expr::{self, ExpressionHead},
     hir,
-    hir_types::TyHirs,
     interner::{FieldName, Identifier},
     order::Orders,
     types::TypeId,
 };
 
 #[salsa::query_group(AbsIntDatabase)]
-pub trait AbsInt: TyHirs + Orders {}
+pub trait AbsInt: Orders {}
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Arg {
     Named(Identifier),
     From,
@@ -31,22 +30,26 @@ pub enum Arg {
 
 pub trait AbstractDomain<'a>: Sized + Clone + std::hash::Hash + Eq + std::fmt::Debug {
     type Err: From<SilencedError>;
+    type DomainContext;
     fn widen(self, ctx: &mut AbsIntCtx<'a, Self>, other: Self) -> Result<(Self, bool), Self::Err>;
     fn join(self, ctx: &mut AbsIntCtx<'a, Self>, other: Self) -> Result<(Self, bool), Self::Err>;
     fn make_block(
         ctx: &mut AbsIntCtx<'a, Self>,
         id: hir::BlockId,
+        ty: TypeId,
         fields: &FxHashMap<FieldName, Self>,
+    ) -> Result<Self, Self::Err>;
+    fn make_thunk(
+        ctx: &mut AbsIntCtx<'a, Self>,
+        id: hir::ParserDefId,
+        ty: TypeId,
+        args: &FxHashMap<Arg, Self>,
     ) -> Result<Self, Self::Err>;
     fn eval_expr(
         ctx: &mut AbsIntCtx<'a, Self>,
         expr: ExpressionHead<expr::KindWithData<ResolvedExpr, TypeId>, Self>,
     ) -> Result<Self, Self::Err>;
-    fn convert_to_indirection_level(
-        self,
-        ctx: &mut AbsIntCtx<'a, Self>,
-        level: IndirectionLevel,
-    ) -> Result<Self, Self::Err>;
+    fn typecast(self, ctx: &mut AbsIntCtx<'a, Self>, ty: TypeId) -> Result<Self, Self::Err>;
     fn get_arg(self, ctx: &mut AbsIntCtx<'a, Self>, arg: Arg) -> Result<Self, Self::Err>;
 }
 
@@ -64,26 +67,30 @@ pub struct VarPlace {
 
 pub struct AbsIntCtx<'a, Dom: AbstractDomain<'a>> {
     pub db: &'a dyn AbsInt,
+    pub dcx: Dom::DomainContext,
     current_call: AbsIntCall,
     currently_recursive: bool,
     active_calls: FxHashSet<AbsIntCall>,
     pd_vars: FxHashMap<VarPlace, Dom>,
     block_vars: FxHashMap<VarPlace, Dom>,
+    active_block: Option<Dom>,
     type_substitutions: Arc<Vec<TypeId>>,
 }
 
 impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
-    pub fn new(db: &'a dyn AbsInt, root_call: AbsIntCall) -> Self {
+    pub fn new(db: &'a dyn AbsInt, root_call: AbsIntCall, dcx: Dom::DomainContext) -> Self {
         let mut active_calls = FxHashSet::default();
         active_calls.insert(root_call);
         let mut ret = Self {
             db,
+            dcx,
             currently_recursive: false,
             pd_vars: Default::default(),
             current_call: root_call,
             active_calls,
             block_vars: Default::default(),
             type_substitutions: Default::default(),
+            active_block: Default::default(),
         };
         ret.type_substitutions = ret.type_substitutions(root_call.pd_ty);
         ret
@@ -94,11 +101,6 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             Type::Nominal(nom) => nom.ty_args,
             _ => panic!("type_substitutions called on non-nominal type"),
         }
-    }
-
-    fn deref_to_type(&mut self, val: Dom, ty: TypeId) -> Result<Dom, Dom::Err> {
-        let level = self.db.indirection_level(ty)?;
-        Dom::convert_to_indirection_level(val, self, level)
     }
 
     fn subst_type(&self, ty: TypeId) -> TypeId {
@@ -115,7 +117,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             let ty = self.subst_type(*owned_expr.root_data());
             let subst_expr = owned_expr.map_data(|_| ty);
             let ret = Dom::eval_expr(self, subst_expr)?;
-            self.deref_to_type(ret, ty)
+            ret.typecast(self, ty)
         })
     }
 
@@ -231,7 +233,25 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         }
     }
 
-    pub fn eval_block(&mut self, block_id: hir::BlockId, from: Dom) -> Result<Dom, Dom::Err> {
+    fn with_block_context<T>(
+        &mut self,
+        block: Dom,
+        f: impl FnOnce(&mut Self) -> Result<T, Dom::Err>,
+    ) -> Result<T, Dom::Err> {
+        let old_block = std::mem::replace(&mut self.active_block, Some(block));
+
+        let res = f(self);
+
+        self.active_block = old_block;
+        res
+    }
+
+    fn eval_block_impl(
+        &mut self,
+        block_id: hir::BlockId,
+        result_type: TypeId,
+        from: Dom,
+    ) -> Result<Dom, Dom::Err> {
         let block = block_id.lookup(self.db)?;
         let order = self.db.block_serialization(block_id).silence()?.eval_order;
         for subvalue in order.iter() {
@@ -246,7 +266,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                 hir::HirNode::Let(statement) => {
                     let expr = self.db.resolve_expr(statement.expr)?;
                     let res = self.eval_expr(expr)?.0.root_data().clone();
-                    self.deref_to_type(res, result_ty)?
+                    res.typecast(self, result_ty)?
                 }
                 hir::HirNode::Parse(statement) => {
                     let expr = self.db.resolve_expr(statement.expr)?;
@@ -255,14 +275,17 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                 hir::HirNode::ChoiceIndirection(ind) => ind
                     .choices
                     .iter()
-                    .try_fold(None, |acc, (_, choice_id)| -> Result<_, Dom::Err> {
-                        let new = self.var_by_id(*choice_id);
-                        let derefed = self.deref_to_type(new, result_ty)?;
-                        match acc {
-                            None => Ok(Some(derefed)),
-                            Some(acc) => Ok(Some(acc.join(self, derefed)?.0)),
-                        }
-                    })?
+                    .try_fold(
+                        None,
+                        |acc: Option<Dom>, (_, choice_id)| -> Result<_, Dom::Err> {
+                            let new = self.var_by_id(*choice_id);
+                            let derefed = new.typecast(self, result_ty)?;
+                            match acc {
+                                None => Ok(Some(derefed)),
+                                Some(acc) => Ok(Some(acc.join(self, derefed)?.0)),
+                            }
+                        },
+                    )?
                     .unwrap(),
                 _ => continue,
             };
@@ -274,6 +297,33 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             .iter()
             .map(|(name, id)| (*name, self.var_by_id(*id.inner())))
             .collect::<FxHashMap<_, _>>();
-        Dom::make_block(self, block_id, &vars)
+        Dom::make_block(self, block_id, result_type, &vars)
+    }
+
+    pub fn eval_block(
+        &mut self,
+        block_id: hir::BlockId,
+        result_type: TypeId,
+        from: Dom,
+        block_parser: Dom,
+    ) -> Result<Dom, Dom::Err> {
+        self.with_block_context(block_parser, |ctx| {
+            ctx.eval_block_impl(block_id, result_type, from)
+        })
+    }
+
+    pub fn active_block(&self) -> &Option<Dom> {
+        &self.active_block
+    }
+
+    pub fn apply_thunk_arg(
+        &mut self,
+        pd_id: hir::ParserDefId,
+        result_type: TypeId,
+        from: Dom,
+    ) -> Result<Dom, Dom::Err> {
+        let mut args = FxHashMap::default();
+        args.insert(Arg::From, from);
+        Dom::make_thunk(self, pd_id, result_type, &args)
     }
 }
