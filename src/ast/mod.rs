@@ -166,7 +166,7 @@ impl From<Block> for ParserAtom {
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Module {
     pub tl_statements: Vec<Arc<ParserDefinition>>,
-    pub span: Span,
+    pub 亘: Span,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]

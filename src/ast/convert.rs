@@ -113,7 +113,7 @@ fn module(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Module> {
     })?;
     Ok(Module {
         tl_statements: statements,
-        span: span_from_node(fd, &node),
+        亘: span_from_node(fd, &node),
     })
 }
 
