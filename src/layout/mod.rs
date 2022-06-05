@@ -3,7 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use fxhash::FxHashMap;
 
-use crate::absint::{AbsIntCall, AbsIntCtx, AbstractDomain, Arg};
+use crate::absint::{AbsInt, AbsIntCall, AbsIntCtx, AbstractDomain, Arg};
+use crate::error::SResult;
 use crate::expr::{self, ExpressionHead, ValBinOp, ValUnOp};
 use crate::hir;
 use crate::hir_types::NominalId;
@@ -12,6 +13,9 @@ use crate::low_effort_interner::{Interner, Uniq};
 use crate::order::expr::ResolvedAtom;
 use crate::order::ResolvedExpr;
 use crate::types::{PrimitiveType, Type, TypeId};
+
+#[salsa::query_group(LayoutDatabase)]
+pub trait Layouts: AbsInt {}
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Layout<Inner> {
@@ -192,6 +196,51 @@ impl<'a> Uniq<InternerLayout<'a>> {
                 _ => panic!("Attempting to apply argument to non-parser layout"),
             }
         })
+    }
+}
+
+pub fn canon_layout<'a, 'b>(
+    ctx: &'b mut AbsIntCtx<'a, ILayout<'a>>,
+    ty: TypeId,
+) -> Result<ILayout<'a>, LayoutError> {
+    let typ = ctx.db.lookup_intern_type(ty);
+    let make_layout = |ctx: &'b mut AbsIntCtx<'a, ILayout<'a>>, x| {
+        ctx.dcx.intern(InternerLayout {
+            layout: Layout::Mono(x, ty),
+        })
+    };
+    match typ {
+        Type::Primitive(x) => Ok(make_layout(ctx, MonoLayout::Primitive(x))),
+        Type::Loop(_, inner_ty) => {
+            let inner_type = ctx.db.lookup_intern_type(inner_ty);
+            match inner_type {
+                Type::Primitive(PrimitiveType::Int) => {
+                    return Ok(make_layout(ctx, MonoLayout::Pointer))
+                }
+                _ => return Err(LayoutError),
+            }
+        }
+        Type::Nominal(n) => {
+            let def_id = match NominalId::from_nominal_head(&n) {
+                NominalId::Def(d) => d,
+                NominalId::Block(_) => return Err(LayoutError),
+            };
+            if !n.fun_args.is_empty() {
+                // TODO(8051): i am not yet sure how to handle fun args that are in addition to the parse arg
+                // and function args are not implemented anyway so return an error for now
+                return Err(LayoutError);
+            }
+            let from = n.parse_arg.map(|arg| canon_layout(ctx, arg)).transpose()?;
+            let mut args = BTreeMap::new();
+            if let Some(f) = from {
+                args.insert(Arg::From, f);
+            }
+            Ok(make_layout(ctx, MonoLayout::Nominal(def_id, args)))
+        }
+        Type::ParserArg { .. } | Type::FunctionArg(_, _) => Err(LayoutError),
+        Type::TypeVarRef(_, _, _) | Type::Any | Type::Bot | Type::Unknown | Type::ForAll(_, _) => {
+            Err(LayoutError)
+        }
     }
 }
 
