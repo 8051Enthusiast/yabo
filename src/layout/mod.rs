@@ -4,7 +4,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use fxhash::FxHashMap;
 
 use crate::absint::{AbsInt, AbsIntCall, AbsIntCtx, AbstractDomain, Arg};
-use crate::error::SResult;
 use crate::expr::{self, ExpressionHead, ValBinOp, ValUnOp};
 use crate::hir;
 use crate::hir_types::NominalId;
@@ -19,6 +18,7 @@ pub trait Layouts: AbsInt {}
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Layout<Inner> {
+    None,
     Mono(MonoLayout<Inner>, TypeId),
     Multi(MultiLayout<Inner>),
 }
@@ -73,10 +73,12 @@ impl<'a> Uniq<InternerLayout<'a>> {
                     match &l.layout {
                         Layout::Mono(_, _) => res.push(IMonoLayout(l)),
                         Layout::Multi(_) => panic!("MultiLayout inside MultiLayout not supported"),
+                        Layout::None => panic!("Empty layout inside MultiLayout not supported"),
                     }
                 }
                 res
             }
+            Layout::None => vec![],
         }
     }
 
@@ -96,15 +98,18 @@ impl<'a> Uniq<InternerLayout<'a>> {
                 Layout::Multi(l) => {
                     acc.extend(l.layouts.iter().copied());
                 }
+                Layout::None => {}
             }
         }
         let acc_vec = acc.into_iter().collect::<Vec<_>>();
-        if acc_vec.len() == 1 {
-            acc_vec[0]
-        } else {
-            ctx.dcx.intern(InternerLayout {
+        match &acc_vec[..] {
+            [single] => *single,
+            [] => ctx.dcx.intern(InternerLayout {
+                layout: Layout::None,
+            }),
+            _ => ctx.dcx.intern(InternerLayout {
                 layout: Layout::Multi(MultiLayout { layouts: acc_vec }),
-            })
+            }),
         }
     }
 
@@ -127,16 +132,19 @@ impl<'a> Uniq<InternerLayout<'a>> {
                 Layout::Multi(l) => {
                     acc.extend(l.layouts.iter().copied());
                 }
+                Layout::None => {}
             }
         }
         let acc_vec = acc.into_iter().collect::<Vec<_>>();
-        if acc_vec.len() == 1 {
-            Ok(acc_vec[0])
-        } else {
-            Ok(ctx.dcx.intern(InternerLayout {
+        Ok(match &acc_vec[..] {
+            [single] => *single,
+            [] => ctx.dcx.intern(InternerLayout {
+                layout: Layout::None,
+            }),
+            _ => ctx.dcx.intern(InternerLayout {
                 layout: Layout::Multi(MultiLayout { layouts: acc_vec }),
-            }))
-        }
+            }),
+        })
     }
 
     fn typecast_impl(
@@ -165,6 +173,9 @@ impl<'a> Uniq<InternerLayout<'a>> {
             Layout::Mono(m, _) => m,
             Layout::Multi(_) => {
                 panic!("Attempting to get captured variable inside multi layout block")
+            }
+            Layout::None => {
+                panic!("Attempting to get captured variable inside empty layout")
             }
         } {
             MonoLayout::BlockParser(_, captures) => captures,
@@ -276,6 +287,8 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
             return Ok((self, false));
         }
         let layouts = match (&self.layout, &other.layout) {
+            (Layout::None, _) => return Ok((other, true)),
+            (_, Layout::None) => return Ok((self, false)),
             (Layout::Mono(_, _), Layout::Mono(_, _)) => vec![self, other],
             (Layout::Multi(first), Layout::Mono(_, _)) => match first.layouts.binary_search(&other)
             {
