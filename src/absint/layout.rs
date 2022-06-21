@@ -3,7 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use fxhash::FxHashMap;
 
-use crate::absint::{AbsInt, AbsIntCall, AbsIntCtx, AbstractDomain, Arg};
+use crate::absint::{AbsInt, AbsIntCtx, AbstractDomain, Arg};
+use crate::error::{IsSilenced, SilencedError};
 use crate::expr::{self, ExpressionHead, ValBinOp, ValUnOp};
 use crate::hir;
 use crate::hir_types::NominalId;
@@ -155,12 +156,10 @@ impl<'a> Uniq<InternerLayout<'a>> {
         self.try_map(ctx, |layout, ctx| {
             Ok(match layout.mono_layout().0 {
                 MonoLayout::Nominal(pd, _) if Some(*pd) == target => layout.0,
-                MonoLayout::Nominal(pd, _) => {
-                    let abscall = AbsIntCall {
-                        pd: *pd,
-                        pd_ty: layout.mono_layout().1,
-                    };
-                    ctx.eval(abscall, layout.inner())?
+                MonoLayout::Nominal(_, _) => {
+                    let res_ty = layout.mono_layout().1;
+                    ctx.eval_pd(layout.inner(), res_ty)
+                        .ok_or(SilencedError)?
                         .typecast_impl(ctx, target)?
                 }
                 _ => layout.0,
@@ -197,9 +196,9 @@ impl<'a> Uniq<InternerLayout<'a>> {
             };
             match layout.mono_layout().0 {
                 MonoLayout::NominalParser(pd) => ctx.apply_thunk_arg(*pd, result_type, from),
-                MonoLayout::BlockParser(block_id, _) => {
-                    ctx.eval_block(*block_id, result_type, from, self)
-                }
+                MonoLayout::BlockParser(block_id, _) => ctx
+                    .eval_block(*block_id, from, self, result_type)
+                    .ok_or(SilencedError.into()),
                 MonoLayout::ComposedParser(first, second) => {
                     let first_result = first.apply_arg(ctx, from)?;
                     second.apply_arg(ctx, first_result)
@@ -260,6 +259,12 @@ pub struct LayoutError;
 impl From<crate::error::SilencedError> for LayoutError {
     fn from(_: crate::error::SilencedError) -> Self {
         LayoutError
+    }
+}
+
+impl IsSilenced for LayoutError {
+    fn is_silenced(&self) -> bool {
+        true
     }
 }
 
@@ -463,5 +468,11 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
             ),
         };
         Ok(ctx.dcx.intern(new_layout))
+    }
+
+    fn bottom(ctx: &mut AbsIntCtx<'a, Self>) -> Self {
+        ctx.dcx.intern(InternerLayout {
+            layout: Layout::None,
+        })
     }
 }
