@@ -51,7 +51,8 @@ pub trait AbstractDomain<'a>: Sized + Clone + std::hash::Hash + Eq + std::fmt::D
         ctx: &mut AbsIntCtx<'a, Self>,
         expr: ExpressionHead<expr::KindWithData<ResolvedExpr, TypeId>, Self>,
     ) -> Result<Self, Self::Err>;
-    fn typecast(self, ctx: &mut AbsIntCtx<'a, Self>, ty: TypeId) -> Result<Self, Self::Err>;
+    fn typecast(self, ctx: &mut AbsIntCtx<'a, Self>, ty: TypeId)
+        -> Result<(Self, bool), Self::Err>;
     fn get_arg(self, ctx: &mut AbsIntCtx<'a, Self>, arg: Arg) -> Result<Self, Self::Err>;
     fn bottom(ctx: &mut AbsIntCtx<'a, Self>) -> Self;
 }
@@ -131,7 +132,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             let ty = self.subst_type(*owned_expr.root_data());
             let subst_expr = owned_expr.map_data(|_| ty);
             let ret = Dom::eval_expr(self, subst_expr)?;
-            ret.typecast(self, ty)
+            ret.typecast(self, ty).map(|x| x.0)
         })
     }
 
@@ -282,7 +283,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                     let res_expr = self.eval_expr(expr)?;
                     let res = res_expr.0.root_data().clone();
                     self.block_expr_vals.insert(statement.expr, res_expr);
-                    res.typecast(self, result_ty)?
+                    res.typecast(self, result_ty)?.0
                 }
                 hir::HirNode::Parse(statement) => {
                     let expr = self.db.resolve_expr(statement.expr)?;
@@ -298,7 +299,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                         None,
                         |acc: Option<Dom>, (_, choice_id)| -> Result<_, Dom::Err> {
                             let new = self.var_by_id(*choice_id);
-                            let derefed = new.typecast(self, result_ty)?;
+                            let derefed = new.typecast(self, result_ty)?.0;
                             match acc {
                                 None => Ok(Some(derefed)),
                                 Some(acc) => Ok(Some(acc.join(self, derefed)?.0)),
