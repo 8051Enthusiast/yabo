@@ -152,19 +152,23 @@ impl<'a> Uniq<InternerLayout<'a>> {
         &'a self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
         target: Option<hir::ParserDefId>,
-    ) -> Result<ILayout<'a>, LayoutError> {
-        self.try_map(ctx, |layout, ctx| {
+    ) -> Result<(ILayout<'a>, bool), LayoutError> {
+        let mut changed = false;
+        let res = self.try_map(ctx, |layout, ctx| {
             Ok(match layout.mono_layout().0 {
                 MonoLayout::Nominal(pd, _) if Some(*pd) == target => layout.0,
                 MonoLayout::Nominal(_, _) => {
+                    changed = true;
                     let res_ty = layout.mono_layout().1;
                     ctx.eval_pd(layout.inner(), res_ty)
                         .ok_or(SilencedError)?
                         .typecast_impl(ctx, target)?
+                        .0
                 }
                 _ => layout.0,
             })
-        })
+        });
+        res.map(|x| (x, changed))
     }
 
     fn get_captured(&'a self, id: HirId) -> Option<ILayout<'a>> {
@@ -433,7 +437,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
         })
     }
 
-    fn typecast(self, ctx: &mut AbsIntCtx<'a, Self>, ty: TypeId) -> Result<Self, Self::Err> {
+    fn typecast(self, ctx: &mut AbsIntCtx<'a, Self>, ty: TypeId) -> Result<(Self, bool), Self::Err> {
         let non_derefed_pd_id = match ctx.db.lookup_intern_type(ty) {
             Type::Nominal(nom) => match NominalId::from_nominal_head(&nom) {
                 NominalId::Def(id) => Some(id),
