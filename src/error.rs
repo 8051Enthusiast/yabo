@@ -40,6 +40,10 @@ impl<E: Into<SilencedError>> Silencable for Vec<E> {
     }
 }
 
+pub trait IsSilenced: From<SilencedError> {
+    fn is_silenced(&self) -> bool;
+}
+
 pub trait ErrorCollector<E> {
     fn with_error<T, F: FnOnce() -> Result<T, E>>(&mut self, f: F) -> Option<T>;
 }
