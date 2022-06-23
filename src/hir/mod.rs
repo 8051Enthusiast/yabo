@@ -132,6 +132,7 @@ fn hir_parent_parserdef(db: &dyn Hirs, id: HirId) -> SResult<ParserDefId> {
 fn hir_parent_block(db: &dyn Hirs, id: HirId) -> SResult<Option<BlockId>> {
     match db.hir_node(id)? {
         HirNode::Block(b) => return Ok(Some(b.id)),
+        HirNode::ParserDef(_) => return Ok(None),
         _ => {}
     }
     let mut path = db.lookup_intern_hir_path(id);
@@ -141,7 +142,6 @@ fn hir_parent_block(db: &dyn Hirs, id: HirId) -> SResult<Option<BlockId>> {
     let id = db.intern_hir_path(path);
     db.hir_parent_block(id)
 }
-
 
 macro_rules! hir_id_wrapper {
     {type $name:ident = $id:ident ($ty:ty);} => {
