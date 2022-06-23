@@ -1,3 +1,4 @@
+use crate::absint::AbsIntDatabase;
 use crate::ast::AstDatabase;
 use crate::error::Report;
 use crate::hir::HirDatabase;
@@ -14,7 +15,8 @@ use crate::types::TypeInternerDatabase;
     HirDatabase,
     TypeInternerDatabase,
     HirTypesDatabase,
-    OrdersDatabase
+    OrdersDatabase,
+    AbsIntDatabase
 )]
 #[derive(Default)]
 pub struct LivingInTheDatabase {
