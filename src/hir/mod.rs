@@ -138,7 +138,7 @@ fn hir_parent_block(db: &dyn Hirs, id: HirId) -> SResult<Option<BlockId>> {
     if path.pop().is_none() {
         return Ok(None);
     }
-    db.intern_hir_path(path);
+    let id = db.intern_hir_path(path);
     db.hir_parent_block(id)
 }
 
