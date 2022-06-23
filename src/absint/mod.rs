@@ -54,7 +54,7 @@ pub trait AbstractDomain<'a>: Sized + Clone + std::hash::Hash + Eq + std::fmt::D
     fn typecast(self, ctx: &mut AbsIntCtx<'a, Self>, ty: TypeId)
         -> Result<(Self, bool), Self::Err>;
     fn get_arg(self, ctx: &mut AbsIntCtx<'a, Self>, arg: Arg) -> Result<Self, Self::Err>;
-    fn bottom(ctx: &mut AbsIntCtx<'a, Self>) -> Self;
+    fn bottom(ctx: &mut Self::DomainContext) -> Self;
 }
 
 pub type AbstractExpression<Dom> = expr::Expression<expr::KindWithData<ResolvedExpr, Dom>>;
@@ -78,11 +78,13 @@ pub struct AbsIntCtx<'a, Dom: AbstractDomain<'a>> {
 
     type_substitutions: Arc<Vec<TypeId>>,
 
-    depth: usize,
     current_pd: Dom,
+    depth: usize,
     call_needs_fixpoint: FxHashSet<usize>,
     active_calls: FxHashMap<Dom, usize>,
     pd_result: FxHashMap<Dom, Option<PdEvaluated<Dom>>>,
+    existing_pd: FxHashSet<(TypeId, Dom)>,
+    new_pd: FxHashSet<(TypeId, Dom)>,
 
     block_vars: FxHashMap<HirId, Dom>,
     block_expr_vals: FxHashMap<hir::ExprId, AbstractExpression<Dom>>,
@@ -93,6 +95,27 @@ pub struct AbsIntCtx<'a, Dom: AbstractDomain<'a>> {
 }
 
 impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
+    pub fn new(db: &'a dyn AbsInt, mut dcx: Dom::DomainContext) -> Self {
+        let bottom = Dom::bottom(&mut dcx);
+        Self {
+            db,
+            dcx,
+            current_pd: bottom,
+            type_substitutions: Default::default(),
+            depth: Default::default(),
+            call_needs_fixpoint: Default::default(),
+            active_calls: Default::default(),
+            pd_result: Default::default(),
+            existing_pd: Default::default(),
+            new_pd: Default::default(),
+            block_vars: Default::default(),
+            block_expr_vals: Default::default(),
+            block_result: Default::default(),
+            active_block: Default::default(),
+            errors: Default::default(),
+        }
+    }
+
     fn strip_error<T>(&mut self, x: Result<T, Dom::Err>) -> Option<T> {
         match x {
             Ok(x) => Some(x),
@@ -204,7 +227,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             if let Some(pd) = self.pd_result.get(&pd) {
                 return pd.as_ref().map(|x| x.returned.clone());
             }
-            let bottom = Dom::bottom(self);
+            let bottom = Dom::bottom(&mut self.dcx);
             self.pd_result.insert(
                 pd,
                 Some(PdEvaluated {
@@ -274,6 +297,13 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                 SubValueKind::Val => {}
                 // TODO(8051): for now, we just use the from argument, but we should probably
                 // start using the front and back subvalues for this in the future
+                _ => continue,
+            }
+            let node = self.db.hir_node(subvalue.id)?;
+            match node {
+                hir::HirNode::Let(_)
+                | hir::HirNode::Parse(_)
+                | hir::HirNode::ChoiceIndirection(_) => {}
                 _ => continue,
             }
             let result_ty = self.subst_type(self.db.parser_type_at(subvalue.id)?);
@@ -359,6 +389,16 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
     ) -> Result<Dom, Dom::Err> {
         let mut args = FxHashMap::default();
         args.insert(Arg::From, from);
-        Dom::make_thunk(self, pd_id, result_type, &args)
+        let pd = Dom::make_thunk(self, pd_id, result_type, &args)?;
+        if !self.existing_pd.contains(&(result_type, pd.clone())) {
+            self.new_pd.insert((result_type, pd.clone()));
+        }
+        Ok(pd)
+    }
+
+    pub fn new_pds(&mut self) -> FxHashSet<(TypeId, Dom)> {
+        let new_pd = std::mem::take(&mut self.new_pd);
+        self.existing_pd.extend(new_pd.iter().cloned());
+        new_pd
     }
 }

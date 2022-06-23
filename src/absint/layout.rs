@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
-use fxhash::FxHashMap;
+use fxhash::{FxHashMap, FxHashSet};
 
 use crate::absint::{AbsInt, AbsIntCtx, AbstractDomain, Arg};
 use crate::error::{IsSilenced, SilencedError};
@@ -188,6 +188,19 @@ impl<'a> Uniq<InternerLayout<'a>> {
         .copied()
     }
 
+    fn array_primitive(&'a self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> ILayout<'a> {
+        self.map(ctx, |layout, ctx| match layout.mono_layout().0 {
+            MonoLayout::Pointer => {
+                let int = PrimitiveType::Int;
+                let int_ty = ctx.db.intern_type(Type::Primitive(int));
+                ctx.dcx.intern(InternerLayout {
+                    layout: Layout::Mono(MonoLayout::Primitive(int), int_ty),
+                })
+            }
+            _ => panic!("Attempting to get an primitive element from non-array"),
+        })
+    }
+
     fn apply_arg(
         &'a self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
@@ -201,12 +214,13 @@ impl<'a> Uniq<InternerLayout<'a>> {
             match layout.mono_layout().0 {
                 MonoLayout::NominalParser(pd) => ctx.apply_thunk_arg(*pd, result_type, from),
                 MonoLayout::BlockParser(block_id, _) => ctx
-                    .eval_block(*block_id, from, self, result_type)
+                    .eval_block(*block_id, self, from, result_type)
                     .ok_or(SilencedError.into()),
                 MonoLayout::ComposedParser(first, second) => {
                     let first_result = first.apply_arg(ctx, from)?;
                     second.apply_arg(ctx, first_result)
                 }
+                MonoLayout::Single => Ok(from.array_primitive(ctx)),
                 _ => panic!("Attempting to apply argument to non-parser layout"),
             }
         })
@@ -258,6 +272,25 @@ pub fn canon_layout<'a, 'b>(
     }
 }
 
+pub fn instantiate<'a>(
+    ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+    types: &[TypeId],
+) -> Result<(), LayoutError> {
+    let mut pd_eval_worklist = FxHashSet::default();
+    for &ty in types {
+        let root_layout = canon_layout(ctx, ty)?;
+        pd_eval_worklist.insert((ty, root_layout));
+    }
+    while !pd_eval_worklist.is_empty() {
+        for (ty, layout) in pd_eval_worklist.drain() {
+            ctx.eval_pd(layout, ty);
+        }
+        pd_eval_worklist = ctx.new_pds();
+    }
+    Ok(())
+}
+
+#[derive(Debug)]
 pub struct LayoutError;
 
 impl From<crate::error::SilencedError> for LayoutError {
@@ -412,7 +445,9 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 },
             },
             ExpressionHead::Dyadic(d) => match d.op.inner {
-                ValBinOp::ParserApply => d.inner[1].apply_arg(ctx, d.inner[0])?,
+                ValBinOp::ParserApply => {
+                    d.inner[1].apply_arg(ctx, d.inner[0])?
+                }
                 ValBinOp::Compose => {
                     make_layout(MonoLayout::ComposedParser(d.inner[0], d.inner[1]))
                 }
@@ -437,7 +472,11 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
         })
     }
 
-    fn typecast(self, ctx: &mut AbsIntCtx<'a, Self>, ty: TypeId) -> Result<(Self, bool), Self::Err> {
+    fn typecast(
+        self,
+        ctx: &mut AbsIntCtx<'a, Self>,
+        ty: TypeId,
+    ) -> Result<(Self, bool), Self::Err> {
         let non_derefed_pd_id = match ctx.db.lookup_intern_type(ty) {
             Type::Nominal(nom) => match NominalId::from_nominal_head(&nom) {
                 NominalId::Def(id) => Some(id),
@@ -474,9 +513,36 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
         Ok(ctx.dcx.intern(new_layout))
     }
 
-    fn bottom(ctx: &mut AbsIntCtx<'a, Self>) -> Self {
-        ctx.dcx.intern(InternerLayout {
+    fn bottom(ctx: &mut Self::DomainContext) -> Self {
+        ctx.intern(InternerLayout {
             layout: Layout::None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bumpalo::Bump;
+
+    use crate::{context::Context, hir_types::TyHirs};
+
+    use super::*;
+    #[test]
+    fn layouts() {
+        let ctx = Context::mock(
+            r"
+def for[int] *> main = {
+    a: ~,
+    b: ~,
+}
+        ",
+        );
+        let mut bump = Bump::new();
+        let intern = Interner::<InternerLayout>::new(&mut bump);
+        let mut outlayer = AbsIntCtx::<ILayout>::new(&ctx.db, intern);
+        let main = ctx.parser("main");
+        let main_ty = ctx.db.parser_args(main).unwrap().thunk;
+        instantiate(&mut outlayer, &[main_ty]).unwrap();
+        eprintln!("{:#?}", outlayer.block_result);
     }
 }

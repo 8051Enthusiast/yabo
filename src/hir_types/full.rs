@@ -48,7 +48,8 @@ pub fn parser_full_types(
 pub fn parser_type_at(db: &dyn TyHirs, id: HirId) -> SResult<TypeId> {
     let parent_pd = db.hir_parent_parserdef(id)?;
     let types = db.parser_full_types(parent_pd).silence()?;
-    types.types.get(&id).copied().ok_or(SilencedError)
+    let res = types.types.get(&id).copied().ok_or(SilencedError);
+    res
 }
 
 pub fn parser_expr_at(db: &dyn TyHirs, id: hir::ExprId) -> SResult<TypedExpression> {
@@ -369,7 +370,7 @@ def each[int] *> expr6 = {
 }
             "#,
         );
-        let public_type = |name: &str, fields: &[&str]| {
+        let full_type = |name: &str, fields: &[&str]| {
             let p = ctx.parser(name);
             let mut ret = ctx.db.parser_returns(p).unwrap().deref;
             for x in fields {
@@ -388,31 +389,31 @@ def each[int] *> expr6 = {
             }
             ret.to_db_string(&ctx.db)
         };
-        assert_eq!(public_type("expr1", &["a"]), "'t");
-        assert_eq!(public_type("expr1", &["b", "c"]), "int");
-        assert_eq!(public_type("expr1", &["b", "d"]), "'t");
-        assert_eq!(public_type("expr2", &["x"]), "for[int] &> file[_].expr1");
-        assert_eq!(public_type("expr2", &["y"]), "int");
-        assert_eq!(public_type("expr4", &["x"]), "for[int] &> file[_].expr3");
+        assert_eq!(full_type("expr1", &["a"]), "'t");
+        assert_eq!(full_type("expr1", &["b", "c"]), "int");
+        assert_eq!(full_type("expr1", &["b", "d"]), "'t");
+        assert_eq!(full_type("expr2", &["x"]), "for[int] &> file[_].expr1");
+        assert_eq!(full_type("expr2", &["y"]), "int");
+        assert_eq!(full_type("expr4", &["x"]), "for[int] &> file[_].expr3");
         assert_eq!(
-            public_type("expr4", &["b"]),
+            full_type("expr4", &["b"]),
             "for[int] *> for[int] &> file[_].expr3"
         );
-        assert_eq!(public_type("expr4", &["y"]), "for[int] &> file[_].expr3");
-        assert_eq!(public_type("expr4", &["a"]), "int");
-        assert_eq!(public_type("expr5", &["x"]), "each[int] &> file[_].expr2");
-        assert_eq!(public_type("expr5", &["b"]), "each[int] &> file[_].expr2");
+        assert_eq!(full_type("expr4", &["y"]), "for[int] &> file[_].expr3");
+        assert_eq!(full_type("expr4", &["a"]), "int");
+        assert_eq!(full_type("expr5", &["x"]), "each[int] &> file[_].expr2");
+        assert_eq!(full_type("expr5", &["b"]), "each[int] &> file[_].expr2");
         assert_eq!(
-            public_type("expr6", &["expr3"]),
+            full_type("expr6", &["expr3"]),
             "each[int] *> each[int] &> file[_].expr5"
         );
-        assert_eq!(public_type("expr6", &["b"]), "each[int] &> file[_].expr5");
+        assert_eq!(full_type("expr6", &["b"]), "each[int] &> file[_].expr5");
         assert_eq!(
-            public_type("expr6", &["inner", "expr3"]),
+            full_type("expr6", &["inner", "expr3"]),
             "each[int] *> each[int] &> file[_].expr2"
         );
         assert_eq!(
-            public_type("expr6", &["inner", "b"]),
+            full_type("expr6", &["inner", "b"]),
             "each[int] &> file[_].expr2"
         );
     }
