@@ -18,7 +18,9 @@ pub fn captures(db: &dyn Orders, id: hir::BlockId) -> Arc<BTreeSet<HirId>> {
                 );
             }
             hir::HirNode::Block(block) => {
-                ret.extend(db.captures(block.id).iter());
+                if block.id != id {
+                    ret.extend(db.captures(block.id).iter());
+                }
             }
             _ => continue,
         }
