@@ -1,4 +1,5 @@
 pub mod layout;
+mod represent;
 use std::sync::Arc;
 
 use crate::{
@@ -20,6 +21,7 @@ use crate::{
     order::Orders,
     types::TypeId,
 };
+pub use layout::ILayout;
 
 #[salsa::query_group(AbsIntDatabase)]
 pub trait AbsInt: Orders {}
@@ -174,7 +176,8 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             [from, res.0.root_data().clone()],
         );
         let ret_val = Dom::eval_expr(self, applied)?;
-        Ok((ret_val, res))
+        let casted_ret = ret_val.typecast(self, result_type)?.0;
+        Ok((casted_ret, res))
     }
 
     fn eval_pd_expr(

@@ -41,7 +41,7 @@ pub struct MultiLayout<Inner> {
     pub layouts: Vec<Inner>,
 }
 
-type ILayout<'a> = &'a Uniq<InternerLayout<'a>>;
+pub type ILayout<'a> = &'a Uniq<InternerLayout<'a>>;
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub struct InternerLayout<'a> {
@@ -522,7 +522,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
 mod tests {
     use bumpalo::Bump;
 
-    use crate::{context::Context, hir_types::TyHirs};
+    use crate::{context::Context, hir_types::TyHirs, dbeprintln, dbformat};
 
     use super::*;
 
@@ -536,10 +536,11 @@ def for[int] *> main = {
     a: ~,
     b: ~,
     c: {
-        c: first,
+        let c: for[int] *> first = first,
         ;
-        c: second,
+        let c: for[int] *> second = second,
     },
+    d: c.c,
 }
         ",
         );
@@ -549,6 +550,14 @@ def for[int] *> main = {
         let main = ctx.parser("main");
         let main_ty = ctx.db.parser_args(main).unwrap().thunk;
         instantiate(&mut outlayer, &[main_ty]).unwrap();
-        eprintln!("{:#?}", outlayer.block_result);
+        for ((from, parser), val) in outlayer.block_result.iter() {
+            let res = match val {
+                Some(evaluated) => {
+                    dbformat!(&ctx.db, "Some({})", &evaluated.returned)
+                }
+                None => format!("None")
+            };
+            dbeprintln!(&ctx.db, "({} *> {}) => {}", from, parser, &res);
+        }
     }
 }
