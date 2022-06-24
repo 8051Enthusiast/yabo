@@ -5,7 +5,7 @@ use fxhash::{FxHashMap, FxHashSet};
 
 use crate::absint::{AbsInt, AbsIntCtx, AbstractDomain, Arg};
 use crate::error::{IsSilenced, SilencedError};
-use crate::expr::{self, ExpressionHead, ValBinOp, ValUnOp};
+use crate::expr::{self, Atom, ExpressionHead, ValBinOp, ValUnOp};
 use crate::hir;
 use crate::hir_types::NominalId;
 use crate::interner::{FieldName, HirId};
@@ -225,6 +225,16 @@ impl<'a> Uniq<InternerLayout<'a>> {
             }
         })
     }
+
+    fn access_field(&'a self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>, field: Atom) -> ILayout<'a> {
+        self.map(ctx, |layout, ctx| match field {
+            expr::Atom::Field(f) => match layout.mono_layout().0 {
+                MonoLayout::Block(_, fields) => fields[&f],
+                _ => panic!("Field access on non-block"),
+            },
+            expr::Atom::Number(_) | expr::Atom::Char(_) => panic!("Invalid field name"),
+        })
+    }
 }
 
 pub fn canon_layout<'a, 'b>(
@@ -436,13 +446,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                     make_layout(MonoLayout::Primitive(PrimitiveType::Int))
                 }
                 ValUnOp::Wiggle(_, _) => m.inner,
-                ValUnOp::Dot(a) => match a {
-                    expr::Atom::Field(f) => m.inner.map(ctx, |x, _| match x.mono_layout().0 {
-                        MonoLayout::Block(_, fields) => fields[&f],
-                        _ => panic!("Field access on non-block"),
-                    }),
-                    expr::Atom::Number(_) | expr::Atom::Char(_) => panic!("Invalid field name"),
-                },
+                ValUnOp::Dot(a) => m.inner.access_field(ctx, a),
             },
             ExpressionHead::Dyadic(d) => match d.op.inner {
                 ValBinOp::ParserApply => d.inner[1].apply_arg(ctx, d.inner[0])?,
@@ -522,7 +526,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
 mod tests {
     use bumpalo::Bump;
 
-    use crate::{context::Context, hir_types::TyHirs, dbeprintln, dbformat};
+    use crate::{context::Context, dbformat, hir_types::TyHirs};
 
     use super::*;
 
@@ -550,14 +554,36 @@ def for[int] *> main = {
         let main = ctx.parser("main");
         let main_ty = ctx.db.parser_args(main).unwrap().thunk;
         instantiate(&mut outlayer, &[main_ty]).unwrap();
-        for ((from, parser), val) in outlayer.block_result.iter() {
-            let res = match val {
-                Some(evaluated) => {
-                    dbformat!(&ctx.db, "Some({})", &evaluated.returned)
-                }
-                None => format!("None")
-            };
-            dbeprintln!(&ctx.db, "({} *> {}) => {}", from, parser, &res);
-        }
+        let canon_2006 = canon_layout(&mut outlayer, main_ty).unwrap();
+        let main_block = outlayer.pd_result[canon_2006].as_ref().unwrap().returned;
+        let field = |name| Atom::Field(FieldName::Ident(ctx.id(name)));
+        assert_eq!(
+            dbformat!(
+                &ctx.db,
+                "{}",
+                &main_block.access_field(&mut outlayer, field("a"))
+            ),
+            "int"
+        );
+        assert_eq!(
+            dbformat!(
+                &ctx.db,
+                "{}",
+                &main_block.access_field(&mut outlayer, field("b"))
+            ),
+            "int"
+        );
+        assert_eq!(
+            dbformat!(&ctx.db, "{}", &main_block.access_field(&mut outlayer, field("c")).access_field(&mut outlayer, field("c"))),
+            "nominal-parser[for[int] *> for[int] &> file[_].second] | nominal-parser[for[int] *> for[int] &> file[_].first]"
+        );
+        assert_eq!(
+            dbformat!(
+                &ctx.db,
+                "{}",
+                &main_block.access_field(&mut outlayer, field("d"))
+            ),
+            "int"
+        );
     }
 }
