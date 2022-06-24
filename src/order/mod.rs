@@ -198,6 +198,20 @@ fn inner_parser_refs(db: &dyn Orders, node: &hir::HirNode) -> SResult<FxHashSet<
             }
             Ok(ret)
         }
+        hir::HirNode::Block(b) => {
+            let mut ret = FxHashSet::default();
+            match b.root_context.lookup(db)?.endpoints {
+                Some((_, back)) => ret.insert(SubValue {
+                    id: back,
+                    kind: SubValueKind::Back,
+                }),
+                None => ret.insert(SubValue {
+                    id: b.id.0,
+                    kind: SubValueKind::Front,
+                }),
+            };
+            Ok(ret)
+        }
         _ => Ok(FxHashSet::default()),
     }
 }
@@ -225,6 +239,10 @@ impl DependencyGraph {
             .without_kinds(hir::HirNodeKind::Block)
             .chain(std::iter::once(db.hir_node(block.id())?))
         {
+            match hir_node {
+                hir::HirNode::Block(b) if b.id != block => continue,
+                _ => {}
+            }
             let kinds = node_subvalue_kinds(&hir_node);
             for kind in kinds {
                 let sub_value = SubValue::new(*kind, hir_node.id());
@@ -325,6 +343,7 @@ pub fn block_serialization(
         let nodes = condensed_graph.node_weight(node).unwrap();
         eval_order.extend(nodes.iter().copied());
     }
+    eval_order.reverse();
     Ok(BlockSerialization {
         eval_order: Arc::new(eval_order),
     })
@@ -333,7 +352,7 @@ pub fn block_serialization(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::Context;
+    use crate::{context::Context, hir_types::NominalId, types::TypeInterner};
 
     #[test]
     fn simple_cycle() {
@@ -358,5 +377,60 @@ def for[u8] *> cycle = {
         "#,
         );
         assert!(!error::errors(&ctx.db).is_empty());
+    }
+    #[test]
+    fn choice_indirection() {
+        let ctx = Context::mock(
+            r#"
+def for[int] *> main = {
+    y: ~,
+    ;
+    let y: int = 0,
+}
+        "#,
+        );
+        let main = ctx.parser("main");
+        let block = match ctx
+            .db
+            .lookup_intern_type(ctx.db.parser_returns(main).unwrap().deref)
+        {
+            crate::types::Type::Nominal(n) => match NominalId::from_nominal_head(&n) {
+                NominalId::Block(b) => b,
+                NominalId::Def(_) => panic!(),
+            },
+            _ => panic!(),
+        };
+        let _ = ctx.db.block_serialization(block).unwrap();
+        // TODO(8051): write actual test
+    }
+    #[test]
+    fn inner_choice() {
+        let ctx = Context::mock(
+            r"
+def for['a] *> first = ~
+def for['b] *> second = ~
+def for[int] *> main = {
+    a: ~,
+    b: ~,
+    c: {
+        c: first,
+        ;
+        c: second,
+    },
+}
+            ",
+        );
+        let main = ctx.parser("main");
+        let block = match ctx
+            .db
+            .lookup_intern_type(ctx.db.parser_returns(main).unwrap().deref)
+        {
+            crate::types::Type::Nominal(n) => match NominalId::from_nominal_head(&n) {
+                NominalId::Block(b) => b,
+                NominalId::Def(_) => panic!(),
+            },
+            _ => panic!(),
+        };
+        let _ = ctx.db.block_serialization(block).unwrap();
     }
 }
