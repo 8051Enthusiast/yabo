@@ -445,9 +445,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 },
             },
             ExpressionHead::Dyadic(d) => match d.op.inner {
-                ValBinOp::ParserApply => {
-                    d.inner[1].apply_arg(ctx, d.inner[0])?
-                }
+                ValBinOp::ParserApply => d.inner[1].apply_arg(ctx, d.inner[0])?,
                 ValBinOp::Compose => {
                     make_layout(MonoLayout::ComposedParser(d.inner[0], d.inner[1]))
                 }
@@ -527,13 +525,21 @@ mod tests {
     use crate::{context::Context, hir_types::TyHirs};
 
     use super::*;
+
     #[test]
     fn layouts() {
         let ctx = Context::mock(
             r"
+def for['a] *> first = ~
+def for['b] *> second = ~
 def for[int] *> main = {
     a: ~,
     b: ~,
+    c: {
+        c: first,
+        ;
+        c: second,
+    },
 }
         ",
         );
