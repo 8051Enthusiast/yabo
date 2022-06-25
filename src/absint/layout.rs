@@ -227,7 +227,7 @@ impl<'a> Uniq<InternerLayout<'a>> {
     }
 
     fn access_field(&'a self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>, field: Atom) -> ILayout<'a> {
-        self.map(ctx, |layout, ctx| match field {
+        self.map(ctx, |layout, _| match field {
             expr::Atom::Field(f) => match layout.mono_layout().0 {
                 MonoLayout::Block(_, fields) => fields[&f],
                 _ => panic!("Field access on non-block"),
