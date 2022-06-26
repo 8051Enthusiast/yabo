@@ -207,10 +207,11 @@ impl<'a> Uniq<InternerLayout<'a>> {
         from: ILayout<'a>,
     ) -> Result<ILayout<'a>, LayoutError> {
         self.try_map(ctx, |layout, ctx| {
-            let result_type = match ctx.db.lookup_intern_type(layout.mono_layout().1) {
-                Type::ParserArg { result, .. } => result,
+            let (result_type, arg_type) = match ctx.db.lookup_intern_type(layout.mono_layout().1) {
+                Type::ParserArg { result, arg  } => (result, arg),
                 _ => panic!("Attempting to apply argument to non-parser type"),
             };
+            let from = from.typecast(ctx, arg_type)?.0;
             match layout.mono_layout().0 {
                 MonoLayout::NominalParser(pd) => ctx.apply_thunk_arg(*pd, result_type, from),
                 MonoLayout::BlockParser(block_id, _) => ctx
