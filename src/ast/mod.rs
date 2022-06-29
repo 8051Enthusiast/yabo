@@ -73,9 +73,9 @@ pub type AstTypeSpanned = KindWithData<AstType, Span>;
 pub type AstConstraintBinOp = OpWithData<ConstraintBinOp, Span>;
 pub type AstConstraintUnOp = OpWithData<ConstraintUnOp, Span>;
 pub type AstValBinOp = OpWithData<ValBinOp, Span>;
-pub type AstValUnOp = OpWithData<ValUnOp<AstConstraintSpanned>, Span>;
+pub type AstValUnOp = OpWithData<ValUnOp<Arc<ConstraintExpression>>, Span>;
 pub type AstTypeBinOp = OpWithData<TypeBinOp, Span>;
-pub type AstTypeUnOp = OpWithData<TypeUnOp<AstConstraintSpanned>, Span>;
+pub type AstTypeUnOp = OpWithData<TypeUnOp<Arc<ConstraintExpression>>, Span>;
 
 impl ExpressionKind for AstConstraint {
     type NiladicOp = Atom;
@@ -85,13 +85,13 @@ impl ExpressionKind for AstConstraint {
 
 impl ExpressionKind for AstVal {
     type NiladicOp = ParserAtom;
-    type MonadicOp = ValUnOp<AstConstraintSpanned>;
+    type MonadicOp = ValUnOp<Arc<ConstraintExpression>>;
     type DyadicOp = ValBinOp;
 }
 
 impl ExpressionKind for AstType {
     type NiladicOp = TypeAtom;
-    type MonadicOp = TypeUnOp<AstConstraintSpanned>;
+    type MonadicOp = TypeUnOp<Arc<ConstraintExpression>>;
     type DyadicOp = TypeBinOp;
 }
 

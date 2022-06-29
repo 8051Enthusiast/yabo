@@ -61,7 +61,7 @@ fn val_expression(
         },
         &mut |monadic, _| OpWithData {
             data: monadic.data,
-            inner: monadic.inner.map_expr(|x| x.map(&mut add_span)),
+            inner: monadic.inner.map_expr(|x| Arc::new(x.map(&mut add_span))),
         },
         &mut |dyadic, _, _| dyadic.clone(),
     );
@@ -111,7 +111,7 @@ fn convert_type_expression(
         },
         &mut |monadic, _| OpWithData {
             data: monadic.data,
-            inner: monadic.inner.map_expr(|x| x.map(&mut add_span)),
+            inner: monadic.inner.map_expr(|x| Arc::new(x.map(&mut add_span))),
         },
         &mut |dyadic, _, _| dyadic.clone(),
     )
