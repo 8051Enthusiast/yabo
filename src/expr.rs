@@ -2,7 +2,6 @@ use crate::interner::FieldName;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
-use std::sync::Arc;
 pub trait ExpressionKind: Clone + Hash + Eq + Debug {
     type NiladicOp: Clone + Hash + Eq + Debug;
     type MonadicOp: Clone + Hash + Eq + Debug;
@@ -517,15 +516,15 @@ impl Display for ValBinOp {
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum ValUnOp<C: ExpressionKind> {
+pub enum ValUnOp<C> {
     Not,
     Neg,
     Pos,
-    Wiggle(Arc<Expression<C>>, WiggleKind),
+    Wiggle(C, WiggleKind),
     Dot(Atom),
 }
 
-impl<C: ExpressionKind> ValUnOp<C> {
+impl<C> ValUnOp<C> {
     pub fn parse_from_str(s: &str) -> Result<Self, &str> {
         use ValUnOp::*;
         Ok(match s {
@@ -535,16 +534,13 @@ impl<C: ExpressionKind> ValUnOp<C> {
             otherwise => return Err(otherwise),
         })
     }
-    pub fn map_expr<D: ExpressionKind>(
-        &self,
-        f: impl FnOnce(&Expression<C>) -> Expression<D>,
-    ) -> ValUnOp<D> {
+    pub fn map_expr<D>(&self, f: impl FnOnce(&C) -> D) -> ValUnOp<D> {
         use ValUnOp::*;
         match self {
             Not => Not,
             Neg => Neg,
             Pos => Pos,
-            Wiggle(expr, kind) => Wiggle(Arc::new(f(expr)), kind.clone()),
+            Wiggle(expr, kind) => Wiggle(f(expr), kind.clone()),
             Dot(atom) => Dot(atom.clone()),
         }
     }
@@ -602,12 +598,12 @@ impl Display for TypeBinOp {
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum TypeUnOp<C: ExpressionKind> {
-    Wiggle(Arc<Expression<C>>),
+pub enum TypeUnOp<C> {
+    Wiggle(C),
     Ref,
 }
 
-impl<C: ExpressionKind> TypeUnOp<C> {
+impl<C> TypeUnOp<C> {
     pub fn parse_from_str(s: &str) -> Result<Self, &str> {
         use TypeUnOp::*;
         Ok(match s {
@@ -615,13 +611,10 @@ impl<C: ExpressionKind> TypeUnOp<C> {
             otherwise => return Err(otherwise),
         })
     }
-    pub fn map_expr<D: ExpressionKind>(
-        &self,
-        f: impl FnOnce(&Expression<C>) -> Expression<D>,
-    ) -> TypeUnOp<D> {
+    pub fn map_expr<D>(&self, f: impl FnOnce(&C) -> D) -> TypeUnOp<D> {
         use TypeUnOp::*;
         match self {
-            Wiggle(expr) => Wiggle(Arc::new(f(expr))),
+            Wiggle(expr) => Wiggle(f(expr)),
             Ref => Ref,
         }
     }

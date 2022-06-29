@@ -21,7 +21,7 @@ pub struct ResolvedExpr;
 
 impl ExpressionKind for ResolvedExpr {
     type NiladicOp = ResolvedAtom;
-    type MonadicOp = ValUnOp<hir::HirConstraintSpanned>;
+    type MonadicOp = ValUnOp<std::sync::Arc<Expression<hir::HirConstraintSpanned>>>;
     type DyadicOp = ValBinOp;
 }
 
