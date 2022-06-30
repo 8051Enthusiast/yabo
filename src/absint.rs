@@ -1,5 +1,3 @@
-pub mod layout;
-mod represent;
 use std::sync::Arc;
 
 use crate::{
@@ -21,7 +19,6 @@ use crate::{
     order::Orders,
     types::TypeId,
 };
-pub use layout::ILayout;
 
 #[salsa::query_group(AbsIntDatabase)]
 pub trait AbsInt: Orders {}
@@ -63,15 +60,15 @@ pub type AbstractExpression<Dom> = expr::Expression<expr::KindWithData<ResolvedE
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PdEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
-    returned: Dom,
-    expr_vals: Option<AbstractExpression<Dom>>,
+    pub returned: Dom,
+    pub expr_vals: Option<AbstractExpression<Dom>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlockEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
-    expr_vals: FxHashMap<hir::ExprId, AbstractExpression<Dom>>,
-    vals: FxHashMap<HirId, Dom>,
-    returned: Dom,
+    pub expr_vals: FxHashMap<hir::ExprId, AbstractExpression<Dom>>,
+    pub vals: FxHashMap<HirId, Dom>,
+    pub returned: Dom,
 }
 
 pub struct AbsIntCtx<'a, Dom: AbstractDomain<'a>> {
@@ -117,6 +114,11 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             errors: Default::default(),
         }
     }
+
+    pub fn pd_result(&self) -> &FxHashMap<Dom, Option<PdEvaluated<Dom>>> {
+        &self.pd_result
+    }
+
 
     fn strip_error<T>(&mut self, x: Result<T, Dom::Err>) -> Option<T> {
         match x {
