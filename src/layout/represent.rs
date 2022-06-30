@@ -1,9 +1,7 @@
 use crate::{databased_display::DatabasedDisplay, dbwrite};
 
-use super::{
-    layout::{Layout, MonoLayout},
-    AbsInt, Arg, ILayout,
-};
+use super::{ILayout, Layout, MonoLayout};
+use crate::absint::{AbsInt, Arg};
 
 impl<'a, DB: AbsInt> DatabasedDisplay<DB> for ILayout<'a> {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {

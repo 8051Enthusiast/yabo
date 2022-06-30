@@ -1,3 +1,4 @@
+mod represent;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -556,7 +557,7 @@ def for[int] *> main = {
         let main_ty = ctx.db.parser_args(main).unwrap().thunk;
         instantiate(&mut outlayer, &[main_ty]).unwrap();
         let canon_2006 = canon_layout(&mut outlayer, main_ty).unwrap();
-        let main_block = outlayer.pd_result[canon_2006].as_ref().unwrap().returned;
+        let main_block = outlayer.pd_result()[canon_2006].as_ref().unwrap().returned;
         let field = |name| Atom::Field(FieldName::Ident(ctx.id(name)));
         assert_eq!(
             dbformat!(
