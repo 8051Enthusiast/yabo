@@ -11,7 +11,7 @@ pub enum VarType {
 
 pub fn parserdef_ref(
     db: &(impl Hirs + ?Sized),
-    loc: HirId,
+    loc: DefId,
     name: FieldName,
 ) -> SResult<Option<ParserDefId>> {
     let (id, kind) = resolve_var_ref(db, loc, name)?.ok_or(SilencedError)?;
@@ -25,7 +25,7 @@ pub fn parserdef_ref(
     Ok(Some(ParserDefId(id)))
 }
 
-pub fn is_const_ref(db: &(impl Hirs + ?Sized), id: HirId) -> bool {
+pub fn is_const_ref(db: &(impl Hirs + ?Sized), id: DefId) -> bool {
     matches!(
         db.lookup_intern_hir_path(id).path(),
         [PathComponent::File(_), PathComponent::Named(_)]
@@ -34,9 +34,9 @@ pub fn is_const_ref(db: &(impl Hirs + ?Sized), id: HirId) -> bool {
 
 pub fn resolve_var_ref(
     db: &(impl Hirs + ?Sized),
-    loc: HirId,
+    loc: DefId,
     ident: FieldName,
-) -> SResult<Option<(HirId, VarType)>> {
+) -> SResult<Option<(DefId, VarType)>> {
     let mut current_id = loc;
     loop {
         current_id = match &db.hir_node(current_id)? {
@@ -82,7 +82,7 @@ pub fn expr_idents(expr: &ValExpression) -> Vec<FieldName> {
 pub fn expr_parser_refs<'a>(
     db: &'a (impl Hirs + ?Sized),
     expr: &ValExpression,
-    context: HirId,
+    context: DefId,
 ) -> impl Iterator<Item = ParserDefId> + 'a {
     expr_idents(expr)
         .into_iter()
@@ -93,15 +93,15 @@ pub fn expr_parser_refs<'a>(
 pub fn expr_value_refs<'a>(
     db: &'a (impl Hirs + ?Sized),
     expr: &ValExpression,
-    context: HirId,
-) -> impl Iterator<Item = HirId> + 'a {
+    context: DefId,
+) -> impl Iterator<Item = DefId> + 'a {
     expr_idents(expr)
         .into_iter()
         .flat_map(move |ident| resolve_var_ref(db, context, ident).ok()?)
         .flat_map(|(id, ty)| matches!(ty, VarType::Value).then(|| id))
 }
 
-pub fn find_parser_refs(db: &(impl Hirs + ?Sized), id: HirId) -> SResult<Vec<ParserDefId>> {
+pub fn find_parser_refs(db: &(impl Hirs + ?Sized), id: DefId) -> SResult<Vec<ParserDefId>> {
     let mut refs = HashSet::new();
     for node in walk::ChildIter::new(id, db) {
         let (expr, context) = match node {

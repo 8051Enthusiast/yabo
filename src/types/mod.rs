@@ -10,7 +10,7 @@ use crate::{
     ast::ArrayKind,
     dbeprintln, dbformat,
     error::{Silencable, SilencedError},
-    interner::{FieldName, HirId, Interner, TypeVar},
+    interner::{FieldName, DefId, Interner, TypeVar},
 };
 
 use self::{
@@ -44,7 +44,7 @@ pub trait TypeInterner: crate::source::Files {
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct NominalTypeHead {
     pub kind: NominalKind,
-    pub def: HirId,
+    pub def: DefId,
     pub parse_arg: Option<TypeId>,
     pub fun_args: Arc<Vec<TypeId>>,
     pub ty_args: Arc<Vec<TypeId>>,
@@ -56,7 +56,7 @@ pub enum Type {
     Bot,
     Unknown,
     Primitive(PrimitiveType),
-    TypeVarRef(HirId, u32, u32),
+    TypeVarRef(DefId, u32, u32),
     ForAll(TypeId, Arc<Vec<TypeVar>>),
     Nominal(NominalTypeHead),
     Loop(ArrayKind, TypeId),
@@ -115,8 +115,8 @@ pub enum TypeHead {
     Any,
     Bot,
     Primitive(PrimitiveType),
-    TypeVarRef(HirId, u32, u32),
-    Nominal(HirId),
+    TypeVarRef(DefId, u32, u32),
+    Nominal(DefId),
     Loop(ArrayKind),
     ParserArg,
     FunctionArgs(usize),

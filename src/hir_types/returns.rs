@@ -69,7 +69,7 @@ pub fn parser_returns_ssc(db: &dyn TyHirs, id: FunctionSscId) -> Vec<ParserDefTy
 
 pub struct ReturnResolver<'a> {
     db: &'a dyn TyHirs,
-    return_infs: FxHashMap<HirId, ParserDefTypeInf>,
+    return_infs: FxHashMap<DefId, ParserDefTypeInf>,
 }
 
 impl<'a> ReturnResolver<'a> {
@@ -109,7 +109,7 @@ impl<'a> TypeResolver for ReturnResolver<'a> {
         get_signature(self.db, ty)
     }
 
-    fn lookup(&self, context: HirId, name: FieldName) -> Result<EitherType, TypeError> {
+    fn lookup(&self, context: DefId, name: FieldName) -> Result<EitherType, TypeError> {
         get_thunk(self.db, context, name)
     }
 

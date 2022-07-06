@@ -20,7 +20,7 @@ use crate::{
     dbpanic,
     error::{SResult, SilencedError},
     expr::{self, Atom, Expression, ExpressionKind},
-    interner::{FieldName, HirId, HirPath, Identifier, PathComponent, TypeVar},
+    interner::{FieldName, DefId, HirPath, Identifier, PathComponent, TypeVar},
     source::{FileId, Span},
 };
 
@@ -36,8 +36,8 @@ use self::convert::HirConversionErrors;
 
 #[salsa::query_group(HirDatabase)]
 pub trait Hirs: crate::ast::Asts + crate::types::TypeInterner {
-    fn hir_parser_collection(&self, hid: HirId) -> SResult<Option<HirParserCollection>>;
-    fn hir_node(&self, id: HirId) -> SResult<HirNode>;
+    fn hir_parser_collection(&self, did: DefId) -> SResult<Option<HirParserCollection>>;
+    fn hir_node(&self, id: DefId) -> SResult<HirNode>;
     #[salsa::interned]
     fn intern_recursion_scc(&self, functions: Vec<ParserDefId>) -> recursion::FunctionSscId;
     fn mod_parser_ssc(
@@ -46,14 +46,14 @@ pub trait Hirs: crate::ast::Asts + crate::types::TypeInterner {
     ) -> SResult<Arc<BTreeMap<ParserDefId, FunctionSscId>>>;
     fn parser_ssc(&self, parser: ParserDefId) -> SResult<FunctionSscId>;
     fn root_id(&self) -> ModuleId;
-    fn all_hir_ids(&self) -> Vec<HirId>;
+    fn all_def_ids(&self) -> Vec<DefId>;
     fn all_parserdefs(&self) -> Vec<ParserDefId>;
-    fn hir_parent_module(&self, id: HirId) -> SResult<ModuleId>;
-    fn hir_parent_parserdef(&self, id: HirId) -> SResult<ParserDefId>;
-    fn hir_parent_block(&self, id: HirId) -> SResult<Option<BlockId>>;
+    fn hir_parent_module(&self, id: DefId) -> SResult<ModuleId>;
+    fn hir_parent_parserdef(&self, id: DefId) -> SResult<ParserDefId>;
+    fn hir_parent_block(&self, id: DefId) -> SResult<Option<BlockId>>;
 }
 
-fn hir_node(db: &dyn Hirs, id: HirId) -> SResult<HirNode> {
+fn hir_node(db: &dyn Hirs, id: DefId) -> SResult<HirNode> {
     let path = db.lookup_intern_hir_path(id);
     let file = path.path()[0].unwrap_file();
     let fid = match path.path().get(1) {
@@ -81,7 +81,7 @@ fn root_id(db: &dyn Hirs) -> ModuleId {
     ModuleId(db.intern_hir_path(root_path))
 }
 
-fn all_hir_ids(db: &dyn Hirs) -> Vec<HirId> {
+fn all_def_ids(db: &dyn Hirs) -> Vec<DefId> {
     let root = db.root_id();
     let module = match root.lookup(db) {
         Ok(m) => m,
@@ -113,14 +113,14 @@ fn all_parserdefs(db: &dyn Hirs) -> Vec<ParserDefId> {
     ret
 }
 
-fn hir_parent_module(db: &dyn Hirs, id: HirId) -> SResult<ModuleId> {
+fn hir_parent_module(db: &dyn Hirs, id: DefId) -> SResult<ModuleId> {
     // todo
     Ok(ModuleId(db.intern_hir_path(HirPath::new_file(
         db.lookup_intern_hir_path(id).path()[0].unwrap_file(),
     ))))
 }
 
-fn hir_parent_parserdef(db: &dyn Hirs, id: HirId) -> SResult<ParserDefId> {
+fn hir_parent_parserdef(db: &dyn Hirs, id: DefId) -> SResult<ParserDefId> {
     let path = db.lookup_intern_hir_path(id);
     // todo
     Ok(ParserDefId(db.intern_hir_path(HirPath::new_fid(
@@ -129,7 +129,7 @@ fn hir_parent_parserdef(db: &dyn Hirs, id: HirId) -> SResult<ParserDefId> {
     ))))
 }
 
-fn hir_parent_block(db: &dyn Hirs, id: HirId) -> SResult<Option<BlockId>> {
+fn hir_parent_block(db: &dyn Hirs, id: DefId) -> SResult<Option<BlockId>> {
     match db.hir_node(id)? {
         HirNode::Block(b) => return Ok(Some(b.id)),
         HirNode::ParserDef(_) => return Ok(None),
@@ -146,10 +146,10 @@ fn hir_parent_block(db: &dyn Hirs, id: HirId) -> SResult<Option<BlockId>> {
 macro_rules! hir_id_wrapper {
     {type $name:ident = $id:ident ($ty:ty);} => {
         #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug, PartialOrd, Ord)]
-        pub struct $name(pub HirId);
+        pub struct $name(pub DefId);
         impl HirIdWrapper for $name {
             type Inner = $ty;
-            fn id(self) -> HirId {
+            fn id(self) -> DefId {
                 self.0
             }
             fn extract(node: HirNode) -> Self::Inner {
@@ -183,7 +183,7 @@ macro_rules! hir_node_enum {
         }
 
         impl HirNode {
-            pub fn children(&self) -> Vec<HirId> {
+            pub fn children(&self) -> Vec<DefId> {
                 match self {
                     $(HirNode::$variant(x) => x.children()),*
                 }
@@ -193,7 +193,7 @@ macro_rules! hir_node_enum {
                     $(HirNode::$variant(_) => kind.contains(HirNodeKind::$variant)),*
                 }
             }
-            pub fn id(&self) -> HirId {
+            pub fn id(&self) -> DefId {
                 match self {
                     $(HirNode::$variant(x) => x.id.id()),*
                 }
@@ -234,9 +234,9 @@ hir_id_wrapper! {
 
 pub trait HirIdWrapper: Copy {
     type Inner;
-    fn id(self) -> HirId;
+    fn id(self) -> DefId;
     fn extract(node: HirNode) -> Self::Inner;
-    fn child<DB: Hirs + ?Sized>(self, db: &DB, add: PathComponent) -> HirId {
+    fn child<DB: Hirs + ?Sized>(self, db: &DB, add: PathComponent) -> DefId {
         self.id().child(db, add)
     }
     fn lookup<DB: Hirs + ?Sized>(self, db: &DB) -> SResult<Self::Inner> {
@@ -247,8 +247,8 @@ pub trait HirIdWrapper: Copy {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Default)]
 pub struct HirParserCollection {
-    map: BTreeMap<HirId, HirNode>,
-    spans: BTreeMap<HirId, Vec<Span>>,
+    map: BTreeMap<DefId, HirNode>,
+    spans: BTreeMap<DefId, Vec<Span>>,
     errors: HirConversionErrors,
 }
 
@@ -256,7 +256,7 @@ impl HirParserCollection {
     pub fn new() -> Self {
         Self::default()
     }
-    pub fn default_span(&self, id: HirId) -> Option<Span> {
+    pub fn default_span(&self, id: DefId) -> Option<Span> {
         self.spans.get(&id)?.last().copied()
     }
 }
@@ -269,7 +269,7 @@ pub struct Module {
 }
 
 impl Module {
-    pub fn children(&self) -> Vec<HirId> {
+    pub fn children(&self) -> Vec<DefId> {
         self.defs
             .values()
             .map(|x| x.0)
@@ -327,11 +327,11 @@ pub type HirTypeSpanned = expr::KindWithData<HirType, SpanIndex>;
 pub struct ValExpression {
     pub id: ExprId,
     pub expr: Expression<HirValSpanned>,
-    pub children: Vec<HirId>,
+    pub children: Vec<DefId>,
 }
 
 impl ValExpression {
-    fn children(&self) -> Vec<HirId> {
+    fn children(&self) -> Vec<DefId> {
         self.children.clone()
     }
 }
@@ -343,7 +343,7 @@ pub struct TypeExpression {
 }
 
 impl TypeExpression {
-    fn children(&self) -> Vec<HirId> {
+    fn children(&self) -> Vec<DefId> {
         Vec::new()
     }
 }
@@ -356,7 +356,7 @@ pub struct ParserDef {
 }
 
 impl ParserDef {
-    pub fn children(&self) -> Vec<HirId> {
+    pub fn children(&self) -> Vec<DefId> {
         vec![self.from.0, self.to.0]
     }
 }
@@ -378,7 +378,7 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn children(&self) -> Vec<HirId> {
+    pub fn children(&self) -> Vec<DefId> {
         vec![self.root_context.0]
     }
 }
@@ -387,12 +387,12 @@ impl Block {
 pub struct ChoiceIndirection {
     pub id: ChoiceIndirectId,
     pub parent_context: ContextId,
-    pub choices: Vec<(u32, HirId)>,
+    pub choices: Vec<(u32, DefId)>,
     pub target_choice: ChoiceId,
 }
 
 impl ChoiceIndirection {
-    pub fn children(&self) -> Vec<HirId> {
+    pub fn children(&self) -> Vec<DefId> {
         Vec::new()
     }
 }
@@ -407,7 +407,7 @@ pub struct StructChoice {
 }
 
 impl StructChoice {
-    pub fn children(&self) -> Vec<HirId> {
+    pub fn children(&self) -> Vec<DefId> {
         self.subcontexts.iter().map(|x| x.0).collect()
     }
 }
@@ -418,13 +418,13 @@ pub struct StructCtx {
     pub block_id: BlockId,
     pub parent_choice: Option<ChoiceId>,
     pub parent_context: Option<ContextId>,
-    pub vars: Box<VariableSet<HirId>>,
-    pub children: Box<Vec<HirId>>,
-    pub endpoints: Option<(HirId, HirId)>,
+    pub vars: Box<VariableSet<DefId>>,
+    pub children: Box<Vec<DefId>>,
+    pub endpoints: Option<(DefId, DefId)>,
 }
 
 impl StructCtx {
-    pub fn children(&self) -> Vec<HirId> {
+    pub fn children(&self) -> Vec<DefId> {
         self.children.as_ref().clone()
     }
 }
@@ -437,7 +437,7 @@ pub struct LetStatement {
 }
 
 impl LetStatement {
-    fn children(&self) -> Vec<HirId> {
+    fn children(&self) -> Vec<DefId> {
         vec![self.ty.0, self.expr.0]
     }
 }
@@ -445,11 +445,11 @@ impl LetStatement {
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub enum ParserPredecessor {
     ChildOf(ContextId),
-    After(HirId),
+    After(DefId),
 }
 
 impl ParserPredecessor {
-    pub fn id(self) -> HirId {
+    pub fn id(self) -> DefId {
         match self {
             ParserPredecessor::ChildOf(id) => id.0,
             ParserPredecessor::After(id) => id,
@@ -467,7 +467,7 @@ pub struct ParseStatement {
 }
 
 impl ParseStatement {
-    pub fn children(&self) -> Vec<HirId> {
+    pub fn children(&self) -> Vec<DefId> {
         vec![self.expr.0]
     }
 }
@@ -517,7 +517,7 @@ pub struct ParserArray {
 }
 
 impl ParserArray {
-    pub fn children(&self) -> Vec<HirId> {
+    pub fn children(&self) -> Vec<DefId> {
         vec![self.expr.0]
     }
 }
@@ -540,7 +540,7 @@ def for [u8] *> expr1 = {
 }
         "#,
         );
-        eprintln!("{:?}", ctx.db.all_hir_ids());
+        eprintln!("{:?}", ctx.db.all_def_ids());
     }
     #[test]
     fn recursion_ssc() {

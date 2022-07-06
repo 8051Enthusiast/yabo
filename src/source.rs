@@ -10,7 +10,7 @@ use ariadne::{Cache, FnCache};
 
 use crate::context::LivingInTheDatabase;
 use crate::databased_display::DatabasedDisplay;
-use crate::interner::{FieldName, Identifier, HirId};
+use crate::interner::{FieldName, Identifier, DefId};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Span {
@@ -239,14 +239,14 @@ impl<T: Clone + Eq + Hash + Debug> IndexSpanned<T> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct IndirectSpan(HirId, SpanIndex);
+pub struct IndirectSpan(DefId, SpanIndex);
 
 impl IndirectSpan {
-    pub fn new(id: HirId, span: SpanIndex) -> Self {
+    pub fn new(id: DefId, span: SpanIndex) -> Self {
         Self(id, span)
     }
 
-    pub fn first(id: HirId) -> Self {
+    pub fn first(id: DefId) -> Self {
         Self(id, SpanIndex(0))
     }
 }

@@ -172,7 +172,7 @@ fn struct_choice(
     id: ChoiceId,
     pred: ParserPredecessor,
     parents: &ParentInfo,
-) -> VariableSet<Vec<(u32, HirId, Span)>> {
+) -> VariableSet<Vec<(u32, DefId, Span)>> {
     let children = extract_non_choice(ast);
     let parents = ParentInfo {
         parent_choice: Some(id),
@@ -195,7 +195,7 @@ fn struct_choice(
             .iter()
             .enumerate()
             .flat_map(|(i, x)| x.set.get(&id).map(|y| (i as u32, y.inner().0, y.inner().1)))
-            .collect::<Vec<(u32, HirId, Span)>>()
+            .collect::<Vec<(u32, DefId, Span)>>()
     });
 
     let choice = StructChoice {
@@ -227,7 +227,7 @@ fn empty_struct_context(
     id: ContextId,
     parents: &ParentInfo,
     span: Span,
-) -> VariableSet<HirId> {
+) -> VariableSet<DefId> {
     let varset = VariableSet::new();
     let context = StructCtx {
         id,
@@ -247,7 +247,7 @@ fn struct_context(
     ctx: &HirConversionCtx,
     id: ContextId,
     parents: &ParentInfo,
-) -> VariableSet<(HirId, Span)> {
+) -> VariableSet<(DefId, Span)> {
     let children = match ast {
         ast::BlockContent::Sequence(x) => x.content.iter().collect(),
         otherwise => vec![otherwise],
@@ -347,7 +347,7 @@ fn let_statement(
     ctx: &HirConversionCtx,
     id: LetId,
     context: ContextId,
-) -> VariableSet<(HirId, Span)> {
+) -> VariableSet<(DefId, Span)> {
     let val_id = ExprId(id.child(ctx.db, PathComponent::Unnamed(0)));
     let ty_id = TExprId(id.child(ctx.db, PathComponent::Unnamed(1)));
     val_expression(&ast.expr, ctx, val_id, Some(context));
@@ -368,7 +368,7 @@ fn parse_statement(
     id: ParseId,
     prev: ParserPredecessor,
     parent_context: ContextId,
-) -> VariableSet<(HirId, Span)> {
+) -> VariableSet<(DefId, Span)> {
     let expr = ExprId(id.child(ctx.db, PathComponent::Unnamed(0)));
     val_expression(&ast.parser, ctx, expr, Some(parent_context));
     let pt = ParseStatement {
@@ -390,7 +390,7 @@ fn parse_statement(
 }
 
 pub fn choice_indirection(
-    subs: &[(u32, HirId, Span)],
+    subs: &[(u32, DefId, Span)],
     ctx: &HirConversionCtx,
     id: ChoiceIndirectId,
     parent_context: ContextId,
@@ -429,7 +429,7 @@ impl<'a> HirConversionCtx<'a> {
         }
     }
 
-    fn insert(&self, id: HirId, node: HirNode, span: Vec<Span>) {
+    fn insert(&self, id: DefId, node: HirNode, span: Vec<Span>) {
         let mut borrow = self.collection.borrow_mut();
         borrow.map.insert(id, node);
         borrow.spans.insert(id, span);
@@ -442,7 +442,7 @@ impl<'a> HirConversionCtx<'a> {
         }
     }
 
-    fn modify_back_predecessor(&self, id: HirId, pred: ParserPredecessor) {
+    fn modify_back_predecessor(&self, id: DefId, pred: ParserPredecessor) {
         let mut borrow = self.collection.borrow_mut();
         let node = match borrow
             .map
@@ -465,17 +465,17 @@ impl<'a> HirConversionCtx<'a> {
 
 pub fn hir_parser_collection(
     db: &dyn Hirs,
-    hid: HirId,
+    did: DefId,
 ) -> Result<Option<HirParserCollection>, SilencedError> {
     let collection = HirParserCollection::new();
     let ctx = HirConversionCtx::new(collection, db);
-    let path = db.lookup_intern_hir_path(hid);
+    let path = db.lookup_intern_hir_path(did);
     let file = path.path()[0].unwrap_file();
     let id = path.path()[1].unwrap_ident();
     let parser = match db.top_level_statement(file, id)? {
         None => return Ok(None),
         Some(x) => x,
     };
-    parser_def(&parser, &ctx, ParserDefId(hid));
+    parser_def(&parser, &ctx, ParserDefId(did));
     Ok(Some(ctx.collection.into_inner()))
 }

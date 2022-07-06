@@ -42,11 +42,11 @@ fn public_expr_type_impl(
     Ok((ctx.expr_to_concrete_type(&expr)?, ret))
 }
 
-pub fn public_type(db: &dyn TyHirs, loc: HirId) -> SResult<TypeId> {
+pub fn public_type(db: &dyn TyHirs, loc: DefId) -> SResult<TypeId> {
     public_type_impl(db, loc).silence()
 }
 
-fn public_type_impl(db: &dyn TyHirs, loc: HirId) -> Result<TypeId, TypeError> {
+fn public_type_impl(db: &dyn TyHirs, loc: DefId) -> Result<TypeId, TypeError> {
     let node = db.hir_node(loc)?;
     let ret = match node {
         hir::HirNode::Let(l) => public_expr_type(db, l.expr)?.1,
@@ -154,7 +154,7 @@ impl<'a> PublicResolver<'a> {
     }
     pub fn new_typing_context_and_loc(
         db: &'a dyn TyHirs,
-        loc: HirId,
+        loc: DefId,
     ) -> SResult<TypingContext<Self>> {
         let typeloc = TypingLocation {
             vars: TypeVarCollection::new_empty(),
@@ -183,7 +183,7 @@ impl<'a> TypeResolver for PublicResolver<'a> {
         get_signature(self.db, ty)
     }
 
-    fn lookup(&self, context: HirId, name: FieldName) -> Result<EitherType, TypeError> {
+    fn lookup(&self, context: DefId, name: FieldName) -> Result<EitherType, TypeError> {
         get_thunk(self.db, context, name)
     }
 
@@ -240,11 +240,11 @@ def for[for[int]] *> expr5 = {
             let mut ret = ctx.db.parser_returns(p).unwrap().deref;
             for x in fields {
                 let block = ctx.db.lookup_intern_type(ret);
-                let hir_id = match &block {
+                let def_id = match &block {
                     Type::Nominal(n) => n.def,
                     _ => panic!("expected nominal type"),
                 };
-                let block = hir::BlockId::extract(ctx.db.hir_node(hir_id).unwrap());
+                let block = hir::BlockId::extract(ctx.db.hir_node(def_id).unwrap());
                 let root_context = block.root_context;
                 let ident_field = ctx.id(x);
                 let child = root_context

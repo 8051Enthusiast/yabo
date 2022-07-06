@@ -16,7 +16,7 @@ use super::*;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ParserFullTypes {
     pub id: hir::ParserDefId,
-    pub types: Arc<BTreeMap<HirId, TypeId>>,
+    pub types: Arc<BTreeMap<DefId, TypeId>>,
     pub exprs: Arc<BTreeMap<hir::ExprId, TypedExpression>>,
 }
 
@@ -45,7 +45,7 @@ pub fn parser_full_types(
     }))
 }
 
-pub fn parser_type_at(db: &dyn TyHirs, id: HirId) -> SResult<TypeId> {
+pub fn parser_type_at(db: &dyn TyHirs, id: DefId) -> SResult<TypeId> {
     let parent_pd = db.hir_parent_parserdef(id)?;
     let types = db.parser_full_types(parent_pd).silence()?;
     let res = types.types.get(&id).copied().ok_or(SilencedError);
@@ -59,10 +59,10 @@ pub fn parser_expr_at(db: &dyn TyHirs, id: hir::ExprId) -> SResult<TypedExpressi
 }
 
 impl<'a> TypingContext<'a, FullResolver<'a>> {
-    fn set_current_loc(&mut self, loc: HirId) {
+    fn set_current_loc(&mut self, loc: DefId) {
         self.infctx.tr.loc.loc = loc;
     }
-    fn infty_at(&mut self, id: HirId) -> InfTypeId {
+    fn infty_at(&mut self, id: DefId) -> InfTypeId {
         self.infctx.tr.inftypes[&id]
     }
     fn let_statement_types(
@@ -148,7 +148,7 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
         self.set_ambient_type(old_ambient);
         ret
     }
-    fn with_loc<T>(&mut self, loc: HirId, f: impl FnOnce(&mut Self) -> T) -> T {
+    fn with_loc<T>(&mut self, loc: DefId, f: impl FnOnce(&mut Self) -> T) -> T {
         let old_loc = self.infctx.tr.loc.loc;
         self.infctx.tr.loc.loc = loc;
         let ret = f(self);
@@ -209,7 +209,7 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
             Ok(())
         })
     }
-    fn type_block_component(&mut self, id: HirId) -> Result<(), TypeError> {
+    fn type_block_component(&mut self, id: DefId) -> Result<(), TypeError> {
         match self.db.hir_node(id)? {
             hir::HirNode::Let(l) => self.type_let(&l),
             hir::HirNode::Parse(parse) => self.type_parse(&parse),
@@ -250,14 +250,14 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
 
 pub struct FullResolver<'a> {
     db: &'a dyn TyHirs,
-    inftypes: FxHashMap<HirId, InfTypeId>,
+    inftypes: FxHashMap<DefId, InfTypeId>,
     inf_expressions: FxHashMap<hir::ExprId, InfTypedExpression>,
     loc: TypingLocation,
     current_ambient: Option<InfTypeId>,
 }
 
 impl<'a> FullResolver<'a> {
-    pub fn new(db: &'a dyn TyHirs, loc: HirId) -> SResult<Self> {
+    pub fn new(db: &'a dyn TyHirs, loc: DefId) -> SResult<Self> {
         Ok(Self {
             db,
             inftypes: Default::default(),
@@ -308,7 +308,7 @@ impl<'a> TypeResolver for FullResolver<'a> {
         get_signature(self.db, ty)
     }
 
-    fn lookup(&self, context: HirId, name: FieldName) -> Result<EitherType, TypeError> {
+    fn lookup(&self, context: DefId, name: FieldName) -> Result<EitherType, TypeError> {
         let (resolved_ref, ref_type) =
             resolve_var_ref(self.db, context, name)?.ok_or(SilencedError)?;
         if let VarType::ParserDef = ref_type {
@@ -375,11 +375,11 @@ def each[int] *> expr6 = {
             let mut ret = ctx.db.parser_returns(p).unwrap().deref;
             for x in fields {
                 let block = ctx.db.lookup_intern_type(ret);
-                let hir_id = match &block {
+                let def_id = match &block {
                     Type::Nominal(n) => n.def,
                     _ => panic!("expected nominal type"),
                 };
-                let block = hir::BlockId::extract(ctx.db.hir_node(hir_id).unwrap());
+                let block = hir::BlockId::extract(ctx.db.hir_node(def_id).unwrap());
                 let root_context = block.root_context;
                 let ident_field = ctx.id(x);
                 let child = root_context

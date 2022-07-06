@@ -177,16 +177,16 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Expression<HirTypeSpanned> {
 #[derive(Clone)]
 pub struct HirGraph<'a>(pub &'a dyn Hirs);
 
-impl<'a> dot::Labeller<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGraph<'a> {
+impl<'a> dot::Labeller<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGraph<'a> {
     fn graph_id(&'a self) -> dot::Id<'a> {
         dot::Id::new("HIR").unwrap()
     }
 
-    fn node_id(&'a self, n: &HirId) -> dot::Id<'a> {
+    fn node_id(&'a self, n: &DefId) -> dot::Id<'a> {
         dot::Id::new(n.graphviz_name()).unwrap()
     }
 
-    fn node_label(&'a self, n: &HirId) -> dot::LabelText<'a> {
+    fn node_label(&'a self, n: &DefId) -> dot::LabelText<'a> {
         let text = match self.0.hir_node(*n) {
             Ok(node) => node.to_db_string(self.0),
             Err(_) => String::from("error"),
@@ -194,11 +194,11 @@ impl<'a> dot::Labeller<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGra
         dot::LabelText::label(text)
     }
 
-    fn edge_label(&'a self, e: &(HirId, HirId, String, dot::Style)) -> dot::LabelText<'_> {
+    fn edge_label(&'a self, e: &(DefId, DefId, String, dot::Style)) -> dot::LabelText<'_> {
         dot::LabelText::label(e.2.clone())
     }
 
-    fn edge_style(&'a self, e: &(HirId, HirId, String, dot::Style)) -> dot::Style {
+    fn edge_style(&'a self, e: &(DefId, DefId, String, dot::Style)) -> dot::Style {
         e.3
     }
 }
@@ -211,14 +211,14 @@ fn parser_pred(pp: &ParserPredecessor) -> String {
     .to_string()
 }
 
-impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGraph<'a> {
-    fn nodes(&'a self) -> dot::Nodes<'a, HirId> {
-        Cow::Owned(self.0.all_hir_ids())
+impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGraph<'a> {
+    fn nodes(&'a self) -> dot::Nodes<'a, DefId> {
+        Cow::Owned(self.0.all_def_ids())
     }
 
-    fn edges(&'a self) -> dot::Edges<'a, (HirId, HirId, String, dot::Style)> {
+    fn edges(&'a self) -> dot::Edges<'a, (DefId, DefId, String, dot::Style)> {
         self.0
-            .all_hir_ids()
+            .all_def_ids()
             .iter()
             .flat_map(|&x| self.0.hir_node(x).ok())
             .flat_map(|node| {
@@ -390,11 +390,11 @@ impl<'a> dot::GraphWalk<'a, HirId, (HirId, HirId, String, dot::Style)> for HirGr
             .collect()
     }
 
-    fn source(&'a self, edge: &(HirId, HirId, String, dot::Style)) -> HirId {
+    fn source(&'a self, edge: &(DefId, DefId, String, dot::Style)) -> DefId {
         edge.0
     }
 
-    fn target(&'a self, edge: &(HirId, HirId, String, dot::Style)) -> HirId {
+    fn target(&'a self, edge: &(DefId, DefId, String, dot::Style)) -> DefId {
         edge.1
     }
 }
