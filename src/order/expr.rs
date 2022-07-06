@@ -1,14 +1,14 @@
 use crate::error::{SResult, SilencedError};
 use crate::expr::{Atom, Expression, KindWithData, OpWithData, ValBinOp, ValUnOp};
 use crate::types::TypeId;
-use crate::{expr::ExpressionKind, hir, interner::HirId};
+use crate::{expr::ExpressionKind, hir, interner::DefId};
 
 use super::Orders;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ResolvedAtom {
-    Val(HirId),
-    Captured(HirId),
+    Val(DefId),
+    Captured(DefId),
     ParserDef(hir::ParserDefId),
     Number(String),
     Char(String),

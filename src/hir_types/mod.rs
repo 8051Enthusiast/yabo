@@ -15,7 +15,7 @@ use crate::{
         TypeUnOp, ValBinOp, ValUnOp,
     },
     hir::{HirIdWrapper, ParseStatement, ParserAtom, ParserDefRef},
-    interner::{FieldName, HirId, TypeVar, TypeVarName},
+    interner::{FieldName, DefId, TypeVar, TypeVarName},
     source::SpanIndex,
     types::{
         inference::{InfTypeId, InferenceContext, InferenceType, NominalInfHead, TypeResolver},
@@ -36,8 +36,8 @@ pub trait TyHirs: Hirs + crate::types::TypeInterner {
     fn parser_args(&self, id: hir::ParserDefId) -> SResult<Signature>;
     fn parser_returns(&self, id: hir::ParserDefId) -> SResult<ParserDefType>;
     fn parser_returns_ssc(&self, id: hir::recursion::FunctionSscId) -> Vec<ParserDefType>;
-    fn public_type(&self, loc: HirId) -> SResult<TypeId>;
-    fn parser_type_at(&self, loc: HirId) -> SResult<TypeId>;
+    fn public_type(&self, loc: DefId) -> SResult<TypeId>;
+    fn parser_type_at(&self, loc: DefId) -> SResult<TypeId>;
     fn parser_expr_at(&self, loc: hir::ExprId) -> SResult<TypedExpression>;
     fn public_expr_type(
         &self,
@@ -311,12 +311,12 @@ fn n_type_vars(db: &(impl TyHirs + ?Sized), id: hir::ParserDefId, n: u32) -> Vec
 #[derive(Clone)]
 pub struct TypingLocation {
     vars: TypeVarCollection,
-    loc: HirId,
+    loc: DefId,
     pd: hir::ParserDefId,
 }
 
 impl TypingLocation {
-    pub fn at_id(db: &(impl TyHirs + ?Sized), loc: HirId) -> SResult<Self> {
+    pub fn at_id(db: &(impl TyHirs + ?Sized), loc: DefId) -> SResult<Self> {
         let pd = db.hir_parent_parserdef(loc)?;
         let vars = TypeVarCollection::at_id(db, pd)?;
         Ok(TypingLocation { vars, loc, pd })

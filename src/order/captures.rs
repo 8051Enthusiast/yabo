@@ -2,12 +2,12 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use crate::{
     hir::{self, walk::ChildIter},
-    interner::HirId,
+    interner::DefId,
 };
 
 use super::Orders;
 
-pub fn captures(db: &dyn Orders, id: hir::BlockId) -> Arc<BTreeSet<HirId>> {
+pub fn captures(db: &dyn Orders, id: hir::BlockId) -> Arc<BTreeSet<DefId>> {
     let mut ret = BTreeSet::new();
     for i in ChildIter::new(id.0, db).without_kinds(hir::HirNodeKind::Block) {
         match i {

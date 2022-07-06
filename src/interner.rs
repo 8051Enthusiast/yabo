@@ -122,34 +122,34 @@ impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for PathComponent {
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct HirId(InternId);
+pub struct DefId(InternId);
 
-impl HirId {
+impl DefId {
     pub fn graphviz_name(&self) -> String {
         format!("HirNode{}", self.0.as_u32())
     }
-    pub fn parent<DB: Interner + ?Sized>(self, db: &DB) -> HirId {
+    pub fn parent<DB: Interner + ?Sized>(self, db: &DB) -> DefId {
         let mut path = db.lookup_intern_hir_path(self);
         path.pop();
         db.intern_hir_path(path)
     }
-    pub fn child<DB: Interner + ?Sized>(self, db: &DB, name: PathComponent) -> HirId {
+    pub fn child<DB: Interner + ?Sized>(self, db: &DB, name: PathComponent) -> DefId {
         let mut path = db.lookup_intern_hir_path(self);
         path.push(name);
         db.intern_hir_path(path)
     }
-    pub fn child_field<DB: Interner + ?Sized>(self, db: &DB, name: FieldName) -> HirId {
+    pub fn child_field<DB: Interner + ?Sized>(self, db: &DB, name: FieldName) -> DefId {
         self.child(db, PathComponent::Named(name))
     }
-    pub fn is_ancestor_of<DB: Interner + ?Sized>(self, db: &DB, other: HirId) -> bool {
+    pub fn is_ancestor_of<DB: Interner + ?Sized>(self, db: &DB, other: DefId) -> bool {
         let other_path = db.lookup_intern_hir_path(other);
         let self_path = db.lookup_intern_hir_path(self);
         other_path.0.starts_with(&self_path.0)
     }
 }
-impl salsa::InternKey for HirId {
+impl salsa::InternKey for DefId {
     fn from_intern_id(v: InternId) -> Self {
-        HirId(v)
+        DefId(v)
     }
 
     fn as_intern_id(&self) -> InternId {
@@ -190,7 +190,7 @@ impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for HirPath {
     }
 }
 
-impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for HirId {
+impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for DefId {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         dbwrite!(f, db, "{}", &db.lookup_intern_hir_path(*self))
     }
@@ -203,5 +203,5 @@ pub trait Interner: crate::source::Files {
     #[salsa::interned]
     fn intern_type_var(&self, identifier: TypeVarName) -> TypeVar;
     #[salsa::interned]
-    fn intern_hir_path(&self, path: HirPath) -> HirId;
+    fn intern_hir_path(&self, path: HirPath) -> DefId;
 }

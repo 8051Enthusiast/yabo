@@ -1,7 +1,7 @@
 use std::{collections::HashMap, hash::Hash, sync::Arc};
 
 use crate::{
-    interner::HirId,
+    interner::DefId,
     types::{inference::NominalInfHead, InferenceType, TypeHead},
 };
 
@@ -63,7 +63,7 @@ pub struct TypeConvertMemo<'a, TR: TypeResolver> {
     normalize: MemoRecursor<InfTypeId, InfTypeId>,
     meet: MemoRecursor<(InfTypeId, InfTypeId), InfTypeId>,
     join: MemoRecursor<(InfTypeId, InfTypeId), InfTypeId>,
-    var_count: Option<(HirId, u32)>,
+    var_count: Option<(DefId, u32)>,
     ctx: &'a mut InferenceContext<TR>,
 }
 
@@ -461,7 +461,7 @@ impl<'a, TR: TypeResolver> TypeConvertMemo<'a, TR> {
         &mut self,
         infty: InfTypeId,
         n_vars: u32,
-        at: HirId,
+        at: DefId,
     ) -> Result<(TypeId, u32), TypeError> {
         self.var_count = Some((at, n_vars));
         let ret = self.to_type_internal(infty);

@@ -17,7 +17,7 @@ pub enum InferenceType {
     Any,
     Bot,
     Primitive(PrimitiveType),
-    TypeVarRef(HirId, u32, u32),
+    TypeVarRef(DefId, u32, u32),
     Var(VarId),
     Unknown,
     Nominal(NominalInfHead),
@@ -36,7 +36,7 @@ pub enum InferenceType {
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct NominalInfHead {
     pub kind: NominalKind,
-    pub def: HirId,
+    pub def: DefId,
     pub parse_arg: Option<InfTypeId>,
     pub fun_args: Box<Vec<InfTypeId>>,
     pub ty_args: Box<Vec<InfTypeId>>,
@@ -159,7 +159,7 @@ pub trait TypeResolver {
     fn field_type(&self, ty: &NominalInfHead, name: FieldName) -> Result<EitherType, TypeError>;
     fn deref(&self, ty: &NominalInfHead) -> Result<Option<TypeId>, TypeError>;
     fn signature(&self, ty: &NominalInfHead) -> Result<Signature, TypeError>;
-    fn lookup(&self, context: HirId, name: FieldName) -> Result<EitherType, TypeError>;
+    fn lookup(&self, context: DefId, name: FieldName) -> Result<EitherType, TypeError>;
     fn name(&self) -> String;
 }
 
@@ -222,7 +222,7 @@ impl<TR: TypeResolver> InferenceContext<TR> {
     pub fn signature(&self, ty: &NominalInfHead) -> Result<Signature, TypeError> {
         self.tr.signature(ty)
     }
-    pub fn lookup(&mut self, context: HirId, name: FieldName) -> Result<InfTypeId, TypeError> {
+    pub fn lookup(&mut self, context: DefId, name: FieldName) -> Result<InfTypeId, TypeError> {
         let ret = match self.tr.lookup(context, name)? {
             EitherType::Regular(result_type) => {
                 let ret = self.from_type(result_type);
@@ -441,7 +441,7 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         let array = self.intern_infty(array);
         Ok(self.parser(array, arg))
     }
-    pub fn block_call(&mut self, id: HirId, ty_args: &[InfTypeId]) -> Result<InfTypeId, TypeError> {
+    pub fn block_call(&mut self, id: DefId, ty_args: &[InfTypeId]) -> Result<InfTypeId, TypeError> {
         let arg = self.var();
         let nominal = NominalInfHead {
             kind: NominalKind::Block,
@@ -622,7 +622,7 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         &mut self,
         inftys: &[InfTypeId],
         mut n_vars: u32,
-        at: HirId,
+        at: DefId,
     ) -> Result<(Vec<TypeId>, u32), TypeError> {
         let mut converter = TypeConvertMemo::new(self);
         let mut ret = Vec::new();

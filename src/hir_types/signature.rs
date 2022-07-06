@@ -59,7 +59,7 @@ impl<'a> TypeResolver for ArgResolver<'a> {
         get_signature(self.0, ty)
     }
 
-    fn lookup(&self, _context: HirId, _name: FieldName) -> Result<EitherType, TypeError> {
+    fn lookup(&self, _context: DefId, _name: FieldName) -> Result<EitherType, TypeError> {
         Ok(self.0.intern_type(Type::Unknown).into())
     }
 
@@ -84,7 +84,7 @@ pub fn get_signature(db: &dyn TyHirs, ty: &NominalInfHead) -> Result<Signature, 
 
 pub fn get_thunk(
     db: &dyn TyHirs,
-    context: HirId,
+    context: DefId,
     name: FieldName,
 ) -> Result<EitherType, TypeError> {
     let pd = parserdef_ref(db, context, name)?.ok_or(SilencedError)?;

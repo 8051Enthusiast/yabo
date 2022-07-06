@@ -11,7 +11,7 @@ use crate::{
     error_type,
     hir::{self, HirIdWrapper, ParserPredecessor},
     hir_types::TyHirs,
-    interner::HirId,
+    interner::DefId,
 };
 
 use petgraph::{graph::NodeIndex, Graph};
@@ -23,7 +23,7 @@ use fxhash::{FxHashMap, FxHashSet};
 
 #[salsa::query_group(OrdersDatabase)]
 pub trait Orders: TyHirs {
-    fn captures(&self, id: hir::BlockId) -> Arc<BTreeSet<HirId>>;
+    fn captures(&self, id: hir::BlockId) -> Arc<BTreeSet<DefId>>;
     fn block_serialization(
         &self,
         id: hir::BlockId,
@@ -41,27 +41,27 @@ pub enum SubValueKind {
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct SubValue {
     pub kind: SubValueKind,
-    pub id: HirId,
+    pub id: DefId,
 }
 
 impl SubValue {
-    pub fn new(kind: SubValueKind, id: HirId) -> Self {
+    pub fn new(kind: SubValueKind, id: DefId) -> Self {
         Self { kind, id }
     }
 
-    pub fn new_val(id: HirId) -> Self {
+    pub fn new_val(id: DefId) -> Self {
         Self {
             kind: SubValueKind::Val,
             id,
         }
     }
-    pub fn new_front(id: HirId) -> Self {
+    pub fn new_front(id: DefId) -> Self {
         Self {
             kind: SubValueKind::Front,
             id,
         }
     }
-    pub fn new_back(id: HirId) -> Self {
+    pub fn new_back(id: DefId) -> Self {
         Self {
             kind: SubValueKind::Back,
             id,

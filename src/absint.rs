@@ -5,7 +5,7 @@ use crate::{
     error::{IsSilenced, Silencable},
     hir::HirIdWrapper,
     hir_types::NominalId,
-    interner::HirId,
+    interner::DefId,
     order::{ResolvedExpr, SubValueKind},
     types::Type,
 };
@@ -67,7 +67,7 @@ pub struct PdEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlockEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
     pub expr_vals: FxHashMap<hir::ExprId, AbstractExpression<Dom>>,
-    pub vals: FxHashMap<HirId, Dom>,
+    pub vals: FxHashMap<DefId, Dom>,
     pub returned: Dom,
 }
 
@@ -85,7 +85,7 @@ pub struct AbsIntCtx<'a, Dom: AbstractDomain<'a>> {
     existing_pd: FxHashSet<(TypeId, Dom)>,
     new_pd: FxHashSet<(TypeId, Dom)>,
 
-    block_vars: FxHashMap<HirId, Dom>,
+    block_vars: FxHashMap<DefId, Dom>,
     block_expr_vals: FxHashMap<hir::ExprId, AbstractExpression<Dom>>,
     block_result: FxHashMap<(Dom, Dom), Option<BlockEvaluated<Dom>>>,
     active_block: Option<Dom>,
@@ -274,14 +274,14 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         ret
     }
 
-    pub fn var_by_id(&self, id: HirId) -> Dom {
+    pub fn var_by_id(&self, id: DefId) -> Dom {
         match self.block_vars.get(&id) {
             Some(v) => v.clone(),
             None => dbpanic!(self.db, "Did not find variable {}", &id,),
         }
     }
 
-    fn set_block_var(&mut self, id: HirId, val: Dom) {
+    fn set_block_var(&mut self, id: DefId, val: Dom) {
         self.block_vars.insert(id, val);
     }
 

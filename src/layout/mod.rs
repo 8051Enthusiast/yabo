@@ -10,7 +10,7 @@ use crate::error::{IsSilenced, SResult, SilencedError};
 use crate::expr::{self, Atom, ExpressionHead, ValBinOp, ValUnOp};
 use crate::hir::{self, HirIdWrapper};
 use crate::hir_types::NominalId;
-use crate::interner::{FieldName, HirId, PathComponent};
+use crate::interner::{FieldName, DefId, PathComponent};
 use crate::low_effort_interner::{Interner, Uniq};
 use crate::order::expr::ResolvedAtom;
 use crate::order::ResolvedExpr;
@@ -52,8 +52,8 @@ impl SizeAlign {
 
 #[derive(Clone, PartialEq, Eq, Default)]
 pub struct StructManifestation {
-    field_offsets: FxHashMap<HirId, PSize>,
-    discriminant_mapping: FxHashMap<HirId, PSize>,
+    field_offsets: FxHashMap<DefId, PSize>,
+    discriminant_mapping: FxHashMap<DefId, PSize>,
     discriminant_offset: PSize,
     size: SizeAlign,
 }
@@ -64,7 +64,7 @@ impl UnfinishedManifestation {
     pub fn new() -> Self {
         UnfinishedManifestation(Default::default())
     }
-    pub fn add_field(&mut self, id: HirId, field_size: SizeAlign, discriminated: bool) {
+    pub fn add_field(&mut self, id: DefId, field_size: SizeAlign, discriminated: bool) {
         self.0.size = self.0.size.cat(field_size);
         let offset = self.0.size.size - field_size.size;
         self.0.field_offsets.insert(id, offset);
@@ -103,7 +103,7 @@ pub enum MonoLayout<Inner> {
     Nominal(hir::ParserDefId, Option<Inner>),
     NominalParser(hir::ParserDefId),
     Block(hir::BlockId, BTreeMap<FieldName, Inner>),
-    BlockParser(hir::BlockId, BTreeMap<HirId, Inner>),
+    BlockParser(hir::BlockId, BTreeMap<DefId, Inner>),
     ComposedParser(Inner, Inner),
 }
 
@@ -242,7 +242,7 @@ impl<'a> Uniq<InternerLayout<'a>> {
         res.map(|x| (x, changed))
     }
 
-    fn get_captured(&'a self, id: HirId) -> Option<ILayout<'a>> {
+    fn get_captured(&'a self, id: DefId) -> Option<ILayout<'a>> {
         match match &self.layout {
             Layout::Mono(m, _) => m,
             Layout::Multi(_) => {
@@ -379,7 +379,7 @@ impl<'a> Uniq<InternerLayout<'a>> {
     pub fn block_parser_manifestation(
         &'a self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
-        captures: &BTreeMap<HirId, ILayout<'a>>,
+        captures: &BTreeMap<DefId, ILayout<'a>>,
     ) -> SResult<Arc<StructManifestation>> {
         if let Some(man) = ctx.dcx.manifestations.get(self) {
             return Ok(man.clone());
