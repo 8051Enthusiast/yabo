@@ -1,19 +1,89 @@
 mod represent;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use fxhash::{FxHashMap, FxHashSet};
 
 use crate::absint::{AbsInt, AbsIntCtx, AbstractDomain, Arg};
-use crate::error::{IsSilenced, SilencedError};
+use crate::error::{IsSilenced, SResult, SilencedError};
 use crate::expr::{self, Atom, ExpressionHead, ValBinOp, ValUnOp};
-use crate::hir;
+use crate::hir::{self, HirIdWrapper};
 use crate::hir_types::NominalId;
-use crate::interner::{FieldName, HirId};
+use crate::interner::{FieldName, HirId, PathComponent};
 use crate::low_effort_interner::{Interner, Uniq};
 use crate::order::expr::ResolvedAtom;
 use crate::order::ResolvedExpr;
 use crate::types::{PrimitiveType, Type, TypeId};
+
+type PSize = u64;
+pub const TARGET_POINTER_SA: SizeAlign = SizeAlign { size: 8, alogn: 3 };
+pub const TARGET_BIT_SA: SizeAlign = SizeAlign { size: 1, alogn: 0 };
+pub const TARGET_CHAR_SA: SizeAlign = SizeAlign { size: 4, alogn: 2 };
+pub const TARGET_INT_SA: SizeAlign = SizeAlign { size: 8, alogn: 3 };
+pub const TARGET_ZST_SA: SizeAlign = SizeAlign { size: 0, alogn: 0 };
+
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub struct SizeAlign {
+    /// total size (not including potential alignment padding at the end)
+    pub size: PSize,
+    /// log2 of the alignment
+    pub alogn: u8,
+}
+
+impl SizeAlign {
+    pub fn align(&self) -> PSize {
+        1 << self.alogn
+    }
+    pub fn cat(self, other: Self) -> Self {
+        let other_start = ((other.align() - 1 + self.size) >> other.alogn) << other.alogn;
+        SizeAlign {
+            size: other_start + other.size,
+            alogn: self.alogn.max(other.alogn),
+        }
+    }
+    pub fn union(self, other: Self) -> Self {
+        SizeAlign {
+            size: self.size.max(other.size),
+            alogn: self.alogn.max(other.alogn),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Default)]
+pub struct StructManifestation {
+    field_offsets: FxHashMap<HirId, PSize>,
+    discriminant_mapping: FxHashMap<HirId, PSize>,
+    discriminant_offset: PSize,
+    size: SizeAlign,
+}
+
+struct UnfinishedManifestation(StructManifestation);
+
+impl UnfinishedManifestation {
+    pub fn new() -> Self {
+        UnfinishedManifestation(Default::default())
+    }
+    pub fn add_field(&mut self, id: HirId, field_size: SizeAlign, discriminated: bool) {
+        self.0.size = self.0.size.cat(field_size);
+        let offset = self.0.size.size - field_size.size;
+        self.0.field_offsets.insert(id, offset);
+        if discriminated {
+            self.0
+                .discriminant_mapping
+                .insert(id, self.0.discriminant_mapping.len() as PSize);
+        }
+    }
+    pub fn finalize(self) -> StructManifestation {
+        let mut manifest = self.0;
+        manifest.discriminant_offset = manifest.size.size;
+        manifest.size.cat(SizeAlign {
+            size: ((manifest.discriminant_mapping.len() + 7) / 8) as PSize,
+            alogn: 0,
+        });
+        manifest
+    }
+}
 
 #[salsa::query_group(LayoutDatabase)]
 pub trait Layouts: AbsInt {}
@@ -30,7 +100,7 @@ pub enum MonoLayout<Inner> {
     Primitive(PrimitiveType),
     Pointer,
     Single,
-    Nominal(hir::ParserDefId, BTreeMap<Arg, Inner>),
+    Nominal(hir::ParserDefId, Option<Inner>),
     NominalParser(hir::ParserDefId),
     Block(hir::BlockId, BTreeMap<FieldName, Inner>),
     BlockParser(hir::BlockId, BTreeMap<HirId, Inner>),
@@ -106,10 +176,10 @@ impl<'a> Uniq<InternerLayout<'a>> {
         let acc_vec = acc.into_iter().collect::<Vec<_>>();
         match &acc_vec[..] {
             [single] => *single,
-            [] => ctx.dcx.intern(InternerLayout {
+            [] => ctx.dcx.intern.intern(InternerLayout {
                 layout: Layout::None,
             }),
-            _ => ctx.dcx.intern(InternerLayout {
+            _ => ctx.dcx.intern.intern(InternerLayout {
                 layout: Layout::Multi(MultiLayout { layouts: acc_vec }),
             }),
         }
@@ -140,10 +210,10 @@ impl<'a> Uniq<InternerLayout<'a>> {
         let acc_vec = acc.into_iter().collect::<Vec<_>>();
         Ok(match &acc_vec[..] {
             [single] => *single,
-            [] => ctx.dcx.intern(InternerLayout {
+            [] => ctx.dcx.intern.intern(InternerLayout {
                 layout: Layout::None,
             }),
-            _ => ctx.dcx.intern(InternerLayout {
+            _ => ctx.dcx.intern.intern(InternerLayout {
                 layout: Layout::Multi(MultiLayout { layouts: acc_vec }),
             }),
         })
@@ -194,7 +264,7 @@ impl<'a> Uniq<InternerLayout<'a>> {
             MonoLayout::Pointer => {
                 let int = PrimitiveType::Int;
                 let int_ty = ctx.db.intern_type(Type::Primitive(int));
-                ctx.dcx.intern(InternerLayout {
+                ctx.dcx.intern.intern(InternerLayout {
                     layout: Layout::Mono(MonoLayout::Primitive(int), int_ty),
                 })
             }
@@ -209,7 +279,7 @@ impl<'a> Uniq<InternerLayout<'a>> {
     ) -> Result<ILayout<'a>, LayoutError> {
         self.try_map(ctx, |layout, ctx| {
             let (result_type, arg_type) = match ctx.db.lookup_intern_type(layout.mono_layout().1) {
-                Type::ParserArg { result, arg  } => (result, arg),
+                Type::ParserArg { result, arg } => (result, arg),
                 _ => panic!("Attempting to apply argument to non-parser type"),
             };
             let from = from.typecast(ctx, arg_type)?.0;
@@ -237,6 +307,92 @@ impl<'a> Uniq<InternerLayout<'a>> {
             expr::Atom::Number(_) | expr::Atom::Char(_) => panic!("Invalid field name"),
         })
     }
+
+    pub fn size_align(&'a self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> SResult<SizeAlign> {
+        if let Some(sa) = ctx.dcx.sizes.get(self) {
+            return Ok(*sa);
+        }
+        let ret = match &self.layout {
+            Layout::None => TARGET_ZST_SA,
+            Layout::Mono(MonoLayout::Block(id, fields), _) => {
+                self.block_manifestation(ctx, *id, fields)?.size
+            }
+            Layout::Mono(MonoLayout::BlockParser(_, captures), _) => {
+                self.block_parser_manifestation(ctx, captures)?.size
+            }
+            Layout::Mono(MonoLayout::ComposedParser(fst, snd), _) => {
+                fst.size_align(ctx)?.cat(snd.size_align(ctx)?)
+            }
+            Layout::Mono(MonoLayout::Nominal(_, from), _) => from
+                .map(|layout| layout.size_align(ctx))
+                .transpose()?
+                .unwrap_or(TARGET_ZST_SA),
+            Layout::Mono(MonoLayout::NominalParser(_), _) => TARGET_ZST_SA,
+            Layout::Mono(MonoLayout::Pointer, _) => TARGET_POINTER_SA,
+            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Bit), _) => TARGET_BIT_SA,
+            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Char), _) => TARGET_CHAR_SA,
+            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int), _) => TARGET_INT_SA,
+            Layout::Mono(MonoLayout::Single, _) => TARGET_ZST_SA,
+            Layout::Multi(m) => {
+                let inner = m.layouts.iter().try_fold(TARGET_ZST_SA, |sa, layout| {
+                    Ok(sa.union(layout.size_align(ctx)?))
+                })?;
+                TARGET_POINTER_SA.cat(inner)
+            }
+        };
+        ctx.dcx.sizes.insert(self, ret);
+        Ok(ret)
+    }
+
+    pub fn block_manifestation(
+        &'a self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+        id: hir::BlockId,
+        fields: &BTreeMap<FieldName, ILayout<'a>>,
+    ) -> SResult<Arc<StructManifestation>> {
+        if let Some(man) = ctx.dcx.manifestations.get(self) {
+            return Ok(man.clone());
+        }
+        let mut manifest = UnfinishedManifestation::new();
+        let block = id.lookup(ctx.db)?;
+        let root_ctx = ctx.db.lookup_intern_hir_path(block.root_context.0);
+        for (field, layout) in fields {
+            let mut field_path = root_ctx.clone();
+            field_path.push(PathComponent::Named(*field));
+            let field_id = ctx.db.intern_hir_path(field_path);
+            let needs_discriminant = match ctx.db.hir_node(field_id)? {
+                hir::HirNode::ChoiceIndirection(_) => {
+                    // TODO(8051): check here if discriminant is *actually* needed
+                    true
+                }
+                hir::HirNode::Let(_) | hir::HirNode::Parse(_) => false,
+                _ => panic!("Invalid block field node"),
+            };
+            let field_size = layout.size_align(ctx)?;
+            manifest.add_field(field_id, field_size, needs_discriminant);
+        }
+        let manifest = Arc::new(manifest.finalize());
+        ctx.dcx.manifestations.insert(self, manifest.clone());
+        Ok(manifest)
+    }
+
+    pub fn block_parser_manifestation(
+        &'a self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+        captures: &BTreeMap<HirId, ILayout<'a>>,
+    ) -> SResult<Arc<StructManifestation>> {
+        if let Some(man) = ctx.dcx.manifestations.get(self) {
+            return Ok(man.clone());
+        }
+        let mut manifest = UnfinishedManifestation::new();
+        for (capture, layout) in captures.iter() {
+            let sa = layout.size_align(ctx)?;
+            manifest.add_field(*capture, sa, false);
+        }
+        let manifest = Arc::new(manifest.finalize());
+        ctx.dcx.manifestations.insert(self, manifest.clone());
+        Ok(manifest)
+    }
 }
 
 pub fn canon_layout<'a, 'b>(
@@ -245,7 +401,7 @@ pub fn canon_layout<'a, 'b>(
 ) -> Result<ILayout<'a>, LayoutError> {
     let typ = ctx.db.lookup_intern_type(ty);
     let make_layout = |ctx: &'b mut AbsIntCtx<'a, ILayout<'a>>, x| {
-        ctx.dcx.intern(InternerLayout {
+        ctx.dcx.intern.intern(InternerLayout {
             layout: Layout::Mono(x, ty),
         })
     };
@@ -271,11 +427,7 @@ pub fn canon_layout<'a, 'b>(
                 return Err(LayoutError);
             }
             let from = n.parse_arg.map(|arg| canon_layout(ctx, arg)).transpose()?;
-            let mut args = BTreeMap::new();
-            if let Some(f) = from {
-                args.insert(Arg::From, f);
-            }
-            Ok(make_layout(ctx, MonoLayout::Nominal(def_id, args)))
+            Ok(make_layout(ctx, MonoLayout::Nominal(def_id, from)))
         }
         Type::ParserArg { .. } | Type::FunctionArg(_, _) => Err(LayoutError),
         Type::TypeVarRef(_, _, _) | Type::Any | Type::Bot | Type::Unknown | Type::ForAll(_, _) => {
@@ -317,9 +469,15 @@ impl IsSilenced for LayoutError {
     }
 }
 
+pub struct LayoutContext<'a> {
+    intern: Interner<'a, InternerLayout<'a>>,
+    sizes: FxHashMap<ILayout<'a>, SizeAlign>,
+    manifestations: FxHashMap<ILayout<'a>, Arc<StructManifestation>>,
+}
+
 impl<'a> AbstractDomain<'a> for ILayout<'a> {
     type Err = LayoutError;
-    type DomainContext = Interner<'a, InternerLayout<'a>>;
+    type DomainContext = LayoutContext<'a>;
 
     fn make_block(
         ctx: &mut AbsIntCtx<'a, Self>,
@@ -333,7 +491,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ty,
             ),
         };
-        Ok(ctx.dcx.intern(new_layout))
+        Ok(ctx.dcx.intern.intern(new_layout))
     }
 
     fn join(self, ctx: &mut AbsIntCtx<'a, Self>, other: Self) -> Result<(Self, bool), Self::Err> {
@@ -398,7 +556,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
         let new_layout = InternerLayout {
             layout: Layout::Multi(MultiLayout { layouts }),
         };
-        Ok((ctx.dcx.intern(new_layout), true))
+        Ok((ctx.dcx.intern.intern(new_layout), true))
     }
 
     fn widen(self, ctx: &mut AbsIntCtx<'a, Self>, other: Self) -> Result<(Self, bool), Self::Err> {
@@ -411,7 +569,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
     ) -> Result<Self, Self::Err> {
         let ret_type = *expr.root_data();
         let mut make_layout = |x| {
-            ctx.dcx.intern(InternerLayout {
+            ctx.dcx.intern.intern(InternerLayout {
                 layout: Layout::Mono(x, ret_type),
             })
         };
@@ -431,7 +589,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                             .unwrap_or_else(|| ctx.var_by_id(*capture));
                         captures.insert(*capture, capture_value);
                     }
-                    ctx.dcx.intern(InternerLayout {
+                    ctx.dcx.intern.intern(InternerLayout {
                         layout: Layout::Mono(MonoLayout::BlockParser(block_id, captures), ret_type),
                     })
                 }
@@ -497,7 +655,10 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
         arg: crate::absint::Arg,
     ) -> Result<Self, Self::Err> {
         Ok(self.map(ctx, |l, _| match l.mono_layout().0 {
-            MonoLayout::Nominal(_, args) => &args[&arg],
+            MonoLayout::Nominal(_, from) => match arg {
+                Arg::Named(_) => unimplemented!("args not yet implemented"),
+                Arg::From => from.expect("unexpectedly did not have from arg"),
+            },
             _ => panic!("get_arg called on non-nominal layout"),
         }))
     }
@@ -508,17 +669,18 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
         ty: TypeId,
         fields: &FxHashMap<Arg, Self>,
     ) -> Result<Self, Self::Err> {
+        let from = fields.get(&Arg::From).map(|x| *x);
+        if fields.len() > from.iter().len() {
+            panic!("unknown args in {:?}", fields)
+        }
         let new_layout = InternerLayout {
-            layout: Layout::Mono(
-                MonoLayout::Nominal(id, fields.iter().map(|(a, b)| (a.clone(), *b)).collect()),
-                ty,
-            ),
+            layout: Layout::Mono(MonoLayout::Nominal(id, from), ty),
         };
-        Ok(ctx.dcx.intern(new_layout))
+        Ok(ctx.dcx.intern.intern(new_layout))
     }
 
     fn bottom(ctx: &mut Self::DomainContext) -> Self {
-        ctx.intern(InternerLayout {
+        ctx.intern.intern(InternerLayout {
             layout: Layout::None,
         })
     }
@@ -552,7 +714,12 @@ def for[int] *> main = {
         );
         let mut bump = Bump::new();
         let intern = Interner::<InternerLayout>::new(&mut bump);
-        let mut outlayer = AbsIntCtx::<ILayout>::new(&ctx.db, intern);
+        let layout_ctx = LayoutContext {
+            intern,
+            sizes: Default::default(),
+            manifestations: Default::default(),
+        };
+        let mut outlayer = AbsIntCtx::<ILayout>::new(&ctx.db, layout_ctx);
         let main = ctx.parser("main");
         let main_ty = ctx.db.parser_args(main).unwrap().thunk;
         instantiate(&mut outlayer, &[main_ty]).unwrap();

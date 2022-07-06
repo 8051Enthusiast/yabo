@@ -13,11 +13,8 @@ impl<'a, DB: AbsInt> DatabasedDisplay<DB> for ILayout<'a> {
                 MonoLayout::Single => write!(f, "simple"),
                 MonoLayout::Nominal(_, args) => {
                     dbwrite!(f, db, "nominal[{}](", ty)?;
-                    for (i, (arg, layout)) in args.iter().enumerate() {
-                        if i > 0 {
-                            write!(f, ", ")?;
-                        }
-                        dbwrite!(f, db, "{}: {}", arg, layout)?;
+                    if let Some(inner_layout) = args {
+                        dbwrite!(f, db, "from: {}", inner_layout)?;
                     }
                     write!(f, ")")
                 }
