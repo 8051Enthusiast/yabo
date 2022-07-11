@@ -626,12 +626,32 @@ fn idspan(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<IdSpan> {
     })
 }
 
-fn number_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<String> {
-    node_to_string(db, fd, c)
+fn number_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<i64> {
+    let Spanned { inner, span } = spanned(node_to_string)(db, fd, c)?;
+    let (num, radix) = if let Some(hex) = inner.strip_prefix("0x") {
+        (hex, 16)
+    } else if let Some(oct) = inner.strip_prefix("0o") {
+        (oct, 8)
+    } else if let Some(bin) = inner.strip_prefix("0b") {
+        (bin, 2)
+    } else {
+        (inner.as_str(), 10)
+    };
+    i64::from_str_radix(num, radix).map_err(|_| vec![GenericParseError { loc: span }])
 }
 
-fn char_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<String> {
-    node_to_string(db, fd, c)
+fn char_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<u32> {
+    let Spanned { inner, span } = spanned(node_to_string)(db, fd, c)?;
+    let without_quotes = inner
+        .strip_prefix("'")
+        .and_then(|s| s.strip_suffix("'"))
+        .ok_or_else(|| vec![GenericParseError { loc: span }])?;
+    let mut it = without_quotes.chars();
+    let first = it
+        .next()
+        .filter(|_| it.next().is_none())
+        .ok_or_else(|| vec![GenericParseError { loc: span }])?;
+    Ok(first as u32)
 }
 
 fn node_to_string(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<String> {
