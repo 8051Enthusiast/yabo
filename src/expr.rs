@@ -430,8 +430,8 @@ impl<'a, K: ExpressionKind> Iterator for ExprIter<'a, K> {
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum Atom {
     Field(FieldName),
-    Number(String),
-    Char(String),
+    Number(i64),
+    Char(u32),
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]

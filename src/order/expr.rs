@@ -10,8 +10,8 @@ pub enum ResolvedAtom {
     Val(DefId),
     Captured(DefId),
     ParserDef(hir::ParserDefId),
-    Number(String),
-    Char(String),
+    Number(i64),
+    Char(u32),
     Single,
     Block(hir::BlockId),
 }
@@ -32,8 +32,8 @@ pub fn resolve_expr(db: &dyn Orders, expr_id: hir::ExprId) -> SResult<TypedResol
     let parent_block = db.hir_parent_block(expr_id.0)?;
     expr.convert_niladic(&mut |x| {
         let inner = match &x.inner {
-            hir::ParserAtom::Atom(Atom::Number(s)) => ResolvedAtom::Number(s.to_string()),
-            hir::ParserAtom::Atom(Atom::Char(s)) => ResolvedAtom::Char(s.to_string()),
+            hir::ParserAtom::Atom(Atom::Number(s)) => ResolvedAtom::Number(*s),
+            hir::ParserAtom::Atom(Atom::Char(s)) => ResolvedAtom::Char(*s),
             hir::ParserAtom::Single => ResolvedAtom::Single,
             hir::ParserAtom::Block(b) => ResolvedAtom::Block(*b),
             hir::ParserAtom::Atom(Atom::Field(f)) => {

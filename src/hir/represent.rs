@@ -121,7 +121,8 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Atom {
         match self {
             Atom::Field(FieldName::Ident(id)) => dbwrite!(f, db, "{}", id),
             Atom::Field(FieldName::Return) => write!(f, "return"),
-            Atom::Number(a) | Atom::Char(a) => write!(f, "{}", a),
+            Atom::Number(a) => write!(f, "{}", a),
+            Atom::Char(a) => write!(f, "'{}'", a),
         }
     }
 }
