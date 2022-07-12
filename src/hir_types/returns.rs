@@ -36,6 +36,15 @@ pub fn deref_type(db: &dyn TyHirs, ty: TypeId) -> SResult<Option<TypeId>> {
     }
 }
 
+pub fn least_deref_type(db: &dyn TyHirs, mut ty: TypeId) -> SResult<TypeId> {
+    Ok(loop {
+        match db.deref_type(ty)? {
+            Some(t) => ty = t,
+            None => break ty,
+        }
+    })
+}
+
 pub fn parser_returns(db: &dyn TyHirs, id: hir::ParserDefId) -> SResult<ParserDefType> {
     db.parser_returns_ssc(db.parser_ssc(id)?)
         .into_iter()
