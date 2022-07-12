@@ -27,7 +27,7 @@ use crate::hir::{self, Hirs};
 
 use full::{parser_expr_at, parser_full_types, parser_type_at, ParserFullTypes};
 use public::{ambient_type, public_expr_type, public_type};
-use returns::{parser_returns, parser_returns_ssc, ParserDefType};
+use returns::{parser_returns, parser_returns_ssc, deref_type, ParserDefType};
 pub use returns::IndirectionLevel;
 use signature::{get_signature, get_thunk, parser_args};
 
@@ -36,6 +36,7 @@ pub trait TyHirs: Hirs + crate::types::TypeInterner {
     fn parser_args(&self, id: hir::ParserDefId) -> SResult<Signature>;
     fn parser_returns(&self, id: hir::ParserDefId) -> SResult<ParserDefType>;
     fn parser_returns_ssc(&self, id: hir::recursion::FunctionSscId) -> Vec<ParserDefType>;
+    fn deref_type(&self, ty: TypeId) -> SResult<Option<TypeId>>;
     fn public_type(&self, loc: DefId) -> SResult<TypeId>;
     fn parser_type_at(&self, loc: DefId) -> SResult<TypeId>;
     fn parser_expr_at(&self, loc: hir::ExprId) -> SResult<TypedExpression>;

@@ -14,6 +14,28 @@ pub enum IndirectionLevel {
     Indirect(NonZeroU32),
 }
 
+pub fn deref_type(db: &dyn TyHirs, ty: TypeId) -> SResult<Option<TypeId>> {
+    match db.lookup_intern_type(ty) {
+        Type::ForAll(inner, vars) => {
+            let inner_deref = match db.deref_type(inner)? {
+                Some(t) => t,
+                None => return Ok(None),
+            };
+            Ok(Some(db.intern_type(Type::ForAll(inner_deref, vars))))
+        }
+        Type::Nominal(nom) => {
+            let id = match NominalId::from_nominal_head(&nom) {
+                NominalId::Def(id) => id,
+                NominalId::Block(_) => return Ok(None),
+            };
+            let deref_ty = db.parser_returns(id)?.deref;
+            let subst_deref_ty = db.substitute_typevar(deref_ty, nom.ty_args);
+            Ok(Some(subst_deref_ty))
+        }
+        _ => Ok(None),
+    }
+}
+
 pub fn parser_returns(db: &dyn TyHirs, id: hir::ParserDefId) -> SResult<ParserDefType> {
     db.parser_returns_ssc(db.parser_ssc(id)?)
         .into_iter()
