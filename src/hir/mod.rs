@@ -301,12 +301,14 @@ pub type HirConstraint = AstConstraint;
 
 pub type HirConstraintSpanned = expr::KindWithData<HirConstraint, SpanIndex>;
 
+pub type ConstraintExpression = Expression<HirConstraintSpanned>;
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct HirVal;
 
 impl ExpressionKind for HirVal {
     type DyadicOp = expr::ValBinOp;
-    type MonadicOp = expr::ValUnOp<Arc<Expression<HirConstraintSpanned>>>;
+    type MonadicOp = expr::ValUnOp<Arc<ConstraintExpression>>;
     type NiladicOp = ParserAtom;
 }
 
@@ -317,7 +319,7 @@ pub struct HirType;
 
 impl ExpressionKind for HirType {
     type DyadicOp = expr::TypeBinOp;
-    type MonadicOp = expr::TypeUnOp<Arc<Expression<HirConstraintSpanned>>>;
+    type MonadicOp = expr::TypeUnOp<Arc<ConstraintExpression>>;
     type NiladicOp = TypeAtom;
 }
 
