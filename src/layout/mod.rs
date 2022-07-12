@@ -7,10 +7,10 @@ use fxhash::{FxHashMap, FxHashSet};
 
 use crate::absint::{AbsInt, AbsIntCtx, AbstractDomain, Arg};
 use crate::error::{IsSilenced, SResult, SilencedError};
-use crate::expr::{self, Atom, ExpressionHead, ValBinOp, ValUnOp};
+use crate::expr::{self, ExpressionHead, ValBinOp, ValUnOp};
 use crate::hir::{self, HirIdWrapper};
 use crate::hir_types::NominalId;
-use crate::interner::{FieldName, DefId, PathComponent};
+use crate::interner::{DefId, FieldName, PathComponent};
 use crate::low_effort_interner::{Interner, Uniq};
 use crate::order::expr::ResolvedAtom;
 use crate::order::ResolvedExpr;
@@ -298,13 +298,14 @@ impl<'a> Uniq<InternerLayout<'a>> {
         })
     }
 
-    fn access_field(&'a self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>, field: Atom) -> ILayout<'a> {
-        self.map(ctx, |layout, _| match field {
-            expr::Atom::Field(f) => match layout.mono_layout().0 {
-                MonoLayout::Block(_, fields) => fields[&f],
-                _ => panic!("Field access on non-block"),
-            },
-            expr::Atom::Number(_) | expr::Atom::Char(_) => panic!("Invalid field name"),
+    fn access_field(
+        &'a self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+        field: FieldName,
+    ) -> ILayout<'a> {
+        self.map(ctx, |layout, _| match layout.mono_layout().0 {
+            MonoLayout::Block(_, fields) => fields[&field],
+            _ => panic!("Field access on non-block"),
         })
     }
 
@@ -725,7 +726,7 @@ def for[int] *> main = {
         instantiate(&mut outlayer, &[main_ty]).unwrap();
         let canon_2006 = canon_layout(&mut outlayer, main_ty).unwrap();
         let main_block = outlayer.pd_result()[canon_2006].as_ref().unwrap().returned;
-        let field = |name| Atom::Field(FieldName::Ident(ctx.id(name)));
+        let field = |name| FieldName::Ident(ctx.id(name));
         assert_eq!(
             dbformat!(
                 &ctx.db,

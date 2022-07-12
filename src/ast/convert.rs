@@ -559,7 +559,7 @@ impl Into<MonadicExpr<AstTypeSpanned>> for TypeConstraint {
 struct ValDot {
     left: ValExpression,
     op: Spanned<String>,
-    right: Atom,
+    right: FieldSpan,
     #[allow(dead_code)]
     span: Span,
 }
@@ -568,7 +568,7 @@ astify! {
     struct val_dot = ValDot {
         left: expression(val_expression)[!],
         op: spanned(node_to_string)[!],
-        right: atom[!],
+        right: fieldspan[!],
     };
 }
 
@@ -577,7 +577,7 @@ impl Into<MonadicExpr<AstValSpanned>> for ValDot {
         Monadic {
             op: OpWithData {
                 data: self.op.span,
-                inner: ValUnOp::Dot(self.right),
+                inner: ValUnOp::Dot(self.right.id),
             },
             inner: Box::new(self.left),
         }
