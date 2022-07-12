@@ -15,7 +15,7 @@ use crate::{
         TypeUnOp, ValBinOp, ValUnOp,
     },
     hir::{HirIdWrapper, ParseStatement, ParserAtom, ParserDefRef},
-    interner::{FieldName, DefId, TypeVar, TypeVarName},
+    interner::{DefId, FieldName, TypeVar, TypeVarName},
     source::SpanIndex,
     types::{
         inference::{InfTypeId, InferenceContext, InferenceType, NominalInfHead, TypeResolver},
@@ -27,8 +27,8 @@ use crate::hir::{self, Hirs};
 
 use full::{parser_expr_at, parser_full_types, parser_type_at, ParserFullTypes};
 use public::{ambient_type, public_expr_type, public_type};
-use returns::{parser_returns, parser_returns_ssc, deref_type, least_deref_type, ParserDefType};
 pub use returns::IndirectionLevel;
+use returns::{deref_type, least_deref_type, parser_returns, parser_returns_ssc, ParserDefType};
 use signature::{get_signature, get_thunk, parser_args};
 
 #[salsa::query_group(HirTypesDatabase)]
@@ -213,10 +213,7 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                         int
                     }
                     ValUnOp::Wiggle(_, _) => inner,
-                    ValUnOp::Dot(name) => match name {
-                        Atom::Field(f) => self.infctx.access_field(inner, *f)?,
-                        Atom::Number(_) | Atom::Char(_) => return Err(TypeError),
-                    },
+                    ValUnOp::Dot(name) => self.infctx.access_field(inner, *name)?,
                 },
                 ExpressionHead::Niladic(a) => match &a.inner {
                     ParserAtom::Atom(Atom::Char(_)) => self.infctx.char(),

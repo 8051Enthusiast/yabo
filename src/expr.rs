@@ -521,7 +521,7 @@ pub enum ValUnOp<C> {
     Neg,
     Pos,
     Wiggle(C, WiggleKind),
-    Dot(Atom),
+    Dot(FieldName),
 }
 
 impl<C> ValUnOp<C> {
