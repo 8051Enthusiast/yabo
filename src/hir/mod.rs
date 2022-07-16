@@ -330,6 +330,7 @@ pub struct ValExpression {
     pub id: ExprId,
     pub expr: Expression<HirValSpanned>,
     pub children: Vec<DefId>,
+    pub parent_context: Option<ContextId>,
 }
 
 impl ValExpression {
