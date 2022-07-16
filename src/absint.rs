@@ -297,7 +297,8 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
     ) -> Result<Dom, Dom::Err> {
         let block = block_id.lookup(self.db)?;
         let order = self.db.block_serialization(block_id).silence()?.eval_order;
-        for subvalue in order.iter() {
+        for subvalue_info in order.iter() {
+            let subvalue = subvalue_info.val;
             match subvalue.kind {
                 SubValueKind::Val => {}
                 // TODO(8051): for now, we just use the from argument, but we should probably
