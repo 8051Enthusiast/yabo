@@ -65,7 +65,12 @@ fn val_expression(
         },
         &mut |dyadic, _, _| dyadic.clone(),
     );
-    let expr = ValExpression { id, expr, children };
+    let expr = ValExpression {
+        id,
+        expr,
+        children,
+        parent_context,
+    };
     drop(add_span);
     ctx.insert(id.0, HirNode::Expr(expr), spans.into_inner());
 }
