@@ -73,11 +73,11 @@ fn val_refs(
     db: &dyn Orders,
     node: &hir::HirNode,
     parent_block: hir::BlockId,
-) -> SResult<FxHashSet<SubValue>> {
+) -> SResult<FxHashSet<(SubValue, bool)>> {
     match node {
         hir::HirNode::Let(l) => {
             let mut ret = FxHashSet::default();
-            ret.insert(SubValue::new_val(l.expr.0));
+            ret.insert((SubValue::new_val(l.expr.0), true));
             Ok(ret)
         }
         hir::HirNode::Expr(expr) => Ok(hir::refs::expr_value_refs(db, expr, expr.id.0)
@@ -85,12 +85,12 @@ fn val_refs(
                 let res = parent_block.0.is_ancestor_of(db, *target);
                 res
             })
-            .map(|target| SubValue::new_val(target))
+            .map(|target| (SubValue::new_val(target), true))
             .collect()),
         hir::HirNode::Parse(p) => {
             let mut ret = FxHashSet::default();
-            ret.insert(SubValue::new_val(p.expr.0));
-            ret.insert(SubValue::new_front(p.id.id()));
+            ret.insert((SubValue::new_val(p.expr.0), true));
+            ret.insert((SubValue::new_front(p.id.id()), true));
             Ok(ret)
         }
         hir::HirNode::Block(block) if block.id == parent_block => Ok(block
@@ -98,14 +98,14 @@ fn val_refs(
             .lookup(db)?
             .vars
             .iter()
-            .map(|(_, id)| SubValue::new_val(*id.inner()))
+            .map(|(_, id)| (SubValue::new_val(*id.inner()), true))
             .collect()),
         hir::HirNode::Block(block) => Ok(db
             .captures(block.id)
             .iter()
             .copied()
             .filter(|target| parent_block.0.is_ancestor_of(db, *target))
-            .map(|target| SubValue::new_val(target))
+            .map(|target| (SubValue::new_val(target), true))
             .collect()),
         hir::HirNode::Choice(choice) => {
             let mut ret = FxHashSet::default();
@@ -114,7 +114,7 @@ fn val_refs(
                     ctx.lookup(db)?
                         .children
                         .into_iter()
-                        .map(|c| SubValue::new_val(c)),
+                        .map(|c| (SubValue::new_val(c), false)),
                 );
             }
             Ok(ret)
@@ -122,8 +122,11 @@ fn val_refs(
         hir::HirNode::ChoiceIndirection(ind) => Ok(ind
             .choices
             .iter()
-            .map(|(_, id)| SubValue::new_val(*id))
-            .chain(std::iter::once(SubValue::new_val(ind.target_choice.id())))
+            .map(|(_, id)| (SubValue::new_val(*id), true))
+            .chain(std::iter::once((
+                SubValue::new_val(ind.target_choice.id()),
+                true,
+            )))
             .collect()),
         hir::HirNode::TExpr(_) => Ok(FxHashSet::default()),
         hir::HirNode::Array(_) => todo!(),
@@ -175,41 +178,26 @@ fn inner_parser_refs(db: &dyn Orders, node: &hir::HirNode) -> SResult<FxHashSet<
     match node {
         hir::HirNode::Parse(p) => {
             let mut ret = FxHashSet::default();
-            ret.insert(SubValue {
-                id: p.expr.0,
-                kind: SubValueKind::Val,
-            });
-            ret.insert(SubValue {
-                id: p.id.id(),
-                kind: SubValueKind::Front,
-            });
+            ret.insert(SubValue::new_val(p.expr.0));
+            ret.insert(SubValue::new_front(p.id.id()));
             Ok(ret)
         }
         hir::HirNode::Choice(c) => {
             let mut ret = FxHashSet::default();
             for ctx in c.subcontexts.iter() {
-                ret.extend(
-                    ctx.lookup(db)?
-                        .endpoints
-                        .map(|(_, x)| SubValue::new_back(x))
-                        .into_iter()
-                        .chain(std::iter::once(SubValue::new_val(c.id.id()))),
-                );
+                if let Some((_, back)) = ctx.lookup(db)?.endpoints {
+                    ret.insert(SubValue::new_back(back));
+                }
+                ret.insert(SubValue::new_val(c.id.0));
             }
             Ok(ret)
         }
         hir::HirNode::Block(b) => {
             let mut ret = FxHashSet::default();
-            match b.root_context.lookup(db)?.endpoints {
-                Some((_, back)) => ret.insert(SubValue {
-                    id: back,
-                    kind: SubValueKind::Back,
-                }),
-                None => ret.insert(SubValue {
-                    id: b.id.0,
-                    kind: SubValueKind::Front,
-                }),
-            };
+            ret.insert(match b.root_context.lookup(db)?.endpoints {
+                Some((_, back)) => SubValue::new_back(back),
+                None => SubValue::new_front(b.id.0),
+            });
             Ok(ret)
         }
         _ => Ok(FxHashSet::default()),
@@ -230,7 +218,7 @@ fn node_subvalue_kinds(node: &hir::HirNode) -> &'static [SubValueKind] {
 
 pub struct DependencyGraph {
     val_map: FxHashMap<SubValue, NodeIndex>,
-    graph: Graph<SubValue, ()>,
+    graph: Graph<SubValue, bool>,
 }
 
 impl DependencyGraph {
@@ -257,14 +245,14 @@ impl DependencyGraph {
         &mut self,
         db: &dyn Orders,
         from: SubValue,
-        to: impl IntoIterator<Item = SubValue>,
+        to: impl IntoIterator<Item = (SubValue, bool)>,
     ) {
         let from_idx = self.val_map[&from];
-        for sub_value in to {
+        for (sub_value, is_data) in to {
             let to_idx = *self.val_map.get(&sub_value).unwrap_or_else(|| {
                 dbpanic!(db, "subvalue {} not found", &sub_value);
             });
-            self.graph.add_edge(from_idx, to_idx, ());
+            self.graph.add_edge(from_idx, to_idx, is_data);
         }
     }
 
@@ -275,11 +263,19 @@ impl DependencyGraph {
                 SubValueKind::Val => {
                     self.add_edges(db, sub_value, val_refs(db, &hir_node, block)?);
                 }
-                SubValueKind::Front => {
-                    self.add_edges(db, sub_value, between_parser_refs(db, &hir_node, block)?)
-                }
+                SubValueKind::Front => self.add_edges(
+                    db,
+                    sub_value,
+                    between_parser_refs(db, &hir_node, block)?.map(|x| (x, true)),
+                ),
                 SubValueKind::Back => {
-                    self.add_edges(db, sub_value, inner_parser_refs(db, &hir_node)?);
+                    self.add_edges(
+                        db,
+                        sub_value,
+                        inner_parser_refs(db, &hir_node)?
+                            .into_iter()
+                            .map(|x| (x, true)),
+                    );
                 }
             };
         }
@@ -300,9 +296,16 @@ impl DependencyGraph {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub struct BlockSlot(u32);
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+pub struct SubValueInfo {
+    pub val: SubValue,
+    pub rdepends_back: bool,
+    pub rdepends_val: bool,
+}
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct BlockSerialization {
-    pub eval_order: Arc<Vec<SubValue>>,
+    pub eval_order: Arc<Vec<SubValueInfo>>,
 }
 
 error_type!(BlockSerializationError(Arc<Vec<Vec<SubValue>>>) in self);
@@ -323,6 +326,18 @@ pub fn block_serialization(
         Ok(g) => g,
         Err(e) => return Err(e.into()),
     };
+    let mut reachable_block_val = FxHashSet::default();
+    let mut reachable_block_back = FxHashSet::default();
+    let mut dfs_val =
+        petgraph::visit::Dfs::new(&graph.graph, graph.val_map[&SubValue::new_val(block.id())]);
+    while let Some(node) = dfs_val.next(&graph.graph) {
+        reachable_block_val.insert(graph.graph.node_weight(node).unwrap());
+    }
+    let mut dfs_back =
+        petgraph::visit::Dfs::new(&graph.graph, graph.val_map[&SubValue::new_back(block.id())]);
+    while let Some(node) = dfs_back.next(&graph.graph) {
+        reachable_block_back.insert(graph.graph.node_weight(node).unwrap());
+    }
     let condensed_graph = petgraph::algo::condensation(graph.graph.clone(), false);
     let mut errors = Vec::new();
     for node in condensed_graph.node_indices() {
@@ -341,7 +356,11 @@ pub fn block_serialization(
         .into_iter()
     {
         let nodes = condensed_graph.node_weight(node).unwrap();
-        eval_order.extend(nodes.iter().copied());
+        eval_order.extend(nodes.iter().copied().map(|val| SubValueInfo {
+            val,
+            rdepends_back: reachable_block_back.contains(&val),
+            rdepends_val: reachable_block_val.contains(&val),
+        }));
     }
     eval_order.reverse();
     Ok(BlockSerialization {
