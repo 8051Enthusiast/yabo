@@ -20,7 +20,7 @@ use crate::{
     dbpanic,
     error::{SResult, SilencedError},
     expr::{self, Atom, Expression, ExpressionKind},
-    interner::{FieldName, DefId, HirPath, Identifier, PathComponent, TypeVar},
+    interner::{DefId, FieldName, HirPath, Identifier, PathComponent, TypeVar},
     source::{FileId, Span},
 };
 
@@ -32,7 +32,7 @@ use variable_set::VariableSet;
 use convert::hir_parser_collection;
 use recursion::{mod_parser_ssc, parser_ssc, FunctionSscId};
 
-use self::convert::HirConversionErrors;
+use self::{convert::HirConversionErrors, walk::ChildIter};
 
 #[salsa::query_group(HirDatabase)]
 pub trait Hirs: crate::ast::Asts + crate::types::TypeInterner {
@@ -51,6 +51,7 @@ pub trait Hirs: crate::ast::Asts + crate::types::TypeInterner {
     fn hir_parent_module(&self, id: DefId) -> SResult<ModuleId>;
     fn hir_parent_parserdef(&self, id: DefId) -> SResult<ParserDefId>;
     fn hir_parent_block(&self, id: DefId) -> SResult<Option<BlockId>>;
+    fn all_parserdef_blocks(&self, pd: ParserDefId) -> Arc<Vec<BlockId>>;
 }
 
 fn hir_node(db: &dyn Hirs, id: DefId) -> SResult<HirNode> {
@@ -79,6 +80,16 @@ fn hir_node(db: &dyn Hirs, id: DefId) -> SResult<HirNode> {
 fn root_id(db: &dyn Hirs) -> ModuleId {
     let root_path = HirPath::new_file(FileId::default());
     ModuleId(db.intern_hir_path(root_path))
+}
+
+fn all_parserdef_blocks(db: &dyn Hirs, pd: ParserDefId) -> Arc<Vec<BlockId>> {
+    let mut ret = Vec::new();
+    for node in ChildIter::new(pd.0, db) {
+        if let HirNode::Block(b) = node {
+            ret.push(b.id)
+        }
+    }
+    Arc::new(ret)
 }
 
 fn all_def_ids(db: &dyn Hirs) -> Vec<DefId> {
