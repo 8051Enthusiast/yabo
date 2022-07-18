@@ -1,0 +1,20 @@
+def for[int] *> whatever = {
+	x: ~,
+	y: ~,
+	let f: int = z * x,
+	(
+		z: ~,
+		;
+		let z: int = 3 + 4,
+		g: ~,
+		let e: int = z * y,
+	)
+	a: ~,
+	;
+	x: ~,
+	m: {
+		d: ~,
+	}
+	let g: int = m.d | x,
+	a: ~,
+}

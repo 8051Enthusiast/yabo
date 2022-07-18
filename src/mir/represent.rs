@@ -1,8 +1,11 @@
-use std::fmt::Display;
+use std::{fmt::Display, io::Write};
 
 use crate::{databased_display::DatabasedDisplay, dbwrite};
 
-use super::{BBRef, DupleField, Function, MirInstr, Mirs, Place, PlaceRef, StackRef, IntBinOp, IntUnOp, Comp, Val, ExceptionRetreat, CallKind, BlockExit, ReturnStatus};
+use super::{
+    BBRef, BlockExit, CallKind, Comp, DupleField, ExceptionRetreat, Function, IntBinOp, IntUnOp,
+    MirInstr, Mirs, Place, PlaceRef, ReturnStatus, StackRef, Val,
+};
 
 impl Display for StackRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -94,14 +97,18 @@ impl Display for Val {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Val::Char(c) => write!(f, "'{}'", char::try_from(*c).unwrap()),
-            Val::Int(i) => write!(f, "{}", i)
+            Val::Int(i) => write!(f, "{}", i),
         }
     }
 }
 
 impl Display for ExceptionRetreat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{backtrack: {}, eof: {}, error: {}}}", &self.backtrack, &self.eof, &self.error)
+        write!(
+            f,
+            "{{backtrack: {}, eof: {}, error: {}}}",
+            &self.backtrack, &self.eof, &self.error
+        )
     }
 }
 
@@ -131,7 +138,16 @@ impl<DB: Mirs> DatabasedDisplay<(&Function, &DB)> for MirInstr {
                 dbwrite!(f, db, "{} = load {}", target, val)
             }
             MirInstr::Call(target, kind, fun, arg, retreat) => {
-                dbwrite!(f, db, "{} = call {}.{}({}), {}", target, fun, kind, arg, retreat)
+                dbwrite!(
+                    f,
+                    db,
+                    "{} = call {}.{}({}), {}",
+                    target,
+                    fun,
+                    kind,
+                    arg,
+                    retreat
+                )
             }
             MirInstr::Field(target, inner, field, error) => {
                 dbwrite!(f, db, "{} = access_field {}.", target, inner)?;
@@ -163,7 +179,7 @@ impl Display for BlockExit {
         match self {
             BlockExit::BlockInProgress => write!(f, "block_in_progress"),
             BlockExit::Jump(bb) => write!(f, "jump {}", bb),
-            BlockExit::Return(r) => write!(f, "return {}", r)
+            BlockExit::Return(r) => write!(f, "return {}", r),
         }
     }
 }
@@ -196,4 +212,37 @@ impl<DB: Mirs> DatabasedDisplay<DB> for Function {
         }
         Ok(())
     }
+}
+
+pub fn print_all_mir<DB: Mirs, W: Write>(db: &DB, w: &mut W) -> std::io::Result<()> {
+    let convert_error_ignore =
+        |_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "could not get mir");
+    for pd in db.all_parserdefs() {
+        dbwrite!(
+            w,
+            db,
+            "---\nmir parserdef len {}:\n",
+            &db.def_name(pd.0).unwrap()
+        )?;
+        dbwrite!(w, db, "{}", &db.mir_pd_len(pd).map_err(convert_error_ignore)?)?;
+        dbwrite!(
+            w,
+            db,
+            "---\nmir parserdef val {}:\n",
+            &db.def_name(pd.0).unwrap()
+        )?;
+        dbwrite!(w, db, "{}", &db.mir_pd_val(pd).map_err(convert_error_ignore)?)?;
+        for block in db.all_parserdef_blocks(pd).iter() {
+            for call in [CallKind::Len, CallKind::Val] {
+                dbwrite!(w, db, "---\nmir block {} {}:\n", &call, &block.0)?;
+                dbwrite!(
+                    w,
+                    db,
+                    "{}",
+                    &db.mir_block(*block, call).map_err(convert_error_ignore)?
+                )?;
+            }
+        }
+    }
+    Ok(())
 }
