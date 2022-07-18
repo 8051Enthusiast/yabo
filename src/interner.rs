@@ -196,6 +196,15 @@ impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for DefId {
     }
 }
 
+fn def_name(db: &dyn Interner, defid: DefId) -> Option<FieldName> {
+    db.lookup_intern_hir_path(defid)
+        .path()
+        .last()
+        .and_then(|x| match x {
+            PathComponent::File(_) | PathComponent::Unnamed(_) => None,
+            PathComponent::Named(f) => Some(*f),
+        })
+}
 #[salsa::query_group(InternerDatabase)]
 pub trait Interner: crate::source::Files {
     #[salsa::interned]
@@ -204,4 +213,6 @@ pub trait Interner: crate::source::Files {
     fn intern_type_var(&self, identifier: TypeVarName) -> TypeVar;
     #[salsa::interned]
     fn intern_hir_path(&self, path: HirPath) -> DefId;
+
+    fn def_name(&self, defid: DefId) -> Option<FieldName>;
 }
