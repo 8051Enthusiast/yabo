@@ -303,7 +303,7 @@ impl<'a> ConvertCtx<'a> {
         expr: &TypedResolvedExpr,
         place: Option<PlaceRef>,
     ) -> SResult<PlaceRef> {
-        let ty = *expr.0.root_data();
+        let (ty, _span) = *expr.0.root_data();
         Ok(match &expr.0 {
             ExpressionHead::Niladic(n) => match &n.inner {
                 ResolvedAtom::Val(val) => self
@@ -318,7 +318,7 @@ impl<'a> ConvertCtx<'a> {
                 ResolvedAtom::Block(block) => self.create_block_parser(*block, ty, place)?,
             },
             ExpressionHead::Monadic(Monadic { op, inner }) => {
-                let inner_ty = *inner.0.root_data();
+                let inner_ty = inner.0.root_data().0;
                 let recurse = |ctx: &mut Self, plc| ctx.convert_expr(&inner, plc);
                 match &op.inner {
                     ValUnOp::Not | ValUnOp::Neg => {
@@ -369,8 +369,8 @@ impl<'a> ConvertCtx<'a> {
                 op,
                 inner: [left, right],
             }) => {
-                let left_ty = *left.0.root_data();
-                let right_ty = *right.0.root_data();
+                let left_ty = left.0.root_data().0;
+                let right_ty = right.0.root_data().0;
                 let lrecurse = |ctx: &mut Self, plc| ctx.convert_expr(left, plc);
                 let rrecurse = |ctx: &mut Self, plc| ctx.convert_expr(right, plc);
                 match &op.inner {
@@ -717,7 +717,7 @@ impl<'a> ConvertCtx<'a> {
                     HirNode::Let(_) | HirNode::Parse(_) | HirNode::ChoiceIndirection(_) => {
                         db.parser_type_at(val.id)?
                     }
-                    HirNode::Expr(e) => *db.resolve_expr(e.id)?.0.root_data(),
+                    HirNode::Expr(e) => db.resolve_expr(e.id)?.0.root_data().0,
                     HirNode::Choice(_) => continue,
                     HirNode::Block(_) => continue,
                     HirNode::TExpr(_)
@@ -751,7 +751,8 @@ impl<'a> ConvertCtx<'a> {
                 }) if *b == id => Some(*data),
                 _ => None,
             })
-            .expect("could not find block within enclosing expression");
+            .expect("could not find block within enclosing expression")
+            .0;
         let (arg_ty, ret_ty) = match db.lookup_intern_type(block_ty) {
             Type::ParserArg { result, arg } => (arg, result),
             _ => dbpanic!(db, "should have been a parser type, was {}", &block_ty),
@@ -798,7 +799,7 @@ impl<'a> ConvertCtx<'a> {
     ) -> SResult<FxHashMap<SubValue, PlaceRef>> {
         let mut places: FxHashMap<SubValue, PlaceRef> = FxHashMap::default();
         let pd = id.lookup(db)?;
-        let expr_ty = *db.resolve_expr(pd.to)?.0.root_data();
+        let expr_ty = db.resolve_expr(pd.to)?.0.root_data().0;
         let expr_place = Place::Stack(f.new_stack_ref());
         let expr_place_ref = f.add_place(PlaceInfo {
             place: expr_place,

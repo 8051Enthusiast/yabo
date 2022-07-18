@@ -26,7 +26,7 @@ fn public_expr_type_impl(
     };
     let expr = loc.lookup(db)?;
     let expr = ctx.val_expression_type(&mut typeloc, &expr.expr)?;
-    let root = *expr.0.root_data();
+    let root = expr.0.root_data().0;
     let into_ret = if let Some(ty) = surrounding_types.from_type {
         ctx.infctx.parser_apply(root, ty)?
     } else {
@@ -86,7 +86,7 @@ fn ambient_type_impl(db: &dyn TyHirs, loc: hir::ParseId) -> Result<TypeId, TypeE
             ExpressionHead::Niladic(expr::OpWithData {
                 inner: ParserAtom::Block(b),
                 data,
-            }) if *b == block.id => Some(*data),
+            }) if *b == block.id => Some(data.0),
             _ => None,
         })
         .ok_or(SilencedError)?;

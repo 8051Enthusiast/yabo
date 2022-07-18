@@ -3,10 +3,12 @@ use std::sync::Arc;
 use crate::{
     dbpanic,
     error::{IsSilenced, Silencable},
+    expr::KindWithData,
     hir::HirIdWrapper,
     hir_types::NominalId,
     interner::DefId,
     order::{ResolvedExpr, SubValueKind},
+    source::SpanIndex,
     types::Type,
 };
 
@@ -56,7 +58,8 @@ pub trait AbstractDomain<'a>: Sized + Clone + std::hash::Hash + Eq + std::fmt::D
     fn bottom(ctx: &mut Self::DomainContext) -> Self;
 }
 
-pub type AbstractExpression<Dom> = expr::Expression<expr::KindWithData<ResolvedExpr, Dom>>;
+pub type AbstractExpression<Dom> =
+    expr::Expression<expr::KindWithData<ResolvedExpr, (Dom, SpanIndex)>>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PdEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
@@ -119,7 +122,6 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         &self.pd_result
     }
 
-
     fn strip_error<T>(&mut self, x: Result<T, Dom::Err>) -> Option<T> {
         match x {
             Ok(x) => Some(x),
@@ -152,20 +154,23 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
 
     fn eval_expr(
         &mut self,
-        expr: expr::Expression<expr::KindWithData<ResolvedExpr, TypeId>>,
+        expr: expr::Expression<expr::KindWithData<ResolvedExpr, (TypeId, SpanIndex)>>,
     ) -> Result<AbstractExpression<Dom>, Dom::Err> {
-        expr.try_scan(&mut |expr| {
+        expr.try_scan(&mut |expr| -> Result<(Dom, SpanIndex), _> {
             let owned_expr = expr.make_owned();
-            let ty = self.subst_type(*owned_expr.root_data());
-            let subst_expr = owned_expr.map_data(|_| ty);
+            let span = owned_expr.root_data().1;
+            let ty = self.subst_type(owned_expr.root_data().0);
+            let subst_expr: ExpressionHead<KindWithData<_, TypeId>, _> =
+                owned_expr.map_data(|_| ty).map_inner(|x| x.0);
             let ret = Dom::eval_expr(self, subst_expr)?;
-            ret.typecast(self, ty).map(|x| x.0)
+            let casted_ret = ret.typecast(self, ty).map(|x| x.0)?;
+            Ok((casted_ret, span))
         })
     }
 
     fn eval_expr_with_ambience(
         &mut self,
-        expr: expr::Expression<expr::KindWithData<ResolvedExpr, TypeId>>,
+        expr: expr::Expression<expr::KindWithData<ResolvedExpr, (TypeId, SpanIndex)>>,
         from: Dom,
         result_type: TypeId,
     ) -> Result<(Dom, AbstractExpression<Dom>), Dom::Err> {
@@ -175,7 +180,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                 inner: expr::ValBinOp::ParserApply,
                 data: result_type,
             },
-            [from, res.0.root_data().clone()],
+            [from, res.0.root_data().clone().0],
         );
         let ret_val = Dom::eval_expr(self, applied)?;
         let casted_ret = ret_val.typecast(self, result_type)?.0;
@@ -317,7 +322,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                 hir::HirNode::Let(statement) => {
                     let expr = self.db.resolve_expr(statement.expr)?;
                     let res_expr = self.eval_expr(expr)?;
-                    let res = res_expr.0.root_data().clone();
+                    let res = res_expr.0.root_data().0.clone();
                     self.block_expr_vals.insert(statement.expr, res_expr);
                     res.typecast(self, result_ty)?.0
                 }

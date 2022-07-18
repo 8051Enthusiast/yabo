@@ -172,7 +172,7 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
     fn type_expr(&mut self, expr: &ValExpression) -> Result<InfTypeId, TypeError> {
         let mut typeloc = self.infctx.tr.loc.clone();
         let inf_expression = self.val_expression_type(&mut typeloc, &expr.expr)?;
-        let root = *inf_expression.0.root_data();
+        let root = inf_expression.0.root_data().0;
         let ret = if let Some(ambient) = self.ambient_type() {
             self.infctx.parser_apply(root, ambient)?
         } else {
@@ -184,7 +184,7 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
                     data,
                     inner: ParserAtom::Block(block_id),
                 }) => {
-                    let ambient = self.infctx.reuse_parser_arg(*data)?;
+                    let ambient = self.infctx.reuse_parser_arg(data.0)?;
                     let block = block_id.lookup(self.db)?;
                     self.with_ambient_type(Some(ambient), |ctx| ctx.type_block(&block))?;
                 }
