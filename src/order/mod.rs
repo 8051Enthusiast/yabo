@@ -346,13 +346,21 @@ pub fn block_serialization(
     };
     let mut reachable_block_val = FxHashSet::default();
     let mut reachable_block_back = FxHashSet::default();
-    let mut dfs_val =
-        petgraph::visit::Dfs::new(&graph.graph, graph.val_map[&SubValue::new_val(block.id())]);
+    let data_dependencies = graph
+        .graph
+        .filter_map(|_, x| Some(x), |_, x| x.then_some(()));
+
+    let mut dfs_val = petgraph::visit::Dfs::new(
+        &data_dependencies,
+        graph.val_map[&SubValue::new_val(block.id())],
+    );
     while let Some(node) = dfs_val.next(&graph.graph) {
         reachable_block_val.insert(graph.graph.node_weight(node).unwrap());
     }
-    let mut dfs_back =
-        petgraph::visit::Dfs::new(&graph.graph, graph.val_map[&SubValue::new_back(block.id())]);
+    let mut dfs_back = petgraph::visit::Dfs::new(
+        &data_dependencies,
+        graph.val_map[&SubValue::new_back(block.id())],
+    );
     while let Some(node) = dfs_back.next(&graph.graph) {
         reachable_block_back.insert(graph.graph.node_weight(node).unwrap());
     }
