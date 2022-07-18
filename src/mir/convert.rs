@@ -333,12 +333,11 @@ impl<'a> ConvertCtx<'a> {
                         self.copy_if_different_types(self.int, inner_ty, None, recurse)?
                     }
                     ValUnOp::Wiggle(constr, kind) => {
-                        let place_ref = self.unwrap_or_stack(place, ty);
+                        let place_ref =
+                            self.copy_if_different_types(self.int, inner_ty, None, recurse)?;
                         let place_ldt = self.db.least_deref_type(ty)?;
-                        let ldt_ref =
-                            self.copy_if_different_types(place_ldt, ty, None, |_, _| {
-                                Ok(place_ref)
-                            })?;
+                        let ldt_ref = self.new_stack_place(place_ldt);
+                        self.copy(place_ref, ldt_ref);
                         let old_backtrack = self.retreat.backtrack;
                         self.retreat.backtrack = match kind {
                             WiggleKind::If => self.retreat.backtrack,
