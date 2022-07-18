@@ -1,7 +1,7 @@
 def for[int] *> whatever = {
 	x: ~,
 	y: ~,
-	let f: int = z * x,
+	let f: int = z * x if 1 or 2,
 	(
 		z: ~,
 		;
