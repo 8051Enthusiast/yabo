@@ -112,7 +112,7 @@ impl<T: Clone + Eq + Debug + Hash> VarStatus<T> {
     ) -> VarStatus<S> {
         match self {
             VarStatus::Always(a) => VarStatus::Always(f(a)),
-            VarStatus::Maybe(a) => VarStatus::Always(f(a)),
+            VarStatus::Maybe(a) => VarStatus::Maybe(f(a)),
         }
     }
     pub(crate) fn from_accessibility(access: bool) -> VarStatus<()> {
