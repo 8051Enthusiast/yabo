@@ -1,5 +1,6 @@
 use crate::error::{SResult, SilencedError};
 use crate::expr::{Atom, Expression, KindWithData, OpWithData, ValBinOp, ValUnOp};
+use crate::source::SpanIndex;
 use crate::types::TypeId;
 use crate::{expr::ExpressionKind, hir, interner::DefId};
 
@@ -25,7 +26,7 @@ impl ExpressionKind for ResolvedExpr {
     type DyadicOp = ValBinOp;
 }
 
-pub type TypedResolvedExpr = Expression<KindWithData<ResolvedExpr, TypeId>>;
+pub type TypedResolvedExpr = Expression<KindWithData<ResolvedExpr, (TypeId, SpanIndex)>>;
 
 pub fn resolve_expr(db: &dyn Orders, expr_id: hir::ExprId) -> SResult<TypedResolvedExpr> {
     let expr = db.parser_expr_at(expr_id)?;

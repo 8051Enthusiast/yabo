@@ -41,16 +41,13 @@ pub trait TyHirs: Hirs + crate::types::TypeInterner {
     fn public_type(&self, loc: DefId) -> SResult<TypeId>;
     fn parser_type_at(&self, loc: DefId) -> SResult<TypeId>;
     fn parser_expr_at(&self, loc: hir::ExprId) -> SResult<TypedExpression>;
-    fn public_expr_type(
-        &self,
-        loc: hir::ExprId,
-    ) -> SResult<(Expression<TypedHirVal<TypeId>>, TypeId)>;
+    fn public_expr_type(&self, loc: hir::ExprId) -> SResult<(TypedExpression, TypeId)>;
     fn ambient_type(&self, id: hir::ParseId) -> SResult<TypeId>;
     fn parser_full_types(&self, id: hir::ParserDefId) -> Result<Arc<ParserFullTypes>, TypeError>;
 }
 
-type TypedExpression = Expression<TypedHirVal<TypeId>>;
-type InfTypedExpression = Expression<TypedHirVal<InfTypeId>>;
+type TypedExpression = Expression<TypedHirVal<(TypeId, SpanIndex)>>;
+type InfTypedExpression = Expression<TypedHirVal<(InfTypeId, SpanIndex)>>;
 
 pub struct ExpressionTypeConstraints {
     pub root_type: Option<InfTypeId>,
@@ -187,50 +184,63 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
             Ok(match expr {
                 ExpressionHead::Dyadic(Dyadic {
                     op,
-                    inner: [&left, &right],
-                }) => match op.inner {
-                    And | Xor | Or | ShiftR | ShiftL | Minus | Plus | Div | Modulo | Mul => {
-                        let int = self.infctx.int();
-                        self.infctx.constrain(left, int)?;
-                        self.infctx.constrain(right, int)?;
-                        int
-                    }
-                    LesserEq | Lesser | GreaterEq | Greater => {
-                        let bit = self.infctx.bit();
-                        self.infctx.constrain(left, bit)?;
-                        self.infctx.constrain(right, bit)?;
-                        bit
-                    }
-                    Else => self.infctx.one_of(&[left, right])?,
-                    Compose => self.infctx.parser_compose(left, right)?,
-                    ParserApply => self.infctx.parser_apply(right, left)?,
-                    Uneq | Equals => todo!(),
-                },
-                ExpressionHead::Monadic(Monadic { op, inner: &inner }) => match &op.inner {
-                    ValUnOp::Neg | ValUnOp::Pos | ValUnOp::Not => {
-                        let int = self.infctx.int();
-                        self.infctx.constrain(inner, int)?;
-                        int
-                    }
-                    ValUnOp::Wiggle(_, _) => inner,
-                    ValUnOp::Dot(name) => self.infctx.access_field(inner, *name)?,
-                },
-                ExpressionHead::Niladic(a) => match &a.inner {
-                    ParserAtom::Atom(Atom::Char(_)) => self.infctx.char(),
-                    ParserAtom::Atom(Atom::Number(_)) => self.infctx.int(),
-                    ParserAtom::Atom(Atom::Field(f)) => self.infctx.lookup(context.loc, *f)?,
-                    ParserAtom::Single => self.infctx.single(),
-                    ParserAtom::Block(b) => {
-                        let pd = self.db.hir_parent_parserdef(b.0)?;
-                        let ty_vars = (0..context.vars.defs.len() as u32)
-                            .map(|i| {
-                                self.db
-                                    .intern_inference_type(InferenceType::TypeVarRef(pd.0, 0, i))
-                            })
-                            .collect::<Vec<_>>();
-                        self.infctx.block_call(b.0, &ty_vars)?
-                    }
-                },
+                    inner: [&(left, _), &(right, _)],
+                }) => (
+                    match op.inner {
+                        And | Xor | Or | ShiftR | ShiftL | Minus | Plus | Div | Modulo | Mul => {
+                            let int = self.infctx.int();
+                            self.infctx.constrain(left, int)?;
+                            self.infctx.constrain(right, int)?;
+                            int
+                        }
+                        LesserEq | Lesser | GreaterEq | Greater => {
+                            let bit = self.infctx.bit();
+                            self.infctx.constrain(left, bit)?;
+                            self.infctx.constrain(right, bit)?;
+                            bit
+                        }
+                        Else => self.infctx.one_of(&[left, right])?,
+                        Compose => self.infctx.parser_compose(left, right)?,
+                        ParserApply => self.infctx.parser_apply(right, left)?,
+                        Uneq | Equals => todo!(),
+                    },
+                    op.data,
+                ),
+                ExpressionHead::Monadic(Monadic {
+                    op,
+                    inner: &(inner, _),
+                }) => (
+                    match &op.inner {
+                        ValUnOp::Neg | ValUnOp::Pos | ValUnOp::Not => {
+                            let int = self.infctx.int();
+                            self.infctx.constrain(inner, int)?;
+                            int
+                        }
+                        ValUnOp::Wiggle(_, _) => inner,
+                        ValUnOp::Dot(name) => self.infctx.access_field(inner, *name)?,
+                    },
+                    op.data,
+                ),
+                ExpressionHead::Niladic(a) => (
+                    match &a.inner {
+                        ParserAtom::Atom(Atom::Char(_)) => self.infctx.char(),
+                        ParserAtom::Atom(Atom::Number(_)) => self.infctx.int(),
+                        ParserAtom::Atom(Atom::Field(f)) => self.infctx.lookup(context.loc, *f)?,
+                        ParserAtom::Single => self.infctx.single(),
+                        ParserAtom::Block(b) => {
+                            let pd = self.db.hir_parent_parserdef(b.0)?;
+                            let ty_vars = (0..context.vars.defs.len() as u32)
+                                .map(|i| {
+                                    self.db.intern_inference_type(InferenceType::TypeVarRef(
+                                        pd.0, 0, i,
+                                    ))
+                                })
+                                .collect::<Vec<_>>();
+                            self.infctx.block_call(b.0, &ty_vars)?
+                        }
+                    },
+                    a.data,
+                ),
             })
         })
     }
@@ -241,7 +251,7 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
         &mut self,
         expr: &InfTypedExpression,
     ) -> Result<TypedExpression, TypeError> {
-        expr.try_map(&mut |x| self.inftype_to_concrete_type(*x))
+        expr.try_map(&mut |(ty, span)| Ok((self.inftype_to_concrete_type(*ty)?, *span)))
     }
 }
 

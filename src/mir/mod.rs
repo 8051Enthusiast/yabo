@@ -12,7 +12,7 @@ use crate::{
     hir::{BlockId, HirIdWrapper, ParserDefId},
     interner::{DefId, FieldName},
     order::{Orders, SubValue, SubValueInfo},
-    types::TypeId,
+    types::TypeId, source::SpanIndex,
 };
 
 use self::convert::ConvertCtx;
@@ -212,7 +212,7 @@ pub enum Place {
 pub enum PlaceOrigin {
     None,
     Node(DefId),
-    Expr(DefId, usize),
+    Expr(DefId, SpanIndex),
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
