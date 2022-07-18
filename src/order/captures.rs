@@ -1,7 +1,6 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use crate::{
-    dbeprintln,
     hir::{self, walk::ChildIter, HirIdWrapper},
     interner::DefId,
 };
@@ -22,10 +21,6 @@ pub fn captures(db: &dyn Orders, id: hir::BlockId) -> Arc<BTreeSet<DefId>> {
                     .filter(|target| !id.0.is_ancestor_of(db, *target)),
             );
         }
-    }
-    dbeprintln!(db, "{}:", &id.0);
-    for i in ret.iter() {
-        dbeprintln!(db, "\t{}", i);
     }
     Arc::new(ret)
 }
