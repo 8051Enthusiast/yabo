@@ -23,7 +23,7 @@ use crate::{
 
 use super::{
     BBRef, CallKind, Comp, DupleField, ExceptionRetreat, Function, FunctionWriter, IntBinOp,
-    IntUnOp, MirInstr, Mirs, Place, PlaceInfo, PlaceRef, ReturnStatus, Val,
+    IntUnOp, MirInstr, Mirs, Place, PlaceInfo, PlaceOrigin, PlaceRef, ReturnStatus, Val,
 };
 
 pub struct ConvertCtx<'a> {
@@ -206,12 +206,17 @@ impl<'a> ConvertCtx<'a> {
         let place_info = PlaceInfo { place, ty };
         self.f.add_place(place_info)
     }
-    fn new_stack_place(&mut self, ty: TypeId) -> PlaceRef {
-        let new_place = Place::Stack(self.f.new_stack_ref());
+    fn new_stack_place(&mut self, ty: TypeId, origin: PlaceOrigin) -> PlaceRef {
+        let new_place = Place::Stack(self.f.new_stack_ref(origin));
         self.make_place_ref(new_place, ty)
     }
-    fn unwrap_or_stack(&mut self, place: Option<PlaceRef>, ty: TypeId) -> PlaceRef {
-        place.unwrap_or_else(|| self.new_stack_place(ty))
+    fn unwrap_or_stack(
+        &mut self,
+        place: Option<PlaceRef>,
+        ty: TypeId,
+        origin: PlaceOrigin,
+    ) -> PlaceRef {
+        place.unwrap_or_else(|| self.new_stack_place(ty, origin))
     }
     fn copy(&mut self, origin: PlaceRef, target: PlaceRef) {
         self.f
@@ -222,22 +227,29 @@ impl<'a> ConvertCtx<'a> {
         target_ty: TypeId,
         inner_ty: TypeId,
         place: Option<PlaceRef>,
+        origin: PlaceOrigin,
         cont: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
     ) -> SResult<PlaceRef> {
         if target_ty == inner_ty {
             return cont(self, place);
         }
         let inner = cont(self, None)?;
-        let target = self.unwrap_or_stack(place, target_ty);
+        let target = self.unwrap_or_stack(place, target_ty, origin);
         self.copy(inner, target);
         Ok(target)
     }
-    fn load_var(&mut self, var: DefId, ty: TypeId, place: Option<PlaceRef>) -> Option<PlaceRef> {
+    fn load_var(
+        &mut self,
+        var: DefId,
+        ty: TypeId,
+        place: Option<PlaceRef>,
+        origin: PlaceOrigin,
+    ) -> Option<PlaceRef> {
         let place_ref = self.val_place_at_def(var)?;
         if self.f.fun.place(place_ref).ty == ty && place.is_none() {
             return Some(place_ref);
         }
-        let new_place = self.new_stack_place(ty);
+        let new_place = self.new_stack_place(ty, origin);
         self.copy(place_ref, new_place);
         Some(new_place)
     }
@@ -246,6 +258,7 @@ impl<'a> ConvertCtx<'a> {
         captured: DefId,
         ty: TypeId,
         place: Option<PlaceRef>,
+        origin: PlaceOrigin,
     ) -> SResult<PlaceRef> {
         let cap_ty = self.db.parser_type_at(captured)?;
         let place_ref = self.f.add_place(PlaceInfo {
@@ -255,17 +268,29 @@ impl<'a> ConvertCtx<'a> {
         if ty == cap_ty && place.is_none() {
             return Ok(place_ref);
         }
-        let new_place = self.new_stack_place(ty);
+        let new_place = self.new_stack_place(ty, origin);
         self.copy(place_ref, new_place);
         Ok(new_place)
     }
-    fn load_int(&mut self, n: i64, ty: TypeId, place: Option<PlaceRef>) -> PlaceRef {
-        let place_ref = self.unwrap_or_stack(place, ty);
+    fn load_int(
+        &mut self,
+        n: i64,
+        ty: TypeId,
+        place: Option<PlaceRef>,
+        origin: PlaceOrigin,
+    ) -> PlaceRef {
+        let place_ref = self.unwrap_or_stack(place, ty, origin);
         self.f.append_ins(MirInstr::LoadVal(place_ref, Val::Int(n)));
         place_ref
     }
-    fn load_char(&mut self, c: u32, ty: TypeId, place: Option<PlaceRef>) -> PlaceRef {
-        let place_ref = self.unwrap_or_stack(place, ty);
+    fn load_char(
+        &mut self,
+        c: u32,
+        ty: TypeId,
+        place: Option<PlaceRef>,
+        origin: PlaceOrigin,
+    ) -> PlaceRef {
+        let place_ref = self.unwrap_or_stack(place, ty, origin);
         self.f
             .append_ins(MirInstr::LoadVal(place_ref, Val::Char(c)));
         place_ref
@@ -275,9 +300,10 @@ impl<'a> ConvertCtx<'a> {
         block: BlockId,
         ty: TypeId,
         place: Option<PlaceRef>,
+        origin: PlaceOrigin,
     ) -> SResult<PlaceRef> {
         let captures = self.db.captures(block);
-        let place_ref = self.unwrap_or_stack(place, ty);
+        let place_ref = self.unwrap_or_stack(place, ty, origin);
         for captured in captures.iter() {
             let cap_ty = self.db.parser_type_at(*captured)?;
             let bp_ref = |ctx: &mut Self, block| {
@@ -300,43 +326,47 @@ impl<'a> ConvertCtx<'a> {
     }
     fn convert_expr(
         &mut self,
+        expr_id: ExprId,
         expr: &TypedResolvedExpr,
         place: Option<PlaceRef>,
     ) -> SResult<PlaceRef> {
-        let (ty, _span) = *expr.0.root_data();
+        let (ty, span) = *expr.0.root_data();
+        let origin = PlaceOrigin::Expr(expr_id, span);
         Ok(match &expr.0 {
             ExpressionHead::Niladic(n) => match &n.inner {
                 ResolvedAtom::Val(val) => self
-                    .load_var(*val, ty, place)
+                    .load_var(*val, ty, place, origin)
                     .expect("Invalid refernce to variable"),
-                ResolvedAtom::Captured(cap) => self.load_captured(*cap, ty, place)?,
-                ResolvedAtom::Number(n) => self.load_int(*n, ty, place),
-                ResolvedAtom::Char(c) => self.load_char(*c, ty, place),
+                ResolvedAtom::Captured(cap) => self.load_captured(*cap, ty, place, origin)?,
+                ResolvedAtom::Number(n) => self.load_int(*n, ty, place, origin),
+                ResolvedAtom::Char(c) => self.load_char(*c, ty, place, origin),
                 ResolvedAtom::ParserDef(_) | ResolvedAtom::Single => {
-                    self.unwrap_or_stack(place, ty)
+                    self.unwrap_or_stack(place, ty, origin)
                 }
-                ResolvedAtom::Block(block) => self.create_block_parser(*block, ty, place)?,
+                ResolvedAtom::Block(block) => {
+                    self.create_block_parser(*block, ty, place, origin)?
+                }
             },
             ExpressionHead::Monadic(Monadic { op, inner }) => {
                 let inner_ty = inner.0.root_data().0;
-                let recurse = |ctx: &mut Self, plc| ctx.convert_expr(&inner, plc);
+                let recurse = |ctx: &mut Self, plc| ctx.convert_expr(expr_id, &inner, plc);
                 match &op.inner {
                     ValUnOp::Not | ValUnOp::Neg => {
                         let op: IntUnOp = (&op.inner).try_into().unwrap();
-                        let inner =
-                            self.copy_if_different_types(self.int, inner_ty, None, recurse)?;
-                        let place_ref = self.unwrap_or_stack(place, ty);
+                        let inner = self
+                            .copy_if_different_types(self.int, inner_ty, None, origin, recurse)?;
+                        let place_ref = self.unwrap_or_stack(place, ty, origin);
                         self.f.append_ins(MirInstr::IntUn(place_ref, op, inner));
                         place_ref
                     }
                     ValUnOp::Pos => {
-                        self.copy_if_different_types(self.int, inner_ty, None, recurse)?
+                        self.copy_if_different_types(self.int, inner_ty, None, origin, recurse)?
                     }
                     ValUnOp::Wiggle(constr, kind) => {
-                        let place_ref =
-                            self.copy_if_different_types(self.int, inner_ty, None, recurse)?;
+                        let place_ref = self
+                            .copy_if_different_types(self.int, inner_ty, None, origin, recurse)?;
                         let place_ldt = self.db.least_deref_type(ty)?;
-                        let ldt_ref = self.new_stack_place(place_ldt);
+                        let ldt_ref = self.new_stack_place(place_ldt, origin);
                         self.copy(place_ref, ldt_ref);
                         let old_backtrack = self.retreat.backtrack;
                         self.retreat.backtrack = match kind {
@@ -352,9 +382,9 @@ impl<'a> ConvertCtx<'a> {
                     }
                     ValUnOp::Dot(field) => {
                         let inner_ldt = self.db.least_deref_type(inner_ty)?;
-                        let block_ref =
-                            self.copy_if_different_types(inner_ldt, inner_ty, None, recurse)?;
-                        let place_ref = self.unwrap_or_stack(place, ty);
+                        let block_ref = self
+                            .copy_if_different_types(inner_ldt, inner_ty, None, origin, recurse)?;
+                        let place_ref = self.unwrap_or_stack(place, ty, origin);
                         self.f.append_ins(MirInstr::Field(
                             place_ref,
                             block_ref,
@@ -371,8 +401,8 @@ impl<'a> ConvertCtx<'a> {
             }) => {
                 let left_ty = left.0.root_data().0;
                 let right_ty = right.0.root_data().0;
-                let lrecurse = |ctx: &mut Self, plc| ctx.convert_expr(left, plc);
-                let rrecurse = |ctx: &mut Self, plc| ctx.convert_expr(right, plc);
+                let lrecurse = |ctx: &mut Self, plc| ctx.convert_expr(expr_id, left, plc);
+                let rrecurse = |ctx: &mut Self, plc| ctx.convert_expr(expr_id, right, plc);
                 match &op.inner {
                     ValBinOp::And
                     | ValBinOp::Xor
@@ -385,11 +415,11 @@ impl<'a> ConvertCtx<'a> {
                     | ValBinOp::Modulo
                     | ValBinOp::Mul => {
                         let op: IntBinOp = (&op.inner).try_into().unwrap();
-                        let left =
-                            self.copy_if_different_types(self.int, left_ty, None, lrecurse)?;
-                        let right =
-                            self.copy_if_different_types(self.int, right_ty, None, rrecurse)?;
-                        let place_ref = self.unwrap_or_stack(place, ty);
+                        let left = self
+                            .copy_if_different_types(self.int, left_ty, None, origin, lrecurse)?;
+                        let right = self
+                            .copy_if_different_types(self.int, right_ty, None, origin, rrecurse)?;
+                        let place_ref = self.unwrap_or_stack(place, ty, origin);
                         self.f
                             .append_ins(MirInstr::IntBin(place_ref, op, left, right));
                         place_ref
@@ -401,21 +431,21 @@ impl<'a> ConvertCtx<'a> {
                     | ValBinOp::Uneq
                     | ValBinOp::Equals => {
                         let op: Comp = (&op.inner).try_into().unwrap();
-                        let left =
-                            self.copy_if_different_types(self.int, left_ty, None, lrecurse)?;
-                        let right =
-                            self.copy_if_different_types(self.int, right_ty, None, rrecurse)?;
-                        let place_ref = self.unwrap_or_stack(place, ty);
+                        let left = self
+                            .copy_if_different_types(self.int, left_ty, None, origin, lrecurse)?;
+                        let right = self
+                            .copy_if_different_types(self.int, right_ty, None, origin, rrecurse)?;
+                        let place_ref = self.unwrap_or_stack(place, ty, origin);
                         self.f
                             .append_ins(MirInstr::Comp(place_ref, op, left, right));
                         place_ref
                     }
                     ValBinOp::ParserApply => {
                         let left_ldt = self.db.least_deref_type(left_ty)?;
-                        let left =
-                            self.copy_if_different_types(left_ldt, left_ty, None, lrecurse)?;
+                        let left = self
+                            .copy_if_different_types(left_ldt, left_ty, None, origin, lrecurse)?;
                         let right = rrecurse(self, None)?;
-                        let place_ref = self.unwrap_or_stack(place, ty);
+                        let place_ref = self.unwrap_or_stack(place, ty, origin);
                         self.f.append_ins(MirInstr::Call(
                             place_ref,
                             CallKind::Val,
@@ -426,22 +456,34 @@ impl<'a> ConvertCtx<'a> {
                         place_ref
                     }
                     ValBinOp::Else => {
-                        let place_ref = self.unwrap_or_stack(place, ty);
+                        let place_ref = self.unwrap_or_stack(place, ty, origin);
                         let right_bb = self.f.new_bb();
                         let continue_bb = self.f.new_bb();
                         let old_backtrack = self.retreat.backtrack;
                         self.retreat.backtrack = right_bb;
-                        self.copy_if_different_types(ty, left_ty, Some(place_ref), lrecurse)?;
+                        self.copy_if_different_types(
+                            ty,
+                            left_ty,
+                            Some(place_ref),
+                            origin,
+                            lrecurse,
+                        )?;
                         self.f.set_jump(continue_bb);
                         self.f.set_bb(right_bb);
                         self.retreat.backtrack = old_backtrack;
-                        self.copy_if_different_types(ty, right_ty, Some(place_ref), rrecurse)?;
+                        self.copy_if_different_types(
+                            ty,
+                            right_ty,
+                            Some(place_ref),
+                            origin,
+                            rrecurse,
+                        )?;
                         self.f.set_jump(continue_bb);
                         self.f.set_bb(continue_bb);
                         place_ref
                     }
                     ValBinOp::Compose => {
-                        let place_ref = self.unwrap_or_stack(place, ty);
+                        let place_ref = self.unwrap_or_stack(place, ty, origin);
                         let left_ldt = self.db.least_deref_type(left_ty)?;
                         let right_ldt = self.db.least_deref_type(right_ty)?;
                         let left_place = self.f.add_place(PlaceInfo {
@@ -456,12 +498,14 @@ impl<'a> ConvertCtx<'a> {
                             left_ldt,
                             left_ty,
                             Some(left_place),
+                            origin,
                             lrecurse,
                         )?;
                         self.copy_if_different_types(
                             right_ldt,
                             right_ty,
                             Some(right_place),
+                            origin,
                             rrecurse,
                         )?;
                         place_ref
@@ -633,7 +677,7 @@ impl<'a> ConvertCtx<'a> {
                 }
                 let resolved_expr = self.db.resolve_expr(e.id)?;
                 let place = self.val_place_at_def(e.id.0).unwrap();
-                self.convert_expr(&resolved_expr, Some(place))?;
+                self.convert_expr(e.id, &resolved_expr, Some(place))?;
             }
             hir::HirNode::Parse(p) => {
                 self.change_context(p.parent_context);
@@ -701,7 +745,7 @@ impl<'a> ConvertCtx<'a> {
             {
                 places.insert(val, f.fun.ret());
             } else if matches!(val.kind, SubValueKind::Back | SubValueKind::Front) {
-                let place = Place::Stack(f.new_stack_ref());
+                let place = Place::Stack(f.new_stack_ref(PlaceOrigin::Ambient(block.id, val.id)));
                 let place_ref = f.add_place(PlaceInfo {
                     place,
                     ty: ambient_type,
@@ -711,7 +755,7 @@ impl<'a> ConvertCtx<'a> {
                 let place = if returned_vals.contains(&val.id) {
                     Place::Field(f.fun.ret(), val.id)
                 } else {
-                    Place::Stack(f.new_stack_ref())
+                    Place::Stack(f.new_stack_ref(PlaceOrigin::Node(val.id)))
                 };
                 let ty: TypeId = match db.hir_node(val.id)? {
                     HirNode::Let(_) | HirNode::Parse(_) | HirNode::ChoiceIndirection(_) => {
@@ -799,8 +843,10 @@ impl<'a> ConvertCtx<'a> {
     ) -> SResult<FxHashMap<SubValue, PlaceRef>> {
         let mut places: FxHashMap<SubValue, PlaceRef> = FxHashMap::default();
         let pd = id.lookup(db)?;
-        let expr_ty = db.resolve_expr(pd.to)?.0.root_data().0;
-        let expr_place = Place::Stack(f.new_stack_ref());
+        let expr = db.resolve_expr(pd.to)?;
+        let expr_ty = expr.0.root_data().0;
+        let expr_place =
+            Place::Stack(f.new_stack_ref(PlaceOrigin::Expr(pd.to, expr.0.root_data().1)));
         let expr_place_ref = f.add_place(PlaceInfo {
             place: expr_place,
             ty: expr_ty,
