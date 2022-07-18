@@ -360,11 +360,11 @@ impl<'a> ConvertCtx<'a> {
                         place_ref
                     }
                     ValUnOp::Pos => {
-                        self.copy_if_different_types(self.int, inner_ty, None, origin, recurse)?
+                        self.copy_if_different_types(self.int, inner_ty, place, origin, recurse)?
                     }
                     ValUnOp::Wiggle(constr, kind) => {
                         let place_ref = self
-                            .copy_if_different_types(self.int, inner_ty, None, origin, recurse)?;
+                            .copy_if_different_types(self.int, inner_ty, place, origin, recurse)?;
                         let place_ldt = self.db.least_deref_type(ty)?;
                         let ldt_ref = self.new_stack_place(place_ldt, origin);
                         self.copy(place_ref, ldt_ref);
