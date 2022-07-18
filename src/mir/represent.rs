@@ -4,7 +4,7 @@ use crate::{databased_display::DatabasedDisplay, dbwrite};
 
 use super::{
     BBRef, BlockExit, CallKind, Comp, DupleField, ExceptionRetreat, Function, IntBinOp, IntUnOp,
-    MirInstr, Mirs, Place, PlaceRef, ReturnStatus, StackRef, Val,
+    MirInstr, Mirs, Place, PlaceOrigin, PlaceRef, ReturnStatus, StackRef, Val,
 };
 
 impl Display for StackRef {
@@ -196,9 +196,22 @@ impl Display for ReturnStatus {
     }
 }
 
+impl<DB: Mirs> DatabasedDisplay<DB> for PlaceOrigin {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
+        match self {
+            PlaceOrigin::Node(n) => dbwrite!(f, db, "node {}", n),
+            PlaceOrigin::Ambient(_, n) => dbwrite!(f, db, "ambient {}", n),
+            PlaceOrigin::Expr(n, i) => dbwrite!(f, db, "expr {}:{}", &n.0, &i.as_usize()),
+        }
+    }
+}
+
 impl<DB: Mirs> DatabasedDisplay<DB> for Function {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         for (place_ref, place) in self.iter_places() {
+            if let Place::Stack(st) = self.place(place_ref).place {
+                dbwrite!(f, db, "// origin: {}\n", &self.stack(st))?;
+            }
             write!(f, "define ")?;
             place_ref.db_fmt(f, &(self, db))?;
             dbwrite!(f, db, ": {}\n", &place.ty)?;
@@ -224,14 +237,24 @@ pub fn print_all_mir<DB: Mirs, W: Write>(db: &DB, w: &mut W) -> std::io::Result<
             "---\nmir parserdef len {}:\n",
             &db.def_name(pd.0).unwrap()
         )?;
-        dbwrite!(w, db, "{}", &db.mir_pd_len(pd).map_err(convert_error_ignore)?)?;
+        dbwrite!(
+            w,
+            db,
+            "{}",
+            &db.mir_pd_len(pd).map_err(convert_error_ignore)?
+        )?;
         dbwrite!(
             w,
             db,
             "---\nmir parserdef val {}:\n",
             &db.def_name(pd.0).unwrap()
         )?;
-        dbwrite!(w, db, "{}", &db.mir_pd_val(pd).map_err(convert_error_ignore)?)?;
+        dbwrite!(
+            w,
+            db,
+            "{}",
+            &db.mir_pd_val(pd).map_err(convert_error_ignore)?
+        )?;
         for block in db.all_parserdef_blocks(pd).iter() {
             for call in [CallKind::Len, CallKind::Val] {
                 dbwrite!(w, db, "---\nmir block {} {}:\n", &call, &block.0)?;

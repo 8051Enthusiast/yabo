@@ -9,7 +9,7 @@ use fxhash::FxHashMap;
 use crate::{
     error::{SResult, Silencable},
     expr::{Atom, ValBinOp, ValUnOp},
-    hir::{BlockId, HirIdWrapper, ParserDefId},
+    hir::{BlockId, HirIdWrapper, ParserDefId, ExprId},
     interner::{DefId, FieldName},
     order::{Orders, SubValue, SubValueInfo},
     types::TypeId, source::SpanIndex,
@@ -208,11 +208,11 @@ pub enum Place {
     From(PlaceRef),
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum PlaceOrigin {
-    None,
     Node(DefId),
-    Expr(DefId, SpanIndex),
+    Ambient(BlockId, DefId),
+    Expr(ExprId, SpanIndex),
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -225,7 +225,7 @@ pub struct PlaceInfo {
 pub struct Function {
     bb: Vec<BasicBlock>,
     place: Vec<PlaceInfo>,
-    stack: Vec<()>,
+    stack: Vec<PlaceOrigin>,
 }
 
 const fn const_ref(r: u32) -> PlaceRef {
@@ -246,6 +246,10 @@ impl Function {
 
     pub fn place(&self, place_ref: PlaceRef) -> &PlaceInfo {
         &self.place[u32::from(place_ref.0) as usize - 1]
+    }
+
+    pub fn stack(&self, stack_ref: StackRef) -> PlaceOrigin {
+        self.stack[u32::from(stack_ref.0) as usize - 1]
     }
 
     pub fn cap(&self) -> PlaceRef {
@@ -344,8 +348,8 @@ impl FunctionWriter {
         placeref
     }
 
-    pub fn new_stack_ref(&mut self) -> StackRef {
-        self.fun.stack.push(());
+    pub fn new_stack_ref(&mut self, origin: PlaceOrigin) -> StackRef {
+        self.fun.stack.push(origin);
         StackRef(NonZeroU32::new(self.fun.stack.len() as u32).unwrap())
     }
 

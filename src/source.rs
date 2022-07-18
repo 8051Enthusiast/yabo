@@ -220,6 +220,10 @@ impl SpanIndex {
             .map(|i| SpanIndex(i.try_into().expect("overflow adding spans")))
             .collect()
     }
+
+    pub fn as_usize(self) -> usize {
+        self.0 as usize
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
