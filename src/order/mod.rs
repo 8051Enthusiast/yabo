@@ -92,7 +92,7 @@ fn val_refs(
                         db.captures(b)
                             .iter()
                             .copied()
-                            .filter(|target| dbg!(parent_block.0.is_ancestor_of(db, *target)))
+                            .filter(|target| parent_block.0.is_ancestor_of(db, *target))
                             .map(|target| (SubValue::new_val(target), true)),
                     ),
                     _ => continue,
