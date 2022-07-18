@@ -9,7 +9,8 @@ use crate::{
     dbpanic,
     error::{SResult, SilencedError},
     error_type,
-    hir::{self, HirIdWrapper, ParserPredecessor},
+    expr::{ExprIter, ExpressionHead, OpWithData},
+    hir::{self, HirIdWrapper, ParserAtom, ParserPredecessor},
     hir_types::TyHirs,
     interner::DefId,
 };
@@ -80,32 +81,45 @@ fn val_refs(
             ret.insert((SubValue::new_val(l.expr.0), true));
             Ok(ret)
         }
-        hir::HirNode::Expr(expr) => Ok(hir::refs::expr_value_refs(db, expr, expr.id.0)
-            .filter(|target| {
-                let res = parent_block.0.is_ancestor_of(db, *target);
-                res
-            })
-            .map(|target| (SubValue::new_val(target), true))
-            .collect()),
+        hir::HirNode::Expr(expr) => {
+            let mut ret = FxHashSet::default();
+            for e in ExprIter::new(&expr.expr) {
+                match e.0 {
+                    ExpressionHead::Niladic(OpWithData {
+                        inner: ParserAtom::Block(b),
+                        ..
+                    }) => ret.extend(
+                        db.captures(b)
+                            .iter()
+                            .copied()
+                            .filter(|target| dbg!(parent_block.0.is_ancestor_of(db, *target)))
+                            .map(|target| (SubValue::new_val(target), true)),
+                    ),
+                    _ => continue,
+                };
+            }
+            ret.extend(
+                hir::refs::expr_value_refs(db, expr, expr.id.0)
+                    .filter(|target| {
+                        let res = parent_block.0.is_ancestor_of(db, *target);
+                        res
+                    })
+                    .map(|target| (SubValue::new_val(target), true)),
+            );
+            Ok(ret)
+        }
         hir::HirNode::Parse(p) => {
             let mut ret = FxHashSet::default();
             ret.insert((SubValue::new_val(p.expr.0), true));
             ret.insert((SubValue::new_front(p.id.id()), true));
             Ok(ret)
         }
-        hir::HirNode::Block(block) if block.id == parent_block => Ok(block
+        hir::HirNode::Block(block) => Ok(block
             .root_context
             .lookup(db)?
             .vars
             .iter()
             .map(|(_, id)| (SubValue::new_val(*id.inner()), true))
-            .collect()),
-        hir::HirNode::Block(block) => Ok(db
-            .captures(block.id)
-            .iter()
-            .copied()
-            .filter(|target| parent_block.0.is_ancestor_of(db, *target))
-            .map(|target| (SubValue::new_val(target), true))
             .collect()),
         hir::HirNode::Choice(choice) => {
             let mut ret = FxHashSet::default();
