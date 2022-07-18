@@ -8,13 +8,12 @@ pub mod hir;
 pub mod hir_types;
 pub mod interner;
 pub mod layout;
+pub mod low_effort_interner;
+pub mod mir;
 pub mod order;
 pub mod source;
 pub mod types;
-pub mod low_effort_interner;
-mod mir;
 use context::Context;
-use hir::Hirs;
 use std::{env::args_os, error::Error, path::Path};
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -28,9 +27,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if context.print_diagnostics() {
         exit_with_message("Errors occured during compilation");
     }
-    let graph = hir::represent::HirGraph(&context.db as &dyn Hirs);
-    dot::render(&graph, &mut std::io::stdout()).expect("Could not render graph");
-    hir::error::errors(&context.db);
+    mir::print_all_mir(&context.db, &mut std::io::stdout().lock())?;
     Ok(())
 }
 

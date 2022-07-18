@@ -17,11 +17,13 @@ use crate::{
 
 use self::convert::ConvertCtx;
 
+pub use represent::print_all_mir;
+
 #[salsa::query_group(MirDatabase)]
 pub trait Mirs: Orders {
     fn mir_block(&self, block: BlockId, call_kind: CallKind) -> SResult<Function>;
-    fn pd_len(&self, pd: ParserDefId) -> SResult<Function>;
-    fn pd_val(&self, pd: ParserDefId) -> SResult<Function>;
+    fn mir_pd_len(&self, pd: ParserDefId) -> SResult<Function>;
+    fn mir_pd_val(&self, pd: ParserDefId) -> SResult<Function>;
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -383,7 +385,7 @@ fn mir_block(db: &dyn Mirs, block: BlockId, call_kind: CallKind) -> SResult<Func
     Ok(ctx.finish_fun())
 }
 
-fn pd_len(db: &dyn Mirs, pd: ParserDefId) -> SResult<Function> {
+fn mir_pd_len(db: &dyn Mirs, pd: ParserDefId) -> SResult<Function> {
     let parserdef = pd.lookup(db)?;
     let mut ctx = ConvertCtx::new_parserdef_builder(db, pd, CallKind::Len)?;
     ctx.add_sub_value(SubValue::new_front(pd.0))?;
@@ -392,7 +394,7 @@ fn pd_len(db: &dyn Mirs, pd: ParserDefId) -> SResult<Function> {
     Ok(ctx.finish_fun())
 }
 
-fn pd_val(db: &dyn Mirs, pd: ParserDefId) -> SResult<Function> {
+fn mir_pd_val(db: &dyn Mirs, pd: ParserDefId) -> SResult<Function> {
     let parserdef = pd.lookup(db)?;
     let mut ctx = ConvertCtx::new_parserdef_builder(db, pd, CallKind::Val)?;
     ctx.add_sub_value(SubValue::new_front(pd.0))?;
@@ -434,7 +436,7 @@ def for[int] *> main = {
                 ctx.db.mir_block(*block, call_kind).unwrap();
             }
         }
-        ctx.db.pd_val(main).unwrap();
-        ctx.db.pd_len(main).unwrap();
+        ctx.db.mir_pd_val(main).unwrap();
+        ctx.db.mir_pd_len(main).unwrap();
     }
 }

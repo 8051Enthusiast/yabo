@@ -3,7 +3,7 @@ use std::collections::hash_map::Entry;
 use fxhash::{FxHashMap, FxHashSet};
 
 use crate::{
-    dbeprintln, dbpanic,
+    dbpanic,
     error::SResult,
     expr::{
         self, ConstraintBinOp, ConstraintUnOp, Dyadic, ExprIter, ExpressionHead, Monadic, ValBinOp,
@@ -195,7 +195,6 @@ impl<'a> ConvertCtx<'a> {
         }
         self.current_context = Some(context);
         self.f.set_bb(self.context_bb[&context].1);
-        dbeprintln!(self.db, "context change to {}", &context.0);
         let context_backtrack = self.context_data[&context].backtracks_to;
 
         self.retreat.backtrack = context_backtrack
