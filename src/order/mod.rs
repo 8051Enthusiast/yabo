@@ -124,12 +124,16 @@ fn val_refs(
         hir::HirNode::Choice(choice) => {
             let mut ret = FxHashSet::default();
             for ctx in choice.subcontexts.iter() {
+                let context = ctx.lookup(db)?;
                 ret.extend(
-                    ctx.lookup(db)?
+                    context
                         .children
                         .into_iter()
                         .map(|c| (SubValue::new_val(c), false)),
                 );
+                if let Some((_, end)) = context.endpoints {
+                    ret.insert((SubValue::new_back(end), false));
+                }
             }
             Ok(ret)
         }
