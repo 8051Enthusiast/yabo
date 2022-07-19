@@ -8,9 +8,10 @@ use fxhash::{FxHashMap, FxHashSet};
 use crate::absint::{AbsInt, AbsIntCtx, AbstractDomain, Arg};
 use crate::error::{IsSilenced, SResult, SilencedError};
 use crate::expr::{self, ExpressionHead, ValBinOp, ValUnOp};
+use crate::hir::variable_set::VarStatus;
 use crate::hir::{self, HirIdWrapper};
 use crate::hir_types::NominalId;
-use crate::interner::{DefId, FieldName, PathComponent};
+use crate::interner::{DefId, FieldName};
 use crate::low_effort_interner::{Interner, Uniq};
 use crate::order::expr::ResolvedAtom;
 use crate::order::ResolvedExpr;
@@ -375,19 +376,13 @@ impl<'a> Uniq<InternerLayout<'a>> {
         }
         let mut manifest = UnfinishedManifestation::new();
         let block = id.lookup(ctx.db)?;
-        let root_ctx = ctx.db.lookup_intern_hir_path(block.root_context.0);
+        let root_ctx = block.root_context.lookup(ctx.db)?;
         for (field, layout) in fields {
-            let mut field_path = root_ctx.clone();
-            field_path.push(PathComponent::Named(*field));
-            let field_id = ctx.db.intern_hir_path(field_path);
-            let needs_discriminant = match ctx.db.hir_node(field_id)? {
-                hir::HirNode::ChoiceIndirection(_) => {
-                    // TODO(8051): check here if discriminant is *actually* needed
-                    true
-                }
-                hir::HirNode::Let(_) | hir::HirNode::Parse(_) => false,
-                _ => panic!("Invalid block field node"),
-            };
+            let (needs_discriminant, field_id) = root_ctx
+                .vars
+                .get(*field)
+                .map(|x| (matches!(x, VarStatus::Maybe(_)), *x.inner()))
+                .expect("Could not find field during layout calculation");
             let field_size = layout.size_align(ctx)?;
             manifest.add_field(field_id, field_size, needs_discriminant);
         }
