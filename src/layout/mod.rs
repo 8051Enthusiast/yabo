@@ -1,4 +1,6 @@
 mod represent;
+pub mod size_align;
+pub mod vtable;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -17,58 +19,7 @@ use crate::order::expr::ResolvedAtom;
 use crate::order::ResolvedExpr;
 use crate::types::{PrimitiveType, Type, TypeId};
 
-type PSize = u64;
-pub const TARGET_POINTER_SA: SizeAlign = SizeAlign {
-    size: 8,
-    align_mask: 0x7,
-};
-pub const TARGET_BIT_SA: SizeAlign = SizeAlign {
-    size: 1,
-    align_mask: 0,
-};
-pub const TARGET_CHAR_SA: SizeAlign = SizeAlign {
-    size: 4,
-    align_mask: 0x3,
-};
-pub const TARGET_INT_SA: SizeAlign = SizeAlign {
-    size: 8,
-    align_mask: 0x7,
-};
-pub const TARGET_ZST_SA: SizeAlign = SizeAlign {
-    size: 0,
-    align_mask: 0,
-};
-
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
-pub struct SizeAlign {
-    /// total size (not including potential alignment padding at the end)
-    pub size: PSize,
-    /// mask of alignment
-    pub align_mask: PSize,
-}
-
-impl SizeAlign {
-    pub fn align(&self) -> PSize {
-        self.align_mask + 1
-    }
-    /// log2 of alignment
-    pub fn alogn(&self) -> u32 {
-        self.align_mask.count_ones()
-    }
-    pub fn cat(self, other: Self) -> Self {
-        let other_start = other.align_mask + self.size & !self.align_mask;
-        SizeAlign {
-            size: other_start + other.size,
-            align_mask: self.align_mask.max(other.align_mask),
-        }
-    }
-    pub fn union(self, other: Self) -> Self {
-        SizeAlign {
-            size: self.size.max(other.size),
-            align_mask: self.align_mask.max(other.align_mask),
-        }
-    }
-}
+use self::size_align::{PSize, SizeAlign, TargetSized, Zst};
 
 #[derive(Clone, PartialEq, Eq, Default)]
 pub struct StructManifestation {
@@ -334,7 +285,7 @@ impl<'a> Uniq<InternerLayout<'a>> {
             return Ok(*sa);
         }
         let ret = match &self.layout {
-            Layout::None => TARGET_ZST_SA,
+            Layout::None => Zst::tsize(),
             Layout::Mono(MonoLayout::Block(id, fields), _) => {
                 self.block_manifestation(ctx, *id, fields)?.size
             }
@@ -347,18 +298,18 @@ impl<'a> Uniq<InternerLayout<'a>> {
             Layout::Mono(MonoLayout::Nominal(_, from), _) => from
                 .map(|layout| layout.size_align(ctx))
                 .transpose()?
-                .unwrap_or(TARGET_ZST_SA),
-            Layout::Mono(MonoLayout::NominalParser(_), _) => TARGET_ZST_SA,
-            Layout::Mono(MonoLayout::Pointer, _) => TARGET_POINTER_SA,
-            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Bit), _) => TARGET_BIT_SA,
-            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Char), _) => TARGET_CHAR_SA,
-            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int), _) => TARGET_INT_SA,
-            Layout::Mono(MonoLayout::Single, _) => TARGET_ZST_SA,
+                .unwrap_or(Zst::tsize()),
+            Layout::Mono(MonoLayout::NominalParser(_), _) => Zst::tsize(),
+            Layout::Mono(MonoLayout::Pointer, _) => <&Zst>::tsize(),
+            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Bit), _) => bool::tsize(),
+            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Char), _) => char::tsize(),
+            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int), _) => i64::tsize(),
+            Layout::Mono(MonoLayout::Single, _) => Zst::tsize(),
             Layout::Multi(m) => {
-                let inner = m.layouts.iter().try_fold(TARGET_ZST_SA, |sa, layout| {
+                let inner = m.layouts.iter().try_fold(Zst::tsize(), |sa, layout| {
                     Ok(sa.union(layout.size_align(ctx)?))
                 })?;
-                TARGET_POINTER_SA.cat(inner)
+                <&Zst>::tsize().cat(inner)
             }
         };
         ctx.dcx.sizes.insert(self, ret);
