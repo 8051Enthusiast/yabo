@@ -17,35 +17,54 @@ use crate::order::ResolvedExpr;
 use crate::types::{PrimitiveType, Type, TypeId};
 
 type PSize = u64;
-pub const TARGET_POINTER_SA: SizeAlign = SizeAlign { size: 8, alogn: 3 };
-pub const TARGET_BIT_SA: SizeAlign = SizeAlign { size: 1, alogn: 0 };
-pub const TARGET_CHAR_SA: SizeAlign = SizeAlign { size: 4, alogn: 2 };
-pub const TARGET_INT_SA: SizeAlign = SizeAlign { size: 8, alogn: 3 };
-pub const TARGET_ZST_SA: SizeAlign = SizeAlign { size: 0, alogn: 0 };
+pub const TARGET_POINTER_SA: SizeAlign = SizeAlign {
+    size: 8,
+    align_mask: 0x7,
+};
+pub const TARGET_BIT_SA: SizeAlign = SizeAlign {
+    size: 1,
+    align_mask: 0,
+};
+pub const TARGET_CHAR_SA: SizeAlign = SizeAlign {
+    size: 4,
+    align_mask: 0x3,
+};
+pub const TARGET_INT_SA: SizeAlign = SizeAlign {
+    size: 8,
+    align_mask: 0x7,
+};
+pub const TARGET_ZST_SA: SizeAlign = SizeAlign {
+    size: 0,
+    align_mask: 0,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub struct SizeAlign {
     /// total size (not including potential alignment padding at the end)
     pub size: PSize,
-    /// log2 of the alignment
-    pub alogn: u8,
+    /// mask of alignment
+    pub align_mask: PSize,
 }
 
 impl SizeAlign {
     pub fn align(&self) -> PSize {
-        1 << self.alogn
+        self.align_mask + 1
+    }
+    /// log2 of alignment
+    pub fn alogn(&self) -> u32 {
+        self.align_mask.count_ones()
     }
     pub fn cat(self, other: Self) -> Self {
-        let other_start = ((other.align() - 1 + self.size) >> other.alogn) << other.alogn;
+        let other_start = other.align_mask + self.size & !self.align_mask;
         SizeAlign {
             size: other_start + other.size,
-            alogn: self.alogn.max(other.alogn),
+            align_mask: self.align_mask.max(other.align_mask),
         }
     }
     pub fn union(self, other: Self) -> Self {
         SizeAlign {
             size: self.size.max(other.size),
-            alogn: self.alogn.max(other.alogn),
+            align_mask: self.align_mask.max(other.align_mask),
         }
     }
 }
@@ -79,7 +98,7 @@ impl UnfinishedManifestation {
         manifest.discriminant_offset = manifest.size.size;
         manifest.size.cat(SizeAlign {
             size: ((manifest.discriminant_mapping.len() + 7) / 8) as PSize,
-            alogn: 0,
+            align_mask: 0,
         });
         manifest
     }
