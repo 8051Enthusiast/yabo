@@ -54,3 +54,49 @@ target_struct! {
         pub apply_table: [ParserArgImpl; 0],
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::layout::size_align::{SizeAlign, TargetSized};
+
+    use super::*;
+
+    #[test]
+    fn vtable_sizes() {
+        assert_eq!(
+            VTableHeader::tsize(),
+            SizeAlign {
+                size: 32,
+                align_mask: 0b111
+            }
+        );
+        assert_eq!(
+            BlockVTable::tsize(),
+            SizeAlign {
+                size: 32,
+                align_mask: 0b111,
+            }
+        );
+        assert_eq!(
+            ParserVTable::tsize(),
+            SizeAlign {
+                size: 48,
+                align_mask: 0b111,
+            }
+        );
+        assert_eq!(
+            LayoutKind::tsize(),
+            SizeAlign {
+                size: 16,
+                align_mask: 0b111,
+            }
+        );
+        assert_eq!(
+            ParserArgImpl::tsize(),
+            SizeAlign {
+                size: 16,
+                align_mask: 0b111,
+            }
+        );
+    }
+}
