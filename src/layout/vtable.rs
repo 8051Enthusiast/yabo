@@ -20,7 +20,7 @@ target_struct! {
 target_struct! {
     pub struct VTableHeader {
         pub layout: &'static LayoutKind,
-        pub typecast: &'static Zst,
+        pub typecast_impl: &'static Zst,
         pub size: usize,
         pub align: usize,
     }
@@ -29,7 +29,7 @@ target_struct! {
 target_struct! {
     pub struct BlockVTable {
         pub head: VTableHeader,
-        pub access_funs: [&'static Zst; 0],
+        pub access_impl: [&'static Zst; 0],
     }
 }
 
@@ -37,13 +37,16 @@ target_struct! {
     pub struct NominalVTable {
         pub head: VTableHeader,
         pub deref_table: &'static VTableHeader,
+        pub start_impl: &'static Zst,
+        pub end_impl: &'static Zst,
     }
 }
 
 target_struct! {
     pub struct ParserArgImpl {
         pub vtable: Option<&'static VTableHeader>,
-        pub implementation: Option<&'static Zst>,
+        pub val_impl: Option<&'static Zst>,
+        pub len_impl: Option<&'static Zst>,
     }
 }
 
@@ -52,6 +55,15 @@ target_struct! {
         pub head: VTableHeader,
         pub default_arg_impl: ParserArgImpl,
         pub apply_table: [ParserArgImpl; 0],
+    }
+}
+
+target_struct! {
+    pub struct ArrayVTable {
+        pub head: VTableHeader,
+        pub single_forward_impl: &'static Zst,
+        pub current_element_impl: &'static Zst,
+        pub skip_impl: Option<&'static Zst>,
     }
 }
 
@@ -80,7 +92,7 @@ mod tests {
         assert_eq!(
             ParserVTable::tsize(),
             SizeAlign {
-                size: 48,
+                size: 56,
                 align_mask: 0b111,
             }
         );
@@ -94,7 +106,14 @@ mod tests {
         assert_eq!(
             ParserArgImpl::tsize(),
             SizeAlign {
-                size: 16,
+                size: 24,
+                align_mask: 0b111,
+            }
+        );
+        assert_eq!(
+            ArrayVTable::tsize(),
+            SizeAlign {
+                size: 56,
                 align_mask: 0b111,
             }
         );
