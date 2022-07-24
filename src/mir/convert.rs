@@ -1,5 +1,3 @@
-use std::collections::hash_map::Entry;
-
 use fxhash::{FxHashMap, FxHashSet};
 
 use crate::{
@@ -112,16 +110,10 @@ impl ContextData {
                     }
                     // move responsibility of setting discriminant to contexts inside subchoice
                     affected_discriminants.remove(&field);
-                    match subchoice_affected_discriminants.entry(c.target_choice) {
-                        Entry::Occupied(mut entry) => {
-                            entry.get_mut().insert(field);
-                        }
-                        Entry::Vacant(entry) => {
-                            let mut new_map = FxHashSet::default();
-                            new_map.insert(field);
-                            entry.insert(new_map);
-                        }
-                    };
+                    subchoice_affected_discriminants
+                        .entry(c.target_choice)
+                        .or_default()
+                        .insert(field);
                 }
                 _ => continue,
             };
