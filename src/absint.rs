@@ -64,12 +64,14 @@ pub type AbstractExpression<Dom> =
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PdEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
     pub returned: Dom,
+    pub from: Dom,
     pub expr_vals: Option<AbstractExpression<Dom>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlockEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
     pub expr_vals: FxHashMap<hir::ExprId, AbstractExpression<Dom>>,
+    pub from: Dom,
     pub vals: FxHashMap<DefId, Dom>,
     pub returned: Dom,
 }
@@ -195,9 +197,10 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         let from = val.get_arg(self, Arg::From)?;
         let expr = self.db.resolve_expr(parserdef.to)?;
         let result_type = self.subst_type(self.db.parser_returns(parserdef.id)?.deref);
-        let (ret_val, expr_vals) = self.eval_expr_with_ambience(expr, from, result_type)?;
+        let (ret_val, expr_vals) = self.eval_expr_with_ambience(expr, from.clone(), result_type)?;
         let ret = PdEvaluated {
             returned: ret_val,
+            from,
             expr_vals: Some(expr_vals),
         };
         Ok(ret)
@@ -242,6 +245,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                 pd,
                 Some(PdEvaluated {
                     returned: bottom.clone(),
+                    from: bottom.clone(),
                     expr_vals: None,
                 }),
             );
@@ -384,6 +388,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
 
         let evaluated = res.clone().map(|returned| BlockEvaluated {
             expr_vals: old_block_expr,
+            from: from.clone(),
             vals: old_block_vars,
             returned,
         });
