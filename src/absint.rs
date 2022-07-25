@@ -124,6 +124,10 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         &self.pd_result
     }
 
+    pub fn block_result(&self) -> &FxHashMap<(Dom, Dom), Option<BlockEvaluated<Dom>>> {
+        &self.block_result
+    }
+
     fn strip_error<T>(&mut self, x: Result<T, Dom::Err>) -> Option<T> {
         match x {
             Ok(x) => Some(x),
@@ -417,4 +421,5 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         self.existing_pd.extend(new_pd.iter().cloned());
         new_pd
     }
+
 }

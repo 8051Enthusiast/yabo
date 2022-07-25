@@ -1,3 +1,4 @@
+pub mod collect;
 mod represent;
 pub mod size_align;
 pub mod vtable;
@@ -90,7 +91,7 @@ pub struct InternerLayout<'a> {
     pub layout: Layout<&'a Uniq<Self>>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[repr(transparent)]
 pub struct IMonoLayout<'a>(&'a Uniq<InternerLayout<'a>>);
 
@@ -106,32 +107,30 @@ impl<'a> IMonoLayout<'a> {
     }
 }
 
-impl<'a> Uniq<InternerLayout<'a>> {
-    fn flat_layout_list(&'a self) -> Vec<IMonoLayout<'a>> {
-        match &self.layout {
-            Layout::Mono(_, _) => vec![IMonoLayout(self)],
-            Layout::Multi(l) => {
-                let mut res = vec![];
-                for l in &l.layouts {
-                    match &l.layout {
-                        Layout::Mono(_, _) => res.push(IMonoLayout(l)),
-                        Layout::Multi(_) => panic!("MultiLayout inside MultiLayout not supported"),
-                        Layout::None => panic!("Empty layout inside MultiLayout not supported"),
-                    }
-                }
-                res
-            }
-            Layout::None => vec![],
-        }
+fn flat_layouts<'a, 'l>(
+    layout: &'l ILayout<'a>,
+) -> impl ExactSizeIterator<Item = IMonoLayout<'a>> + Clone + 'l {
+    match &layout.layout {
+        Layout::Mono(_, _) => std::slice::from_ref(layout),
+        Layout::Multi(l) => l.layouts.as_slice(),
+        Layout::None => &[],
     }
+    .iter()
+    .map(|l| match l.layout {
+        Layout::Mono(_, _) => IMonoLayout(l),
+        Layout::Multi(_) => panic!("MultiLayout inside MultiLayout not supported"),
+        Layout::None => panic!("Empty layout inside MultiLayout not supported"),
+    })
+}
 
+impl<'a> Uniq<InternerLayout<'a>> {
     fn map(
         &'a self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
         mut f: impl FnMut(IMonoLayout<'a>, &mut AbsIntCtx<'a, ILayout<'a>>) -> ILayout<'a>,
     ) -> ILayout<'a> {
         let mut acc = BTreeSet::new();
-        let layouts = self.flat_layout_list();
+        let layouts = flat_layouts(&self);
         for layout in layouts {
             let result_layout = f(layout, ctx);
             match &result_layout.layout {
@@ -165,7 +164,7 @@ impl<'a> Uniq<InternerLayout<'a>> {
         ) -> Result<ILayout<'a>, LayoutError>,
     ) -> Result<ILayout<'a>, LayoutError> {
         let mut acc = BTreeSet::new();
-        let layouts = self.flat_layout_list();
+        let layouts = flat_layouts(&self);
         for layout in layouts {
             let result_layout = f(layout, ctx)?;
             match &result_layout.layout {
@@ -434,6 +433,8 @@ impl IsSilenced for LayoutError {
         true
     }
 }
+
+pub type AbsLayoutCtx<'a> = AbsIntCtx<'a, ILayout<'a>>;
 
 pub struct LayoutContext<'a> {
     intern: Interner<'a, InternerLayout<'a>>,
