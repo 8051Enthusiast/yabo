@@ -15,13 +15,15 @@ use crate::{
         self, Atom, Dyadic, ExprIter, Expression, ExpressionHead, Monadic, OpWithData, TypeBinOp,
         TypeUnOp, ValBinOp, ValUnOp,
     },
+    hash::StableHash,
     hir::{HirIdWrapper, ParseStatement, ParserAtom, ParserDefRef},
     interner::{DefId, FieldName, TypeVar, TypeVarName},
     source::SpanIndex,
     types::{
         inference::{InfTypeId, InferenceContext, InferenceType, NominalInfHead, TypeResolver},
-        EitherType, NominalKind, NominalTypeHead, Signature, Type, TypeError, TypeId,
-    }, hash::StableHash,
+        EitherType, NominalKind, NominalTypeHead, PrimitiveType, Signature, Type, TypeError,
+        TypeId,
+    },
 };
 
 use crate::hir::{self, Hirs};
@@ -46,8 +48,46 @@ pub trait TyHirs: Hirs + crate::types::TypeInterner {
     fn ambient_type(&self, id: hir::ParseId) -> SResult<TypeId>;
     fn parser_full_types(&self, id: hir::ParserDefId) -> Result<Arc<ParserFullTypes>, TypeError>;
     fn type_hash(&self, ty: TypeId) -> [u8; 32];
+    fn head_discriminant(&self, ty: TypeId) -> i64;
 }
 
+#[derive(Clone, Copy)]
+pub enum HeadDiscriminant {
+    Int = 0x100,
+    Bit = 0x200,
+    Char = 0x300,
+    Loop = 0x400,
+    Parser = 0x500,
+    FunctionArgs = 0x600,
+    Block = 0x700,
+}
+
+pub fn head_discriminant(db: &dyn TyHirs, ty: TypeId) -> i64 {
+    match db.lookup_intern_type(ty) {
+        Type::Primitive(PrimitiveType::Int) => HeadDiscriminant::Int as i64,
+        Type::Primitive(PrimitiveType::Bit) => HeadDiscriminant::Bit as i64,
+        Type::Primitive(PrimitiveType::Char) => HeadDiscriminant::Char as i64,
+        Type::Loop(_, _) => HeadDiscriminant::Loop as i64,
+        Type::ParserArg { .. } => HeadDiscriminant::Parser as i64,
+        Type::FunctionArg(_, _) => HeadDiscriminant::FunctionArgs as i64,
+        Type::ForAll(inner, _) => db.head_discriminant(inner),
+        Type::Nominal(NominalTypeHead {
+            kind: NominalKind::Block,
+            ..
+        }) => HeadDiscriminant::Block as i64,
+        Type::Nominal(NominalTypeHead {
+            kind: NominalKind::Def,
+            def,
+            ..
+        }) => {
+            let def_hash: [u8; 8] = db.def_hash(def).as_ref().try_into().unwrap();
+            // highest bit is set for nominal types (so that it is negative)
+            // and the rest is derived from the first 8 bytes of the hash
+            i64::from_le_bytes(def_hash) | i64::MIN
+        }
+        Type::TypeVarRef(_, _, _) | Type::Any | Type::Bot | Type::Unknown => 0,
+    }
+}
 type TypedExpression = Expression<TypedHirVal<(TypeId, SpanIndex)>>;
 type InfTypedExpression = Expression<TypedHirVal<(InfTypeId, SpanIndex)>>;
 
@@ -324,7 +364,6 @@ fn type_hash(db: &dyn TyHirs, id: TypeId) -> [u8; 32] {
     id.update_hash(&mut hasher, db);
     hasher.finalize().try_into().unwrap()
 }
-
 
 #[derive(Clone)]
 pub struct TypingLocation {
