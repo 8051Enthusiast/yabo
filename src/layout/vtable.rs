@@ -19,7 +19,7 @@ target_struct! {
 
 target_struct! {
     pub struct VTableHeader {
-        pub layout: &'static LayoutKind,
+        pub kind: &'static LayoutKind,
         pub typecast_impl: &'static Zst,
         pub size: usize,
         pub align: usize,

@@ -4,6 +4,7 @@ use crate::error::Report;
 use crate::hir::HirDatabase;
 use crate::hir_types::HirTypesDatabase;
 use crate::interner::{Identifier, IdentifierName, Interner, InternerDatabase};
+use crate::layout::LayoutDatabase;
 use crate::mir::MirDatabase;
 use crate::order::OrdersDatabase;
 use crate::source::{AriadneCache, FileCollection, FileDatabase};
@@ -18,7 +19,8 @@ use crate::types::TypeInternerDatabase;
     HirTypesDatabase,
     OrdersDatabase,
     MirDatabase,
-    AbsIntDatabase
+    AbsIntDatabase,
+    LayoutDatabase
 )]
 #[derive(Default)]
 pub struct LivingInTheDatabase {

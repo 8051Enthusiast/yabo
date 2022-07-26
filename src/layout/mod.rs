@@ -20,6 +20,7 @@ use crate::order::expr::ResolvedAtom;
 use crate::order::ResolvedExpr;
 use crate::types::{PrimitiveType, Type, TypeId};
 
+use self::represent::{LayoutHasher, LayoutPart, LayoutSymbol};
 use self::size_align::{PSize, SizeAlign, TargetSized, Zst};
 
 #[derive(Clone, PartialEq, Eq, Default)]
@@ -104,6 +105,15 @@ impl<'a> IMonoLayout<'a> {
     }
     pub fn inner(self) -> ILayout<'a> {
         self.0
+    }
+    pub fn symbol<DB: Layouts + ?Sized>(
+        self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+        part: LayoutPart,
+        db: &DB,
+    ) -> String {
+        let sym = LayoutSymbol { layout: self, part };
+        sym.symbol(&mut ctx.dcx.hashes, db)
     }
 }
 
@@ -440,6 +450,18 @@ pub struct LayoutContext<'a> {
     intern: Interner<'a, InternerLayout<'a>>,
     sizes: FxHashMap<ILayout<'a>, SizeAlign>,
     manifestations: FxHashMap<ILayout<'a>, Arc<StructManifestation>>,
+    hashes: LayoutHasher<'a>,
+}
+
+impl<'a> LayoutContext<'a> {
+    pub fn new(intern: Interner<'a, InternerLayout<'a>>) -> Self {
+        Self {
+            intern,
+            sizes: Default::default(),
+            manifestations: Default::default(),
+            hashes: LayoutHasher::new(),
+        }
+    }
 }
 
 impl<'a> AbstractDomain<'a> for ILayout<'a> {
@@ -681,17 +703,19 @@ def for[int] *> main = {
         );
         let mut bump = Bump::new();
         let intern = Interner::<InternerLayout>::new(&mut bump);
-        let layout_ctx = LayoutContext {
-            intern,
-            sizes: Default::default(),
-            manifestations: Default::default(),
-        };
+        let layout_ctx = LayoutContext::new(intern);
         let mut outlayer = AbsIntCtx::<ILayout>::new(&ctx.db, layout_ctx);
         let main = ctx.parser("main");
         let main_ty = ctx.db.parser_args(main).unwrap().thunk;
         instantiate(&mut outlayer, &[main_ty]).unwrap();
         let canon_2006 = canon_layout(&mut outlayer, main_ty).unwrap();
+        for lay in flat_layouts(&canon_2006) {
+            assert_eq!(lay.symbol(&mut outlayer, LayoutPart::LenImpl(0), &ctx.db), "main$e16412415cc84158$len_0");
+        }
         let main_block = outlayer.pd_result()[canon_2006].as_ref().unwrap().returned;
+        for lay in flat_layouts(&main_block) {
+            assert_eq!(lay.symbol(&mut outlayer, LayoutPart::LenImpl(0), &ctx.db), "block_1b15571abd710f7a$000fdd43004bec7e$len_0");
+        }
         let field = |name| FieldName::Ident(ctx.id(name));
         assert_eq!(
             dbformat!(

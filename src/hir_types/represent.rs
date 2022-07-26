@@ -1,10 +1,13 @@
+use sha2::Digest;
+
 use crate::{
     ast::ArrayKind,
     databased_display::DatabasedDisplay,
     dbwrite,
+    hash::StableHash,
     hir::ParserDefId,
     hir_types::TypeVarCollection,
-    types::{NominalKind, PrimitiveType, Type, TypeId},
+    types::{NominalKind, NominalTypeHead, PrimitiveType, Type, TypeId},
 };
 
 use super::TyHirs;
@@ -80,6 +83,62 @@ impl<DB: ?Sized> DatabasedDisplay<DB> for PrimitiveType {
             PrimitiveType::Int => write!(f, "int"),
             PrimitiveType::Bit => write!(f, "bit"),
             PrimitiveType::Char => write!(f, "char"),
+        }
+    }
+}
+
+impl<DB: TyHirs + ?Sized> StableHash<DB> for TypeId {
+    fn update_hash(&self, state: &mut sha2::Sha256, db: &DB) {
+        let sub_update =
+            |id: TypeId, state: &mut sha2::Sha256| db.type_hash(id).update_hash(state, db);
+        match db.lookup_intern_type(*self) {
+            Type::Any => state.update([0]),
+            Type::Bot => state.update([1]),
+            Type::Unknown => state.update([2]),
+            Type::Primitive(p) => {
+                state.update([3]);
+                p.update_hash(state, db)
+            }
+            Type::TypeVarRef(def, layer, index) => {
+                state.update([4]);
+                def.update_hash(state, db);
+                layer.update_hash(state, db);
+                index.update_hash(state, db);
+            }
+            Type::ForAll(inner, x) => {
+                state.update([5]);
+                x.len().update_hash(state, db);
+                sub_update(inner, state);
+            }
+            Type::Nominal(NominalTypeHead {
+                kind, def, ty_args, ..
+            }) => {
+                state.update([6]);
+                kind.update_hash(state, db);
+                def.update_hash(state, db);
+                ty_args.len().update_hash(state, db);
+                for arg in ty_args.iter() {
+                    sub_update(*arg, state);
+                }
+            }
+            Type::Loop(kind, inner) => {
+                state.update([7]);
+                kind.update_hash(state, db);
+                sub_update(inner, state);
+            }
+            Type::ParserArg { result, arg } => {
+                state.update([8]);
+                sub_update(arg, state);
+                sub_update(result, state);
+            }
+            Type::FunctionArg(inner, args) => {
+                state.update([9]);
+                sub_update(inner, state);
+                args.len().update_hash(state, db);
+                for arg in args.iter() {
+                    sub_update(*arg, state);
+                }
+            }
         }
     }
 }

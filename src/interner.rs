@@ -1,6 +1,12 @@
 use salsa::InternId;
+use sha2::{Digest, Sha256};
 
-use crate::{databased_display::DatabasedDisplay, dbwrite, source::FileId};
+use crate::{
+    databased_display::DatabasedDisplay,
+    dbwrite,
+    hash::{hash_array, StableHash},
+    source::FileId,
+};
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Identifier(InternId);
@@ -29,6 +35,14 @@ impl IdentifierName {
 impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for Identifier {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         write!(f, "{}", db.lookup_intern_identifier(*self).name)
+    }
+}
+
+impl<DB: Interner + ?Sized> StableHash<DB> for Identifier {
+    fn update_hash(&self, state: &mut sha2::Sha256, db: &DB) {
+        db.lookup_intern_identifier(*self)
+            .name
+            .update_hash(state, db)
     }
 }
 
@@ -63,8 +77,20 @@ impl TypeVarName {
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum FieldName {
-    Ident(Identifier),
     Return,
+    Ident(Identifier),
+}
+
+impl<DB: Interner + ?Sized> StableHash<DB> for FieldName {
+    fn update_hash(&self, state: &mut sha2::Sha256, db: &DB) {
+        match self {
+            FieldName::Return => state.update(&[0]),
+            FieldName::Ident(id) => {
+                state.update(&[1]);
+                id.update_hash(state, db)
+            }
+        }
+    }
 }
 
 impl From<Identifier> for FieldName {
@@ -87,6 +113,25 @@ pub enum PathComponent {
     Named(FieldName),
     Unnamed(u32),
     File(FileId),
+}
+
+impl<DB: Interner + ?Sized> StableHash<DB> for PathComponent {
+    fn update_hash(&self, state: &mut sha2::Sha256, db: &DB) {
+        match self {
+            PathComponent::Named(n) => {
+                state.update([0]);
+                n.update_hash(state, db);
+            }
+            PathComponent::Unnamed(n) => {
+                state.update([1]);
+                n.update_hash(state, db);
+            }
+            PathComponent::File(fd) => {
+                state.update([2]);
+                fd.update_hash(state, db);
+            }
+        }
+    }
 }
 
 impl PathComponent {
@@ -147,6 +192,7 @@ impl DefId {
         other_path.0.starts_with(&self_path.0)
     }
 }
+
 impl salsa::InternKey for DefId {
     fn from_intern_id(v: InternId) -> Self {
         DefId(v)
@@ -196,6 +242,13 @@ impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for DefId {
     }
 }
 
+impl<DB: Interner + ?Sized> StableHash<DB> for DefId {
+    fn update_hash(&self, state: &mut sha2::Sha256, db: &DB) {
+        let path = db.lookup_intern_hir_path(*self);
+        hash_array(path.path(), state, db)
+    }
+}
+
 fn def_name(db: &dyn Interner, defid: DefId) -> Option<FieldName> {
     db.lookup_intern_hir_path(defid)
         .path()
@@ -205,6 +258,13 @@ fn def_name(db: &dyn Interner, defid: DefId) -> Option<FieldName> {
             PathComponent::Named(f) => Some(*f),
         })
 }
+
+fn def_hash(db: &dyn Interner, defid: DefId) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    defid.update_hash(&mut hasher, db);
+    hasher.finalize().try_into().unwrap()
+}
+
 #[salsa::query_group(InternerDatabase)]
 pub trait Interner: crate::source::Files {
     #[salsa::interned]
@@ -215,4 +275,5 @@ pub trait Interner: crate::source::Files {
     fn intern_hir_path(&self, path: HirPath) -> DefId;
 
     fn def_name(&self, defid: DefId) -> Option<FieldName>;
+    fn def_hash(&self, defid: DefId) -> [u8; 32];
 }

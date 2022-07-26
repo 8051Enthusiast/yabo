@@ -1,6 +1,8 @@
-use crate::{ast::ArrayKind, databased_display::DatabasedDisplay, interner::Interner};
+use crate::{
+    ast::ArrayKind, databased_display::DatabasedDisplay, hash::StableHash, interner::Interner,
+};
 
-use super::{InfTypeId, InferenceType, NominalKind, TypeInterner};
+use super::{InfTypeId, InferenceType, NominalKind, PrimitiveType, TypeInterner};
 
 use crate::dbwrite;
 
@@ -60,5 +62,36 @@ impl<DB: TypeInterner + Interner + ?Sized> DatabasedDisplay<DB> for InfTypeId {
                 dbwrite!(f, db, "{}", &inner_type)
             }
         }
+    }
+}
+
+impl<DB: TypeInterner + ?Sized> StableHash<DB> for PrimitiveType {
+    fn update_hash(&self, state: &mut sha2::Sha256, db: &DB) {
+        match self {
+            PrimitiveType::Bit => 0u8,
+            PrimitiveType::Int => 1,
+            PrimitiveType::Char => 2,
+        }
+        .update_hash(state, db)
+    }
+}
+
+impl<DB: TypeInterner + ?Sized> StableHash<DB> for NominalKind {
+    fn update_hash(&self, state: &mut sha2::Sha256, db: &DB) {
+        match self {
+            NominalKind::Def => 0u8,
+            NominalKind::Block => 1
+        }
+        .update_hash(state, db)
+    }
+}
+
+impl<DB: TypeInterner + ?Sized> StableHash<DB> for ArrayKind {
+    fn update_hash(&self, state: &mut sha2::Sha256, db: &DB) {
+        match self {
+            ArrayKind::For => 0u8,
+            ArrayKind::Each => 1,
+        }
+        .update_hash(state, db)
     }
 }
