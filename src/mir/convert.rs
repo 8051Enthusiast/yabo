@@ -214,7 +214,7 @@ impl<'a> ConvertCtx<'a> {
         self.f
             .append_ins(MirInstr::Copy(target, origin, self.retreat.error));
     }
-    fn copy_if_different_types(
+    fn copy_if_different_heads(
         &mut self,
         target_ty: TypeId,
         inner_ty: TypeId,
@@ -222,7 +222,7 @@ impl<'a> ConvertCtx<'a> {
         origin: PlaceOrigin,
         cont: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
     ) -> SResult<PlaceRef> {
-        if target_ty == inner_ty {
+        if self.db.head_discriminant(target_ty) == self.db.head_discriminant(inner_ty) {
             return cont(self, place);
         }
         let inner = cont(self, None)?;
@@ -257,7 +257,7 @@ impl<'a> ConvertCtx<'a> {
             place: Place::Field(self.f.fun.cap(), captured),
             ty: cap_ty,
         });
-        if ty == cap_ty && place.is_none() {
+        if self.db.head_discriminant(ty) == self.db.head_discriminant(cap_ty) && place.is_none() {
             return Ok(place_ref);
         }
         let new_place = self.new_stack_place(ty, origin);
@@ -346,17 +346,17 @@ impl<'a> ConvertCtx<'a> {
                     ValUnOp::Not | ValUnOp::Neg => {
                         let op: IntUnOp = (&op.inner).try_into().unwrap();
                         let inner = self
-                            .copy_if_different_types(self.int, inner_ty, None, origin, recurse)?;
+                            .copy_if_different_heads(self.int, inner_ty, None, origin, recurse)?;
                         let place_ref = self.unwrap_or_stack(place, ty, origin);
                         self.f.append_ins(MirInstr::IntUn(place_ref, op, inner));
                         place_ref
                     }
                     ValUnOp::Pos => {
-                        self.copy_if_different_types(self.int, inner_ty, place, origin, recurse)?
+                        self.copy_if_different_heads(self.int, inner_ty, place, origin, recurse)?
                     }
                     ValUnOp::Wiggle(constr, kind) => {
                         let place_ref = self
-                            .copy_if_different_types(self.int, inner_ty, place, origin, recurse)?;
+                            .copy_if_different_heads(self.int, inner_ty, place, origin, recurse)?;
                         let place_ldt = self.db.least_deref_type(ty)?;
                         let ldt_ref = self.new_stack_place(place_ldt, origin);
                         self.copy(place_ref, ldt_ref);
@@ -375,7 +375,7 @@ impl<'a> ConvertCtx<'a> {
                     ValUnOp::Dot(field) => {
                         let inner_ldt = self.db.least_deref_type(inner_ty)?;
                         let block_ref = self
-                            .copy_if_different_types(inner_ldt, inner_ty, None, origin, recurse)?;
+                            .copy_if_different_heads(inner_ldt, inner_ty, None, origin, recurse)?;
                         let place_ref = self.unwrap_or_stack(place, ty, origin);
                         self.f.append_ins(MirInstr::Field(
                             place_ref,
@@ -408,9 +408,9 @@ impl<'a> ConvertCtx<'a> {
                     | ValBinOp::Mul => {
                         let op: IntBinOp = (&op.inner).try_into().unwrap();
                         let left = self
-                            .copy_if_different_types(self.int, left_ty, None, origin, lrecurse)?;
+                            .copy_if_different_heads(self.int, left_ty, None, origin, lrecurse)?;
                         let right = self
-                            .copy_if_different_types(self.int, right_ty, None, origin, rrecurse)?;
+                            .copy_if_different_heads(self.int, right_ty, None, origin, rrecurse)?;
                         let place_ref = self.unwrap_or_stack(place, ty, origin);
                         self.f
                             .append_ins(MirInstr::IntBin(place_ref, op, left, right));
@@ -424,9 +424,9 @@ impl<'a> ConvertCtx<'a> {
                     | ValBinOp::Equals => {
                         let op: Comp = (&op.inner).try_into().unwrap();
                         let left = self
-                            .copy_if_different_types(self.int, left_ty, None, origin, lrecurse)?;
+                            .copy_if_different_heads(self.int, left_ty, None, origin, lrecurse)?;
                         let right = self
-                            .copy_if_different_types(self.int, right_ty, None, origin, rrecurse)?;
+                            .copy_if_different_heads(self.int, right_ty, None, origin, rrecurse)?;
                         let place_ref = self.unwrap_or_stack(place, ty, origin);
                         self.f
                             .append_ins(MirInstr::Comp(place_ref, op, left, right));
@@ -435,7 +435,7 @@ impl<'a> ConvertCtx<'a> {
                     ValBinOp::ParserApply => {
                         let left_ldt = self.db.least_deref_type(left_ty)?;
                         let left = self
-                            .copy_if_different_types(left_ldt, left_ty, None, origin, lrecurse)?;
+                            .copy_if_different_heads(left_ldt, left_ty, None, origin, lrecurse)?;
                         let right = rrecurse(self, None)?;
                         let place_ref = self.unwrap_or_stack(place, ty, origin);
                         self.f.append_ins(MirInstr::Call(
@@ -453,7 +453,7 @@ impl<'a> ConvertCtx<'a> {
                         let continue_bb = self.f.new_bb();
                         let old_backtrack = self.retreat.backtrack;
                         self.retreat.backtrack = right_bb;
-                        self.copy_if_different_types(
+                        self.copy_if_different_heads(
                             ty,
                             left_ty,
                             Some(place_ref),
@@ -463,7 +463,7 @@ impl<'a> ConvertCtx<'a> {
                         self.f.set_jump(continue_bb);
                         self.f.set_bb(right_bb);
                         self.retreat.backtrack = old_backtrack;
-                        self.copy_if_different_types(
+                        self.copy_if_different_heads(
                             ty,
                             right_ty,
                             Some(place_ref),
@@ -486,14 +486,14 @@ impl<'a> ConvertCtx<'a> {
                             place: Place::DupleField(place_ref, DupleField::Second),
                             ty: right_ldt,
                         });
-                        self.copy_if_different_types(
+                        self.copy_if_different_heads(
                             left_ldt,
                             left_ty,
                             Some(left_place),
                             origin,
                             lrecurse,
                         )?;
-                        self.copy_if_different_types(
+                        self.copy_if_different_heads(
                             right_ldt,
                             right_ty,
                             Some(right_place),
