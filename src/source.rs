@@ -3,14 +3,14 @@ use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::io::Error;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ariadne::{Cache, FnCache};
 
 use crate::context::LivingInTheDatabase;
 use crate::databased_display::DatabasedDisplay;
-use crate::interner::{FieldName, Identifier, DefId};
+use crate::hash::StableHash;
+use crate::interner::{DefId, FieldName, Identifier};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Span {
@@ -71,15 +71,21 @@ impl FileId {
     }
 }
 
+impl<DB: Files + ?Sized> StableHash<DB> for FileId {
+    fn update_hash(&self, state: &mut sha2::Sha256, db: &DB) {
+        db.path(*self).update_hash(state, db)
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct FileData {
     pub id: FileId,
-    pub path: Option<PathBuf>,
+    pub path: Option<String>,
     pub content: Arc<String>,
 }
 
 impl FileData {
-    fn new(path: &Path, id: FileId) -> Result<Self, Error> {
+    fn new(path: &str, id: FileId) -> Result<Self, Error> {
         let content = Arc::new(std::fs::read_to_string(path)?);
         u32::try_from(content.len()).expect("File length bigger than 32 bits");
         Ok(FileData {
@@ -107,7 +113,7 @@ impl FileCollection {
     pub fn new() -> Self {
         FileCollection::default()
     }
-    pub fn add(&mut self, new_file: &Path) -> Result<FileId, Error> {
+    pub fn add(&mut self, new_file: &str) -> Result<FileId, Error> {
         let new_f = FileData::new(new_file, self.current_id)?;
         let old_id = self.current_id;
         self.current_id = self.current_id.inc();
@@ -127,7 +133,7 @@ impl FileCollection {
     pub fn content(&self, id: FileId) -> &str {
         &self.file_data(id).content
     }
-    pub fn path(&self, id: FileId) -> Option<&Path> {
+    pub fn path(&self, id: FileId) -> Option<&str> {
         self.file_data(id).path.as_deref()
     }
     pub fn span(&self, span: Span) -> &str {
@@ -180,7 +186,7 @@ pub trait Files: salsa::Database {
 
     fn file_content(&self, id: FileId) -> Arc<String>;
 
-    fn path(&self, id: FileId) -> Option<PathBuf>;
+    fn path(&self, id: FileId) -> Option<String>;
 }
 
 fn file_content(db: &dyn Files, id: FileId) -> Arc<String> {
@@ -188,7 +194,7 @@ fn file_content(db: &dyn Files, id: FileId) -> Arc<String> {
     fd.content.clone()
 }
 
-fn path(db: &dyn Files, id: FileId) -> Option<PathBuf> {
+fn path(db: &dyn Files, id: FileId) -> Option<String> {
     let fd = db.input_file(id);
     fd.path.clone()
 }
@@ -197,7 +203,7 @@ impl<DB: Files + ?Sized> DatabasedDisplay<DB> for FileId {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         let fd = db.input_file(*self);
         if let Some(path) = &fd.path {
-            write!(f, "{}", path.display())
+            write!(f, "{}", path)
         } else {
             write!(f, "file[_]")
         }

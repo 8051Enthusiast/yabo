@@ -7,6 +7,7 @@ mod signature;
 use std::{collections::BTreeMap, fmt::Debug, hash::Hash, sync::Arc};
 
 use fxhash::FxHashMap;
+use sha2::Digest;
 
 use crate::{
     error::{SResult, Silencable},
@@ -20,7 +21,7 @@ use crate::{
     types::{
         inference::{InfTypeId, InferenceContext, InferenceType, NominalInfHead, TypeResolver},
         EitherType, NominalKind, NominalTypeHead, Signature, Type, TypeError, TypeId,
-    },
+    }, hash::StableHash,
 };
 
 use crate::hir::{self, Hirs};
@@ -44,6 +45,7 @@ pub trait TyHirs: Hirs + crate::types::TypeInterner {
     fn public_expr_type(&self, loc: hir::ExprId) -> SResult<(TypedExpression, TypeId)>;
     fn ambient_type(&self, id: hir::ParseId) -> SResult<TypeId>;
     fn parser_full_types(&self, id: hir::ParserDefId) -> Result<Arc<ParserFullTypes>, TypeError>;
+    fn type_hash(&self, ty: TypeId) -> [u8; 32];
 }
 
 type TypedExpression = Expression<TypedHirVal<(TypeId, SpanIndex)>>;
@@ -316,6 +318,13 @@ fn n_type_vars(db: &(impl TyHirs + ?Sized), id: hir::ParserDefId, n: u32) -> Vec
         .map(|i| db.intern_type(Type::TypeVarRef(id.0, 0, i)))
         .collect()
 }
+
+fn type_hash(db: &dyn TyHirs, id: TypeId) -> [u8; 32] {
+    let mut hasher = sha2::Sha256::new();
+    id.update_hash(&mut hasher, db);
+    hasher.finalize().try_into().unwrap()
+}
+
 
 #[derive(Clone)]
 pub struct TypingLocation {

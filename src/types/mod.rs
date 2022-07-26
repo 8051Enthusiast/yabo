@@ -10,7 +10,7 @@ use crate::{
     ast::ArrayKind,
     dbeprintln, dbformat,
     error::{Silencable, SilencedError},
-    interner::{FieldName, DefId, Interner, TypeVar},
+    interner::{DefId, FieldName, Interner, TypeVar},
 };
 
 use self::{
