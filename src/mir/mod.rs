@@ -8,10 +8,11 @@ use fxhash::FxHashMap;
 use crate::{
     error::{SResult, Silencable},
     expr::{Atom, ValBinOp, ValUnOp},
-    hir::{BlockId, HirIdWrapper, ParserDefId, ExprId},
+    hir::{BlockId, ExprId, HirIdWrapper, ParserDefId},
     interner::{DefId, FieldName},
     order::{Orders, SubValue, SubValueInfo},
-    types::TypeId, source::SpanIndex,
+    source::SpanIndex,
+    types::TypeId,
 };
 
 use self::convert::ConvertCtx;
@@ -144,6 +145,12 @@ pub enum CallKind {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum PdArgKind {
+    Thunk,
+    Parse,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Val {
     Char(u32),
     Int(i64),
@@ -165,6 +172,12 @@ pub enum MirInstr {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct BBRef(NonZeroU32);
 
+impl BBRef {
+    pub fn as_index(self) -> usize {
+        u32::from(self.0) as usize - 1
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ExceptionRetreat {
     backtrack: BBRef,
@@ -175,8 +188,20 @@ pub struct ExceptionRetreat {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PlaceRef(NonZeroU32);
 
+impl PlaceRef {
+    pub fn as_index(self) -> usize {
+        u32::from(self.0) as usize - 1
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct StackRef(NonZeroU32);
+
+impl StackRef {
+    pub fn as_index(self) -> usize {
+        u32::from(self.0) as usize - 1
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum DupleField {
@@ -216,8 +241,8 @@ pub enum PlaceOrigin {
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct PlaceInfo {
-    place: Place,
-    ty: TypeId,
+    pub place: Place,
+    pub ty: TypeId,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -240,15 +265,15 @@ const RET_REF: PlaceRef = const_ref(3);
 
 impl Function {
     fn bb_mut(&mut self, bb: BBRef) -> &mut BasicBlock {
-        &mut self.bb[u32::from(bb.0) as usize - 1]
+        &mut self.bb[bb.as_index()]
     }
 
     pub fn place(&self, place_ref: PlaceRef) -> &PlaceInfo {
-        &self.place[u32::from(place_ref.0) as usize - 1]
+        &self.place[place_ref.as_index()]
     }
 
     pub fn stack(&self, stack_ref: StackRef) -> PlaceOrigin {
-        self.stack[u32::from(stack_ref.0) as usize - 1]
+        self.stack[stack_ref.as_index()]
     }
 
     pub fn cap(&self) -> PlaceRef {
@@ -271,6 +296,15 @@ impl Function {
         self.bb
             .iter()
             .all(|x| matches!(x.exit, BlockExit::BlockInProgress))
+    }
+
+    pub fn iter_stack(&self) -> impl Iterator<Item = (StackRef, PlaceOrigin)> + '_ {
+        (0..self.stack.len()).map(|x| {
+            (
+                StackRef(NonZeroU32::new((x + 1) as u32).unwrap()),
+                self.stack[x],
+            )
+        })
     }
 
     pub fn iter_places(&self) -> impl Iterator<Item = (PlaceRef, PlaceInfo)> + '_ {
@@ -390,7 +424,7 @@ fn mir_block(db: &dyn Mirs, block: BlockId, call_kind: CallKind) -> SResult<Func
 
 fn mir_pd_len(db: &dyn Mirs, pd: ParserDefId) -> SResult<Function> {
     let parserdef = pd.lookup(db)?;
-    let mut ctx = ConvertCtx::new_parserdef_builder(db, pd, CallKind::Len)?;
+    let mut ctx = ConvertCtx::new_parserdef_builder(db, pd, CallKind::Len, PdArgKind::Parse)?;
     ctx.add_sub_value(SubValue::new_front(pd.0))?;
     ctx.add_sub_value(SubValue::new_val(parserdef.to.0))?;
     ctx.add_sub_value(SubValue::new_back(pd.0))?;
@@ -399,7 +433,7 @@ fn mir_pd_len(db: &dyn Mirs, pd: ParserDefId) -> SResult<Function> {
 
 fn mir_pd_val(db: &dyn Mirs, pd: ParserDefId) -> SResult<Function> {
     let parserdef = pd.lookup(db)?;
-    let mut ctx = ConvertCtx::new_parserdef_builder(db, pd, CallKind::Val)?;
+    let mut ctx = ConvertCtx::new_parserdef_builder(db, pd, CallKind::Val, PdArgKind::Thunk)?;
     ctx.add_sub_value(SubValue::new_front(pd.0))?;
     ctx.add_sub_value(SubValue::new_val(parserdef.to.0))?;
     ctx.add_sub_value(SubValue::new_val(pd.0))?;

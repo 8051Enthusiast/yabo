@@ -21,7 +21,7 @@ use crate::{
 
 use super::{
     BBRef, CallKind, Comp, DupleField, ExceptionRetreat, Function, FunctionWriter, IntBinOp,
-    IntUnOp, MirInstr, Mirs, Place, PlaceInfo, PlaceOrigin, PlaceRef, ReturnStatus, Val,
+    IntUnOp, MirInstr, Mirs, PdArgKind, Place, PlaceInfo, PlaceOrigin, PlaceRef, ReturnStatus, Val,
 };
 
 pub struct ConvertCtx<'a> {
@@ -830,6 +830,7 @@ impl<'a> ConvertCtx<'a> {
         db: &dyn Mirs,
         id: ParserDefId,
         call_kind: CallKind,
+        arg_kind: PdArgKind,
         from: TypeId,
         f: &mut FunctionWriter,
     ) -> SResult<FxHashMap<SubValue, PlaceRef>> {
@@ -844,9 +845,9 @@ impl<'a> ConvertCtx<'a> {
             ty: expr_ty,
         });
         places.insert(SubValue::new_val(pd.to.0), expr_place_ref);
-        let arg_place_ref = match call_kind {
-            CallKind::Len => f.fun.arg(),
-            CallKind::Val => {
+        let arg_place_ref = match arg_kind {
+            PdArgKind::Parse => f.fun.arg(),
+            PdArgKind::Thunk => {
                 let place = Place::From(f.fun.arg());
                 f.add_place(PlaceInfo { place, ty: from })
             }
@@ -870,19 +871,20 @@ impl<'a> ConvertCtx<'a> {
         db: &'a dyn Mirs,
         id: ParserDefId,
         call_kind: CallKind,
+        arg_kind: PdArgKind,
     ) -> SResult<Self> {
         let sig = db.parser_args(id)?;
         let from = sig.from.unwrap_or(db.intern_type(Type::Any));
-        let ret_ty = match call_kind {
-            CallKind::Len => from,
-            CallKind::Val => db.parser_returns(id)?.deref,
+        let ret_ty = match arg_kind {
+            PdArgKind::Parse => from,
+            PdArgKind::Thunk => db.parser_returns(id)?.deref,
         };
-        let fun_ty = match call_kind {
-            CallKind::Len => db.intern_type(Type::ParserArg {
+        let fun_ty = match arg_kind {
+            PdArgKind::Parse => db.intern_type(Type::ParserArg {
                 result: sig.thunk,
                 arg: from,
             }),
-            CallKind::Val => db.intern_type(Type::Any),
+            PdArgKind::Thunk => db.intern_type(Type::Any),
         };
         let arg_ty = match call_kind {
             CallKind::Len => from,
@@ -894,7 +896,7 @@ impl<'a> ConvertCtx<'a> {
         let int: TypeId = db.intern_type(Type::Primitive(PrimitiveType::Int));
         let context_data = FxHashMap::default();
         let context_bb = FxHashMap::default();
-        let places = Self::pd_places(db, id, call_kind, from, &mut f)?;
+        let places = Self::pd_places(db, id, call_kind, arg_kind, from, &mut f)?;
         let current_context = None;
         let returns_self = false;
         f.set_bb(f.fun.entry());
