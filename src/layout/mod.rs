@@ -1,4 +1,5 @@
 pub mod collect;
+pub mod mir_subst;
 mod represent;
 pub mod size_align;
 pub mod vtable;
@@ -16,6 +17,7 @@ use crate::hir::{self, HirIdWrapper};
 use crate::hir_types::NominalId;
 use crate::interner::{DefId, FieldName};
 use crate::low_effort_interner::{Interner, Uniq};
+use crate::mir::DupleField;
 use crate::order::expr::ResolvedAtom;
 use crate::order::ResolvedExpr;
 use crate::types::{PrimitiveType, Type, TypeId};
@@ -286,6 +288,29 @@ impl<'a> Uniq<InternerLayout<'a>> {
         self.map(ctx, |layout, _| match layout.mono_layout().0 {
             MonoLayout::Block(_, fields) => fields[&field],
             _ => panic!("Field access on non-block"),
+        })
+    }
+
+    fn access_from(&'a self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> ILayout<'a> {
+        self.map(ctx, |layout, _| match layout.mono_layout().0 {
+            MonoLayout::Nominal(_, from) => {
+                from.expect("Attempting to get 'from' field from non-from field containing nominal")
+            }
+            _ => panic!("Attempting to get 'from' field from non-nominal"),
+        })
+    }
+
+    fn access_duple(
+        &'a self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+        duple_field: DupleField,
+    ) -> ILayout<'a> {
+        self.map(ctx, |layout, _| match layout.mono_layout().0 {
+            MonoLayout::ComposedParser(first, second) => match duple_field {
+                DupleField::First => first,
+                DupleField::Second => second,
+            },
+            _ => panic!("Attempting to get 'from' field from non-nominal"),
         })
     }
 
@@ -710,11 +735,17 @@ def for[int] *> main = {
         instantiate(&mut outlayer, &[main_ty]).unwrap();
         let canon_2006 = canon_layout(&mut outlayer, main_ty).unwrap();
         for lay in flat_layouts(&canon_2006) {
-            assert_eq!(lay.symbol(&mut outlayer, LayoutPart::LenImpl(0), &ctx.db), "main$e16412415cc84158$len_0");
+            assert_eq!(
+                lay.symbol(&mut outlayer, LayoutPart::LenImpl(0), &ctx.db),
+                "main$e16412415cc84158$len_0"
+            );
         }
         let main_block = outlayer.pd_result()[canon_2006].as_ref().unwrap().returned;
         for lay in flat_layouts(&main_block) {
-            assert_eq!(lay.symbol(&mut outlayer, LayoutPart::LenImpl(0), &ctx.db), "block_1b15571abd710f7a$000fdd43004bec7e$len_0");
+            assert_eq!(
+                lay.symbol(&mut outlayer, LayoutPart::LenImpl(0), &ctx.db),
+                "block_1b15571abd710f7a$000fdd43004bec7e$len_0"
+            );
         }
         let field = |name| FieldName::Ident(ctx.id(name));
         assert_eq!(
