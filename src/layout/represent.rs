@@ -9,7 +9,7 @@ use crate::{
     interner::{FieldName, Identifier},
 };
 
-use super::{flat_layouts, size_align::PSize, ILayout, IMonoLayout, Layout, Layouts, MonoLayout};
+use super::{flat_layouts, prop::PSize, ILayout, IMonoLayout, Layout, Layouts, MonoLayout};
 use crate::absint::{AbsInt, Arg};
 
 impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {

@@ -148,11 +148,11 @@ macro_rules! target_struct {
         #[repr(C)]
         $pub struct $name {$($field_pub $field: $ty),*}
 
-        impl $crate::layout::size_align::TargetSized for $name {
-            fn tsize() -> $crate::layout::size_align::SizeAlign {
-                $crate::layout::size_align::Zst::tsize()
+        impl $crate::layout::prop::TargetSized for $name {
+            fn tsize() -> $crate::layout::prop::SizeAlign {
+                $crate::layout::prop::Zst::tsize()
                 $(
-                    .cat(<$ty as $crate::layout::size_align::TargetSized>::tsize())
+                    .cat(<$ty as $crate::layout::prop::TargetSized>::tsize())
                 )*
             }
         }

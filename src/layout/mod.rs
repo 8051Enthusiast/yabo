@@ -1,7 +1,7 @@
 pub mod collect;
 pub mod mir_subst;
 mod represent;
-pub mod size_align;
+pub mod prop;
 pub mod vtable;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -23,7 +23,7 @@ use crate::order::ResolvedExpr;
 use crate::types::{PrimitiveType, Type, TypeId};
 
 use self::represent::{LayoutHasher, LayoutPart, LayoutSymbol};
-use self::size_align::{PSize, SizeAlign, TargetSized, Zst};
+use self::prop::{PSize, SizeAlign, TargetSized, Zst};
 
 #[derive(Clone, PartialEq, Eq, Default)]
 pub struct StructManifestation {
