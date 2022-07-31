@@ -13,7 +13,7 @@ use crate::{
 };
 
 use super::{
-    canon_layout, flat_layouts, size_align::PSize, AbsLayoutCtx, ILayout, IMonoLayout,
+    canon_layout, flat_layouts, prop::PSize, AbsLayoutCtx, ILayout, IMonoLayout,
     InternerLayout, Layout, LayoutError, MonoLayout,
 };
 

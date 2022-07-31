@@ -1,6 +1,6 @@
 use crate::target_struct;
 
-use super::size_align::Zst;
+use super::prop::Zst;
 
 target_struct! {
     pub struct LayoutKind {
@@ -69,7 +69,7 @@ target_struct! {
 
 #[cfg(test)]
 mod tests {
-    use crate::layout::size_align::{SizeAlign, TargetSized};
+    use crate::layout::prop::{SizeAlign, TargetSized};
 
     use super::*;
 
