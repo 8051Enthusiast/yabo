@@ -19,8 +19,8 @@ target_struct! {
 
 target_struct! {
     pub struct VTableHeader {
-        pub kind: &'static LayoutKind,
-        pub typecast_impl: &'static Zst,
+        pub head: i64,
+        pub typecast_impl: fn(from: *const u8, target_head: i64, ret: *mut u8) -> i64,
         pub size: usize,
         pub align: usize,
     }
@@ -29,31 +29,31 @@ target_struct! {
 target_struct! {
     pub struct BlockVTable {
         pub head: VTableHeader,
-        pub access_impl: [&'static Zst; 0],
+        pub access_impl: [fn(from: *const u8, target_head: i64, ret: *mut u8) -> i64; 0],
     }
 }
 
 target_struct! {
     pub struct NominalVTable {
         pub head: VTableHeader,
-        pub deref_table: &'static VTableHeader,
-        pub start_impl: &'static Zst,
-        pub end_impl: &'static Zst,
+        pub start_impl: fn(nom: *const u8, ret: *mut u8) -> i64,
+        pub end_impl: fn(nom: *const u8, ret: *mut u8) -> i64,
     }
 }
 
 target_struct! {
     pub struct ParserArgImpl {
-        pub vtable: Option<&'static VTableHeader>,
-        pub val_impl: Option<&'static Zst>,
-        pub len_impl: Option<&'static Zst>,
+        pub val_impl: Option<
+            fn(fun: *const u8, from: *const u8, target_head: i64, ret: *mut u8) -> i64
+        >,
+        pub len_impl: Option<fn(fun: *const u8, from: *const u8, ret: *mut u8) -> i64>,
     }
 }
 
 target_struct! {
     pub struct ParserVTable {
         pub head: VTableHeader,
-        pub default_arg_impl: ParserArgImpl,
+        //pub default_arg_impl: ParserArgImpl,
         pub apply_table: [ParserArgImpl; 0],
     }
 }
@@ -61,9 +61,9 @@ target_struct! {
 target_struct! {
     pub struct ArrayVTable {
         pub head: VTableHeader,
-        pub single_forward_impl: &'static Zst,
-        pub current_element_impl: &'static Zst,
-        pub skip_impl: Option<&'static Zst>,
+        pub single_forward_impl: fn(from: *const u8, ret: *mut u8) -> i64,
+        pub current_element_impl: fn(from: *const u8, target_head: i64, ret: *mut u8) -> i64,
+        pub skip_impl: Option<fn(from: *const u8, offset: u64, ret: *mut u8) -> i64>,
     }
 }
 
@@ -92,7 +92,7 @@ mod tests {
         assert_eq!(
             ParserVTable::tsize(),
             SizeAlign {
-                size: 56,
+                size: 48,
                 align_mask: 0b111,
             }
         );
@@ -106,7 +106,7 @@ mod tests {
         assert_eq!(
             ParserArgImpl::tsize(),
             SizeAlign {
-                size: 24,
+                size: 16,
                 align_mask: 0b111,
             }
         );

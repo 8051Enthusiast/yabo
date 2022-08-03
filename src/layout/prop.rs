@@ -3,10 +3,12 @@ pub trait CodegenTypeContext {
     fn int(&mut self, bits: u8, signed: bool) -> Self::Type;
     fn size(&mut self, signed: bool) -> Self::Type;
     fn char(&mut self) -> Self::Type;
-    fn ptr(&mut self) -> Self::Type;
+    fn ptr(&mut self, inner: Self::Type) -> Self::Type;
     fn zst(&mut self) -> Self::Type;
     fn array(&mut self, ty: Self::Type, size: PSize) -> Self::Type;
-    fn tuple(&mut self, fields: &[Self::Type]) -> Self::Type;
+    fn fun_ptr(&mut self, args: &[Self::Type], ret: Self::Type) -> Self::Type;
+    type StructType: Into<Self::Type>;
+    fn tuple(&mut self, fields: &[Self::Type]) -> Self::StructType;
 }
 
 pub type PSize = u64;
@@ -19,6 +21,10 @@ pub const TARGET_SIZE_SA: SizeAlign = SizeAlign {
     align_mask: 0b111,
 };
 pub const TARGET_BIT_SA: SizeAlign = SizeAlign {
+    size: 1,
+    align_mask: 0,
+};
+pub const TARGET_BYTE_SA: SizeAlign = SizeAlign {
     size: 1,
     align_mask: 0,
 };
@@ -106,9 +112,33 @@ impl<T: TargetSized> TargetSized for &T {
     }
 
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
-        ctx.ptr()
+        let inner = T::codegen_ty(ctx);
+        ctx.ptr(inner)
     }
 }
+
+impl<T: TargetSized> TargetSized for *const T {
+    fn tsize() -> SizeAlign {
+        TARGET_POINTER_SA
+    }
+
+    fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
+        let inner = T::codegen_ty(ctx);
+        ctx.ptr(inner)
+    }
+}
+
+impl<T: TargetSized> TargetSized for *mut T {
+    fn tsize() -> SizeAlign {
+        TARGET_POINTER_SA
+    }
+
+    fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
+        let inner = T::codegen_ty(ctx);
+        ctx.ptr(inner)
+    }
+}
+
 
 impl<T: TargetSized> TargetSized for Option<&T> {
     fn tsize() -> SizeAlign {
@@ -116,9 +146,48 @@ impl<T: TargetSized> TargetSized for Option<&T> {
     }
 
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
-        ctx.ptr()
+        let inner = T::codegen_ty(ctx);
+        ctx.ptr(inner)
     }
 }
+
+macro_rules! fn_impl {
+    ($($name:ident),*) => {
+        impl<Ret: TargetSized, $($name: TargetSized),*> TargetSized for fn($($name),*) -> Ret {
+            fn tsize() -> SizeAlign {
+                TARGET_POINTER_SA
+            }
+        
+            fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
+                let pointers = [$(
+                    $name::codegen_ty(ctx)
+                ),*
+                ];
+                let ret = Ret::codegen_ty(ctx);
+                ctx.fun_ptr(&pointers, ret)
+            }
+        }
+        impl<Ret: TargetSized, $($name: TargetSized),*> TargetSized for Option<fn($($name),*) -> Ret> {
+            fn tsize() -> SizeAlign {
+                TARGET_POINTER_SA
+            }
+        
+            fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
+                let pointers = [$(
+                    $name::codegen_ty(ctx)
+                ),*
+                ];
+                let ret = Ret::codegen_ty(ctx);
+                ctx.fun_ptr(&pointers, ret)
+            }
+        }
+    };
+}
+
+fn_impl!(A);
+fn_impl!(A, B);
+fn_impl!(A, B, C);
+fn_impl!(A, B, C, D);
 
 impl TargetSized for Zst {
     fn tsize() -> SizeAlign {
@@ -147,6 +216,16 @@ impl TargetSized for i64 {
 
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
         ctx.int(64, true)
+    }
+}
+
+impl TargetSized for u8 {
+    fn tsize() -> SizeAlign {
+        TARGET_BYTE_SA
+    }
+
+    fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
+        ctx.int(8, false)
     }
 }
 
@@ -206,6 +285,12 @@ macro_rules! target_struct {
             }
 
             fn codegen_ty<Ctx: $crate::layout::prop::CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
+                $name::struct_type(ctx).into()
+            }
+        }
+
+        impl $name {
+            pub fn struct_type<Ctx: $crate::layout::prop::CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::StructType {
                 let arr = &[$(
                     <$ty as $crate::layout::prop::TargetSized>::codegen_ty(ctx)
                 ),*];

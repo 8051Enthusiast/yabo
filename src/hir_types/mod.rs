@@ -80,10 +80,12 @@ pub fn head_discriminant(db: &dyn TyHirs, ty: TypeId) -> i64 {
             def,
             ..
         }) => {
-            let def_hash: [u8; 8] = db.def_hash(def).as_ref().try_into().unwrap();
+            let def_hash: [u8; 8] = db.def_hash(def)[0..8].try_into().unwrap();
             // highest bit is set for nominal types (so that it is negative)
             // and the rest is derived from the first 8 bytes of the hash
-            i64::from_le_bytes(def_hash) | i64::MIN
+            //
+            // the lowest two bits are for flags so they get zeroed out
+            i64::from_le_bytes(def_hash) & !0x3 | i64::MIN
         }
         Type::TypeVarRef(_, _, _) | Type::Any | Type::Bot | Type::Unknown => 0,
     }
