@@ -1,5 +1,8 @@
+use std::sync::Arc;
+
 use crate::absint::AbsIntDatabase;
 use crate::ast::AstDatabase;
+use crate::config::{Config, ConfigDatabase, Configs};
 use crate::error::Report;
 use crate::hir::HirDatabase;
 use crate::hir_types::HirTypesDatabase;
@@ -12,6 +15,7 @@ use crate::types::TypeInternerDatabase;
 
 #[salsa::database(
     InternerDatabase,
+    ConfigDatabase,
     AstDatabase,
     FileDatabase,
     HirDatabase,
@@ -56,7 +60,6 @@ impl Context {
         ctx.update_db();
         ctx
     }
-    #[cfg(test)]
     pub fn parser(&self, s: &str) -> crate::hir::ParserDefId {
         use crate::{
             hir::ParserDefId,
@@ -69,6 +72,10 @@ impl Context {
             self.db
                 .intern_hir_path(HirPath::new_fid(fd, FieldName::Ident(self.id(s)))),
         )
+    }
+    pub fn set_config(&mut self, config: Config) {
+        let config = Arc::new(config);
+        self.db.set_config(config);
     }
     pub fn diagnostics(&self) -> Vec<Report> {
         let mut ret = Vec::new();

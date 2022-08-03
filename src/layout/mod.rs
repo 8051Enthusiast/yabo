@@ -1,6 +1,6 @@
 pub mod collect;
 pub mod mir_subst;
-mod represent;
+pub mod represent;
 pub mod prop;
 pub mod vtable;
 use std::cmp::Ordering;

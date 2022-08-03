@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::collections::hash_map::Entry;
 
 use fxhash::{FxHashMap, FxHashSet};
@@ -13,11 +11,20 @@ use crate::{
 };
 
 use super::{
-    canon_layout, flat_layouts, prop::PSize, AbsLayoutCtx, ILayout, IMonoLayout,
-    InternerLayout, Layout, LayoutError, MonoLayout,
+    canon_layout, flat_layouts, prop::PSize, AbsLayoutCtx, ILayout, IMonoLayout, InternerLayout,
+    Layout, LayoutError, MonoLayout,
 };
 
 type LayoutSet<'a> = FxHashSet<IMonoLayout<'a>>;
+
+pub struct LayoutCollection<'a> {
+    pub arrays: LayoutSet<'a>,
+    pub blocks: LayoutSet<'a>,
+    pub nominals: LayoutSet<'a>,
+    pub parsers: LayoutSet<'a>,
+    pub call_slots: FxHashMap<(ILayout<'a>, ILayout<'a>), PSize>,
+    pub parser_occupied_entries: FxHashMap<IMonoLayout<'a>, FxHashMap<PSize, ILayout<'a>>>,
+}
 
 pub struct LayoutCollector<'a, 'b> {
     ctx: &'b mut AbsLayoutCtx<'a>,
@@ -155,7 +162,29 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             }
             self.register_layouts(thunk_layout);
         }
+        self.proc_list()?;
         Ok(())
+    }
+    pub fn into_results(self) -> LayoutCollection<'a> {
+        let call_slots = self.calls.into_layout_vtable_offsets();
+        let mut parser_occupied_entries: FxHashMap<IMonoLayout, FxHashMap<PSize, ILayout>> =
+            FxHashMap::default();
+        for ((from, parsers), &slot) in call_slots.iter() {
+            for parser in flat_layouts(&parsers) {
+                parser_occupied_entries
+                    .entry(parser)
+                    .or_default()
+                    .insert(slot, from);
+            }
+        }
+        LayoutCollection {
+            arrays: self.arrays,
+            blocks: self.blocks,
+            nominals: self.nominals,
+            parsers: self.parsers,
+            call_slots,
+            parser_occupied_entries,
+        }
     }
 }
 

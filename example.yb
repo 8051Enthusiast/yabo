@@ -1,4 +1,4 @@
-def for[int] *> whatever = {
+def for[int] *> main = {
 	x: ~,
 	y: ~,
 	let f: int = z * x if 1 or 2,

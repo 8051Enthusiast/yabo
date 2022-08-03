@@ -213,6 +213,9 @@ pub enum LayoutPart {
     Start,
     End,
     Typecast,
+    SingleForward,
+    CurrentElement,
+    Skip,
 }
 
 impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
@@ -225,6 +228,10 @@ impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
             LayoutPart::Start => write!(f, "start"),
             LayoutPart::End => write!(f, "end"),
             LayoutPart::Typecast => write!(f, "typecast"),
+            LayoutPart::SingleForward => write!(f, "single_forward"),
+            LayoutPart::CurrentElement => write!(f, "current_element"),
+            LayoutPart::Skip => write!(f, "skip"),
+            
         }
     }
 }
