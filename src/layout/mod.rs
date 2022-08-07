@@ -1,7 +1,7 @@
 pub mod collect;
 pub mod mir_subst;
-pub mod represent;
 pub mod prop;
+pub mod represent;
 pub mod vtable;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -22,15 +22,15 @@ use crate::order::expr::ResolvedAtom;
 use crate::order::ResolvedExpr;
 use crate::types::{PrimitiveType, Type, TypeId};
 
-use self::represent::{LayoutHasher, LayoutPart, LayoutSymbol};
 use self::prop::{PSize, SizeAlign, TargetSized, Zst};
+use self::represent::{LayoutHasher, LayoutPart, LayoutSymbol};
 
 #[derive(Clone, PartialEq, Eq, Default)]
 pub struct StructManifestation {
-    field_offsets: FxHashMap<DefId, PSize>,
-    discriminant_mapping: FxHashMap<DefId, PSize>,
-    discriminant_offset: PSize,
-    size: SizeAlign,
+    pub field_offsets: FxHashMap<DefId, PSize>,
+    pub discriminant_mapping: FxHashMap<DefId, PSize>,
+    pub discriminant_offset: PSize,
+    pub size: SizeAlign,
 }
 
 struct UnfinishedManifestation(StructManifestation);
@@ -136,6 +136,13 @@ fn flat_layouts<'a, 'l>(
 }
 
 impl<'a> Uniq<InternerLayout<'a>> {
+    pub fn maybe_mono(&'a self) -> Option<IMonoLayout<'a>> {
+        match self.layout {
+            Layout::None => None,
+            Layout::Mono(_, _) => Some(IMonoLayout(self)),
+            Layout::Multi(_) => None,
+        }
+    }
     fn map(
         &'a self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
@@ -486,6 +493,9 @@ impl<'a> LayoutContext<'a> {
             manifestations: Default::default(),
             hashes: LayoutHasher::new(),
         }
+    }
+    pub fn manifestation(&self, layout: ILayout<'a>) -> Arc<StructManifestation> {
+        self.manifestations[&layout].clone()
     }
 }
 

@@ -92,7 +92,7 @@ mod tests {
         assert_eq!(
             ParserVTable::tsize(),
             SizeAlign {
-                size: 48,
+                size: 32,
                 align_mask: 0b111,
             }
         );

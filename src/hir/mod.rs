@@ -52,6 +52,14 @@ pub trait Hirs: crate::ast::Asts + crate::types::TypeInterner {
     fn hir_parent_parserdef(&self, id: DefId) -> SResult<ParserDefId>;
     fn hir_parent_block(&self, id: DefId) -> SResult<Option<BlockId>>;
     fn all_parserdef_blocks(&self, pd: ParserDefId) -> Arc<Vec<BlockId>>;
+    fn sorted_block_fields(&self, bd: BlockId, discriminants: bool)
+        -> SResult<Arc<Vec<FieldName>>>;
+    fn sorted_field_index(
+        &self,
+        block: BlockId,
+        name: FieldName,
+        discriminants: bool,
+    ) -> SResult<Option<usize>>;
 }
 
 fn hir_node(db: &dyn Hirs, id: DefId) -> SResult<HirNode> {
@@ -152,6 +160,41 @@ fn hir_parent_block(db: &dyn Hirs, id: DefId) -> SResult<Option<BlockId>> {
     }
     let id = db.intern_hir_path(path);
     db.hir_parent_block(id)
+}
+
+fn sorted_block_fields(
+    db: &dyn Hirs,
+    bd: BlockId,
+    discriminants: bool,
+) -> SResult<Arc<Vec<FieldName>>> {
+    let context = bd.lookup(db)?.root_context.lookup(db)?;
+    let mut fields: Vec<_> = context
+        .vars
+        .set
+        .into_values()
+        .filter(|x| !(discriminants && x.is_accessible()))
+        .map(|x| db.def_name(*x.inner()).unwrap())
+        .collect();
+    fields.sort_unstable_by_key(|def_id| match def_id {
+        FieldName::Return => None,
+        FieldName::Ident(id) => Some(db.lookup_intern_identifier(*id).name),
+    });
+    Ok(Arc::new(fields))
+}
+
+fn sorted_field_index(
+    db: &dyn Hirs,
+    block: BlockId,
+    name: FieldName,
+    discriminants: bool,
+) -> SResult<Option<usize>> {
+    let fields = db.sorted_block_fields(block, discriminants)?;
+    let lookup_name = |x: &FieldName| match x {
+        FieldName::Return => None,
+        FieldName::Ident(f) => Some(db.lookup_intern_identifier(*f).name),
+    };
+    let needle = lookup_name(&name);
+    Ok(fields.binary_search_by_key(&needle, lookup_name).ok())
 }
 
 macro_rules! hir_id_wrapper {

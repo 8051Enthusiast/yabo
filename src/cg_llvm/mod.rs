@@ -1,28 +1,37 @@
 #![allow(dead_code)]
-use std::{path::Path, rc::Rc};
+pub mod convert_mir;
+
+use std::{marker::PhantomData, path::Path, rc::Rc};
 
 use inkwell::{
     builder::Builder,
     context::Context,
     module::{Linkage, Module},
     passes::PassManager,
-    targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine, TargetTriple, FileType},
+    targets::{
+        CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine, TargetTriple,
+    },
     types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, PointerType, StructType},
     values::{FunctionValue, GlobalValue, IntValue, PointerValue, StructValue},
-    AddressSpace, OptimizationLevel,
+    AddressSpace, GlobalVisibility, OptimizationLevel,
 };
 
 use crate::{
     config::Configs,
-    hir::HirIdWrapper,
+    hir::{BlockId, Hirs},
     hir_types::TyHirs,
-    interner::{FieldName, Identifier, Interner},
+    interner::{FieldName, Identifier},
     layout::{
         collect::{LayoutCollection, LayoutCollector},
-        prop::{CodegenTypeContext, PSize, TargetSized},
+        prop::{CodegenTypeContext, PSize, SizeAlign, TargetSized},
         represent::LayoutPart,
-        vtable, AbsLayoutCtx, IMonoLayout, LayoutError, MonoLayout,
+        vtable::{
+            self, ArrayVTableFields, BlockVTableFields, ParserArgImplFields, ParserVTableFields,
+            VTableHeaderFields,
+        },
+        AbsLayoutCtx, IMonoLayout, LayoutError, MonoLayout,
     },
+    mir::CallKind,
 };
 
 pub struct CodeGenCtx<'llvm, 'comp> {
@@ -119,8 +128,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> FunctionValue<'llvm> {
         let sf_sym = self.sym(layout, part);
         let sf_type = self.llvm.i64_type().fn_type(types, false);
-        self.module
-            .add_function(&sf_sym, sf_type, Some(Linkage::External))
+        let fun = self
+            .module
+            .add_function(&sf_sym, sf_type, Some(Linkage::External));
+        fun.as_global_value()
+            .set_visibility(GlobalVisibility::Hidden);
+        fun
     }
     fn pp_fun_val(&mut self, layout: IMonoLayout<'comp>, part: LayoutPart) -> FunctionValue<'llvm> {
         self.fun_val(
@@ -250,11 +263,24 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             false,
         )
     }
+    fn sa_type(&mut self, sa: SizeAlign) -> StructType<'llvm> {
+        let align = sa.align();
+        // note: this might or might not actually work and i have no idea how to do this properly
+        // (there was something about i64 having an alignment of 4 on some 32-bit platform,
+        // but there the maximum alignment would be 4 byte anyway so this is fine in that case?)
+        let alignment_forcer = self.llvm.custom_width_int_type((align * 8) as u32);
+        let array = self.llvm.i8_type().array_type((sa.size - align) as u32);
+        self.llvm
+            .struct_type(&[alignment_forcer.into(), array.into()], false)
+    }
     fn create_vtable<T: TargetSized>(&mut self, layout: IMonoLayout<'comp>) -> GlobalValue<'llvm> {
         let vtable_type = T::codegen_ty(self);
         let vtable_sym = self.sym(layout, LayoutPart::VTable);
-        self.module
-            .add_global(vtable_type, Some(AddressSpace::Const), &vtable_sym)
+        let vtable = self
+            .module
+            .add_global(vtable_type, Some(AddressSpace::Const), &vtable_sym);
+        vtable.set_visibility(GlobalVisibility::Hidden);
+        vtable
     }
     fn create_resized_vtable<T: TargetSized>(
         &mut self,
@@ -264,8 +290,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let vtable_type = T::codegen_ty(self).into_struct_type();
         let vtable_type = self.resize_struct_end_array(vtable_type, size);
         let vtable_sym = self.sym(layout, LayoutPart::VTable);
-        self.module
-            .add_global(vtable_type, Some(AddressSpace::Const), &vtable_sym)
+        let vtable = self
+            .module
+            .add_global(vtable_type, Some(AddressSpace::Const), &vtable_sym);
+        vtable.set_visibility(GlobalVisibility::Hidden);
+        vtable
     }
     fn create_array_vtable(&mut self, layout: IMonoLayout<'comp>) {
         let vtable = self.create_vtable::<vtable::ArrayVTable>(layout);
@@ -305,30 +334,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         } else {
             panic!("attempting to create block vtable of non-block layout")
         };
-        let context = id
-            .lookup(&self.compiler_database.db)
-            .unwrap()
-            .root_context
-            .lookup(&self.compiler_database.db)
-            .unwrap();
-        let mut fields: Vec<_> = context
-            .vars
-            .set
-            .into_values()
-            .map(|x| self.compiler_database.db.def_name(*x.inner()).unwrap())
-            .collect();
-        fields.sort_unstable_by_key(|def_id| match def_id {
-            FieldName::Return => None,
-            FieldName::Ident(id) => {
-                Some(self.compiler_database.db.lookup_intern_identifier(*id).name)
-            }
-        });
+        let fields = self
+            .compiler_database
+            .db
+            .sorted_block_fields(id, false)
+            .expect("no sort block fields");
         let funs: Vec<_> = fields
-            .into_iter()
+            .iter()
             .map(|field| {
                 let name = match field {
                     FieldName::Return => panic!("no field access for return"),
-                    FieldName::Ident(id) => id,
+                    FieldName::Ident(id) => *id,
                 };
                 self.access_field_fun_val(layout, name)
                     .as_global_value()
@@ -377,11 +393,146 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.create_parser_vtable(*layout);
         }
     }
+    fn vtable_get<T: TargetSized>(
+        &mut self,
+        vtable_ptr_ptr: PointerValue<'llvm>,
+        field_path: &[u64],
+    ) -> PointerValue<'llvm> {
+        let ty = <&&T>::codegen_ty(self).into_pointer_type();
+        let actual_ptr_ptr = self
+            .builder
+            .build_bitcast(vtable_ptr_ptr, ty, "")
+            .into_pointer_value();
+        let mut path = Vec::with_capacity(field_path.len() + 2);
+        let zero = self.llvm.i32_type().const_int(0, false);
+        path.push(zero);
+        path.push(zero);
+        path.extend(
+            field_path
+                .iter()
+                .map(|x| self.llvm.i32_type().const_int(*x, false)),
+        );
+        unsafe { self.builder.build_in_bounds_gep(actual_ptr_ptr, &path, "") }
+    }
+    fn build_typecast_fun_get(
+        &mut self,
+        layout: Option<IMonoLayout<'comp>>,
+        ptr: PointerValue<'llvm>,
+    ) -> PointerValue<'llvm> {
+        match layout {
+            Some(mono) => self.sym_ptr(mono, LayoutPart::Typecast),
+            None => self.vtable_get::<vtable::VTableHeader>(
+                ptr,
+                &[VTableHeaderFields::typecast_impl as u64],
+            ),
+        }
+    }
+    fn build_field_access_fun_get(
+        &mut self,
+        block: BlockId,
+        layout: Option<IMonoLayout<'comp>>,
+        ptr: PointerValue<'llvm>,
+        field: Identifier,
+    ) -> PointerValue<'llvm> {
+        match layout {
+            Some(mono) => self.sym_ptr(mono, LayoutPart::Field(field)),
+            None => {
+                let index = self
+                    .compiler_database
+                    .db
+                    .sorted_field_index(block, FieldName::Ident(field), false)
+                    .expect("failed to lookup field index")
+                    .expect("could not find field");
+                self.vtable_get::<vtable::BlockVTable>(
+                    ptr,
+                    &[BlockVTableFields::access_impl as u64, index as u64],
+                )
+            }
+        }
+    }
+    fn build_parser_fun_get(
+        &mut self,
+        layout: Option<IMonoLayout<'comp>>,
+        ptr: PointerValue<'llvm>,
+        slot: u64,
+        call_kind: CallKind,
+    ) -> PointerValue<'llvm> {
+        match layout {
+            Some(mono) => {
+                let part = match call_kind {
+                    CallKind::Len => LayoutPart::LenImpl(slot),
+                    CallKind::Val => LayoutPart::ValImpl(slot),
+                };
+                self.sym_ptr(mono, part)
+            }
+            None => {
+                let part = match call_kind {
+                    CallKind::Len => ParserArgImplFields::len_impl as u64,
+                    CallKind::Val => ParserArgImplFields::val_impl as u64,
+                };
+                self.vtable_get::<vtable::ParserVTable>(
+                    ptr,
+                    &[ParserVTableFields::apply_table as u64, slot, part],
+                )
+            }
+        }
+    }
+    fn build_current_element_fun_get(
+        &mut self,
+        layout: Option<IMonoLayout<'comp>>,
+        ptr: PointerValue<'llvm>,
+    ) -> PointerValue<'llvm> {
+        match layout {
+            Some(mono) => self.sym_ptr(mono, LayoutPart::CurrentElement),
+            None => self.vtable_get::<vtable::ArrayVTable>(
+                ptr,
+                &[ArrayVTableFields::current_element_impl as u64],
+            ),
+        }
+    }
+    fn build_single_forward_fun_get(
+        &mut self,
+        layout: Option<IMonoLayout<'comp>>,
+        ptr: PointerValue<'llvm>,
+    ) -> PointerValue<'llvm> {
+        match layout {
+            Some(mono) => self.sym_ptr(mono, LayoutPart::SingleForward),
+            None => self.vtable_get::<vtable::ArrayVTable>(
+                ptr,
+                &[ArrayVTableFields::single_forward_impl as u64],
+            ),
+        }
+    }
+    fn build_skip_fun_get(
+        &mut self,
+        layout: Option<IMonoLayout<'comp>>,
+        ptr: PointerValue<'llvm>,
+    ) -> PointerValue<'llvm> {
+        match layout {
+            Some(mono) => self.sym_ptr(mono, LayoutPart::Skip),
+            None => {
+                self.vtable_get::<vtable::ArrayVTable>(ptr, &[ArrayVTableFields::skip_impl as u64])
+            }
+        }
+    }
     pub fn object_file(&mut self) {
         self.module.print_to_stderr();
         self.module.verify().expect("could not verify");
-        self.target.write_to_file(&self.module, FileType::Object, Path::new("a.out")).expect("Could not create object file");
+        self.target
+            .write_to_file(&self.module, FileType::Object, Path::new("a.out"))
+            .expect("Could not create object file");
     }
+}
+
+enum InvokeInfo<T: TargetSized> {
+    Direct {
+        direct_part: LayoutPart,
+        _type: PhantomData<T>,
+    },
+    VTable {
+        gep_path: &'static [i32],
+        _type: PhantomData<T>,
+    },
 }
 
 impl<'llvm, 'comp> CodegenTypeContext for CodeGenCtx<'llvm, 'comp> {

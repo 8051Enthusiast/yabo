@@ -134,7 +134,7 @@ impl<DB: Mirs> DatabasedDisplay<(&Function, &DB)> for MirInstr {
             MirInstr::Comp(target, op, left, right) => {
                 dbwrite!(f, db, "{} = {} {}, {}", target, op, left, right)
             }
-            MirInstr::LoadVal(target, val) => {
+            MirInstr::StoreVal(target, val) => {
                 dbwrite!(f, db, "{} = load {}", target, val)
             }
             MirInstr::Call(target, kind, fun, arg, retreat) => {

@@ -14,8 +14,8 @@ use super::{ILayout, IMonoLayout, InternerLayout, Layout, LayoutError, MonoLayou
 
 pub struct FunctionSubstitute<'a> {
     pub f: Function,
-    stack_layouts: Vec<ILayout<'a>>,
-    place_layouts: Vec<ILayout<'a>>,
+    pub stack_layouts: Vec<ILayout<'a>>,
+    pub place_layouts: Vec<ILayout<'a>>,
 }
 
 impl<'a> FunctionSubstitute<'a> {
