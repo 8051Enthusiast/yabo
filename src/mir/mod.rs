@@ -27,6 +27,7 @@ pub trait Mirs: Orders {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[repr(i64)]
 pub enum ReturnStatus {
     Ok,
     Error,
@@ -161,7 +162,7 @@ pub enum MirInstr {
     IntBin(PlaceRef, IntBinOp, PlaceRef, PlaceRef),
     IntUn(PlaceRef, IntUnOp, PlaceRef),
     Comp(PlaceRef, Comp, PlaceRef, PlaceRef),
-    LoadVal(PlaceRef, Val),
+    StoreVal(PlaceRef, Val),
     Call(PlaceRef, CallKind, PlaceRef, PlaceRef, ExceptionRetreat),
     Field(PlaceRef, PlaceRef, FieldName, BBRef),
     AssertVal(PlaceRef, Atom, BBRef),
@@ -180,9 +181,9 @@ impl BBRef {
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ExceptionRetreat {
-    backtrack: BBRef,
-    eof: BBRef,
-    error: BBRef,
+    pub backtrack: BBRef,
+    pub eof: BBRef,
+    pub error: BBRef,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -219,6 +220,12 @@ impl BasicBlock {
     pub fn append_ins(&mut self, ins: MirInstr) {
         self.ins.push(ins)
     }
+    pub fn ins(&self) -> impl Iterator<Item = MirInstr> + '_ {
+        self.ins.iter().cloned()
+    }
+    pub fn exit(&self) -> BlockExit {
+        self.exit
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -239,7 +246,7 @@ pub enum PlaceOrigin {
     Expr(ExprId, SpanIndex),
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PlaceInfo {
     pub place: Place,
     pub ty: TypeId,
@@ -264,12 +271,16 @@ const ARG_REF: PlaceRef = const_ref(2);
 const RET_REF: PlaceRef = const_ref(3);
 
 impl Function {
+    pub fn bb(&self, bb: BBRef) -> &BasicBlock {
+        &self.bb[bb.as_index()]
+    }
+
     fn bb_mut(&mut self, bb: BBRef) -> &mut BasicBlock {
         &mut self.bb[bb.as_index()]
     }
 
-    pub fn place(&self, place_ref: PlaceRef) -> &PlaceInfo {
-        &self.place[place_ref.as_index()]
+    pub fn place(&self, place_ref: PlaceRef) -> PlaceInfo {
+        self.place[place_ref.as_index()]
     }
 
     pub fn stack(&self, stack_ref: StackRef) -> PlaceOrigin {

@@ -272,7 +272,7 @@ impl<'a> ConvertCtx<'a> {
         origin: PlaceOrigin,
     ) -> PlaceRef {
         let place_ref = self.unwrap_or_stack(place, ty, origin);
-        self.f.append_ins(MirInstr::LoadVal(place_ref, Val::Int(n)));
+        self.f.append_ins(MirInstr::StoreVal(place_ref, Val::Int(n)));
         place_ref
     }
     fn load_char(
@@ -284,7 +284,7 @@ impl<'a> ConvertCtx<'a> {
     ) -> PlaceRef {
         let place_ref = self.unwrap_or_stack(place, ty, origin);
         self.f
-            .append_ins(MirInstr::LoadVal(place_ref, Val::Char(c)));
+            .append_ins(MirInstr::StoreVal(place_ref, Val::Char(c)));
         place_ref
     }
     fn create_block_parser(

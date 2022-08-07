@@ -299,7 +299,7 @@ macro_rules! target_struct {
         }
 
         paste::paste! {
-            #[repr(u16)]
+            #[repr(i32)]
             #[allow(non_camel_case_types)]
             $pub enum [<$name Fields>] {
                 $($field),*
