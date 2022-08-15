@@ -13,7 +13,7 @@ use crate::{
     },
     interner::{DefId, FieldName, PathComponent},
     order::{
-        expr::ResolvedAtom, BlockSerialization, SubValue, SubValueInfo, SubValueKind,
+        expr::ResolvedAtom, BlockSerialization, SubValue, SubValueKind,
         TypedResolvedExpr,
     },
     types::{PrimitiveType, Type, TypeId},
@@ -66,6 +66,7 @@ impl ContextData {
         )?;
         Ok(hashmap)
     }
+
     fn build_subcontext(
         db: &dyn Mirs,
         ctx: ContextId,
@@ -159,6 +160,7 @@ impl<'a> ConvertCtx<'a> {
             })
             .map(|x| *x)
     }
+
     fn front_place_at_def(&self, id: DefId) -> Option<PlaceRef> {
         self.places
             .get(&SubValue {
@@ -167,6 +169,7 @@ impl<'a> ConvertCtx<'a> {
             })
             .map(|x| *x)
     }
+
     fn back_place_at_def(&self, id: DefId) -> Option<PlaceRef> {
         self.places
             .get(&SubValue {
@@ -175,6 +178,7 @@ impl<'a> ConvertCtx<'a> {
             })
             .map(|x| *x)
     }
+
     pub fn change_context(&mut self, context: ContextId) {
         if Some(context) == self.current_context {
             return;
@@ -198,10 +202,12 @@ impl<'a> ConvertCtx<'a> {
         let place_info = PlaceInfo { place, ty };
         self.f.add_place(place_info)
     }
+
     fn new_stack_place(&mut self, ty: TypeId, origin: PlaceOrigin) -> PlaceRef {
         let new_place = Place::Stack(self.f.new_stack_ref(origin));
         self.make_place_ref(new_place, ty)
     }
+
     fn unwrap_or_stack(
         &mut self,
         place: Option<PlaceRef>,
@@ -210,10 +216,12 @@ impl<'a> ConvertCtx<'a> {
     ) -> PlaceRef {
         place.unwrap_or_else(|| self.new_stack_place(ty, origin))
     }
+
     fn copy(&mut self, origin: PlaceRef, target: PlaceRef) {
         self.f
             .append_ins(MirInstr::Copy(target, origin, self.retreat.error));
     }
+
     fn copy_if_different_heads(
         &mut self,
         target_ty: TypeId,
@@ -230,6 +238,7 @@ impl<'a> ConvertCtx<'a> {
         self.copy(inner, target);
         Ok(target)
     }
+
     fn load_var(
         &mut self,
         var: DefId,
@@ -245,6 +254,7 @@ impl<'a> ConvertCtx<'a> {
         self.copy(place_ref, new_place);
         Some(new_place)
     }
+
     fn load_captured(
         &mut self,
         captured: DefId,
@@ -264,6 +274,7 @@ impl<'a> ConvertCtx<'a> {
         self.copy(place_ref, new_place);
         Ok(new_place)
     }
+
     fn load_int(
         &mut self,
         n: i64,
@@ -272,9 +283,11 @@ impl<'a> ConvertCtx<'a> {
         origin: PlaceOrigin,
     ) -> PlaceRef {
         let place_ref = self.unwrap_or_stack(place, ty, origin);
-        self.f.append_ins(MirInstr::StoreVal(place_ref, Val::Int(n)));
+        self.f
+            .append_ins(MirInstr::StoreVal(place_ref, Val::Int(n)));
         place_ref
     }
+
     fn load_char(
         &mut self,
         c: u32,
@@ -287,6 +300,7 @@ impl<'a> ConvertCtx<'a> {
             .append_ins(MirInstr::StoreVal(place_ref, Val::Char(c)));
         place_ref
     }
+
     fn create_block_parser(
         &mut self,
         block: BlockId,
@@ -316,6 +330,7 @@ impl<'a> ConvertCtx<'a> {
         }
         Ok(place_ref)
     }
+
     fn convert_expr(
         &mut self,
         expr_id: ExprId,
@@ -506,6 +521,7 @@ impl<'a> ConvertCtx<'a> {
             }
         })
     }
+
     fn convert_constraint(
         &mut self,
         expr: &hir::ConstraintExpression,
@@ -552,6 +568,7 @@ impl<'a> ConvertCtx<'a> {
             },
         }
     }
+
     fn terminate_context(&mut self, context: ContextId, superchoice: ChoiceId, cont: BBRef) {
         self.change_context(context);
         let context_data = self
@@ -587,6 +604,7 @@ impl<'a> ConvertCtx<'a> {
         }
         self.f.set_jump(cont);
     }
+
     fn end_choice(&mut self, subcontexts: &[ContextId], id: ChoiceId) {
         let parent_context = self
             .current_context
@@ -603,6 +621,7 @@ impl<'a> ConvertCtx<'a> {
         }
         self.change_context(parent_context);
     }
+
     fn let_statement(&mut self, statement: &hir::LetStatement) {
         let target = self
             .val_place_at_def(statement.id.0)
@@ -612,6 +631,7 @@ impl<'a> ConvertCtx<'a> {
             .expect("let statement's expression has no place");
         self.copy(expr_val, target);
     }
+
     fn call_expr(&mut self, call_loc: DefId, expr: ExprId, call_kind: CallKind) {
         let parser_fun = self.val_place_at_def(expr.0).unwrap();
         let addr = self.front_place_at_def(call_loc).unwrap();
@@ -628,18 +648,23 @@ impl<'a> ConvertCtx<'a> {
             self.retreat,
         ));
     }
+
     fn parse_statement_val(&mut self, parse: &hir::ParseStatement) {
         self.call_expr(parse.id.0, parse.expr, CallKind::Val)
     }
+
     fn parse_statement_back(&mut self, parse: &hir::ParseStatement) {
         self.call_expr(parse.id.0, parse.expr, CallKind::Len)
     }
+
     fn parserdef_val(&mut self, pd: &hir::ParserDef) {
         self.call_expr(pd.id.0, pd.to, CallKind::Val)
     }
+
     fn parserdef_len(&mut self, pd: &hir::ParserDef) {
         self.call_expr(pd.id.0, pd.to, CallKind::Len)
     }
+
     fn copy_predecessor(&mut self, pred: ParserPredecessor, id: DefId) {
         let from_place = match pred {
             ParserPredecessor::ChildOf(c) => {
@@ -654,9 +679,11 @@ impl<'a> ConvertCtx<'a> {
         let to_place = self.front_place_at_def(id).unwrap();
         self.copy(from_place, to_place);
     }
+
     fn parse_statement_front(&mut self, parse: &hir::ParseStatement) {
         self.copy_predecessor(parse.front, parse.id.0)
     }
+
     pub fn add_sub_value(&mut self, sub_value: SubValue) -> SResult<()> {
         match self.db.hir_node(sub_value.id)? {
             hir::HirNode::Let(l) => {
@@ -728,10 +755,7 @@ impl<'a> ConvertCtx<'a> {
                 .collect(),
             CallKind::Len => FxHashSet::default(),
         };
-        for value in order.eval_order.iter().filter(match call_kind {
-            CallKind::Len => |x: &&SubValueInfo| x.rdepends_back,
-            CallKind::Val => |x: &&SubValueInfo| x.rdepends_val,
-        }) {
+        for value in order.eval_order.iter() {
             let val = value.val;
             if val.id == block.id.0 && val.kind == SubValueKind::Back && call_kind == CallKind::Len
             {
@@ -875,9 +899,9 @@ impl<'a> ConvertCtx<'a> {
     ) -> SResult<Self> {
         let sig = db.parser_args(id)?;
         let from = sig.from.unwrap_or(db.intern_type(Type::Any));
-        let ret_ty = match arg_kind {
-            PdArgKind::Parse => from,
-            PdArgKind::Thunk => db.parser_returns(id)?.deref,
+        let ret_ty = match call_kind {
+            CallKind::Len => from,
+            CallKind::Val => db.parser_returns(id)?.deref,
         };
         let fun_ty = match arg_kind {
             PdArgKind::Parse => db.intern_type(Type::ParserArg {
@@ -886,9 +910,9 @@ impl<'a> ConvertCtx<'a> {
             }),
             PdArgKind::Thunk => db.intern_type(Type::Any),
         };
-        let arg_ty = match call_kind {
-            CallKind::Len => from,
-            CallKind::Val => sig.thunk,
+        let arg_ty = match arg_kind {
+            PdArgKind::Parse => from,
+            PdArgKind::Thunk => sig.thunk,
         };
         let mut f = FunctionWriter::new(fun_ty, arg_ty, ret_ty);
         let top_level_retreat = f.make_top_level_retreat();

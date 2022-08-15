@@ -10,9 +10,9 @@ use crate::{
     expr::{Atom, ValBinOp, ValUnOp},
     hir::{BlockId, ExprId, HirIdWrapper, ParserDefId},
     interner::{DefId, FieldName},
-    order::{Orders, SubValue, SubValueInfo},
+    order::{Orders, SubValue},
     source::SpanIndex,
-    types::TypeId,
+    types::{Type, TypeId},
 };
 
 use self::convert::ConvertCtx;
@@ -22,8 +22,12 @@ pub use represent::print_all_mir;
 #[salsa::query_group(MirDatabase)]
 pub trait Mirs: Orders {
     fn mir_block(&self, block: BlockId, call_kind: CallKind) -> SResult<Function>;
-    fn mir_pd_len(&self, pd: ParserDefId) -> SResult<Function>;
-    fn mir_pd_val(&self, pd: ParserDefId) -> SResult<Function>;
+    fn mir_pd(
+        &self,
+        pd: ParserDefId,
+        call_kind: CallKind,
+        arg_kind: PdArgKind,
+    ) -> SResult<Function>;
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -423,31 +427,54 @@ impl FunctionWriter {
 fn mir_block(db: &dyn Mirs, block: BlockId, call_kind: CallKind) -> SResult<Function> {
     let order = db.block_serialization(block).silence()?;
     let mut ctx = ConvertCtx::new_block_builder(db, block, call_kind, &order)?;
-    for value in order.eval_order.iter().filter(match call_kind {
-        CallKind::Len => |x: &&SubValueInfo| x.rdepends_back,
-        CallKind::Val => |x: &&SubValueInfo| x.rdepends_val,
-    }) {
+    for value in order.eval_order.iter() {
         ctx.add_sub_value(value.val)?;
     }
     ctx.change_context(block.lookup(db)?.root_context);
     Ok(ctx.finish_fun())
 }
 
-fn mir_pd_len(db: &dyn Mirs, pd: ParserDefId) -> SResult<Function> {
-    let parserdef = pd.lookup(db)?;
-    let mut ctx = ConvertCtx::new_parserdef_builder(db, pd, CallKind::Len, PdArgKind::Parse)?;
-    ctx.add_sub_value(SubValue::new_front(pd.0))?;
-    ctx.add_sub_value(SubValue::new_val(parserdef.to.0))?;
-    ctx.add_sub_value(SubValue::new_back(pd.0))?;
-    Ok(ctx.finish_fun())
+fn mir_pd_val_parser(db: &dyn Mirs, pd: ParserDefId) -> SResult<Function> {
+    let sig = db.parser_args(pd)?;
+    let arg_ty = sig.from.unwrap_or(db.intern_type(Type::Any));
+    let fun_ty = db.intern_type(Type::ParserArg {
+        result: sig.thunk,
+        arg: arg_ty,
+    });
+    let ret_ty = sig.thunk;
+    let mut writer = FunctionWriter::new(fun_ty, arg_ty, ret_ty);
+    let error = writer.new_bb();
+    writer.set_bb(error);
+    writer.set_return(ReturnStatus::Error);
+    writer.set_bb(writer.fun.entry());
+    let ret_place = writer.fun.ret();
+    let ret_place_from = writer.add_place(PlaceInfo {
+        place: Place::From(ret_place),
+        ty: arg_ty,
+    });
+    let arg_place = writer.fun.arg();
+    writer.append_ins(MirInstr::Copy(ret_place_from, arg_place, error));
+    writer.set_return(ReturnStatus::Ok);
+    Ok(writer.fun)
 }
 
-fn mir_pd_val(db: &dyn Mirs, pd: ParserDefId) -> SResult<Function> {
+fn mir_pd(
+    db: &dyn Mirs,
+    pd: ParserDefId,
+    call_kind: CallKind,
+    arg_kind: PdArgKind,
+) -> SResult<Function> {
+    if call_kind == CallKind::Val && arg_kind == PdArgKind::Parse {
+        return mir_pd_val_parser(db, pd);
+    }
     let parserdef = pd.lookup(db)?;
-    let mut ctx = ConvertCtx::new_parserdef_builder(db, pd, CallKind::Val, PdArgKind::Thunk)?;
+    let mut ctx = ConvertCtx::new_parserdef_builder(db, pd, call_kind, arg_kind)?;
     ctx.add_sub_value(SubValue::new_front(pd.0))?;
     ctx.add_sub_value(SubValue::new_val(parserdef.to.0))?;
-    ctx.add_sub_value(SubValue::new_val(pd.0))?;
+    match call_kind {
+        CallKind::Val => ctx.add_sub_value(SubValue::new_val(pd.0))?,
+        CallKind::Len => ctx.add_sub_value(SubValue::new_back(pd.0))?,
+    }
     Ok(ctx.finish_fun())
 }
 
@@ -484,7 +511,11 @@ def for[int] *> main = {
                 ctx.db.mir_block(*block, call_kind).unwrap();
             }
         }
-        ctx.db.mir_pd_val(main).unwrap();
-        ctx.db.mir_pd_len(main).unwrap();
+        ctx.db
+            .mir_pd(main, CallKind::Val, PdArgKind::Thunk)
+            .unwrap();
+        ctx.db
+            .mir_pd(main, CallKind::Len, PdArgKind::Parse)
+            .unwrap();
     }
 }

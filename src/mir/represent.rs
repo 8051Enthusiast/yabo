@@ -4,7 +4,7 @@ use crate::{databased_display::DatabasedDisplay, dbwrite};
 
 use super::{
     BBRef, BlockExit, CallKind, Comp, DupleField, ExceptionRetreat, Function, IntBinOp, IntUnOp,
-    MirInstr, Mirs, Place, PlaceOrigin, PlaceRef, ReturnStatus, StackRef, Val,
+    MirInstr, Mirs, Place, PlaceOrigin, PlaceRef, ReturnStatus, StackRef, Val, PdArgKind,
 };
 
 impl Display for StackRef {
@@ -196,7 +196,7 @@ impl Display for ReturnStatus {
     }
 }
 
-impl<DB: Mirs> DatabasedDisplay<DB> for PlaceOrigin {
+impl<DB: Mirs + ?Sized> DatabasedDisplay<DB> for PlaceOrigin {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
             PlaceOrigin::Node(n) => dbwrite!(f, db, "node {}", n),
@@ -241,7 +241,8 @@ pub fn print_all_mir<DB: Mirs, W: Write>(db: &DB, w: &mut W) -> std::io::Result<
             w,
             db,
             "{}",
-            &db.mir_pd_len(pd).map_err(convert_error_ignore)?
+            &db.mir_pd(pd, CallKind::Len, PdArgKind::Parse)
+                .map_err(convert_error_ignore)?
         )?;
         dbwrite!(
             w,
@@ -253,7 +254,8 @@ pub fn print_all_mir<DB: Mirs, W: Write>(db: &DB, w: &mut W) -> std::io::Result<
             w,
             db,
             "{}",
-            &db.mir_pd_val(pd).map_err(convert_error_ignore)?
+            &db.mir_pd(pd, CallKind::Val, PdArgKind::Thunk)
+                .map_err(convert_error_ignore)?
         )?;
         for block in db.all_parserdef_blocks(pd).iter() {
             for call in [CallKind::Len, CallKind::Val] {

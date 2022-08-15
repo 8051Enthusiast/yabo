@@ -1,5 +1,8 @@
+/.cargo
 /target
 /tree-sitter-yabo/target
 node_modules
-/example.yb
+/*.yb
 a.out
+a.ll
+a.s
