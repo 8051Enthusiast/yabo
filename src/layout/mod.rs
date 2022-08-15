@@ -79,7 +79,7 @@ pub enum MonoLayout<Inner> {
     NominalParser(hir::ParserDefId),
     Block(hir::BlockId, BTreeMap<FieldName, Inner>),
     BlockParser(hir::BlockId, BTreeMap<DefId, Inner>),
-    ComposedParser(Inner, Inner),
+    ComposedParser(Inner, TypeId, Inner),
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -117,6 +117,17 @@ impl<'a> IMonoLayout<'a> {
         let sym = LayoutSymbol { layout: self, part };
         sym.symbol(&mut ctx.dcx.hashes, db)
     }
+    pub fn deref(
+        self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+    ) -> Result<Option<ILayout<'a>>, SilencedError> {
+        Ok(if let MonoLayout::Nominal(_, _) = self.mono_layout().0 {
+            let res_ty = self.mono_layout().1;
+            Some(ctx.eval_pd(self.inner(), res_ty).ok_or(SilencedError)?)
+        } else {
+            None
+        })
+    }
 }
 
 fn flat_layouts<'a, 'l>(
@@ -143,6 +154,11 @@ impl<'a> Uniq<InternerLayout<'a>> {
             Layout::Multi(_) => None,
         }
     }
+
+    pub fn contains_deref(&'a self) -> bool {
+        flat_layouts(&self).any(|x| matches!(x.mono_layout().0, MonoLayout::Nominal(_, _)))
+    }
+
     fn map(
         &'a self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
@@ -261,7 +277,7 @@ impl<'a> Uniq<InternerLayout<'a>> {
         })
     }
 
-    fn apply_arg(
+    pub fn apply_arg(
         &'a self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
         from: ILayout<'a>,
@@ -275,11 +291,12 @@ impl<'a> Uniq<InternerLayout<'a>> {
             match layout.mono_layout().0 {
                 MonoLayout::NominalParser(pd) => ctx.apply_thunk_arg(*pd, result_type, from),
                 MonoLayout::BlockParser(block_id, _) => ctx
-                    .eval_block(*block_id, self, from, result_type)
+                    .eval_block(*block_id, self, from, result_type, arg_type)
                     .ok_or(SilencedError.into()),
-                MonoLayout::ComposedParser(first, second) => {
+                MonoLayout::ComposedParser(first, inner_ty, second) => {
                     let first_result = first.apply_arg(ctx, from)?;
-                    second.apply_arg(ctx, first_result)
+                    let casted_result = first_result.typecast(ctx, *inner_ty)?.0;
+                    second.apply_arg(ctx, casted_result)
                 }
                 MonoLayout::Single => Ok(from.array_primitive(ctx)),
                 _ => panic!("Attempting to apply argument to non-parser layout"),
@@ -313,7 +330,7 @@ impl<'a> Uniq<InternerLayout<'a>> {
         duple_field: DupleField,
     ) -> ILayout<'a> {
         self.map(ctx, |layout, _| match layout.mono_layout().0 {
-            MonoLayout::ComposedParser(first, second) => match duple_field {
+            MonoLayout::ComposedParser(first, _, second) => match duple_field {
                 DupleField::First => first,
                 DupleField::Second => second,
             },
@@ -321,7 +338,10 @@ impl<'a> Uniq<InternerLayout<'a>> {
         })
     }
 
-    pub fn size_align(&'a self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> SResult<SizeAlign> {
+    pub fn size_align_without_vtable(
+        &'a self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+    ) -> SResult<SizeAlign> {
         if let Some(sa) = ctx.dcx.sizes.get(self) {
             return Ok(*sa);
         }
@@ -333,7 +353,7 @@ impl<'a> Uniq<InternerLayout<'a>> {
             Layout::Mono(MonoLayout::BlockParser(_, captures), _) => {
                 self.block_parser_manifestation(ctx, captures)?.size
             }
-            Layout::Mono(MonoLayout::ComposedParser(fst, snd), _) => {
+            Layout::Mono(MonoLayout::ComposedParser(fst, _, snd), _) => {
                 fst.size_align(ctx)?.cat(snd.size_align(ctx)?)
             }
             Layout::Mono(MonoLayout::Nominal(_, from), _) => from
@@ -346,15 +366,21 @@ impl<'a> Uniq<InternerLayout<'a>> {
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Char), _) => char::tsize(),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int), _) => i64::tsize(),
             Layout::Mono(MonoLayout::Single, _) => Zst::tsize(),
-            Layout::Multi(m) => {
-                let inner = m.layouts.iter().try_fold(Zst::tsize(), |sa, layout| {
-                    Ok(sa.union(layout.size_align(ctx)?))
-                })?;
-                <&Zst>::tsize().cat(inner)
-            }
+            Layout::Multi(m) => m.layouts.iter().try_fold(Zst::tsize(), |sa, layout| {
+                Ok(sa.union(layout.size_align(ctx)?))
+            })?,
         };
         ctx.dcx.sizes.insert(self, ret);
         Ok(ret)
+    }
+
+    pub fn size_align(&'a self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> SResult<SizeAlign> {
+        let size = self.size_align_without_vtable(ctx)?;
+        Ok(if let Layout::Multi(_) = self.layout {
+            <&Zst>::tsize().cat(size)
+        } else {
+            size
+        })
     }
 
     pub fn block_manifestation(
@@ -589,7 +615,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
 
     fn eval_expr(
         ctx: &mut AbsIntCtx<'a, Self>,
-        expr: ExpressionHead<expr::KindWithData<ResolvedExpr, TypeId>, Self>,
+        expr: expr::ExpressionHead<expr::KindWithData<ResolvedExpr, TypeId>, (ILayout<'a>, TypeId)>,
     ) -> Result<Self, Self::Err> {
         let ret_type = *expr.root_data();
         let mut make_layout = |x| {
@@ -629,15 +655,26 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ValUnOp::Not | ValUnOp::Neg | ValUnOp::Pos => {
                     make_layout(MonoLayout::Primitive(PrimitiveType::Int))
                 }
-                ValUnOp::Wiggle(_, _) => m.inner,
-                ValUnOp::Dot(a) => m.inner.access_field(ctx, a),
+                ValUnOp::Wiggle(_, _) => m.inner.0,
+                ValUnOp::Dot(a) => m.inner.0.access_field(ctx, a),
             },
             ExpressionHead::Dyadic(d) => match d.op.inner {
-                ValBinOp::ParserApply => d.inner[1].apply_arg(ctx, d.inner[0])?,
+                ValBinOp::ParserApply => d.inner[1].0.apply_arg(ctx, d.inner[0].0)?,
                 ValBinOp::Compose => {
-                    make_layout(MonoLayout::ComposedParser(d.inner[0], d.inner[1]))
+                    let middle_ty = match ctx
+                        .db
+                        .lookup_intern_type(ctx.db.least_deref_type(d.inner[1].1)?)
+                    {
+                        Type::ParserArg { arg, .. } => arg,
+                        _ => panic!("cannot compose non-parser types"),
+                    };
+                    make_layout(MonoLayout::ComposedParser(
+                        d.inner[0].0,
+                        middle_ty,
+                        d.inner[1].0,
+                    ))
                 }
-                ValBinOp::Else => d.inner[0].join(ctx, d.inner[1])?.0,
+                ValBinOp::Else => d.inner[0].0.join(ctx, d.inner[1].0)?.0,
                 ValBinOp::LesserEq
                 | ValBinOp::Lesser
                 | ValBinOp::GreaterEq

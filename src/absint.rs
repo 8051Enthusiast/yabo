@@ -50,7 +50,7 @@ pub trait AbstractDomain<'a>: Sized + Clone + std::hash::Hash + Eq + std::fmt::D
     ) -> Result<Self, Self::Err>;
     fn eval_expr(
         ctx: &mut AbsIntCtx<'a, Self>,
-        expr: ExpressionHead<expr::KindWithData<ResolvedExpr, TypeId>, Self>,
+        expr: ExpressionHead<expr::KindWithData<ResolvedExpr, TypeId>, (Self, TypeId)>,
     ) -> Result<Self, Self::Err>;
     fn typecast(self, ctx: &mut AbsIntCtx<'a, Self>, ty: TypeId)
         -> Result<(Self, bool), Self::Err>;
@@ -58,8 +58,15 @@ pub trait AbstractDomain<'a>: Sized + Clone + std::hash::Hash + Eq + std::fmt::D
     fn bottom(ctx: &mut Self::DomainContext) -> Self;
 }
 
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct AbstractExprInfo<Dom> {
+    pub val: Dom,
+    pub span: SpanIndex,
+    pub ty: TypeId,
+}
+
 pub type AbstractExpression<Dom> =
-    expr::Expression<expr::KindWithData<ResolvedExpr, (Dom, SpanIndex)>>;
+    expr::Expression<expr::KindWithData<ResolvedExpr, AbstractExprInfo<Dom>>>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PdEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
@@ -162,31 +169,36 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         &mut self,
         expr: expr::Expression<expr::KindWithData<ResolvedExpr, (TypeId, SpanIndex)>>,
     ) -> Result<AbstractExpression<Dom>, Dom::Err> {
-        expr.try_scan(&mut |expr| -> Result<(Dom, SpanIndex), _> {
+        expr.try_scan(&mut |expr| -> Result<AbstractExprInfo<Dom>, _> {
             let owned_expr = expr.make_owned();
             let span = owned_expr.root_data().1;
             let ty = self.subst_type(owned_expr.root_data().0);
             let subst_expr: ExpressionHead<KindWithData<_, TypeId>, _> =
-                owned_expr.map_data(|_| ty).map_inner(|x| x.0);
+                owned_expr.map_data(|_| ty).map_inner(|x| (x.val, x.ty));
             let ret = Dom::eval_expr(self, subst_expr)?;
             let casted_ret = ret.typecast(self, ty).map(|x| x.0)?;
-            Ok((casted_ret, span))
+            Ok(AbstractExprInfo {
+                val: casted_ret,
+                span,
+                ty,
+            })
         })
     }
 
     fn eval_expr_with_ambience(
         &mut self,
         expr: expr::Expression<expr::KindWithData<ResolvedExpr, (TypeId, SpanIndex)>>,
-        from: Dom,
+        from: (Dom, TypeId),
         result_type: TypeId,
     ) -> Result<(Dom, AbstractExpression<Dom>), Dom::Err> {
         let res = self.eval_expr(expr)?;
+        let roo = res.0.root_data().clone();
         let applied = ExpressionHead::new_dyadic(
             expr::OpWithData {
                 inner: expr::ValBinOp::ParserApply,
                 data: result_type,
             },
-            [from, res.0.root_data().clone().0],
+            [from, (roo.val, roo.ty)],
         );
         let ret_val = Dom::eval_expr(self, applied)?;
         let casted_ret = ret_val.typecast(self, result_type)?.0;
@@ -197,11 +209,13 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         &mut self,
         val: Dom,
         parserdef: &hir::ParserDef,
+        from_ty: TypeId,
     ) -> Result<PdEvaluated<Dom>, Dom::Err> {
         let from = val.get_arg(self, Arg::From)?;
         let expr = self.db.resolve_expr(parserdef.to)?;
         let result_type = self.subst_type(self.db.parser_returns(parserdef.id)?.deref);
-        let (ret_val, expr_vals) = self.eval_expr_with_ambience(expr, from.clone(), result_type)?;
+        let (ret_val, expr_vals) =
+            self.eval_expr_with_ambience(expr, (from.clone(), from_ty), result_type)?;
         let ret = PdEvaluated {
             returned: ret_val,
             from,
@@ -215,10 +229,11 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         pd: Dom,
         mut ret: Option<Dom>,
         parserdef: &hir::ParserDef,
+        from_ty: TypeId,
     ) -> Option<Dom> {
         loop {
             let old_ret = ret?;
-            let evaluated = self.eval_pd_expr(pd.clone(), parserdef);
+            let evaluated = self.eval_pd_expr(pd.clone(), parserdef, from_ty);
             let widened_return = self.strip_error(evaluated).and_then(|mut evaluated| {
                 let widened = old_ret.widen(self, evaluated.returned.clone());
                 let (ret, changed) = self.strip_error(widened)?;
@@ -268,15 +283,19 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             },
             _ => panic!("called eval_pd with non-pd type"),
         };
+        let unsub_from_ty = self.db.parser_args(parserdef.id).ok()?.from.unwrap();
+        let from_ty = self
+            .db
+            .substitute_typevar(unsub_from_ty, self.type_substitutions.clone());
         // to make sure
         self.call_needs_fixpoint.remove(&self.depth);
 
-        let result = self.eval_pd_expr(pd.clone(), &parserdef);
+        let result = self.eval_pd_expr(pd.clone(), &parserdef, from_ty);
         let result = self.strip_error(result);
 
         let mut ret = self.set_pd_ret(result);
         if self.call_needs_fixpoint.remove(&self.depth) {
-            ret = self.eval_pd_fixpoint(pd.clone(), ret, &parserdef);
+            ret = self.eval_pd_fixpoint(pd.clone(), ret, &parserdef, from_ty);
         }
 
         self.type_substitutions = old_type_substitutions;
@@ -307,6 +326,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         block_id: hir::BlockId,
         from: Dom,
         result_type: TypeId,
+        arg_type: TypeId,
     ) -> Result<Dom, Dom::Err> {
         let block = block_id.lookup(self.db)?;
         let order = self.db.block_serialization(block_id).silence()?.eval_order;
@@ -330,14 +350,16 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                 hir::HirNode::Let(statement) => {
                     let expr = self.db.resolve_expr(statement.expr)?;
                     let res_expr = self.eval_expr(expr)?;
-                    let res = res_expr.0.root_data().0.clone();
+                    let res = res_expr.0.root_data().val.clone();
+                    self.set_block_var(statement.expr.0, res.clone());
                     self.block_expr_vals.insert(statement.expr, res_expr);
                     res.typecast(self, result_ty)?.0
                 }
                 hir::HirNode::Parse(statement) => {
                     let expr = self.db.resolve_expr(statement.expr)?;
                     let (res, res_expr) =
-                        self.eval_expr_with_ambience(expr, from.clone(), result_ty)?;
+                        self.eval_expr_with_ambience(expr, (from.clone(), arg_type), result_ty)?;
+                    self.set_block_var(statement.expr.0, res_expr.0.root_data().val.clone());
                     self.block_expr_vals.insert(statement.expr, res_expr);
                     res
                 }
@@ -375,6 +397,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         block: Dom,
         from: Dom,
         result_type: TypeId,
+        arg_type: TypeId,
     ) -> Option<Dom> {
         //if let Some(block_info) = self.block_result.get(&(block.clone(), from.clone())) {
         //    return block_info.as_ref().map(|x| x.returned.clone());
@@ -383,7 +406,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         let mut old_block_expr = std::mem::take(&mut self.block_expr_vals);
         let old_block = std::mem::replace(&mut self.active_block, Some(block.clone()));
 
-        let res = self.eval_block_impl(block_id, from.clone(), result_type);
+        let res = self.eval_block_impl(block_id, from.clone(), result_type, arg_type);
         let res = self.strip_error(res);
 
         self.active_block = old_block;
@@ -421,5 +444,4 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         self.existing_pd.extend(new_pd.iter().cloned());
         new_pd
     }
-
 }

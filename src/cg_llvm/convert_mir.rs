@@ -8,23 +8,22 @@ use inkwell::{
 };
 
 use crate::{
-    dbpanic,
     expr::Atom,
     hir::{BlockId, HirIdWrapper},
     hir_types::{NominalId, TyHirs},
     interner::FieldName,
     layout::{mir_subst::FunctionSubstitute, ILayout, Layout, MonoLayout},
     mir::{
-        self, BBRef, CallKind, Comp, DupleField, ExceptionRetreat, IntBinOp, IntUnOp, MirInstr,
-        PlaceRef, ReturnStatus, Val,
+        self, BBRef, CallKind, Comp, ExceptionRetreat, IntBinOp, IntUnOp, MirInstr, PlaceRef,
+        ReturnStatus, Val,
     },
     types::{Type, TypeInterner},
 };
 
 use super::CodeGenCtx;
 
-struct MirTranslator<'llvm, 'comp> {
-    cg: &'comp mut CodeGenCtx<'llvm, 'comp>,
+pub struct MirTranslator<'llvm, 'comp, 'r> {
+    cg: &'r mut CodeGenCtx<'llvm, 'comp>,
     mir_fun: Rc<FunctionSubstitute<'comp>>,
     llvm_fun: FunctionValue<'llvm>,
     blocks: Vec<BasicBlock<'llvm>>,
@@ -32,13 +31,12 @@ struct MirTranslator<'llvm, 'comp> {
     fun: PointerValue<'llvm>,
     arg: PointerValue<'llvm>,
     ret: PointerValue<'llvm>,
-    entry: BasicBlock<'llvm>,
     undefined: BasicBlock<'llvm>,
 }
 
-impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
+impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     pub fn new(
-        cg: &'comp mut CodeGenCtx<'llvm, 'comp>,
+        cg: &'r mut CodeGenCtx<'llvm, 'comp>,
         mir_fun: Rc<FunctionSubstitute<'comp>>,
         llvm_fun: FunctionValue<'llvm>,
         fun: PointerValue<'llvm>,
@@ -48,18 +46,8 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
         let entry = cg.llvm.append_basic_block(llvm_fun, "entry");
         cg.builder.position_at_end(entry);
         let mut stack = Vec::new();
-        for (i, &layout) in mir_fun.stack_layouts.iter().enumerate() {
-            let sa = layout
-                .size_align(cg.layouts)
-                .expect("Could not get size/alignment of layout");
-            let ty = cg.sa_type(sa);
-            let ptr = cg.builder.build_alloca(ty, &format!("stack_{}", i));
-            let u8_ptr_ty = cg.llvm.i8_type().ptr_type(AddressSpace::Generic);
-            let u8_ptr = cg
-                .builder
-                .build_bitcast(ptr, u8_ptr_ty, &format!("allocacast_{}", i))
-                .into_pointer_value();
-            stack.push(u8_ptr);
+        for layout in mir_fun.stack_layouts.iter() {
+            stack.push(cg.build_layout_alloca(layout));
         }
         let mut blocks = Vec::new();
         for (bbref, _) in mir_fun.f.iter_bb() {
@@ -72,7 +60,9 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
         cg.builder.build_unconditional_branch(mir_entry);
         let undefined = cg.llvm.append_basic_block(llvm_fun, "undefined");
         cg.builder.position_at_end(undefined);
-        cg.builder.build_unreachable();
+        // cg.builder.build_unreachable();
+        // is easier to use with disassemblers for now
+        cg.builder.build_return(Some(&cg.const_i64(4)));
         cg.builder.position_at_end(mir_entry);
         Self {
             cg,
@@ -83,13 +73,14 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
             fun,
             arg,
             ret,
-            entry,
             undefined,
         }
     }
+
     fn bb(&self, bbref: BBRef) -> BasicBlock<'llvm> {
         self.blocks[bbref.as_index()]
     }
+
     fn place_ptr(&mut self, place: mir::PlaceRef) -> PointerValue<'llvm> {
         let place = self.mir_fun.f.place(place).place;
         match place {
@@ -100,65 +91,17 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
             mir::Place::Stack(stack_ref) => self.stack[stack_ref.as_index()],
             mir::Place::Field(outer, a) => {
                 let outer_layout = self.mir_fun.place(outer);
-                let offset = self
-                    .cg
-                    .layouts
-                    .dcx
-                    .manifestation(outer_layout)
-                    .field_offsets[&a];
                 let outer_ptr = self.place_ptr(outer);
-                let offset_llvm_int = self.cg.llvm.i64_type().const_int(offset, false);
-                unsafe {
-                    self.cg
-                        .builder
-                        .build_in_bounds_gep(outer_ptr, &[offset_llvm_int], "")
-                }
+                self.cg.build_field_gep(outer_layout, a, outer_ptr)
             }
             mir::Place::DupleField(outer, field) => {
-                let outer_ptr = self.place_ptr(outer);
-                if field == DupleField::First {
-                    return outer_ptr;
-                }
                 let outer_layout = self.mir_fun.place(outer);
-                let outer_sa = outer_layout.size_align(self.cg.layouts).unwrap();
-                let offset = match outer_layout.layout {
-                    Layout::Mono(MonoLayout::ComposedParser(_, second), _) => {
-                        let second_sa = second.size_align(self.cg.layouts).unwrap();
-                        outer_sa.size - second_sa.size
-                    }
-                    _ => dbpanic!(
-                        &self.cg.compiler_database.db,
-                        "duple field on non-composed or non-mono-layout place {}",
-                        &outer_layout
-                    ),
-                };
-                let llvm_int = self.cg.llvm.i64_type().const_int(offset, false);
-                unsafe {
-                    self.cg
-                        .builder
-                        .build_in_bounds_gep(outer_ptr, &[llvm_int], "")
-                }
+                let outer_ptr = self.place_ptr(outer);
+                self.cg.build_duple_gep(outer_layout, field, outer_ptr)
             }
         }
     }
-    fn mono_ptr(
-        &mut self,
-        place_ptr: PointerValue<'llvm>,
-        layout: ILayout<'comp>,
-    ) -> PointerValue<'llvm> {
-        match layout.layout {
-            Layout::None => self.cg.any_ptr().get_undef(),
-            Layout::Mono(_, _) => place_ptr,
-            Layout::Multi(_) => {
-                let ptr_width = self.cg.any_ptr().size_of();
-                unsafe {
-                    self.cg
-                        .builder
-                        .build_in_bounds_gep(place_ptr, &[ptr_width], "ml_ptr_skip")
-                }
-            }
-        }
-    }
+
     fn head_disc(&mut self, place: PlaceRef) -> IntValue<'llvm> {
         let place_ty = self.mir_fun.f.place(place).ty;
         let place_layout = self.mir_fun.place(place);
@@ -168,22 +111,14 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
         }
         self.cg.llvm.i64_type().const_int(disc as u64, false)
     }
+
     fn fallible_call(
         &mut self,
-        fun: PointerValue<'llvm>,
+        fun: CallableValue<'llvm>,
         args: &[BasicMetadataValueEnum<'llvm>],
         retreat: [BasicBlock<'llvm>; 3],
     ) {
-        let call_fun =
-            CallableValue::try_from(fun).expect("Could not use typecast function pointer");
-        let ret = self
-            .cg
-            .builder
-            .build_call(call_fun, args, "call")
-            .try_as_basic_value()
-            .left()
-            .expect("function shuold not return void")
-            .into_int_value();
+        let ret = self.cg.build_call_with_int_ret(fun, args);
         let next_block = self.cg.llvm.append_basic_block(self.llvm_fun, "");
         self.cg.builder.build_switch(
             ret,
@@ -200,6 +135,7 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
         );
         self.cg.builder.position_at_end(next_block);
     }
+
     fn copy(&mut self, to: PlaceRef, from: PlaceRef, error: BBRef) {
         let from_layout = self.mir_fun.place(from);
         let to_disc = self.head_disc(to);
@@ -217,6 +153,7 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
             [self.undefined, self.undefined, self.bb(error)],
         )
     }
+
     fn unwrap_block_id(&mut self, layout: ILayout<'comp>) -> BlockId {
         match layout
             .maybe_mono()
@@ -228,6 +165,7 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
             _ => panic!("set_discriminant can only be called on block layouts"),
         }
     }
+
     fn discriminant_info(
         &mut self,
         block: PlaceRef,
@@ -258,6 +196,7 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
         };
         Some((byte_ptr, shifted_bit))
     }
+
     fn set_discriminant(&mut self, block: PlaceRef, field: FieldName, val: bool) {
         let (byte_ptr, shifted_bit) = self
             .discriminant_info(block, field)
@@ -276,6 +215,7 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
         };
         self.cg.builder.build_store(byte_ptr, modified_byte);
     }
+
     fn assert_value(&mut self, place: PlaceRef, val: Atom, fallback: BBRef) {
         let cond = match val {
             Atom::Field(field) => {
@@ -355,10 +295,11 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
             .build_conditional_branch(cond, next_block, fallback_block);
         self.cg.builder.position_at_end(next_block);
     }
+
     fn field(&mut self, ret: PlaceRef, place: PlaceRef, field: FieldName, error: BBRef) {
         let place_ptr = self.place_ptr(place);
         let layout = self.mir_fun.place(place);
-        let shifted_place_ptr = self.mono_ptr(place_ptr, layout);
+        let shifted_place_ptr = self.cg.build_mono_ptr(place_ptr, layout);
         let field = match field {
             FieldName::Return => {
                 return self.copy(place, ret, error);
@@ -388,6 +329,7 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
             [self.undefined, self.undefined, self.bb(error)],
         )
     }
+
     fn call(
         &mut self,
         ret: PlaceRef,
@@ -398,7 +340,7 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
     ) {
         let fun_layout = self.mir_fun.place(fun);
         let fun_ptr = self.place_ptr(fun);
-        let mono_fun_ptr = self.mono_ptr(fun_ptr, fun_layout);
+        let mono_fun_ptr = self.cg.build_mono_ptr(fun_ptr, fun_layout);
         let arg_layout = self.mir_fun.place(arg);
         let slot = match self
             .cg
@@ -408,7 +350,7 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
         {
             Some(slot) => *slot,
             None => {
-                // TODO(8051): should be turned into a llvm unreachable in the future,
+                // TODO(8051): should be turned into an llvm unreachable in the future,
                 // but for now this is a panic to catch more errors
                 panic!("call slot not available")
             }
@@ -440,6 +382,7 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
             }
         };
     }
+
     fn store_val(&mut self, ret: PlaceRef, val: Val) {
         let ret_ptr = self.place_ptr(ret);
         let llvm_val = match val {
@@ -457,6 +400,7 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
             .into_pointer_value();
         self.cg.builder.build_store(casted_ret_ptr, llvm_val);
     }
+
     fn build_typed_place_ptr(
         &mut self,
         place: PlaceRef,
@@ -468,10 +412,12 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
             .build_bitcast(ptr, ty.ptr_type(AddressSpace::Generic), "int")
             .into_pointer_value()
     }
+
     fn build_int_load(&mut self, place: PlaceRef) -> IntValue<'llvm> {
         let ptr = self.build_typed_place_ptr(place, self.cg.llvm.i64_type());
         self.cg.builder.build_load(ptr, "load_int").into_int_value()
     }
+
     fn comp(&mut self, ret: PlaceRef, op: Comp, left: PlaceRef, right: PlaceRef) {
         let lhs = self.build_int_load(left);
         let rhs = self.build_int_load(right);
@@ -487,6 +433,7 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
         let ret_ptr = self.build_typed_place_ptr(ret, self.cg.llvm.bool_type());
         self.cg.builder.build_store(ret_ptr, comp_res);
     }
+
     fn int_un(&mut self, ret: PlaceRef, op: IntUnOp, right: PlaceRef) {
         let rhs = self.build_int_load(right);
         let value = match op {
@@ -496,6 +443,7 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
         let ret_ptr = self.build_typed_place_ptr(ret, self.cg.llvm.i64_type());
         self.cg.builder.build_store(ret_ptr, value);
     }
+
     fn int_bin(&mut self, ret: PlaceRef, op: IntBinOp, left: PlaceRef, right: PlaceRef) {
         let lhs = self.build_int_load(left);
         let rhs = self.build_int_load(right);
@@ -515,6 +463,7 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
         let ret_ptr = self.build_typed_place_ptr(ret, self.cg.llvm.i64_type());
         self.cg.builder.build_store(ret_ptr, value);
     }
+
     fn mir_ins(&mut self, ins: MirInstr) {
         match ins {
             MirInstr::IntBin(ret, op, left, right) => self.int_bin(ret, op, left, right),
@@ -529,9 +478,10 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
             MirInstr::SetDiscriminant(block, field, val) => {
                 self.set_discriminant(block, field, val)
             }
-            MirInstr::Copy(from, to, error) => self.copy(to, from, error),
+            MirInstr::Copy(to, from, error) => self.copy(to, from, error),
         }
     }
+
     fn build_bb(&mut self, bb: &mir::BasicBlock) {
         for ins in bb.ins() {
             self.mir_ins(ins)
@@ -548,9 +498,12 @@ impl<'llvm, 'comp> MirTranslator<'llvm, 'comp> {
             }
         }
     }
+
     pub fn build(mut self) -> FunctionValue<'llvm> {
         let mir_fun = self.mir_fun.clone();
-        for (_, bb) in mir_fun.f.iter_bb() {
+        for (bbref, bb) in mir_fun.f.iter_bb() {
+            let block = self.bb(bbref);
+            self.cg.builder.position_at_end(block);
             self.build_bb(bb);
         }
         self.llvm_fun

@@ -19,7 +19,7 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
             Layout::Mono(d, ty) => match d {
                 MonoLayout::Primitive(p) => p.db_fmt(f, db),
                 MonoLayout::Pointer => write!(f, "ptr"),
-                MonoLayout::Single => write!(f, "simple"),
+                MonoLayout::Single => write!(f, "single"),
                 MonoLayout::Nominal(_, args) => {
                     dbwrite!(f, db, "nominal[{}](", ty)?;
                     if let Some(inner_layout) = args {
@@ -50,7 +50,7 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
                     }
                     write!(f, "}}")
                 }
-                MonoLayout::ComposedParser(left, right) => {
+                MonoLayout::ComposedParser(left, _, right) => {
                     dbwrite!(f, db, "composed[{}]({} |> {})", ty, left, right)
                 }
             },
@@ -195,9 +195,10 @@ impl<'a> LayoutHasher<'a> {
                     state.update(hash);
                 }
             }
-            MonoLayout::ComposedParser(left, right) => {
+            MonoLayout::ComposedParser(left, inner_ty, right) => {
                 state.update([7]);
                 state.update(self.hash(left, db));
+                state.update(db.type_hash(*inner_ty));
                 state.update(self.hash(right, db));
             }
         }
@@ -207,12 +208,13 @@ impl<'a> LayoutHasher<'a> {
 #[derive(Clone, Copy)]
 pub enum LayoutPart {
     LenImpl(PSize),
-    ValImpl(PSize),
+    ValImpl(PSize, bool),
     Field(Identifier),
     VTable,
     Start,
     End,
     Typecast,
+    Deref,
     SingleForward,
     CurrentElement,
     Skip,
@@ -222,12 +224,14 @@ impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
             LayoutPart::LenImpl(p) => write!(f, "len_{}", *p),
-            LayoutPart::ValImpl(p) => write!(f, "val_{}", *p),
+            LayoutPart::ValImpl(p, true) => write!(f, "val_{}", *p),
+            LayoutPart::ValImpl(p, false) => write!(f, "val_impl_{}", *p),
             LayoutPart::Field(n) => dbwrite!(f, db, "field_{}", n),
             LayoutPart::VTable => write!(f, "vtable"),
             LayoutPart::Start => write!(f, "start"),
             LayoutPart::End => write!(f, "end"),
             LayoutPart::Typecast => write!(f, "typecast"),
+            LayoutPart::Deref => write!(f, "deref"),
             LayoutPart::SingleForward => write!(f, "single_forward"),
             LayoutPart::CurrentElement => write!(f, "current_element"),
             LayoutPart::Skip => write!(f, "skip"),
@@ -260,7 +264,7 @@ impl<'a> LayoutSymbol<'a> {
             MonoLayout::Block(def, _) => {
                 format!("block_{}", &truncated_hex(&db.def_hash(def.0)))
             }
-            MonoLayout::ComposedParser(_, _) => String::from("composed"),
+            MonoLayout::ComposedParser(_, _, _) => String::from("composed"),
             MonoLayout::Nominal(id, _) => {
                 dbformat!(db, "{}", &db.def_name(id.0).unwrap())
             }

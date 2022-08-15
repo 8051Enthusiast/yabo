@@ -1,13 +1,14 @@
 use fxhash::FxHashMap;
 
 use crate::{
-    absint::{AbsIntCtx, AbstractDomain},
+    absint::{AbsIntCtx, AbstractDomain, AbstractExprInfo},
     error::SilencedError,
     expr::ExprIter,
-    hir::{ExprId, HirIdWrapper, ParserDefId},
+    hir::{walk::ChildIter, ExprId, HirIdWrapper, HirNode, HirNodeKind, ParserDefId},
     interner::DefId,
-    mir::{Function, PdArgKind, Place, PlaceOrigin, PlaceRef, StackRef},
+    mir::{Function, Place, PlaceOrigin, PlaceRef, StackRef},
     source::SpanIndex,
+    types::{PrimitiveType, Type},
 };
 
 use super::{ILayout, IMonoLayout, InternerLayout, Layout, LayoutError, MonoLayout};
@@ -25,7 +26,8 @@ impl<'a> FunctionSubstitute<'a> {
         block: IMonoLayout<'a>,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
-        let (_, captures) = if let MonoLayout::BlockParser(def, captures) = block.mono_layout().0 {
+        let (def, captures) = if let MonoLayout::BlockParser(def, captures) = block.mono_layout().0
+        {
             (def, captures)
         } else {
             panic!("non-block-parser as argument")
@@ -36,16 +38,28 @@ impl<'a> FunctionSubstitute<'a> {
         let mut expr_map = FxHashMap::default();
         for (id, expr) in evaluated.expr_vals.iter() {
             for r in ExprIter::new(&expr) {
-                let (layout, span) = *r.0.root_data();
-                expr_map.insert((*id, span), layout);
+                let AbstractExprInfo { val, span, .. } = *r.0.root_data();
+                expr_map.insert((*id, span), val);
             }
         }
+        let ret = evaluated.returned;
         let mut vals = evaluated.vals.clone();
         vals.extend(captures.iter());
+        let root_context = def.lookup(ctx.db)?.root_context.0;
+        for node in ChildIter::new(root_context, ctx.db).without_kinds(HirNodeKind::Block) {
+            if let HirNode::Choice(choice) = node {
+                let int_ty = ctx.db.intern_type(Type::Primitive(PrimitiveType::Int));
+                let int_layout = ctx.dcx.intern.intern(InternerLayout {
+                    layout: Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int), int_ty),
+                });
+                vals.insert(choice.id.0, int_layout);
+            }
+        }
+        vals.insert(def.0, ret);
         let sub_info = SubInfo {
             fun: block.0,
             arg: from,
-            ret: evaluated.returned,
+            ret,
             expr: expr_map,
             vals,
         };
@@ -57,12 +71,24 @@ impl<'a> FunctionSubstitute<'a> {
             place_layouts,
         })
     }
+
+    pub fn new_from_pd_typecast(
+        f: Function,
+        from: ILayout<'a>,
+        pd: ParserDefId,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+    ) -> Result<Self, LayoutError> {
+        let fun = ctx.dcx.intern.intern(InternerLayout {
+            layout: Layout::None,
+        });
+        Self::new_from_pd(f, from, fun, pd, ctx)
+    }
+
     pub fn new_from_pd(
         f: Function,
         from: ILayout<'a>,
         fun: ILayout<'a>,
         pd: ParserDefId,
-        arg_kind: PdArgKind,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
         let evaluated = ctx.pd_result()[&from].as_ref().ok_or(SilencedError)?;
@@ -70,25 +96,12 @@ impl<'a> FunctionSubstitute<'a> {
         let mut expr_map = FxHashMap::default();
         if let Some(expr) = evaluated.expr_vals.as_ref() {
             for r in ExprIter::new(&expr) {
-                let (layout, span) = *r.0.root_data();
-                expr_map.insert((expr_id, span), layout);
+                let AbstractExprInfo { val, span, .. } = *r.0.root_data();
+                expr_map.insert((expr_id, span), val);
             }
         }
         let vals = FxHashMap::default();
         let ret = evaluated.returned;
-        let (fun, from) = match arg_kind {
-            PdArgKind::Parse => (fun, from),
-            PdArgKind::Thunk => {
-                let ty = f.place(f.cap()).ty;
-                let thunk = ctx.dcx.intern.intern(InternerLayout {
-                    layout: Layout::Mono(MonoLayout::Nominal(pd, Some(from)), ty),
-                });
-                let none = ctx.dcx.intern.intern(InternerLayout {
-                    layout: Layout::None,
-                });
-                (thunk, none)
-            }
-        };
         let sub_info = SubInfo {
             fun,
             arg: from,
@@ -104,9 +117,11 @@ impl<'a> FunctionSubstitute<'a> {
             place_layouts,
         })
     }
+
     pub fn place(&self, place: PlaceRef) -> ILayout<'a> {
         self.place_layouts[place.as_index()]
     }
+
     pub fn stack(&self, stack: StackRef) -> ILayout<'a> {
         self.stack_layouts[stack.as_index()]
     }
@@ -125,7 +140,7 @@ impl<'a> SubInfo<ILayout<'a>> {
         f.iter_stack()
             .map(|(_, place_origin)| match place_origin {
                 PlaceOrigin::Node(id) => self.vals[&id],
-                PlaceOrigin::Ambient(_, _) => self.ret,
+                PlaceOrigin::Ambient(_, _) => self.arg,
                 PlaceOrigin::Expr(e, idx) => self.expr[&(e, idx)],
             })
             .collect()

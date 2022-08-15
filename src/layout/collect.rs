@@ -8,6 +8,7 @@ use crate::{
     error::SResult,
     expr::{Dyadic, ExprIter, ExpressionHead, OpWithData, ValBinOp},
     hir::{HirNode, ParserDefId},
+    types::{PrimitiveType, Type},
 };
 
 use super::{
@@ -22,6 +23,7 @@ pub struct LayoutCollection<'a> {
     pub blocks: LayoutSet<'a>,
     pub nominals: LayoutSet<'a>,
     pub parsers: LayoutSet<'a>,
+    pub primitives: LayoutSet<'a>,
     pub call_slots: FxHashMap<(ILayout<'a>, ILayout<'a>), PSize>,
     pub parser_occupied_entries: FxHashMap<IMonoLayout<'a>, FxHashMap<PSize, ILayout<'a>>>,
 }
@@ -71,7 +73,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 }
                 MonoLayout::NominalParser(_)
                 | MonoLayout::BlockParser(_, _)
-                | MonoLayout::ComposedParser(_, _)
+                | MonoLayout::ComposedParser(_, _, _)
                 | MonoLayout::Single => {
                     self.parsers.insert(mono);
                 }
@@ -81,7 +83,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     }
     fn register_call(&mut self, left: ILayout<'a>, right: ILayout<'a>) {
         for mono in flat_layouts(&right) {
-            if let MonoLayout::Block(_, _) = mono.mono_layout().0 {
+            if let MonoLayout::BlockParser(_, _) = mono.mono_layout().0 {
                 if self.block_calls.insert((left, mono)) {
                     self.unprocessed.push(UnprocessedCall::Block(left, mono));
                 }
@@ -91,8 +93,8 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     }
     fn collect_expr(&mut self, expr: &AbstractExpression<ILayout<'a>>) {
         for part in ExprIter::new(expr) {
-            let (dom, _) = part.0.root_data();
-            self.register_layouts(*dom);
+            let dom = part.0.root_data().val;
+            self.register_layouts(dom);
             if let ExpressionHead::Dyadic(Dyadic {
                 op:
                     OpWithData {
@@ -102,7 +104,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 inner: [left, right],
             }) = &part.0
             {
-                self.register_call(&left.0.root_data().0, &right.0.root_data().0)
+                self.register_call(&left.0.root_data().val, &right.0.root_data().val)
             }
         }
     }
@@ -112,7 +114,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         }
         for (&node, &value) in block.vals.iter() {
             if let HirNode::Parse(p) = self.ctx.db.hir_node(node)? {
-                let expr_val = block.expr_vals[&p.expr].0.root_data().0;
+                let expr_val = block.expr_vals[&p.expr].0.root_data().val;
                 self.register_call(block.from, expr_val);
             }
             self.register_layouts(value)
@@ -122,7 +124,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     fn collect_pd(&mut self, pd: &PdEvaluated<ILayout<'a>>) {
         if let Some(val) = &pd.expr_vals {
             self.collect_expr(val);
-            let root = val.0.root_data().0;
+            let root = val.0.root_data().val;
             self.register_call(pd.from, root);
         }
         self.register_layouts(pd.returned)
@@ -151,6 +153,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             let thunk_layout = canon_layout(self.ctx, thunk_ty)?;
             if let Some(from) = sig.from {
                 let from_layout = canon_layout(self.ctx, from)?;
+                self.register_layouts(from_layout);
                 let parser_ty = self.ctx.db.intern_type(crate::types::Type::ParserArg {
                     result: thunk_ty,
                     arg: from,
@@ -177,11 +180,21 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     .insert(slot, from);
             }
         }
+        let mut primitives = FxHashSet::default();
+
+        for x in [PrimitiveType::Int, PrimitiveType::Bit, PrimitiveType::Char] {
+            let primitive_type = self.ctx.db.intern_type(Type::Primitive(x));
+            let layout = self.ctx.dcx.intern.intern(InternerLayout {
+                layout: Layout::Mono(MonoLayout::Primitive(x), primitive_type),
+            });
+            primitives.insert(IMonoLayout(layout));
+        }
         LayoutCollection {
             arrays: self.arrays,
             blocks: self.blocks,
             nominals: self.nominals,
             parsers: self.parsers,
+            primitives,
             call_slots,
             parser_occupied_entries,
         }

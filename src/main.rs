@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if context.print_diagnostics() {
         exit_with_message("Errors occured during compilation");
     }
-    //mir::print_all_mir(&context.db, &mut std::io::stdout().lock())?;
+    mir::print_all_mir(&context.db, &mut std::io::stdout().lock())?;
     let llvm = inkwell::context::Context::create();
     let mut bump = Bump::new();
     let intern = Interner::<InternerLayout>::new(&mut bump);
@@ -51,6 +51,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     instantiate(&mut layouts, &[main_ty]).unwrap();
     let mut codegen = cg_llvm::CodeGenCtx::new(&llvm, &context, &mut layouts).unwrap();
     codegen.create_all_vtables();
+    codegen.create_all_funs();
     let object_file = codegen.object_file();
     eprintln!("{:?}", object_file);
     Ok(())

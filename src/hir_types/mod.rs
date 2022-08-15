@@ -62,6 +62,8 @@ pub enum HeadDiscriminant {
     Block = 0x700,
 }
 
+pub const DISCRIMINANT_MASK: i64 = !0x3;
+
 pub fn head_discriminant(db: &dyn TyHirs, ty: TypeId) -> i64 {
     match db.lookup_intern_type(ty) {
         Type::Primitive(PrimitiveType::Int) => HeadDiscriminant::Int as i64,
@@ -85,7 +87,7 @@ pub fn head_discriminant(db: &dyn TyHirs, ty: TypeId) -> i64 {
             // and the rest is derived from the first 8 bytes of the hash
             //
             // the lowest two bits are for flags so they get zeroed out
-            i64::from_le_bytes(def_hash) & !0x3 | i64::MIN
+            i64::from_le_bytes(def_hash) & DISCRIMINANT_MASK | i64::MIN
         }
         Type::TypeVarRef(_, _, _) | Type::Any | Type::Bot | Type::Unknown => 0,
     }
