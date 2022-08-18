@@ -98,6 +98,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let pmb = PassManagerBuilder::create();
         pmb.set_optimization_level(OptimizationLevel::Aggressive);
         let pass_manager = PassManager::create(());
+        pass_manager.add_always_inliner_pass();
         pmb.populate_module_pass_manager(&pass_manager);
         Ok(CodeGenCtx {
             llvm: llvm_context,
@@ -110,6 +111,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             collected_layouts,
             target_data,
         })
+    }
+    fn set_always_inline(&self, fun: FunctionValue<'llvm>) {
+        let alwaysinline = Attribute::get_named_enum_kind_id("alwaysinline");
+        fun.add_attribute(
+            AttributeLoc::Function,
+            self.llvm.create_enum_attribute(alwaysinline, 1),
+        );
     }
     fn resize_struct_end_array(&self, st: StructType<'llvm>, size: u32) -> StructType<'llvm> {
         let mut field_types = st.get_field_types();
@@ -169,7 +177,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let sf_type = self.llvm.i64_type().fn_type(types, false);
         let fun = self
             .module
-            .add_function(&sf_sym, sf_type, Some(Linkage::Internal));
+            .add_function(&sf_sym, sf_type, Some(Linkage::External));
         fun.as_global_value()
             .set_unnamed_address(UnnamedAddress::Global);
         fun
@@ -251,11 +259,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
     fn typecast_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
         let f = self.pip_fun_val(layout, LayoutPart::Typecast);
-        let alwaysinline = Attribute::get_named_enum_kind_id("alwaysinline");
-        f.add_attribute(
-            AttributeLoc::Function,
-            self.llvm.create_enum_attribute(alwaysinline, 1),
-        );
+        self.set_always_inline(f);
         f
     }
     fn parser_len_fun_val(
@@ -864,6 +868,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn create_array_single_forward(&mut self, layout: IMonoLayout<'comp>) {
         let fun = self.single_forward_fun_val(layout);
+        self.set_always_inline(fun);
+
         let [from, to] = get_fun_args(fun).map(|x| x.into_pointer_value());
         let entry = self.llvm.append_basic_block(fun, "entry");
         self.builder.position_at_end(entry);
@@ -883,6 +889,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn create_array_skip(&mut self, layout: IMonoLayout<'comp>) {
         let fun = self.skip_fun_val(layout);
+        self.set_always_inline(fun);
         let entry = self.llvm.append_basic_block(fun, "entry");
         self.builder.position_at_end(entry);
         let [from, len, to] = get_fun_args(fun);
@@ -902,6 +909,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn create_array_current_element(&mut self, layout: IMonoLayout<'comp>) {
         let fun = self.current_element_fun_val(layout);
+        self.set_always_inline(fun);
         let entry = self.llvm.append_basic_block(fun, "entry");
         self.builder.position_at_end(entry);
         let int_layout = canon_layout(
@@ -913,10 +921,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         .unwrap();
         let int_buf = self.build_layout_alloca(int_layout);
         let [from, target_head, return_ptr] = get_fun_args(fun);
-        let from = self.build_cast::<*const i64, _>(from);
+        let from = self.build_cast::<*const *const u8, _>(from);
         let target_head = target_head.into_int_value();
         let return_ptr = return_ptr.into_pointer_value();
-        let int = self.builder.build_load(from, "load_ptr").into_int_value();
+        let int_ptr = self.builder.build_load(from, "load_ptr").into_pointer_value();
+        let byte = self.builder.build_load(int_ptr, "load_byte").into_int_value();
+        let int = self.builder.build_int_z_extend(byte, self.llvm.i64_type(), "int");
         let bitcasted_buf = self.build_cast::<*mut i64, _>(int_buf);
         self.builder.build_store(bitcasted_buf, int);
         self.terminate_tail_typecast(int_layout, int_buf, target_head, return_ptr);
@@ -931,6 +941,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn create_single_len(&mut self, from: ILayout<'comp>, layout: IMonoLayout<'comp>, slot: PSize) {
         let llvm_fun = self.parser_len_fun_val(layout, slot);
+        self.set_always_inline(llvm_fun);
         let [_, arg, ret] = get_fun_args(llvm_fun).map(|x| x.into_pointer_value());
         let entry = self.llvm.append_basic_block(llvm_fun, "entry");
         self.builder.position_at_end(entry);
@@ -942,15 +953,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn create_single_val(&mut self, from: ILayout<'comp>, layout: IMonoLayout<'comp>, slot: PSize) {
         let llvm_fun = self.parser_val_fun_val(layout, slot);
+        self.set_always_inline(llvm_fun);
         let [_, arg, target_head, ret] = get_fun_args(llvm_fun);
         let [arg, ret] = [arg, ret].map(|x| x.into_pointer_value());
         let target_head = target_head.into_int_value();
         let entry = self.llvm.append_basic_block(llvm_fun, "entry");
         self.builder.position_at_end(entry);
-        let single_forward_fun = self.build_current_element_fun_get(from.maybe_mono(), arg);
+        let current_elmeent_fun = self.build_current_element_fun_get(from.maybe_mono(), arg);
         let from_mono = self.build_mono_ptr(arg, from);
         let ret = self.build_call_with_int_ret(
-            single_forward_fun,
+            current_elmeent_fun,
             &[from_mono.into(), target_head.into(), ret.into()],
         );
         self.builder.build_return(Some(&ret));
@@ -1120,8 +1132,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let block = block.into_pointer_value();
         let target_head = target_head.into_int_value();
         let return_ptr = return_ptr.into_pointer_value();
+        let inner_layout = if let MonoLayout::Block(_, fields) = &layout.mono_layout().0 {
+            fields[&FieldName::Ident(name)]
+        } else {
+            dbpanic!(
+                &self.compiler_database.db,
+                "called create_field_access on non-block {}",
+                &layout.inner()
+            );
+        };
         let field_ptr = self.build_field_gep(layout.inner(), field, block);
-        self.terminate_tail_typecast(layout.inner(), field_ptr, target_head, return_ptr);
+        self.terminate_tail_typecast(inner_layout, field_ptr, target_head, return_ptr);
     }
 
     fn non_zero_early_return(&mut self, fun: FunctionValue<'llvm>, status: IntValue<'llvm>) {
@@ -1285,12 +1306,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     pub fn object_file(&mut self) {
-        self.module.print_to_file("a.ll").unwrap();
-        eprintln!("{}", self.pass_manager.run_on(&self.module));
         if let Err(err) = self.module.verify() {
             eprintln!("validation failed: {}", err.to_string());
             return;
         }
+        eprintln!("{}", self.pass_manager.run_on(&self.module));
+        self.module.print_to_file("a.ll").unwrap();
         self.target
             .write_to_file(&self.module, FileType::Object, Path::new("a.out"))
             .expect("Could not create object file");

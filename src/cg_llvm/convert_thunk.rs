@@ -129,7 +129,7 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
 
         self.cg.builder.position_at_end(check_vtable_bb);
         self.check_vtable(copy_bb, copy_phi, copy_bb);
-        copy_phi.add_incoming(&[(&self.from_ptr, check_vtable_bb)]);
+        copy_phi.add_incoming(&[(&self.return_ptr, check_vtable_bb)]);
 
         self.cg.builder.position_at_end(old_bb);
         let layout_size = self
@@ -145,7 +145,7 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
         }
 
         self.cg.builder.position_at_end(copy_bb);
-        let from_ptr = copy_phi.as_basic_value().into_pointer_value();
+        let target_ptr = copy_phi.as_basic_value().into_pointer_value();
         let align = self
             .from_layout
             .inner()
@@ -155,9 +155,9 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
         self.cg
             .builder
             .build_memcpy(
-                self.return_ptr,
+                target_ptr,
                 align,
-                from_ptr,
+                self.from_ptr,
                 align,
                 self.cg.const_size_t(layout_size),
             )
@@ -181,13 +181,13 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
             .build_conditional_branch(has_vtable, write_vtable_ptr, otherwise);
         self.cg.builder.position_at_end(write_vtable_ptr);
         let vtable_pointer = self.build_vtable_any_ptr();
-        let ret_vtable_ptr = self.cg.build_cast::<*mut *const u8, _>(self.from_ptr);
+        let ret_vtable_ptr = self.cg.build_cast::<*mut *const u8, _>(self.return_ptr);
         self.cg.builder.build_store(ret_vtable_ptr, vtable_pointer);
         let ptr_width = self.cg.any_ptr().size_of();
         let after_ptr = unsafe {
             self.cg
                 .builder
-                .build_in_bounds_gep(self.from_ptr, &[ptr_width], "vtable_ptr_skip")
+                .build_in_bounds_gep(self.return_ptr, &[ptr_width], "vtable_ptr_skip")
         };
         copy_phi.add_incoming(&[(&after_ptr, write_vtable_ptr)]);
         self.cg.builder.build_unconditional_branch(copy_bb);
@@ -210,9 +210,15 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
         let tagged_vtable_ptr = self.build_malloc_tag_ptr(vtable_pointer);
         let malloc_pointer = self.build_malloc();
         let target_as_ptr_ptr = self.cg.build_cast::<*mut *mut u8, _>(self.return_ptr);
-        self.cg.builder.build_store(target_as_ptr_ptr, tagged_vtable_ptr);
+        self.cg
+            .builder
+            .build_store(target_as_ptr_ptr, tagged_vtable_ptr);
         let second = unsafe {
-            self.cg.builder.build_in_bounds_gep(target_as_ptr_ptr, &[self.cg.const_size_t(1)],"second")
+            self.cg.builder.build_in_bounds_gep(
+                target_as_ptr_ptr,
+                &[self.cg.const_size_t(1)],
+                "second",
+            )
         };
         self.cg.builder.build_store(second, malloc_pointer);
         copy_phi.add_incoming(&[(&malloc_pointer, allocator_bb)]);
@@ -220,10 +226,7 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
     }
 
     fn build_malloc_tag_ptr(&mut self, ptr: PointerValue<'llvm>) -> PointerValue<'llvm> {
-        let int_type = self
-            .cg
-            .llvm
-            .ptr_sized_int_type(&self.cg.target_data, None);
+        let int_type = self.cg.llvm.ptr_sized_int_type(&self.cg.target_data, None);
         let vtable_ptr_int = self
             .cg
             .builder
