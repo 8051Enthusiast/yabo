@@ -5,7 +5,7 @@ use std::{fmt::Debug, path::Path, rc::Rc};
 
 use fxhash::FxHashMap;
 use inkwell::{
-    attributes::AttributeLoc,
+    attributes::{Attribute, AttributeLoc},
     builder::Builder,
     context::Context,
     module::{Linkage, Module},
@@ -17,7 +17,7 @@ use inkwell::{
     types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, PointerType, StructType},
     values::{
         BasicMetadataValueEnum, BasicValue, BasicValueEnum, CallableValue, FunctionValue,
-        GlobalValue, IntValue, PointerValue, StructValue,
+        GlobalValue, IntValue, PointerValue, StructValue, UnnamedAddress,
     },
     AddressSpace, GlobalVisibility, IntPredicate, OptimizationLevel,
 };
@@ -170,6 +170,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let fun = self
             .module
             .add_function(&sf_sym, sf_type, Some(Linkage::Internal));
+        fun.as_global_value()
+            .set_unnamed_address(UnnamedAddress::Global);
         fun
     }
     fn pp_fun_val(&mut self, layout: IMonoLayout<'comp>, part: LayoutPart) -> FunctionValue<'llvm> {
@@ -249,9 +251,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
     fn typecast_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
         let f = self.pip_fun_val(layout, LayoutPart::Typecast);
+        let alwaysinline = Attribute::get_named_enum_kind_id("alwaysinline");
         f.add_attribute(
             AttributeLoc::Function,
-            self.llvm.create_string_attribute("alwaysinline", ""),
+            self.llvm.create_enum_attribute(alwaysinline, 1),
         );
         f
     }
