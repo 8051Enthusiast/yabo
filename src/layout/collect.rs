@@ -161,6 +161,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 let parser_layout = self.ctx.dcx.intern.intern(InternerLayout {
                     layout: Layout::Mono(MonoLayout::NominalParser(*pd), parser_ty),
                 });
+                self.register_layouts(parser_layout);
                 self.register_call(from_layout, parser_layout);
             }
             self.register_layouts(thunk_layout);
