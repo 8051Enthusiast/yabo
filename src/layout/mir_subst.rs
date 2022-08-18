@@ -6,7 +6,7 @@ use crate::{
     expr::ExprIter,
     hir::{walk::ChildIter, ExprId, HirIdWrapper, HirNode, HirNodeKind, ParserDefId},
     interner::DefId,
-    mir::{Function, Place, PlaceOrigin, PlaceRef, StackRef},
+    mir::{CallKind, Function, PdArgKind, Place, PlaceOrigin, PlaceRef, StackRef},
     source::SpanIndex,
     types::{PrimitiveType, Type},
 };
@@ -25,6 +25,7 @@ impl<'a> FunctionSubstitute<'a> {
         from: ILayout<'a>,
         block: IMonoLayout<'a>,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+        call_kind: CallKind,
     ) -> Result<Self, LayoutError> {
         let (def, captures) = if let MonoLayout::BlockParser(def, captures) = block.mono_layout().0
         {
@@ -42,7 +43,10 @@ impl<'a> FunctionSubstitute<'a> {
                 expr_map.insert((*id, span), val);
             }
         }
-        let ret = evaluated.returned;
+        let ret = match call_kind {
+            CallKind::Val => evaluated.returned,
+            CallKind::Len => from,
+        };
         let mut vals = evaluated.vals.clone();
         vals.extend(captures.iter());
         let root_context = def.lookup(ctx.db)?.root_context.0;
@@ -81,7 +85,7 @@ impl<'a> FunctionSubstitute<'a> {
         let fun = ctx.dcx.intern.intern(InternerLayout {
             layout: Layout::None,
         });
-        Self::new_from_pd(f, from, fun, pd, ctx)
+        Self::new_from_pd(f, from, fun, pd, ctx, PdArgKind::Thunk, CallKind::Val)
     }
 
     pub fn new_from_pd(
@@ -90,8 +94,19 @@ impl<'a> FunctionSubstitute<'a> {
         fun: ILayout<'a>,
         pd: ParserDefId,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+        arg_kind: PdArgKind,
+        call_kind: CallKind,
     ) -> Result<Self, LayoutError> {
-        let evaluated = ctx.pd_result()[&from].as_ref().ok_or(SilencedError)?;
+        if arg_kind == PdArgKind::Parse && call_kind == CallKind::Val {
+            return Self::new_from_pd_val_parser(f, from, fun, ctx);
+        }
+        let lookup_layout = match arg_kind {
+            PdArgKind::Thunk => from,
+            PdArgKind::Parse => fun.apply_arg(ctx, from)?,
+        };
+        let evaluated = ctx.pd_result()[&lookup_layout]
+            .as_ref()
+            .ok_or(SilencedError)?;
         let expr_id = pd.lookup(ctx.db)?.to;
         let mut expr_map = FxHashMap::default();
         if let Some(expr) = evaluated.expr_vals.as_ref() {
@@ -101,13 +116,39 @@ impl<'a> FunctionSubstitute<'a> {
             }
         }
         let vals = FxHashMap::default();
-        let ret = evaluated.returned;
+        let ret = match call_kind {
+            CallKind::Val => evaluated.returned,
+            CallKind::Len => from,
+        };
         let sub_info = SubInfo {
             fun,
             arg: from,
             ret,
             expr: expr_map,
             vals,
+        };
+        let stack_layouts = sub_info.stack_layouts(&f);
+        let place_layouts = sub_info.place_layouts(&f, &stack_layouts, ctx)?;
+        Ok(FunctionSubstitute {
+            f,
+            stack_layouts,
+            place_layouts,
+        })
+    }
+
+    fn new_from_pd_val_parser(
+        f: Function,
+        from: ILayout<'a>,
+        fun: ILayout<'a>,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+    ) -> Result<Self, LayoutError> {
+        let ret = fun.apply_arg(ctx, from)?;
+        let sub_info = SubInfo {
+            fun,
+            arg: from,
+            ret,
+            expr: Default::default(),
+            vals: Default::default(),
         };
         let stack_layouts = sub_info.stack_layouts(&f);
         let place_layouts = sub_info.place_layouts(&f, &stack_layouts, ctx)?;

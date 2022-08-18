@@ -11,7 +11,8 @@ use inkwell::{
     module::{Linkage, Module},
     passes::{PassManager, PassManagerBuilder},
     targets::{
-        CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine, TargetTriple,
+        CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetData, TargetMachine,
+        TargetTriple,
     },
     types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, PointerType, StructType},
     values::{
@@ -49,6 +50,7 @@ use self::{convert_mir::MirTranslator, convert_thunk::ThunkContext};
 pub struct CodeGenCtx<'llvm, 'comp> {
     llvm: &'llvm Context,
     target: TargetMachine,
+    target_data: TargetData,
     builder: Builder<'llvm>,
     pass_manager: PassManager<Module<'llvm>>,
     module: Module<'llvm>,
@@ -77,12 +79,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         });
         let builder = llvm_context.create_builder();
         let module = llvm_context.create_module("yabo");
-        let pmb = PassManagerBuilder::create();
-        pmb.set_optimization_level(OptimizationLevel::Aggressive);
-        let pass_manager = PassManager::create(());
-        pass_manager.add_always_inliner_pass();
-        pmb.populate_module_pass_manager(&pass_manager);
-        pass_manager.add_always_inliner_pass();
         let cfg = compiler_database.db.config();
         let triple = TargetTriple::create(&cfg.target_triple);
         let target = Target::from_triple(&triple)
@@ -96,6 +92,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 CodeModel::Default,
             )
             .expect("Could not get target machine");
+        let target_data = target.get_target_data();
+        module.set_data_layout(&target.get_target_data().get_data_layout());
+        module.set_triple(&triple);
+        let pmb = PassManagerBuilder::create();
+        pmb.set_optimization_level(OptimizationLevel::Aggressive);
+        let pass_manager = PassManager::create(());
+        pmb.populate_module_pass_manager(&pass_manager);
         Ok(CodeGenCtx {
             llvm: llvm_context,
             target,
@@ -105,6 +108,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             compiler_database,
             layouts,
             collected_layouts,
+            target_data,
         })
     }
     fn resize_struct_end_array(&self, st: StructType<'llvm>, size: u32) -> StructType<'llvm> {
@@ -143,7 +147,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
     fn const_size_t(&self, val: u64) -> IntValue<'llvm> {
         self.llvm
-            .ptr_sized_int_type(&self.target.get_target_data(), None)
+            .ptr_sized_int_type(&self.target_data, None)
             .const_int(val, false)
     }
     fn const_i64(&self, val: i64) -> IntValue<'llvm> {
@@ -355,8 +359,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         call_fun: CallableValue<'llvm>,
         args: &[BasicMetadataValueEnum<'llvm>],
     ) -> IntValue<'llvm> {
-        let call = self.builder
-            .build_call(call_fun, args, "call");
+        let call = self.builder.build_call(call_fun, args, "call");
         call.try_as_basic_value()
             .left()
             .expect("function shuold not return void")
@@ -758,7 +761,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .db
             .mir_pd(*pd, call_kind, PdArgKind::Parse)
             .unwrap();
-        FunctionSubstitute::new_from_pd(mir, from, layout.inner(), *pd, self.layouts).unwrap()
+        FunctionSubstitute::new_from_pd(
+            mir,
+            from,
+            layout.inner(),
+            *pd,
+            self.layouts,
+            PdArgKind::Parse,
+            call_kind,
+        )
+        .unwrap()
     }
 
     fn mir_pd_thunk_fun(
@@ -777,7 +789,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .mir_pd(*pd, call_kind, PdArgKind::Thunk)
             .unwrap();
         let fun = ILayout::bottom(&mut self.layouts.dcx);
-        FunctionSubstitute::new_from_pd(mir, layout.inner(), fun, *pd, self.layouts).unwrap()
+        FunctionSubstitute::new_from_pd(
+            mir,
+            layout.inner(),
+            fun,
+            *pd,
+            self.layouts,
+            PdArgKind::Thunk,
+            call_kind,
+        )
+        .unwrap()
     }
 
     fn mir_block_fun(
@@ -792,7 +813,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
         let mir = self.compiler_database.db.mir_block(*bd, call_kind).unwrap();
-        FunctionSubstitute::new_from_block(mir, from, layout, self.layouts).unwrap()
+        FunctionSubstitute::new_from_block(mir, from, layout, self.layouts, call_kind).unwrap()
     }
 
     fn create_pd_len(&mut self, from: ILayout<'comp>, layout: IMonoLayout<'comp>, slot: PSize) {
@@ -829,7 +850,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .expect("Could not get size/alignment of layout");
         let size = self
             .llvm
-            .ptr_sized_int_type(&self.target.get_target_data(), None)
+            .ptr_sized_int_type(&self.target_data, None)
             .const_int(sa.size, false);
         let align = sa.align();
         self.builder
@@ -1262,7 +1283,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub fn object_file(&mut self) {
         self.module.print_to_file("a.ll").unwrap();
-        self.pass_manager.run_on(&self.module);
+        eprintln!("{}", self.pass_manager.run_on(&self.module));
         if let Err(err) = self.module.verify() {
             eprintln!("validation failed: {}", err.to_string());
             return;
@@ -1285,9 +1306,7 @@ impl<'llvm, 'comp> CodegenTypeContext for CodeGenCtx<'llvm, 'comp> {
     }
 
     fn size(&mut self, _signed: bool) -> Self::Type {
-        self.llvm
-            .ptr_sized_int_type(&self.target.get_target_data(), None)
-            .into()
+        self.llvm.ptr_sized_int_type(&self.target_data, None).into()
     }
 
     fn char(&mut self) -> Self::Type {

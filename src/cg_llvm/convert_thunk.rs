@@ -223,7 +223,7 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
         let int_type = self
             .cg
             .llvm
-            .ptr_sized_int_type(&self.cg.target.get_target_data(), None);
+            .ptr_sized_int_type(&self.cg.target_data, None);
         let vtable_ptr_int = self
             .cg
             .builder
