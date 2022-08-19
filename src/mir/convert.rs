@@ -12,10 +12,7 @@ use crate::{
         ParserDefId, ParserPredecessor,
     },
     interner::{DefId, FieldName, PathComponent},
-    order::{
-        expr::ResolvedAtom, BlockSerialization, SubValue, SubValueKind,
-        TypedResolvedExpr,
-    },
+    order::{expr::ResolvedAtom, BlockSerialization, SubValue, SubValueKind, TypedResolvedExpr},
     types::{PrimitiveType, Type, TypeId},
 };
 
@@ -726,6 +723,14 @@ impl<'a> ConvertCtx<'a> {
             // choice indirections are pushed by individual contexts and not pulled
             hir::HirNode::ChoiceIndirection(_) => return Ok(()),
             // arg and return place already have this function
+            hir::HirNode::Block(b) if sub_value.kind == SubValueKind::Back => {
+                let last_place_back = self.context_data[&b.root_context]
+                    .ends
+                    .map(|x| self.back_place_at_def(x.1).unwrap())
+                    .unwrap_or_else(|| self.f.fun.arg());
+                let current_place = self.back_place_at_def(b.id.0).unwrap();
+                self.copy(last_place_back, current_place);
+            }
             hir::HirNode::Block(_) => return Ok(()),
             hir::HirNode::Module(_)
             | hir::HirNode::Context(_)
@@ -744,15 +749,9 @@ impl<'a> ConvertCtx<'a> {
     ) -> SResult<FxHashMap<SubValue, PlaceRef>> {
         let ambient_type = f.fun.place(f.fun.arg()).ty;
         let mut places: FxHashMap<SubValue, PlaceRef> = Default::default();
+        let root_context = block.root_context.lookup(db)?;
         let returned_vals: FxHashSet<DefId> = match call_kind {
-            CallKind::Val => block
-                .root_context
-                .lookup(db)?
-                .vars
-                .set
-                .values()
-                .map(|x| *x.inner())
-                .collect(),
+            CallKind::Val => root_context.vars.set.values().map(|x| *x.inner()).collect(),
             CallKind::Len => FxHashSet::default(),
         };
         for value in order.eval_order.iter() {
@@ -814,7 +813,13 @@ impl<'a> ConvertCtx<'a> {
             .expect("could not find block within enclosing expression")
             .0;
         let (arg_ty, ret_ty) = match db.lookup_intern_type(block_ty) {
-            Type::ParserArg { result, arg } => (arg, result),
+            Type::ParserArg { result, arg } => (
+                arg,
+                match call_kind {
+                    CallKind::Val => result,
+                    CallKind::Len => arg,
+                },
+            ),
             _ => dbpanic!(db, "should have been a parser type, was {}", &block_ty),
         };
         let mut f: FunctionWriter = FunctionWriter::new(block_ty, arg_ty, ret_ty);

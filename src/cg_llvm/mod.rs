@@ -87,7 +87,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 &triple,
                 &cfg.target_cpu,
                 &cfg.target_features,
-                OptimizationLevel::Aggressive,
+                OptimizationLevel::Default,
                 RelocMode::PIC,
                 CodeModel::Default,
             )
@@ -96,7 +96,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         module.set_data_layout(&target.get_target_data().get_data_layout());
         module.set_triple(&triple);
         let pmb = PassManagerBuilder::create();
-        pmb.set_optimization_level(OptimizationLevel::Aggressive);
+        pmb.set_optimization_level(OptimizationLevel::Default);
+        // pmb.set_inliner_with_threshold(250);
         let pass_manager = PassManager::create(());
         pass_manager.add_always_inliner_pass();
         pmb.populate_module_pass_manager(&pass_manager);

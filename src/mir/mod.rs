@@ -12,7 +12,7 @@ use crate::{
     interner::{DefId, FieldName},
     order::{Orders, SubValue},
     source::SpanIndex,
-    types::{Type, TypeId},
+    types::{Type, TypeId}, dbeprintln,
 };
 
 use self::convert::ConvertCtx;
@@ -428,6 +428,8 @@ fn mir_block(db: &dyn Mirs, block: BlockId, call_kind: CallKind) -> SResult<Func
     let order = db.block_serialization(block).silence()?;
     let mut ctx = ConvertCtx::new_block_builder(db, block, call_kind, &order)?;
     for value in order.eval_order.iter() {
+        let x = value.val;
+        dbeprintln!(db, "{}", &x);
         ctx.add_sub_value(value.val)?;
     }
     ctx.change_context(block.lookup(db)?.root_context);
