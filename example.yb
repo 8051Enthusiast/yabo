@@ -1,7 +1,7 @@
 def for[int] *> main = {
 	x: ~,
 	y: ~,
-	let f: int = z * x if 1 or 2,
+		let f: int = z * x if 7,
 	(
 		z: ~,
 		;
@@ -14,7 +14,8 @@ def for[int] *> main = {
 	x: ~,
 	m: {
 		d: ~,
-	}
+	},
+	n: {},
 	let g: int = m.d | x,
 	a: ~,
 }
