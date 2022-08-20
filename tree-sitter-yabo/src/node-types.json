@@ -842,6 +842,16 @@
           }
         ]
       },
+      "qualifier": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "export",
+            "named": false
+          }
+        ]
+      },
       "to": {
         "multiple": true,
         "required": true,
@@ -1581,6 +1591,10 @@
   },
   {
     "type": "else",
+    "named": false
+  },
+  {
+    "type": "export",
     "named": false
   },
   {

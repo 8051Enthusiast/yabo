@@ -23,6 +23,7 @@ module.exports = grammar({
       $.parser_definition
     ),
     parser_definition: $ => seq(
+      optional(field('qualifier', 'export')),
       'def',
       field('from', $._type_expression),
       '*>',

@@ -19,9 +19,24 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for HirNode {
             HirNode::Choice(_) => write!(f, "Choice"),
             HirNode::Module(_) => write!(f, "Module"),
             HirNode::Context(_) => write!(f, "Context"),
-            HirNode::ParserDef(_) => write!(f, "ParserDef"),
+            HirNode::ParserDef(n) => {
+                if n.qualifier == Qualifier::Export {
+                    write!(f, "export ")?;
+                }
+                write!(f, "ParserDef")
+            }
             HirNode::ChoiceIndirection(_) => write!(f, "ChoiceIndirection"),
         }
+    }
+}
+
+impl std::fmt::Display for Qualifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let r = match self {
+            Qualifier::Export => "export",
+            Qualifier::Regular => "regular",
+        };
+        write!(f, "{}", r)
     }
 }
 
@@ -361,7 +376,7 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                             )
                         }))
                         .collect(),
-                    HirNode::ParserDef(ParserDef { id, from, to }) => {
+                    HirNode::ParserDef(ParserDef { id, from, to, .. }) => {
                         vec![
                             (id.0, from.0, "from".to_string(), dot::Style::Bold),
                             (id.0, to.0, "to".to_string(), dot::Style::Bold),

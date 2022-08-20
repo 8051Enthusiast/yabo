@@ -28,7 +28,7 @@ use crate::{
     dbpanic,
     hir::{BlockId, HirIdWrapper, Hirs, ParserDefId},
     hir_types::TyHirs,
-    interner::{DefId, FieldName, Identifier},
+    interner::{DefId, FieldName, Identifier, Interner},
     layout::{
         canon_layout,
         collect::{LayoutCollection, LayoutCollector},
@@ -66,8 +66,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layouts: &'comp mut AbsLayoutCtx<'comp>,
     ) -> Result<Self, LayoutError> {
         let mut layout_collector = LayoutCollector::new(layouts);
-        let pd = compiler_database.parser("main");
-        layout_collector.collect(&[pd])?;
+        let pds = compiler_database.db.all_exported_parserdefs();
+        layout_collector.collect(&pds)?;
         let collected_layouts = Rc::new(layout_collector.into_results());
         Target::initialize_all(&InitializationConfig {
             asm_parser: true,
@@ -925,9 +925,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let from = self.build_cast::<*const *const u8, _>(from);
         let target_head = target_head.into_int_value();
         let return_ptr = return_ptr.into_pointer_value();
-        let int_ptr = self.builder.build_load(from, "load_ptr").into_pointer_value();
-        let byte = self.builder.build_load(int_ptr, "load_byte").into_int_value();
-        let int = self.builder.build_int_z_extend(byte, self.llvm.i64_type(), "int");
+        let int_ptr = self
+            .builder
+            .build_load(from, "load_ptr")
+            .into_pointer_value();
+        let byte = self
+            .builder
+            .build_load(int_ptr, "load_byte")
+            .into_int_value();
+        let int = self
+            .builder
+            .build_int_z_extend(byte, self.llvm.i64_type(), "int");
         let bitcasted_buf = self.build_cast::<*mut i64, _>(int_buf);
         self.builder.build_store(bitcasted_buf, int);
         self.terminate_tail_typecast(int_layout, int_buf, target_head, return_ptr);
@@ -1306,15 +1314,37 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
     }
 
+    fn create_pd_export(&mut self, pd: ParserDefId, layout: IMonoLayout<'comp>, slot: PSize) {
+        let name = match self.compiler_database.db.def_name(pd.0).unwrap() {
+            FieldName::Return => unreachable!(),
+            FieldName::Ident(d) => self.compiler_database.db.lookup_intern_identifier(d).name,
+        };
+        let val = self.parser_impl_struct_val(layout, slot, true);
+        let global_ty = vtable::ParserArgImpl::struct_type(self);
+        let global = self.module.add_global(global_ty, None, &name);
+        global.set_initializer(&val);
+        global.set_linkage(Linkage::External);
+        global.set_visibility(GlobalVisibility::Default);
+    }
+
+    pub fn create_pd_exports(&mut self) {
+        let collected_layouts = self.collected_layouts.clone();
+        for (layout, slot) in collected_layouts.root.iter() {
+            if let MonoLayout::NominalParser(pd) = layout.mono_layout().0 {
+                self.create_pd_export(*pd, *layout, *slot);
+            }
+        }
+    }
+
     pub fn object_file(&mut self) {
         if let Err(err) = self.module.verify() {
             eprintln!("validation failed: {}", err.to_string());
             return;
         }
-        eprintln!("{}", self.pass_manager.run_on(&self.module));
+        self.pass_manager.run_on(&self.module);
         self.module.print_to_file("a.ll").unwrap();
         self.target
-            .write_to_file(&self.module, FileType::Object, Path::new("a.out"))
+            .write_to_file(&self.module, FileType::Object, Path::new("a.o"))
             .expect("Could not create object file");
     }
 }
