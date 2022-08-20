@@ -1105,15 +1105,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let [fun, arg, ret] = get_fun_args(llvm_fun).map(|x| x.into_pointer_value());
         MirTranslator::new(self, mir_fun, llvm_fun, fun, arg, ret).build();
         let thunk = self.parser_val_fun_val(layout, slot);
-        let result = if let Type::ParserArg { result, .. } = self
+        let result = self
             .compiler_database
             .db
-            .lookup_intern_type(layout.mono_layout().1)
-        {
-            result
-        } else {
-            panic!("pd parsers type is not parser")
-        };
+            .parser_result(layout.mono_layout().1)
+            .expect("pd parsers type is not parser");
         let mut map = FxHashMap::default();
         map.insert(Arg::From, from);
         let return_layout = ILayout::make_thunk(self.layouts, pd, result, &map).unwrap();

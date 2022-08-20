@@ -39,6 +39,7 @@ pub trait TypeInterner: crate::source::Files {
     fn type_contains_unknown(&self, ty: TypeId) -> bool;
     fn type_contains_typevar(&self, ty: TypeId) -> bool;
     fn substitute_typevar(&self, ty: TypeId, replacements: Arc<Vec<TypeId>>) -> TypeId;
+    fn parser_result(&self, ty: TypeId) -> Option<TypeId>;
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -227,5 +228,12 @@ pub fn substitute_typevar(
         }
         Type::ForAll(inner, _) => return inner,
         Type::Any | Type::Bot | Type::Unknown | Type::Primitive(_) => return ty,
+    }
+}
+
+fn parser_result(db: &dyn TypeInterner, ty: TypeId) -> Option<TypeId> {
+    match db.lookup_intern_type(ty) {
+        Type::ParserArg { result, .. } => Some(result),
+        _ => None,
     }
 }
