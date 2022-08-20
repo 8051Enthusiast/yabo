@@ -20,9 +20,11 @@ use bumpalo::Bump;
 use config::Config;
 use context::Context;
 use hir_types::TyHirs;
-use layout::{LayoutContext, InternerLayout, instantiate};
+use layout::{instantiate, InternerLayout, LayoutContext};
 use low_effort_interner::Interner;
 use std::{env::args, error::Error};
+
+use crate::hir::Hirs;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let infile = args()
@@ -45,13 +47,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut bump = Bump::new();
     let intern = Interner::<InternerLayout>::new(&mut bump);
     let layout_ctx = LayoutContext::new(intern);
-    let main = context.parser("main");
-    let main_ty = context.db.parser_args(main).unwrap().thunk;
+    let exported_pds = context.db.all_exported_parserdefs();
+    let exported_tys: Vec<_> = exported_pds
+        .iter()
+        .map(|x| context.db.parser_args(*x).unwrap().thunk)
+        .collect();
     let mut layouts = layout::AbsLayoutCtx::new(&context.db, layout_ctx);
-    instantiate(&mut layouts, &[main_ty]).unwrap();
+    instantiate(&mut layouts, &exported_tys).unwrap();
     let mut codegen = cg_llvm::CodeGenCtx::new(&llvm, &context, &mut layouts).unwrap();
     codegen.create_all_vtables();
     codegen.create_all_funs();
+    codegen.create_pd_exports();
     let object_file = codegen.object_file();
     eprintln!("{:?}", object_file);
     Ok(())

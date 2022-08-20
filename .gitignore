@@ -6,3 +6,5 @@ node_modules
 a.out
 a.ll
 a.s
+a.o
+a.so

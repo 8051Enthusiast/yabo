@@ -396,6 +396,7 @@ where
 
 astify! {
     struct parser_definition = ParserDefinition {
+        qualifier: quali[?],
         name: idspan[!],
         from: expression(type_expression)[!],
         to: expression(val_expression)[!],
@@ -591,6 +592,15 @@ fn wiggle_kind(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<WiggleKi
         "if" => Ok(WiggleKind::If),
         "try" => Ok(WiggleKind::Try),
         _ => panic!("unknown wiggle kind: {}", str),
+    }
+}
+
+fn quali(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Qualifier> {
+    let str = node_to_string(db, fd, c)?;
+    if str == "export" {
+        Ok(Qualifier::Export)
+    } else {
+        panic!("unknown qualifier '{str}'");
     }
 }
 

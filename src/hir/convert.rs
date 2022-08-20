@@ -136,7 +136,11 @@ fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDef
     let to = ExprId(id.child(ctx.db, PathComponent::Unnamed(1)));
     type_expression(&ast.from, ctx, from);
     val_expression(&ast.to, ctx, to, None);
-    let pdef = ParserDef { id, from, to };
+    let qualifier = match ast.qualifier {
+        Some(ast::Qualifier::Export) => Qualifier::Export,
+        None => Qualifier::Regular,
+    };
+    let pdef = ParserDef { qualifier, id, from, to };
     ctx.insert(id.0, HirNode::ParserDef(pdef), vec![ast.span]);
 }
 

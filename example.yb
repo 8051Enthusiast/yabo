@@ -1,4 +1,4 @@
-def for[int] *> main = {
+export def for[int] *> nonsense = {
 	x: ~,
 	y: ~,
 		let f: int = z * x if 7,

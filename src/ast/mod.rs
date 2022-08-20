@@ -192,6 +192,7 @@ impl Statement {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDefinition {
+    pub qualifier: Option<Qualifier>,
     pub name: IdSpan,
     pub from: TypeExpression,
     pub to: ValExpression,
@@ -248,6 +249,12 @@ pub struct ParserChoice {
     pub right: BlockContent,
     pub span: Span,
 }
+
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug, PartialOrd, Ord)]
+pub enum Qualifier {
+    Export,
+}
+
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDefRef {
     pub from: Option<TypeExpression>,

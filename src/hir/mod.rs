@@ -48,6 +48,7 @@ pub trait Hirs: crate::ast::Asts + crate::types::TypeInterner {
     fn root_id(&self) -> ModuleId;
     fn all_def_ids(&self) -> Vec<DefId>;
     fn all_parserdefs(&self) -> Vec<ParserDefId>;
+    fn all_exported_parserdefs(&self) -> Vec<ParserDefId>;
     fn hir_parent_module(&self, id: DefId) -> SResult<ModuleId>;
     fn hir_parent_parserdef(&self, id: DefId) -> SResult<ParserDefId>;
     fn hir_parent_block(&self, id: DefId) -> SResult<Option<BlockId>>;
@@ -130,6 +131,14 @@ fn all_parserdefs(db: &dyn Hirs) -> Vec<ParserDefId> {
     };
     let ret: Vec<_> = module.defs.values().cloned().collect();
     ret
+}
+
+fn all_exported_parserdefs(db: &dyn Hirs) -> Vec<ParserDefId> {
+    db.all_parserdefs()
+        .into_iter()
+        .flat_map(|x| x.lookup(db))
+        .flat_map(|x| (x.qualifier == Qualifier::Export).then_some(x.id))
+        .collect()
 }
 
 fn hir_parent_module(db: &dyn Hirs, id: DefId) -> SResult<ModuleId> {
@@ -405,9 +414,16 @@ impl TypeExpression {
     }
 }
 
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug, PartialOrd, Ord)]
+pub enum Qualifier {
+    Export,
+    Regular,
+}
+
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDef {
     pub id: ParserDefId,
+    pub qualifier: Qualifier,
     pub from: TExprId,
     pub to: ExprId,
 }

@@ -19,6 +19,7 @@ use super::{
 type LayoutSet<'a> = FxHashSet<IMonoLayout<'a>>;
 
 pub struct LayoutCollection<'a> {
+    pub root: Vec<(IMonoLayout<'a>, PSize)>,
     pub arrays: LayoutSet<'a>,
     pub blocks: LayoutSet<'a>,
     pub nominals: LayoutSet<'a>,
@@ -35,6 +36,7 @@ pub struct LayoutCollector<'a, 'b> {
     blocks: LayoutSet<'a>,
     nominals: LayoutSet<'a>,
     parsers: LayoutSet<'a>,
+    root: Vec<(ILayout<'a>, IMonoLayout<'a>)>,
     block_calls: FxHashSet<(ILayout<'a>, IMonoLayout<'a>)>,
     unprocessed: Vec<UnprocessedCall<'a>>,
 }
@@ -55,6 +57,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             parsers: Default::default(),
             block_calls: Default::default(),
             unprocessed: Default::default(),
+            root: Default::default(),
         }
     }
     fn register_layouts(&mut self, layout: ILayout<'a>) {
@@ -162,6 +165,9 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     layout: Layout::Mono(MonoLayout::NominalParser(*pd), parser_ty),
                 });
                 self.register_layouts(parser_layout);
+                for mono in flat_layouts(&parser_layout) {
+                    self.root.push((from_layout, mono));
+                }
                 self.register_call(from_layout, parser_layout);
             }
             self.register_layouts(thunk_layout);
@@ -190,7 +196,16 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             });
             primitives.insert(IMonoLayout(layout));
         }
+        let root = self
+            .root
+            .into_iter()
+            .map(|(from, mono)| {
+                let slot = call_slots[&(from, mono.0)];
+                (mono, slot)
+            })
+            .collect();
         LayoutCollection {
+            root,
             arrays: self.arrays,
             blocks: self.blocks,
             nominals: self.nominals,
