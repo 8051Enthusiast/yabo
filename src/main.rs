@@ -58,8 +58,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     codegen.create_all_vtables();
     codegen.create_all_funs();
     codegen.create_pd_exports();
-    let object_file = codegen.object_file();
-    eprintln!("{:?}", object_file);
+    codegen.object_file();
     Ok(())
 }
 

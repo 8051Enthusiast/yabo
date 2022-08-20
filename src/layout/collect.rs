@@ -1,3 +1,4 @@
+use crate::absint::{AbstractDomain, Arg};
 use std::collections::hash_map::Entry;
 
 use fxhash::{FxHashMap, FxHashSet};
@@ -37,12 +38,13 @@ pub struct LayoutCollector<'a, 'b> {
     nominals: LayoutSet<'a>,
     parsers: LayoutSet<'a>,
     root: Vec<(ILayout<'a>, IMonoLayout<'a>)>,
-    block_calls: FxHashSet<(ILayout<'a>, IMonoLayout<'a>)>,
+    processed_calls: FxHashSet<(ILayout<'a>, IMonoLayout<'a>)>,
     unprocessed: Vec<UnprocessedCall<'a>>,
 }
 
 pub enum UnprocessedCall<'a> {
     Nominal(IMonoLayout<'a>),
+    NominalParser(ILayout<'a>, IMonoLayout<'a>),
     Block(ILayout<'a>, IMonoLayout<'a>),
 }
 
@@ -55,7 +57,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             blocks: Default::default(),
             nominals: Default::default(),
             parsers: Default::default(),
-            block_calls: Default::default(),
+            processed_calls: Default::default(),
             unprocessed: Default::default(),
             root: Default::default(),
         }
@@ -86,10 +88,19 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     }
     fn register_call(&mut self, left: ILayout<'a>, right: ILayout<'a>) {
         for mono in flat_layouts(&right) {
-            if let MonoLayout::BlockParser(_, _) = mono.mono_layout().0 {
-                if self.block_calls.insert((left, mono)) {
-                    self.unprocessed.push(UnprocessedCall::Block(left, mono));
+            match mono.mono_layout().0 {
+                MonoLayout::BlockParser(_, _) => {
+                    if self.processed_calls.insert((left, mono)) {
+                        self.unprocessed.push(UnprocessedCall::Block(left, mono));
+                    }
                 }
+                MonoLayout::NominalParser(_) => {
+                    if self.processed_calls.insert((left, mono)) {
+                        self.unprocessed
+                            .push(UnprocessedCall::NominalParser(left, mono));
+                    }
+                }
+                _ => {}
             }
         }
         self.calls.add_call(left, right)
@@ -145,6 +156,17 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         self.collect_block(block)?
                     }
                 }
+                UnprocessedCall::NominalParser(arg, parser) => {
+                    if let (MonoLayout::NominalParser(id), ty) = parser.mono_layout() {
+                        let mut args = FxHashMap::default();
+                        let thunk_ty = self.ctx.db.parser_result(ty).unwrap();
+                        args.insert(Arg::From, arg);
+                        let thunk = ILayout::make_thunk(self.ctx, *id, thunk_ty, &args).unwrap();
+                        self.register_layouts(thunk);
+                    } else {
+                        panic!("unexpected non-nominal-parser layout");
+                    }
+                }
             }
         }
         Ok(())
@@ -187,6 +209,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     .insert(slot, from);
             }
         }
+
         let mut primitives = FxHashSet::default();
 
         for x in [PrimitiveType::Int, PrimitiveType::Bit, PrimitiveType::Char] {
@@ -196,6 +219,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             });
             primitives.insert(IMonoLayout(layout));
         }
+
         let root = self
             .root
             .into_iter()

@@ -1,0 +1,5 @@
+def for[int] *> thunk_returning_int = ~
+export def for[int] *> top = {
+	let parser_with_invisible_thunk: for[int] *> int = thunk_returning_int,
+	x: parser_with_invisible_thunk,
+}
