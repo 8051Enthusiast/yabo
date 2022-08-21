@@ -13,7 +13,7 @@ impl Display for StackRef {
     }
 }
 
-impl<DB: Mirs> DatabasedDisplay<(&Function, &DB)> for PlaceRef {
+impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for PlaceRef {
     fn db_fmt(
         &self,
         f: &mut std::fmt::Formatter<'_>,
