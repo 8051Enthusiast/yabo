@@ -181,6 +181,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .add_function(&sf_sym, sf_type, Some(Linkage::External));
         fun.as_global_value()
             .set_unnamed_address(UnnamedAddress::Global);
+        fun.as_global_value()
+            .set_visibility(GlobalVisibility::Hidden);
         fun
     }
     fn pp_fun_val(&mut self, layout: IMonoLayout<'comp>, part: LayoutPart) -> FunctionValue<'llvm> {
