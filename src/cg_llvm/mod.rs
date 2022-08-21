@@ -34,10 +34,10 @@ use crate::{
         collect::{LayoutCollection, LayoutCollector},
         mir_subst::FunctionSubstitute,
         prop::{CodegenTypeContext, PSize, SizeAlign, TargetSized},
-        represent::LayoutPart,
+        represent::{truncated_hex, LayoutPart},
         vtable::{
-            self, ArrayVTableFields, BlockVTableFields, ParserArgImplFields, ParserVTableFields,
-            VTableHeaderFields,
+            self, ArrayVTableFields, BlockVTableFields, NominalVTableFields, ParserArgImplFields,
+            ParserVTableFields, VTableHeaderFields,
         },
         AbsLayoutCtx, ILayout, IMonoLayout, Layout, LayoutError, MonoLayout,
     },
@@ -273,7 +273,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.ppp_fun_val(layout, LayoutPart::LenImpl(slot))
     }
     fn deref_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
-        self.pp_fun_val(layout, LayoutPart::Deref)
+        self.pip_fun_val(layout, LayoutPart::Deref(true))
+    }
+    fn deref_impl_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
+        self.pp_fun_val(layout, LayoutPart::Deref(false))
     }
     fn parser_val_impl_fun_val(
         &mut self,
@@ -376,15 +379,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .into_int_value()
     }
 
-    fn build_ptr_call_with_int_ret(
-        &mut self,
-        fun: PointerValue<'llvm>,
-        args: &[BasicMetadataValueEnum<'llvm>],
-    ) -> IntValue<'llvm> {
-        let call_fun = fun.try_into().unwrap();
-        self.build_call_with_int_ret(call_fun, args)
-    }
-
     fn create_vtable<T: TargetSized>(&mut self, layout: IMonoLayout<'comp>) -> GlobalValue<'llvm> {
         let vtable_type = T::codegen_ty(self);
         let vtable_sym = self.sym(layout, LayoutPart::VTable);
@@ -436,17 +430,91 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_nominal_vtable(&mut self, layout: IMonoLayout<'comp>) {
         let vtable = self.create_vtable::<vtable::NominalVTable>(layout);
         let vtable_header = self.vtable_header(layout);
+        let deref = self.deref_fun_val(layout);
         let start = self.start_fun_val(layout);
         let end = self.end_fun_val(layout);
         let vtable_val = self.llvm.const_struct(
             &[
                 vtable_header.into(),
+                deref.as_global_value().as_pointer_value().into(),
                 start.as_global_value().as_pointer_value().into(),
                 end.as_global_value().as_pointer_value().into(),
             ],
             false,
         );
         vtable.set_initializer(&vtable_val);
+    }
+
+    fn module_string(&mut self, s: &str) -> PointerValue<'llvm> {
+        let sym_name = format!("s${}", s);
+        if let Some(sym) = self.module.get_global(&sym_name) {
+            return sym.as_pointer_value();
+        }
+        let cstr = self.llvm.const_string(s.as_bytes(), true);
+        let global_value = self.module.add_global(cstr.get_type(), None, &sym_name);
+        global_value.set_visibility(GlobalVisibility::Hidden);
+        global_value.set_initializer(&cstr);
+        global_value.as_pointer_value()
+    }
+
+    fn field_info(&mut self, name: Identifier, disc_index: PSize) -> StructValue<'llvm> {
+        let name = self
+            .compiler_database
+            .db
+            .lookup_intern_identifier(name)
+            .name;
+        let name_ptr = self.module_string(&name);
+        let disc_index = self.const_size_t(disc_index);
+        self.llvm
+            .const_struct(&[name_ptr.into(), disc_index.into()], false)
+    }
+
+    fn block_info(&mut self, block: BlockId) -> PointerValue<'llvm> {
+        let hash = self.compiler_database.db.def_hash(block.0);
+        let info_sym = format!("block_info${}", &truncated_hex(&hash));
+        if let Some(val) = self.module.get_global(&info_sym) {
+            return val.as_pointer_value().const_cast(
+                vtable::BlockFields::struct_type(self).ptr_type(AddressSpace::Generic),
+            );
+        }
+
+        let [fields, disc_fields] = [false, true].map(|disc| {
+            self.compiler_database
+                .db
+                .sorted_block_fields(block, disc)
+                .unwrap()
+        });
+        let mut disc_index: PSize = 0;
+        let mut field_info = Vec::new();
+        for field in fields.iter() {
+            let index_value = if disc_fields.get(disc_index as usize) == Some(field) {
+                let val = disc_index;
+                disc_index += 1;
+                val
+            } else {
+                PSize::MAX
+            };
+            let name = match field {
+                FieldName::Ident(id) => id,
+                FieldName::Return => panic!("return field should not be in fields"),
+            };
+            field_info.push(self.field_info(*name, index_value));
+        }
+
+        let info_type = vtable::BlockFields::struct_type(self);
+        let info_type = self.resize_struct_end_array(info_type, field_info.len() as u32);
+        let field_info_array =
+            vtable::BlockFieldDescription::struct_type(self).const_array(&field_info);
+        let len = self.const_size_t(field_info.len() as u64);
+        let info_val = self
+            .llvm
+            .const_struct(&[len.into(), field_info_array.into()], false);
+        let global = self.module.add_global(info_type, None, &info_sym);
+        global.set_initializer(&info_val);
+        global.set_visibility(GlobalVisibility::Hidden);
+        global
+            .as_pointer_value()
+            .const_cast(vtable::BlockFields::struct_type(self).ptr_type(AddressSpace::Generic))
     }
 
     fn create_block_vtable(&mut self, layout: IMonoLayout<'comp>) {
@@ -474,12 +542,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .collect();
         let vtable = self.create_resized_vtable::<vtable::BlockVTable>(layout, funs.len() as u32);
         let vtable_header = self.vtable_header(layout);
+        let block_info = self.block_info(id);
         let access_array = <fn(*const u8, i64, *mut u8) -> i64>::codegen_ty(self)
             .into_pointer_type()
             .const_array(&funs);
-        let vtable_val = self
-            .llvm
-            .const_struct(&[vtable_header.into(), access_array.into()], false);
+        let vtable_val = self.llvm.const_struct(
+            &[vtable_header.into(), block_info.into(), access_array.into()],
+            false,
+        );
         vtable.set_initializer(&vtable_val);
     }
 
@@ -543,6 +613,20 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         );
         let target = unsafe { self.builder.build_in_bounds_gep(actual_ptr, &path, "") };
         self.builder.build_load(target, "")
+    }
+    fn build_deref_fun_get(
+        &mut self,
+        layout: Option<IMonoLayout<'comp>>,
+        ptr: PointerValue<'llvm>,
+    ) -> CallableValue<'llvm> {
+        match layout {
+            Some(mono) => self.sym_callable(mono, LayoutPart::Deref(true)),
+            None => self
+                .vtable_get::<vtable::NominalVTable>(ptr, &[NominalVTableFields::deref_impl as u64])
+                .into_pointer_value()
+                .try_into()
+                .unwrap(),
+        }
     }
     fn build_typecast_fun_get(
         &mut self,
@@ -687,15 +771,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_typecast(&mut self, layout: IMonoLayout<'comp>) {
-        let (mono, _) = layout.mono_layout();
-        let deref_fun = if let MonoLayout::Nominal(_, _) = mono {
-            self.create_pd_deref(layout);
-            let sym = layout.symbol(self.layouts, LayoutPart::Deref, &self.compiler_database.db);
-            Some(self.module.get_function(&sym).unwrap())
-        } else {
-            None
-        };
-        ThunkContext::new(self, layout, deref_fun).build();
+        ThunkContext::new(self, layout).build();
     }
 
     fn build_field_gep(
@@ -833,12 +909,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         MirTranslator::new(self, mir_fun, llvm_fun, fun, arg, ret).build();
     }
 
-    fn create_pd_deref(&mut self, layout: IMonoLayout<'comp>) {
-        let llvm_fun = self.deref_fun_val(layout);
+    fn create_pd_deref(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
+        let thunk = self.deref_fun_val(layout);
+        let deref_impl = self.deref_impl_fun_val(layout);
         let mir_fun = Rc::new(self.mir_pd_thunk_fun(layout, CallKind::Val));
-        let [arg, ret] = get_fun_args(llvm_fun).map(|x| x.into_pointer_value());
+        let [arg, ret] = get_fun_args(deref_impl).map(|x| x.into_pointer_value());
         let fun = self.any_ptr().get_undef();
-        MirTranslator::new(self, mir_fun, llvm_fun, fun, arg, ret).build();
+        let deref = layout
+            .deref(self.layouts)
+            .unwrap()
+            .expect("trying to deref non-deref layout");
+        MirTranslator::new(self, mir_fun, deref_impl, fun, arg, ret).build();
+        self.wrap_tail_typecast(deref_impl, thunk, deref);
+        thunk
     }
 
     fn create_pd_end(&mut self, layout: IMonoLayout<'comp>) {
@@ -1291,6 +1374,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_nominal_funs(&mut self, layout: IMonoLayout<'comp>) {
+        self.create_pd_deref(layout);
         self.create_pd_end(layout);
         self.create_pd_start(layout);
     }

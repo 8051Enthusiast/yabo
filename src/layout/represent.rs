@@ -214,7 +214,7 @@ pub enum LayoutPart {
     Start,
     End,
     Typecast,
-    Deref,
+    Deref(bool),
     SingleForward,
     CurrentElement,
     Skip,
@@ -231,11 +231,11 @@ impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
             LayoutPart::Start => write!(f, "start"),
             LayoutPart::End => write!(f, "end"),
             LayoutPart::Typecast => write!(f, "typecast"),
-            LayoutPart::Deref => write!(f, "deref"),
+            LayoutPart::Deref(true) => write!(f, "deref"),
+            LayoutPart::Deref(false) => write!(f, "deref_impl"),
             LayoutPart::SingleForward => write!(f, "single_forward"),
             LayoutPart::CurrentElement => write!(f, "current_element"),
             LayoutPart::Skip => write!(f, "skip"),
-            
         }
     }
 }
@@ -248,15 +248,16 @@ pub struct LayoutSymbol<'a> {
 
 const TRUNCATION_LENGTH: usize = 8;
 
+pub fn truncated_hex(array: &[u8]) -> String {
+    let mut ret = String::new();
+    for i in &array[0..TRUNCATION_LENGTH] {
+        write!(ret, "{:02x}", i).unwrap();
+    }
+    ret
+}
+
 impl<'a> LayoutSymbol<'a> {
     pub fn symbol<DB: Layouts + ?Sized>(&self, hasher: &mut LayoutHasher<'a>, db: &DB) -> String {
-        let truncated_hex = |array: &[u8]| {
-            let mut ret = String::new();
-            for i in &array[0..TRUNCATION_LENGTH] {
-                write!(ret, "{:02x}", i).unwrap();
-            }
-            ret
-        };
         let name_prefix = match self.layout.mono_layout().0 {
             MonoLayout::BlockParser(def, _) => {
                 format!("parse_block_{}", &truncated_hex(&db.def_hash(def.0)))
