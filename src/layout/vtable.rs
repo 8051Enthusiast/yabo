@@ -27,8 +27,23 @@ target_struct! {
 }
 
 target_struct! {
+    pub struct BlockFieldDescription {
+        pub name: *const u8,
+        pub discriminant_offset: usize,
+    }
+}
+
+target_struct! {
+    pub struct BlockFields {
+        pub number_fields: usize,
+        pub fields: [BlockFieldDescription; 0],
+    }
+}
+
+target_struct! {
     pub struct BlockVTable {
         pub head: VTableHeader,
+        pub fields: &'static BlockFields,
         pub access_impl: [fn(from: *const u8, target_head: i64, ret: *mut u8) -> i64; 0],
     }
 }
@@ -36,6 +51,7 @@ target_struct! {
 target_struct! {
     pub struct NominalVTable {
         pub head: VTableHeader,
+        pub deref_impl: fn(from: *const u8, target_head: i64, ret: *mut u8) -> i64,
         pub start_impl: fn(nom: *const u8, ret: *mut u8) -> i64,
         pub end_impl: fn(nom: *const u8, ret: *mut u8) -> i64,
     }

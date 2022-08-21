@@ -1,12 +1,12 @@
 use inkwell::{
     basic_block::BasicBlock,
-    values::{FunctionValue, InstructionValue, IntValue, PhiValue, PointerValue},
+    values::{FunctionValue, IntValue, PhiValue, PointerValue},
     IntPredicate,
 };
 
 use crate::{
     hir_types::DISCRIMINANT_MASK,
-    layout::{prop::TargetSized, represent::LayoutPart, ILayout, IMonoLayout},
+    layout::{prop::TargetSized, represent::LayoutPart, IMonoLayout},
 };
 
 use super::CodeGenCtx;
@@ -14,8 +14,6 @@ use super::CodeGenCtx;
 pub struct ThunkContext<'llvm, 'comp, 'r> {
     cg: &'r mut CodeGenCtx<'llvm, 'comp>,
     thunk: FunctionValue<'llvm>,
-    alloca_ins: InstructionValue<'llvm>,
-    deref_fun: Option<FunctionValue<'llvm>>,
     target_head: IntValue<'llvm>,
     from_ptr: PointerValue<'llvm>,
     from_layout: IMonoLayout<'comp>,
@@ -23,25 +21,16 @@ pub struct ThunkContext<'llvm, 'comp, 'r> {
 }
 
 impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
-    pub fn new(
-        cg: &'r mut CodeGenCtx<'llvm, 'comp>,
-        layout: IMonoLayout<'comp>,
-        deref_fun: Option<FunctionValue<'llvm>>,
-    ) -> Self {
+    pub fn new(cg: &'r mut CodeGenCtx<'llvm, 'comp>, layout: IMonoLayout<'comp>) -> Self {
         let thunk = cg.typecast_fun_val(layout);
         let from_ptr = thunk.get_nth_param(0).unwrap().into_pointer_value();
         let target_head = thunk.get_nth_param(1).unwrap().into_int_value();
         let return_ptr = thunk.get_nth_param(2).unwrap().into_pointer_value();
-        let alloca_block = cg.llvm.append_basic_block(thunk, "entry");
-        let start_block = cg.llvm.append_basic_block(thunk, "start");
-        cg.builder.position_at_end(alloca_block);
-        let alloca_ins = cg.builder.build_unconditional_branch(start_block);
-        cg.builder.position_at_end(start_block);
+        let entry_block = cg.llvm.append_basic_block(thunk, "entry");
+        cg.builder.position_at_end(entry_block);
         ThunkContext {
             cg,
             thunk,
-            alloca_ins,
-            deref_fun,
             target_head,
             from_ptr,
             from_layout: layout,
@@ -50,7 +39,7 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
     }
 
     fn maybe_deref(&mut self) {
-        if let Some(deref_layout) = self.from_layout.deref(self.cg.layouts).unwrap() {
+        if self.from_layout.deref(self.cg.layouts).unwrap().is_some() {
             let mask = self.cg.const_i64(DISCRIMINANT_MASK);
             let discriminant = self
                 .cg
@@ -75,7 +64,7 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
                 .cg
                 .builder
                 .build_or(heads_equal, heads_zero, "no_deref");
-            let tail = self.typecast_tail(self.deref_fun.unwrap(), deref_layout);
+            let tail = self.typecast_tail();
             let next_bb = self.cg.llvm.append_basic_block(self.thunk, "head_match");
             self.cg
                 .builder
@@ -83,31 +72,18 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
             self.cg.builder.position_at_end(next_bb);
         }
     }
-    fn typecast_tail(
-        &mut self,
-        deref_fun: FunctionValue<'llvm>,
-        deref_layout: ILayout<'comp>,
-    ) -> BasicBlock<'llvm> {
+    fn typecast_tail(&mut self) -> BasicBlock<'llvm> {
         let previous_bb = self.cg.builder.get_insert_block();
         let current_bb = self.cg.llvm.append_basic_block(self.thunk, "typecast_tail");
 
-        self.cg.builder.position_before(&self.alloca_ins);
-        let deref_ret_ptr = self.cg.build_layout_alloca(deref_layout);
-
         self.cg.builder.position_at_end(current_bb);
-        let deref_status = self.cg.build_ptr_call_with_int_ret(
-            deref_fun.as_global_value().as_pointer_value(),
-            &[self.from_ptr.into(), deref_ret_ptr.into()],
-        );
-        self.cg.non_zero_early_return(self.thunk, deref_status);
-
-        let deref_typecast_fun = self
+        let deref_fun = self
             .cg
-            .build_typecast_fun_get(deref_layout.maybe_mono(), deref_ret_ptr);
+            .build_deref_fun_get(Some(self.from_layout), self.from_ptr);
         let ret = self.cg.build_call_with_int_ret(
-            deref_typecast_fun,
+            deref_fun,
             &[
-                deref_ret_ptr.into(),
+                self.from_ptr.into(),
                 self.target_head.into(),
                 self.return_ptr.into(),
             ],
