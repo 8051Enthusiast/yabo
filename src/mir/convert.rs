@@ -247,7 +247,7 @@ impl<'a> ConvertCtx<'a> {
         if self.f.fun.place(place_ref).ty == ty && place.is_none() {
             return Some(place_ref);
         }
-        let new_place = self.new_stack_place(ty, origin);
+        let new_place = self.unwrap_or_stack(place, ty, origin);
         self.copy(place_ref, new_place);
         Some(new_place)
     }
