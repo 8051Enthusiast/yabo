@@ -51,11 +51,17 @@ impl UnfinishedManifestation {
     }
     pub fn finalize(self) -> StructManifestation {
         let mut manifest = self.0;
-        manifest.discriminant_offset = manifest.size.size;
-        manifest.size.cat(SizeAlign {
+        manifest.discriminant_offset = 0;
+        let disc_sa = SizeAlign {
             size: ((manifest.discriminant_mapping.len() + 7) / 8) as PSize,
             align_mask: 0,
-        });
+        };
+        let size = manifest.size.size;
+        manifest.size = disc_sa.cat(manifest.size);
+        let added_offset = manifest.size.size - size;
+        for offset in manifest.field_offsets.values_mut() {
+            *offset += added_offset;
+        }
         manifest
     }
 }
