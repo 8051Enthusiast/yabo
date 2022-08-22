@@ -4,7 +4,6 @@
 node_modules
 /*.yb
 a.out
-a.ll
-a.s
-a.o
-a.so
+*.s
+*.o
+*.so

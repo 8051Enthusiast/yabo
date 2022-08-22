@@ -1,22 +1,5 @@
 use crate::target_struct;
 
-use super::prop::Zst;
-
-target_struct! {
-    pub struct LayoutKind {
-        pub head: i64,
-        pub number_fields: usize,
-        pub fields: [FieldInfo; 0],
-    }
-}
-
-target_struct! {
-    pub struct FieldInfo {
-        pub name: &'static Zst,
-        pub layout: &'static LayoutKind,
-    }
-}
-
 target_struct! {
     pub struct VTableHeader {
         pub head: i64,
@@ -109,13 +92,6 @@ mod tests {
             ParserVTable::tsize(),
             SizeAlign {
                 size: 32,
-                align_mask: 0b111,
-            }
-        );
-        assert_eq!(
-            LayoutKind::tsize(),
-            SizeAlign {
-                size: 16,
                 align_mask: 0b111,
             }
         );
