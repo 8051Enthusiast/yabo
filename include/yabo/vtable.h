@@ -1,6 +1,7 @@
 #pragma once
 #include<stdint.h>
 #include<sys/types.h>
+
 enum YaboHead {
 	YABO_INTEGER = 0x100,
 	YABO_BIT = 0x200,
@@ -26,13 +27,8 @@ typedef struct {
 } VTableHeader;
 
 typedef struct {
-	char *name;
-	size_t discriminant_offset;
-} BlockFieldDescription;
-
-typedef struct {
 	size_t number_fields;
-	BlockFieldDescription fields[];
+	char *fields[];
 } BlockFields ;
 
 typedef struct {
@@ -41,7 +37,6 @@ typedef struct {
 	int64_t (*access_impl[])(void *, int64_t, void *);
 } BlockVTable;
 
-
 typedef struct {
 	VTableHeader head;
 	int64_t (*deref_impl)(void *, int64_t, void *);
@@ -49,18 +44,15 @@ typedef struct {
 	int64_t (*end_impl)(void *, void *);
 } NominalVTable;
 
-
 typedef struct {
 	int64_t (*val_impl)(void *, void *, int64_t, void *);
 	int64_t (*len_impl)(void *, void *, void *);
 } ParserArgImpl;
 
-
 typedef struct {
 	VTableHeader head;
 	ParserArgImpl apply_table[];
 } ParserVTable;
-
 
 typedef struct {
 	VTableHeader head;

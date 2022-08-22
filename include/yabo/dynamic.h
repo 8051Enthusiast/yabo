@@ -52,10 +52,10 @@ static inline DynValue dyn_deref(DynValue val) {
 
 static inline DynValue dyn_access_field(DynValue block, char *name) {
 	BlockVTable *vtable = (BlockVTable *)dyn_vtable(block);
-	BlockFieldDescription *start = vtable->fields->fields;
+	char **start = vtable->fields->fields;
 	int64_t (*access_impl)(void *, int64_t, void *) = NULL;
 	for(size_t i = 0; i < vtable->fields->number_fields; i++) {
-		char *current_name = start[i].name;
+		char *current_name = start[i];
 		if (!strcmp(current_name, name)) {
 			access_impl = vtable->access_impl[i];
 			break;

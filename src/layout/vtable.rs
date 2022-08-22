@@ -10,16 +10,9 @@ target_struct! {
 }
 
 target_struct! {
-    pub struct BlockFieldDescription {
-        pub name: *const u8,
-        pub discriminant_offset: usize,
-    }
-}
-
-target_struct! {
     pub struct BlockFields {
         pub number_fields: usize,
-        pub fields: [BlockFieldDescription; 0],
+        pub fields: [*const u8; 0],
     }
 }
 

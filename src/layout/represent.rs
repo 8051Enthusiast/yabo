@@ -218,6 +218,7 @@ pub enum LayoutPart {
     SingleForward,
     CurrentElement,
     Skip,
+
 }
 
 impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
