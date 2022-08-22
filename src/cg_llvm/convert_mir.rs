@@ -9,7 +9,7 @@ use inkwell::{
 
 use crate::{
     expr::Atom,
-    hir::{BlockId, HirIdWrapper},
+    hir::BlockId,
     hir_types::{NominalId, TyHirs},
     interner::FieldName,
     layout::{mir_subst::FunctionSubstitute, ILayout, Layout, MonoLayout},
@@ -174,27 +174,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let layout = self.mir_fun.place(block);
         let block_id = self.unwrap_block_id(layout);
         let block_ptr = self.place_ptr(block);
-        let manifestation = self.cg.layouts.dcx.manifestation(layout);
-        let disc_offset = manifestation.discriminant_offset;
-        let root_ctx = block_id
-            .lookup(&self.cg.compiler_database.db)
-            .unwrap()
-            .root_context;
-        let def_id = root_ctx.0.child_field(&self.cg.compiler_database.db, field);
-        let inner_offset = manifestation.discriminant_mapping.get(&def_id)?;
-        let byte_offset = self
-            .cg
-            .llvm
-            .i32_type()
-            .const_int(disc_offset + inner_offset / 8, false);
-        let bit_offset = inner_offset % 8;
-        let shifted_bit = self.cg.llvm.i8_type().const_int(1 << bit_offset, false);
-        let byte_ptr = unsafe {
-            self.cg
-                .builder
-                .build_in_bounds_gep(block_ptr, &[byte_offset], "gepdisc")
-        };
-        Some((byte_ptr, shifted_bit))
+        self.cg
+            .build_discriminant_info(block_id, block_ptr, layout, field)
     }
 
     fn set_discriminant(&mut self, block: PlaceRef, field: FieldName, val: bool) {
@@ -223,21 +204,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                     Some(x) => x,
                     None => return,
                 };
-                let byte = self
-                    .cg
-                    .builder
-                    .build_load(byte_ptr, "ld_assert_field")
-                    .into_int_value();
-                let and_byte = self
-                    .cg
-                    .builder
-                    .build_and(byte, shifted_bit, "cmp_assert_field");
-                self.cg.builder.build_int_compare(
-                    IntPredicate::NE,
-                    and_byte,
-                    self.cg.llvm.i8_type().const_zero(),
-                    "and_assert_not_zero",
-                )
+                self.cg.build_discriminant_check(byte_ptr, shifted_bit)
             }
             Atom::Number(num) => {
                 let num = self.cg.const_i64(num);

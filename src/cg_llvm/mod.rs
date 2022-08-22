@@ -41,7 +41,7 @@ use crate::{
         },
         AbsLayoutCtx, ILayout, IMonoLayout, Layout, LayoutError, MonoLayout,
     },
-    mir::{CallKind, DupleField, Mirs, PdArgKind},
+    mir::{CallKind, DupleField, Mirs, PdArgKind, ReturnStatus},
     types::{PrimitiveType, Type, TypeInterner},
 };
 
@@ -258,7 +258,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         name: Identifier,
     ) -> FunctionValue<'llvm> {
-        self.pip_fun_val(layout, LayoutPart::Field(name))
+        let f = self.pip_fun_val(layout, LayoutPart::Field(name));
+        self.set_always_inline(f);
+        f
     }
     fn typecast_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
         let f = self.pip_fun_val(layout, LayoutPart::Typecast);
@@ -457,16 +459,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         global_value.as_pointer_value()
     }
 
-    fn field_info(&mut self, name: Identifier, disc_index: PSize) -> StructValue<'llvm> {
+    fn field_info(&mut self, name: Identifier) -> PointerValue<'llvm> {
         let name = self
             .compiler_database
             .db
             .lookup_intern_identifier(name)
             .name;
-        let name_ptr = self.module_string(&name);
-        let disc_index = self.const_size_t(disc_index);
-        self.llvm
-            .const_struct(&[name_ptr.into(), disc_index.into()], false)
+        self.module_string(&name)
     }
 
     fn block_info(&mut self, block: BlockId) -> PointerValue<'llvm> {
@@ -478,33 +477,25 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             );
         }
 
-        let [fields, disc_fields] = [false, true].map(|disc| {
-            self.compiler_database
-                .db
-                .sorted_block_fields(block, disc)
-                .unwrap()
-        });
-        let mut disc_index: PSize = 0;
+        let fields = self
+            .compiler_database
+            .db
+            .sorted_block_fields(block, false)
+            .unwrap();
         let mut field_info = Vec::new();
         for field in fields.iter() {
-            let index_value = if disc_fields.get(disc_index as usize) == Some(field) {
-                let val = disc_index;
-                disc_index += 1;
-                val
-            } else {
-                PSize::MAX
-            };
             let name = match field {
                 FieldName::Ident(id) => id,
                 FieldName::Return => panic!("return field should not be in fields"),
             };
-            field_info.push(self.field_info(*name, index_value));
+            field_info.push(self.field_info(*name));
         }
 
         let info_type = vtable::BlockFields::struct_type(self);
         let info_type = self.resize_struct_end_array(info_type, field_info.len() as u32);
-        let field_info_array =
-            vtable::BlockFieldDescription::struct_type(self).const_array(&field_info);
+        let field_info_array = <*const u8>::codegen_ty(self)
+            .into_pointer_type()
+            .const_array(&field_info);
         let len = self.const_size_t(field_info.len() as u64);
         let info_val = self
             .llvm
@@ -758,6 +749,54 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .build_int_compare(IntPredicate::NE, and, self.const_i64(0), "")
     }
 
+    fn build_discriminant_info(
+        &mut self,
+        block_id: BlockId,
+        block_ptr: PointerValue<'llvm>,
+        layout: ILayout<'comp>,
+        field: FieldName,
+    ) -> Option<(PointerValue<'llvm>, IntValue<'llvm>)> {
+        let manifestation = self.layouts.dcx.manifestation(layout);
+        let disc_offset = manifestation.discriminant_offset;
+        let root_ctx = block_id
+            .lookup(&self.compiler_database.db)
+            .unwrap()
+            .root_context;
+        let def_id = root_ctx.0.child_field(&self.compiler_database.db, field);
+        let inner_offset = manifestation.discriminant_mapping.get(&def_id)?;
+        let byte_offset = self
+            .llvm
+            .i32_type()
+            .const_int(disc_offset + inner_offset / 8, false);
+        let bit_offset = inner_offset % 8;
+        let shifted_bit = self.llvm.i8_type().const_int(1 << bit_offset, false);
+        let byte_ptr = unsafe {
+            self.builder
+                .build_in_bounds_gep(block_ptr, &[byte_offset], "gepdisc")
+        };
+        Some((byte_ptr, shifted_bit))
+    }
+
+    fn build_discriminant_check(
+        &mut self,
+        byte_ptr: PointerValue<'llvm>,
+        shifted_bit: IntValue<'llvm>,
+    ) -> IntValue<'llvm> {
+        let byte = self
+            .builder
+            .build_load(byte_ptr, "ld_assert_field")
+            .into_int_value();
+        let and_byte = self
+            .builder
+            .build_and(byte, shifted_bit, "cmp_assert_field");
+        self.builder.build_int_compare(
+            IntPredicate::NE,
+            and_byte,
+            self.llvm.i8_type().const_zero(),
+            "and_assert_not_zero",
+        )
+    }
+
     fn build_cast<T: TargetSized, R: TryFrom<BasicValueEnum<'llvm>>>(
         &mut self,
         v: impl BasicValue<'llvm>,
@@ -949,7 +988,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.builder
             .build_memcpy(to, align as u32, from, align as u32, size)
             .unwrap();
-        self.builder.build_return(Some(&self.const_i64(0)));
+        self.builder
+            .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)));
     }
 
     fn create_array_single_forward(&mut self, layout: IMonoLayout<'comp>) {
@@ -970,7 +1010,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 .build_in_bounds_gep(ptr, &[self.const_i64(1)], "inc_ptr")
         };
         self.builder.build_store(to_ptr, inc_ptr);
-        self.builder.build_return(Some(&self.const_i64(0)));
+        self.builder
+            .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)));
     }
 
     fn create_array_skip(&mut self, layout: IMonoLayout<'comp>) {
@@ -990,7 +1031,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .into_pointer_value();
         let inc_ptr = unsafe { self.builder.build_in_bounds_gep(ptr, &[len], "inc_ptr") };
         self.builder.build_store(to_ptr, inc_ptr);
-        self.builder.build_return(Some(&self.const_i64(0)));
+        self.builder
+            .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)));
     }
 
     fn create_array_current_element(&mut self, layout: IMonoLayout<'comp>) {
@@ -1222,8 +1264,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let block = block.into_pointer_value();
         let target_head = target_head.into_int_value();
         let return_ptr = return_ptr.into_pointer_value();
-        let inner_layout = if let MonoLayout::Block(_, fields) = &layout.mono_layout().0 {
-            fields[&FieldName::Ident(name)]
+        let (id, inner_layout) = if let MonoLayout::Block(id, fields) = &layout.mono_layout().0 {
+            (id, fields[&FieldName::Ident(name)])
         } else {
             dbpanic!(
                 &self.compiler_database.db,
@@ -1231,6 +1273,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 &layout.inner()
             );
         };
+        if let Some((ptr, mask)) =
+            self.build_discriminant_info(*id, block, layout.inner(), FieldName::Ident(name))
+        {
+            let next_bb = self.llvm.append_basic_block(fun, "next");
+            let early_exit_bb = self.llvm.append_basic_block(fun, "early_exit");
+            let is_disc_set = self.build_discriminant_check(ptr, mask);
+            self.builder
+                .build_conditional_branch(is_disc_set, next_bb, early_exit_bb);
+            self.builder.position_at_end(early_exit_bb);
+            self.builder
+                .build_return(Some(&self.const_i64(ReturnStatus::Backtrack as i64)));
+            self.builder.position_at_end(next_bb);
+        }
         let field_ptr = self.build_field_gep(layout.inner(), field, block);
         self.terminate_tail_typecast(inner_layout, field_ptr, target_head, return_ptr);
     }
@@ -1241,7 +1296,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let is_not_zero = self.builder.build_int_compare(
             IntPredicate::NE,
             status,
-            self.const_i64(0),
+            self.const_i64(ReturnStatus::Ok as i64),
             "deref_status_is_zero",
         );
         self.builder
