@@ -7,3 +7,4 @@ a.out
 *.s
 *.o
 *.so
+*.ll
