@@ -77,7 +77,7 @@ mod tests {
         assert_eq!(
             BlockVTable::tsize(),
             SizeAlign {
-                size: 32,
+                size: 40,
                 align_mask: 0b111,
             }
         );
