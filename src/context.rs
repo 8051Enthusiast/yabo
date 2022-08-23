@@ -1,14 +1,23 @@
+use std::ffi::OsStr;
+use std::process::Command;
 use std::sync::Arc;
+
+use bumpalo::Bump;
+use inkwell::support::LLVMString;
+use tempfile::NamedTempFile;
 
 use crate::absint::AbsIntDatabase;
 use crate::ast::AstDatabase;
+use crate::cg_llvm::{self, CodeGenCtx};
 use crate::config::{Config, ConfigDatabase, Configs};
 use crate::error::Report;
-use crate::hir::HirDatabase;
-use crate::hir_types::HirTypesDatabase;
+use crate::hir::represent::HirGraph;
+use crate::hir::{HirDatabase, Hirs};
+use crate::hir_types::{HirTypesDatabase, TyHirs};
 use crate::interner::{Identifier, IdentifierName, Interner, InternerDatabase};
-use crate::layout::LayoutDatabase;
-use crate::mir::MirDatabase;
+use crate::layout::{self, instantiate, InternerLayout, LayoutContext, LayoutDatabase};
+use crate::low_effort_interner;
+use crate::mir::{print_all_mir, MirDatabase};
 use crate::order::OrdersDatabase;
 use crate::source::{AriadneCache, FileCollection, FileDatabase};
 use crate::types::TypeInternerDatabase;
@@ -94,5 +103,63 @@ impl Context {
                 .expect("Error while printing errors")
         }
         true
+    }
+
+    pub fn write_mir(&self, outfile: &OsStr) -> Result<(), std::io::Error> {
+        let mut out = std::fs::File::create(outfile)?;
+        print_all_mir(&self.db, &mut out)?;
+        Ok(())
+    }
+
+    pub fn write_hir(&self, outfile: &OsStr) -> Result<(), std::io::Error> {
+        let mut out = std::fs::File::create(outfile)?;
+        let hir_graph = HirGraph(&self.db);
+        dot::render(&hir_graph, &mut out)?;
+        Ok(())
+    }
+
+    fn run_on_codegen(
+        &self,
+        f: impl FnOnce(CodeGenCtx) -> Result<(), LLVMString>,
+    ) -> Result<(), String> {
+        let llvm = inkwell::context::Context::create();
+        let mut bump = Bump::new();
+        let intern = low_effort_interner::Interner::<InternerLayout>::new(&mut bump);
+        let layout_ctx = LayoutContext::new(intern);
+        let exported_pds = self.db.all_exported_parserdefs();
+        let exported_tys: Vec<_> = exported_pds
+            .iter()
+            .map(|x| self.db.parser_args(*x).unwrap().thunk)
+            .collect();
+        let mut layouts = layout::AbsLayoutCtx::new(&self.db, layout_ctx);
+        instantiate(&mut layouts, &exported_tys).unwrap();
+        let mut codegen = cg_llvm::CodeGenCtx::new(&llvm, self, &mut layouts).unwrap();
+        codegen.create_all_vtables();
+        codegen.create_all_funs();
+        codegen.create_pd_exports();
+        f(codegen).map_err(|x| x.to_string())
+    }
+
+    pub fn write_llvm(&self, outfile: &OsStr) -> Result<(), String> {
+        self.run_on_codegen(|codegen| codegen.llvm_code(outfile))
+    }
+
+    pub fn write_object(&self, outfile: &OsStr) -> Result<(), String> {
+        self.run_on_codegen(|codegen| codegen.object_file(outfile))
+    }
+
+    pub fn write_shared_lib(&self, outfile: &OsStr) -> Result<(), String> {
+        let temp_object_file = NamedTempFile::new().map_err(|e| e.to_string())?;
+        let temp_path = temp_object_file.into_temp_path();
+        let temp_path = temp_path.as_os_str();
+        self.run_on_codegen(|codegen| codegen.object_file(temp_path))?;
+        Command::new("clang")
+            .arg("-shared")
+            .arg("-o")
+            .arg(outfile)
+            .arg(temp_path)
+            .status()
+            .map_err(|e| e.to_string())?;
+        Ok(())
     }
 }

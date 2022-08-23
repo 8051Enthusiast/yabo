@@ -16,20 +16,34 @@ pub mod mir;
 pub mod order;
 pub mod source;
 pub mod types;
-use bumpalo::Bump;
+
+use clap::Parser;
 use config::Config;
 use context::Context;
-use hir_types::TyHirs;
-use layout::{instantiate, InternerLayout, LayoutContext};
-use low_effort_interner::Interner;
-use std::{env::args, error::Error};
 
-use crate::hir::Hirs;
+use std::ffi::OsString;
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let infile = args()
-        .nth(1)
-        .unwrap_or_else(|| exit_with_message("No filename provided"));
+#[derive(clap::ValueEnum, Clone, Copy)]
+enum EmitKind {
+    Hir,
+    Mir,
+    Llvm,
+    Object,
+    SharedLib,
+}
+
+#[derive(Parser)]
+#[clap(author, version, about)]
+struct Args {
+    #[clap(short, long, arg_enum, default_value = "shared-lib")]
+    emit: EmitKind,
+    infile: String,
+    outfile: OsString,
+}
+
+fn main() {
+    let args = Args::parse();
+    let infile = &args.infile;
     let mut context = Context::default();
     context.fc.add(&infile).expect("Could not read file");
     context.update_db();
@@ -42,24 +56,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     if context.print_diagnostics() {
         exit_with_message("Errors occured during compilation");
     }
-    mir::print_all_mir(&context.db, &mut std::io::stdout().lock())?;
-    let llvm = inkwell::context::Context::create();
-    let mut bump = Bump::new();
-    let intern = Interner::<InternerLayout>::new(&mut bump);
-    let layout_ctx = LayoutContext::new(intern);
-    let exported_pds = context.db.all_exported_parserdefs();
-    let exported_tys: Vec<_> = exported_pds
-        .iter()
-        .map(|x| context.db.parser_args(*x).unwrap().thunk)
-        .collect();
-    let mut layouts = layout::AbsLayoutCtx::new(&context.db, layout_ctx);
-    instantiate(&mut layouts, &exported_tys).unwrap();
-    let mut codegen = cg_llvm::CodeGenCtx::new(&llvm, &context, &mut layouts).unwrap();
-    codegen.create_all_vtables();
-    codegen.create_all_funs();
-    codegen.create_pd_exports();
-    codegen.object_file();
-    Ok(())
+    let outfile = &args.outfile;
+    match match args.emit {
+        EmitKind::Hir => context.write_mir(outfile).map_err(|x| x.to_string()),
+        EmitKind::Mir => context.write_hir(outfile).map_err(|x| x.to_string()),
+        EmitKind::Llvm => context.write_llvm(outfile),
+        EmitKind::Object => context.write_object(outfile),
+        EmitKind::SharedLib => context.write_shared_lib(outfile),
+    } {
+        Ok(()) => {}
+        Err(x) => exit_with_message(&x),
+    };
 }
 
 fn exit_with_message(msg: &str) -> ! {
