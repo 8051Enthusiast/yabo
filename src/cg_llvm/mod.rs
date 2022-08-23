@@ -1,7 +1,7 @@
 pub mod convert_mir;
 pub mod convert_thunk;
 
-use std::{fmt::Debug, path::Path, rc::Rc, ffi::OsStr};
+use std::{ffi::OsStr, fmt::Debug, path::Path, rc::Rc};
 
 use fxhash::FxHashMap;
 use inkwell::{
@@ -10,6 +10,7 @@ use inkwell::{
     context::Context,
     module::{Linkage, Module},
     passes::{PassManager, PassManagerBuilder},
+    support::LLVMString,
     targets::{
         CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetData, TargetMachine,
         TargetTriple,
@@ -19,7 +20,7 @@ use inkwell::{
         BasicMetadataValueEnum, BasicValue, BasicValueEnum, CallableValue, FunctionValue,
         GlobalValue, IntValue, PointerValue, StructValue, UnnamedAddress,
     },
-    AddressSpace, GlobalVisibility, IntPredicate, OptimizationLevel, support::LLVMString,
+    AddressSpace, GlobalVisibility, IntPredicate, OptimizationLevel,
 };
 
 use crate::{
@@ -117,7 +118,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let alwaysinline = Attribute::get_named_enum_kind_id("alwaysinline");
         fun.add_attribute(
             AttributeLoc::Function,
-            self.llvm.create_enum_attribute(alwaysinline, 1),
+            self.llvm.create_enum_attribute(alwaysinline, 0),
         );
     }
     fn resize_struct_end_array(&self, st: StructType<'llvm>, size: u32) -> StructType<'llvm> {
@@ -456,7 +457,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let global_value = self.module.add_global(cstr.get_type(), None, &sym_name);
         global_value.set_visibility(GlobalVisibility::Hidden);
         global_value.set_initializer(&cstr);
-        global_value.as_pointer_value()
+        global_value
+            .as_pointer_value()
+            .const_cast(self.llvm.i8_type().ptr_type(AddressSpace::Generic))
     }
 
     fn field_info(&mut self, name: Identifier) -> PointerValue<'llvm> {
@@ -1474,8 +1477,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     pub fn llvm_code(self, outfile: &OsStr) -> Result<(), LLVMString> {
-//        self.module.verify()?;
-//        self.pass_manager.run_on(&self.module);
+        //        self.module.verify()?;
+        //        self.pass_manager.run_on(&self.module);
         self.module.print_to_file(outfile)?;
         Ok(())
     }
