@@ -1,7 +1,7 @@
 pub mod convert_mir;
 pub mod convert_thunk;
 
-use std::{fmt::Debug, path::Path, rc::Rc};
+use std::{fmt::Debug, path::Path, rc::Rc, ffi::OsStr};
 
 use fxhash::FxHashMap;
 use inkwell::{
@@ -19,7 +19,7 @@ use inkwell::{
         BasicMetadataValueEnum, BasicValue, BasicValueEnum, CallableValue, FunctionValue,
         GlobalValue, IntValue, PointerValue, StructValue, UnnamedAddress,
     },
-    AddressSpace, GlobalVisibility, IntPredicate, OptimizationLevel,
+    AddressSpace, GlobalVisibility, IntPredicate, OptimizationLevel, support::LLVMString,
 };
 
 use crate::{
@@ -1473,16 +1473,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
     }
 
-    pub fn object_file(&mut self) {
-        if let Err(err) = self.module.verify() {
-            eprintln!("validation failed: {}", err.to_string());
-            return;
-        }
+    pub fn llvm_code(self, outfile: &OsStr) -> Result<(), LLVMString> {
+//        self.module.verify()?;
+//        self.pass_manager.run_on(&self.module);
+        self.module.print_to_file(outfile)?;
+        Ok(())
+    }
+
+    pub fn object_file(self, outfile: &OsStr) -> Result<(), LLVMString> {
+        self.module.verify()?;
         self.pass_manager.run_on(&self.module);
-        self.module.print_to_file("a.ll").unwrap();
         self.target
-            .write_to_file(&self.module, FileType::Object, Path::new("a.o"))
-            .expect("Could not create object file");
+            .write_to_file(&self.module, FileType::Object, Path::new(outfile))?;
+        Ok(())
     }
 }
 
