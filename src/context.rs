@@ -118,7 +118,7 @@ impl Context {
         Ok(())
     }
 
-    fn run_on_codegen(
+    fn codegen_and_then(
         &self,
         f: impl FnOnce(CodeGenCtx) -> Result<(), LLVMString>,
     ) -> Result<(), String> {
@@ -141,18 +141,18 @@ impl Context {
     }
 
     pub fn write_llvm(&self, outfile: &OsStr) -> Result<(), String> {
-        self.run_on_codegen(|codegen| codegen.llvm_code(outfile))
+        self.codegen_and_then(|codegen| codegen.llvm_code(outfile))
     }
 
     pub fn write_object(&self, outfile: &OsStr) -> Result<(), String> {
-        self.run_on_codegen(|codegen| codegen.object_file(outfile))
+        self.codegen_and_then(|codegen| codegen.object_file(outfile))
     }
 
     pub fn write_shared_lib(&self, outfile: &OsStr) -> Result<(), String> {
         let temp_object_file = NamedTempFile::new().map_err(|e| e.to_string())?;
         let temp_path = temp_object_file.into_temp_path();
         let temp_path = temp_path.as_os_str();
-        self.run_on_codegen(|codegen| codegen.object_file(temp_path))?;
+        self.codegen_and_then(|codegen| codegen.object_file(temp_path))?;
         Command::new("clang")
             .arg("-shared")
             .arg("-o")
