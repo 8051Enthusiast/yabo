@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <string.h>
 typedef struct {
-	VTableHeader *vtable;
+	struct VTableHeader *vtable;
 	union {
 		void *data;
 		char in_data[sizeof(void *)];
@@ -17,8 +17,8 @@ static inline void dyn_free(DynValue val) {
 	}
 }
 
-static inline VTableHeader *dyn_vtable(DynValue val) {
-	return (VTableHeader *)((intptr_t)val.vtable & ~1);
+static inline struct VTableHeader *dyn_vtable(DynValue val) {
+	return (struct VTableHeader *)((intptr_t)val.vtable & ~1);
 }
 
 static inline void *dyn_data(DynValue *val) {
@@ -29,7 +29,7 @@ static inline void *dyn_data(DynValue *val) {
 	}
 }
 
-static inline DynValue dyn_parse_bytes(char *bytes, ParserArgImpl parser) {
+static inline DynValue dyn_parse_bytes(char *bytes, struct ParserArgImpl parser) {
 	DynValue ret;
 	int64_t status = parser.val_impl(NULL, &bytes, 0x3, &ret);
 	if (status != 0) {
@@ -41,7 +41,7 @@ static inline DynValue dyn_parse_bytes(char *bytes, ParserArgImpl parser) {
 
 static inline DynValue dyn_deref(DynValue val) {
 	DynValue ret;
-	NominalVTable *vtable = (NominalVTable *)dyn_vtable(val);
+	struct NominalVTable *vtable = (struct NominalVTable *)dyn_vtable(val);
 	int64_t status = vtable->deref_impl(dyn_data(&val), 0x3, &ret);
 	if (status != 0) {
 		ret.vtable = 0;
@@ -51,7 +51,7 @@ static inline DynValue dyn_deref(DynValue val) {
 }
 
 static inline DynValue dyn_access_field(DynValue block, char *name) {
-	BlockVTable *vtable = (BlockVTable *)dyn_vtable(block);
+	struct BlockVTable *vtable = (struct BlockVTable *)dyn_vtable(block);
 	char **start = vtable->fields->fields;
 	int64_t (*access_impl)(void *, int64_t, void *) = NULL;
 	for(size_t i = 0; i < vtable->fields->number_fields; i++) {

@@ -1,6 +1,6 @@
 #pragma once
 #include<stdint.h>
-#include<sys/types.h>
+//#include<sys/types.h>
 
 enum YaboHead {
 	YABO_INTEGER = 0x100,
@@ -19,44 +19,44 @@ enum ReturnStatus {
 	BACKTRACK = 3,
 };
 
-typedef struct {
+struct VTableHeader {
 	int64_t head;
 	int64_t (*typecast_impl)(void *, int64_t, void *);
 	size_t size;
 	size_t align;
-} VTableHeader;
+};
 
-typedef struct {
+struct BlockFields {
 	size_t number_fields;
 	char *fields[];
-} BlockFields ;
+};
 
-typedef struct {
-	VTableHeader head;
-	BlockFields *fields;
+struct BlockVTable {
+	struct VTableHeader head;
+	struct BlockFields *fields;
 	int64_t (*access_impl[])(void *, int64_t, void *);
-} BlockVTable;
+};
 
-typedef struct {
-	VTableHeader head;
+struct NominalVTable {
+	struct VTableHeader head;
 	int64_t (*deref_impl)(void *, int64_t, void *);
 	int64_t (*start_impl)(void *, void *);
 	int64_t (*end_impl)(void *, void *);
-} NominalVTable;
+};
 
-typedef struct {
+struct ParserArgImpl {
 	int64_t (*val_impl)(void *, void *, int64_t, void *);
 	int64_t (*len_impl)(void *, void *, void *);
-} ParserArgImpl;
+};
 
-typedef struct {
-	VTableHeader head;
-	ParserArgImpl apply_table[];
-} ParserVTable;
+struct ParserVTable {
+	struct VTableHeader head;
+	struct ParserArgImpl apply_table[];
+};
 
-typedef struct {
-	VTableHeader head;
+struct ArrayVTable {
+	struct VTableHeader head;
 	int64_t (*single_forward_impl)(void *, void *);
 	int64_t (*current_element_impl)(void *, int64_t, void *);
 	int64_t (*skip_impl)(void *, uint64_t, void *);
-} ArrayVTable;
+};
