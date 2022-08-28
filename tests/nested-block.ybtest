@@ -1,0 +1,65 @@
+====[ source code ]====
+def for[int] *> block = {
+	tag: ~
+	(
+		let ignore: int = tag if 1,
+		next: block,
+	;
+		more: ~,
+	)
+}
+export def for[int] *> test = {
+	a: block,
+	b: block,
+}
+====[ binary 1 ]====
+01 01 01 02 04 01 01 01 00 04
+====[ output 1 ]====
+{
+  "a": {
+    "tag": 1,
+    "ignore": 1,
+    "next": {
+      "tag": 1,
+      "ignore": 1,
+      "next": {
+        "ignore": 1,
+        "tag": 1,
+        "next": {
+          "tag": 2,
+          "more": 4
+        }
+      }
+    }
+  },
+  "b": {
+    "tag": 1,
+    "ignore": 1,
+    "next": {
+      "tag": 1,
+      "ignore": 1,
+      "next": {
+        "tag": 1,
+        "ignore": 1,
+        "next": {
+          "tag": 0,
+          "more": 4
+        }
+      }
+    }
+  }
+}
+
+====[ binary 2 ]====
+ff fe fd fc
+====[ output 2 ]====
+{
+  "a": {
+    "tag": 255,
+      "more": 254
+  },
+  "b": {
+    "tag": 253,
+    "more": 252
+  }
+}
