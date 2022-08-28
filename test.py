@@ -9,6 +9,9 @@ import json
 from typing import Optional, Tuple
 import yabo
 
+TARGET_RELEASE='release'
+BINARY_NAME='yabo'
+
 # test files are structured as follows:
 # ====[ source code ]====
 # (source)
@@ -25,6 +28,20 @@ case_title = re.compile('^(binary|output)\s+(.+)$')
 
 current_script_dir = os.path.dirname(os.path.realpath(__file__))
 
+def build_compiler_binary():
+    compiler_dir = os.path.join(current_script_dir, 'compiler')
+    os.chdir(compiler_dir)
+    cargo_metadata = subprocess.Popen(['cargo', 'metadata', '--format-version=1'], stdout=subprocess.PIPE)
+    cargo_metadata_output = json.loads(cargo_metadata.communicate()[0].decode('utf-8'))
+    cargo_args = ['cargo', 'build']
+    if TARGET_RELEASE == 'release':
+        cargo_args.append('--release')
+    cargo_build = subprocess.run(cargo_args)
+    if cargo_build.returncode != 0:
+        raise Exception('Failed to build compiler')
+    return os.path.join(cargo_metadata_output['target_directory'], TARGET_RELEASE, BINARY_NAME)
+
+compiler_path = build_compiler_binary()
 
 class CompiledSource:
     dir: str
@@ -38,10 +55,7 @@ class CompiledSource:
             sourcepath = os.path.join(dir, 'source.yb')
             with open(sourcepath, 'w') as sourcefile:
                 sourcefile.write(source)
-            compiler_dir = os.path.join(current_script_dir, 'compiler')
-            os.chdir(compiler_dir)
-            subprocess.run(['cargo', 'run', '--quiet',
-                           '--', sourcepath, self.compiled])
+            subprocess.run([compiler_path, sourcepath, self.compiled])
         except Exception as e:
             shutil.rmtree(self.dir)
             raise e
@@ -84,26 +98,29 @@ def dictionarified_obj(obj):
 def wrap_maybe_field(inner: str, indent: str, field: Optional[str] = None):
     if field is None:
         return inner + '\n'
-    return f'  "{field}": {inner},\n{indent}'
+    return f'{indent}"{field}": {inner},\n'
 
 
-def dict_with_indent(d, indent: str) -> str:
+def dict_with_indent(d, indent: str, field=None) -> str:
     if type(d) is str:
-        return f'"{d}"'
-    if type(d) is int:
-        return str(d)
-    if type(d) is bool:
+        ret = f'"{d}"'
+    elif type(d) is int:
+        ret = str(d)
+    elif type(d) is bool:
         if d:
-            return 'true'
-        return 'false'
-    if type(d) is not dict:
-        return str(d)
-    out = f'{{\n{indent}'
-    for key, value in d.items():
-        inner = dict_with_indent(value, indent + '  ')
-        out += wrap_maybe_field(inner, indent, key)
-    out += '}'
-    return out
+            ret = 'true'
+        else:
+            ret = 'false'
+    elif type(d) is not dict:
+        ret = str(d)
+    else:
+        ret = '{\n'
+        sorted_keys = sorted(d.keys())
+        for key in sorted_keys:
+            value = d[key]
+            ret += dict_with_indent(value, indent + '  ', key)
+        ret += f'{indent}}}'
+    return wrap_maybe_field(ret, indent, field)
 
 
 RED = '\033[31m'
@@ -118,8 +135,7 @@ class MatchingHead:
         self.data = data
 
     def diff(self, indent='', field=None) -> str:
-        inner = dict_with_indent(self.data, indent)
-        return wrap_maybe_field(inner, indent, field)
+        return dict_with_indent(self.data, indent, field)
 
 
 class DiffHead:
@@ -133,12 +149,10 @@ class DiffHead:
         ret = ''
         if self.left is not None:
             ret += RED
-            inner = dict_with_indent(self.left, indent)
-            ret += wrap_maybe_field(inner, indent, field)
+            ret += dict_with_indent(self.left, indent, field)
         if self.right is not None:
             ret += GREEN
-            inner = dict_with_indent(self.right, indent)
-            ret += wrap_maybe_field(inner, indent, field)
+            ret += dict_with_indent(self.right, indent, field)
         return ret + CLEAR
 
 
@@ -150,10 +164,12 @@ class DictHead:
         self.data = data
 
     def diff(self, indent='', field=None) -> str:
-        out = f'{{\n{indent}'
-        for key, value in self.data.items():
-            out += value.diff(indent, key)
-        out += '}'
+        out = '{\n'
+        sorted_keys = sorted(self.data.keys())
+        for key in sorted_keys:
+            value = self.data[key]
+            out += value.diff(indent + '  ', key)
+        out += f'{indent}}}'
         return wrap_maybe_field(out, indent, field)
 
 
@@ -225,10 +241,10 @@ class TestFile:
                 obj = parser.parse(buf)
                 parsed_json = json.loads(pair.output)
                 dict_obj = dictionarified_obj(obj)
-                (diffed, is_different) = diff(dict_obj, parsed_json)
+                (diffed, is_different) = diff(parsed_json, dict_obj)
                 if is_different:
                     print(f'Test {test_name} failed:')
-                    print(diffed.diff(' '), end='')
+                    print(diffed.diff(), end='')
                     failed_tests += 1
                 else:
                     print(f'Test {test_name} passed')
