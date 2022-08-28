@@ -137,6 +137,7 @@ impl Context {
         codegen.create_all_vtables();
         codegen.create_all_funs();
         codegen.create_pd_exports();
+        codegen.create_free_fun();
         f(codegen).map_err(|x| x.to_string())
     }
 

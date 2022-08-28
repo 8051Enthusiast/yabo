@@ -1,0 +1,14 @@
+====[ source code ]====
+def for[int] *> thunk_returning_int = ~
+export def for[int] *> test = {
+	let parser_with_invisible_thunk: for[int] *> int = thunk_returning_int,
+	x: parser_with_invisible_thunk,
+}
+
+====[ binary 1 ]====
+10
+====[ output 1 ]====
+{
+	"parser_with_invisible_thunk": "parser",
+	"x": 16
+}

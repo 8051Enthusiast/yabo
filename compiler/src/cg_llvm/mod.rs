@@ -1476,6 +1476,21 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
     }
 
+    pub fn create_free_fun(&mut self) {
+        let free_fun = self.module.add_function(
+            "yabo_free",
+            self.llvm
+                .void_type()
+                .fn_type(&[self.any_ptr().into()], false),
+            Some(Linkage::External),
+        );
+        let entry = self.llvm.append_basic_block(free_fun, "entry");
+        self.builder.position_at_end(entry);
+        let arg = free_fun.get_first_param().unwrap().into_pointer_value();
+        self.builder.build_free(arg);
+        self.builder.build_return(None);
+    }
+
     pub fn llvm_code(self, outfile: &OsStr) -> Result<(), LLVMString> {
         //        self.module.verify()?;
         //        self.pass_manager.run_on(&self.module);

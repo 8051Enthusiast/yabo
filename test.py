@@ -1,7 +1,13 @@
+#!/usr/bin/env python3
 import os
+import sys
+import shutil
 import re
 import tempfile
 import subprocess
+import json
+from typing import Optional, Tuple
+import yabo
 
 # test files are structured as follows:
 # ====[ source code ]====
@@ -17,40 +23,173 @@ heading = re.compile('^={3,}\[\s*(.*?)\s*\]\={3,}$', re.MULTILINE)
 # this regex matches a input/output title
 case_title = re.compile('^(binary|output)\s+(.+)$')
 
+current_script_dir = os.path.dirname(os.path.realpath(__file__))
+
+
 class CompiledSource:
-    filename: str
+    dir: str
+    compiled: str
+
     def __init__(self, source):
-        file = tempfile.NamedTemporaryFile(delete=False)
-        self.filename = file.name
-        file.close()
+        dir = tempfile.mkdtemp()
+        self.dir = dir
+        try:
+            self.compiled = os.path.join(dir, 'target.so')
+            sourcepath = os.path.join(dir, 'source.yb')
+            with open(sourcepath, 'w') as sourcefile:
+                sourcefile.write(source)
+            compiler_dir = os.path.join(current_script_dir, 'compiler')
+            os.chdir(compiler_dir)
+            subprocess.run(['cargo', 'run', '--quiet',
+                           '--', sourcepath, self.compiled])
+        except Exception as e:
+            shutil.rmtree(self.dir)
+            raise e
 
-    def __enter__(self):
-        return self
-    
+    def __enter__(self) -> str:
+        return self.compiled
+
     def __exit__(self, _exc_type, _exc_value, _traceback):
-        os.remove(self.filename)
+        shutil.rmtree(self.dir)
 
-    
 
 class InputOutputPair:
     input: bytes
     output: str
+
     def __init__(self, input, output):
         self.input = input
         self.output = output
 
+
+def dictionarified_obj(obj):
+    while type(obj) is yabo.NominalValue:
+        obj = obj.deref()
+    ty = type(obj)
+    if ty is int or ty is str or ty is bool:
+        return obj
+    if ty is yabo.ArrayValue:
+        return "array"
+    if ty is yabo.ParserValue:
+        return "parser"
+    if ty is yabo.FunArgValue:
+        return "fun_args"
+    if ty is yabo.BlockValue:
+        ret_dict = {}
+        for field in obj.fields():
+            ret_dict[field] = dictionarified_obj(obj.get(field))
+        return ret_dict
+
+
+def wrap_maybe_field(inner: str, indent: str, field: Optional[str] = None):
+    if field is None:
+        return inner + '\n'
+    return f'  "{field}": {inner},\n{indent}'
+
+
+def dict_with_indent(d, indent: str) -> str:
+    if type(d) is str:
+        return f'"{d}"'
+    if type(d) is int:
+        return str(d)
+    if type(d) is bool:
+        if d:
+            return 'true'
+        return 'false'
+    if type(d) is not dict:
+        return str(d)
+    out = f'{{\n{indent}'
+    for key, value in d.items():
+        inner = dict_with_indent(value, indent + '  ')
+        out += wrap_maybe_field(inner, indent, key)
+    out += '}'
+    return out
+
+
+RED = '\033[31m'
+GREEN = '\033[32m'
+CLEAR = '\033[0m'
+
+
+class MatchingHead:
+    __slots__ = ['data']
+
+    def __init__(self, data):
+        self.data = data
+
+    def diff(self, indent='', field=None) -> str:
+        inner = dict_with_indent(self.data, indent)
+        return wrap_maybe_field(inner, indent, field)
+
+
+class DiffHead:
+    __slots__ = ['left', 'right']
+
+    def __init__(self, left, right):
+        self.left = left
+        self.right = right
+
+    def diff(self, indent='', field=None) -> str:
+        ret = ''
+        if self.left is not None:
+            ret += RED
+            inner = dict_with_indent(self.left, indent)
+            ret += wrap_maybe_field(inner, indent, field)
+        if self.right is not None:
+            ret += GREEN
+            inner = dict_with_indent(self.right, indent)
+            ret += wrap_maybe_field(inner, indent, field)
+        return ret + CLEAR
+
+
+class DictHead:
+    __slot__ = ['data']
+    data: dict
+
+    def __init__(self, data):
+        self.data = data
+
+    def diff(self, indent='', field=None) -> str:
+        out = f'{{\n{indent}'
+        for key, value in self.data.items():
+            out += value.diff(indent, key)
+        out += '}'
+        return wrap_maybe_field(out, indent, field)
+
+
+def diff(left, right) -> Tuple[MatchingHead | DiffHead | DictHead, bool]:
+    if type(left) is dict and type(right) is dict:
+        is_different = False
+        ret = {}
+        both_fields = set(left.keys()) | set(right.keys())
+        for field in both_fields:
+            left_field = left.get(field)
+            right_field = right.get(field)
+            (ret[field], is_field_diff) = diff(left_field, right_field)
+            is_different |= is_field_diff
+        return (DictHead(ret), is_different)
+
+    if left != right:
+        return (DiffHead(left, right), True)
+
+    return (MatchingHead(left), False)
+
+
 class TestFile:
     source: str
     cases: dict[str, InputOutputPair]
-    def __init__(self, text):
-        self.parse(text)
+
+    def __init__(self, source: str):
+        self.cases = {}
+        self.source = source
+        self.parse(source)
 
     # parses a raw file into a TestFile object
-    def parse(self, text):
-        split = heading.split(text)
+    def parse(self, source: str):
+        split = heading.split(source)
         binary_cases = {}
         output_cases = {}
-        if split[1] != 'source':
+        if split[1] != 'source code':
             raise Exception('first section must be source')
         self.source = split[2]
         for (title, subtext) in zip(split[3::2], split[4::2]):
@@ -63,7 +202,7 @@ class TestFile:
                 binary_cases[test_name] = subtext
             elif kind == 'output':
                 output_cases[test_name] = subtext
-        
+
         for (test_name, hexdump) in binary_cases.items():
             binary = bytes.fromhex(hexdump)
             try:
@@ -73,7 +212,45 @@ class TestFile:
             self.cases[test_name] = InputOutputPair(binary, output)
 
         if output_cases:
-            raise Exception('Extra output cases: ' + ', '.join(output_cases.keys()))
+            raise Exception('Extra output cases: ' +
+                            ', '.join(output_cases.keys()))
 
-    def run(self):
-        pass
+    def run(self) -> int:
+        failed_tests = 0
+        with CompiledSource(self.source) as compiled:
+            lib = yabo.YaboLib(compiled)
+            for (test_name, pair) in self.cases.items():
+                parser = lib.parser('test')
+                buf = bytearray(pair.input)
+                obj = parser.parse(buf)
+                parsed_json = json.loads(pair.output)
+                dict_obj = dictionarified_obj(obj)
+                (diffed, is_different) = diff(dict_obj, parsed_json)
+                if is_different:
+                    print(f'Test {test_name} failed:')
+                    print(diffed.diff(' '), end='')
+                    failed_tests += 1
+                else:
+                    print(f'Test {test_name} passed')
+        return failed_tests
+
+
+# goes through all files in the target directory ending in .ybtest
+def run_tests(target_dir: str) -> int:
+    failed_tests = 0
+    for file in os.listdir(target_dir):
+        if not file.endswith('.ybtest'):
+            continue
+        print(f'Running test {file}')
+        test = TestFile(open(os.path.join(target_dir, file)).read())
+        failed_tests += test.run()
+    return failed_tests
+
+target_folder = os.path.join(current_script_dir, 'tests')
+failed_tests = run_tests(target_folder)
+if failed_tests != 0:
+    print(f'{failed_tests} tests failed')
+    sys.exit(1)
+else:
+    print('All tests passed')
+    sys.exit(0)
