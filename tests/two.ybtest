@@ -1,0 +1,21 @@
+====[ source code ]====
+export def for[int] *> test = {
+	fst: ~,
+	snd: ~,
+}
+====[ binary 1 ]====
+01 02
+====[ output 1 ]====
+{
+  "fst": 1,
+  "snd": 2
+}
+
+====[ binary 2 ]====
+04 03
+====[ output 2 ]====
+{
+  "fst": 4,
+  "snd": 3
+}
+

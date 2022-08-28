@@ -1,0 +1,43 @@
+====[ source code ]====
+export def for[int] *> test = {
+	tag: ~,
+	(
+		let first: int = tag if 1,
+		let extra: int = 1,
+		;
+		let second: int = 5 * tag if 2,
+		extra: ~,
+		let additional: int = extra + tag,
+		;
+		let third: int = tag if 3,
+		additional: ~,
+	)
+}
+
+====[ binary 1 ]====
+01 ff fe fd
+====[ output 1 ]====
+{
+	"tag": 1,
+	"first": 1,
+	"extra": 1
+}
+
+====[ binary 2 ]====
+02 ff fe fd
+====[ output 2 ]====
+{
+	"tag": 2,
+	"second": 10,
+	"extra": 255,
+	"additional": 257
+}
+
+====[ binary 3 ]====
+03 aa 55 22
+====[ output 3 ]====
+{
+	"tag": 3,
+	"third": 3,
+	"additional": 170
+}

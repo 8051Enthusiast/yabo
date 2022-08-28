@@ -1,4 +1,0 @@
-export def for[int] *> tuple = {
-	fst: ~,
-	snd: ~,
-}

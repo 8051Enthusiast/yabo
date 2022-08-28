@@ -1,0 +1,6 @@
+====[ source code ]====
+export def for[int] *> test = ~
+====[ binary 1 ]====
+01
+====[ output 1 ]====
+1
