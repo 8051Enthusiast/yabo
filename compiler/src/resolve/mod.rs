@@ -7,15 +7,16 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use parserdef_ssc::{mod_parser_ssc, parser_ssc};
 
+use crate::expr::{ExprIter, ExpressionHead, OpWithData};
 use crate::hir::walk::ChildIter;
 use crate::hir::HirIdWrapper;
 use crate::interner::{DefId, Identifier};
 use crate::{error::SResult, hir};
 
-use self::refs::parserdef_ref;
 use self::expr::resolve_expr;
 pub use self::expr::ResolvedExpr;
 use self::parserdef_ssc::FunctionSscId;
+use self::refs::parserdef_ref;
 
 #[salsa::query_group(ResolveDatabase)]
 pub trait Resolves: crate::hir::Hirs {
@@ -40,10 +41,22 @@ pub fn captures(db: &dyn Resolves, id: hir::BlockId) -> Arc<BTreeSet<DefId>> {
     .root_context;
     for i in ChildIter::new(root_context.0, db).without_kinds(hir::HirNodeKind::Block) {
         if let hir::HirNode::Expr(expr) = i {
-            ret.extend(
-                refs::expr_value_refs(db, &expr, expr.id.0)
-                    .filter(|target| !id.0.is_ancestor_of(db, *target)),
-            );
+            let resolved_expr = if let Ok(x) = db.resolve_expr(expr.id) {
+                x
+            } else {
+                continue;
+            };
+            ret.extend(ExprIter::new(&resolved_expr).filter_map(|subexpr| {
+                if let ExpressionHead::Niladic(OpWithData {
+                    inner: expr::ResolvedAtom::Captured(capture),
+                    ..
+                }) = subexpr.0
+                {
+                    Some(capture)
+                } else {
+                    None
+                }
+            }));
         }
     }
     Arc::new(ret)
