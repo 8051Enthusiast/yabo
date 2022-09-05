@@ -3,6 +3,7 @@ use std::{collections::BTreeSet, sync::Arc};
 use crate::{
     hir::{self, walk::ChildIter, HirIdWrapper},
     interner::DefId,
+    resolve::refs,
 };
 
 use super::Orders;
@@ -17,7 +18,7 @@ pub fn captures(db: &dyn Orders, id: hir::BlockId) -> Arc<BTreeSet<DefId>> {
     for i in ChildIter::new(root_context.0, db).without_kinds(hir::HirNodeKind::Block) {
         if let hir::HirNode::Expr(expr) = i {
             ret.extend(
-                hir::refs::expr_value_refs(db, &expr, expr.id.0)
+                refs::expr_value_refs(db, &expr, expr.id.0)
                     .filter(|target| !id.0.is_ancestor_of(db, *target)),
             );
         }

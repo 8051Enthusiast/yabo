@@ -18,7 +18,7 @@ use crate::{
     hash::StableHash,
     hir::{HirIdWrapper, ParseStatement, ParserAtom, ParserDefRef},
     interner::{DefId, FieldName, TypeVar, TypeVarName},
-    resolve,
+    resolve::{self, refs::parserdef_ref},
     source::SpanIndex,
     types::{
         inference::{InfTypeId, InferenceContext, InferenceType, NominalInfHead, TypeResolver},
@@ -183,7 +183,7 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                 .map(|x| self.resolve_type_expr(context, x))
                 .collect::<Result<Vec<_>, _>>()?,
         );
-        let def = hir::refs::parserdef_ref(self.db, context.loc, FieldName::Ident(pd.name.atom))?
+        let def = parserdef_ref(self.db, context.loc, FieldName::Ident(pd.name.atom))?
             .ok_or(TypeError)?;
         let definition = self.db.parser_args(def)?;
         match (parse_arg, definition.from) {

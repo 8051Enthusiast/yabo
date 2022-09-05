@@ -1,4 +1,4 @@
-use crate::{error::SilencedError, hir::refs::parserdef_ref};
+use crate::{error::SilencedError, resolve::refs::parserdef_ref};
 
 use super::*;
 

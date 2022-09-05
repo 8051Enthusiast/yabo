@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::expr::ExpressionHead;
+use crate::{expr::{ExpressionHead, Atom}, hir::{HirNode, walk, HirIdWrapper}, interner::{DefId, FieldName, PathComponent}, error::SilencedError};
 
 use super::*;
 
@@ -10,10 +10,10 @@ pub enum VarType {
 }
 
 pub fn parserdef_ref(
-    db: &(impl Hirs + ?Sized),
+    db: &(impl Resolves + ?Sized),
     loc: DefId,
     name: FieldName,
-) -> SResult<Option<ParserDefId>> {
+) -> SResult<Option<hir::ParserDefId>> {
     let (id, kind) = resolve_var_ref(db, loc, name)?.ok_or(SilencedError)?;
     if let VarType::Value = kind {
         return Ok(None);
@@ -22,10 +22,10 @@ pub fn parserdef_ref(
         return Ok(None);
     }
     // TODO(8051): change this when adding other types of toplevel items
-    Ok(Some(ParserDefId(id)))
+    Ok(Some(hir::ParserDefId(id)))
 }
 
-pub fn is_const_ref(db: &(impl Hirs + ?Sized), id: DefId) -> bool {
+pub fn is_const_ref(db: &(impl Resolves + ?Sized), id: DefId) -> bool {
     matches!(
         db.lookup_intern_hir_path(id).path(),
         [PathComponent::File(_), PathComponent::Named(_)]
@@ -33,7 +33,7 @@ pub fn is_const_ref(db: &(impl Hirs + ?Sized), id: DefId) -> bool {
 }
 
 pub fn resolve_var_ref(
-    db: &(impl Hirs + ?Sized),
+    db: &(impl Resolves + ?Sized),
     loc: DefId,
     ident: FieldName,
 ) -> SResult<Option<(DefId, VarType)>> {
@@ -64,12 +64,12 @@ pub fn resolve_var_ref(
 }
 
 // identifiers inside of expression
-pub fn expr_idents(expr: &ValExpression) -> Vec<FieldName> {
+pub fn expr_idents(expr: &hir::ValExpression) -> Vec<FieldName> {
     let mut ret = Vec::new();
     for node in crate::expr::ExprIter::new(&expr.expr) {
         let ident = match &node.0 {
             ExpressionHead::Niladic(a) => match a.inner {
-                ParserAtom::Atom(Atom::Field(ident)) => ident,
+                hir::ParserAtom::Atom(Atom::Field(ident)) => ident,
                 _ => continue,
             },
             _ => continue,
@@ -80,19 +80,19 @@ pub fn expr_idents(expr: &ValExpression) -> Vec<FieldName> {
 }
 
 pub fn expr_parser_refs<'a>(
-    db: &'a (impl Hirs + ?Sized),
-    expr: &ValExpression,
+    db: &'a (impl Resolves + ?Sized),
+    expr: &hir::ValExpression,
     context: DefId,
-) -> impl Iterator<Item = ParserDefId> + 'a {
+) -> impl Iterator<Item = hir::ParserDefId> + 'a {
     expr_idents(expr)
         .into_iter()
         .flat_map(move |ident| resolve_var_ref(db, context, ident).ok()?)
-        .flat_map(|(id, ty)| matches!(ty, VarType::ParserDef).then(|| ParserDefId(id)))
+        .flat_map(|(id, ty)| matches!(ty, VarType::ParserDef).then(|| hir::ParserDefId(id)))
 }
 
 pub fn expr_value_refs<'a>(
-    db: &'a (impl Hirs + ?Sized),
-    expr: &ValExpression,
+    db: &'a (impl Resolves + ?Sized),
+    expr: &hir::ValExpression,
     context: DefId,
 ) -> impl Iterator<Item = DefId> + 'a {
     expr_idents(expr)
@@ -101,7 +101,7 @@ pub fn expr_value_refs<'a>(
         .flat_map(|(id, ty)| matches!(ty, VarType::Value).then(|| id))
 }
 
-pub fn find_parser_refs(db: &(impl Hirs + ?Sized), id: DefId) -> SResult<Vec<ParserDefId>> {
+pub fn find_parser_refs(db: &(impl Resolves + ?Sized), id: DefId) -> SResult<Vec<hir::ParserDefId>> {
     let mut refs = HashSet::new();
     for node in walk::ChildIter::new(id, db) {
         let (expr, context) = match node {

@@ -2,9 +2,9 @@ use std::{sync::Arc, collections::{BTreeMap, HashMap}};
 
 use petgraph::Graph;
 
-use crate::{error::{SResult, SilencedError}, hir::{self, refs, HirIdWrapper}};
+use crate::{error::{SResult, SilencedError}, hir::{self, HirIdWrapper}};
 
-use super::Resolves;
+use super::{Resolves, refs};
 
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]

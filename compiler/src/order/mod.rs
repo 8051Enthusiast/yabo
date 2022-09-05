@@ -12,7 +12,7 @@ use crate::{
     expr::{ExprIter, ExpressionHead, OpWithData},
     hir::{self, HirIdWrapper, ParserAtom, ParserPredecessor},
     hir_types::TyHirs,
-    interner::DefId,
+    interner::DefId, resolve::refs,
 };
 
 use petgraph::{graph::NodeIndex, Graph};
@@ -99,7 +99,7 @@ fn val_refs(
                 };
             }
             ret.extend(
-                hir::refs::expr_value_refs(db, expr, expr.id.0)
+                refs::expr_value_refs(db, expr, expr.id.0)
                     .filter(|target| {
                         let res = parent_block.0.is_ancestor_of(db, *target);
                         res
