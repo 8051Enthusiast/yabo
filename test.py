@@ -9,7 +9,7 @@ import json
 from typing import Optional, Tuple
 import yabo
 
-TARGET_RELEASE='release'
+TARGET_RELEASE='debug'
 BINARY_NAME='yabo'
 
 # test files are structured as follows:
@@ -40,6 +40,15 @@ def build_compiler_binary():
     if cargo_build.returncode != 0:
         raise Exception('Failed to build compiler')
     return os.path.join(cargo_metadata_output['target_directory'], TARGET_RELEASE, BINARY_NAME)
+
+def run_compiler_unit_tests():
+    compiler_dir = os.path.join(current_script_dir, 'compiler')
+    os.chdir(compiler_dir)
+    cargo_args = ['cargo', 'test']
+    if TARGET_RELEASE == 'release':
+        cargo_args.append('--release')
+    cargo_test = subprocess.run(cargo_args)
+    return cargo_test.returncode == 0
 
 compiler_path = build_compiler_binary()
 
@@ -262,6 +271,8 @@ def run_tests(target_dir: str) -> int:
         failed_tests += test.run()
     return failed_tests
 
+if not run_compiler_unit_tests():
+    sys.exit(1)
 target_folder = os.path.join(current_script_dir, 'tests')
 failed_tests = run_tests(target_folder)
 if failed_tests != 0:
