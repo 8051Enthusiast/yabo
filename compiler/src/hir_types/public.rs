@@ -4,7 +4,7 @@ use crate::{
     expr::ExpressionHead,
 };
 
-use super::*;
+use super::{signature::get_parserdef, *};
 
 pub fn public_expr_type(db: &dyn TyHirs, loc: hir::ExprId) -> SResult<(TypedExpression, TypeId)> {
     public_expr_type_impl(db, loc).silence()
@@ -24,8 +24,8 @@ fn public_expr_type_impl(
         hir::HirNode::Array(_) => unimplemented!(),
         _ => panic!("expected parse statement, let statement or parser def"),
     };
-    let expr = loc.lookup(db)?;
-    let expr = ctx.val_expression_type(&mut typeloc, &expr.expr)?;
+    let resolved_expr = db.resolve_expr(loc)?;
+    let expr = ctx.val_expression_type(&mut typeloc, &resolved_expr)?;
     let root = expr.0.root_data().0;
     let into_ret = if let Some(ty) = surrounding_types.from_type {
         ctx.infctx.parser_apply(root, ty)?
@@ -84,7 +84,7 @@ fn ambient_type_impl(db: &dyn TyHirs, loc: hir::ParseId) -> Result<TypeId, TypeE
     let block_ty = ExprIter::new(&typed_expr)
         .find_map(|x| match &x.0 {
             ExpressionHead::Niladic(expr::OpWithData {
-                inner: ParserAtom::Block(b),
+                inner: ResolvedAtom::Block(b),
                 data,
             }) if *b == block.id => Some(data.0),
             _ => None,
@@ -183,8 +183,8 @@ impl<'a> TypeResolver for PublicResolver<'a> {
         get_signature(self.db, ty)
     }
 
-    fn lookup(&self, context: DefId, name: FieldName) -> Result<EitherType, TypeError> {
-        get_thunk(self.db, context, name)
+    fn lookup(&self, _val: DefId) -> Result<EitherType, TypeError> {
+        Err(SilencedError.into())
     }
 
     type DB = dyn TyHirs + 'a;
@@ -195,6 +195,10 @@ impl<'a> TypeResolver for PublicResolver<'a> {
 
     fn name(&self) -> String {
         dbformat!(self.db, "public at {}", &self.tloc.pd.0)
+    }
+
+    fn parserdef(&self, pd: DefId) -> Result<EitherType, TypeError> {
+        get_parserdef(self.db(), pd).map(|x| x.into())
     }
 }
 

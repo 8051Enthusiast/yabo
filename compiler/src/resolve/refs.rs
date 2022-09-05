@@ -1,6 +1,10 @@
 use std::collections::HashSet;
 
-use crate::{expr::{ExpressionHead, Atom}, hir::{HirNode, walk, HirIdWrapper}, interner::{DefId, FieldName, PathComponent}, error::SilencedError};
+use crate::{
+    expr::{Atom, ExpressionHead},
+    hir::{walk, HirIdWrapper, HirNode},
+    interner::{DefId, FieldName, Identifier},
+};
 
 use super::*;
 
@@ -12,24 +16,10 @@ pub enum VarType {
 pub fn parserdef_ref(
     db: &(impl Resolves + ?Sized),
     loc: DefId,
-    name: FieldName,
+    name: Identifier,
 ) -> SResult<Option<hir::ParserDefId>> {
-    let (id, kind) = resolve_var_ref(db, loc, name)?.ok_or(SilencedError)?;
-    if let VarType::Value = kind {
-        return Ok(None);
-    }
-    if !is_const_ref(db, id) {
-        return Ok(None);
-    }
-    // TODO(8051): change this when adding other types of toplevel items
-    Ok(Some(hir::ParserDefId(id)))
-}
-
-pub fn is_const_ref(db: &(impl Resolves + ?Sized), id: DefId) -> bool {
-    matches!(
-        db.lookup_intern_hir_path(id).path(),
-        [PathComponent::File(_), PathComponent::Named(_)]
-    )
+    let parent_module = db.hir_parent_module(loc)?;
+    Ok(parent_module.lookup(db)?.defs.get(&name).copied())
 }
 
 pub fn resolve_var_ref(
@@ -101,7 +91,10 @@ pub fn expr_value_refs<'a>(
         .flat_map(|(id, ty)| matches!(ty, VarType::Value).then(|| id))
 }
 
-pub fn find_parser_refs(db: &(impl Resolves + ?Sized), id: DefId) -> SResult<Vec<hir::ParserDefId>> {
+pub fn find_parser_refs(
+    db: &(impl Resolves + ?Sized),
+    id: DefId,
+) -> SResult<Vec<hir::ParserDefId>> {
     let mut refs = HashSet::new();
     for node in walk::ChildIter::new(id, db) {
         let (expr, context) = match node {

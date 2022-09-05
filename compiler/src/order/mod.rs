@@ -1,9 +1,7 @@
-pub mod captures;
 pub mod error;
-pub mod expr;
 mod represent;
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::sync::Arc;
 
 use crate::{
     dbpanic,
@@ -12,24 +10,20 @@ use crate::{
     expr::{ExprIter, ExpressionHead, OpWithData},
     hir::{self, HirIdWrapper, ParserAtom, ParserPredecessor},
     hir_types::TyHirs,
-    interner::DefId, resolve::refs,
+    interner::DefId,
+    resolve::expr::ResolvedAtom,
 };
 
 use petgraph::{graph::NodeIndex, Graph};
 
-use captures::captures;
-use expr::resolve_expr;
-pub use expr::{ResolvedExpr, TypedResolvedExpr};
 use fxhash::{FxHashMap, FxHashSet};
 
 #[salsa::query_group(OrdersDatabase)]
 pub trait Orders: TyHirs {
-    fn captures(&self, id: hir::BlockId) -> Arc<BTreeSet<DefId>>;
     fn block_serialization(
         &self,
         id: hir::BlockId,
     ) -> Result<BlockSerialization, BlockSerializationError>;
-    fn resolve_expr(&self, expr_id: hir::ExprId) -> SResult<TypedResolvedExpr>;
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -98,14 +92,14 @@ fn val_refs(
                     _ => continue,
                 };
             }
-            ret.extend(
-                refs::expr_value_refs(db, expr, expr.id.0)
-                    .filter(|target| {
-                        let res = parent_block.0.is_ancestor_of(db, *target);
-                        res
-                    })
-                    .map(|target| (SubValue::new_val(target), true)),
-            );
+            let rexpr = db.resolve_expr(expr.id)?;
+            ret.extend(ExprIter::new(&rexpr).filter_map(|x| match x.0 {
+                ExpressionHead::Niladic(OpWithData {
+                    inner: ResolvedAtom::Val(v),
+                    ..
+                }) => Some((SubValue::new_val(v), true)),
+                _ => None,
+            }));
             Ok(ret)
         }
         hir::HirNode::Parse(p) => {

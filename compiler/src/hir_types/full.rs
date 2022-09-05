@@ -4,11 +4,10 @@ use crate::{
     expr::{ExpressionHead, OpWithData},
     hir::{walk::ChildIter, Block, ChoiceIndirection, StructChoice, StructCtx, ValExpression},
     interner::PathComponent,
-    resolve::refs::{resolve_var_ref, VarType},
     types::inference::{InfTypeId, NominalInfHead, TypeResolver},
 };
 
-use super::*;
+use super::{signature::get_parserdef, *};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ParserFullTypes {
@@ -168,7 +167,8 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
     }
     fn type_expr(&mut self, expr: &ValExpression) -> Result<InfTypeId, TypeError> {
         let mut typeloc = self.infctx.tr.loc.clone();
-        let inf_expression = self.val_expression_type(&mut typeloc, &expr.expr)?;
+        let resolved_expr = self.db.resolve_expr(expr.id)?;
+        let inf_expression = self.val_expression_type(&mut typeloc, &resolved_expr)?;
         let root = inf_expression.0.root_data().0;
         let ret = if let Some(ambient) = self.ambient_type() {
             self.infctx.parser_apply(root, ambient)?
@@ -179,7 +179,7 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
             match &part.0 {
                 ExpressionHead::Niladic(OpWithData {
                     data,
-                    inner: ParserAtom::Block(block_id),
+                    inner: ResolvedAtom::Block(block_id),
                 }) => {
                     let ambient = self.infctx.reuse_parser_arg(data.0)?;
                     let block = block_id.lookup(self.db)?;
@@ -305,18 +305,16 @@ impl<'a> TypeResolver for FullResolver<'a> {
         get_signature(self.db, ty)
     }
 
-    fn lookup(&self, context: DefId, name: FieldName) -> Result<EitherType, TypeError> {
-        let (resolved_ref, ref_type) =
-            resolve_var_ref(self.db, context, name)?.ok_or(SilencedError)?;
-        if let VarType::ParserDef = ref_type {
-            get_thunk(self.db, context, name)
-        } else {
-            Ok(self.inftypes[&resolved_ref].into())
-        }
+    fn lookup(&self, val: DefId) -> Result<EitherType, TypeError> {
+        Ok(self.inftypes[&val].into())
     }
 
     fn name(&self) -> String {
         dbformat!(self.db, "full at {}", &self.loc.pd.0)
+    }
+
+    fn parserdef(&self, pd: DefId) -> Result<EitherType, TypeError> {
+        get_parserdef(self.db(), pd).map(|x| x.into())
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::{error::SilencedError, resolve::refs::parserdef_ref};
+use crate::{hir::ParserDefId, error::SilencedError};
 
 use super::*;
 
@@ -6,7 +6,10 @@ pub fn parser_args(db: &dyn TyHirs, id: hir::ParserDefId) -> SResult<Signature> 
     parser_args_impl(db, id).silence()
 }
 
-pub(super) fn parser_args_impl(db: &dyn TyHirs, id: hir::ParserDefId) -> Result<Signature, TypeError> {
+pub(super) fn parser_args_impl(
+    db: &dyn TyHirs,
+    id: hir::ParserDefId,
+) -> Result<Signature, TypeError> {
     let pd = id.lookup(db)?;
     let mut context = TypingLocation {
         vars: TypeVarCollection::new_empty(),
@@ -59,8 +62,8 @@ impl<'a> TypeResolver for ArgResolver<'a> {
         get_signature(self.0, ty)
     }
 
-    fn lookup(&self, _context: DefId, _name: FieldName) -> Result<EitherType, TypeError> {
-        Ok(self.0.intern_type(Type::Unknown).into())
+    fn lookup(&self, _val: DefId) -> Result<EitherType, TypeError> {
+        Err(SilencedError.into())
     }
 
     type DB = dyn TyHirs + 'a;
@@ -72,6 +75,10 @@ impl<'a> TypeResolver for ArgResolver<'a> {
     fn name(&self) -> String {
         String::from("signature")
     }
+
+    fn parserdef(&self, pd: DefId) -> Result<EitherType, TypeError> {
+        get_parserdef(self.db(), pd).map(|x| x.into())
+    }
 }
 
 pub fn get_signature(db: &dyn TyHirs, ty: &NominalInfHead) -> Result<Signature, TypeError> {
@@ -82,12 +89,8 @@ pub fn get_signature(db: &dyn TyHirs, ty: &NominalInfHead) -> Result<Signature, 
     Ok(db.parser_args(id)?)
 }
 
-pub fn get_thunk(
-    db: &dyn TyHirs,
-    context: DefId,
-    name: FieldName,
-) -> Result<EitherType, TypeError> {
-    let pd = parserdef_ref(db, context, name)?.ok_or(SilencedError)?;
+pub fn get_parserdef(db: &dyn TyHirs, pd: DefId) -> Result<TypeId, TypeError> {
+    let pd = unsafe { ParserDefId::new_unchecked(pd) };
     let args = db.parser_args(pd)?;
     let mut ret = args.thunk;
     if let Some(from) = args.from {
@@ -100,7 +103,7 @@ pub fn get_thunk(
         ret = db.intern_type(Type::FunctionArg(ret, args.args.clone()))
     }
     ret = attach_forall(db, ret, &args.ty_args);
-    Ok(ret.into())
+    Ok(ret)
 }
 
 pub fn attach_forall(db: &dyn TyHirs, ty: TypeId, ty_args: &Arc<Vec<TypeVar>>) -> TypeId {

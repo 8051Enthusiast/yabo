@@ -7,7 +7,8 @@ use crate::{
     hir::HirIdWrapper,
     hir_types::NominalId,
     interner::DefId,
-    order::{ResolvedExpr, SubValueKind},
+    order::SubValueKind,
+    resolve::expr::ResolvedKind,
     source::SpanIndex,
     types::Type,
 };
@@ -50,7 +51,7 @@ pub trait AbstractDomain<'a>: Sized + Clone + std::hash::Hash + Eq + std::fmt::D
     ) -> Result<Self, Self::Err>;
     fn eval_expr(
         ctx: &mut AbsIntCtx<'a, Self>,
-        expr: ExpressionHead<expr::KindWithData<ResolvedExpr, TypeId>, (Self, TypeId)>,
+        expr: ExpressionHead<expr::KindWithData<ResolvedKind, TypeId>, (Self, TypeId)>,
     ) -> Result<Self, Self::Err>;
     fn typecast(self, ctx: &mut AbsIntCtx<'a, Self>, ty: TypeId)
         -> Result<(Self, bool), Self::Err>;
@@ -66,7 +67,7 @@ pub struct AbstractExprInfo<Dom> {
 }
 
 pub type AbstractExpression<Dom> =
-    expr::Expression<expr::KindWithData<ResolvedExpr, AbstractExprInfo<Dom>>>;
+    expr::Expression<expr::KindWithData<ResolvedKind, AbstractExprInfo<Dom>>>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PdEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
@@ -167,7 +168,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
 
     fn eval_expr(
         &mut self,
-        expr: expr::Expression<expr::KindWithData<ResolvedExpr, (TypeId, SpanIndex)>>,
+        expr: expr::Expression<expr::KindWithData<ResolvedKind, (TypeId, SpanIndex)>>,
     ) -> Result<AbstractExpression<Dom>, Dom::Err> {
         expr.try_scan(&mut |expr| -> Result<AbstractExprInfo<Dom>, _> {
             let owned_expr = expr.make_owned();
@@ -187,7 +188,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
 
     fn eval_expr_with_ambience(
         &mut self,
-        expr: expr::Expression<expr::KindWithData<ResolvedExpr, (TypeId, SpanIndex)>>,
+        expr: expr::Expression<expr::KindWithData<ResolvedKind, (TypeId, SpanIndex)>>,
         from: (Dom, TypeId),
         result_type: TypeId,
     ) -> Result<(Dom, AbstractExpression<Dom>), Dom::Err> {
@@ -212,7 +213,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         from_ty: TypeId,
     ) -> Result<PdEvaluated<Dom>, Dom::Err> {
         let from = val.get_arg(self, Arg::From)?;
-        let expr = self.db.resolve_expr(parserdef.to)?;
+        let expr = self.db.parser_expr_at(parserdef.to)?;
         let result_type = self.subst_type(self.db.parser_returns(parserdef.id)?.deref);
         let (ret_val, expr_vals) =
             self.eval_expr_with_ambience(expr, (from.clone(), from_ty), result_type)?;
@@ -348,7 +349,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             let result_ty = self.subst_type(self.db.parser_type_at(subvalue.id)?);
             let val = match self.db.hir_node(subvalue.id)? {
                 hir::HirNode::Let(statement) => {
-                    let expr = self.db.resolve_expr(statement.expr)?;
+                    let expr = self.db.parser_expr_at(statement.expr)?;
                     let res_expr = self.eval_expr(expr)?;
                     let res = res_expr.0.root_data().val.clone();
                     self.set_block_var(statement.expr.0, res.clone());
@@ -356,7 +357,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                     res.typecast(self, result_ty)?.0
                 }
                 hir::HirNode::Parse(statement) => {
-                    let expr = self.db.resolve_expr(statement.expr)?;
+                    let expr = self.db.parser_expr_at(statement.expr)?;
                     let (res, res_expr) =
                         self.eval_expr_with_ambience(expr, (from.clone(), arg_type), result_ty)?;
                     self.set_block_var(statement.expr.0, res_expr.0.root_data().val.clone());

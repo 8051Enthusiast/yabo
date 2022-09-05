@@ -11,8 +11,10 @@ use crate::{
         self, variable_set::VarStatus, BlockId, ChoiceId, ContextId, ExprId, HirIdWrapper, HirNode,
         ParserDefId, ParserPredecessor,
     },
+    hir_types::TypedExpression,
     interner::{DefId, FieldName, PathComponent},
-    order::{expr::ResolvedAtom, BlockSerialization, SubValue, SubValueKind, TypedResolvedExpr},
+    order::{BlockSerialization, SubValue, SubValueKind},
+    resolve::expr::ResolvedAtom,
     types::{PrimitiveType, Type, TypeId},
 };
 
@@ -331,7 +333,7 @@ impl<'a> ConvertCtx<'a> {
     fn convert_expr(
         &mut self,
         expr_id: ExprId,
-        expr: &TypedResolvedExpr,
+        expr: &TypedExpression,
         place: Option<PlaceRef>,
     ) -> SResult<PlaceRef> {
         let (ty, span) = *expr.0.root_data();
@@ -691,7 +693,7 @@ impl<'a> ConvertCtx<'a> {
                 if let Some(ctx) = e.parent_context {
                     self.change_context(ctx)
                 }
-                let resolved_expr = self.db.resolve_expr(e.id)?;
+                let resolved_expr = self.db.parser_expr_at(e.id)?;
                 let place = self.val_place_at_def(e.id.0).unwrap();
                 self.convert_expr(e.id, &resolved_expr, Some(place))?;
             }
@@ -776,7 +778,7 @@ impl<'a> ConvertCtx<'a> {
                     HirNode::Let(_) | HirNode::Parse(_) | HirNode::ChoiceIndirection(_) => {
                         db.parser_type_at(val.id)?
                     }
-                    HirNode::Expr(e) => db.resolve_expr(e.id)?.0.root_data().0,
+                    HirNode::Expr(e) => db.parser_expr_at(e.id)?.0.root_data().0,
                     HirNode::Choice(_) => continue,
                     HirNode::Block(_) => continue,
                     HirNode::TExpr(_)
@@ -801,7 +803,7 @@ impl<'a> ConvertCtx<'a> {
         order: &BlockSerialization,
     ) -> SResult<Self> {
         let block = id.lookup(db)?;
-        let block_expr = db.resolve_expr(block.enclosing_expr)?;
+        let block_expr = db.parser_expr_at(block.enclosing_expr)?;
         let block_ty = ExprIter::new(&block_expr)
             .find_map(|x| match &x.0 {
                 ExpressionHead::Niladic(expr::OpWithData {
@@ -865,7 +867,7 @@ impl<'a> ConvertCtx<'a> {
     ) -> SResult<FxHashMap<SubValue, PlaceRef>> {
         let mut places: FxHashMap<SubValue, PlaceRef> = FxHashMap::default();
         let pd = id.lookup(db)?;
-        let expr = db.resolve_expr(pd.to)?;
+        let expr = db.parser_expr_at(pd.to)?;
         let expr_ty = expr.0.root_data().0;
         let expr_place =
             Place::Stack(f.new_stack_ref(PlaceOrigin::Expr(pd.to, expr.0.root_data().1)));
