@@ -80,17 +80,6 @@ pub fn expr_parser_refs<'a>(
         .flat_map(|(id, ty)| matches!(ty, VarType::ParserDef).then(|| hir::ParserDefId(id)))
 }
 
-pub fn expr_value_refs<'a>(
-    db: &'a (impl Resolves + ?Sized),
-    expr: &hir::ValExpression,
-    context: DefId,
-) -> impl Iterator<Item = DefId> + 'a {
-    expr_idents(expr)
-        .into_iter()
-        .flat_map(move |ident| resolve_var_ref(db, context, ident).ok()?)
-        .flat_map(|(id, ty)| matches!(ty, VarType::Value).then(|| id))
-}
-
 pub fn find_parser_refs(
     db: &(impl Resolves + ?Sized),
     id: DefId,
