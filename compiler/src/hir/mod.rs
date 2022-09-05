@@ -1,6 +1,5 @@
 mod convert;
 pub mod error;
-pub mod refs;
 pub mod represent;
 pub mod variable_set;
 pub mod walk;

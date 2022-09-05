@@ -2,12 +2,9 @@ use crate::{
     dbformat, dbpanic,
     error::{SResult, Silencable, SilencedError},
     expr::{ExpressionHead, OpWithData},
-    hir::{
-        refs::{resolve_var_ref, VarType},
-        walk::ChildIter,
-        Block, ChoiceIndirection, StructChoice, StructCtx, ValExpression,
-    },
+    hir::{walk::ChildIter, Block, ChoiceIndirection, StructChoice, StructCtx, ValExpression},
     interner::PathComponent,
+    resolve::refs::{resolve_var_ref, VarType},
     types::inference::{InfTypeId, NominalInfHead, TypeResolver},
 };
 

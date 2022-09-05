@@ -1,5 +1,6 @@
 use crate::error::{SResult, SilencedError};
 use crate::expr::{Atom, Expression, KindWithData, OpWithData, ValBinOp, ValUnOp};
+use crate::resolve::refs;
 use crate::source::SpanIndex;
 use crate::types::TypeId;
 use crate::{expr::ExpressionKind, hir, interner::DefId};
@@ -38,11 +39,10 @@ pub fn resolve_expr(db: &dyn Orders, expr_id: hir::ExprId) -> SResult<TypedResol
             hir::ParserAtom::Single => ResolvedAtom::Single,
             hir::ParserAtom::Block(b) => ResolvedAtom::Block(*b),
             hir::ParserAtom::Atom(Atom::Field(f)) => {
-                let (id, kind) =
-                    hir::refs::resolve_var_ref(db, expr_id.0, *f)?.ok_or(SilencedError)?;
+                let (id, kind) = refs::resolve_var_ref(db, expr_id.0, *f)?.ok_or(SilencedError)?;
                 match kind {
-                    hir::refs::VarType::ParserDef => ResolvedAtom::ParserDef(hir::ParserDefId(id)),
-                    hir::refs::VarType::Value => {
+                    refs::VarType::ParserDef => ResolvedAtom::ParserDef(hir::ParserDefId(id)),
+                    refs::VarType::Value => {
                         let is_captured = parent_block
                             .map(|x| !x.0.is_ancestor_of(db, id))
                             .unwrap_or(false);

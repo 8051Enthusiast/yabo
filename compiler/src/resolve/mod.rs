@@ -1,4 +1,5 @@
 pub mod parserdef_ssc;
+pub mod refs;
 
 use std::{sync::Arc, collections::BTreeMap};
 
