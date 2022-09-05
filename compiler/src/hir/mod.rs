@@ -214,6 +214,9 @@ macro_rules! hir_id_wrapper {
                     ),
                 }
             }
+            unsafe fn new_unchecked(id: DefId) -> Self {
+                Self(id)
+            }
         }
     };
     {$(type $name:ident = $id:ident ($ty:ty);)*} => {
@@ -289,6 +292,7 @@ pub trait HirIdWrapper: Copy {
     type Inner;
     fn id(self) -> DefId;
     fn extract(node: HirNode) -> Self::Inner;
+    unsafe fn new_unchecked(id: DefId) -> Self;
     fn child<DB: Hirs + ?Sized>(self, db: &DB, add: PathComponent) -> DefId {
         self.id().child(db, add)
     }

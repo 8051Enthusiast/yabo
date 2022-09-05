@@ -12,13 +12,13 @@ use sha2::Digest;
 use crate::{
     error::{SResult, Silencable},
     expr::{
-        self, Atom, Dyadic, ExprIter, Expression, ExpressionHead, Monadic, OpWithData, TypeBinOp,
+        self, Dyadic, ExprIter, Expression, ExpressionHead, Monadic, OpWithData, TypeBinOp,
         TypeUnOp, ValBinOp, ValUnOp,
     },
     hash::StableHash,
-    hir::{HirIdWrapper, ParseStatement, ParserAtom, ParserDefRef},
+    hir::{HirIdWrapper, ParseStatement, ParserDefRef},
     interner::{DefId, FieldName, TypeVar, TypeVarName},
-    resolve::{self, refs::parserdef_ref},
+    resolve::{self, expr::ResolvedAtom},
     source::SpanIndex,
     types::{
         inference::{InfTypeId, InferenceContext, InferenceType, NominalInfHead, TypeResolver},
@@ -33,7 +33,7 @@ use full::{parser_expr_at, parser_full_types, parser_type_at, ParserFullTypes};
 use public::{ambient_type, public_expr_type, public_type};
 pub use returns::IndirectionLevel;
 use returns::{deref_type, least_deref_type, parser_returns, parser_returns_ssc, ParserDefType};
-use signature::{get_signature, get_thunk, parser_args};
+use signature::{get_signature, parser_args};
 
 #[salsa::query_group(HirTypesDatabase)]
 pub trait TyHirs: Hirs + crate::types::TypeInterner + resolve::Resolves {
@@ -93,8 +93,8 @@ pub fn head_discriminant(db: &dyn TyHirs, ty: TypeId) -> i64 {
         Type::TypeVarRef(_, _, _) | Type::Any | Type::Bot | Type::Unknown => 0,
     }
 }
-type TypedExpression = Expression<TypedHirVal<(TypeId, SpanIndex)>>;
-type InfTypedExpression = Expression<TypedHirVal<(InfTypeId, SpanIndex)>>;
+pub type TypedExpression = Expression<TypedHirVal<(TypeId, SpanIndex)>>;
+pub type InfTypedExpression = Expression<TypedHirVal<(InfTypeId, SpanIndex)>>;
 
 pub struct ExpressionTypeConstraints {
     pub root_type: Option<InfTypeId>,
@@ -183,7 +183,9 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                 .map(|x| self.resolve_type_expr(context, x))
                 .collect::<Result<Vec<_>, _>>()?,
         );
-        let def = parserdef_ref(self.db, context.loc, FieldName::Ident(pd.name.atom))?
+        let def = self
+            .db
+            .parserdef_ref(context.loc, pd.name.atom)?
             .ok_or(TypeError)?;
         let definition = self.db.parser_args(def)?;
         match (parse_arg, definition.from) {
@@ -224,7 +226,7 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
     pub fn val_expression_type(
         &mut self,
         context: &mut TypingLocation,
-        expr: &Expression<hir::HirValSpanned>,
+        expr: &resolve::ResolvedExpr,
     ) -> Result<InfTypedExpression, TypeError> {
         use ValBinOp::*;
         expr.try_scan(&mut |expr| {
@@ -270,11 +272,10 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                 ),
                 ExpressionHead::Niladic(a) => (
                     match &a.inner {
-                        ParserAtom::Atom(Atom::Char(_)) => self.infctx.char(),
-                        ParserAtom::Atom(Atom::Number(_)) => self.infctx.int(),
-                        ParserAtom::Atom(Atom::Field(f)) => self.infctx.lookup(context.loc, *f)?,
-                        ParserAtom::Single => self.infctx.single(),
-                        ParserAtom::Block(b) => {
+                        ResolvedAtom::Char(_) => self.infctx.char(),
+                        ResolvedAtom::Number(_) => self.infctx.int(),
+                        ResolvedAtom::Single => self.infctx.single(),
+                        ResolvedAtom::Block(b) => {
                             let pd = self.db.hir_parent_parserdef(b.0)?;
                             let ty_vars = (0..context.vars.defs.len() as u32)
                                 .map(|i| {
@@ -284,6 +285,10 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                                 })
                                 .collect::<Vec<_>>();
                             self.infctx.block_call(b.0, &ty_vars)?
+                        }
+                        ResolvedAtom::ParserDef(pd) => self.infctx.parserdef(pd.0)?,
+                        ResolvedAtom::Val(v) | ResolvedAtom::Captured(v) => {
+                            self.infctx.lookup(*v)?
                         }
                     },
                     a.data,
@@ -385,7 +390,7 @@ impl TypingLocation {
     }
 }
 
-type TypedHirVal<T> = expr::KindWithData<hir::HirVal, T>;
+type TypedHirVal<T> = expr::KindWithData<crate::resolve::expr::ResolvedKind, T>;
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct TypeInfo<Id> {

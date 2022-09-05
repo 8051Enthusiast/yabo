@@ -18,8 +18,7 @@ use crate::hir_types::NominalId;
 use crate::interner::{DefId, FieldName};
 use crate::low_effort_interner::{Interner, Uniq};
 use crate::mir::DupleField;
-use crate::order::expr::ResolvedAtom;
-use crate::order::ResolvedExpr;
+use crate::resolve::expr::{ResolvedAtom, ResolvedKind};
 use crate::types::{PrimitiveType, Type, TypeId};
 
 use self::prop::{PSize, SizeAlign, TargetSized, Zst};
@@ -621,7 +620,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
 
     fn eval_expr(
         ctx: &mut AbsIntCtx<'a, Self>,
-        expr: expr::ExpressionHead<expr::KindWithData<ResolvedExpr, TypeId>, (ILayout<'a>, TypeId)>,
+        expr: expr::ExpressionHead<expr::KindWithData<ResolvedKind, TypeId>, (ILayout<'a>, TypeId)>,
     ) -> Result<Self, Self::Err> {
         let ret_type = *expr.root_data();
         let mut make_layout = |x| {

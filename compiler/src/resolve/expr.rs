@@ -1,11 +1,13 @@
+use std::sync::Arc;
+
 use crate::error::{SResult, SilencedError};
 use crate::expr::{Atom, Expression, KindWithData, OpWithData, ValBinOp, ValUnOp};
+use crate::hir::HirIdWrapper;
 use crate::resolve::refs;
 use crate::source::SpanIndex;
-use crate::types::TypeId;
 use crate::{expr::ExpressionKind, hir, interner::DefId};
 
-use super::Orders;
+use super::Resolves;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ResolvedAtom {
@@ -19,18 +21,18 @@ pub enum ResolvedAtom {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ResolvedExpr;
+pub struct ResolvedKind;
 
-impl ExpressionKind for ResolvedExpr {
+impl ExpressionKind for ResolvedKind {
     type NiladicOp = ResolvedAtom;
-    type MonadicOp = ValUnOp<std::sync::Arc<Expression<hir::HirConstraintSpanned>>>;
+    type MonadicOp = ValUnOp<Arc<Expression<hir::HirConstraintSpanned>>>;
     type DyadicOp = ValBinOp;
 }
 
-pub type TypedResolvedExpr = Expression<KindWithData<ResolvedExpr, (TypeId, SpanIndex)>>;
+pub type ResolvedExpr = Expression<KindWithData<ResolvedKind, SpanIndex>>;
 
-pub fn resolve_expr(db: &dyn Orders, expr_id: hir::ExprId) -> SResult<TypedResolvedExpr> {
-    let expr = db.parser_expr_at(expr_id)?;
+pub fn resolve_expr(db: &dyn Resolves, expr_id: hir::ExprId) -> SResult<ResolvedExpr> {
+    let expr = expr_id.lookup(db)?.expr;
     let parent_block = db.hir_parent_block(expr_id.0)?;
     expr.convert_niladic(&mut |x| {
         let inner = match &x.inner {

@@ -159,7 +159,8 @@ pub trait TypeResolver {
     fn field_type(&self, ty: &NominalInfHead, name: FieldName) -> Result<EitherType, TypeError>;
     fn deref(&self, ty: &NominalInfHead) -> Result<Option<TypeId>, TypeError>;
     fn signature(&self, ty: &NominalInfHead) -> Result<Signature, TypeError>;
-    fn lookup(&self, context: DefId, name: FieldName) -> Result<EitherType, TypeError>;
+    fn lookup(&self, val: DefId) -> Result<EitherType, TypeError>;
+    fn parserdef(&self, pd: DefId) -> Result<EitherType, TypeError>;
     fn name(&self) -> String;
 }
 
@@ -222,17 +223,35 @@ impl<TR: TypeResolver> InferenceContext<TR> {
     pub fn signature(&self, ty: &NominalInfHead) -> Result<Signature, TypeError> {
         self.tr.signature(ty)
     }
-    pub fn lookup(&mut self, context: DefId, name: FieldName) -> Result<InfTypeId, TypeError> {
-        let ret = match self.tr.lookup(context, name)? {
+    pub fn lookup(&mut self, val: DefId) -> Result<InfTypeId, TypeError> {
+        let ret = match self.tr.lookup(val)? {
             EitherType::Regular(result_type) => {
                 let ret = self.from_type(result_type);
                 if self.trace {
                     dbeprintln!(
                         self.tr.db(),
-                        "[{}] lookup {} at {}: {}",
+                        "[{}] lookup {}: {}",
                         &self.tr.name(),
-                        &name,
-                        &context,
+                        &val,
+                        &ret
+                    );
+                }
+                ret
+            }
+            EitherType::Inference(infty) => infty,
+        };
+        Ok(ret)
+    }
+    pub fn parserdef(&mut self, pd: DefId) -> Result<InfTypeId, TypeError> {
+        let ret = match self.tr.parserdef(pd)? {
+            EitherType::Regular(result_type) => {
+                let ret = self.from_type(result_type);
+                if self.trace {
+                    dbeprintln!(
+                        self.tr.db(),
+                        "[{}] parserdef {}: {}",
+                        &self.tr.name(),
+                        &pd,
                         &ret
                     );
                 }

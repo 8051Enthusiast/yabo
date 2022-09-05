@@ -6,7 +6,7 @@ use crate::{
     resolve::parserdef_ssc::FunctionSscId,
 };
 
-use super::*;
+use super::{signature::get_parserdef, *};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum IndirectionLevel {
@@ -72,7 +72,7 @@ pub fn parser_returns_ssc(db: &dyn TyHirs, id: FunctionSscId) -> Vec<ParserDefTy
         .into_iter()
         .flat_map(|def| -> Result<hir::ParserDef, TypeError> {
             // in this separate loop we do the actual type inference
-            let expr = def.to.lookup(db)?.expr;
+            let expr = db.resolve_expr(def.to)?;
             let mut context = TypingLocation {
                 vars: TypeVarCollection::at_id(db, def.id)?,
                 loc: db.hir_parent_module(def.id.0)?.0,
@@ -144,8 +144,8 @@ impl<'a> TypeResolver for ReturnResolver<'a> {
         get_signature(self.db, ty)
     }
 
-    fn lookup(&self, context: DefId, name: FieldName) -> Result<EitherType, TypeError> {
-        get_thunk(self.db, context, name)
+    fn lookup(&self, _val: DefId) -> Result<EitherType, TypeError> {
+        Err(SilencedError.into())
     }
 
     fn name(&self) -> String {
@@ -158,6 +158,10 @@ impl<'a> TypeResolver for ReturnResolver<'a> {
         }
         ret.push(')');
         ret
+    }
+
+    fn parserdef(&self, pd: DefId) -> Result<EitherType, TypeError> {
+        get_parserdef(self.db(), pd).map(|x| x.into())
     }
 }
 
