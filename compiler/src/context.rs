@@ -19,6 +19,7 @@ use crate::layout::{self, instantiate, InternerLayout, LayoutContext, LayoutData
 use crate::low_effort_interner;
 use crate::mir::{print_all_mir, MirDatabase};
 use crate::order::OrdersDatabase;
+use crate::resolve::ResolveDatabase;
 use crate::source::{AriadneCache, FileCollection, FileDatabase};
 use crate::types::TypeInternerDatabase;
 
@@ -28,6 +29,7 @@ use crate::types::TypeInternerDatabase;
     AstDatabase,
     FileDatabase,
     HirDatabase,
+    ResolveDatabase,
     TypeInternerDatabase,
     HirTypesDatabase,
     OrdersDatabase,

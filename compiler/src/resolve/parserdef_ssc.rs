@@ -1,7 +1,11 @@
-use petgraph::Graph;
-use std::{collections::HashMap, sync::Arc};
+use std::{sync::Arc, collections::{BTreeMap, HashMap}};
 
-use super::*;
+use petgraph::Graph;
+
+use crate::{error::{SResult, SilencedError}, hir::{self, refs, HirIdWrapper}};
+
+use super::Resolves;
+
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub struct FunctionSscId(salsa::InternId);
@@ -16,16 +20,16 @@ impl salsa::InternKey for FunctionSscId {
     }
 }
 
-pub fn parser_ssc(db: &dyn Hirs, id: ParserDefId) -> SResult<FunctionSscId> {
+pub fn parser_ssc(db: &dyn Resolves, id: hir::ParserDefId) -> SResult<FunctionSscId> {
     let module = db.hir_parent_module(id.0)?;
     let sscs = db.mod_parser_ssc(module)?;
     sscs.get(&id).copied().ok_or(SilencedError)
 }
 
 pub fn mod_parser_ssc(
-    db: &dyn Hirs,
-    module: ModuleId,
-) -> SResult<Arc<BTreeMap<ParserDefId, FunctionSscId>>> {
+    db: &dyn Resolves,
+    module: hir::ModuleId,
+) -> SResult<Arc<BTreeMap<hir::ParserDefId, FunctionSscId>>> {
     let mut graph = Graph::new();
     let module = module.lookup(db)?;
     let mut index_map = HashMap::new();
