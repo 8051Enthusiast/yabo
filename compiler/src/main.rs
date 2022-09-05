@@ -14,6 +14,7 @@ pub mod layout;
 pub mod low_effort_interner;
 pub mod mir;
 pub mod order;
+pub mod resolve;
 pub mod source;
 pub mod types;
 

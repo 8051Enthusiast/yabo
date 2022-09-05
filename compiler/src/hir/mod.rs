@@ -1,6 +1,5 @@
 mod convert;
 pub mod error;
-pub mod recursion;
 pub mod refs;
 pub mod represent;
 pub mod variable_set;
@@ -30,7 +29,6 @@ use enumflags2::{bitflags, BitFlags};
 use variable_set::VariableSet;
 
 use convert::hir_parser_collection;
-use recursion::{mod_parser_ssc, parser_ssc, FunctionSscId};
 
 use self::{convert::HirConversionErrors, walk::ChildIter};
 
@@ -38,13 +36,6 @@ use self::{convert::HirConversionErrors, walk::ChildIter};
 pub trait Hirs: crate::ast::Asts + crate::types::TypeInterner {
     fn hir_parser_collection(&self, did: DefId) -> SResult<Option<HirParserCollection>>;
     fn hir_node(&self, id: DefId) -> SResult<HirNode>;
-    #[salsa::interned]
-    fn intern_recursion_scc(&self, functions: Vec<ParserDefId>) -> recursion::FunctionSscId;
-    fn mod_parser_ssc(
-        &self,
-        module: ModuleId,
-    ) -> SResult<Arc<BTreeMap<ParserDefId, FunctionSscId>>>;
-    fn parser_ssc(&self, parser: ParserDefId) -> SResult<FunctionSscId>;
     fn root_id(&self) -> ModuleId;
     fn all_def_ids(&self) -> Vec<DefId>;
     fn all_parserdefs(&self) -> Vec<ParserDefId>;
@@ -614,33 +605,5 @@ def for [u8] *> expr1 = {
         "#,
         );
         eprintln!("{:?}", ctx.db.all_def_ids());
-    }
-    #[test]
-    fn recursion_ssc() {
-        let ctx = Context::mock(
-            r#"
-def for [u8] *> a = {x: c, y: {b, z: d,},}
-def for [u8] *> b = {x: a, y: c,}
-def for [u8] *> c = {x: c,}
-def for [u8] *> d = {let a: u64 = 1, let b: u64 = a + 1,}
-def for [u8] *> e = {}
-            "#,
-        );
-        let a = ctx.parser("a");
-        let b = ctx.parser("b");
-        let c = ctx.parser("c");
-        let d = ctx.parser("d");
-        let e = ctx.parser("d");
-        let get_ssc = |x| ctx.db.parser_ssc(x).unwrap();
-        let ssc_a = get_ssc(a);
-        let ssc_b = get_ssc(b);
-        let ssc_c = get_ssc(c);
-        let ssc_d = get_ssc(d);
-        let ssc_e = get_ssc(e);
-        assert!(ssc_a == ssc_b);
-        assert!(ssc_b != ssc_c);
-        assert!(ssc_c != ssc_d);
-        assert!(ssc_b != ssc_d);
-        assert!(ssc_b != ssc_e);
     }
 }

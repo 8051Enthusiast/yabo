@@ -18,6 +18,7 @@ use crate::{
     hash::StableHash,
     hir::{HirIdWrapper, ParseStatement, ParserAtom, ParserDefRef},
     interner::{DefId, FieldName, TypeVar, TypeVarName},
+    resolve,
     source::SpanIndex,
     types::{
         inference::{InfTypeId, InferenceContext, InferenceType, NominalInfHead, TypeResolver},
@@ -35,10 +36,10 @@ use returns::{deref_type, least_deref_type, parser_returns, parser_returns_ssc, 
 use signature::{get_signature, get_thunk, parser_args};
 
 #[salsa::query_group(HirTypesDatabase)]
-pub trait TyHirs: Hirs + crate::types::TypeInterner {
+pub trait TyHirs: Hirs + crate::types::TypeInterner + resolve::Resolves {
     fn parser_args(&self, id: hir::ParserDefId) -> SResult<Signature>;
     fn parser_returns(&self, id: hir::ParserDefId) -> SResult<ParserDefType>;
-    fn parser_returns_ssc(&self, id: hir::recursion::FunctionSscId) -> Vec<ParserDefType>;
+    fn parser_returns_ssc(&self, id: resolve::parserdef_ssc::FunctionSscId) -> Vec<ParserDefType>;
     fn deref_type(&self, ty: TypeId) -> SResult<Option<TypeId>>;
     fn least_deref_type(&self, ty: TypeId) -> SResult<TypeId>;
     fn public_type(&self, loc: DefId) -> SResult<TypeId>;
