@@ -252,11 +252,11 @@ class TestFile:
                 dict_obj = dictionarified_obj(obj)
                 (diffed, is_different) = diff(parsed_json, dict_obj)
                 if is_different:
-                    print(f'Test {test_name} failed:')
+                    print(f'{RED}Test {test_name} failed:{CLEAR}')
                     print(diffed.diff(), end='')
                     failed_tests += 1
                 else:
-                    print(f'Test {test_name} passed')
+                    print(f'{GREEN}Test {test_name} passed{CLEAR}')
         return failed_tests
 
 
