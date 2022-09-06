@@ -14,7 +14,8 @@ fn public_expr_type_impl(
     db: &dyn TyHirs,
     loc: hir::ExprId,
 ) -> Result<(TypedExpression, TypeId), TypeError> {
-    let mut ctx = PublicResolver::new_typing_context_and_loc(db, loc.0)?;
+    let bump = Bump::new();
+    let mut ctx = PublicResolver::new_typing_context_and_loc(db, loc.0, &bump)?;
     let mut typeloc = ctx.infctx.tr.tloc.clone();
     let parent = loc.0.parent(db);
     let surrounding_types = match db.hir_node(parent)? {
@@ -52,7 +53,8 @@ fn public_type_impl(db: &dyn TyHirs, loc: DefId) -> Result<TypeId, TypeError> {
         hir::HirNode::Let(l) => public_expr_type(db, l.expr)?.1,
         hir::HirNode::Parse(p) => db.public_expr_type(p.expr)?.1,
         hir::HirNode::ChoiceIndirection(ind) => {
-            let mut ctx = PublicResolver::new_typing_context_and_loc(db, ind.parent_context.0)?;
+            let bump = Bump::new();
+            let mut ctx = PublicResolver::new_typing_context_and_loc(db, ind.parent_context.0, &bump)?;
             let ret = ctx.infctx.var();
             for (_, choice_id) in ind.choices.iter() {
                 // todo
@@ -104,11 +106,11 @@ fn ambient_type_impl(db: &dyn TyHirs, loc: hir::ParseId) -> Result<TypeId, TypeE
     }
 }
 
-impl<'a> TypingContext<'a, PublicResolver<'a>> {
+impl<'a, 'intern> TypingContext<'a, 'intern, PublicResolver<'a>> {
     pub fn parse_statement_types(
         &mut self,
         parse: &ParseStatement,
-    ) -> Result<ExpressionTypeConstraints, TypeError> {
+    ) -> Result<ExpressionTypeConstraints<'intern>, TypeError> {
         let from = self.db.ambient_type(parse.id)?;
         let infty = self.infctx.from_type(from);
         Ok(ExpressionTypeConstraints {
@@ -119,7 +121,7 @@ impl<'a> TypingContext<'a, PublicResolver<'a>> {
     pub fn let_statement_types(
         &mut self,
         let_statement: &hir::LetStatement,
-    ) -> Result<ExpressionTypeConstraints, TypeError> {
+    ) -> Result<ExpressionTypeConstraints<'intern>, TypeError> {
         let ty = let_statement.ty;
         let ty_expr = ty.lookup(self.db)?.expr;
         let mut typeloc = self.infctx.tr.tloc.clone();
@@ -132,7 +134,7 @@ impl<'a> TypingContext<'a, PublicResolver<'a>> {
     pub fn parserdef_types(
         &mut self,
         parserdef: &hir::ParserDef,
-    ) -> Result<ExpressionTypeConstraints, TypeError> {
+    ) -> Result<ExpressionTypeConstraints<'intern>, TypeError> {
         let ty_expr = parserdef.from.lookup(self.db)?.expr;
         let mut typeloc = self.infctx.tr.tloc.clone();
         let from = self.resolve_type_expr(&mut typeloc, &ty_expr)?;
@@ -152,26 +154,31 @@ impl<'a> PublicResolver<'a> {
     pub fn new(db: &'a dyn TyHirs, tloc: TypingLocation) -> Self {
         Self { db, tloc }
     }
-    pub fn new_typing_context_and_loc(
+    pub fn new_typing_context_and_loc<'intern>(
         db: &'a dyn TyHirs,
         loc: DefId,
-    ) -> SResult<TypingContext<Self>> {
+        bump: &'intern Bump,
+    ) -> SResult<TypingContext<'a, 'intern, Self>> {
         let typeloc = TypingLocation {
             vars: TypeVarCollection::new_empty(),
             loc,
             pd: db.hir_parent_parserdef(loc)?,
         };
         let public_resolver = Self::new(db, typeloc);
-        Ok(TypingContext::new(db, public_resolver))
+        Ok(TypingContext::new(db, public_resolver, &bump))
     }
 }
 
-impl<'a> TypeResolver for PublicResolver<'a> {
-    fn field_type(&self, _ty: &NominalInfHead, _name: FieldName) -> Result<EitherType, TypeError> {
+impl<'a, 'intern> TypeResolver<'intern> for PublicResolver<'a> {
+    fn field_type(
+        &self,
+        _ty: &NominalInfHead<'intern>,
+        _name: FieldName,
+    ) -> Result<EitherType<'intern>, TypeError> {
         Ok(self.db.intern_type(Type::Unknown).into())
     }
 
-    fn deref(&self, ty: &NominalInfHead) -> Result<Option<TypeId>, TypeError> {
+    fn deref(&self, ty: &NominalInfHead<'intern>) -> Result<Option<TypeId>, TypeError> {
         let id = match NominalId::from_nominal_inf_head(ty) {
             NominalId::Def(d) => d,
             NominalId::Block(_) => return Ok(None),
@@ -179,11 +186,11 @@ impl<'a> TypeResolver for PublicResolver<'a> {
         Ok(Some(self.db.parser_returns(id)?.deref))
     }
 
-    fn signature(&self, ty: &NominalInfHead) -> Result<Signature, TypeError> {
+    fn signature(&self, ty: &NominalInfHead<'intern>) -> Result<Signature, TypeError> {
         get_signature(self.db, ty)
     }
 
-    fn lookup(&self, _val: DefId) -> Result<EitherType, TypeError> {
+    fn lookup(&self, _val: DefId) -> Result<EitherType<'intern>, TypeError> {
         Err(SilencedError.into())
     }
 
@@ -197,7 +204,7 @@ impl<'a> TypeResolver for PublicResolver<'a> {
         dbformat!(self.db, "public at {}", &self.tloc.pd.0)
     }
 
-    fn parserdef(&self, pd: DefId) -> Result<EitherType, TypeError> {
+    fn parserdef(&self, pd: DefId) -> Result<EitherType<'intern>, TypeError> {
         get_parserdef(self.db(), pd).map(|x| x.into())
     }
 }

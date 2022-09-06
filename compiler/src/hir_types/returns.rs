@@ -60,7 +60,8 @@ pub fn parser_returns_ssc(db: &dyn TyHirs, id: FunctionSscId) -> Vec<ParserDefTy
         .collect::<Vec<_>>();
 
     let resolver = ReturnResolver::new(db);
-    let mut ctx = TypingContext::new(db, resolver);
+    let bump = Bump::new();
+    let mut ctx = TypingContext::new(db, resolver, &bump);
 
     for def in def_ids.iter() {
         // in this loop we do not directly the inference variables we are creating yet
@@ -104,7 +105,7 @@ pub fn parser_returns_ssc(db: &dyn TyHirs, id: FunctionSscId) -> Vec<ParserDefTy
 
 pub struct ReturnResolver<'a> {
     db: &'a dyn TyHirs,
-    return_infs: FxHashMap<DefId, ParserDefTypeInf>,
+    return_infs: FxHashMap<DefId, ParserDefTypeInf<'a>>,
 }
 
 impl<'a> ReturnResolver<'a> {
@@ -117,18 +118,18 @@ impl<'a> ReturnResolver<'a> {
     }
 }
 
-impl<'a> TypeResolver for ReturnResolver<'a> {
+impl<'a> TypeResolver<'a> for ReturnResolver<'a> {
     type DB = dyn TyHirs + 'a;
 
     fn db(&self) -> &Self::DB {
         self.db
     }
 
-    fn field_type(&self, _: &NominalInfHead, _: FieldName) -> Result<EitherType, TypeError> {
+    fn field_type(&self, _: &NominalInfHead<'a>, _: FieldName) -> Result<EitherType<'a>, TypeError> {
         Ok(self.db.intern_type(Type::Unknown).into())
     }
 
-    fn deref(&self, ty: &NominalInfHead) -> Result<Option<TypeId>, TypeError> {
+    fn deref(&self, ty: &NominalInfHead<'a>) -> Result<Option<TypeId>, TypeError> {
         if self.return_infs.get(&ty.def).is_some() {
             Ok(Some(self.db.intern_type(Type::Unknown)))
         } else {
@@ -140,11 +141,11 @@ impl<'a> TypeResolver for ReturnResolver<'a> {
         }
     }
 
-    fn signature(&self, ty: &NominalInfHead) -> Result<Signature, TypeError> {
+    fn signature(&self, ty: &NominalInfHead<'a>) -> Result<Signature, TypeError> {
         get_signature(self.db, ty)
     }
 
-    fn lookup(&self, _val: DefId) -> Result<EitherType, TypeError> {
+    fn lookup(&self, _val: DefId) -> Result<EitherType<'a>, TypeError> {
         Err(SilencedError.into())
     }
 
@@ -160,7 +161,7 @@ impl<'a> TypeResolver for ReturnResolver<'a> {
         ret
     }
 
-    fn parserdef(&self, pd: DefId) -> Result<EitherType, TypeError> {
+    fn parserdef(&self, pd: DefId) -> Result<EitherType<'a>, TypeError> {
         get_parserdef(self.db(), pd).map(|x| x.into())
     }
 }
@@ -172,9 +173,9 @@ pub struct ParserDefType {
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct ParserDefTypeInf {
+pub struct ParserDefTypeInf<'a> {
     pub id: hir::ParserDefId,
-    pub deref: InfTypeId,
+    pub deref: InfTypeId<'a>,
 }
 
 #[cfg(test)]

@@ -1,4 +1,4 @@
-use crate::{hir::ParserDefId, error::SilencedError};
+use crate::{error::SilencedError, hir::ParserDefId};
 
 use super::*;
 
@@ -17,7 +17,8 @@ pub(super) fn parser_args_impl(
         pd: id,
     };
     let arg_resolver = ArgResolver::new(db);
-    let mut tcx = TypingContext::new(db, arg_resolver);
+    let bump = Bump::new();
+    let mut tcx = TypingContext::new(db, arg_resolver, &bump);
     let from_expr = pd.from.lookup(db)?;
     let args = Arc::new(vec![]);
     let from_infty = tcx.resolve_type_expr(&mut context, &from_expr.expr)?;
@@ -49,20 +50,24 @@ impl<'a> ArgResolver<'a> {
     }
 }
 
-impl<'a> TypeResolver for ArgResolver<'a> {
-    fn field_type(&self, _ty: &NominalInfHead, _name: FieldName) -> Result<EitherType, TypeError> {
+impl<'a> TypeResolver<'a> for ArgResolver<'a> {
+    fn field_type(
+        &self,
+        _ty: &NominalInfHead<'a>,
+        _name: FieldName,
+    ) -> Result<EitherType<'a>, TypeError> {
         Ok(self.0.intern_type(Type::Unknown).into())
     }
 
-    fn deref(&self, _ty: &NominalInfHead) -> Result<Option<TypeId>, TypeError> {
+    fn deref(&self, _ty: &NominalInfHead<'a>) -> Result<Option<TypeId>, TypeError> {
         Ok(Some(self.0.intern_type(Type::Unknown)))
     }
 
-    fn signature(&self, ty: &NominalInfHead) -> Result<Signature, TypeError> {
+    fn signature(&self, ty: &NominalInfHead<'a>) -> Result<Signature, TypeError> {
         get_signature(self.0, ty)
     }
 
-    fn lookup(&self, _val: DefId) -> Result<EitherType, TypeError> {
+    fn lookup(&self, _val: DefId) -> Result<EitherType<'a>, TypeError> {
         Err(SilencedError.into())
     }
 
@@ -76,7 +81,7 @@ impl<'a> TypeResolver for ArgResolver<'a> {
         String::from("signature")
     }
 
-    fn parserdef(&self, pd: DefId) -> Result<EitherType, TypeError> {
+    fn parserdef(&self, pd: DefId) -> Result<EitherType<'a>, TypeError> {
         get_parserdef(self.db(), pd).map(|x| x.into())
     }
 }

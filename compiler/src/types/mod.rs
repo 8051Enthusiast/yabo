@@ -34,8 +34,6 @@ impl salsa::InternKey for TypeId {
 pub trait TypeInterner: crate::source::Files {
     #[salsa::interned]
     fn intern_type(&self, ty: Type) -> TypeId;
-    #[salsa::interned]
-    fn intern_inference_type(&self, ty: InferenceType) -> InfTypeId;
     fn type_contains_unknown(&self, ty: TypeId) -> bool;
     fn type_contains_typevar(&self, ty: TypeId) -> bool;
     fn substitute_typevar(&self, ty: TypeId, replacements: Arc<Vec<TypeId>>) -> TypeId;
@@ -163,18 +161,18 @@ impl From<SilencedError> for TypeError {
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub enum EitherType {
+pub enum EitherType<'a> {
     Regular(TypeId),
-    Inference(InfTypeId),
+    Inference(InfTypeId<'a>),
 }
 
-impl From<InfTypeId> for EitherType {
-    fn from(x: InfTypeId) -> Self {
+impl<'a> From<InfTypeId<'a>> for EitherType<'a> {
+    fn from(x: InfTypeId<'a>) -> Self {
         EitherType::Inference(x)
     }
 }
 
-impl From<TypeId> for EitherType {
+impl<'a> From<TypeId> for EitherType<'a> {
     fn from(x: TypeId) -> Self {
         EitherType::Regular(x)
     }
