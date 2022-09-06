@@ -52,6 +52,7 @@ pub struct Context {
 const ERROR_FNS: &[fn(&LivingInTheDatabase) -> Vec<Report>] = &[
     crate::ast::error::errors,
     crate::hir::error::errors,
+    crate::resolve::error::errors,
     crate::order::error::errors,
 ];
 

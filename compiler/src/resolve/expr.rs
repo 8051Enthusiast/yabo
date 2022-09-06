@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
-use crate::error::{SResult, SilencedError};
 use crate::expr::{Atom, Expression, KindWithData, OpWithData, ValBinOp, ValUnOp};
 use crate::hir::HirIdWrapper;
 use crate::resolve::refs;
 use crate::source::SpanIndex;
 use crate::{expr::ExpressionKind, hir, interner::DefId};
 
-use super::Resolves;
+use super::{ResolveError, Resolves};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ResolvedAtom {
@@ -31,7 +30,10 @@ impl ExpressionKind for ResolvedKind {
 
 pub type ResolvedExpr = Expression<KindWithData<ResolvedKind, SpanIndex>>;
 
-pub fn resolve_expr(db: &dyn Resolves, expr_id: hir::ExprId) -> SResult<ResolvedExpr> {
+pub fn resolve_expr_error(
+    db: &dyn Resolves,
+    expr_id: hir::ExprId,
+) -> Result<Arc<ResolvedExpr>, ResolveError> {
     let expr = expr_id.lookup(db)?.expr;
     let parent_block = db.hir_parent_block(expr_id.0)?;
     expr.convert_niladic(&mut |x| {
@@ -41,7 +43,8 @@ pub fn resolve_expr(db: &dyn Resolves, expr_id: hir::ExprId) -> SResult<Resolved
             hir::ParserAtom::Single => ResolvedAtom::Single,
             hir::ParserAtom::Block(b) => ResolvedAtom::Block(*b),
             hir::ParserAtom::Atom(Atom::Field(f)) => {
-                let (id, kind) = refs::resolve_var_ref(db, expr_id.0, *f)?.ok_or(SilencedError)?;
+                let (id, kind) = refs::resolve_var_ref(db, expr_id.0, *f)?
+                    .ok_or(ResolveError::Unresolved(expr_id, x.data, *f))?;
                 match kind {
                     refs::VarType::ParserDef => ResolvedAtom::ParserDef(hir::ParserDefId(id)),
                     refs::VarType::Value => {
@@ -62,4 +65,5 @@ pub fn resolve_expr(db: &dyn Resolves, expr_id: hir::ExprId) -> SResult<Resolved
             data: x.data,
         })
     })
+    .map(Arc::new)
 }
