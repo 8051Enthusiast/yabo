@@ -1,3 +1,4 @@
+pub mod error;
 pub mod expr;
 pub mod parserdef_ssc;
 mod refs;
@@ -7,13 +8,15 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use parserdef_ssc::{mod_parser_ssc, parser_ssc};
 
+use crate::error::{Silencable, SilencedError};
 use crate::expr::{ExprIter, ExpressionHead, OpWithData};
 use crate::hir::walk::ChildIter;
-use crate::hir::HirIdWrapper;
-use crate::interner::{DefId, Identifier};
+use crate::hir::{ExprId, HirIdWrapper};
+use crate::interner::{DefId, FieldName, Identifier};
+use crate::source::SpanIndex;
 use crate::{error::SResult, hir};
 
-use self::expr::resolve_expr;
+use self::expr::resolve_expr_error;
 pub use self::expr::ResolvedExpr;
 use self::parserdef_ssc::FunctionSscId;
 use self::refs::parserdef_ref;
@@ -27,9 +30,14 @@ pub trait Resolves: crate::hir::Hirs {
         module: hir::ModuleId,
     ) -> SResult<Arc<BTreeMap<hir::ParserDefId, FunctionSscId>>>;
     fn parser_ssc(&self, parser: hir::ParserDefId) -> SResult<FunctionSscId>;
-    fn resolve_expr(&self, expr_id: hir::ExprId) -> SResult<ResolvedExpr>;
+    fn resolve_expr_error(&self, expr_id: hir::ExprId) -> Result<Arc<ResolvedExpr>, ResolveError>;
+    fn resolve_expr(&self, expr_id: hir::ExprId) -> SResult<Arc<ResolvedExpr>>;
     fn captures(&self, id: hir::BlockId) -> Arc<BTreeSet<DefId>>;
     fn parserdef_ref(&self, loc: DefId, name: Identifier) -> SResult<Option<hir::ParserDefId>>;
+}
+
+fn resolve_expr(db: &dyn Resolves, expr_id: hir::ExprId) -> SResult<Arc<ResolvedExpr>> {
+    db.resolve_expr_error(expr_id).silence()
 }
 
 pub fn captures(db: &dyn Resolves, id: hir::BlockId) -> Arc<BTreeSet<DefId>> {
@@ -60,6 +68,26 @@ pub fn captures(db: &dyn Resolves, id: hir::BlockId) -> Arc<BTreeSet<DefId>> {
         }
     }
     Arc::new(ret)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ResolveError {
+    Unresolved(ExprId, SpanIndex, FieldName),
+    Silenced,
+}
+
+impl From<SilencedError> for ResolveError {
+    fn from(_: SilencedError) -> Self {
+        ResolveError::Silenced
+    }
+}
+
+impl Silencable for ResolveError {
+    type Out = SilencedError;
+
+    fn silence(self) -> Self::Out {
+        SilencedError
+    }
 }
 
 #[cfg(test)]

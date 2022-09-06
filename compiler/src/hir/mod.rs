@@ -316,6 +316,9 @@ impl HirParserCollection {
     pub fn default_span(&self, id: DefId) -> Option<Span> {
         self.spans.get(&id)?.last().copied()
     }
+    pub fn span_with_index(&self, id: DefId, index: usize) -> Option<Span> {
+        self.spans.get(&id)?.get(index).copied()
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
