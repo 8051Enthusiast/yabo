@@ -21,7 +21,8 @@ pub fn parser_full_types(
     id: hir::ParserDefId,
 ) -> Result<Arc<ParserFullTypes>, TypeError> {
     let resolver = FullResolver::new(db, id.0)?;
-    let mut ctx = TypingContext::new(db, resolver);
+    let bump = Bump::new();
+    let mut ctx = TypingContext::new(db, resolver, &bump);
     ctx.initialize_vars()?;
     ctx.type_parserdef(id)?;
     let mut types = BTreeMap::new();
@@ -54,17 +55,17 @@ pub fn parser_expr_at(db: &dyn TyHirs, id: hir::ExprId) -> SResult<TypedExpressi
     types.exprs.get(&id).cloned().ok_or(SilencedError)
 }
 
-impl<'a> TypingContext<'a, FullResolver<'a>> {
+impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
     fn set_current_loc(&mut self, loc: DefId) {
         self.infctx.tr.loc.loc = loc;
     }
-    fn infty_at(&mut self, id: DefId) -> InfTypeId {
+    fn infty_at(&mut self, id: DefId) -> InfTypeId<'intern> {
         self.infctx.tr.inftypes[&id]
     }
     fn let_statement_types(
         &mut self,
         let_statement: &hir::LetStatement,
-    ) -> Result<ExpressionTypeConstraints, TypeError> {
+    ) -> Result<ExpressionTypeConstraints<'intern>, TypeError> {
         let ty = let_statement.ty;
         let ty_expr = ty.lookup(self.db)?.expr;
         let mut typeloc = self.infctx.tr.loc.clone();
@@ -74,7 +75,7 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
             from_type: None,
         })
     }
-    fn init_var_at_loc(&mut self, infty: InfTypeId) {
+    fn init_var_at_loc(&mut self, infty: InfTypeId<'intern>) {
         self.infctx
             .tr
             .inftypes
@@ -127,15 +128,15 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
         }
         Ok(())
     }
-    fn set_ambient_type(&mut self, infty: Option<InfTypeId>) {
+    fn set_ambient_type(&mut self, infty: Option<InfTypeId<'intern>>) {
         self.infctx.tr.current_ambient = infty;
     }
-    fn ambient_type(&self) -> Option<InfTypeId> {
+    fn ambient_type(&self) -> Option<InfTypeId<'intern>> {
         self.infctx.tr.current_ambient
     }
     fn with_ambient_type<T>(
         &mut self,
-        infty: Option<InfTypeId>,
+        infty: Option<InfTypeId<'intern>>,
         f: impl FnOnce(&mut Self) -> T,
     ) -> T {
         let old_ambient = self.ambient_type();
@@ -165,7 +166,7 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
         self.infctx.constrain(ret, previous_ret)?;
         Ok(())
     }
-    fn type_expr(&mut self, expr: &ValExpression) -> Result<InfTypeId, TypeError> {
+    fn type_expr(&mut self, expr: &ValExpression) -> Result<InfTypeId<'intern>, TypeError> {
         let mut typeloc = self.infctx.tr.loc.clone();
         let resolved_expr = self.db.resolve_expr(expr.id)?;
         let inf_expression = self.val_expression_type(&mut typeloc, &resolved_expr)?;
@@ -245,15 +246,15 @@ impl<'a> TypingContext<'a, FullResolver<'a>> {
     }
 }
 
-pub struct FullResolver<'a> {
+pub struct FullResolver<'a, 'intern> {
     db: &'a dyn TyHirs,
-    inftypes: FxHashMap<DefId, InfTypeId>,
-    inf_expressions: FxHashMap<hir::ExprId, InfTypedExpression>,
+    inftypes: FxHashMap<DefId, InfTypeId<'intern>>,
+    inf_expressions: FxHashMap<hir::ExprId, InfTypedExpression<'intern>>,
     loc: TypingLocation,
-    current_ambient: Option<InfTypeId>,
+    current_ambient: Option<InfTypeId<'intern>>,
 }
 
-impl<'a> FullResolver<'a> {
+impl<'a, 'intern> FullResolver<'a, 'intern> {
     pub fn new(db: &'a dyn TyHirs, loc: DefId) -> SResult<Self> {
         Ok(Self {
             db,
@@ -265,13 +266,17 @@ impl<'a> FullResolver<'a> {
     }
 }
 
-impl<'a> TypeResolver for FullResolver<'a> {
+impl<'a, 'intern> TypeResolver<'intern> for FullResolver<'a, 'intern> {
     type DB = dyn TyHirs + 'a;
     fn db(&self) -> &Self::DB {
         self.db
     }
 
-    fn field_type(&self, ty: &NominalInfHead, name: FieldName) -> Result<EitherType, TypeError> {
+    fn field_type(
+        &self,
+        ty: &NominalInfHead<'intern>,
+        name: FieldName,
+    ) -> Result<EitherType<'intern>, TypeError> {
         let block = match NominalId::from_nominal_inf_head(ty) {
             NominalId::Def(pd) => {
                 dbpanic!(self.db, "field_type called on parser def {}", &pd.0)
@@ -293,7 +298,7 @@ impl<'a> TypeResolver for FullResolver<'a> {
         }
     }
 
-    fn deref(&self, ty: &NominalInfHead) -> Result<Option<TypeId>, TypeError> {
+    fn deref(&self, ty: &NominalInfHead<'intern>) -> Result<Option<TypeId>, TypeError> {
         let id = match NominalId::from_nominal_inf_head(ty) {
             NominalId::Def(d) => d,
             NominalId::Block(_) => return Ok(None),
@@ -301,11 +306,11 @@ impl<'a> TypeResolver for FullResolver<'a> {
         Ok(Some(self.db.parser_returns(id)?.deref))
     }
 
-    fn signature(&self, ty: &NominalInfHead) -> Result<Signature, TypeError> {
+    fn signature(&self, ty: &NominalInfHead<'intern>) -> Result<Signature, TypeError> {
         get_signature(self.db, ty)
     }
 
-    fn lookup(&self, val: DefId) -> Result<EitherType, TypeError> {
+    fn lookup(&self, val: DefId) -> Result<EitherType<'intern>, TypeError> {
         Ok(self.inftypes[&val].into())
     }
 
@@ -313,7 +318,7 @@ impl<'a> TypeResolver for FullResolver<'a> {
         dbformat!(self.db, "full at {}", &self.loc.pd.0)
     }
 
-    fn parserdef(&self, pd: DefId) -> Result<EitherType, TypeError> {
+    fn parserdef(&self, pd: DefId) -> Result<EitherType<'intern>, TypeError> {
         get_parserdef(self.db(), pd).map(|x| x.into())
     }
 }

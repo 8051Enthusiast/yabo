@@ -6,9 +6,9 @@ use super::{InfTypeId, InferenceType, NominalKind, PrimitiveType, TypeInterner};
 
 use crate::dbwrite;
 
-impl<DB: TypeInterner + Interner + ?Sized> DatabasedDisplay<DB> for InfTypeId {
+impl<'a, DB: TypeInterner + Interner + ?Sized> DatabasedDisplay<DB> for InfTypeId<'a> {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
-        match db.lookup_intern_inference_type(*self) {
+        match self.value() {
             InferenceType::Any => write!(f, "any"),
             InferenceType::Bot => write!(f, "bot"),
             InferenceType::Primitive(p) => match p {
@@ -17,7 +17,7 @@ impl<DB: TypeInterner + Interner + ?Sized> DatabasedDisplay<DB> for InfTypeId {
                 super::PrimitiveType::Char => write!(f, "char"),
             },
             InferenceType::TypeVarRef(loc, level, index) => {
-                dbwrite!(f, db, "<Var Ref ({}, {}, {})>", &loc, &level, &index)
+                dbwrite!(f, db, "<Var Ref ({}, {}, {})>", loc, level, index)
             }
             InferenceType::Nominal(n) => {
                 if let NominalKind::Block = n.kind {
@@ -38,13 +38,13 @@ impl<DB: TypeInterner + Interner + ?Sized> DatabasedDisplay<DB> for InfTypeId {
                     ArrayKind::For => write!(f, "for")?,
                     ArrayKind::Each => write!(f, "each")?,
                 };
-                dbwrite!(f, db, "[{}]", &inner)
+                dbwrite!(f, db, "[{}]", inner)
             }
             InferenceType::ParserArg { result, arg } => {
-                dbwrite!(f, db, "{} *> {}", &arg, &result)
+                dbwrite!(f, db, "{} *> {}", arg, result)
             }
             InferenceType::FunctionArgs { result, args } => {
-                dbwrite!(f, db, "{}(", &result)?;
+                dbwrite!(f, db, "{}(", result)?;
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
@@ -59,7 +59,7 @@ impl<DB: TypeInterner + Interner + ?Sized> DatabasedDisplay<DB> for InfTypeId {
             }
             InferenceType::InferField(field_name, inner_type) => {
                 write!(f, "<InferField {:?}: ", field_name)?;
-                dbwrite!(f, db, "{}", &inner_type)
+                dbwrite!(f, db, "{}", inner_type)
             }
         }
     }
@@ -80,7 +80,7 @@ impl<DB: TypeInterner + ?Sized> StableHash<DB> for NominalKind {
     fn update_hash(&self, state: &mut sha2::Sha256, db: &DB) {
         match self {
             NominalKind::Def => 0u8,
-            NominalKind::Block => 1
+            NominalKind::Block => 1,
         }
         .update_hash(state, db)
     }

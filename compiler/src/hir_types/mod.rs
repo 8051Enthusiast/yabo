@@ -6,6 +6,7 @@ mod signature;
 
 use std::{collections::BTreeMap, fmt::Debug, hash::Hash, sync::Arc};
 
+use bumpalo::Bump;
 use fxhash::FxHashMap;
 use sha2::Digest;
 
@@ -94,18 +95,18 @@ pub fn head_discriminant(db: &dyn TyHirs, ty: TypeId) -> i64 {
     }
 }
 pub type TypedExpression = Expression<TypedHirVal<(TypeId, SpanIndex)>>;
-pub type InfTypedExpression = Expression<TypedHirVal<(InfTypeId, SpanIndex)>>;
+pub type InfTypedExpression<'a> = Expression<TypedHirVal<(InfTypeId<'a>, SpanIndex)>>;
 
-pub struct ExpressionTypeConstraints {
-    pub root_type: Option<InfTypeId>,
-    pub from_type: Option<InfTypeId>,
+pub struct ExpressionTypeConstraints<'a> {
+    pub root_type: Option<InfTypeId<'a>>,
+    pub from_type: Option<InfTypeId<'a>>,
 }
 
-impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
-    fn new(db: &'a dyn TyHirs, tr: TR) -> Self {
-        TypingContext {
+impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
+    fn new(db: &'a dyn TyHirs, tr: TR, bump: &'intern Bump) -> Self {
+        Self {
             db,
-            infctx: InferenceContext::new(tr),
+            infctx: InferenceContext::new(tr, bump),
         }
     }
 
@@ -113,7 +114,7 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
         &mut self,
         context: &mut TypingLocation,
         expr: &Expression<hir::HirTypeSpanned>,
-    ) -> Result<InfTypeId, TypeError> {
+    ) -> Result<InfTypeId<'intern>, TypeError> {
         let ret = match &expr.0 {
             ExpressionHead::Dyadic(Dyadic {
                 op,
@@ -131,7 +132,7 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                         }) => self.resolve_type_expr_parserdef_ref(context, pd, Some(from))?,
                         _ => self.resolve_type_expr(context, right)?,
                     };
-                    self.db.intern_inference_type(InferenceType::ParserArg {
+                    self.infctx.intern_infty(InferenceType::ParserArg {
                         result: inner,
                         arg: from,
                     })
@@ -150,16 +151,13 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                 }
                 hir::TypeAtom::Array(a) => {
                     let inner = self.resolve_type_expr(context, &a.expr)?;
-                    self.db
-                        .intern_inference_type(InferenceType::Loop(a.direction, inner))
+                    self.infctx
+                        .intern_infty(InferenceType::Loop(a.direction, inner))
                 }
                 hir::TypeAtom::TypeVar(v) => {
                     let var_idx = context.vars.get_var(*v).ok_or(TypeError)?;
-                    self.db.intern_inference_type(InferenceType::TypeVarRef(
-                        context.pd.0,
-                        0,
-                        var_idx,
-                    ))
+                    self.infctx
+                        .intern_infty(InferenceType::TypeVarRef(context.pd.0, 0, var_idx))
                 }
             },
         };
@@ -169,8 +167,8 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
         &mut self,
         context: &mut TypingLocation,
         pd: &ParserDefRef,
-        parserarg_from: Option<InfTypeId>,
-    ) -> Result<InfTypeId, TypeError> {
+        parserarg_from: Option<InfTypeId<'intern>>,
+    ) -> Result<InfTypeId<'intern>, TypeError> {
         let mut parse_arg = pd
             .from
             .as_ref()
@@ -211,8 +209,8 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
         }));
         let inferred_def = self.infctx.from_type_with_args(def_type, &ty_args);
         let ret = self
-            .db
-            .intern_inference_type(InferenceType::Nominal(NominalInfHead {
+            .infctx
+            .intern_infty(InferenceType::Nominal(NominalInfHead {
                 kind: NominalKind::Def,
                 def: def.0,
                 parse_arg,
@@ -227,7 +225,7 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
         &mut self,
         context: &mut TypingLocation,
         expr: &resolve::ResolvedExpr,
-    ) -> Result<InfTypedExpression, TypeError> {
+    ) -> Result<InfTypedExpression<'intern>, TypeError> {
         use ValBinOp::*;
         expr.try_scan(&mut |expr| {
             Ok(match expr {
@@ -279,9 +277,8 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
                             let pd = self.db.hir_parent_parserdef(b.0)?;
                             let ty_vars = (0..context.vars.defs.len() as u32)
                                 .map(|i| {
-                                    self.db.intern_inference_type(InferenceType::TypeVarRef(
-                                        pd.0, 0, i,
-                                    ))
+                                    self.infctx
+                                        .intern_infty(InferenceType::TypeVarRef(pd.0, 0, i))
                                 })
                                 .collect::<Vec<_>>();
                             self.infctx.block_call(b.0, &ty_vars)?
@@ -296,20 +293,20 @@ impl<'a, TR: TypeResolver> TypingContext<'a, TR> {
             })
         })
     }
-    fn inftype_to_concrete_type(&mut self, infty: InfTypeId) -> Result<TypeId, TypeError> {
+    fn inftype_to_concrete_type(&mut self, infty: InfTypeId<'intern>) -> Result<TypeId, TypeError> {
         self.infctx.to_type(infty)
     }
     fn expr_to_concrete_type(
         &mut self,
-        expr: &InfTypedExpression,
+        expr: &InfTypedExpression<'intern>,
     ) -> Result<TypedExpression, TypeError> {
         expr.try_map(&mut |(ty, span)| Ok((self.inftype_to_concrete_type(*ty)?, *span)))
     }
 }
 
-pub struct TypingContext<'a, TR: TypeResolver> {
+pub struct TypingContext<'a, 'intern, TR: TypeResolver<'intern>> {
     db: &'a dyn TyHirs,
-    infctx: InferenceContext<TR>,
+    infctx: InferenceContext<'intern, TR>,
 }
 
 #[derive(Clone, Debug)]

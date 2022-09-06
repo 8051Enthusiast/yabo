@@ -1,50 +1,61 @@
+use std::ops::Deref;
+
+use bumpalo::Bump;
+
+use crate::low_effort_interner::{self, Uniq};
+
 use super::*;
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct InfTypeId(InternId);
-impl salsa::InternKey for InfTypeId {
-    fn from_intern_id(v: InternId) -> Self {
-        InfTypeId(v)
-    }
+pub struct InfTypeId<'intern>(&'intern Uniq<InferenceType<'intern>>);
 
-    fn as_intern_id(&self) -> InternId {
-        self.0
+impl<'intern> InfTypeId<'intern> {
+    pub fn value(self) -> &'intern InferenceType<'intern> {
+        &self.0 .0
+    }
+}
+
+impl<'intern> Deref for InfTypeId<'intern> {
+    type Target = InferenceType<'intern>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub enum InferenceType {
+pub enum InferenceType<'intern> {
     Any,
     Bot,
     Primitive(PrimitiveType),
     TypeVarRef(DefId, u32, u32),
     Var(VarId),
     Unknown,
-    Nominal(NominalInfHead),
-    Loop(ArrayKind, InfTypeId),
+    Nominal(NominalInfHead<'intern>),
+    Loop(ArrayKind, InfTypeId<'intern>),
     ParserArg {
-        result: InfTypeId,
-        arg: InfTypeId,
+        result: InfTypeId<'intern>,
+        arg: InfTypeId<'intern>,
     },
     FunctionArgs {
-        result: InfTypeId,
-        args: Box<Vec<InfTypeId>>,
+        result: InfTypeId<'intern>,
+        args: Box<Vec<InfTypeId<'intern>>>,
     },
-    InferField(FieldName, InfTypeId),
+    InferField(FieldName, InfTypeId<'intern>),
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct NominalInfHead {
+pub struct NominalInfHead<'intern> {
     pub kind: NominalKind,
     pub def: DefId,
-    pub parse_arg: Option<InfTypeId>,
-    pub fun_args: Box<Vec<InfTypeId>>,
-    pub ty_args: Box<Vec<InfTypeId>>,
+    pub parse_arg: Option<InfTypeId<'intern>>,
+    pub fun_args: Box<Vec<InfTypeId<'intern>>>,
+    pub ty_args: Box<Vec<InfTypeId<'intern>>>,
     pub internal: bool,
 }
 
-impl InferenceType {
-    pub fn children(&mut self) -> Vec<&mut InfTypeId> {
+impl<'intern> InferenceType<'intern> {
+    pub fn children(&mut self) -> Vec<&mut InfTypeId<'intern>> {
         match self {
             InferenceType::Loop(_, inner) => {
                 vec![inner]
@@ -83,13 +94,13 @@ impl VarId {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct InferenceVar {
+pub struct InferenceVar<'a> {
     id: usize,
-    upper: Vec<InfTypeId>,
-    lower: Vec<InfTypeId>,
+    upper: Vec<InfTypeId<'a>>,
+    lower: Vec<InfTypeId<'a>>,
 }
 
-impl InferenceVar {
+impl<'intern> InferenceVar<'intern> {
     pub fn new(id: usize) -> Self {
         Self {
             id,
@@ -97,15 +108,15 @@ impl InferenceVar {
             lower: Vec::new(),
         }
     }
-    pub fn lower(&self) -> &[InfTypeId] {
+    pub fn lower(&self) -> &[InfTypeId<'intern>] {
         &self.lower
     }
-    pub fn upper(&self) -> &[InfTypeId] {
+    pub fn upper(&self) -> &[InfTypeId<'intern>] {
         &self.upper
     }
 }
 
-impl TryFrom<&InferenceType> for TypeHead {
+impl<'intern> TryFrom<&InferenceType<'intern>> for TypeHead {
     type Error = TypeError;
 
     fn try_from(value: &InferenceType) -> Result<Self, Self::Error> {
@@ -125,11 +136,11 @@ impl TryFrom<&InferenceType> for TypeHead {
 }
 
 #[derive(Clone, Default)]
-pub struct VarStore {
-    vars: Vec<InferenceVar>,
+pub struct VarStore<'intern> {
+    vars: Vec<InferenceVar<'intern>>,
 }
 
-impl VarStore {
+impl<'intern> VarStore<'intern> {
     fn new() -> Self {
         Self::default()
     }
@@ -138,54 +149,57 @@ impl VarStore {
         self.vars.push(InferenceVar::new(id));
         VarId(id)
     }
-    pub fn get(&self, id: VarId) -> &InferenceVar {
+    pub fn get(&self, id: VarId) -> &InferenceVar<'intern> {
         &self.vars[id.usize()]
     }
-    fn get_mut(&mut self, id: VarId) -> &mut InferenceVar {
+    fn get_mut(&mut self, id: VarId) -> &mut InferenceVar<'intern> {
         &mut self.vars[id.usize()]
     }
 }
 
-pub struct InferenceContext<TR: TypeResolver> {
-    pub var_store: VarStore,
+pub struct InferenceContext<'intern, TR: TypeResolver<'intern>> {
+    pub var_store: VarStore<'intern>,
     pub tr: TR,
-    cache: HashSet<(InfTypeId, InfTypeId)>,
+    pub interner: low_effort_interner::Interner<'intern, InferenceType<'intern>>,
+    cache: HashSet<(InfTypeId<'intern>, InfTypeId<'intern>)>,
     trace: bool,
 }
 
-pub trait TypeResolver {
+pub trait TypeResolver<'intern> {
     type DB: TypeInterner + Interner + ?Sized;
     fn db(&self) -> &Self::DB;
-    fn field_type(&self, ty: &NominalInfHead, name: FieldName) -> Result<EitherType, TypeError>;
-    fn deref(&self, ty: &NominalInfHead) -> Result<Option<TypeId>, TypeError>;
-    fn signature(&self, ty: &NominalInfHead) -> Result<Signature, TypeError>;
-    fn lookup(&self, val: DefId) -> Result<EitherType, TypeError>;
-    fn parserdef(&self, pd: DefId) -> Result<EitherType, TypeError>;
+    fn field_type(
+        &self,
+        ty: &NominalInfHead<'intern>,
+        name: FieldName,
+    ) -> Result<EitherType<'intern>, TypeError>;
+    fn deref(&self, ty: &NominalInfHead<'intern>) -> Result<Option<TypeId>, TypeError>;
+    fn signature(&self, ty: &NominalInfHead<'intern>) -> Result<Signature, TypeError>;
+    fn lookup(&self, val: DefId) -> Result<EitherType<'intern>, TypeError>;
+    fn parserdef(&self, pd: DefId) -> Result<EitherType<'intern>, TypeError>;
     fn name(&self) -> String;
 }
 
 const TRACING_ENABLED: bool = false;
 
-impl<TR: TypeResolver> InferenceContext<TR> {
-    pub fn new(tr: TR) -> Self {
+impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
+    pub fn new(tr: TR, bump: &'intern Bump) -> Self {
         Self {
             var_store: VarStore::new(),
             tr,
             cache: HashSet::new(),
             trace: TRACING_ENABLED,
+            interner: low_effort_interner::Interner::new(bump),
         }
     }
-    pub fn lookup_infty(&self, id: InfTypeId) -> InferenceType {
-        self.tr.db().lookup_intern_inference_type(id)
-    }
-    pub fn intern_infty(&self, infty: InferenceType) -> InfTypeId {
-        self.tr.db().intern_inference_type(infty)
+    pub fn intern_infty(&mut self, infty: InferenceType<'intern>) -> InfTypeId<'intern> {
+        InfTypeId(self.interner.intern(infty))
     }
     pub fn field_type(
         &mut self,
-        ty: &NominalInfHead,
+        ty: &NominalInfHead<'intern>,
         name: FieldName,
-    ) -> Result<InfTypeId, TypeError> {
+    ) -> Result<InfTypeId<'intern>, TypeError> {
         let ret = match self.tr.field_type(ty, name)? {
             EitherType::Regular(result_type) => self.from_type_with_args(result_type, &ty.ty_args),
             EitherType::Inference(infty) => infty,
@@ -202,7 +216,10 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         }
         Ok(ret)
     }
-    pub fn deref(&mut self, ty: &NominalInfHead) -> Result<Option<InfTypeId>, TypeError> {
+    pub fn deref(
+        &mut self,
+        ty: &NominalInfHead<'intern>,
+    ) -> Result<Option<InfTypeId<'intern>>, TypeError> {
         let ret = self
             .tr
             .deref(ty)?
@@ -220,10 +237,10 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         }
         Ok(ret)
     }
-    pub fn signature(&self, ty: &NominalInfHead) -> Result<Signature, TypeError> {
+    pub fn signature(&self, ty: &NominalInfHead<'intern>) -> Result<Signature, TypeError> {
         self.tr.signature(ty)
     }
-    pub fn lookup(&mut self, val: DefId) -> Result<InfTypeId, TypeError> {
+    pub fn lookup(&mut self, val: DefId) -> Result<InfTypeId<'intern>, TypeError> {
         let ret = match self.tr.lookup(val)? {
             EitherType::Regular(result_type) => {
                 let ret = self.from_type(result_type);
@@ -242,7 +259,7 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         };
         Ok(ret)
     }
-    pub fn parserdef(&mut self, pd: DefId) -> Result<InfTypeId, TypeError> {
+    pub fn parserdef(&mut self, pd: DefId) -> Result<InfTypeId<'intern>, TypeError> {
         let ret = match self.tr.parserdef(pd)? {
             EitherType::Regular(result_type) => {
                 let ret = self.from_type(result_type);
@@ -261,7 +278,11 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         };
         Ok(ret)
     }
-    pub fn constrain(&mut self, lower: InfTypeId, upper: InfTypeId) -> Result<(), TypeError> {
+    pub fn constrain(
+        &mut self,
+        lower: InfTypeId<'intern>,
+        upper: InfTypeId<'intern>,
+    ) -> Result<(), TypeError> {
         use InferenceType::*;
         if !self.cache.insert((lower, upper)) {
             return Ok(());
@@ -275,17 +296,17 @@ impl<TR: TypeResolver> InferenceContext<TR> {
                 &upper
             );
         }
-        let [lower_ty, upper_ty] = [lower, upper].map(|x| self.lookup_infty(x));
+        let [lower_ty, upper_ty] = [lower, upper].map(|x| x.value());
         match (lower_ty, upper_ty) {
             (_, Any) => Ok(()),
 
             (Bot, _) => Ok(()),
 
             (Var(var_id), _) => {
-                self.var_store.get_mut(var_id).upper.push(upper);
+                self.var_store.get_mut(*var_id).upper.push(upper);
                 // idx is needed because var.lower may change during the loop
                 let mut idx = 0;
-                while let Some(&lower_bound) = self.var_store.get(var_id).lower.get(idx) {
+                while let Some(&lower_bound) = self.var_store.get(*var_id).lower.get(idx) {
                     idx += 1;
                     self.constrain(lower_bound, upper)?;
                 }
@@ -293,10 +314,10 @@ impl<TR: TypeResolver> InferenceContext<TR> {
             }
 
             (_, Var(var_id)) => {
-                self.var_store.get_mut(var_id).lower.push(lower);
+                self.var_store.get_mut(*var_id).lower.push(lower);
                 // idx is needed because var.lower may change during the loop
                 let mut idx = 0;
-                while let Some(&upper_bound) = self.var_store.get(var_id).upper.get(idx) {
+                while let Some(&upper_bound) = self.var_store.get(*var_id).upper.get(idx) {
                     idx += 1;
                     self.constrain(lower, upper_bound)?;
                 }
@@ -316,7 +337,7 @@ impl<TR: TypeResolver> InferenceContext<TR> {
                     args: args2,
                 },
             ) => {
-                self.constrain(res1, res2)?;
+                self.constrain(*res1, *res2)?;
                 if args1.len() != args2.len() {
                     return Err(TypeError);
                 }
@@ -336,22 +357,22 @@ impl<TR: TypeResolver> InferenceContext<TR> {
                     arg: arg2,
                 },
             ) => {
-                self.constrain(res1, res2)?;
-                self.constrain(arg2, arg1)
+                self.constrain(*res1, *res2)?;
+                self.constrain(*arg2, *arg1)
             }
 
             (Loop(kind1, inner1), Loop(kind2, inner2)) => {
                 if matches!((kind1, kind2), (ArrayKind::For, ArrayKind::Each)) {
                     return Err(TypeError);
                 }
-                self.constrain(inner1, inner2)
+                self.constrain(*inner1, *inner2)
             }
 
             (InferField(name1, inner1), InferField(name2, inner2)) => {
                 if name1 != name2 {
                     return Ok(());
                 }
-                self.constrain(inner1, inner2)
+                self.constrain(*inner1, *inner2)
             }
 
             (
@@ -363,8 +384,8 @@ impl<TR: TypeResolver> InferenceContext<TR> {
                 ),
                 InferField(name, fieldtype),
             ) => {
-                let field_ty = self.field_type(nom, name)?;
-                self.constrain(field_ty, fieldtype)
+                let field_ty = self.field_type(nom, *name)?;
+                self.constrain(field_ty, *fieldtype)
             }
 
             (
@@ -414,31 +435,35 @@ impl<TR: TypeResolver> InferenceContext<TR> {
             _ => Err(TypeError),
         }
     }
-    pub fn equal(&mut self, left: InfTypeId, right: InfTypeId) -> Result<(), TypeError> {
+    pub fn equal(
+        &mut self,
+        left: InfTypeId<'intern>,
+        right: InfTypeId<'intern>,
+    ) -> Result<(), TypeError> {
         self.constrain(left, right)?;
         self.constrain(right, left)
     }
-    pub fn var(&mut self) -> InfTypeId {
+    pub fn var(&mut self) -> InfTypeId<'intern> {
         let inftype = InferenceType::Var(self.var_store.add_var());
         self.intern_infty(inftype)
     }
-    pub fn unknown(&self) -> InfTypeId {
+    pub fn unknown(&mut self) -> InfTypeId<'intern> {
         let inftype = InferenceType::Unknown;
         self.intern_infty(inftype)
     }
-    pub fn int(&self) -> InfTypeId {
+    pub fn int(&mut self) -> InfTypeId<'intern> {
         let int = InferenceType::Primitive(PrimitiveType::Int);
         self.intern_infty(int)
     }
-    pub fn char(&self) -> InfTypeId {
+    pub fn char(&mut self) -> InfTypeId<'intern> {
         let char = InferenceType::Primitive(PrimitiveType::Char);
         self.intern_infty(char)
     }
-    pub fn bit(&self) -> InfTypeId {
+    pub fn bit(&mut self) -> InfTypeId<'intern> {
         let bit = InferenceType::Primitive(PrimitiveType::Bit);
         self.intern_infty(bit)
     }
-    pub fn single(&mut self) -> InfTypeId {
+    pub fn single(&mut self) -> InfTypeId<'intern> {
         let ty_var = self.var();
         let for_loop = self.intern_infty(InferenceType::Loop(ArrayKind::For, ty_var));
         self.intern_infty(InferenceType::ParserArg {
@@ -446,21 +471,29 @@ impl<TR: TypeResolver> InferenceContext<TR> {
             arg: for_loop,
         })
     }
-    pub fn parser(&self, result: InfTypeId, arg: InfTypeId) -> InfTypeId {
+    pub fn parser(
+        &mut self,
+        result: InfTypeId<'intern>,
+        arg: InfTypeId<'intern>,
+    ) -> InfTypeId<'intern> {
         self.intern_infty(InferenceType::ParserArg { result, arg })
     }
     pub fn array_call(
         &mut self,
         kind: ArrayKind,
-        inner: InfTypeId,
-    ) -> Result<InfTypeId, TypeError> {
+        inner: InfTypeId<'intern>,
+    ) -> Result<InfTypeId<'intern>, TypeError> {
         let arg = self.var();
         let result = self.parser_apply(inner, arg)?;
         let array = InferenceType::Loop(kind, result);
         let array = self.intern_infty(array);
         Ok(self.parser(array, arg))
     }
-    pub fn block_call(&mut self, id: DefId, ty_args: &[InfTypeId]) -> Result<InfTypeId, TypeError> {
+    pub fn block_call(
+        &mut self,
+        id: DefId,
+        ty_args: &[InfTypeId<'intern>],
+    ) -> Result<InfTypeId<'intern>, TypeError> {
         let arg = self.var();
         let nominal = NominalInfHead {
             kind: NominalKind::Block,
@@ -473,14 +506,20 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         let result = self.intern_infty(InferenceType::Nominal(nominal));
         Ok(self.parser(result, arg))
     }
-    pub fn one_of(&mut self, these: &[InfTypeId]) -> Result<InfTypeId, TypeError> {
+    pub fn one_of(
+        &mut self,
+        these: &[InfTypeId<'intern>],
+    ) -> Result<InfTypeId<'intern>, TypeError> {
         let ret = self.var();
         for &inftype in these {
             self.constrain(inftype, ret)?;
         }
         Ok(ret)
     }
-    pub fn reuse_parser_arg(&mut self, parser: InfTypeId) -> Result<InfTypeId, TypeError> {
+    pub fn reuse_parser_arg(
+        &mut self,
+        parser: InfTypeId<'intern>,
+    ) -> Result<InfTypeId<'intern>, TypeError> {
         let result = self.var();
         let arg = self.var();
         let other_parser = self.parser(result, arg);
@@ -489,9 +528,9 @@ impl<TR: TypeResolver> InferenceContext<TR> {
     }
     pub fn parser_compose(
         &mut self,
-        first: InfTypeId,
-        second: InfTypeId,
-    ) -> Result<InfTypeId, TypeError> {
+        first: InfTypeId<'intern>,
+        second: InfTypeId<'intern>,
+    ) -> Result<InfTypeId<'intern>, TypeError> {
         let arg = self.var();
         let between = self.parser_apply(first, arg)?;
         let result = self.parser_apply(second, between)?;
@@ -500,9 +539,9 @@ impl<TR: TypeResolver> InferenceContext<TR> {
     }
     pub fn parser_apply(
         &mut self,
-        parser: InfTypeId,
-        arg: InfTypeId,
-    ) -> Result<InfTypeId, TypeError> {
+        parser: InfTypeId<'intern>,
+        arg: InfTypeId<'intern>,
+    ) -> Result<InfTypeId<'intern>, TypeError> {
         let var = self.var();
         let new_parser = self.intern_infty(InferenceType::ParserArg { arg, result: var });
         self.constrain(parser, new_parser)?;
@@ -510,9 +549,9 @@ impl<TR: TypeResolver> InferenceContext<TR> {
     }
     pub fn function_apply(
         &mut self,
-        function: InfTypeId,
-        args: &[InfTypeId],
-    ) -> Result<InfTypeId, TypeError> {
+        function: InfTypeId<'intern>,
+        args: &[InfTypeId<'intern>],
+    ) -> Result<InfTypeId<'intern>, TypeError> {
         let var = self.var();
         let new_function = InferenceType::FunctionArgs {
             args: Box::new(Vec::from(args)),
@@ -524,19 +563,23 @@ impl<TR: TypeResolver> InferenceContext<TR> {
     }
     pub fn access_field(
         &mut self,
-        accessed: InfTypeId,
+        accessed: InfTypeId<'intern>,
         name: FieldName,
-    ) -> Result<InfTypeId, TypeError> {
+    ) -> Result<InfTypeId<'intern>, TypeError> {
         let var = self.var();
         let infer_access = self.intern_infty(InferenceType::InferField(name, var));
         self.constrain(accessed, infer_access)?;
         Ok(var)
     }
-    pub fn from_type(&mut self, ty: TypeId) -> InfTypeId {
+    pub fn from_type(&mut self, ty: TypeId) -> InfTypeId<'intern> {
         let ty = self.tr.db().lookup_intern_type(ty);
         self.from_type_internal(&ty, None)
     }
-    pub fn from_type_with_args(&mut self, ty: TypeId, args: &[InfTypeId]) -> InfTypeId {
+    pub fn from_type_with_args(
+        &mut self,
+        ty: TypeId,
+        args: &[InfTypeId<'intern>],
+    ) -> InfTypeId<'intern> {
         if self.trace {
             let args = args
                 .iter()
@@ -565,7 +608,11 @@ impl<TR: TypeResolver> InferenceContext<TR> {
             _ => self.from_type_internal(&ty, Some(&vars)),
         }
     }
-    fn from_type_internal(&mut self, ty: &Type, var_stack: Option<&VarStack>) -> InfTypeId {
+    fn from_type_internal(
+        &mut self,
+        ty: &Type,
+        var_stack: Option<&VarStack<'_, 'intern>>,
+    ) -> InfTypeId<'intern> {
         let mut recurse =
             |x| self.from_type_internal(&self.tr.db().lookup_intern_type(x), var_stack);
         let ret = match ty {
@@ -633,13 +680,13 @@ impl<TR: TypeResolver> InferenceContext<TR> {
         };
         self.intern_infty(ret)
     }
-    pub fn to_type(&mut self, infty: InfTypeId) -> Result<TypeId, TypeError> {
+    pub fn to_type(&mut self, infty: InfTypeId<'intern>) -> Result<TypeId, TypeError> {
         let mut converter = TypeConvertMemo::new(self);
         converter.to_type_internal(infty)
     }
     pub fn to_types_with_vars(
         &mut self,
-        inftys: &[InfTypeId],
+        inftys: &[InfTypeId<'intern>],
         mut n_vars: u32,
         at: DefId,
     ) -> Result<(Vec<TypeId>, u32), TypeError> {
