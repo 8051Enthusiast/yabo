@@ -6,7 +6,7 @@ use crate::{
 };
 
 use super::{
-    inference::InfTypeId,
+    inference::{InfTypeId, InfTypeInterner},
     inference::{InferenceContext, TypeResolver},
     NominalTypeHead, Type, TypeError, TypeId, TypeInterner,
 };
@@ -120,13 +120,12 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                 if args1.len() != args2.len() {
                     return Err(TypeError);
                 }
-                let args = Box::new(
-                    args1
-                        .iter()
-                        .zip(args2.iter())
-                        .map(|(arg1, arg2)| self.join_inftype(*arg1, *arg2))
-                        .collect::<Result<_, _>>()?,
-                );
+                let args_vec: Vec<_> = args1
+                    .iter()
+                    .zip(args2.iter())
+                    .map(|(arg1, arg2)| self.join_inftype(*arg1, *arg2))
+                    .collect::<Result<_, _>>()?;
+                let args = self.ctx.slice_interner.intern_slice(&args_vec);
                 FunctionArgs { result, args }
             }
             (
@@ -152,20 +151,18 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                     (Some(arg1), Some(arg2)) => Some(self.meet_inftype(*arg1, *arg2)?),
                     (None, Some(_)) | (Some(_), None) => return Err(TypeError),
                 };
-                let fun_args = Box::new(
-                    fun_args1
-                        .iter()
-                        .zip(fun_args2.iter())
-                        .map(|(arg1, arg2)| self.meet_inftype(*arg1, *arg2))
-                        .collect::<Result<_, _>>()?,
-                );
-                let ty_args = Box::new(
-                    ty_args1
-                        .iter()
-                        .zip(ty_args2.iter())
-                        .map(|(arg1, arg2)| self.join_inftype(*arg1, *arg2))
-                        .collect::<Result<_, _>>()?,
-                );
+                let fun_args = fun_args1
+                    .iter()
+                    .zip(fun_args2.iter())
+                    .map(|(arg1, arg2)| self.meet_inftype(*arg1, *arg2))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let fun_args = self.ctx.slice_interner.intern_slice(&*fun_args);
+                let ty_args = ty_args1
+                    .iter()
+                    .zip(ty_args2.iter())
+                    .map(|(arg1, arg2)| self.join_inftype(*arg1, *arg2))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let ty_args = self.ctx.slice_interner.intern_slice(&*ty_args);
                 Nominal(NominalInfHead {
                     kind: *kind,
                     def: *def1,
@@ -262,13 +259,12 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                 if args1.len() != args2.len() {
                     return Err(TypeError);
                 }
-                let args = Box::new(
-                    args1
-                        .iter()
-                        .zip(args2.iter())
-                        .map(|(arg1, arg2)| self.meet_inftype(*arg1, *arg2))
-                        .collect::<Result<_, _>>()?,
-                );
+                let args_vec: Vec<_> = args1
+                    .iter()
+                    .zip(args2.iter())
+                    .map(|(arg1, arg2)| self.meet_inftype(*arg1, *arg2))
+                    .collect::<Result<_, _>>()?;
+                let args = self.ctx.slice_interner.intern_slice(&args_vec);
                 FunctionArgs { result, args }
             }
             (
@@ -294,20 +290,18 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                     (Some(arg1), Some(arg2)) => Some(self.join_inftype(*arg1, *arg2)?),
                     (None, Some(_)) | (Some(_), None) => return Err(TypeError),
                 };
-                let fun_args = Box::new(
-                    fun_args1
-                        .iter()
-                        .zip(fun_args2.iter())
-                        .map(|(arg1, arg2)| self.join_inftype(*arg1, *arg2))
-                        .collect::<Result<_, _>>()?,
-                );
-                let ty_args = Box::new(
-                    ty_args1
-                        .iter()
-                        .zip(ty_args2.iter())
-                        .map(|(arg1, arg2)| self.join_inftype(*arg1, *arg2))
-                        .collect::<Result<_, _>>()?,
-                );
+                let fun_args = fun_args1
+                    .iter()
+                    .zip(fun_args2.iter())
+                    .map(|(arg1, arg2)| self.join_inftype(*arg1, *arg2))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let fun_args = self.ctx.slice_interner.intern_slice(&fun_args);
+                let ty_args = ty_args1
+                    .iter()
+                    .zip(ty_args2.iter())
+                    .map(|(arg1, arg2)| self.join_inftype(*arg1, *arg2))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let ty_args = self.ctx.slice_interner.intern_slice(&ty_args);
                 Nominal(NominalInfHead {
                     kind: *kind,
                     def: *def1,
@@ -360,13 +354,14 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
         let ret = self.ctx.intern_infty(res);
         self.join.leave_fun((lhs, rhs), ret)
     }
-    fn normalize_children(&mut self, infty: &mut InferenceType<'intern>) -> Result<(), TypeError> {
-        if !matches!(infty, InferenceType::Var(_)) {
-            for child in infty.children() {
-                *child = self.normalize_inftype(*child)?;
-            }
+    fn normalize_children(
+        &mut self,
+        infty: InfTypeId<'intern>,
+    ) -> Result<InfTypeId<'intern>, TypeError> {
+        if !matches!(infty.value(), InferenceType::Var(_)) {
+            return infty.try_map_children(self, |ctx, child| ctx.normalize_inftype(child));
         }
-        Ok(())
+        Ok(infty)
     }
     fn normalize_inftype(
         &mut self,
@@ -381,12 +376,10 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                 let var_store = self.ctx.var_store.clone();
                 let mut contains_non_var = false;
                 for ty in var_store.get(*v).lower().iter() {
-                    let mut inference_type = ty.value().clone();
-                    if !matches!(inference_type, InferenceType::Var(_)) {
+                    if !matches!(ty.value(), InferenceType::Var(_)) {
                         contains_non_var = true;
-                        self.normalize_children(&mut inference_type)?;
                     }
-                    let normalized = self.ctx.intern_infty(inference_type);
+                    let normalized = self.normalize_children(*ty)?;
                     result = self.join_inftype(result, normalized)?;
                 }
                 if !contains_non_var {
@@ -398,11 +391,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                 }
                 result
             }
-            _ => {
-                let mut inference_type = infty.value().clone();
-                self.normalize_children(&mut inference_type)?;
-                self.ctx.intern_infty(inference_type)
-            }
+            _ => self.normalize_children(infty)?,
         };
         self.normalize.leave_fun(infty, res)
     }
@@ -479,5 +468,20 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
         let ret = self.to_type_internal(infty);
         let new_var_count = self.var_count.take().unwrap().1;
         ret.map(|x| (x, new_var_count))
+    }
+}
+
+impl<'a, 'intern, TR: TypeResolver<'intern>> InfTypeInterner<'intern>
+    for TypeConvertMemo<'a, 'intern, TR>
+{
+    fn intern_infty(&mut self, infty: InferenceType<'intern>) -> InfTypeId<'intern> {
+        InfTypeId(self.ctx.interner.intern(infty))
+    }
+
+    fn intern_infty_slice(
+        &mut self,
+        slice: &[InfTypeId<'intern>],
+    ) -> super::inference::InfSlice<'intern> {
+        self.ctx.slice_interner.intern_slice(slice)
     }
 }

@@ -175,12 +175,11 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
             .map(|x| self.resolve_type_expr(context, x))
             .transpose()?
             .or(parserarg_from);
-        let mut fun_args = Box::new(
-            pd.args
-                .iter()
-                .map(|x| self.resolve_type_expr(context, x))
-                .collect::<Result<Vec<_>, _>>()?,
-        );
+        let mut fun_args = pd
+            .args
+            .iter()
+            .map(|x| self.resolve_type_expr(context, x))
+            .collect::<Result<Vec<_>, _>>()?;
         let def = self
             .db
             .parserdef_ref(context.loc, pd.name.atom)?
@@ -208,6 +207,8 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
             ty_args: Arc::new(n_type_vars(self.db, def, definition.ty_args.len() as u32)),
         }));
         let inferred_def = self.infctx.from_type_with_args(def_type, &ty_args);
+        let fun_args = self.infctx.slice_interner.intern_slice(&fun_args);
+        let ty_args = self.infctx.slice_interner.intern_slice(&ty_args);
         let ret = self
             .infctx
             .intern_infty(InferenceType::Nominal(NominalInfHead {
@@ -215,7 +216,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                 def: def.0,
                 parse_arg,
                 fun_args,
-                ty_args: Box::new(ty_args),
+                ty_args,
                 internal: false,
             }));
         self.infctx.equal(ret, inferred_def)?;

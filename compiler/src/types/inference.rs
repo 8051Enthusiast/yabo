@@ -7,21 +7,9 @@ use crate::low_effort_interner::{self, Uniq};
 use super::*;
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct InfTypeId<'intern>(&'intern Uniq<InferenceType<'intern>>);
+pub struct InfTypeId<'intern>(pub &'intern Uniq<InferenceType<'intern>>);
 
-impl<'intern> InfTypeId<'intern> {
-    pub fn value(self) -> &'intern InferenceType<'intern> {
-        &self.0 .0
-    }
-}
-
-impl<'intern> Deref for InfTypeId<'intern> {
-    type Target = InferenceType<'intern>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
+pub type InfSlice<'intern> = &'intern Uniq<[InfTypeId<'intern>]>;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum InferenceType<'intern> {
@@ -39,7 +27,7 @@ pub enum InferenceType<'intern> {
     },
     FunctionArgs {
         result: InfTypeId<'intern>,
-        args: Box<Vec<InfTypeId<'intern>>>,
+        args: InfSlice<'intern>,
     },
     InferField(FieldName, InfTypeId<'intern>),
 }
@@ -49,39 +37,89 @@ pub struct NominalInfHead<'intern> {
     pub kind: NominalKind,
     pub def: DefId,
     pub parse_arg: Option<InfTypeId<'intern>>,
-    pub fun_args: Box<Vec<InfTypeId<'intern>>>,
-    pub ty_args: Box<Vec<InfTypeId<'intern>>>,
+    pub fun_args: InfSlice<'intern>,
+    pub ty_args: InfSlice<'intern>,
     pub internal: bool,
 }
 
-impl<'intern> InferenceType<'intern> {
-    pub fn children(&mut self) -> Vec<&mut InfTypeId<'intern>> {
-        match self {
-            InferenceType::Loop(_, inner) => {
-                vec![inner]
-            }
+impl<'intern> InfTypeId<'intern> {
+    pub fn value(self) -> &'intern InferenceType<'intern> {
+        &self.0 .1
+    }
+    pub fn try_map_children<I: InfTypeInterner<'intern>, E>(
+        self,
+        interner: &mut I,
+        mut f: impl FnMut(&mut I, Self) -> Result<Self, E>,
+    ) -> Result<Self, E> {
+        let old_value = self.value();
+        match old_value {
             InferenceType::ParserArg { result, arg } => {
-                vec![result, arg]
+                let result = f(interner, *result)?;
+                let arg = f(interner, *arg)?;
+                Ok(interner.intern_infty(InferenceType::ParserArg { result, arg }))
             }
             InferenceType::FunctionArgs { result, args } => {
-                let mut ret = args.iter_mut().collect::<Vec<_>>();
-                ret.push(result);
-                ret
+                let fun_args = args
+                    .iter()
+                    .map(|arg| f(interner, *arg))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let args = interner.intern_infty_slice(&fun_args);
+                let result = f(interner, *result)?;
+                Ok(interner.intern_infty(InferenceType::FunctionArgs { result, args }))
             }
-            InferenceType::InferField(_, inner) => {
-                vec![inner]
+            InferenceType::InferField(name, inner) => {
+                let inner = f(interner, *inner)?;
+                Ok(interner.intern_infty(InferenceType::InferField(*name, inner)))
             }
-            InferenceType::Var(..) => {
-                panic!("Internal Compiler Error: taking children of variable");
+            InferenceType::Loop(kind, inner) => {
+                let inner = f(interner, *inner)?;
+                Ok(interner.intern_infty(InferenceType::Loop(*kind, inner)))
             }
-            InferenceType::Nominal(nom) => nom.ty_args.iter_mut().collect(),
+            InferenceType::Nominal(nom) => {
+                let parse_arg = nom.parse_arg.map(|arg| f(interner, arg));
+                let fun_args = nom
+                    .fun_args
+                    .iter()
+                    .map(|arg| f(interner, *arg))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let ty_args = nom
+                    .ty_args
+                    .iter()
+                    .map(|arg| f(interner, *arg))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let fun_args = interner.intern_infty_slice(&fun_args);
+                let ty_args = interner.intern_infty_slice(&ty_args);
+                let parse_arg = parse_arg.transpose()?;
+                Ok(
+                    interner.intern_infty(InferenceType::Nominal(NominalInfHead {
+                        parse_arg,
+                        fun_args,
+                        ty_args,
+                        ..*nom
+                    })),
+                )
+            }
             InferenceType::Any
             | InferenceType::Bot
             | InferenceType::Primitive(_)
             | InferenceType::TypeVarRef(_, _, _)
-            | InferenceType::Unknown => vec![],
+            | InferenceType::Var(_)
+            | InferenceType::Unknown => Ok(self),
         }
     }
+}
+
+impl<'intern> Deref for InfTypeId<'intern> {
+    type Target = InferenceType<'intern>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub trait InfTypeInterner<'intern> {
+    fn intern_infty(&mut self, infty: InferenceType<'intern>) -> InfTypeId<'intern>;
+    fn intern_infty_slice(&mut self, slice: &[InfTypeId<'intern>]) -> InfSlice<'intern>;
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -161,6 +199,7 @@ pub struct InferenceContext<'intern, TR: TypeResolver<'intern>> {
     pub var_store: VarStore<'intern>,
     pub tr: TR,
     pub interner: low_effort_interner::Interner<'intern, InferenceType<'intern>>,
+    pub slice_interner: low_effort_interner::Interner<'intern, [InfTypeId<'intern>]>,
     cache: HashSet<(InfTypeId<'intern>, InfTypeId<'intern>)>,
     trace: bool,
 }
@@ -190,6 +229,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
             cache: HashSet::new(),
             trace: TRACING_ENABLED,
             interner: low_effort_interner::Interner::new(bump),
+            slice_interner: low_effort_interner::Interner::new(bump),
         }
     }
     pub fn intern_infty(&mut self, infty: InferenceType<'intern>) -> InfTypeId<'intern> {
@@ -499,8 +539,8 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
             kind: NominalKind::Block,
             def: id,
             parse_arg: Some(arg),
-            fun_args: Box::default(),
-            ty_args: Box::new(ty_args.to_vec()),
+            fun_args: self.slice_interner.intern_slice(&[]),
+            ty_args: self.slice_interner.intern_slice(ty_args),
             internal: true,
         };
         let result = self.intern_infty(InferenceType::Nominal(nominal));
@@ -554,7 +594,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     ) -> Result<InfTypeId<'intern>, TypeError> {
         let var = self.var();
         let new_function = InferenceType::FunctionArgs {
-            args: Box::new(Vec::from(args)),
+            args: self.slice_interner.intern_slice(args),
             result: var,
         };
         let new_function = self.intern_infty(new_function);
@@ -643,20 +683,18 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                 ty_args,
             }) => {
                 let parse_arg = parse_arg.map(&mut recurse);
-                let fun_args = Box::new(
-                    fun_args
-                        .iter()
-                        .copied()
-                        .map(&mut recurse)
-                        .collect::<Vec<_>>(),
-                );
-                let ty_args = Box::new(
-                    ty_args
-                        .iter()
-                        .copied()
-                        .map(&mut recurse)
-                        .collect::<Vec<_>>(),
-                );
+                let fun_args = fun_args
+                    .iter()
+                    .copied()
+                    .map(&mut recurse)
+                    .collect::<Vec<_>>();
+                let ty_args = ty_args
+                    .iter()
+                    .copied()
+                    .map(&mut recurse)
+                    .collect::<Vec<_>>();
+                let fun_args = self.slice_interner.intern_slice(&fun_args);
+                let ty_args = self.slice_interner.intern_slice(&ty_args);
                 InferenceType::Nominal(NominalInfHead {
                     kind: *kind,
                     def: *def,
@@ -674,7 +712,8 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
             }
             Type::FunctionArg(function, args) => {
                 let result = recurse(*function);
-                let args = Box::new(args.iter().copied().map(recurse).collect::<Vec<_>>());
+                let args_vec = args.iter().copied().map(recurse).collect::<Vec<_>>();
+                let args = self.slice_interner.intern_slice(&args_vec);
                 InferenceType::FunctionArgs { result, args }
             }
         };
