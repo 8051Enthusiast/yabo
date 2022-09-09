@@ -54,7 +54,8 @@ fn public_type_impl(db: &dyn TyHirs, loc: DefId) -> Result<TypeId, TypeError> {
         hir::HirNode::Parse(p) => db.public_expr_type(p.expr)?.1,
         hir::HirNode::ChoiceIndirection(ind) => {
             let bump = Bump::new();
-            let mut ctx = PublicResolver::new_typing_context_and_loc(db, ind.parent_context.0, &bump)?;
+            let mut ctx =
+                PublicResolver::new_typing_context_and_loc(db, ind.parent_context.0, &bump)?;
             let ret = ctx.infctx.var();
             for (_, choice_id) in ind.choices.iter() {
                 // todo
@@ -159,11 +160,9 @@ impl<'a> PublicResolver<'a> {
         loc: DefId,
         bump: &'intern Bump,
     ) -> SResult<TypingContext<'a, 'intern, Self>> {
-        let typeloc = TypingLocation {
-            vars: TypeVarCollection::new_empty(),
-            loc,
-            pd: db.hir_parent_parserdef(loc)?,
-        };
+        let pd = db.hir_parent_parserdef(loc)?;
+        let vars = TypeVarCollection::at_id(db, pd)?;
+        let typeloc = TypingLocation { vars, loc, pd };
         let public_resolver = Self::new(db, typeloc);
         Ok(TypingContext::new(db, public_resolver, &bump))
     }
