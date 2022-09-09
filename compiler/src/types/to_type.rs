@@ -149,7 +149,8 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                 let parse_arg = match (parse_arg1, parse_arg2) {
                     (None, None) => None,
                     (Some(arg1), Some(arg2)) => Some(self.meet_inftype(*arg1, *arg2)?),
-                    (None, Some(_)) | (Some(_), None) => return Err(TypeError),
+                    // nominal types with same def should have same arity per construction
+                    _ => unreachable!(),
                 };
                 let fun_args = fun_args1
                     .iter()
@@ -230,9 +231,6 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
             (Unknown, _) | (_, Unknown) => Unknown,
             (Any, _) | (_, Any) => Any,
             (InferField(..), InferField(..)) => Bot,
-            (TypeVarRef(a0, a1, a2), TypeVarRef(b0, b1, b2)) if (a0, a1, a2) == (b0, b1, b2) => {
-                TypeVarRef(*a0, *a1, *a2)
-            }
             (Bot | InferField(..), other) | (other, Bot | InferField(..)) => other.clone(),
             (Primitive(p), Primitive(q)) if p == q => Primitive(*p),
             (Loop(kind1, inner1), Loop(kind2, inner2)) => {
@@ -288,7 +286,8 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                 let parse_arg = match (parse_arg1, parse_arg2) {
                     (None, None) => None,
                     (Some(arg1), Some(arg2)) => Some(self.join_inftype(*arg1, *arg2)?),
-                    (None, Some(_)) | (Some(_), None) => return Err(TypeError),
+                    // nominal types with same def should have same arity per construction
+                    _ => unreachable!(),
                 };
                 let fun_args = fun_args1
                     .iter()
@@ -359,7 +358,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
         infty: InfTypeId<'intern>,
     ) -> Result<InfTypeId<'intern>, TypeError> {
         if !matches!(infty.value(), InferenceType::Var(_)) {
-            return infty.try_map_children(self, |ctx, child| ctx.normalize_inftype(child));
+            return infty.try_map_children(self, |ctx, child, _| ctx.normalize_inftype(child));
         }
         Ok(infty)
     }
