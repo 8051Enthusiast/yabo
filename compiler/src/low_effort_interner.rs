@@ -1,5 +1,5 @@
 use bumpalo::Bump;
-use std::collections::HashSet;
+use fxhash::FxHashSet;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::ptr;
@@ -40,14 +40,14 @@ impl<T: ?Sized> Hash for Uniq<T> {
 }
 
 pub struct Interner<'a, T: ?Sized> {
-    set: HashSet<&'a T>,
+    set: FxHashSet<&'a T>,
     arena: &'a Bump,
 }
 
 impl<'a, T: ?Sized> Interner<'a, T> {
     pub fn new(arena: &'a Bump) -> Interner<'a, T> {
         Interner {
-            set: HashSet::new(),
+            set: Default::default(),
             arena,
         }
     }
