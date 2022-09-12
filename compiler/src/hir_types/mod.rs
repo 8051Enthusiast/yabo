@@ -1,3 +1,4 @@
+pub mod error;
 mod full;
 mod public;
 pub mod represent;
@@ -11,16 +12,16 @@ use fxhash::FxHashMap;
 use sha2::Digest;
 
 use crate::{
-    error::{SResult, Silencable},
+    error::{IsSilenced, SResult, Silencable, SilencedError},
     expr::{
         self, Dyadic, ExprIter, Expression, ExpressionHead, Monadic, OpWithData, TypeBinOp,
         TypeUnOp, ValBinOp, ValUnOp,
     },
     hash::StableHash,
-    hir::{HirIdWrapper, ParseStatement, ParserDefRef},
+    hir::{ExprId, HirIdWrapper, ParseStatement, ParserDefRef},
     interner::{DefId, FieldName, TypeVar, TypeVarName},
     resolve::{self, expr::ResolvedAtom},
-    source::SpanIndex,
+    source::{IndirectSpan, SpanIndex},
     types::{
         inference::{InfTypeId, InferenceContext, InferenceType, NominalInfHead, TypeResolver},
         EitherType, NominalKind, NominalTypeHead, PrimitiveType, Signature, Type, TypeError,
@@ -34,13 +35,17 @@ use full::{parser_expr_at, parser_full_types, parser_type_at, ParserFullTypes};
 use public::{ambient_type, public_expr_type, public_type};
 pub use returns::IndirectionLevel;
 use returns::{deref_type, least_deref_type, parser_returns, parser_returns_ssc, ParserDefType};
-use signature::{get_signature, parser_args};
+use signature::{get_signature, parser_args, parser_args_error};
 
 #[salsa::query_group(HirTypesDatabase)]
 pub trait TyHirs: Hirs + crate::types::TypeInterner + resolve::Resolves {
     fn parser_args(&self, id: hir::ParserDefId) -> SResult<Signature>;
+    fn parser_args_error(&self, id: hir::ParserDefId) -> Result<Signature, SpannedTypeError>;
     fn parser_returns(&self, id: hir::ParserDefId) -> SResult<ParserDefType>;
-    fn parser_returns_ssc(&self, id: resolve::parserdef_ssc::FunctionSscId) -> Vec<ParserDefType>;
+    fn parser_returns_ssc(
+        &self,
+        id: resolve::parserdef_ssc::FunctionSscId,
+    ) -> Vec<Result<ParserDefType, SpannedTypeError>>;
     fn deref_type(&self, ty: TypeId) -> SResult<Option<TypeId>>;
     fn least_deref_type(&self, ty: TypeId) -> SResult<TypeId>;
     fn public_type(&self, loc: DefId) -> SResult<TypeId>;
@@ -48,7 +53,10 @@ pub trait TyHirs: Hirs + crate::types::TypeInterner + resolve::Resolves {
     fn parser_expr_at(&self, loc: hir::ExprId) -> SResult<TypedExpression>;
     fn public_expr_type(&self, loc: hir::ExprId) -> SResult<(TypedExpression, TypeId)>;
     fn ambient_type(&self, id: hir::ParseId) -> SResult<TypeId>;
-    fn parser_full_types(&self, id: hir::ParserDefId) -> Result<Arc<ParserFullTypes>, TypeError>;
+    fn parser_full_types(
+        &self,
+        id: hir::ParserDefId,
+    ) -> Result<Arc<ParserFullTypes>, SpannedTypeError>;
     fn type_hash(&self, ty: TypeId) -> [u8; 32];
     fn head_discriminant(&self, ty: TypeId) -> i64;
 }
@@ -114,7 +122,9 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         &mut self,
         context: &mut TypingLocation,
         expr: &Expression<hir::HirTypeSpanned>,
-    ) -> Result<InfTypeId<'intern>, TypeError> {
+        id: hir::TExprId,
+    ) -> Result<InfTypeId<'intern>, SpannedTypeError> {
+        let span = IndirectSpan::new(id.0, *expr.0.root_data());
         let ret = match &expr.0 {
             ExpressionHead::Dyadic(Dyadic {
                 op,
@@ -124,13 +134,15 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                     unimplemented!()
                 }
                 TypeBinOp::ParseArg => {
-                    let from = self.resolve_type_expr(context, left)?;
+                    let from = self.resolve_type_expr(context, left, id)?;
                     let inner = match &right.0 {
                         ExpressionHead::Niladic(OpWithData {
                             inner: hir::TypeAtom::ParserDef(pd),
                             ..
-                        }) => self.resolve_type_expr_parserdef_ref(context, pd, Some(from))?,
-                        _ => self.resolve_type_expr(context, right)?,
+                        }) => {
+                            self.resolve_type_expr_parserdef_ref(context, pd, Some(from), span, id)?
+                        }
+                        _ => self.resolve_type_expr(context, right, id)?,
                     };
                     self.infctx.intern_infty(InferenceType::ParserArg {
                         result: inner,
@@ -139,7 +151,9 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                 }
             },
             ExpressionHead::Monadic(Monadic { op, inner }) => match &op.inner {
-                TypeUnOp::Ref | TypeUnOp::Wiggle(_) => self.resolve_type_expr(context, inner)?,
+                TypeUnOp::Ref | TypeUnOp::Wiggle(_) => {
+                    self.resolve_type_expr(context, inner, id)?
+                }
             },
             ExpressionHead::Niladic(op) => match &op.inner {
                 hir::TypeAtom::Primitive(hir::TypePrimitive::Int) => self.infctx.int(),
@@ -147,15 +161,18 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                 hir::TypeAtom::Primitive(hir::TypePrimitive::Char) => self.infctx.char(),
                 hir::TypeAtom::Primitive(hir::TypePrimitive::Mem) => todo!(),
                 hir::TypeAtom::ParserDef(pd) => {
-                    return self.resolve_type_expr_parserdef_ref(context, pd, None)
+                    return self.resolve_type_expr_parserdef_ref(context, pd, None, span, id)
                 }
                 hir::TypeAtom::Array(a) => {
-                    let inner = self.resolve_type_expr(context, &a.expr)?;
+                    let inner = self.resolve_type_expr(context, &a.expr, id)?;
                     self.infctx
                         .intern_infty(InferenceType::Loop(a.direction, inner))
                 }
                 hir::TypeAtom::TypeVar(v) => {
-                    let var_idx = context.vars.get_var(*v).ok_or(TypeError)?;
+                    let var_idx = context
+                        .vars
+                        .get_var(*v)
+                        .ok_or(SpannedTypeError::new(TypeError::UnknownTypeVar(*v), span))?;
                     self.infctx
                         .intern_infty(InferenceType::TypeVarRef(context.pd.0, 0, var_idx))
                 }
@@ -168,30 +185,40 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         context: &mut TypingLocation,
         pd: &ParserDefRef,
         parserarg_from: Option<InfTypeId<'intern>>,
-    ) -> Result<InfTypeId<'intern>, TypeError> {
+        span: IndirectSpan,
+        id: hir::TExprId,
+    ) -> Result<InfTypeId<'intern>, SpannedTypeError> {
         let mut parse_arg = pd
             .from
             .as_ref()
-            .map(|x| self.resolve_type_expr(context, x))
+            .map(|x| self.resolve_type_expr(context, x, id))
             .transpose()?
             .or(parserarg_from);
         let mut fun_args = pd
             .args
             .iter()
-            .map(|x| self.resolve_type_expr(context, x))
+            .map(|x| self.resolve_type_expr(context, x, id))
             .collect::<Result<Vec<_>, _>>()?;
-        let def = self
-            .db
-            .parserdef_ref(context.loc, pd.name.atom)?
-            .ok_or(TypeError)?;
+        let def =
+            self.db
+                .parserdef_ref(context.loc, pd.name.atom)?
+                .ok_or(SpannedTypeError::new(
+                    TypeError::UnknownParserdefName(pd.name.atom),
+                    span,
+                ))?;
         let definition = self.db.parser_args(def)?;
         match (parse_arg, definition.from) {
             (None, Some(_)) => parse_arg = Some(self.infctx.var()),
-            (Some(_), None) => return Err(TypeError),
+            (Some(_), None) => {
+                return Err(SpannedTypeError::new(TypeError::ParseDefFromMismatch, span))
+            }
             _ => {}
         }
         if fun_args.len() > definition.args.len() {
-            return Err(TypeError);
+            return Err(SpannedTypeError::new(
+                TypeError::ParserDefArgCountMismatch(definition.args.len(), fun_args.len()),
+                span,
+            ));
         }
         while fun_args.len() < definition.args.len() {
             fun_args.push(self.infctx.var());
@@ -219,15 +246,19 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                 ty_args,
                 internal: false,
             }));
-        self.infctx.equal(ret, inferred_def)?;
+        self.infctx
+            .equal(ret, inferred_def)
+            .map_err(|e| SpannedTypeError::new(e, span))?;
         Ok(ret)
     }
     pub fn val_expression_type(
         &mut self,
         context: &mut TypingLocation,
         expr: &resolve::ResolvedExpr,
-    ) -> Result<InfTypedExpression<'intern>, TypeError> {
+        id: hir::ExprId,
+    ) -> Result<InfTypedExpression<'intern>, SpannedTypeError> {
         use ValBinOp::*;
+        let span = IndirectSpan::new(id.0, *expr.0.root_data());
         expr.try_scan(&mut |expr| {
             Ok(match expr {
                 ExpressionHead::Dyadic(Dyadic {
@@ -293,6 +324,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                 ),
             })
         })
+        .map_err(|x| SpannedTypeError::new(x, span))
     }
     fn inftype_to_concrete_type(&mut self, infty: InfTypeId<'intern>) -> Result<TypeId, TypeError> {
         self.infctx.to_type(infty)
@@ -300,8 +332,15 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
     fn expr_to_concrete_type(
         &mut self,
         expr: &InfTypedExpression<'intern>,
-    ) -> Result<TypedExpression, TypeError> {
-        expr.try_map(&mut |(ty, span)| Ok((self.inftype_to_concrete_type(*ty)?, *span)))
+        id: ExprId,
+    ) -> Result<TypedExpression, SpannedTypeError> {
+        expr.try_map(&mut |(ty, span)| {
+            Ok((
+                self.inftype_to_concrete_type(*ty)
+                    .map_err(|e| SpannedTypeError::new(e, IndirectSpan::new(id.0, *span)))?,
+                *span,
+            ))
+        })
     }
 }
 
@@ -413,5 +452,40 @@ impl NominalId {
             NominalKind::Def => NominalId::Def(hir::ParserDefId(head.def)),
             NominalKind::Block => NominalId::Block(hir::BlockId(head.def)),
         }
+    }
+}
+
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+pub enum SpannedTypeError {
+    Spanned(TypeError, IndirectSpan),
+    Silenced,
+}
+
+impl SpannedTypeError {
+    fn new(err: TypeError, span: IndirectSpan) -> Self {
+        SpannedTypeError::Spanned(err, span)
+    }
+}
+
+impl From<SilencedError> for SpannedTypeError {
+    fn from(_: SilencedError) -> Self {
+        SpannedTypeError::Silenced
+    }
+}
+
+impl Silencable for SpannedTypeError {
+    type Out = SilencedError;
+
+    fn silence(self) -> Self::Out {
+        SilencedError
+    }
+}
+
+impl IsSilenced for SpannedTypeError {
+    fn is_silenced(&self) -> bool {
+        matches!(
+            self,
+            SpannedTypeError::Silenced | SpannedTypeError::Spanned(TypeError::Silenced, _)
+        )
     }
 }

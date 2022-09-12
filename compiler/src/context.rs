@@ -54,6 +54,7 @@ const ERROR_FNS: &[fn(&LivingInTheDatabase) -> Vec<Report>] = &[
     crate::hir::error::errors,
     crate::resolve::error::errors,
     crate::order::error::errors,
+    crate::hir_types::error::errors,
 ];
 
 impl Context {

@@ -19,7 +19,7 @@ use crate::{
     error::{SResult, SilencedError},
     expr::{self, Atom, Expression, ExpressionKind},
     interner::{DefId, FieldName, HirPath, Identifier, PathComponent, TypeVar},
-    source::{FileId, Span},
+    source::{FileId, IndirectSpan, Span},
 };
 
 use crate::source::IndexSpanned;
@@ -42,6 +42,8 @@ pub trait Hirs: crate::ast::Asts + crate::types::TypeInterner {
     fn hir_parent_module(&self, id: DefId) -> SResult<ModuleId>;
     fn hir_parent_parserdef(&self, id: DefId) -> SResult<ParserDefId>;
     fn hir_parent_block(&self, id: DefId) -> SResult<Option<BlockId>>;
+    fn indirect_span(&self, span: IndirectSpan) -> SResult<Span>;
+    fn indirection_targets(&self, id: DefId) -> SResult<Arc<Vec<DefId>>>;
     fn all_parserdef_blocks(&self, pd: ParserDefId) -> Arc<Vec<BlockId>>;
     fn sorted_block_fields(&self, bd: BlockId, discriminants: bool)
         -> SResult<Arc<Vec<FieldName>>>;
@@ -159,6 +161,29 @@ fn hir_parent_block(db: &dyn Hirs, id: DefId) -> SResult<Option<BlockId>> {
     }
     let id = db.intern_hir_path(path);
     db.hir_parent_block(id)
+}
+
+fn indirect_span(db: &dyn Hirs, span: IndirectSpan) -> SResult<Span> {
+    let id = db.hir_parent_parserdef(span.0)?;
+    let collection = db.hir_parser_collection(id.0)?.ok_or(SilencedError)?;
+    Ok(match span.1 {
+        Some(index) => collection.span_with_index(span.0, index.as_usize()),
+        None => collection.default_span(span.0),
+    }
+    .ok_or(SilencedError)?)
+}
+
+fn indirection_targets(db: &dyn Hirs, id: DefId) -> SResult<Arc<Vec<DefId>>> {
+    let choice = if let HirNode::ChoiceIndirection(c) = db.hir_node(id)? {
+        c
+    } else {
+        return Ok(Arc::new(vec![id]));
+    };
+    let mut ret = Vec::new();
+    for (_, child) in choice.choices.iter() {
+        ret.extend(db.indirection_targets(*child)?.iter())
+    }
+    Ok(Arc::new(ret))
 }
 
 fn sorted_block_fields(

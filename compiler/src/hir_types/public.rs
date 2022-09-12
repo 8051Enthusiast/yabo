@@ -13,7 +13,8 @@ pub fn public_expr_type(db: &dyn TyHirs, loc: hir::ExprId) -> SResult<(TypedExpr
 fn public_expr_type_impl(
     db: &dyn TyHirs,
     loc: hir::ExprId,
-) -> Result<(TypedExpression, TypeId), TypeError> {
+) -> Result<(TypedExpression, TypeId), SpannedTypeError> {
+    let spanned = |x| SpannedTypeError::new(x, IndirectSpan::default_span(loc.0));
     let bump = Bump::new();
     let mut ctx = PublicResolver::new_typing_context_and_loc(db, loc.0, &bump)?;
     let mut typeloc = ctx.infctx.tr.tloc.clone();
@@ -26,21 +27,21 @@ fn public_expr_type_impl(
         _ => panic!("expected parse statement, let statement or parser def"),
     };
     let resolved_expr = db.resolve_expr(loc)?;
-    let expr = ctx.val_expression_type(&mut typeloc, &resolved_expr)?;
+    let expr = ctx.val_expression_type(&mut typeloc, &resolved_expr, loc)?;
     let root = expr.0.root_data().0;
     let into_ret = if let Some(ty) = surrounding_types.from_type {
-        ctx.infctx.parser_apply(root, ty)?
+        ctx.infctx.parser_apply(root, ty).map_err(spanned)?
     } else {
         root
     };
     let ret = if let Some(real_ret) = surrounding_types.root_type {
-        ctx.infctx.constrain(into_ret, real_ret)?;
+        ctx.infctx.constrain(into_ret, real_ret).map_err(spanned)?;
         real_ret
     } else {
         into_ret
     };
-    let ret = ctx.inftype_to_concrete_type(ret)?;
-    Ok((ctx.expr_to_concrete_type(&expr)?, ret))
+    let ret = ctx.inftype_to_concrete_type(ret).map_err(spanned)?;
+    Ok((ctx.expr_to_concrete_type(&expr, loc)?, ret))
 }
 
 pub fn public_type(db: &dyn TyHirs, loc: DefId) -> SResult<TypeId> {
@@ -111,7 +112,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern, PublicResolver<'a>> {
     pub fn parse_statement_types(
         &mut self,
         parse: &ParseStatement,
-    ) -> Result<ExpressionTypeConstraints<'intern>, TypeError> {
+    ) -> Result<ExpressionTypeConstraints<'intern>, SpannedTypeError> {
         let from = self.db.ambient_type(parse.id)?;
         let infty = self.infctx.from_type(from);
         Ok(ExpressionTypeConstraints {
@@ -122,11 +123,11 @@ impl<'a, 'intern> TypingContext<'a, 'intern, PublicResolver<'a>> {
     pub fn let_statement_types(
         &mut self,
         let_statement: &hir::LetStatement,
-    ) -> Result<ExpressionTypeConstraints<'intern>, TypeError> {
+    ) -> Result<ExpressionTypeConstraints<'intern>, SpannedTypeError> {
         let ty = let_statement.ty;
         let ty_expr = ty.lookup(self.db)?.expr;
         let mut typeloc = self.infctx.tr.tloc.clone();
-        let infty = self.resolve_type_expr(&mut typeloc, &ty_expr)?;
+        let infty = self.resolve_type_expr(&mut typeloc, &ty_expr, ty)?;
         Ok(ExpressionTypeConstraints {
             root_type: Some(infty),
             from_type: None,
@@ -135,10 +136,10 @@ impl<'a, 'intern> TypingContext<'a, 'intern, PublicResolver<'a>> {
     pub fn parserdef_types(
         &mut self,
         parserdef: &hir::ParserDef,
-    ) -> Result<ExpressionTypeConstraints<'intern>, TypeError> {
+    ) -> Result<ExpressionTypeConstraints<'intern>, SpannedTypeError> {
         let ty_expr = parserdef.from.lookup(self.db)?.expr;
         let mut typeloc = self.infctx.tr.tloc.clone();
-        let from = self.resolve_type_expr(&mut typeloc, &ty_expr)?;
+        let from = self.resolve_type_expr(&mut typeloc, &ty_expr, parserdef.from)?;
         Ok(ExpressionTypeConstraints {
             root_type: None,
             from_type: Some(from),

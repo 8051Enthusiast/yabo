@@ -298,7 +298,7 @@ impl<'intern> InferenceVar<'intern> {
 }
 
 impl<'intern> TryFrom<&InferenceType<'intern>> for TypeHead {
-    type Error = TypeError;
+    type Error = ();
 
     fn try_from(value: &InferenceType) -> Result<Self, Self::Error> {
         Ok(match value {
@@ -311,7 +311,7 @@ impl<'intern> TryFrom<&InferenceType<'intern>> for TypeHead {
             InferenceType::ParserArg { .. } => TypeHead::ParserArg,
             InferenceType::FunctionArgs { args, .. } => TypeHead::FunctionArgs(args.len()),
             InferenceType::Unknown => TypeHead::Unknown,
-            InferenceType::Var(_) | InferenceType::InferField(..) => return Err(TypeError),
+            InferenceType::Var(_) | InferenceType::InferField(..) => return Err(()),
         })
     }
 }
@@ -563,11 +563,17 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                 if let Some(deref) = self.deref(&l)? {
                     self.constrain(deref, upper)
                 } else {
-                    Err(TypeError)
+                    Err(TypeError::HeadMismatch(
+                        TypeHead::Nominal(l.def),
+                        upper.value().try_into().unwrap(),
+                    ))
                 }
             }
 
-            _ => Err(TypeError),
+            _ => Err(TypeError::HeadMismatch(
+                lower.value().try_into().unwrap(),
+                upper.value().try_into().unwrap(),
+            )),
         }
     }
     pub fn equal(

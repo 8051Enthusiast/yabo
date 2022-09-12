@@ -7,7 +7,7 @@ use crate::{
     hash::StableHash,
     hir::ParserDefId,
     hir_types::TypeVarCollection,
-    types::{NominalKind, NominalTypeHead, PrimitiveType, Type, TypeId},
+    types::{NominalKind, NominalTypeHead, PrimitiveType, Type, TypeHead, TypeId},
 };
 
 use super::TyHirs;
@@ -139,6 +139,35 @@ impl<DB: TyHirs + ?Sized> StableHash<DB> for TypeId {
                     sub_update(*arg, state);
                 }
             }
+        }
+    }
+}
+
+impl<DB: TyHirs + ?Sized> DatabasedDisplay<DB> for TypeHead {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
+        match self {
+            TypeHead::Any => write!(f, "any type"),
+            TypeHead::Bot => write!(f, "bottom type"),
+            TypeHead::Primitive(p) => p.db_fmt(f, db),
+            TypeHead::TypeVarRef(def, level, index) => {
+                let vars = TypeVarCollection::at_id(db, ParserDefId(*def));
+                if let Ok(v) = vars {
+                    if let Some(x) = v.defs.get(*index as usize) {
+                        return dbwrite!(f, db, "{}", x);
+                    }
+                }
+                dbwrite!(f, db, "<Var Ref ({}, {}, {})>", def, &level, &index)
+            }
+            TypeHead::Nominal(def) => {
+                dbwrite!(f, db, "{}", def)
+            }
+            TypeHead::Loop(kind) => match kind {
+                ArrayKind::For => write!(f, "for array"),
+                ArrayKind::Each => write!(f, "each array"),
+            },
+            TypeHead::ParserArg => write!(f, "a parser"),
+            TypeHead::FunctionArgs(arg) => write!(f, "a function with {} arguments", arg),
+            TypeHead::Unknown => write!(f, "unknon"),
         }
     }
 }
