@@ -19,7 +19,7 @@ pub struct ParserFullTypes {
 pub fn parser_full_types(
     db: &dyn TyHirs,
     id: hir::ParserDefId,
-) -> Result<Arc<ParserFullTypes>, TypeError> {
+) -> Result<Arc<ParserFullTypes>, SpannedTypeError> {
     let resolver = FullResolver::new(db, id.0)?;
     let bump = Bump::new();
     let mut ctx = TypingContext::new(db, resolver, &bump);
@@ -28,11 +28,13 @@ pub fn parser_full_types(
     let mut types = BTreeMap::new();
     let mut exprs = BTreeMap::new();
     for (&id, &infty) in ctx.infctx.tr.inftypes.clone().iter() {
-        let ty = ctx.inftype_to_concrete_type(infty)?;
+        let ty = ctx
+            .inftype_to_concrete_type(infty)
+            .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(id)))?;
         types.insert(id, ty);
     }
     for (&id, expr) in ctx.infctx.tr.inf_expressions.clone().iter() {
-        let expr = ctx.expr_to_concrete_type(expr)?;
+        let expr = ctx.expr_to_concrete_type(expr, id)?;
         exprs.insert(id, expr);
     }
     Ok(Arc::new(ParserFullTypes {
@@ -65,11 +67,11 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
     fn let_statement_types(
         &mut self,
         let_statement: &hir::LetStatement,
-    ) -> Result<ExpressionTypeConstraints<'intern>, TypeError> {
+    ) -> Result<ExpressionTypeConstraints<'intern>, SpannedTypeError> {
         let ty = let_statement.ty;
         let ty_expr = ty.lookup(self.db)?.expr;
         let mut typeloc = self.infctx.tr.loc.clone();
-        let infty = self.resolve_type_expr(&mut typeloc, &ty_expr)?;
+        let infty = self.resolve_type_expr(&mut typeloc, &ty_expr, ty)?;
         Ok(ExpressionTypeConstraints {
             root_type: Some(infty),
             from_type: None,
@@ -81,7 +83,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
             .inftypes
             .insert(self.infctx.tr.loc.loc, infty);
     }
-    fn initialize_vars(&mut self) -> Result<(), TypeError> {
+    fn initialize_vars(&mut self) -> Result<(), SpannedTypeError> {
         let pd = self.infctx.tr.loc.pd;
         for child in ChildIter::new(pd.0, self.db) {
             let ty = match child {
@@ -107,9 +109,10 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
         }
         self.constrain_public_types()
     }
-    fn constrain_public_types(&mut self) -> Result<(), TypeError> {
+    fn constrain_public_types(&mut self) -> Result<(), SpannedTypeError> {
         let pd = self.infctx.tr.loc.pd;
         for child_node in ChildIter::new(pd.0, self.db) {
+            let span = IndirectSpan::default_span(child_node.id());
             let block = match child_node {
                 hir::HirNode::Block(block) => block,
                 _ => continue,
@@ -123,7 +126,9 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
                 };
                 let public_inftype = self.infctx.from_type(public_type);
                 let current_inftype = self.infctx.tr.inftypes[child];
-                self.infctx.constrain(current_inftype, public_inftype)?;
+                self.infctx
+                    .constrain(current_inftype, public_inftype)
+                    .map_err(|e| SpannedTypeError::new(e, span))?;
             }
         }
         Ok(())
@@ -152,7 +157,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
         self.infctx.tr.loc.loc = old_loc;
         ret
     }
-    fn type_parserdef(&mut self, pd: hir::ParserDefId) -> Result<(), TypeError> {
+    fn type_parserdef(&mut self, pd: hir::ParserDefId) -> Result<(), SpannedTypeError> {
         let parserdef = pd.lookup(self.db)?;
         let sig = self.db.parser_args(pd)?;
         let ambient = sig.from.map(|ty| self.infctx.from_type(ty));
@@ -163,16 +168,20 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
         let previous_ret = self
             .infctx
             .from_type(self.db.parser_returns(self.infctx.tr.loc.pd)?.deref);
-        self.infctx.constrain(ret, previous_ret)?;
+        let return_spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(pd.0));
+        self.infctx
+            .constrain(ret, previous_ret)
+            .map_err(return_spanned)?;
         Ok(())
     }
-    fn type_expr(&mut self, expr: &ValExpression) -> Result<InfTypeId<'intern>, TypeError> {
+    fn type_expr(&mut self, expr: &ValExpression) -> Result<InfTypeId<'intern>, SpannedTypeError> {
+        let spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(expr.id.0));
         let mut typeloc = self.infctx.tr.loc.clone();
         let resolved_expr = self.db.resolve_expr(expr.id)?;
-        let inf_expression = self.val_expression_type(&mut typeloc, &resolved_expr)?;
+        let inf_expression = self.val_expression_type(&mut typeloc, &resolved_expr, expr.id)?;
         let root = inf_expression.0.root_data().0;
         let ret = if let Some(ambient) = self.ambient_type() {
-            self.infctx.parser_apply(root, ambient)?
+            self.infctx.parser_apply(root, ambient).map_err(spanned)?
         } else {
             root
         };
@@ -182,7 +191,9 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
                     data,
                     inner: ResolvedAtom::Block(block_id),
                 }) => {
-                    let ambient = self.infctx.reuse_parser_arg(data.0)?;
+                    let spanned =
+                        |e| SpannedTypeError::new(e, IndirectSpan::new(expr.id.0, data.1));
+                    let ambient = self.infctx.reuse_parser_arg(data.0).map_err(spanned)?;
                     let block = block_id.lookup(self.db)?;
                     self.with_ambient_type(Some(ambient), |ctx| ctx.type_block(&block))?;
                 }
@@ -195,11 +206,11 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
             .insert(expr.id, inf_expression);
         Ok(ret)
     }
-    fn type_block(&mut self, block: &Block) -> Result<(), TypeError> {
+    fn type_block(&mut self, block: &Block) -> Result<(), SpannedTypeError> {
         let root_ctx = block.root_context.lookup(self.db)?;
         self.type_context(&root_ctx)
     }
-    fn type_context(&mut self, context: &StructCtx) -> Result<(), TypeError> {
+    fn type_context(&mut self, context: &StructCtx) -> Result<(), SpannedTypeError> {
         self.with_loc(context.id.0, |ctx| {
             for child in context.children.iter() {
                 ctx.type_block_component(*child)?;
@@ -207,7 +218,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
             Ok(())
         })
     }
-    fn type_block_component(&mut self, id: DefId) -> Result<(), TypeError> {
+    fn type_block_component(&mut self, id: DefId) -> Result<(), SpannedTypeError> {
         match self.db.hir_node(id)? {
             hir::HirNode::Let(l) => self.type_let(&l),
             hir::HirNode::Parse(parse) => self.type_parse(&parse),
@@ -217,32 +228,41 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
             _ => unreachable!("Invalid type block component"),
         }
     }
-    fn type_choice(&mut self, choice: &StructChoice) -> Result<(), TypeError> {
+    fn type_choice(&mut self, choice: &StructChoice) -> Result<(), SpannedTypeError> {
         for child in choice.subcontexts.iter() {
             let context = child.lookup(self.db)?;
             self.type_context(&context)?;
         }
         Ok(())
     }
-    fn type_choice_indirection(&mut self, choice_ind: &ChoiceIndirection) -> Result<(), TypeError> {
+    fn type_choice_indirection(
+        &mut self,
+        choice_ind: &ChoiceIndirection,
+    ) -> Result<(), SpannedTypeError> {
         let current = self.infty_at(choice_ind.id.0);
         for (_, choice_id) in choice_ind.choices.iter() {
             let choice = self.infty_at(*choice_id);
-            self.infctx.constrain(choice, current)?;
+            self.infctx.constrain(choice, current).map_err(|e| {
+                SpannedTypeError::new(e, IndirectSpan::default_span(choice_ind.id.0))
+            })?;
         }
         Ok(())
     }
-    fn type_parse(&mut self, parse: &ParseStatement) -> Result<(), TypeError> {
+    fn type_parse(&mut self, parse: &ParseStatement) -> Result<(), SpannedTypeError> {
         let expr = parse.expr.lookup(self.db)?;
         let ty = self.type_expr(&expr)?;
         let self_ty = self.infty_at(parse.id.0);
-        self.infctx.constrain(ty, self_ty)
+        self.infctx
+            .constrain(ty, self_ty)
+            .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(parse.id.0)))
     }
-    fn type_let(&mut self, let_statement: &hir::LetStatement) -> Result<(), TypeError> {
+    fn type_let(&mut self, let_statement: &hir::LetStatement) -> Result<(), SpannedTypeError> {
         let expr = let_statement.expr.lookup(self.db)?;
         let ty = self.with_ambient_type(None, |ctx| ctx.type_expr(&expr))?;
         let self_ty = self.infty_at(let_statement.id.0);
-        self.infctx.constrain(ty, self_ty)
+        self.infctx
+            .constrain(ty, self_ty)
+            .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(let_statement.id.0)))
     }
 }
 
@@ -292,7 +312,7 @@ impl<'a, 'intern> TypeResolver<'intern> for FullResolver<'a, 'intern> {
             self.inftypes
                 .get(&child_id)
                 .map(|&id| id.into())
-                .ok_or(TypeError)
+                .ok_or(TypeError::UnknownField(name))
         } else {
             Ok(self.db.public_type(child_id).map(|t| t.into())?)
         }

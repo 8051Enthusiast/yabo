@@ -2,11 +2,11 @@ use std::{collections::HashMap, hash::Hash, sync::Arc};
 
 use crate::{
     interner::DefId,
-    types::{inference::NominalInfHead, InferenceType, TypeHead},
+    types::{inference::NominalInfHead, TypeHead},
 };
 
 use super::{
-    inference::{InfTypeId, InfTypeInterner},
+    inference::{InfTypeId, InfTypeInterner, InferenceType},
     inference::{InferenceContext, TypeResolver},
     NominalTypeHead, Type, TypeError, TypeId, TypeInterner,
 };
@@ -47,7 +47,7 @@ impl<From: Copy + Eq + Hash, To: Copy> MemoRecursor<From, To> {
         }
         let depth = self.process.len();
         if self.process.insert(from, depth).is_some() {
-            return Some(Err(TypeError));
+            return Some(Err(TypeError::RecursiveType));
         }
         None
     }
@@ -101,7 +101,7 @@ impl Polarity for PositivePolarity {
         };
         let mut other_ty = other;
         loop {
-            other_upset.insert(TypeHead::try_from(other_ty)?, other_ty.clone());
+            other_upset.insert(TypeHead::try_from(other_ty).unwrap(), other_ty.clone());
             match next(&other_ty)? {
                 Some(n) => other_ty = n,
                 None => break,
@@ -110,7 +110,7 @@ impl Polarity for PositivePolarity {
         let mut res = None;
         let mut nom_ty = nom;
         loop {
-            if let Some(other_ty) = other_upset.remove(&TypeHead::try_from(nom_ty)?) {
+            if let Some(other_ty) = other_upset.remove(&TypeHead::try_from(nom_ty).unwrap()) {
                 let other = ctx.ctx.intern_infty(other_ty);
                 let nom = ctx.ctx.intern_infty(nom_ty.clone());
                 res = Some(ctx.join_inftype(other, nom)?);
@@ -124,7 +124,10 @@ impl Polarity for PositivePolarity {
         if let Some(r) = res {
             Ok(r)
         } else {
-            return Err(TypeError);
+            return Err(TypeError::HeadIncompatible(
+                lhs.value().try_into().unwrap(),
+                rhs.value().try_into().unwrap(),
+            ));
         }
     }
 }
@@ -145,8 +148,8 @@ impl Polarity for NegativePolarity {
     ) -> Result<InfTypeId<'intern>, TypeError> {
         let nom = lhs.value();
         let other = rhs.value();
-        let nomhead = TypeHead::try_from(nom)?;
-        let otherhead = TypeHead::try_from(other)?;
+        let nomhead = TypeHead::try_from(nom).unwrap();
+        let otherhead = TypeHead::try_from(other).unwrap();
         let mut next = |ty: &_| -> Result<Option<&InferenceType>, TypeError> {
             if let InferenceType::Nominal(nom) = ty {
                 Ok(ctx.ctx.deref(nom)?.map(|x| x.value()))
@@ -156,10 +159,9 @@ impl Polarity for NegativePolarity {
         };
         let mut nom_ty = nom;
         loop {
-            if TypeHead::try_from(nom_ty)? == otherhead {
+            if TypeHead::try_from(nom_ty).unwrap() == otherhead {
                 let [a_id, b_id] = [&nom_ty, other].map(|x| ctx.ctx.intern_infty(x.clone()));
-                return ctx
-                    .meet_inftype(a_id, b_id);
+                return ctx.meet_inftype(a_id, b_id);
             }
             match next(&nom_ty)? {
                 Some(n) => nom_ty = n,
@@ -168,17 +170,19 @@ impl Polarity for NegativePolarity {
         }
         let mut other_ty = other;
         loop {
-            if TypeHead::try_from(other_ty)? == nomhead {
+            if TypeHead::try_from(other_ty).unwrap() == nomhead {
                 let [a_id, b_id] = [other_ty, nom].map(|x| ctx.ctx.intern_infty(x.clone()));
-                return ctx
-                    .meet_inftype(a_id, b_id);
+                return ctx.meet_inftype(a_id, b_id);
             }
             match next(&other_ty)? {
                 Some(n) => other_ty = n,
                 None => break,
             }
         }
-        return Err(TypeError);
+        return Err(TypeError::HeadIncompatible(
+            lhs.value().try_into().unwrap(),
+            rhs.value().try_into().unwrap(),
+        ));
     }
 }
 pub struct TypeConvertMemo<'a, 'intern, TR: TypeResolver<'intern>> {
@@ -271,10 +275,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                     result: result2,
                     args: args2,
                 },
-            ) => {
-                if args1.len() != args2.len() {
-                    return Err(TypeError);
-                }
+            ) if args1.len() == args2.len() => {
                 let result = self.combine::<P>(*result1, *result2)?;
                 let args_vec: Vec<_> = args1
                     .iter()
@@ -329,13 +330,14 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                     internal: *internal1 && *internal2,
                 })
             }
-            (Nominal(NominalInfHead { .. }), _) => {
-                P::combine_nom(self, lhs, rhs)?.value().clone()
+            (Nominal(NominalInfHead { .. }), _) => P::combine_nom(self, lhs, rhs)?.value().clone(),
+            (_, Nominal(NominalInfHead { .. })) => P::combine_nom(self, rhs, lhs)?.value().clone(),
+            _ => {
+                return Err(TypeError::HeadIncompatible(
+                    lhs.value().try_into().unwrap(),
+                    rhs.value().try_into().unwrap(),
+                ))
             }
-            (_, Nominal(NominalInfHead { .. })) => {
-                P::combine_nom(self, rhs, lhs)?.value().clone()
-            }
-            _ => return Err(TypeError),
         };
         let ret = self.ctx.intern_infty(res);
         self.leave_fun::<P>((lhs, rhs), ret)

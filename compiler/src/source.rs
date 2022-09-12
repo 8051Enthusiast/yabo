@@ -3,6 +3,7 @@ use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::io::Error;
+use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use ariadne::{Cache, FnCache};
@@ -211,24 +212,28 @@ impl<DB: Files + ?Sized> DatabasedDisplay<DB> for FileId {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct SpanIndex(u32);
+pub struct SpanIndex(NonZeroU32);
 impl SpanIndex {
     pub fn add_span(spans: &RefCell<Vec<Span>>) -> impl Fn(&Span) -> Self + '_ {
         |span: &Span| {
             let mut borrow = spans.borrow_mut();
             borrow.push(*span);
-            SpanIndex(u32::try_from(borrow.len()).unwrap() - 1)
+            SpanIndex(NonZeroU32::new(u32::try_from(borrow.len()).unwrap()).unwrap())
         }
     }
 
     pub fn new(n: usize) -> Vec<Self> {
-        (0..n)
-            .map(|i| SpanIndex(i.try_into().expect("overflow adding spans")))
+        (1..=n)
+            .map(|i| {
+                SpanIndex(
+                    NonZeroU32::new(u32::try_from(i).expect("overflow adding spans")).unwrap(),
+                )
+            })
             .collect()
     }
 
     pub fn as_usize(self) -> usize {
-        self.0 as usize
+        u32::from(self.0) as usize - 1
     }
 }
 
@@ -249,14 +254,14 @@ impl<T: Clone + Eq + Hash + Debug> IndexSpanned<T> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct IndirectSpan(DefId, SpanIndex);
+pub struct IndirectSpan(pub DefId, pub Option<SpanIndex>);
 
 impl IndirectSpan {
     pub fn new(id: DefId, span: SpanIndex) -> Self {
-        Self(id, span)
+        Self(id, Some(span))
     }
 
-    pub fn first(id: DefId) -> Self {
-        Self(id, SpanIndex(0))
+    pub fn default_span(id: DefId) -> Self {
+        Self(id, None)
     }
 }

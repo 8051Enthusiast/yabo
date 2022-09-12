@@ -3,13 +3,10 @@ use crate::{error::SilencedError, hir::ParserDefId};
 use super::*;
 
 pub fn parser_args(db: &dyn TyHirs, id: hir::ParserDefId) -> SResult<Signature> {
-    parser_args_impl(db, id).silence()
+    parser_args_error(db, id).silence()
 }
 
-pub(super) fn parser_args_impl(
-    db: &dyn TyHirs,
-    id: hir::ParserDefId,
-) -> Result<Signature, TypeError> {
+pub fn parser_args_error(db: &dyn TyHirs, id: hir::ParserDefId) -> Result<Signature, SpannedTypeError> {
     let pd = id.lookup(db)?;
     let mut context = TypingLocation {
         vars: TypeVarCollection::new_empty(),
@@ -21,10 +18,12 @@ pub(super) fn parser_args_impl(
     let mut tcx = TypingContext::new(db, arg_resolver, &bump);
     let from_expr = pd.from.lookup(db)?;
     let args = Arc::new(vec![]);
-    let from_infty = tcx.resolve_type_expr(&mut context, &from_expr.expr)?;
-    let (from_tys, count) =
-        tcx.infctx
-            .to_types_with_vars(&[from_infty][..], context.vars.defs.len() as u32, id.0)?;
+    let from_infty = tcx.resolve_type_expr(&mut context, &from_expr.expr, pd.from)?;
+    // i don't think an error can happen here, but i'm not sure
+    let (from_tys, count) = tcx
+        .infctx
+        .to_types_with_vars(&[from_infty][..], context.vars.defs.len() as u32, id.0)
+        .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(pd.from.0)))?;
     context.vars.fill_anon_vars(db, count);
     let ty_args = context.vars.var_types(db, id);
     let thunk = db.intern_type(Type::Nominal(NominalTypeHead {

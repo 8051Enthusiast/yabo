@@ -14,7 +14,7 @@ use crate::{
 };
 
 use self::{
-    inference::{InfTypeId, InferenceType},
+    inference::InfTypeId,
     to_type::{TypeConvertMemo, VarStack},
 };
 
@@ -144,7 +144,17 @@ pub struct Signature {
 }
 
 #[derive(Clone, Hash, Debug, PartialEq, Eq)]
-pub struct TypeError;
+pub enum TypeError {
+    HeadMismatch(TypeHead, TypeHead),
+    HeadIncompatible(TypeHead, TypeHead),
+    RecursiveType,
+    UnknownField(FieldName),
+    UnknownParserdefName(crate::interner::Identifier),
+    ParseDefFromMismatch,
+    ParserDefArgCountMismatch(usize, usize),
+    UnknownTypeVar(TypeVar),
+    Silenced,
+}
 
 impl Silencable for TypeError {
     type Out = SilencedError;
@@ -156,7 +166,7 @@ impl Silencable for TypeError {
 
 impl From<SilencedError> for TypeError {
     fn from(_: SilencedError) -> Self {
-        TypeError
+        TypeError::Silenced
     }
 }
 

@@ -48,11 +48,15 @@ pub fn least_deref_type(db: &dyn TyHirs, mut ty: TypeId) -> SResult<TypeId> {
 pub fn parser_returns(db: &dyn TyHirs, id: hir::ParserDefId) -> SResult<ParserDefType> {
     db.parser_returns_ssc(db.parser_ssc(id)?)
         .into_iter()
+        .flatten()
         .find(|x| x.id.0 == id.0)
         .ok_or(SilencedError)
 }
 
-pub fn parser_returns_ssc(db: &dyn TyHirs, id: FunctionSscId) -> Vec<ParserDefType> {
+pub fn parser_returns_ssc(
+    db: &dyn TyHirs,
+    id: FunctionSscId,
+) -> Vec<Result<ParserDefType, SpannedTypeError>> {
     let def_ids = db.lookup_intern_recursion_scc(id);
     let defs = def_ids
         .iter()
@@ -71,7 +75,7 @@ pub fn parser_returns_ssc(db: &dyn TyHirs, id: FunctionSscId) -> Vec<ParserDefTy
     }
     let defs = defs
         .into_iter()
-        .flat_map(|def| -> Result<hir::ParserDef, TypeError> {
+        .map(|def| -> Result<hir::ParserDef, SpannedTypeError> {
             // in this separate loop we do the actual type inference
             let expr = db.resolve_expr(def.to)?;
             let mut context = TypingLocation {
@@ -80,7 +84,7 @@ pub fn parser_returns_ssc(db: &dyn TyHirs, id: FunctionSscId) -> Vec<ParserDefTy
                 pd: def.id,
             };
             let ty = ctx
-                .val_expression_type(&mut context, &expr)?
+                .val_expression_type(&mut context, &expr, def.to)?
                 .0
                 .root_data()
                 .0;
@@ -88,17 +92,23 @@ pub fn parser_returns_ssc(db: &dyn TyHirs, id: FunctionSscId) -> Vec<ParserDefTy
             if let Some(from) = sig.from {
                 let inffrom = ctx.infctx.from_type(from);
                 let deref = ctx.infctx.tr.return_infs[&def.id.0].deref;
-                let ret = ctx.infctx.parser_apply(ty, inffrom)?;
-                ctx.infctx.constrain(ret, deref)?;
+                let spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(def.to.0));
+                let ret = ctx.infctx.parser_apply(ty, inffrom).map_err(spanned)?;
+                ctx.infctx.constrain(ret, deref).map_err(spanned)?;
             };
             Ok(def)
         })
         .collect::<Vec<_>>();
     defs.into_iter()
-        .flat_map(|def| -> Result<ParserDefType, TypeError> {
-            // here we are finished with inference so we can convert to actual types
-            let deref = ctx.inftype_to_concrete_type(ctx.infctx.tr.return_infs[&def.id.0].deref)?;
-            Ok(ParserDefType { id: def.id, deref })
+        .map(|def| -> Result<ParserDefType, SpannedTypeError> {
+            def.and_then(|def| {
+                let spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(def.to.0));
+                // here we are finished with inference so we can convert to actual types
+                let deref = ctx
+                    .inftype_to_concrete_type(ctx.infctx.tr.return_infs[&def.id.0].deref)
+                    .map_err(spanned)?;
+                Ok(ParserDefType { id: def.id, deref })
+            })
         })
         .collect()
 }
@@ -125,7 +135,11 @@ impl<'a> TypeResolver<'a> for ReturnResolver<'a> {
         self.db
     }
 
-    fn field_type(&self, _: &NominalInfHead<'a>, _: FieldName) -> Result<EitherType<'a>, TypeError> {
+    fn field_type(
+        &self,
+        _: &NominalInfHead<'a>,
+        _: FieldName,
+    ) -> Result<EitherType<'a>, TypeError> {
         Ok(self.db.intern_type(Type::Unknown).into())
     }
 

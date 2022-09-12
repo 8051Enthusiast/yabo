@@ -2,7 +2,7 @@ use crate::{
     ast::ArrayKind, databased_display::DatabasedDisplay, hash::StableHash, interner::Interner,
 };
 
-use super::{InfTypeId, InferenceType, NominalKind, PrimitiveType, TypeInterner};
+use super::{inference::InferenceType, InfTypeId, NominalKind, PrimitiveType, TypeInterner};
 
 use crate::dbwrite;
 

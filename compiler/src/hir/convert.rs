@@ -140,7 +140,12 @@ fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDef
         Some(ast::Qualifier::Export) => Qualifier::Export,
         None => Qualifier::Regular,
     };
-    let pdef = ParserDef { qualifier, id, from, to };
+    let pdef = ParserDef {
+        qualifier,
+        id,
+        from,
+        to,
+    };
     ctx.insert(id.0, HirNode::ParserDef(pdef), vec![ast.span]);
 }
 
@@ -440,8 +445,8 @@ impl<'a> HirConversionCtx<'a> {
 
     fn insert(&self, id: DefId, node: HirNode, span: Vec<Span>) {
         let mut borrow = self.collection.borrow_mut();
-        borrow.map.insert(id, node);
-        borrow.spans.insert(id, span);
+        assert!(borrow.map.insert(id, node).is_none());
+        assert!(borrow.spans.insert(id, span).is_none());
     }
 
     fn add_errors(&self, errors: impl IntoIterator<Item = HirConversionError>) {
