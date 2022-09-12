@@ -17,11 +17,17 @@ const PREC = {
 module.exports = grammar({
   name: 'yabo',
 
+  extras: $ => [
+    /\s/,
+    $._comment,
+  ],
+
   rules: {
     source_file: $ => repeat($._definition),
     _definition: $ => choice(
       $.parser_definition
     ),
+    _comment: $ => token(seq('//', /[^\n]*/)),
     parser_definition: $ => seq(
       optional(field('qualifier', 'export')),
       'def',

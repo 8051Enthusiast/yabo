@@ -85,3 +85,19 @@ def for[u8] *> seven = {
             name: (identifier))
         	expr: (number_literal))))))
 
+=======
+Comment
+=======
+
+// comment
+def for[u8] *> test = ~
+
+---
+
+(source_file
+  (parser_definition
+    (type_array
+      (parserdef_ref
+        (identifier)))
+    (identifier)
+    (single)))
