@@ -61,7 +61,8 @@ impl Diagnostic {
         self.code = Some(code);
     }
     pub fn into_ariadne(self) -> ariadne::Report<Span> {
-        let mut diag = ariadne::Report::build(ariadne::ReportKind::Error, self.file, 0);
+        let mut diag = ariadne::Report::build(ariadne::ReportKind::Error, self.file, 0)
+            .with_message(self.message);
         if let Some(code) = self.code {
             diag = diag.with_code(code);
         }
@@ -72,7 +73,8 @@ impl Diagnostic {
             };
             diag = diag.with_label(label);
         }
-        diag.finish()
+        diag.with_config(ariadne::Config::default().with_compact(true))
+            .finish()
     }
     pub fn into_json(self, files: &(impl Files + ?Sized)) -> JsonDiagnostic {
         JsonDiagnostic::new(&self, files)
