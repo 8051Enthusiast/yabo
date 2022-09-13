@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from collections import defaultdict
 import os
 import sys
 import shutil
@@ -9,8 +10,8 @@ import json
 from typing import Optional, Tuple
 import yabo
 
-TARGET_RELEASE='debug'
-BINARY_NAME='yabo'
+TARGET_RELEASE = 'debug'
+BINARY_NAME = 'yabo'
 
 # test files are structured as follows:
 # ====[ source code ]====
@@ -26,13 +27,62 @@ heading = re.compile('^={3,}\[\s*(.*?)\s*\]\={3,}$', re.MULTILINE)
 # this regex matches a input/output title
 case_title = re.compile('^(binary|output)\s+(.+)$')
 
+# a comment that contains the error message
+# for example, '//~^ error[301] not found here'
+# represents an error message that should be
+# one line above the line with the comment
+# with error code 301
+error_comment = re.compile('^.*//(~\^*)\s*error\[(\d+)\]\s*(.*)$')
+
+
+class ErrorLocation:
+    contained_message: str
+    line: int
+    code: int
+
+    def __init__(self, message: str, line: int, code: int):
+        self.contained_message = message
+        self.line = line
+        self.code = code
+
+    def __str__(self) -> str:
+        return f'ErrorLocation({self.contained_message}, {self.line}, {self.code})'
+
+    @staticmethod
+    def from_match(match: re.Match, line: int) -> 'ErrorLocation':
+        contained_message = match.group(3)
+        line = line - (len(match.group(1)) - 1)
+        code = int(match.group(2))
+        return ErrorLocation(contained_message, line, code)
+
+    @staticmethod
+    def from_diagnostics(diagnostic: dict) -> dict[int, list['ErrorLocation']]:
+        code: int = diagnostic['code']
+        ret = defaultdict(list)
+        for message in diagnostic['labels']:
+            line: int = message['start_line']
+            message: int = f'{diagnostic["message"]}, {message["message"]}'
+            ret[line].append(ErrorLocation(message, line, code))
+        return ret
+
+    def is_contained_in(self, other: 'ErrorLocation') -> bool:
+        return (
+            self.contained_message in other.contained_message and
+            self.code == other.code and
+            self.line == other.line
+        )
+
+
 current_script_dir = os.path.dirname(os.path.realpath(__file__))
+
 
 def build_compiler_binary():
     compiler_dir = os.path.join(current_script_dir, 'compiler')
     os.chdir(compiler_dir)
-    cargo_metadata = subprocess.Popen(['cargo', 'metadata', '--format-version=1'], stdout=subprocess.PIPE)
-    cargo_metadata_output = json.loads(cargo_metadata.communicate()[0].decode('utf-8'))
+    cargo_metadata = subprocess.Popen(
+        ['cargo', 'metadata', '--format-version=1'], stdout=subprocess.PIPE)
+    cargo_metadata_output = json.loads(
+        cargo_metadata.communicate()[0].decode('utf-8'))
     cargo_args = ['cargo', 'build']
     if TARGET_RELEASE == 'release':
         cargo_args.append('--release')
@@ -40,6 +90,7 @@ def build_compiler_binary():
     if cargo_build.returncode != 0:
         raise Exception('Failed to build compiler')
     return os.path.join(cargo_metadata_output['target_directory'], TARGET_RELEASE, BINARY_NAME)
+
 
 def run_compiler_unit_tests():
     compiler_dir = os.path.join(current_script_dir, 'compiler')
@@ -50,24 +101,74 @@ def run_compiler_unit_tests():
     cargo_test = subprocess.run(cargo_args)
     return cargo_test.returncode == 0
 
+
 compiler_path = build_compiler_binary()
+
 
 class CompiledSource:
     dir: str
     compiled: str
+    source: str
+    stderr: str
 
     def __init__(self, source):
         dir = tempfile.mkdtemp()
+        self.source = source
         self.dir = dir
         try:
             self.compiled = os.path.join(dir, 'target.so')
             sourcepath = os.path.join(dir, 'source.yb')
             with open(sourcepath, 'w') as sourcefile:
                 sourcefile.write(source)
-            subprocess.run([compiler_path, sourcepath, self.compiled])
+            compiler = subprocess.Popen(
+                [compiler_path, "--output-json", sourcepath, self.compiled], stderr=subprocess.PIPE)
+            self.stderr = compiler.communicate()[1].decode('utf-8')
         except Exception as e:
             shutil.rmtree(self.dir)
             raise e
+
+    def check_errors(self):
+        diagnostics = defaultdict(list)
+        for error in self.stderr.splitlines():
+            error_json = json.loads(error)
+            diagnostics.update(ErrorLocation.from_diagnostics(error_json))
+        for (linenum, line) in enumerate(self.source.splitlines()):
+            linenum = linenum + 1
+            match = error_comment.match(line)
+            if not match:
+                continue
+            expected = ErrorLocation.from_match(match, linenum)
+
+            if expected.line not in diagnostics or len(diagnostics[expected.line]) == 0:
+                raise Exception(
+                    f'Expected error {expected.code} on line {expected.line}, but no error was found'
+                )
+            line_diagnostics = diagnostics[expected.line]
+            found = False
+            for actual in line_diagnostics:
+                if expected.is_contained_in(actual):
+                    found = True
+                    break
+            if not found:
+                if len(line_diagnostics) == 1:
+                    diag = line_diagnostics[0]
+                    if diag.code != expected.code:
+                        raise Exception(
+                            f'Expected error {expected.code} on line {expected.line}, ' \
+                            f'but found error {diag.code} instead'
+                        )
+                    else:
+                        raise Exception(
+                            f'Expected error message "{expected.contained_message}" on ' \
+                            f'line {expected.line}, but found "{diag.contained_message}"'
+                        )
+                raise Exception(
+                    f'Expected error {expected.code} on line {expected.line}, ' \
+                    f'but none of the errors matched'
+                )
+
+    def has_errors(self) -> bool:
+        return len(self.stderr) > 0
 
     def __enter__(self) -> str:
         return self.compiled
@@ -242,7 +343,20 @@ class TestFile:
 
     def run(self) -> int:
         failed_tests = 0
-        with CompiledSource(self.source) as compiled:
+        compiled_source = CompiledSource(self.source)
+        if compiled_source.has_errors():
+            try:
+                compiled_source.check_errors()
+            except Exception as e:
+                print(f'{RED}{e}{CLEAR}')
+                return 1
+            if len(self.cases) > 0:
+                print(f'{RED}Expected no errors, but got some{CLEAR}')
+                return 1
+            else:
+                print(f'{GREEN}Errortest passed{CLEAR}')
+                return 0
+        with compiled_source as compiled:
             lib = yabo.YaboLib(compiled)
             for (test_name, pair) in self.cases.items():
                 parser = lib.parser('test')
@@ -270,6 +384,7 @@ def run_tests(target_dir: str) -> int:
         test = TestFile(open(os.path.join(target_dir, file)).read())
         failed_tests += test.run()
     return failed_tests
+
 
 if not run_compiler_unit_tests():
     sys.exit(1)
