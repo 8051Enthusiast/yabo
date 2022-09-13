@@ -102,9 +102,16 @@ impl Context {
         if diagnostics.is_empty() {
             return false;
         }
+        let output_json = self.db.config().output_json;
         for e in diagnostics {
-            e.eprint(AriadneCache::new(&self.db))
-                .expect("Error while printing errors")
+            if output_json {
+                let json = serde_json::to_string(&e.into_json(&self.db)).unwrap();
+                eprintln!("{}", json);
+            } else {
+                e.into_ariadne()
+                    .eprint(AriadneCache::new(&self.db))
+                    .expect("Error while printing errors")
+            }
         }
         true
     }

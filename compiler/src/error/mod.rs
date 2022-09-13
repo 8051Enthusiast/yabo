@@ -1,6 +1,6 @@
-use std::{collections::HashSet, error::Error};
+pub mod diagnostic;
 
-use crate::source::Span;
+use std::{collections::HashSet, error::Error};
 
 pub type SResult<T> = Result<T, SilencedError>;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -108,4 +108,4 @@ macro_rules! error_type {
     }
 }
 
-pub type Report = ariadne::Report<Span>;
+pub type Report = diagnostic::Diagnostic;

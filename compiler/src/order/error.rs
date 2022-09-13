@@ -1,7 +1,13 @@
-use ariadne::{Label, ReportKind};
 use fxhash::FxHashSet;
 
-use crate::{error::Report, hir, source::Span};
+use crate::{
+    error::{
+        diagnostic::{DiagnosticKind, Label},
+        Report,
+    },
+    hir,
+    source::Span,
+};
 
 use super::{Orders, SubValue};
 
@@ -39,13 +45,16 @@ fn block_serialization_error(db: &(impl Orders + ?Sized), error: &[SubValue]) ->
     } else {
         panic!("found no useful span in cycle error");
     };
-    let mut report = Report::build(ReportKind::Error, file, 0)
-        .with_code(401)
-        .with_message("cycle between the following fields");
+    let mut report = Report::new(
+        DiagnosticKind::Error,
+        file,
+        "cycle between the following fields",
+    )
+    .with_code(401);
     for span in spans {
         report = report.with_label(Label::new(span));
     }
-    Some(report.finish())
+    Some(report)
 }
 
 fn hir_span(db: &(impl Orders + ?Sized), node: &hir::HirNode) -> Option<Span> {

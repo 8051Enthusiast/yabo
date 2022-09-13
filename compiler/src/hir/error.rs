@@ -1,5 +1,7 @@
-use crate::error::Report;
-use ariadne::{Label, ReportKind};
+use crate::error::{
+    diagnostic::{DiagnosticKind, Label},
+    Report,
+};
 
 use super::{convert::HirConversionError, Hirs};
 
@@ -26,14 +28,13 @@ fn conversion_report(error: HirConversionError) -> Option<Report> {
         HirConversionError::Silenced => return None,
     };
     Some(
-        Report::build(ReportKind::Error, duplicate.file, 0)
-            .with_code(201)
-            .with_message("Duplicate field in block")
-            .with_label(
-                Label::new(duplicate).with_message("This field already appeared in this block"),
-            )
-            .with_label(Label::new(first).with_message("the previous appearnce of the field"))
-            .with_note("Each field name may only appear at most once in a block")
-            .finish(),
+        Report::new(
+            DiagnosticKind::Error,
+            duplicate.file,
+            "Duplicate field in block",
+        )
+        .with_code(201)
+        .with_label(Label::new(duplicate).with_message("This field already appeared in this block"))
+        .with_label(Label::new(first).with_message("the previous appearnce of the field")),
     )
 }
