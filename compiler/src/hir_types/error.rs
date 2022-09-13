@@ -1,9 +1,11 @@
-use ariadne::{Label, ReportKind};
 use fxhash::FxHashSet;
 
 use crate::{
     dbformat,
-    error::{Report, SResult},
+    error::{
+        diagnostic::{DiagnosticKind, Label},
+        Report, SResult,
+    },
     hir::HirNodeKind,
     resolve::parserdef_ssc::FunctionSscId,
     source::{IndirectSpan, Span},
@@ -87,9 +89,7 @@ fn make_report(db: &(impl TyHirs + ?Sized), error: SpannedTypeError) -> Option<R
             dbformat!(db, "cannot unify {} and {}", &first, &second),
         ),
     };
-    let mut rbuild = Report::build(ReportKind::Error, spans[0].file, 0)
-        .with_code(code)
-        .with_message(message);
+    let mut rbuild = Report::new(DiagnosticKind::Error, spans[0].file, &message).with_code(code);
     for (i, span) in spans.iter().enumerate() {
         let label = Label::new(*span);
         if i == spans.len() - 1 {
@@ -98,7 +98,7 @@ fn make_report(db: &(impl TyHirs + ?Sized), error: SpannedTypeError) -> Option<R
             rbuild.add_label(label);
         }
     }
-    Some(rbuild.finish())
+    Some(rbuild)
 }
 
 fn spans(db: &(impl TyHirs + ?Sized), span: IndirectSpan) -> SResult<Vec<Span>> {

@@ -36,6 +36,8 @@ enum EmitKind {
 #[derive(Parser)]
 #[clap(author, version, about)]
 struct Args {
+    #[clap(short, long)]
+    output_json: bool,
     #[clap(short, long, arg_enum, default_value = "shared-lib")]
     emit: EmitKind,
     infile: String,
@@ -53,9 +55,14 @@ fn main() {
         // if x86-64 was so great,,,
         target_cpu: String::from("x86-64-v2"),
         target_features: String::from(""),
+        output_json: args.output_json,
     });
     if context.print_diagnostics() {
-        exit_with_message("Errors occured during compilation");
+        if !args.output_json {
+            exit_with_message("Errors occured during compilation");
+        } else {
+            std::process::exit(1);
+        }
     }
     let outfile = &args.outfile;
     match match args.emit {

@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -188,6 +189,10 @@ pub trait Files: salsa::Database {
     fn file_content(&self, id: FileId) -> Arc<String>;
 
     fn path(&self, id: FileId) -> Option<String>;
+
+    fn file_lines(&self, id: FileId) -> Arc<BTreeMap<usize, usize>>;
+
+    fn file_offset_pos(&self, id: FileId, offset: (usize, usize)) -> (LineColumn, LineColumn);
 }
 
 fn file_content(db: &dyn Files, id: FileId) -> Arc<String> {
@@ -198,6 +203,46 @@ fn file_content(db: &dyn Files, id: FileId) -> Arc<String> {
 fn path(db: &dyn Files, id: FileId) -> Option<String> {
     let fd = db.input_file(id);
     fd.path.clone()
+}
+
+fn file_lines(db: &dyn Files, id: FileId) -> Arc<BTreeMap<usize, usize>> {
+    let content = db.file_content(id);
+    let start_ptr = content.as_ptr();
+    let offset = |s: &str| (s.as_ptr() as usize) - (start_ptr as usize);
+    let mut lines = BTreeMap::new();
+    for (i, line) in content.lines().enumerate() {
+        lines.insert(offset(line), i);
+    }
+    Arc::new(lines)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct LineColumn {
+    pub line: usize,
+    pub column: usize,
+}
+
+impl LineColumn {
+    pub fn new(line: usize, column: usize) -> Self {
+        LineColumn { line, column }
+    }
+    pub fn one_based_line(&self) -> usize {
+        self.line + 1
+    }
+    pub fn one_based_column(&self) -> usize {
+        self.column + 1
+    }
+}
+
+// gets the column and line number of the given span
+// lines are inclusive on both ends, columns are inclusive on the start and exclusive on the end
+fn file_offset_pos(db: &dyn Files, id: FileId, span: (usize, usize)) -> (LineColumn, LineColumn) {
+    let lines = db.file_lines(id);
+    let (start_line_offset, start_line) = lines.range(..=span.0).next_back().unwrap();
+    let start = LineColumn::new(*start_line, span.0 - start_line_offset);
+    let (end_line_offset, end_line) = lines.range(..span.1).next_back().unwrap_or((&0, &0));
+    let end = LineColumn::new(*end_line, span.1 - end_line_offset);
+    (start, end)
 }
 
 impl<DB: Files + ?Sized> DatabasedDisplay<DB> for FileId {

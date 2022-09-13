@@ -1,8 +1,9 @@
-use ariadne::{Label, ReportKind};
-
 use crate::{
     dbformat,
-    error::Report,
+    error::{
+        diagnostic::{DiagnosticKind, Label},
+        Report,
+    },
     hir::{self, walk::ChildIter, ExprId},
     source::{Span, SpanIndex},
 };
@@ -30,11 +31,9 @@ fn make_report(db: &(impl Resolves + ?Sized), err: &ResolveError) -> Option<Repo
             let span = hir_span(db, *expr, *span).expect("could not find span for unresolved expr");
             let file = span.file;
             let error_msg = dbformat!(db, "could not resolve name {}", field);
-            let report = Report::build(ReportKind::Error, file, 0)
+            let report = Report::new(DiagnosticKind::Error, file, &error_msg)
                 .with_code(301)
-                .with_message(error_msg)
-                .with_label(Label::new(span).with_message("not found here"))
-                .finish();
+                .with_label(Label::new(span).with_message("not found here"));
             Some(report)
         }
         ResolveError::Silenced => None,

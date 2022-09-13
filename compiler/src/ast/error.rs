@@ -1,6 +1,4 @@
-use ariadne::{Label, ReportKind};
-
-use crate::{error::Report, source::FileId};
+use crate::{error::{Report, diagnostic::{DiagnosticKind, Label}}, source::FileId};
 
 use super::{convert::GenericParseError, Asts};
 
@@ -14,9 +12,7 @@ pub fn errors(db: &(impl Asts + ?Sized)) -> Vec<Report> {
 }
 
 fn parse_error_report(f: GenericParseError) -> Report {
-    Report::build(ReportKind::Error, f.loc.file, 0)
+    Report::new(DiagnosticKind::Error, f.loc.file, "Parse error")
         .with_code(100)
-        .with_message("Parse error")
         .with_label(Label::new(f.loc).with_message("error occured here"))
-        .finish()
 }
