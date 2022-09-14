@@ -1,7 +1,5 @@
 ====[ source code ]====
 export def for[int] *> test = {
-    let a: int = b + 'a',
-    //~^ error[507] expected int, but got char
     let b: int = c,
     //~^ error[301] could not resolve name
 }

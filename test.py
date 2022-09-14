@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from collections import defaultdict
+from dataclasses import dataclass
 import os
 import sys
 import shutil
@@ -8,6 +9,7 @@ import tempfile
 import subprocess
 import json
 from typing import Optional, Tuple
+import multiprocessing
 import yabo
 
 TARGET_RELEASE = 'debug'
@@ -22,17 +24,17 @@ BINARY_NAME = 'yabo'
 # (json of output)
 #
 # this regex will match the title lines to split it
-heading = re.compile('^={3,}\[\s*(.*?)\s*\]\={3,}$', re.MULTILINE)
+heading = re.compile(r'^={3,}\[\s*(.*?)\s*\]\={3,}$', re.MULTILINE)
 
 # this regex matches a input/output title
-case_title = re.compile('^(binary|output)\s+(.+)$')
+case_title = re.compile(r'^(binary|output)\s+(.+)$')
 
 # a comment that contains the error message
 # for example, '//~^ error[301] not found here'
 # represents an error message that should be
 # one line above the line with the comment
 # with error code 301
-error_comment = re.compile('^.*//(~\^*)\s*error\[(\d+)\]\s*(.*)$')
+error_comment = re.compile(r'^.*//(~\^*)\s*error\[(\d+)\]\s*(.*)$')
 
 
 class ErrorLocation:
@@ -59,9 +61,9 @@ class ErrorLocation:
     def from_diagnostics(diagnostic: dict) -> dict[int, list['ErrorLocation']]:
         code: int = diagnostic['code']
         ret = defaultdict(list)
-        for message in diagnostic['labels']:
-            line: int = message['start_line']
-            message: int = f'{diagnostic["message"]}, {message["message"]}'
+        for msg in diagnostic['labels']:
+            line: int = msg['start_line']
+            message: str = f'{diagnostic["message"]}, {msg["message"]}'
             ret[line].append(ErrorLocation(message, line, code))
         return ret
 
@@ -79,17 +81,15 @@ current_script_dir = os.path.dirname(os.path.realpath(__file__))
 def build_compiler_binary():
     compiler_dir = os.path.join(current_script_dir, 'compiler')
     os.chdir(compiler_dir)
-    cargo_metadata = subprocess.Popen(
-        ['cargo', 'metadata', '--format-version=1'], stdout=subprocess.PIPE)
-    cargo_metadata_output = json.loads(
-        cargo_metadata.communicate()[0].decode('utf-8'))
-    cargo_args = ['cargo', 'build']
-    if TARGET_RELEASE == 'release':
-        cargo_args.append('--release')
-    cargo_build = subprocess.run(cargo_args)
-    if cargo_build.returncode != 0:
-        raise Exception('Failed to build compiler')
-    return os.path.join(cargo_metadata_output['target_directory'], TARGET_RELEASE, BINARY_NAME)
+    with subprocess.Popen(
+            ['cargo', 'metadata', '--format-version=1'], stdout=subprocess.PIPE) as cargo_metadata:
+        cargo_metadata_output = json.loads(
+            cargo_metadata.communicate()[0].decode('utf-8'))
+        cargo_args = ['cargo', 'build']
+        if TARGET_RELEASE == 'release':
+            cargo_args.append('--release')
+        subprocess.run(cargo_args, check=True)
+        return os.path.join(cargo_metadata_output['target_directory'], TARGET_RELEASE, BINARY_NAME)
 
 
 def run_compiler_unit_tests():
@@ -98,7 +98,7 @@ def run_compiler_unit_tests():
     cargo_args = ['cargo', 'test']
     if TARGET_RELEASE == 'release':
         cargo_args.append('--release')
-    cargo_test = subprocess.run(cargo_args)
+    cargo_test = subprocess.run(cargo_args, check=False)
     return cargo_test.returncode == 0
 
 
@@ -112,23 +112,26 @@ class CompiledSource:
     stderr: str
 
     def __init__(self, source):
-        dir = tempfile.mkdtemp()
+        tmp_dir = tempfile.mkdtemp()
         self.source = source
-        self.dir = dir
+        self.dir = tmp_dir
         try:
-            self.compiled = os.path.join(dir, 'target.so')
-            sourcepath = os.path.join(dir, 'source.yb')
-            with open(sourcepath, 'w') as sourcefile:
+            self.compiled = os.path.join(tmp_dir, 'target.so')
+            sourcepath = os.path.join(tmp_dir, 'source.yb')
+            with open(sourcepath, 'w', encoding='utf-8') as sourcefile:
                 sourcefile.write(source)
-            compiler = subprocess.Popen(
-                [compiler_path, "--output-json", sourcepath, self.compiled], stderr=subprocess.PIPE)
-            self.stderr = compiler.communicate()[1].decode('utf-8')
+            with subprocess.Popen(
+                [compiler_path, "--output-json", sourcepath, self.compiled],
+                stderr=subprocess.PIPE
+            ) as compiler:
+                self.stderr = compiler.communicate()[1].decode('utf-8')
         except Exception as e:
             shutil.rmtree(self.dir)
             raise e
 
     def check_errors(self):
         diagnostics = defaultdict(list)
+        total = 0
         for error in self.stderr.splitlines():
             error_json = json.loads(error)
             diagnostics.update(ErrorLocation.from_diagnostics(error_json))
@@ -137,11 +140,13 @@ class CompiledSource:
             match = error_comment.match(line)
             if not match:
                 continue
+            total += 1
             expected = ErrorLocation.from_match(match, linenum)
 
             if expected.line not in diagnostics or len(diagnostics[expected.line]) == 0:
                 raise Exception(
-                    f'Expected error {expected.code} on line {expected.line}, but no error was found'
+                    f'Expected error {expected.code} on line {expected.line}, '
+                    'but no error was found'
                 )
             line_diagnostics = diagnostics[expected.line]
             found = False
@@ -154,18 +159,21 @@ class CompiledSource:
                     diag = line_diagnostics[0]
                     if diag.code != expected.code:
                         raise Exception(
-                            f'Expected error {expected.code} on line {expected.line}, ' \
+                            f'Expected error {expected.code} on line {expected.line}, '
                             f'but found error {diag.code} instead'
                         )
                     else:
                         raise Exception(
-                            f'Expected error message "{expected.contained_message}" on ' \
+                            f'Expected error message "{expected.contained_message}" on '
                             f'line {expected.line}, but found "{diag.contained_message}"'
                         )
                 raise Exception(
-                    f'Expected error {expected.code} on line {expected.line}, ' \
-                    f'but none of the errors matched'
+                    f'Expected error {expected.code} on line {expected.line}, '
+                    'but none of the errors matched'
                 )
+        if total == 0:
+            raise Exception(
+                'No error comments found in source but errors were found in stderr')
 
     def has_errors(self) -> bool:
         return len(self.stderr) > 0
@@ -177,13 +185,10 @@ class CompiledSource:
         shutil.rmtree(self.dir)
 
 
+@dataclass
 class InputOutputPair:
     input: bytes
     output: str
-
-    def __init__(self, input, output):
-        self.input = input
-        self.output = output
 
 
 def dictionarified_obj(obj):
@@ -212,16 +217,16 @@ def wrap_maybe_field(inner: str, indent: str, field: Optional[str] = None):
 
 
 def dict_with_indent(d, indent: str, field=None) -> str:
-    if type(d) is str:
+    if isinstance(d, str):
         ret = f'"{d}"'
-    elif type(d) is int:
+    elif isinstance(d, int):
         ret = str(d)
-    elif type(d) is bool:
+    elif isinstance(d, bool):
         if d:
             ret = 'true'
         else:
             ret = 'false'
-    elif type(d) is not dict:
+    elif not isinstance(d, dict):
         ret = str(d)
     else:
         ret = '{\n'
@@ -284,7 +289,7 @@ class DictHead:
 
 
 def diff(left, right) -> Tuple[MatchingHead | DiffHead | DictHead, bool]:
-    if type(left) is dict and type(right) is dict:
+    if isinstance(left, dict) and isinstance(right, dict):
         is_different = False
         ret = {}
         both_fields = set(left.keys()) | set(right.keys())
@@ -303,11 +308,13 @@ def diff(left, right) -> Tuple[MatchingHead | DiffHead | DictHead, bool]:
 
 class TestFile:
     source: str
+    name: str
     cases: dict[str, InputOutputPair]
 
-    def __init__(self, source: str):
+    def __init__(self, source: str, name: str):
         self.cases = {}
         self.source = source
+        self.name = name
         self.parse(source)
 
     # parses a raw file into a TestFile object
@@ -333,8 +340,8 @@ class TestFile:
             binary = bytes.fromhex(hexdump)
             try:
                 output = output_cases.pop(test_name)
-            except KeyError:
-                raise Exception('No output for test case: ' + test_name)
+            except KeyError as e:
+                raise Exception('No output for test case: ' + test_name) from e
             self.cases[test_name] = InputOutputPair(binary, output)
 
         if output_cases:
@@ -342,56 +349,66 @@ class TestFile:
                             ', '.join(output_cases.keys()))
 
     def run(self) -> int:
+        output: str = f'Running test {self.name}\n'
         failed_tests = 0
         compiled_source = CompiledSource(self.source)
         if compiled_source.has_errors():
             try:
                 compiled_source.check_errors()
             except Exception as e:
-                print(f'{RED}{e}{CLEAR}')
+                output += f'{RED} {e}{CLEAR}'
+                print(output)
                 return 1
             if len(self.cases) > 0:
-                print(f'{RED}Expected no errors, but got some{CLEAR}')
+                output += f'{RED} Expected no errors, but got some{CLEAR}'
+                print(output)
                 return 1
-            else:
-                print(f'{GREEN}Errortest passed{CLEAR}')
-                return 0
+            output += f'{GREEN} Errortest passed{CLEAR}'
+            print(output)
+            return 0
         with compiled_source as compiled:
             lib = yabo.YaboLib(compiled)
             for (test_name, pair) in self.cases.items():
-                parser = lib.parser('test')
                 buf = bytearray(pair.input)
-                obj = parser.parse(buf)
+                obj = lib.parser('test').parse(buf)
                 parsed_json = json.loads(pair.output)
                 dict_obj = dictionarified_obj(obj)
                 (diffed, is_different) = diff(parsed_json, dict_obj)
                 if is_different:
-                    print(f'{RED}Test {test_name} failed:{CLEAR}')
-                    print(diffed.diff(), end='')
+                    output += f'{RED} Test {test_name} failed:{CLEAR}\n'
+                    output += diffed.diff()
                     failed_tests += 1
                 else:
-                    print(f'{GREEN}Test {test_name} passed{CLEAR}')
+                    output += f'{GREEN} Test {test_name} passed{CLEAR}\n'
+        print(output, end='')
         return failed_tests
 
 
+def run_test(path: str) -> int:
+    if not path.endswith('.ybtest'):
+        return 0
+    with open(path, 'r', encoding='utf-8') as file:
+        content = file.read()
+        testname = os.path.basename(path).removesuffix('.ybtest')
+        test = TestFile(content, testname)
+        return test.run()
+
 # goes through all files in the target directory ending in .ybtest
+
+
 def run_tests(target_dir: str) -> int:
-    failed_tests = 0
-    for file in os.listdir(target_dir):
-        if not file.endswith('.ybtest'):
-            continue
-        print(f'Running test {file}')
-        test = TestFile(open(os.path.join(target_dir, file)).read())
-        failed_tests += test.run()
-    return failed_tests
+    files = map(lambda x: os.path.join(target_dir, x), os.listdir(target_dir))
+    with multiprocessing.Pool() as pool:
+        results = pool.map(run_test, files)
+        return sum(results)
 
 
 if not run_compiler_unit_tests():
     sys.exit(1)
 target_folder = os.path.join(current_script_dir, 'tests')
-failed_tests = run_tests(target_folder)
-if failed_tests != 0:
-    print(f'{failed_tests} tests failed')
+total_failed = run_tests(target_folder)
+if total_failed != 0:
+    print(f'{total_failed} tests failed')
     sys.exit(1)
 else:
     print('All tests passed')

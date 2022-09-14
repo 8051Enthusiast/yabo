@@ -1,0 +1,3 @@
+====[ source code ]====
+export def for[itn] *> test = ~
+//~^ error[503] unknown definition itn
