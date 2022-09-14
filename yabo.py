@@ -1,7 +1,7 @@
 import ctypes
-import os
-import sys
-from ctypes import addressof, c_char_p, c_int64, c_int8, c_ubyte, c_uint32, c_uint64, c_size_t, c_char, Structure, CFUNCTYPE, POINTER, byref, c_void_p, pointer
+from ctypes import (addressof, c_char_p, c_int64, c_int8, c_ubyte,
+                    c_uint32, c_uint64, c_size_t, c_char, Structure,
+                    CFUNCTYPE, POINTER, byref, c_void_p, pointer)
 
 YABO_INTEGER = 256
 YABO_BIT = 512
@@ -166,12 +166,11 @@ class DynValue(Structure):
 def _check_status(status: int):
     if status == OK:
         return
-    elif status == EOS:
+    if status == EOS:
         raise EOFError
-    elif status == BACKTRACK:
+    if status == BACKTRACK:
         raise BacktrackError
-    else:
-        raise Exception
+    raise Exception
 
 
 class Parser:
@@ -213,7 +212,6 @@ class YaboValue:
     def _typecast(self, typ: int):
         typecast = self._val.get_vtable().typecast_impl
         ret = DynValue()
-        null_ptr = ctypes.c_void_p(0)
         status = typecast(self._val.data_ptr(), typ, byref(ret))
         _check_status(status)
         return YaboValue(ret, self._buf, self._lib)
@@ -276,7 +274,7 @@ class BlockValue(YaboValue):
         return self.__getattr__(field)
 
     def fields(self):
-        return [field for field in self._access_impl.keys() if self.get(field) is not None]
+        return [field for field in self._access_impl if self.get(field) is not None]
 
 
 class ArrayValue(YaboValue):
@@ -295,19 +293,18 @@ def _new_value(val: DynValue, buf: bytearray, lib: YaboLib):
     head = val.get_vtable().head
     if head == YABO_INTEGER:
         return ctypes.cast(val.data_ptr(), POINTER(c_int64)).contents.value
-    elif head == YABO_BIT:
+    if head == YABO_BIT:
         return bool(ctypes.cast(val.data_ptr(), POINTER(c_int8)).contents.value)
-    elif head == YABO_CHAR:
+    if head == YABO_CHAR:
         return chr(ctypes.cast(val.data_ptr(), POINTER(c_uint32)).contents.value)
-    elif head == YABO_LOOP:
+    if head == YABO_LOOP:
         return ArrayValue(val, buf, lib)
-    elif head == YABO_PARSER:
+    if head == YABO_PARSER:
         return ParserValue(val, buf, lib)
-    elif head == YABO_FUN_ARGS:
+    if head == YABO_FUN_ARGS:
         return FunArgValue(val, buf, lib)
-    elif head == YABO_BLOCK:
+    if head == YABO_BLOCK:
         return BlockValue(val, buf, lib)
-    elif head < 0:
+    if head < 0:
         return NominalValue(val, buf, lib)
-    else:
-        raise Exception("Unknown type")
+    raise Exception("Unknown type")
