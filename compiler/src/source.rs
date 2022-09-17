@@ -29,11 +29,7 @@ pub struct Spanned<T: Clone + Hash + Eq> {
 
 pub type IdSpan = Spanned<Identifier>;
 
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct FieldSpan {
-    pub id: FieldName,
-    pub span: Span,
-}
+pub type FieldSpan = Spanned<FieldName>;
 
 impl ariadne::Span for Span {
     type SourceId = FileId;

@@ -578,7 +578,7 @@ impl Into<MonadicExpr<AstValSpanned>> for ValDot {
         Monadic {
             op: OpWithData {
                 data: self.op.span,
-                inner: ValUnOp::Dot(self.right.id),
+                inner: ValUnOp::Dot(self.right.inner),
             },
             inner: Box::new(self.left),
         }
@@ -621,10 +621,14 @@ fn type_var(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<TypeVar> {
 }
 
 fn fieldspan(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<FieldSpan> {
-    idspan(db, fd, c).map(|x| FieldSpan {
-        id: FieldName::Ident(x.inner),
-        span: x.span,
-    })
+    spanned(|db, fd, c| match c.node().kind() {
+        "identifier" => {
+            let id = identifier(db, fd, c)?;
+            Ok(FieldName::Ident(id))
+        }
+        "retvrn" => Ok(FieldName::Return),
+        _ => panic!("unknown field name"),
+    })(db, fd, c)
 }
 
 fn idspan(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<IdSpan> {

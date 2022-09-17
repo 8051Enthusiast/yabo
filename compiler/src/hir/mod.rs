@@ -469,7 +469,7 @@ pub struct Block {
     pub root_context: ContextId,
     pub super_context: Option<ContextId>,
     pub enclosing_expr: ExprId,
-    pub array: Option<ArrayKind>,
+    pub returns: bool,
 }
 
 impl Block {
