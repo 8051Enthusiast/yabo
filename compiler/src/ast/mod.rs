@@ -178,8 +178,8 @@ pub enum Statement {
 impl Statement {
     pub fn field(&self) -> Option<FieldName> {
         match self {
-            Statement::Parse(x) => x.name.as_ref().map(|i| i.id),
-            Statement::Let(x) => Some(x.name.id),
+            Statement::Parse(x) => x.name.as_ref().map(|i| i.inner),
+            Statement::Let(x) => Some(x.name.inner),
         }
     }
     pub fn span(&self) -> Span {

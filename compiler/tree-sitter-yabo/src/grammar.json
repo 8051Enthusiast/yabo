@@ -482,7 +482,7 @@
                   "name": "name",
                   "content": {
                     "type": "SYMBOL",
-                    "name": "identifier"
+                    "name": "_field_name"
                   }
                 },
                 {
@@ -522,7 +522,7 @@
           "name": "name",
           "content": {
             "type": "SYMBOL",
-            "name": "identifier"
+            "name": "_field_name"
           }
         },
         {
@@ -1543,7 +1543,7 @@
       "members": [
         {
           "type": "SYMBOL",
-          "name": "identifier"
+          "name": "_field_name"
         },
         {
           "type": "SYMBOL",
@@ -1592,6 +1592,23 @@
     "type_var": {
       "type": "PATTERN",
       "value": "\\'[A-Za-z_][A-Za-z_0-9]*"
+    },
+    "_field_name": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "identifier"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "retvrn"
+        }
+      ]
+    },
+    "retvrn": {
+      "type": "STRING",
+      "value": "return"
     },
     "identifier": {
       "type": "PATTERN",

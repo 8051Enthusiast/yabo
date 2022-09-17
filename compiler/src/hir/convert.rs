@@ -162,12 +162,14 @@ fn block(
         parent_context: None,
         block_id: id,
     };
-    match &ast.content {
+    let returns = match &ast.content {
         Some(c) => {
-            struct_context(c, ctx, context_id, &parents);
+            let vars = struct_context(c, ctx, context_id, &parents);
+            vars.get(FieldName::Return).is_some()
         }
         None => {
             empty_struct_context(ctx, context_id, &parents, ast.span);
+            false
         }
     };
     let block = Block {
@@ -175,7 +177,7 @@ fn block(
         root_context: context_id,
         super_context,
         enclosing_expr,
-        array: None,
+        returns,
     };
     ctx.insert(id.0, HirNode::Block(block), vec![ast.span]);
 }
@@ -373,7 +375,7 @@ fn let_statement(
         context,
     };
     ctx.insert(id.0, HirNode::Let(st), vec![ast.span, ast.name.span]);
-    VariableSet::singular(ast.name.id, (id.0, ast.name.span))
+    VariableSet::singular(ast.name.inner, (id.0, ast.name.span))
 }
 
 fn parse_statement(
@@ -399,7 +401,7 @@ fn parse_statement(
     ctx.insert(id.0, HirNode::Parse(pt), spans);
     ast.name
         .as_ref()
-        .map(|name| VariableSet::singular(name.id, (id.0, name.span)))
+        .map(|name| VariableSet::singular(name.inner, (id.0, name.span)))
         .unwrap_or_default()
 }
 

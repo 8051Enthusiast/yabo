@@ -24,6 +24,10 @@
             "named": true
           },
           {
+            "type": "retvrn",
+            "named": true
+          },
+          {
             "type": "unary_constraint_expression",
             "named": true
           }
@@ -61,6 +65,10 @@
           },
           {
             "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "retvrn",
             "named": true
           },
           {
@@ -113,6 +121,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "retvrn",
             "named": true
           },
           {
@@ -249,6 +261,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "retvrn",
             "named": true
           },
           {
@@ -417,6 +433,10 @@
             "named": true
           },
           {
+            "type": "retvrn",
+            "named": true
+          },
+          {
             "type": "single",
             "named": true
           },
@@ -466,6 +486,10 @@
           },
           {
             "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "retvrn",
             "named": true
           },
           {
@@ -521,6 +545,10 @@
             "named": true
           },
           {
+            "type": "retvrn",
+            "named": true
+          },
+          {
             "type": "single",
             "named": true
           },
@@ -540,6 +568,10 @@
         "types": [
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "retvrn",
             "named": true
           }
         ]
@@ -599,6 +631,10 @@
           {
             "type": "identifier",
             "named": true
+          },
+          {
+            "type": "retvrn",
+            "named": true
           }
         ]
       },
@@ -640,6 +676,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "retvrn",
             "named": true
           },
           {
@@ -714,6 +754,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "retvrn",
             "named": true
           },
           {
@@ -890,6 +934,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "retvrn",
             "named": true
           },
           {
@@ -1199,6 +1247,10 @@
             "named": true
           },
           {
+            "type": "retvrn",
+            "named": true
+          },
+          {
             "type": "unary_constraint_expression",
             "named": true
           }
@@ -1212,7 +1264,7 @@
     "fields": {},
     "children": {
       "multiple": false,
-      "required": true,
+      "required": false,
       "types": [
         {
           "type": "char_literal",
@@ -1224,6 +1276,10 @@
         },
         {
           "type": "number_literal",
+          "named": true
+        },
+        {
+          "type": "retvrn",
           "named": true
         }
       ]
@@ -1293,6 +1349,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "retvrn",
             "named": true
           },
           {
@@ -1414,6 +1474,10 @@
             "named": true
           },
           {
+            "type": "retvrn",
+            "named": true
+          },
+          {
             "type": "single",
             "named": true
           },
@@ -1451,6 +1515,10 @@
           },
           {
             "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "retvrn",
             "named": true
           }
         ]
@@ -1628,6 +1696,10 @@
   {
     "type": "or",
     "named": false
+  },
+  {
+    "type": "retvrn",
+    "named": true
   },
   {
     "type": "try",

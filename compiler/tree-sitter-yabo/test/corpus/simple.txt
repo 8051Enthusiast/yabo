@@ -50,11 +50,11 @@ def for[u8] *> choice = {
       	    parser: (unary_expression
              right: (identifier)))
       	  (parse_statement
-      	    name: (identifier)
+      	    name: (retvrn)
       	    parser: (identifier)))
 	      right: (parser_sequence
           (parse_statement
-      	    name: (identifier)
+      	    name: (retvrn)
       	    parser: (identifier)))))))
 
 =============
@@ -80,7 +80,7 @@ def for[u8] *> seven = {
   	      name: (identifier)
         	parser: (identifier))
         (let_statement
-        	name: (identifier)
+        	name: (retvrn)
         	ty: (parserdef_ref
             name: (identifier))
         	expr: (number_literal))))))
