@@ -65,7 +65,12 @@ pub fn parser_returns_ssc(
 
     let resolver = ReturnResolver::new(db);
     let bump = Bump::new();
-    let mut ctx = TypingContext::new(db, resolver, &bump);
+    let placeholder_id = defs[0].id;
+    let loc = match TypingLocation::at_id(db, placeholder_id.0) {
+        Ok(loc) => loc,
+        Err(e) => return vec![Err(e.into())],
+    };
+    let mut ctx = TypingContext::new(db, resolver, loc, &bump);
 
     for def in def_ids.iter() {
         // in this loop we do not directly the inference variables we are creating yet
@@ -78,13 +83,8 @@ pub fn parser_returns_ssc(
         .map(|def| -> Result<hir::ParserDef, SpannedTypeError> {
             // in this separate loop we do the actual type inference
             let expr = db.resolve_expr(def.to)?;
-            let mut context = TypingLocation {
-                vars: TypeVarCollection::at_id(db, def.id)?,
-                loc: db.hir_parent_module(def.id.0)?.0,
-                pd: def.id,
-            };
             let ty = ctx
-                .val_expression_type(&mut context, &expr, def.to)?
+                .val_expression_type(&expr, def.to)?
                 .0
                 .root_data()
                 .0;

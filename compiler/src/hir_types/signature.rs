@@ -6,26 +6,29 @@ pub fn parser_args(db: &dyn TyHirs, id: hir::ParserDefId) -> SResult<Signature> 
     parser_args_error(db, id).silence()
 }
 
-pub fn parser_args_error(db: &dyn TyHirs, id: hir::ParserDefId) -> Result<Signature, SpannedTypeError> {
+pub fn parser_args_error(
+    db: &dyn TyHirs,
+    id: hir::ParserDefId,
+) -> Result<Signature, SpannedTypeError> {
     let pd = id.lookup(db)?;
-    let mut context = TypingLocation {
+    let loc = TypingLocation {
         vars: TypeVarCollection::new_empty(),
         loc: db.hir_parent_module(id.0)?.0,
         pd: id,
     };
     let arg_resolver = ArgResolver::new(db);
     let bump = Bump::new();
-    let mut tcx = TypingContext::new(db, arg_resolver, &bump);
+    let mut tcx = TypingContext::new(db, arg_resolver, loc, &bump);
     let from_expr = pd.from.lookup(db)?;
     let args = Arc::new(vec![]);
-    let from_infty = tcx.resolve_type_expr(&mut context, &from_expr.expr, pd.from)?;
+    let from_infty = tcx.resolve_type_expr(&from_expr.expr, pd.from)?;
     // i don't think an error can happen here, but i'm not sure
     let (from_tys, count) = tcx
         .infctx
-        .to_types_with_vars(&[from_infty][..], context.vars.defs.len() as u32, id.0)
+        .to_types_with_vars(&[from_infty][..], tcx.loc.vars.defs.len() as u32, id.0)
         .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(pd.from.0)))?;
-    context.vars.fill_anon_vars(db, count);
-    let ty_args = context.vars.var_types(db, id);
+    tcx.loc.vars.fill_anon_vars(db, count);
+    let ty_args = tcx.loc.vars.var_types(db, id);
     let thunk = db.intern_type(Type::Nominal(NominalTypeHead {
         kind: NominalKind::Def,
         def: id.0,
@@ -34,7 +37,7 @@ pub fn parser_args_error(db: &dyn TyHirs, id: hir::ParserDefId) -> Result<Signat
         ty_args: Arc::new(ty_args),
     }));
     Ok(Signature {
-        ty_args: Arc::new(context.vars.defs),
+        ty_args: Arc::new(tcx.loc.vars.defs),
         from: from_tys.last().copied(),
         args,
         thunk,

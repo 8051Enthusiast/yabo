@@ -111,16 +111,16 @@ pub struct ExpressionTypeConstraints<'a> {
 }
 
 impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
-    fn new(db: &'a dyn TyHirs, tr: TR, bump: &'intern Bump) -> Self {
+    fn new(db: &'a dyn TyHirs, tr: TR, loc: TypingLocation, bump: &'intern Bump) -> Self {
         Self {
             db,
             infctx: InferenceContext::new(tr, bump),
+            loc,
         }
     }
 
     pub fn resolve_type_expr(
         &mut self,
-        context: &mut TypingLocation,
         expr: &Expression<hir::HirTypeSpanned>,
         id: hir::TExprId,
     ) -> Result<InfTypeId<'intern>, SpannedTypeError> {
@@ -134,15 +134,13 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                     unimplemented!()
                 }
                 TypeBinOp::ParseArg => {
-                    let from = self.resolve_type_expr(context, left, id)?;
+                    let from = self.resolve_type_expr(left, id)?;
                     let inner = match &right.0 {
                         ExpressionHead::Niladic(OpWithData {
                             inner: hir::TypeAtom::ParserDef(pd),
                             ..
-                        }) => {
-                            self.resolve_type_expr_parserdef_ref(context, pd, Some(from), span, id)?
-                        }
-                        _ => self.resolve_type_expr(context, right, id)?,
+                        }) => self.resolve_type_expr_parserdef_ref(pd, Some(from), span, id)?,
+                        _ => self.resolve_type_expr(right, id)?,
                     };
                     self.infctx.intern_infty(InferenceType::ParserArg {
                         result: inner,
@@ -151,9 +149,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                 }
             },
             ExpressionHead::Monadic(Monadic { op, inner }) => match &op.inner {
-                TypeUnOp::Ref | TypeUnOp::Wiggle(_) => {
-                    self.resolve_type_expr(context, inner, id)?
-                }
+                TypeUnOp::Ref | TypeUnOp::Wiggle(_) => self.resolve_type_expr(inner, id)?,
             },
             ExpressionHead::Niladic(op) => match &op.inner {
                 hir::TypeAtom::Primitive(hir::TypePrimitive::Int) => self.infctx.int(),
@@ -161,20 +157,21 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                 hir::TypeAtom::Primitive(hir::TypePrimitive::Char) => self.infctx.char(),
                 hir::TypeAtom::Primitive(hir::TypePrimitive::Mem) => todo!(),
                 hir::TypeAtom::ParserDef(pd) => {
-                    return self.resolve_type_expr_parserdef_ref(context, pd, None, span, id)
+                    return self.resolve_type_expr_parserdef_ref(pd, None, span, id)
                 }
                 hir::TypeAtom::Array(a) => {
-                    let inner = self.resolve_type_expr(context, &a.expr, id)?;
+                    let inner = self.resolve_type_expr(&a.expr, id)?;
                     self.infctx
                         .intern_infty(InferenceType::Loop(a.direction, inner))
                 }
                 hir::TypeAtom::TypeVar(v) => {
-                    let var_idx = context
+                    let var_idx = self
+                        .loc
                         .vars
                         .get_var(*v)
                         .ok_or(SpannedTypeError::new(TypeError::UnknownTypeVar(*v), span))?;
                     self.infctx
-                        .intern_infty(InferenceType::TypeVarRef(context.pd.0, 0, var_idx))
+                        .intern_infty(InferenceType::TypeVarRef(self.loc.pd.0, 0, var_idx))
                 }
             },
         };
@@ -182,7 +179,6 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
     }
     fn resolve_type_expr_parserdef_ref(
         &mut self,
-        context: &mut TypingLocation,
         pd: &ParserDefRef,
         parserarg_from: Option<InfTypeId<'intern>>,
         span: IndirectSpan,
@@ -191,17 +187,17 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         let mut parse_arg = pd
             .from
             .as_ref()
-            .map(|x| self.resolve_type_expr(context, x, id))
+            .map(|x| self.resolve_type_expr(x, id))
             .transpose()?
             .or(parserarg_from);
         let mut fun_args = pd
             .args
             .iter()
-            .map(|x| self.resolve_type_expr(context, x, id))
+            .map(|x| self.resolve_type_expr(x, id))
             .collect::<Result<Vec<_>, _>>()?;
         let def =
             self.db
-                .parserdef_ref(context.loc, pd.name.atom)?
+                .parserdef_ref(self.loc.loc, pd.name.atom)?
                 .ok_or(SpannedTypeError::new(
                     TypeError::UnknownParserdefName(pd.name.atom),
                     span,
@@ -253,7 +249,6 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
     }
     pub fn val_expression_type(
         &mut self,
-        context: &mut TypingLocation,
         expr: &resolve::ResolvedExpr,
         id: hir::ExprId,
     ) -> Result<InfTypedExpression<'intern>, SpannedTypeError> {
@@ -307,7 +302,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         ResolvedAtom::Single => self.infctx.single(),
                         ResolvedAtom::Block(b) => {
                             let pd = self.db.hir_parent_parserdef(b.0)?;
-                            let ty_vars = (0..context.vars.defs.len() as u32)
+                            let ty_vars = (0..self.loc.vars.defs.len() as u32)
                                 .map(|i| {
                                     self.infctx
                                         .intern_infty(InferenceType::TypeVarRef(pd.0, 0, i))
@@ -347,6 +342,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
 pub struct TypingContext<'a, 'intern, TR: TypeResolver<'intern>> {
     db: &'a dyn TyHirs,
     infctx: InferenceContext<'intern, TR>,
+    loc: TypingLocation,
 }
 
 #[derive(Clone, Debug)]

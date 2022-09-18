@@ -22,7 +22,8 @@ pub fn parser_full_types(
 ) -> Result<Arc<ParserFullTypes>, SpannedTypeError> {
     let resolver = FullResolver::new(db, id.0)?;
     let bump = Bump::new();
-    let mut ctx = TypingContext::new(db, resolver, &bump);
+    let loc = TypingLocation::at_id(db, id.0)?;
+    let mut ctx = TypingContext::new(db, resolver, loc, &bump);
     ctx.initialize_vars()?;
     ctx.type_parserdef(id)?;
     let mut types = BTreeMap::new();
@@ -59,7 +60,7 @@ pub fn parser_expr_at(db: &dyn TyHirs, id: hir::ExprId) -> SResult<TypedExpressi
 
 impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
     fn set_current_loc(&mut self, loc: DefId) {
-        self.infctx.tr.loc.loc = loc;
+        self.loc.loc = loc;
     }
     fn infty_at(&mut self, id: DefId) -> InfTypeId<'intern> {
         self.infctx.tr.inftypes[&id]
@@ -70,8 +71,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
     ) -> Result<ExpressionTypeConstraints<'intern>, SpannedTypeError> {
         let ty = let_statement.ty;
         let ty_expr = ty.lookup(self.db)?.expr;
-        let mut typeloc = self.infctx.tr.loc.clone();
-        let infty = self.resolve_type_expr(&mut typeloc, &ty_expr, ty)?;
+        let infty = self.resolve_type_expr(&ty_expr, ty)?;
         Ok(ExpressionTypeConstraints {
             root_type: Some(infty),
             from_type: None,
@@ -81,10 +81,10 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
         self.infctx
             .tr
             .inftypes
-            .insert(self.infctx.tr.loc.loc, infty);
+            .insert(self.loc.loc, infty);
     }
     fn initialize_vars(&mut self) -> Result<(), SpannedTypeError> {
-        let pd = self.infctx.tr.loc.pd;
+        let pd = self.loc.pd;
         for child in ChildIter::new(pd.0, self.db) {
             let ty = match child {
                 hir::HirNode::Let(l) => {
@@ -110,7 +110,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
         self.constrain_public_types()
     }
     fn constrain_public_types(&mut self) -> Result<(), SpannedTypeError> {
-        let pd = self.infctx.tr.loc.pd;
+        let pd = self.loc.pd;
         for child_node in ChildIter::new(pd.0, self.db) {
             let span = IndirectSpan::default_span(child_node.id());
             let block = match child_node {
@@ -151,10 +151,10 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
         ret
     }
     fn with_loc<T>(&mut self, loc: DefId, f: impl FnOnce(&mut Self) -> T) -> T {
-        let old_loc = self.infctx.tr.loc.loc;
-        self.infctx.tr.loc.loc = loc;
+        let old_loc = self.loc.loc;
+        self.loc.loc = loc;
         let ret = f(self);
-        self.infctx.tr.loc.loc = old_loc;
+        self.loc.loc = old_loc;
         ret
     }
     fn type_parserdef(&mut self, pd: hir::ParserDefId) -> Result<(), SpannedTypeError> {
@@ -167,7 +167,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
         let ret = self.type_expr(&expr)?;
         let previous_ret = self
             .infctx
-            .from_type(self.db.parser_returns(self.infctx.tr.loc.pd)?.deref);
+            .from_type(self.db.parser_returns(self.loc.pd)?.deref);
         let return_spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(pd.0));
         self.infctx
             .constrain(ret, previous_ret)
@@ -176,9 +176,8 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
     }
     fn type_expr(&mut self, expr: &ValExpression) -> Result<InfTypeId<'intern>, SpannedTypeError> {
         let spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(expr.id.0));
-        let mut typeloc = self.infctx.tr.loc.clone();
         let resolved_expr = self.db.resolve_expr(expr.id)?;
-        let inf_expression = self.val_expression_type(&mut typeloc, &resolved_expr, expr.id)?;
+        let inf_expression = self.val_expression_type(&resolved_expr, expr.id)?;
         let root = inf_expression.0.root_data().0;
         let ret = if let Some(ambient) = self.ambient_type() {
             self.infctx.parser_apply(root, ambient).map_err(spanned)?
@@ -270,18 +269,20 @@ pub struct FullResolver<'a, 'intern> {
     db: &'a dyn TyHirs,
     inftypes: FxHashMap<DefId, InfTypeId<'intern>>,
     inf_expressions: FxHashMap<hir::ExprId, InfTypedExpression<'intern>>,
-    loc: TypingLocation,
     current_ambient: Option<InfTypeId<'intern>>,
+    name: String,
 }
 
 impl<'a, 'intern> FullResolver<'a, 'intern> {
     pub fn new(db: &'a dyn TyHirs, loc: DefId) -> SResult<Self> {
+        let pd = db.hir_parent_parserdef(loc)?;
+        let name = dbformat!(db, "full at {}", &pd.0);
         Ok(Self {
             db,
             inftypes: Default::default(),
             inf_expressions: Default::default(),
-            loc: TypingLocation::at_id(db, loc)?,
             current_ambient: None,
+            name,
         })
     }
 }
@@ -335,7 +336,7 @@ impl<'a, 'intern> TypeResolver<'intern> for FullResolver<'a, 'intern> {
     }
 
     fn name(&self) -> String {
-        dbformat!(self.db, "full at {}", &self.loc.pd.0)
+        self.name.clone()
     }
 
     fn parserdef(&self, pd: DefId) -> Result<EitherType<'intern>, TypeError> {
