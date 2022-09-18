@@ -17,7 +17,6 @@ fn public_expr_type_impl(
     let spanned = |x| SpannedTypeError::new(x, IndirectSpan::default_span(loc.0));
     let bump = Bump::new();
     let mut ctx = PublicResolver::new_typing_context_and_loc(db, loc.0, &bump)?;
-    let mut typeloc = ctx.infctx.tr.tloc.clone();
     let parent = loc.0.parent(db);
     let surrounding_types = match db.hir_node(parent)? {
         hir::HirNode::ParserDef(pd) => ctx.parserdef_types(&pd)?,
@@ -27,7 +26,7 @@ fn public_expr_type_impl(
         _ => panic!("expected parse statement, let statement or parser def"),
     };
     let resolved_expr = db.resolve_expr(loc)?;
-    let expr = ctx.val_expression_type(&mut typeloc, &resolved_expr, loc)?;
+    let expr = ctx.val_expression_type(&resolved_expr, loc)?;
     let root = expr.0.root_data().0;
     let into_ret = if let Some(ty) = surrounding_types.from_type {
         ctx.infctx.parser_apply(root, ty).map_err(spanned)?
@@ -126,8 +125,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern, PublicResolver<'a>> {
     ) -> Result<ExpressionTypeConstraints<'intern>, SpannedTypeError> {
         let ty = let_statement.ty;
         let ty_expr = ty.lookup(self.db)?.expr;
-        let mut typeloc = self.infctx.tr.tloc.clone();
-        let infty = self.resolve_type_expr(&mut typeloc, &ty_expr, ty)?;
+        let infty = self.resolve_type_expr(&ty_expr, ty)?;
         Ok(ExpressionTypeConstraints {
             root_type: Some(infty),
             from_type: None,
@@ -138,8 +136,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern, PublicResolver<'a>> {
         parserdef: &hir::ParserDef,
     ) -> Result<ExpressionTypeConstraints<'intern>, SpannedTypeError> {
         let ty_expr = parserdef.from.lookup(self.db)?.expr;
-        let mut typeloc = self.infctx.tr.tloc.clone();
-        let from = self.resolve_type_expr(&mut typeloc, &ty_expr, parserdef.from)?;
+        let from = self.resolve_type_expr(&ty_expr, parserdef.from)?;
         Ok(ExpressionTypeConstraints {
             root_type: None,
             from_type: Some(from),
@@ -149,12 +146,12 @@ impl<'a, 'intern> TypingContext<'a, 'intern, PublicResolver<'a>> {
 
 pub struct PublicResolver<'a> {
     db: &'a dyn TyHirs,
-    tloc: TypingLocation,
+    name: String,
 }
 
 impl<'a> PublicResolver<'a> {
-    pub fn new(db: &'a dyn TyHirs, tloc: TypingLocation) -> Self {
-        Self { db, tloc }
+    pub fn new(db: &'a dyn TyHirs, name: String) -> Self {
+        Self { db, name }
     }
     pub fn new_typing_context_and_loc<'intern>(
         db: &'a dyn TyHirs,
@@ -164,8 +161,9 @@ impl<'a> PublicResolver<'a> {
         let pd = db.hir_parent_parserdef(loc)?;
         let vars = TypeVarCollection::at_id(db, pd)?;
         let typeloc = TypingLocation { vars, loc, pd };
-        let public_resolver = Self::new(db, typeloc);
-        Ok(TypingContext::new(db, public_resolver, &bump))
+        let name = dbformat!(db, "public at {}", &pd.0);
+        let public_resolver = Self::new(db, name);
+        Ok(TypingContext::new(db, public_resolver, typeloc, &bump))
     }
 }
 
@@ -201,7 +199,7 @@ impl<'a, 'intern> TypeResolver<'intern> for PublicResolver<'a> {
     }
 
     fn name(&self) -> String {
-        dbformat!(self.db, "public at {}", &self.tloc.pd.0)
+        self.name.clone()
     }
 
     fn parserdef(&self, pd: DefId) -> Result<EitherType<'intern>, TypeError> {
