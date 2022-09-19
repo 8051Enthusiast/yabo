@@ -447,8 +447,8 @@ impl<'a> HirConversionCtx<'a> {
 
     fn insert(&self, id: DefId, node: HirNode, span: Vec<Span>) {
         let mut borrow = self.collection.borrow_mut();
-        assert!(borrow.map.insert(id, node).is_none());
-        assert!(borrow.spans.insert(id, span).is_none());
+        borrow.map.insert(id, node);
+        borrow.spans.insert(id, span);
     }
 
     fn add_errors(&self, errors: impl IntoIterator<Item = HirConversionError>) {
