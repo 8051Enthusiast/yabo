@@ -99,7 +99,7 @@ int print_fun_args(DynValue val, int indent, FILE *out)
 
 int print_block(DynValue val, int indent, FILE *out)
 {
-	BlockVTable *vtable = (BlockVTable *)dyn_vtable(val);
+	struct BlockVTable *vtable = (struct BlockVTable *)dyn_vtable(val);
 	char **field_desc = vtable->fields->fields;
 	char **field_end = field_desc + vtable->fields->number_fields;
 	int status;
@@ -150,7 +150,7 @@ int print_recursive(DynValue val, int indent, FILE *out)
 	{
 		return fputs("null", out);
 	}
-	VTableHeader *vtable = dyn_vtable(val);
+	struct VTableHeader *vtable = dyn_vtable(val);
 	int64_t head = vtable->head;
 	if (head < 0)
 	{
@@ -234,7 +234,7 @@ int main(int argc, char **argv)
 		perror("could not open library");
 		exit(1);
 	}
-	ParserArgImpl *parser = (ParserArgImpl *)dlsym(lib, argv[2]);
+	struct ParserArgImpl *parser = (struct ParserArgImpl *)dlsym(lib, argv[2]);
 	if (!parser)
 	{
 		perror("could not find parser");
