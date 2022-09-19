@@ -85,7 +85,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
         for child_node in ChildIter::new(pd.0, self.db) {
             let span = IndirectSpan::default_span(child_node.id());
             let block = match child_node {
-                hir::HirNode::Block(block) => block,
+                hir::HirNode::Block(block) if !block.returns => block,
                 _ => continue,
             };
             let root_ctx = block.root_context.lookup(self.db)?;
