@@ -1,5 +1,3 @@
-use std::num::NonZeroU32;
-
 use crate::{
     dbformat,
     error::{SResult, SilencedError},
@@ -7,12 +5,6 @@ use crate::{
 };
 
 use super::{signature::get_parserdef, *};
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum IndirectionLevel {
-    Opaque,
-    Indirect(NonZeroU32),
-}
 
 pub fn deref_type(db: &dyn TyHirs, ty: TypeId) -> SResult<Option<TypeId>> {
     match db.lookup_intern_type(ty) {
@@ -77,8 +69,6 @@ pub fn parser_returns_ssc(
         .into_iter()
         .map(|def| {
             // in this loop we do not directly the inference variables we are creating yet
-            let deref = ctx.infctx.var();
-            vars.insert(def.id.0, deref);
             ctx.initialize_vars_at(def.id.0, &mut vars).and(Ok(def))
         })
         .collect();
@@ -155,8 +145,10 @@ impl<'a> TypeResolver<'a> for ReturnResolver<'a> {
         get_signature(self.db, ty)
     }
 
-    fn lookup(&self, _val: DefId) -> Result<EitherType<'a>, TypeError> {
-        Err(SilencedError.into())
+    fn lookup(&self, val: DefId) -> Result<EitherType<'a>, TypeError> {
+        self.return_infs
+            .get(&val)
+            .map_or_else(|| Err(SilencedError.into()), |inf| Ok((*inf).into()))
     }
 
     fn name(&self) -> String {
@@ -213,5 +205,20 @@ def for[int] *> single = ~
             "<anonymous block for['1] &> file[_].nil &> file[_].expr1.1.0>"
         );
         assert_eq!(return_type("single"), "int");
+    }
+    #[test]
+    fn block_with_return() {
+        let ctx = Context::mock(
+            r#"
+def for[int] *> u16l = {
+    low: ~,
+    high: ~,
+    let return: int = low + high * 256,
+}
+            "#,
+        );
+        let parser = ctx.parser("u16l");
+        let ret = ctx.db.parser_returns(parser).unwrap().deref;
+        assert_eq!(ret.to_db_string(&ctx.db), "int");
     }
 }
