@@ -31,6 +31,7 @@ fn public_expr_type_impl(
     let mut vars = FxHashMap::default();
     ctx.initialize_vars_at(loc.0, &mut vars)?;
     ctx.inftypes = Rc::new(vars);
+    ctx.infctx.tr.inftys = ctx.inftypes.clone();
     let ret = ret.unwrap_or_else(|| ctx.infctx.var());
     ctx.set_ambient_type(ambient);
     let val_expr = loc.lookup(db)?;
@@ -105,7 +106,7 @@ fn ambient_type_impl(db: &dyn TyHirs, loc: hir::ParseId) -> Result<TypeId, TypeE
     }
 }
 
-impl<'a, 'intern> TypingContext<'a, 'intern, PublicResolver<'a>> {
+impl<'a, 'intern> TypingContext<'a, 'intern, PublicResolver<'a, 'intern>> {
     pub fn parse_statement_types(
         &mut self,
         parse: &ParseStatement,
@@ -124,16 +125,21 @@ impl<'a, 'intern> TypingContext<'a, 'intern, PublicResolver<'a>> {
     }
 }
 
-pub struct PublicResolver<'a> {
+pub struct PublicResolver<'a, 'intern> {
     db: &'a dyn TyHirs,
+    inftys: Rc<FxHashMap<DefId, InfTypeId<'intern>>>,
     name: String,
 }
 
-impl<'a> PublicResolver<'a> {
+impl<'a, 'intern> PublicResolver<'a, 'intern> {
     pub fn new(db: &'a dyn TyHirs, name: String) -> Self {
-        Self { db, name }
+        Self {
+            db,
+            name,
+            inftys: Default::default(),
+        }
     }
-    pub fn new_typing_context_and_loc<'intern>(
+    pub fn new_typing_context_and_loc(
         db: &'a dyn TyHirs,
         loc: DefId,
         bump: &'intern Bump,
@@ -153,7 +159,7 @@ impl<'a> PublicResolver<'a> {
     }
 }
 
-impl<'a, 'intern> TypeResolver<'intern> for PublicResolver<'a> {
+impl<'a, 'intern> TypeResolver<'intern> for PublicResolver<'a, 'intern> {
     fn field_type(
         &self,
         _ty: &NominalInfHead<'intern>,
@@ -174,8 +180,10 @@ impl<'a, 'intern> TypeResolver<'intern> for PublicResolver<'a> {
         get_signature(self.db, ty)
     }
 
-    fn lookup(&self, _val: DefId) -> Result<EitherType<'intern>, TypeError> {
-        Err(SilencedError.into())
+    fn lookup(&self, val: DefId) -> Result<EitherType<'intern>, TypeError> {
+        self.inftys
+            .get(&val)
+            .map_or_else(|| Err(SilencedError.into()), |inf| Ok((*inf).into()))
     }
 
     type DB = dyn TyHirs + 'a;

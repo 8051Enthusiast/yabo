@@ -33,7 +33,6 @@ use crate::hir::{self, Hirs};
 
 use full::{parser_expr_at, parser_full_types, parser_type_at, ParserFullTypes};
 use public::{ambient_type, public_expr_type, public_type};
-pub use returns::IndirectionLevel;
 use returns::{deref_type, least_deref_type, parser_returns, parser_returns_ssc, ParserDefType};
 use signature::{get_signature, parser_args, parser_args_error};
 
