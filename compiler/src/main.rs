@@ -66,8 +66,8 @@ fn main() {
     }
     let outfile = &args.outfile;
     match match args.emit {
-        EmitKind::Hir => context.write_mir(outfile).map_err(|x| x.to_string()),
-        EmitKind::Mir => context.write_hir(outfile).map_err(|x| x.to_string()),
+        EmitKind::Hir => context.write_hir(outfile).map_err(|x| x.to_string()),
+        EmitKind::Mir => context.write_mir(outfile).map_err(|x| x.to_string()),
         EmitKind::Llvm => context.write_llvm(outfile),
         EmitKind::Object => context.write_object(outfile),
         EmitKind::SharedLib => context.write_shared_lib(outfile),
