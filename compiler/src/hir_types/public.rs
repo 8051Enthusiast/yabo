@@ -18,28 +18,19 @@ fn public_expr_type_impl(
     let bump = Bump::new();
     let mut ctx = PublicResolver::new_typing_context_and_loc(db, loc.0, &bump)?;
     let parent = loc.0.parent(db);
-    let surrounding_types = match db.hir_node(parent)? {
-        hir::HirNode::ParserDef(pd) => ctx.parserdef_types(&pd)?,
-        hir::HirNode::Let(l) => ctx.let_statement_types(&l)?,
-        hir::HirNode::Parse(p) => ctx.parse_statement_types(&p)?,
-        hir::HirNode::Array(_) => unimplemented!(),
+    let (ambient, ret) = match db.hir_node(parent)? {
+        hir::HirNode::ParserDef(pd) => (ctx.parserdef_types(&pd)?, None),
+        hir::HirNode::Let(l) => (None, ctx.let_statement_types(&l)?),
+        hir::HirNode::Parse(p) => (ctx.parse_statement_types(&p)?, None),
         _ => panic!("expected parse statement, let statement or parser def"),
     };
-    let resolved_expr = db.resolve_expr(loc)?;
-    let expr = ctx.val_expression_type(&resolved_expr, loc)?;
-    let root = expr.0.root_data().0;
-    let into_ret = if let Some(ty) = surrounding_types.from_type {
-        ctx.infctx.parser_apply(root, ty).map_err(spanned)?
-    } else {
-        root
-    };
-    let ret = if let Some(real_ret) = surrounding_types.root_type {
-        ctx.infctx.constrain(into_ret, real_ret).map_err(spanned)?;
-        real_ret
-    } else {
-        into_ret
-    };
+    let ret = ret.unwrap_or_else(|| ctx.infctx.var());
+    ctx.set_ambient_type(ambient);
+    let val_expr = loc.lookup(db)?;
+    let expr_ret = ctx.type_expr(&val_expr)?;
+    ctx.infctx.constrain(expr_ret, ret).map_err(spanned)?;
     let ret = ctx.inftype_to_concrete_type(ret).map_err(spanned)?;
+    let expr = ctx.inf_expressions[&loc].clone();
     Ok((ctx.expr_to_concrete_type(&expr, loc)?, ret))
 }
 
@@ -50,7 +41,7 @@ pub fn public_type(db: &dyn TyHirs, loc: DefId) -> SResult<TypeId> {
 fn public_type_impl(db: &dyn TyHirs, loc: DefId) -> Result<TypeId, TypeError> {
     let node = db.hir_node(loc)?;
     let ret = match node {
-        hir::HirNode::Let(l) => public_expr_type(db, l.expr)?.1,
+        hir::HirNode::Let(l) => db.public_expr_type(l.expr)?.1,
         hir::HirNode::Parse(p) => db.public_expr_type(p.expr)?.1,
         hir::HirNode::ChoiceIndirection(ind) => {
             let bump = Bump::new();
@@ -111,36 +102,18 @@ impl<'a, 'intern> TypingContext<'a, 'intern, PublicResolver<'a>> {
     pub fn parse_statement_types(
         &mut self,
         parse: &ParseStatement,
-    ) -> Result<ExpressionTypeConstraints<'intern>, SpannedTypeError> {
+    ) -> Result<Option<InfTypeId<'intern>>, SpannedTypeError> {
         let from = self.db.ambient_type(parse.id)?;
         let infty = self.infctx.from_type(from);
-        Ok(ExpressionTypeConstraints {
-            from_type: Some(infty),
-            root_type: None,
-        })
-    }
-    pub fn let_statement_types(
-        &mut self,
-        let_statement: &hir::LetStatement,
-    ) -> Result<ExpressionTypeConstraints<'intern>, SpannedTypeError> {
-        let ty = let_statement.ty;
-        let ty_expr = ty.lookup(self.db)?.expr;
-        let infty = self.resolve_type_expr(&ty_expr, ty)?;
-        Ok(ExpressionTypeConstraints {
-            root_type: Some(infty),
-            from_type: None,
-        })
+        Ok(Some(infty))
     }
     pub fn parserdef_types(
         &mut self,
         parserdef: &hir::ParserDef,
-    ) -> Result<ExpressionTypeConstraints<'intern>, SpannedTypeError> {
+    ) -> Result<Option<InfTypeId<'intern>>, SpannedTypeError> {
         let ty_expr = parserdef.from.lookup(self.db)?.expr;
         let from = self.resolve_type_expr(&ty_expr, parserdef.from)?;
-        Ok(ExpressionTypeConstraints {
-            root_type: None,
-            from_type: Some(from),
-        })
+        Ok(Some(from))
     }
 }
 
@@ -161,9 +134,15 @@ impl<'a> PublicResolver<'a> {
         let pd = db.hir_parent_parserdef(loc)?;
         let vars = TypeVarCollection::at_id(db, pd)?;
         let typeloc = TypingLocation { vars, loc, pd };
-        let name = dbformat!(db, "public at {}", &pd.0);
+        let name = dbformat!(db, "public at {}", &loc);
         let public_resolver = Self::new(db, name);
-        Ok(TypingContext::new(db, public_resolver, typeloc, &bump))
+        Ok(TypingContext::new(
+            db,
+            public_resolver,
+            typeloc,
+            &bump,
+            false,
+        ))
     }
 }
 

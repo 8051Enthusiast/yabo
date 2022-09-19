@@ -1,8 +1,9 @@
+use std::rc::Rc;
+
 use crate::{
     dbformat, dbpanic,
     error::{SResult, Silencable, SilencedError},
-    expr::{ExpressionHead, OpWithData},
-    hir::{walk::ChildIter, Block, ChoiceIndirection, StructChoice, StructCtx, ValExpression},
+    hir::walk::ChildIter,
     interner::PathComponent,
     types::inference::{InfTypeId, NominalInfHead, TypeResolver},
 };
@@ -23,7 +24,7 @@ pub fn parser_full_types(
     let resolver = FullResolver::new(db, id.0)?;
     let bump = Bump::new();
     let loc = TypingLocation::at_id(db, id.0)?;
-    let mut ctx = TypingContext::new(db, resolver, loc, &bump);
+    let mut ctx = TypingContext::new(db, resolver, loc, &bump, true);
     ctx.initialize_vars()?;
     ctx.type_parserdef(id)?;
     let mut types = BTreeMap::new();
@@ -34,7 +35,8 @@ pub fn parser_full_types(
             .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(id)))?;
         types.insert(id, ty);
     }
-    for (&id, expr) in ctx.infctx.tr.inf_expressions.clone().iter() {
+    // the context does not need the expressions anymore, so we can just mem::take them
+    for (&id, expr) in std::mem::take(&mut ctx.inf_expressions).iter() {
         let expr = ctx.expr_to_concrete_type(expr, id)?;
         exprs.insert(id, expr);
     }
@@ -59,54 +61,23 @@ pub fn parser_expr_at(db: &dyn TyHirs, id: hir::ExprId) -> SResult<TypedExpressi
 }
 
 impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
-    fn set_current_loc(&mut self, loc: DefId) {
-        self.loc.loc = loc;
-    }
-    fn infty_at(&mut self, id: DefId) -> InfTypeId<'intern> {
-        self.infctx.tr.inftypes[&id]
-    }
-    fn let_statement_types(
-        &mut self,
-        let_statement: &hir::LetStatement,
-    ) -> Result<ExpressionTypeConstraints<'intern>, SpannedTypeError> {
-        let ty = let_statement.ty;
-        let ty_expr = ty.lookup(self.db)?.expr;
-        let infty = self.resolve_type_expr(&ty_expr, ty)?;
-        Ok(ExpressionTypeConstraints {
-            root_type: Some(infty),
-            from_type: None,
-        })
-    }
-    fn init_var_at_loc(&mut self, infty: InfTypeId<'intern>) {
-        self.infctx
-            .tr
-            .inftypes
-            .insert(self.loc.loc, infty);
-    }
     fn initialize_vars(&mut self) -> Result<(), SpannedTypeError> {
         let pd = self.loc.pd;
-        for child in ChildIter::new(pd.0, self.db) {
-            let ty = match child {
-                hir::HirNode::Let(l) => {
-                    self.set_current_loc(l.id.0);
-                    if let Some(ty) = self.let_statement_types(&l)?.root_type {
-                        ty
-                    } else {
-                        self.infctx.var()
-                    }
-                }
-                hir::HirNode::Parse(parse) => {
-                    self.set_current_loc(parse.id.0);
-                    self.infctx.var()
-                }
-                hir::HirNode::ChoiceIndirection(choice) => {
-                    self.set_current_loc(choice.id.0);
-                    self.infctx.var()
-                }
-                _ => continue,
-            };
-            self.init_var_at_loc(ty);
+        let mut vars = FxHashMap::default();
+        let blocks = self.db.all_parserdef_blocks(pd);
+        self.initialize_vars_at(pd.0, &mut vars)?;
+        for block in blocks.iter() {
+            let block_val = block.lookup(self.db)?;
+            if !block_val.returns {
+                self.initialize_vars_at(block_val.root_context.0, &mut vars)?;
+            }
         }
+        let ret = self.db.parser_returns(pd)?;
+        let ret_inf = self.infctx.from_type(ret.deref);
+        vars.insert(pd.0, ret_inf);
+        let vars = Rc::new(vars);
+        self.infctx.tr.inftypes = vars.clone();
+        self.inftypes = vars.clone();
         self.constrain_public_types()
     }
     fn constrain_public_types(&mut self) -> Result<(), SpannedTypeError> {
@@ -133,143 +104,11 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
         }
         Ok(())
     }
-    fn set_ambient_type(&mut self, infty: Option<InfTypeId<'intern>>) {
-        self.infctx.tr.current_ambient = infty;
-    }
-    fn ambient_type(&self) -> Option<InfTypeId<'intern>> {
-        self.infctx.tr.current_ambient
-    }
-    fn with_ambient_type<T>(
-        &mut self,
-        infty: Option<InfTypeId<'intern>>,
-        f: impl FnOnce(&mut Self) -> T,
-    ) -> T {
-        let old_ambient = self.ambient_type();
-        self.set_ambient_type(infty);
-        let ret = f(self);
-        self.set_ambient_type(old_ambient);
-        ret
-    }
-    fn with_loc<T>(&mut self, loc: DefId, f: impl FnOnce(&mut Self) -> T) -> T {
-        let old_loc = self.loc.loc;
-        self.loc.loc = loc;
-        let ret = f(self);
-        self.loc.loc = old_loc;
-        ret
-    }
-    fn type_parserdef(&mut self, pd: hir::ParserDefId) -> Result<(), SpannedTypeError> {
-        let parserdef = pd.lookup(self.db)?;
-        let sig = self.db.parser_args(pd)?;
-        let ambient = sig.from.map(|ty| self.infctx.from_type(ty));
-        self.set_ambient_type(ambient);
-
-        let expr = parserdef.to.lookup(self.db)?;
-        let ret = self.type_expr(&expr)?;
-        let previous_ret = self
-            .infctx
-            .from_type(self.db.parser_returns(self.loc.pd)?.deref);
-        let return_spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(pd.0));
-        self.infctx
-            .constrain(ret, previous_ret)
-            .map_err(return_spanned)?;
-        Ok(())
-    }
-    fn type_expr(&mut self, expr: &ValExpression) -> Result<InfTypeId<'intern>, SpannedTypeError> {
-        let spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(expr.id.0));
-        let resolved_expr = self.db.resolve_expr(expr.id)?;
-        let inf_expression = self.val_expression_type(&resolved_expr, expr.id)?;
-        let root = inf_expression.0.root_data().0;
-        let ret = if let Some(ambient) = self.ambient_type() {
-            self.infctx.parser_apply(root, ambient).map_err(spanned)?
-        } else {
-            root
-        };
-        for part in ExprIter::new(&inf_expression) {
-            match &part.0 {
-                ExpressionHead::Niladic(OpWithData {
-                    data,
-                    inner: ResolvedAtom::Block(block_id),
-                }) => {
-                    let spanned =
-                        |e| SpannedTypeError::new(e, IndirectSpan::new(expr.id.0, data.1));
-                    let ambient = self.infctx.reuse_parser_arg(data.0).map_err(spanned)?;
-                    let block = block_id.lookup(self.db)?;
-                    self.with_ambient_type(Some(ambient), |ctx| ctx.type_block(&block))?;
-                }
-                _ => continue,
-            }
-        }
-        self.infctx
-            .tr
-            .inf_expressions
-            .insert(expr.id, inf_expression);
-        Ok(ret)
-    }
-    fn type_block(&mut self, block: &Block) -> Result<(), SpannedTypeError> {
-        let root_ctx = block.root_context.lookup(self.db)?;
-        self.type_context(&root_ctx)
-    }
-    fn type_context(&mut self, context: &StructCtx) -> Result<(), SpannedTypeError> {
-        self.with_loc(context.id.0, |ctx| {
-            for child in context.children.iter() {
-                ctx.type_block_component(*child)?;
-            }
-            Ok(())
-        })
-    }
-    fn type_block_component(&mut self, id: DefId) -> Result<(), SpannedTypeError> {
-        match self.db.hir_node(id)? {
-            hir::HirNode::Let(l) => self.type_let(&l),
-            hir::HirNode::Parse(parse) => self.type_parse(&parse),
-            hir::HirNode::Choice(choice) => self.type_choice(&choice),
-            hir::HirNode::Context(context) => self.type_context(&context),
-            hir::HirNode::ChoiceIndirection(ci) => self.type_choice_indirection(&ci),
-            _ => unreachable!("Invalid type block component"),
-        }
-    }
-    fn type_choice(&mut self, choice: &StructChoice) -> Result<(), SpannedTypeError> {
-        for child in choice.subcontexts.iter() {
-            let context = child.lookup(self.db)?;
-            self.type_context(&context)?;
-        }
-        Ok(())
-    }
-    fn type_choice_indirection(
-        &mut self,
-        choice_ind: &ChoiceIndirection,
-    ) -> Result<(), SpannedTypeError> {
-        let current = self.infty_at(choice_ind.id.0);
-        for (_, choice_id) in choice_ind.choices.iter() {
-            let choice = self.infty_at(*choice_id);
-            self.infctx.constrain(choice, current).map_err(|e| {
-                SpannedTypeError::new(e, IndirectSpan::default_span(choice_ind.id.0))
-            })?;
-        }
-        Ok(())
-    }
-    fn type_parse(&mut self, parse: &ParseStatement) -> Result<(), SpannedTypeError> {
-        let expr = parse.expr.lookup(self.db)?;
-        let ty = self.type_expr(&expr)?;
-        let self_ty = self.infty_at(parse.id.0);
-        self.infctx
-            .constrain(ty, self_ty)
-            .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(parse.id.0)))
-    }
-    fn type_let(&mut self, let_statement: &hir::LetStatement) -> Result<(), SpannedTypeError> {
-        let expr = let_statement.expr.lookup(self.db)?;
-        let ty = self.with_ambient_type(None, |ctx| ctx.type_expr(&expr))?;
-        let self_ty = self.infty_at(let_statement.id.0);
-        self.infctx
-            .constrain(ty, self_ty)
-            .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(let_statement.id.0)))
-    }
 }
 
 pub struct FullResolver<'a, 'intern> {
     db: &'a dyn TyHirs,
-    inftypes: FxHashMap<DefId, InfTypeId<'intern>>,
-    inf_expressions: FxHashMap<hir::ExprId, InfTypedExpression<'intern>>,
-    current_ambient: Option<InfTypeId<'intern>>,
+    inftypes: Rc<FxHashMap<DefId, InfTypeId<'intern>>>,
     name: String,
 }
 
@@ -280,8 +119,6 @@ impl<'a, 'intern> FullResolver<'a, 'intern> {
         Ok(Self {
             db,
             inftypes: Default::default(),
-            inf_expressions: Default::default(),
-            current_ambient: None,
             name,
         })
     }
