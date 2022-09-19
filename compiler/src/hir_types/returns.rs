@@ -70,33 +70,29 @@ pub fn parser_returns_ssc(
         Ok(loc) => loc,
         Err(e) => return vec![Err(e.into())],
     };
-    let mut ctx = TypingContext::new(db, resolver, loc, &bump);
+    let mut ctx = TypingContext::new(db, resolver, loc, &bump, false);
 
-    for def in def_ids.iter() {
-        // in this loop we do not directly the inference variables we are creating yet
-        let deref = ctx.infctx.var();
-        let retinf = ParserDefTypeInf { id: *def, deref };
-        ctx.infctx.tr.return_infs.insert(retinf.id.0, retinf);
-    }
+    let mut vars = FxHashMap::default();
+    let defs: Vec<_> = defs
+        .into_iter()
+        .map(|def| {
+            // in this loop we do not directly the inference variables we are creating yet
+            let deref = ctx.infctx.var();
+            vars.insert(def.id.0, deref);
+            ctx.initialize_vars_at(def.id.0, &mut vars).and(Ok(def))
+        })
+        .collect();
+    ctx.inftypes = Rc::new(vars);
+    ctx.infctx.tr.return_infs = ctx.inftypes.clone();
     let defs = defs
         .into_iter()
         .map(|def| -> Result<hir::ParserDef, SpannedTypeError> {
-            // in this separate loop we do the actual type inference
-            let expr = db.resolve_expr(def.to)?;
-            let ty = ctx
-                .val_expression_type(&expr, def.to)?
-                .0
-                .root_data()
-                .0;
-            let sig = db.parser_args(def.id)?;
-            if let Some(from) = sig.from {
-                let inffrom = ctx.infctx.from_type(from);
-                let deref = ctx.infctx.tr.return_infs[&def.id.0].deref;
-                let spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(def.to.0));
-                let ret = ctx.infctx.parser_apply(ty, inffrom).map_err(spanned)?;
-                ctx.infctx.constrain(ret, deref).map_err(spanned)?;
-            };
-            Ok(def)
+            def.and_then(|def| {
+                // in this separate loop we do the actual type inference
+                ctx.loc = TypingLocation::at_id(db, def.id.0)?;
+                ctx.type_parserdef(def.id)?;
+                Ok(def)
+            })
         })
         .collect::<Vec<_>>();
     defs.into_iter()
@@ -105,7 +101,7 @@ pub fn parser_returns_ssc(
                 let spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(def.to.0));
                 // here we are finished with inference so we can convert to actual types
                 let deref = ctx
-                    .inftype_to_concrete_type(ctx.infctx.tr.return_infs[&def.id.0].deref)
+                    .inftype_to_concrete_type(ctx.inftypes[&def.id.0])
                     .map_err(spanned)?;
                 Ok(ParserDefType { id: def.id, deref })
             })
@@ -115,7 +111,7 @@ pub fn parser_returns_ssc(
 
 pub struct ReturnResolver<'a> {
     db: &'a dyn TyHirs,
-    return_infs: FxHashMap<DefId, ParserDefTypeInf<'a>>,
+    return_infs: Rc<FxHashMap<DefId, InfTypeId<'a>>>,
 }
 
 impl<'a> ReturnResolver<'a> {
@@ -184,12 +180,6 @@ impl<'a> TypeResolver<'a> for ReturnResolver<'a> {
 pub struct ParserDefType {
     pub id: hir::ParserDefId,
     pub deref: TypeId,
-}
-
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct ParserDefTypeInf<'a> {
-    pub id: hir::ParserDefId,
-    pub deref: InfTypeId<'a>,
 }
 
 #[cfg(test)]

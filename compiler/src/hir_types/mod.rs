@@ -5,7 +5,7 @@ pub mod represent;
 mod returns;
 mod signature;
 
-use std::{collections::BTreeMap, fmt::Debug, hash::Hash, sync::Arc};
+use std::{collections::BTreeMap, fmt::Debug, hash::Hash, rc::Rc, sync::Arc};
 
 use bumpalo::Bump;
 use fxhash::FxHashMap;
@@ -18,7 +18,7 @@ use crate::{
         TypeUnOp, ValBinOp, ValUnOp,
     },
     hash::StableHash,
-    hir::{ExprId, HirIdWrapper, ParseStatement, ParserDefRef},
+    hir::{walk::ChildIter, ExprId, HirIdWrapper, HirNodeKind, ParseStatement, ParserDefRef},
     interner::{DefId, FieldName, TypeVar, TypeVarName},
     resolve::{self, expr::ResolvedAtom},
     source::{IndirectSpan, SpanIndex},
@@ -105,17 +105,32 @@ pub fn head_discriminant(db: &dyn TyHirs, ty: TypeId) -> i64 {
 pub type TypedExpression = Expression<TypedHirVal<(TypeId, SpanIndex)>>;
 pub type InfTypedExpression<'a> = Expression<TypedHirVal<(InfTypeId<'a>, SpanIndex)>>;
 
-pub struct ExpressionTypeConstraints<'a> {
-    pub root_type: Option<InfTypeId<'a>>,
-    pub from_type: Option<InfTypeId<'a>>,
+pub struct TypingContext<'a, 'intern, TR: TypeResolver<'intern>> {
+    db: &'a dyn TyHirs,
+    infctx: InferenceContext<'intern, TR>,
+    loc: TypingLocation,
+    inftypes: Rc<FxHashMap<DefId, InfTypeId<'intern>>>,
+    inf_expressions: FxHashMap<hir::ExprId, Rc<InfTypedExpression<'intern>>>,
+    current_ambient: Option<InfTypeId<'intern>>,
+    recurse_blocks: bool,
 }
 
 impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
-    fn new(db: &'a dyn TyHirs, tr: TR, loc: TypingLocation, bump: &'intern Bump) -> Self {
+    fn new(
+        db: &'a dyn TyHirs,
+        tr: TR,
+        loc: TypingLocation,
+        bump: &'intern Bump,
+        recurse_blocks: bool,
+    ) -> Self {
         Self {
             db,
             infctx: InferenceContext::new(tr, bump),
             loc,
+            inftypes: Default::default(),
+            inf_expressions: Default::default(),
+            current_ambient: None,
+            recurse_blocks,
         }
     }
 
@@ -251,75 +266,91 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         &mut self,
         expr: &resolve::ResolvedExpr,
         id: hir::ExprId,
-    ) -> Result<InfTypedExpression<'intern>, SpannedTypeError> {
+    ) -> Result<Rc<InfTypedExpression<'intern>>, SpannedTypeError> {
         use ValBinOp::*;
         let span = IndirectSpan::new(id.0, *expr.0.root_data());
-        expr.try_scan(&mut |expr| {
-            Ok(match expr {
-                ExpressionHead::Dyadic(Dyadic {
-                    op,
-                    inner: [&(left, _), &(right, _)],
-                }) => (
-                    match op.inner {
-                        And | Xor | Or | ShiftR | ShiftL | Minus | Plus | Div | Modulo | Mul => {
-                            let int = self.infctx.int();
-                            self.infctx.constrain(left, int)?;
-                            self.infctx.constrain(right, int)?;
-                            int
-                        }
-                        LesserEq | Lesser | GreaterEq | Greater => {
-                            let bit = self.infctx.bit();
-                            self.infctx.constrain(left, bit)?;
-                            self.infctx.constrain(right, bit)?;
-                            bit
-                        }
-                        Else => self.infctx.one_of(&[left, right])?,
-                        Compose => self.infctx.parser_compose(left, right)?,
-                        ParserApply => self.infctx.parser_apply(right, left)?,
-                        Uneq | Equals => todo!(),
-                    },
-                    op.data,
-                ),
-                ExpressionHead::Monadic(Monadic {
-                    op,
-                    inner: &(inner, _),
-                }) => (
-                    match &op.inner {
-                        ValUnOp::Neg | ValUnOp::Pos | ValUnOp::Not => {
-                            let int = self.infctx.int();
-                            self.infctx.constrain(inner, int)?;
-                            int
-                        }
-                        ValUnOp::Wiggle(_, _) => inner,
-                        ValUnOp::Dot(name) => self.infctx.access_field(inner, *name)?,
-                    },
-                    op.data,
-                ),
-                ExpressionHead::Niladic(a) => (
-                    match &a.inner {
-                        ResolvedAtom::Char(_) => self.infctx.char(),
-                        ResolvedAtom::Number(_) => self.infctx.int(),
-                        ResolvedAtom::Single => self.infctx.single(),
-                        ResolvedAtom::Block(b) => {
-                            let pd = self.db.hir_parent_parserdef(b.0)?;
-                            let ty_vars = (0..self.loc.vars.defs.len() as u32)
-                                .map(|i| {
-                                    self.infctx
-                                        .intern_infty(InferenceType::TypeVarRef(pd.0, 0, i))
-                                })
-                                .collect::<Vec<_>>();
-                            self.infctx.block_call(b.0, &ty_vars)?
-                        }
-                        ResolvedAtom::ParserDef(pd) => self.infctx.parserdef(pd.0)?,
-                        ResolvedAtom::Val(v) | ResolvedAtom::Captured(v) => {
-                            self.infctx.lookup(*v)?
-                        }
-                    },
-                    a.data,
-                ),
+        let expr = expr
+            .try_scan(&mut |expr| {
+                Ok(match expr {
+                    ExpressionHead::Dyadic(Dyadic {
+                        op,
+                        inner: [&(left, _), &(right, _)],
+                    }) => (
+                        match op.inner {
+                            And | Xor | Or | ShiftR | ShiftL | Minus | Plus | Div | Modulo
+                            | Mul => {
+                                let int = self.infctx.int();
+                                self.infctx.constrain(left, int)?;
+                                self.infctx.constrain(right, int)?;
+                                int
+                            }
+                            LesserEq | Lesser | GreaterEq | Greater => {
+                                let bit = self.infctx.bit();
+                                self.infctx.constrain(left, bit)?;
+                                self.infctx.constrain(right, bit)?;
+                                bit
+                            }
+                            Else => self.infctx.one_of(&[left, right])?,
+                            Compose => self.infctx.parser_compose(left, right)?,
+                            ParserApply => self.infctx.parser_apply(right, left)?,
+                            Uneq | Equals => todo!(),
+                        },
+                        op.data,
+                    ),
+                    ExpressionHead::Monadic(Monadic {
+                        op,
+                        inner: &(inner, _),
+                    }) => (
+                        match &op.inner {
+                            ValUnOp::Neg | ValUnOp::Pos | ValUnOp::Not => {
+                                let int = self.infctx.int();
+                                self.infctx.constrain(inner, int)?;
+                                int
+                            }
+                            ValUnOp::Wiggle(_, _) => inner,
+                            ValUnOp::Dot(name) => self.infctx.access_field(inner, *name)?,
+                        },
+                        op.data,
+                    ),
+                    ExpressionHead::Niladic(a) => (
+                        match &a.inner {
+                            ResolvedAtom::Char(_) => self.infctx.char(),
+                            ResolvedAtom::Number(_) => self.infctx.int(),
+                            ResolvedAtom::Single => self.infctx.single(),
+                            ResolvedAtom::Block(b) => {
+                                let block = b.lookup(self.db)?;
+                                if block.returns {
+                                    let from = self.infctx.var();
+                                    let to_id = block
+                                        .root_context
+                                        .0
+                                        .child_field(self.db, FieldName::Return);
+                                    let to = self.inftypes[&to_id];
+                                    self.infctx.parser(to, from)
+                                } else {
+                                    let pd = self.db.hir_parent_parserdef(b.0)?;
+                                    let ty_vars = (0..self.loc.vars.defs.len() as u32)
+                                        .map(|i| {
+                                            self.infctx
+                                                .intern_infty(InferenceType::TypeVarRef(pd.0, 0, i))
+                                        })
+                                        .collect::<Vec<_>>();
+                                    self.infctx.block_call(b.0, &ty_vars)?
+                                }
+                            }
+                            ResolvedAtom::ParserDef(pd) => self.infctx.parserdef(pd.0)?,
+                            ResolvedAtom::Val(v) | ResolvedAtom::Captured(v) => {
+                                self.infctx.lookup(*v)?
+                            }
+                        },
+                        a.data,
+                    ),
+                })
             })
-        })
-        .map_err(|x| SpannedTypeError::new(x, span))
+            .map_err(|x| SpannedTypeError::new(x, span))?;
+        let rc_expr = Rc::new(expr);
+        self.inf_expressions.insert(id, rc_expr.clone());
+        Ok(rc_expr)
     }
     fn inftype_to_concrete_type(&mut self, infty: InfTypeId<'intern>) -> Result<TypeId, TypeError> {
         self.infctx.to_type(infty)
@@ -337,12 +368,183 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
             ))
         })
     }
-}
+    fn set_current_loc(&mut self, loc: DefId) {
+        // sets loc to loc
+        self.loc.loc = loc;
+    }
+    fn let_statement_types(
+        &mut self,
+        let_statement: &hir::LetStatement,
+    ) -> Result<Option<InfTypeId<'intern>>, SpannedTypeError> {
+        let ty = let_statement.ty;
+        let ty_expr = ty.lookup(self.db)?.expr;
+        let infty = self.resolve_type_expr(&ty_expr, ty)?;
+        Ok(Some(infty))
+    }
+    fn initialize_vars_at(
+        &mut self,
+        root: DefId,
+        vars: &mut FxHashMap<DefId, InfTypeId<'intern>>,
+    ) -> Result<(), SpannedTypeError> {
+        for child in ChildIter::new(root, self.db).without_kinds(HirNodeKind::Block) {
+            let id = child.id();
+            let ty = match child {
+                hir::HirNode::Let(l) => {
+                    self.set_current_loc(id);
+                    if let Some(ty) = self.let_statement_types(&l)? {
+                        ty
+                    } else {
+                        self.infctx.var()
+                    }
+                }
+                hir::HirNode::Parse(_) | hir::HirNode::ChoiceIndirection(_) => {
+                    self.set_current_loc(id);
+                    self.infctx.var()
+                }
+                hir::HirNode::Block(block) => {
+                    if block.returns {
+                        self.initialize_vars_at(block.root_context.0, vars)?;
+                    }
+                    continue;
+                }
+                _ => continue,
+            };
+            vars.insert(id, ty);
+        }
+        Ok(())
+    }
+    fn set_ambient_type(&mut self, infty: Option<InfTypeId<'intern>>) {
+        self.current_ambient = infty;
+    }
+    fn ambient_type(&self) -> Option<InfTypeId<'intern>> {
+        self.current_ambient
+    }
+    fn infty_at(&mut self, id: DefId) -> InfTypeId<'intern> {
+        self.inftypes[&id]
+    }
+    fn with_ambient_type<T>(
+        &mut self,
+        infty: Option<InfTypeId<'intern>>,
+        f: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        let old_ambient = self.ambient_type();
+        self.set_ambient_type(infty);
+        let ret = f(self);
+        self.set_ambient_type(old_ambient);
+        ret
+    }
+    fn with_loc<T>(&mut self, loc: DefId, f: impl FnOnce(&mut Self) -> T) -> T {
+        let old_loc = self.loc.loc;
+        self.loc.loc = loc;
+        let ret = f(self);
+        self.loc.loc = old_loc;
+        ret
+    }
+    fn type_parserdef(&mut self, pd: hir::ParserDefId) -> Result<(), SpannedTypeError> {
+        let parserdef = pd.lookup(self.db)?;
+        let sig = self.db.parser_args(pd)?;
+        let ambient = sig.from.map(|ty| self.infctx.from_type(ty));
+        self.set_ambient_type(ambient);
 
-pub struct TypingContext<'a, 'intern, TR: TypeResolver<'intern>> {
-    db: &'a dyn TyHirs,
-    infctx: InferenceContext<'intern, TR>,
-    loc: TypingLocation,
+        let expr = parserdef.to.lookup(self.db)?;
+        let ret = self.type_expr(&expr)?;
+        let previous_ret = self.infty_at(pd.0);
+        let return_spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(pd.0));
+        self.infctx
+            .constrain(ret, previous_ret)
+            .map_err(return_spanned)?;
+        Ok(())
+    }
+    fn type_expr(
+        &mut self,
+        expr: &hir::ValExpression,
+    ) -> Result<InfTypeId<'intern>, SpannedTypeError> {
+        let spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(expr.id.0));
+        let resolved_expr = self.db.resolve_expr(expr.id)?;
+        let inf_expression = self.val_expression_type(&resolved_expr, expr.id)?;
+        let root = inf_expression.0.root_data().0;
+        let ret = if let Some(ambient) = self.ambient_type() {
+            self.infctx.parser_apply(root, ambient).map_err(spanned)?
+        } else {
+            root
+        };
+        for part in ExprIter::new(&inf_expression) {
+            match &part.0 {
+                ExpressionHead::Niladic(OpWithData {
+                    data,
+                    inner: ResolvedAtom::Block(block_id),
+                }) => {
+                    let spanned =
+                        |e| SpannedTypeError::new(e, IndirectSpan::new(expr.id.0, data.1));
+                    let ambient = self.infctx.reuse_parser_arg(data.0).map_err(spanned)?;
+                    let block = block_id.lookup(self.db)?;
+                    if block.returns || self.recurse_blocks {
+                        self.with_ambient_type(Some(ambient), |ctx| ctx.type_block(&block))?;
+                    }
+                }
+                _ => continue,
+            }
+        }
+        Ok(ret)
+    }
+    fn type_block(&mut self, block: &hir::Block) -> Result<(), SpannedTypeError> {
+        let root_ctx = block.root_context.lookup(self.db)?;
+        self.type_context(&root_ctx)
+    }
+    fn type_context(&mut self, context: &hir::StructCtx) -> Result<(), SpannedTypeError> {
+        self.with_loc(context.id.0, |ctx| {
+            for child in context.children.iter() {
+                ctx.type_block_component(*child)?;
+            }
+            Ok(())
+        })
+    }
+    fn type_block_component(&mut self, id: DefId) -> Result<(), SpannedTypeError> {
+        match self.db.hir_node(id)? {
+            hir::HirNode::Let(l) => self.type_let(&l),
+            hir::HirNode::Parse(parse) => self.type_parse(&parse),
+            hir::HirNode::Choice(choice) => self.type_choice(&choice),
+            hir::HirNode::Context(context) => self.type_context(&context),
+            hir::HirNode::ChoiceIndirection(ci) => self.type_choice_indirection(&ci),
+            _ => unreachable!("Invalid type block component"),
+        }
+    }
+    fn type_choice(&mut self, choice: &hir::StructChoice) -> Result<(), SpannedTypeError> {
+        for child in choice.subcontexts.iter() {
+            let context = child.lookup(self.db)?;
+            self.type_context(&context)?;
+        }
+        Ok(())
+    }
+    fn type_choice_indirection(
+        &mut self,
+        choice_ind: &hir::ChoiceIndirection,
+    ) -> Result<(), SpannedTypeError> {
+        let current = self.infty_at(choice_ind.id.0);
+        for (_, choice_id) in choice_ind.choices.iter() {
+            let choice = self.infty_at(*choice_id);
+            self.infctx.constrain(choice, current).map_err(|e| {
+                SpannedTypeError::new(e, IndirectSpan::default_span(choice_ind.id.0))
+            })?;
+        }
+        Ok(())
+    }
+    fn type_parse(&mut self, parse: &ParseStatement) -> Result<(), SpannedTypeError> {
+        let expr = parse.expr.lookup(self.db)?;
+        let ty = self.type_expr(&expr)?;
+        let self_ty = self.infty_at(parse.id.0);
+        self.infctx
+            .constrain(ty, self_ty)
+            .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(parse.id.0)))
+    }
+    fn type_let(&mut self, let_statement: &hir::LetStatement) -> Result<(), SpannedTypeError> {
+        let expr = let_statement.expr.lookup(self.db)?;
+        let ty = self.with_ambient_type(None, |ctx| ctx.type_expr(&expr))?;
+        let self_ty = self.infty_at(let_statement.id.0);
+        self.infctx
+            .constrain(ty, self_ty)
+            .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(let_statement.id.0)))
+    }
 }
 
 #[derive(Clone, Debug)]

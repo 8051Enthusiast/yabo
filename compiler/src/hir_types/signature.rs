@@ -18,7 +18,7 @@ pub fn parser_args_error(
     };
     let arg_resolver = ArgResolver::new(db);
     let bump = Bump::new();
-    let mut tcx = TypingContext::new(db, arg_resolver, loc, &bump);
+    let mut tcx = TypingContext::new(db, arg_resolver, loc, &bump, false);
     let from_expr = pd.from.lookup(db)?;
     let args = Arc::new(vec![]);
     let from_infty = tcx.resolve_type_expr(&from_expr.expr, pd.from)?;
