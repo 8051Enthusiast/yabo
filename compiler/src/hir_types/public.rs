@@ -19,11 +19,18 @@ fn public_expr_type_impl(
     let mut ctx = PublicResolver::new_typing_context_and_loc(db, loc.0, &bump)?;
     let parent = loc.0.parent(db);
     let (ambient, ret) = match db.hir_node(parent)? {
-        hir::HirNode::ParserDef(pd) => (ctx.parserdef_types(&pd)?, None),
         hir::HirNode::Let(l) => (None, ctx.let_statement_types(&l)?),
         hir::HirNode::Parse(p) => (ctx.parse_statement_types(&p)?, None),
+        hir::HirNode::ParserDef(pd) => {
+            let ret = db.parser_returns(pd.id)?.deref;
+            let ret = ctx.infctx.from_type(ret);
+            (ctx.parserdef_types(&pd)?, Some(ret))
+        }
         _ => panic!("expected parse statement, let statement or parser def"),
     };
+    let mut vars = FxHashMap::default();
+    ctx.initialize_vars_at(loc.0, &mut vars)?;
+    ctx.inftypes = Rc::new(vars);
     let ret = ret.unwrap_or_else(|| ctx.infctx.var());
     ctx.set_ambient_type(ambient);
     let val_expr = loc.lookup(db)?;
