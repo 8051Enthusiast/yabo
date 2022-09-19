@@ -397,7 +397,9 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         self.infctx.var()
                     }
                 }
-                hir::HirNode::Parse(_) | hir::HirNode::ChoiceIndirection(_) => {
+                hir::HirNode::Parse(_)
+                | hir::HirNode::ChoiceIndirection(_)
+                | hir::HirNode::ParserDef(_) => {
                     self.set_current_loc(id);
                     self.infctx.var()
                 }
