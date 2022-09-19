@@ -383,6 +383,13 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             };
             self.set_block_var(subvalue.id, val);
         }
+
+        if block.returns {
+            let ret = block.root_context.0.child_field(self.db, FieldName::Return);
+            let ret = self.var_by_id(ret);
+            return Ok(ret);
+        }
+
         let root_context = block.root_context.lookup(self.db)?;
         let vars = root_context
             .vars

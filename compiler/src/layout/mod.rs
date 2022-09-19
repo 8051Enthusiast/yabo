@@ -12,7 +12,6 @@ use fxhash::{FxHashMap, FxHashSet};
 use crate::absint::{AbsInt, AbsIntCtx, AbstractDomain, Arg};
 use crate::error::{IsSilenced, SResult, SilencedError};
 use crate::expr::{self, ExpressionHead, ValBinOp, ValUnOp};
-use crate::hir::variable_set::VarStatus;
 use crate::hir::{self, HirIdWrapper};
 use crate::hir_types::NominalId;
 use crate::interner::{DefId, FieldName};
@@ -27,10 +26,13 @@ use self::represent::{LayoutHasher, LayoutPart, LayoutSymbol};
 #[derive(Clone, PartialEq, Eq, Default)]
 pub struct StructManifestation {
     pub field_offsets: FxHashMap<DefId, PSize>,
-    pub discriminant_mapping: FxHashMap<DefId, PSize>,
+    pub discriminant_mapping: Arc<FxHashMap<DefId, PSize>>,
     pub discriminant_offset: PSize,
     pub size: SizeAlign,
 }
+
+#[salsa::query_group(LayoutDatabase)]
+pub trait Layouts: AbsInt {}
 
 struct UnfinishedManifestation(StructManifestation);
 
@@ -38,18 +40,17 @@ impl UnfinishedManifestation {
     pub fn new() -> Self {
         UnfinishedManifestation(Default::default())
     }
-    pub fn add_field(&mut self, id: DefId, field_size: SizeAlign, discriminated: bool) {
+    pub fn add_field(&mut self, id: DefId, field_size: SizeAlign) {
         self.0.size = self.0.size.cat(field_size);
         let offset = self.0.size.size - field_size.size;
         self.0.field_offsets.insert(id, offset);
-        if discriminated {
-            self.0
-                .discriminant_mapping
-                .insert(id, self.0.discriminant_mapping.len() as PSize);
-        }
     }
-    pub fn finalize(self) -> StructManifestation {
+    pub fn finalize(
+        self,
+        discriminant_mapping: Arc<FxHashMap<DefId, PSize>>,
+    ) -> StructManifestation {
         let mut manifest = self.0;
+        manifest.discriminant_mapping = discriminant_mapping;
         manifest.discriminant_offset = 0;
         let disc_sa = SizeAlign {
             size: ((manifest.discriminant_mapping.len() + 7) / 8) as PSize,
@@ -64,9 +65,6 @@ impl UnfinishedManifestation {
         manifest
     }
 }
-
-#[salsa::query_group(LayoutDatabase)]
-pub trait Layouts: AbsInt {}
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Layout<Inner> {
@@ -401,15 +399,16 @@ impl<'a> Uniq<InternerLayout<'a>> {
         let block = id.lookup(ctx.db)?;
         let root_ctx = block.root_context.lookup(ctx.db)?;
         for (field, layout) in fields {
-            let (needs_discriminant, field_id) = root_ctx
+            let field_id = root_ctx
                 .vars
                 .get(*field)
-                .map(|x| (matches!(x, VarStatus::Maybe(_)), *x.inner()))
+                .map(|x| *x.inner())
                 .expect("Could not find field during layout calculation");
             let field_size = layout.size_align(ctx)?;
-            manifest.add_field(field_id, field_size, needs_discriminant);
+            manifest.add_field(field_id, field_size);
         }
-        let manifest = Arc::new(manifest.finalize());
+        let discriminant_mapping = ctx.db.discriminant_mapping(id)?;
+        let manifest = Arc::new(manifest.finalize(discriminant_mapping));
         ctx.dcx.manifestations.insert(self, manifest.clone());
         Ok(manifest)
     }
@@ -425,9 +424,9 @@ impl<'a> Uniq<InternerLayout<'a>> {
         let mut manifest = UnfinishedManifestation::new();
         for (capture, layout) in captures.iter() {
             let sa = layout.size_align(ctx)?;
-            manifest.add_field(*capture, sa, false);
+            manifest.add_field(*capture, sa);
         }
-        let manifest = Arc::new(manifest.finalize());
+        let manifest = Arc::new(manifest.finalize(Default::default()));
         ctx.dcx.manifestations.insert(self, manifest.clone());
         Ok(manifest)
     }

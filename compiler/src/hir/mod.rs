@@ -25,6 +25,7 @@ use crate::{
 use crate::source::IndexSpanned;
 use crate::source::SpanIndex;
 use enumflags2::{bitflags, BitFlags};
+use fxhash::FxHashMap;
 use variable_set::VariableSet;
 
 use convert::hir_parser_collection;
@@ -53,6 +54,7 @@ pub trait Hirs: crate::ast::Asts + crate::types::TypeInterner {
         name: FieldName,
         discriminants: bool,
     ) -> SResult<Option<usize>>;
+    fn discriminant_mapping(&self, block: BlockId) -> SResult<Arc<FxHashMap<DefId, u64>>>;
 }
 
 fn hir_node(db: &dyn Hirs, id: DefId) -> SResult<HirNode> {
@@ -219,6 +221,17 @@ fn sorted_field_index(
     };
     let needle = lookup_name(&name);
     Ok(fields.binary_search_by_key(&needle, lookup_name).ok())
+}
+
+fn discriminant_mapping(db: &dyn Hirs, block: BlockId) -> SResult<Arc<FxHashMap<DefId, u64>>> {
+    let mut mapping = FxHashMap::default();
+    let mut i = 0;
+    let root_ctx = block.lookup(db)?.root_context.0;
+    for field in db.sorted_block_fields(block, true)?.iter() {
+        mapping.insert(root_ctx.child_field(db, *field), i);
+        i += 1;
+    }
+    Ok(Arc::new(mapping))
 }
 
 macro_rules! hir_id_wrapper {

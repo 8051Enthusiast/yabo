@@ -753,6 +753,11 @@ impl<'a> ConvertCtx<'a> {
         let mut places: FxHashMap<SubValue, PlaceRef> = Default::default();
         let root_context = block.root_context.lookup(db)?;
         let returned_vals: FxHashSet<DefId> = match call_kind {
+            CallKind::Val if block.returns => {
+                [block.root_context.0.child_field(db, FieldName::Return)]
+                    .into_iter()
+                    .collect()
+            }
             CallKind::Val => root_context.vars.set.values().map(|x| *x.inner()).collect(),
             CallKind::Len => FxHashSet::default(),
         };
@@ -770,7 +775,11 @@ impl<'a> ConvertCtx<'a> {
                 places.insert(val, place_ref);
             } else {
                 let place = if returned_vals.contains(&val.id) {
-                    Place::Field(f.fun.ret(), val.id)
+                    if block.returns {
+                        f.fun.place(f.fun.ret()).place
+                    } else {
+                        Place::Field(f.fun.ret(), val.id)
+                    }
                 } else {
                     Place::Stack(f.new_stack_ref(PlaceOrigin::Node(val.id)))
                 };
@@ -841,7 +850,7 @@ impl<'a> ConvertCtx<'a> {
             context_bb.insert(*context, (new_bb, new_bb));
         }
         let current_context: Option<ContextId> = None;
-        let returns_self: bool = call_kind == CallKind::Val;
+        let returns_self: bool = call_kind == CallKind::Val && !block.returns;
         f.set_bb(f.fun.entry());
         Ok(ConvertCtx {
             db,
