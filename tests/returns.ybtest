@@ -1,0 +1,86 @@
+====[ source code ]====
+def for[int] *> u8l = {
+    return: ~,
+}
+
+def for[int] *> u16l = {
+	lo: ~,
+	hi: ~,
+	let return: int = lo + 256 * hi,
+}
+
+def for[int] *> u32l = {
+	lo: u16l,
+	hi: u16l,
+	let return: int = lo | hi << 16,
+}
+
+def for[int] *> u64l = {
+    lo: u32l,
+    hi: u32l,
+    let return: int = lo | hi << 32,
+}
+
+def for[int] *> header_magic = {
+    n7f: ~,
+    e: ~,
+    l: ~,
+    f: ~,
+}
+
+export def for[int] *> test = {
+    ei_magic: header_magic,
+    ei_class: u8l,
+    ei_data: u8l,
+    ei_version: u8l,
+    ei_osabi: u8l,
+    ei_abiversion: u8l,
+    ~, ~, ~, ~, ~, ~, ~,
+    type: u16l,
+    machine: u16l,
+    version: u32l,
+    entry: u64l,
+    phoff: u64l,
+    shoff: u64l,
+    flags: u32l,
+    ehsize: u16l,
+    phentsize: u16l,
+    phnum: u16l,
+    shentsize: u16l,
+    shnum: u16l,
+    shstrndx: u16l,
+}
+
+====[ binary 1 ]====
+7f 45 4c 46 02 01 01 00 00 00 00 00 00 00 00 00
+03 00 3e 00 01 00 00 00 00 00 00 00 00 00 00 00
+40 00 00 00 00 00 00 00 98 3d 00 00 00 00 00 00
+00 00 00 00 40 00 38 00 08 00 40 00 1b 00 1a 00
+
+====[ output 1 ]====
+{
+  "ei_magic": {
+    "n7f": 127,
+    "e": 69,
+    "f": 70,
+    "l": 76
+  },
+  "ei_class": 2,
+  "ei_data": 1,
+  "ei_version": 1,
+  "ei_osabi": 0,
+  "ei_abiversion": 0,
+  "type": 3,
+  "machine": 62,
+  "version": 1,
+  "entry": 0,
+  "phoff": 64,
+  "shoff": 15768,
+  "flags": 0,
+  "ehsize": 64,
+  "phentsize": 56,
+  "phnum": 8,
+  "shentsize": 64,
+  "shnum": 27,
+  "shstrndx": 26
+}
