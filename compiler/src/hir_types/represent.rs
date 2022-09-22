@@ -83,6 +83,7 @@ impl<DB: ?Sized> DatabasedDisplay<DB> for PrimitiveType {
             PrimitiveType::Int => write!(f, "int"),
             PrimitiveType::Bit => write!(f, "bit"),
             PrimitiveType::Char => write!(f, "char"),
+            PrimitiveType::Unit => write!(f, "unit"),
         }
     }
 }

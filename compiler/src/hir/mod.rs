@@ -606,6 +606,7 @@ pub struct ParserDefRef {
 pub enum ParserAtom {
     Atom(Atom),
     Single,
+    Nil,
     Block(BlockId),
 }
 

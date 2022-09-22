@@ -3,13 +3,14 @@ from ctypes import (addressof, c_char_p, c_int64, c_int8, c_ubyte,
                     c_uint32, c_uint64, c_size_t, c_char, Structure,
                     CFUNCTYPE, POINTER, byref, c_void_p, pointer)
 
-YABO_INTEGER = 256
-YABO_BIT = 512
-YABO_CHAR = 768
-YABO_LOOP = 1024
-YABO_PARSER = 1280
-YABO_FUN_ARGS = 1536
-YABO_BLOCK = 1792
+YABO_INTEGER = 0x100
+YABO_BIT = 0x200
+YABO_CHAR = 0x300
+YABO_LOOP = 0x400
+YABO_PARSER = 0x500
+YABO_FUN_ARGS = 0x600
+YABO_BLOCK = 0x700
+YABO_UNIT = 0x800
 
 OK = 0
 ERROR = 1
@@ -288,6 +289,8 @@ class FunArgValue(YaboValue):
 class ParserValue(YaboValue):
     pass
 
+class UnitValue(YaboValue):
+    pass
 
 def _new_value(val: DynValue, buf: bytearray, lib: YaboLib):
     head = val.get_vtable().head
@@ -305,6 +308,8 @@ def _new_value(val: DynValue, buf: bytearray, lib: YaboLib):
         return FunArgValue(val, buf, lib)
     if head == YABO_BLOCK:
         return BlockValue(val, buf, lib)
+    if head == YABO_UNIT:
+        return UnitValue(val, buf, lib)
     if head < 0:
         return NominalValue(val, buf, lib)
     raise Exception("Unknown type")

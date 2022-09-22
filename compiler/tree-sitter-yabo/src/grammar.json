@@ -695,6 +695,10 @@
           "name": "single"
         },
         {
+          "type": "SYMBOL",
+          "name": "nil"
+        },
+        {
           "type": "SEQ",
           "members": [
             {
@@ -1591,6 +1595,10 @@
     "single": {
       "type": "STRING",
       "value": "~"
+    },
+    "nil": {
+      "type": "STRING",
+      "value": "+"
     },
     "type_var": {
       "type": "PATTERN",

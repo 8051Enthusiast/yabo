@@ -164,6 +164,7 @@ module.exports = grammar({
       $.parser_array,
       $.parser_block,
       $.single,
+      $.nil,
       seq('(', $._expression, ')'),
       $._atom,
     ),
@@ -254,6 +255,7 @@ module.exports = grammar({
       'mem',
     ),
     single: $ => '~',
+    nil: $ => '+',
     type_var: $ => /\'[A-Za-z_][A-Za-z_0-9]*/,
     _field_name: $ => choice(
       $.identifier,

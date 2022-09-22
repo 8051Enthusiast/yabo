@@ -148,6 +148,7 @@ impl From<TypeVar> for TypeAtom {
 pub enum ParserAtom {
     Atom(Atom),
     Single,
+    Nil,
     Block(Block),
 }
 

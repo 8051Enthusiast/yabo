@@ -1,0 +1,105 @@
+====[ source code ]====
+def for[int] *> i8l = {
+    byte: ~
+    let sign_bit: int = byte & 0x80
+    let return: int = byte - 2 * sign_bit
+}
+
+def for[int] *> i16l = {
+    lo: ~
+    hi: i8l
+    let return: int = lo + 256 * hi
+}
+
+export def for[int] *> test = {
+    a: i16l
+    unit: +
+    b: i16l
+    let plus: int = a + b
+    let minus: int = a - b
+    let times: int = a * b
+    | let _: int = b if 0
+      let div: int = 0
+      let mod: int = 0
+    | let div: int = a / b
+      let mod: int = a % b
+    let bit_and: int = a & b
+    let bit_or: int = a | b
+    let bit_xor: int = a ^ b
+    let bit_not: int = !a
+    let neg: int = -a
+}
+
+====[ binary 1 ]====
+01 00 02 00
+====[ output 1 ]====
+{
+    "a": 1,
+    "b": 2,
+    "unit": "unit",
+    "plus": 3,
+    "minus": -1,
+    "times": 2,
+    "div": 0,
+    "mod": 1,
+    "bit_and": 0,
+    "bit_or": 3,
+    "bit_xor": 3,
+    "bit_not": -2,
+    "neg": -1
+}
+====[ binary 2 ]====
+00 01 00 01
+====[ output 2 ]====
+{
+    "a": 256,
+    "b": 256,
+    "unit": "unit",
+    "plus": 512,
+    "minus": 0,
+    "times": 65536,
+    "div": 1,
+    "mod": 0,
+    "bit_and": 256,
+    "bit_or": 256,
+    "bit_xor": 0,
+    "bit_not": -257,
+    "neg": -256
+}
+====[ binary 3 ]====
+f0 ff 00 01
+====[ output 3 ]====
+{
+    "a": -16,
+    "b": 256,
+    "unit": "unit",
+    "plus": 240,
+    "minus": -272,
+    "times": -4096,
+    "div": 0,
+    "mod": -16,
+    "bit_and": 256,
+    "bit_or": -16,
+    "bit_xor": -272,
+    "bit_not": 15,
+    "neg": 16
+}
+====[ binary 4 ]====
+00 00 00 00
+====[ output 4 ]====
+{
+    "_": 0,
+    "a": 0,
+    "b": 0,
+    "unit": "unit",
+    "plus": 0,
+    "minus": 0,
+    "times": 0,
+    "div": 0,
+    "mod": 0,
+    "bit_and": 0,
+    "bit_or": 0,
+    "bit_xor": 0,
+    "bit_not": -1,
+    "neg": 0
+}

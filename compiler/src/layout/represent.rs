@@ -20,6 +20,7 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
                 MonoLayout::Primitive(p) => p.db_fmt(f, db),
                 MonoLayout::Pointer => write!(f, "ptr"),
                 MonoLayout::Single => write!(f, "single"),
+                MonoLayout::Nil => write!(f, "nil"),
                 MonoLayout::Nominal(_, args) => {
                     dbwrite!(f, db, "nominal[{}](", ty)?;
                     if let Some(inner_layout) = args {
@@ -201,6 +202,9 @@ impl<'a> LayoutHasher<'a> {
                 state.update(db.type_hash(*inner_ty));
                 state.update(self.hash(right, db));
             }
+            MonoLayout::Nil => {
+                state.update([8]);
+            }
         }
     }
 }
@@ -218,7 +222,6 @@ pub enum LayoutPart {
     SingleForward,
     CurrentElement,
     Skip,
-
 }
 
 impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
@@ -273,7 +276,10 @@ impl<'a> LayoutSymbol<'a> {
             MonoLayout::NominalParser(id) => {
                 dbformat!(db, "parse_{}", &db.def_name(id.0).unwrap())
             }
-            MonoLayout::Primitive(_) | MonoLayout::Pointer | MonoLayout::Single => {
+            MonoLayout::Primitive(_)
+            | MonoLayout::Pointer
+            | MonoLayout::Single
+            | MonoLayout::Nil => {
                 dbformat!(db, "{}", &self.layout.0)
             }
         };

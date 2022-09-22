@@ -497,6 +497,7 @@ astify! {
         Monadic(val_dot),
         Niladic(with_span_data(parser_block)),
         Niladic(with_span_data(single)),
+        Niladic(with_span_data(nil)),
         Niladic(with_span_data(atom..)),
     };
 }
@@ -626,6 +627,10 @@ fn quali(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Qualifier> {
 
 fn single(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ParserAtom> {
     Ok(ParserAtom::Single)
+}
+
+fn nil(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ParserAtom> {
+    Ok(ParserAtom::Nil)
 }
 
 fn identifier(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Identifier> {

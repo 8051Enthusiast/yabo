@@ -79,7 +79,8 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 MonoLayout::NominalParser(_)
                 | MonoLayout::BlockParser(_, _)
                 | MonoLayout::ComposedParser(_, _, _)
-                | MonoLayout::Single => {
+                | MonoLayout::Single
+                | MonoLayout::Nil => {
                     self.parsers.insert(mono);
                 }
                 MonoLayout::Primitive(_) => {}
@@ -212,7 +213,12 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
 
         let mut primitives = FxHashSet::default();
 
-        for x in [PrimitiveType::Int, PrimitiveType::Bit, PrimitiveType::Char] {
+        for x in [
+            PrimitiveType::Int,
+            PrimitiveType::Bit,
+            PrimitiveType::Char,
+            PrimitiveType::Unit,
+        ] {
             let primitive_type = self.ctx.db.intern_type(Type::Primitive(x));
             let layout = self.ctx.dcx.intern.intern(InternerLayout {
                 layout: Layout::Mono(MonoLayout::Primitive(x), primitive_type),

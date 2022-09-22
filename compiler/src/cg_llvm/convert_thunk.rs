@@ -128,16 +128,21 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
             .size_align(self.cg.layouts)
             .unwrap()
             .align() as u32;
-        self.cg
-            .builder
-            .build_memcpy(
-                target_ptr,
-                align,
-                self.from_ptr,
-                align,
-                self.cg.const_size_t(layout_size),
-            )
-            .unwrap();
+        if layout_size > 0 {
+            // it is nice to be able to pass an invalid pointer
+            // for ZSTs, but calling memcpy with a null pointer
+            // is UB, therefore we simply don't generate it for ZSTs
+            self.cg
+                .builder
+                .build_memcpy(
+                    target_ptr,
+                    align,
+                    self.from_ptr,
+                    align,
+                    self.cg.const_size_t(layout_size),
+                )
+                .unwrap();
+        }
         self.cg.builder.build_return(Some(&self.cg.const_i64(0)));
     }
 
