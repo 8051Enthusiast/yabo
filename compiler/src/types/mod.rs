@@ -127,6 +127,7 @@ pub enum PrimitiveType {
     Bit,
     Int,
     Char,
+    Unit,
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]

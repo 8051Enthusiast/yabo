@@ -69,6 +69,7 @@ pub enum HeadDiscriminant {
     Parser = 0x500,
     FunctionArgs = 0x600,
     Block = 0x700,
+    Unit = 0x800,
 }
 
 pub const DISCRIMINANT_MASK: i64 = !0x3;
@@ -78,6 +79,7 @@ pub fn head_discriminant(db: &dyn TyHirs, ty: TypeId) -> i64 {
         Type::Primitive(PrimitiveType::Int) => HeadDiscriminant::Int as i64,
         Type::Primitive(PrimitiveType::Bit) => HeadDiscriminant::Bit as i64,
         Type::Primitive(PrimitiveType::Char) => HeadDiscriminant::Char as i64,
+        Type::Primitive(PrimitiveType::Unit) => HeadDiscriminant::Unit as i64,
         Type::Loop(_, _) => HeadDiscriminant::Loop as i64,
         Type::ParserArg { .. } => HeadDiscriminant::Parser as i64,
         Type::FunctionArg(_, _) => HeadDiscriminant::FunctionArgs as i64,
@@ -316,6 +318,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                             ResolvedAtom::Char(_) => self.infctx.char(),
                             ResolvedAtom::Number(_) => self.infctx.int(),
                             ResolvedAtom::Single => self.infctx.single(),
+                            ResolvedAtom::Nil => self.infctx.nil(),
                             ResolvedAtom::Block(b) => {
                                 let block = b.lookup(self.db)?;
                                 if block.returns {

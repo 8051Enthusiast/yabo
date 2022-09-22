@@ -745,6 +745,21 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 .into_int_value(),
         }
     }
+    fn build_size_get(
+        &mut self,
+        layout: Option<IMonoLayout<'comp>>,
+        ptr: PointerValue<'llvm>,
+    ) -> IntValue<'llvm> {
+        match layout {
+            Some(mono) => {
+                let size = mono.inner().size_align(self.layouts).unwrap().size;
+                self.const_i64(size as i64)
+            }
+            None => self
+                .vtable_get::<vtable::VTableHeader>(ptr, &[VTableHeaderFields::size as u64])
+                .into_int_value(),
+        }
+    }
     fn build_check_i64_bit_set(&mut self, val: IntValue<'llvm>, bit: u64) -> IntValue<'llvm> {
         let set_bit = self.const_i64(1 << bit);
         let and = self.builder.build_and(set_bit, val, "");
@@ -1107,6 +1122,31 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.builder.build_return(Some(&ret));
     }
 
+    fn create_nil_len(&mut self, from: ILayout<'comp>, layout: IMonoLayout<'comp>, slot: PSize) {
+        let llvm_fun = self.parser_len_fun_val(layout, slot);
+        self.set_always_inline(llvm_fun);
+        let [_, arg, ret] = get_fun_args(llvm_fun).map(|x| x.into_pointer_value());
+        let entry = self.llvm.append_basic_block(llvm_fun, "entry");
+        self.builder.position_at_end(entry);
+        let arg_size = self.build_size_get(from.maybe_mono(), arg);
+        self.builder.build_memcpy(ret, 1, arg, 1, arg_size).unwrap();
+        self.builder.build_return(Some(&self.const_i64(0)));
+    }
+
+    fn create_nil_val(&mut self, _: ILayout<'comp>, layout: IMonoLayout<'comp>, slot: PSize) {
+        let llvm_fun = self.parser_val_fun_val(layout, slot);
+        self.set_always_inline(llvm_fun);
+        let [_, _, target_head, ret] = get_fun_args(llvm_fun);
+        let ret = ret.into_pointer_value();
+        let target_head = target_head.into_int_value();
+        let entry = self.llvm.append_basic_block(llvm_fun, "entry");
+        self.builder.position_at_end(entry);
+        let unit_type = self.compiler_database.db.intern_type(Type::Primitive(PrimitiveType::Unit));
+        let unit_layout = canon_layout(self.layouts, unit_type).unwrap();
+        let null_ptr = self.any_ptr().const_null();
+        self.terminate_tail_typecast(unit_layout, null_ptr, target_head, ret);
+    }
+
     fn create_compose_len(
         &mut self,
         from: ILayout<'comp>,
@@ -1379,6 +1419,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 MonoLayout::Single => {
                     self.create_single_len(from, layout, *slot);
                     self.create_single_val(from, layout, *slot);
+                }
+                MonoLayout::Nil => {
+                    self.create_nil_len(from, layout, *slot);
+                    self.create_nil_val(from, layout, *slot);
                 }
                 MonoLayout::NominalParser(pd) => {
                     self.create_pd_len(from, layout, *slot);

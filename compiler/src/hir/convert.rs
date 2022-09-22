@@ -48,6 +48,7 @@ fn val_expression(
             let inner = match &niladic.inner {
                 ast::ParserAtom::Atom(atom) => ParserAtom::Atom(atom.clone()),
                 ast::ParserAtom::Single => ParserAtom::Single,
+                ast::ParserAtom::Nil => ParserAtom::Nil,
                 ast::ParserAtom::Block(b) => {
                     let nid = BlockId(new_id());
                     block(b, ctx, nid, parent_context, id);

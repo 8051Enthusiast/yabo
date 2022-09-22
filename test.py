@@ -173,7 +173,8 @@ class CompiledSource:
                 )
         if total == 0:
             raise Exception(
-                'No error comments found in source but errors were found in stderr')
+                f'No error comments found in source but errors were found in stderr:\n{self.stderr}'
+            )
 
     def has_errors(self) -> bool:
         return len(self.stderr) > 0
@@ -203,6 +204,8 @@ def dictionarified_obj(obj):
         return "parser"
     if ty is yabo.FunArgValue:
         return "fun_args"
+    if ty is yabo.UnitValue:
+        return "unit"
     if ty is yabo.BlockValue:
         ret_dict = {}
         for field in obj.fields():

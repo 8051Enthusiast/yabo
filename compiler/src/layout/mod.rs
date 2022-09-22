@@ -78,6 +78,7 @@ pub enum MonoLayout<Inner> {
     Primitive(PrimitiveType),
     Pointer,
     Single,
+    Nil,
     Nominal(hir::ParserDefId, Option<Inner>),
     NominalParser(hir::ParserDefId),
     Block(hir::BlockId, BTreeMap<FieldName, Inner>),
@@ -302,6 +303,12 @@ impl<'a> Uniq<InternerLayout<'a>> {
                     second.apply_arg(ctx, casted_result)
                 }
                 MonoLayout::Single => Ok(from.array_primitive(ctx)),
+                MonoLayout::Nil => {
+                    let unit = ctx.db.intern_type(Type::Primitive(PrimitiveType::Unit));
+                    Ok(ctx.dcx.intern.intern(InternerLayout {
+                        layout: Layout::Mono(MonoLayout::Primitive(PrimitiveType::Unit), unit),
+                    }))
+                }
                 _ => panic!("Attempting to apply argument to non-parser layout"),
             }
         })
@@ -368,7 +375,8 @@ impl<'a> Uniq<InternerLayout<'a>> {
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Bit), _) => bool::tsize(),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Char), _) => char::tsize(),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int), _) => i64::tsize(),
-            Layout::Mono(MonoLayout::Single, _) => Zst::tsize(),
+            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Unit), _) => Zst::tsize(),
+            Layout::Mono(MonoLayout::Single | MonoLayout::Nil, _) => Zst::tsize(),
             Layout::Multi(m) => m.layouts.iter().try_fold(Zst::tsize(), |sa, layout| {
                 Ok(sa.union(layout.size_align(ctx)?))
             })?,
@@ -633,6 +641,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ResolvedAtom::Number(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Int)),
                 ResolvedAtom::Val(id) => ctx.var_by_id(id),
                 ResolvedAtom::Single => make_layout(MonoLayout::Single),
+                ResolvedAtom::Nil => make_layout(MonoLayout::Nil),
                 ResolvedAtom::ParserDef(pd) => make_layout(MonoLayout::NominalParser(pd)),
                 ResolvedAtom::Block(block_id) => {
                     let mut captures = BTreeMap::new();

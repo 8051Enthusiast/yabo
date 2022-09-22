@@ -16,6 +16,7 @@ pub enum ResolvedAtom {
     Number(i64),
     Char(u32),
     Single,
+    Nil,
     Block(hir::BlockId),
 }
 
@@ -41,6 +42,7 @@ pub fn resolve_expr_error(
             hir::ParserAtom::Atom(Atom::Number(s)) => ResolvedAtom::Number(*s),
             hir::ParserAtom::Atom(Atom::Char(s)) => ResolvedAtom::Char(*s),
             hir::ParserAtom::Single => ResolvedAtom::Single,
+            hir::ParserAtom::Nil => ResolvedAtom::Nil,
             hir::ParserAtom::Block(b) => ResolvedAtom::Block(*b),
             hir::ParserAtom::Atom(Atom::Field(f)) => {
                 let (id, kind) = refs::resolve_var_ref(db, expr_id.0, *f)?

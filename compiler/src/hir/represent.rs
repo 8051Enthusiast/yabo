@@ -66,6 +66,7 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for ParserAtom {
         match self {
             ParserAtom::Atom(atom) => atom.db_fmt(f, db),
             ParserAtom::Single => dbwrite!(f, db, "~"),
+            ParserAtom::Nil => dbwrite!(f, db, "+"),
             ParserAtom::Block(id) => dbwrite!(
                 f,
                 db,

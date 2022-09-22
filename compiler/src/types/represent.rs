@@ -15,6 +15,7 @@ impl<'a, DB: TypeInterner + Interner + ?Sized> DatabasedDisplay<DB> for InfTypeI
                 super::PrimitiveType::Bit => write!(f, "bit"),
                 super::PrimitiveType::Int => write!(f, "int"),
                 super::PrimitiveType::Char => write!(f, "char"),
+                super::PrimitiveType::Unit => write!(f, "unit"),
             },
             InferenceType::TypeVarRef(loc, level, index) => {
                 dbwrite!(f, db, "<Var Ref ({}, {}, {})>", loc, level, index)
@@ -71,6 +72,7 @@ impl<DB: TypeInterner + ?Sized> StableHash<DB> for PrimitiveType {
             PrimitiveType::Bit => 0u8,
             PrimitiveType::Int => 1,
             PrimitiveType::Char => 2,
+            PrimitiveType::Unit => 3,
         }
         .update_hash(state, db)
     }
