@@ -3,8 +3,8 @@ Simple Parser
 =============
 
 def for[u8] *> complex = {
-  real: f32_el,
-  imag: f32_el,
+  real: f32_el
+  imag: f32_el
 }
 
 ---
@@ -29,10 +29,9 @@ Choice Parser
 =============
 
 def for[u8] *> choice = {
-    if ascii,
-    return: utf8char,
-  ;
-    return: utf8char,
+  | if ascii
+    return: utf8char
+  | return: utf8char
 }
 
 ---
@@ -43,27 +42,30 @@ def for[u8] *> choice = {
       expr: (parserdef_ref
         name: (identifier)))
     name: (identifier)
-    to: (parser_block 
-      content: (parser_choice
-        left: (parser_sequence
-	        (parse_statement
-      	    parser: (unary_expression
-             right: (identifier)))
-      	  (parse_statement
-      	    name: (retvrn)
-      	    parser: (identifier)))
-	      right: (parser_sequence
-          (parse_statement
-      	    name: (retvrn)
-      	    parser: (identifier)))))))
+    to: (parser_block
+      content: (parser_sequence
+        (parser_choice
+          content: (parser_sequence
+            (parse_statement
+              parser: (unary_expression
+                right: (identifier)))
+            (parse_statement
+              name: (retvrn)
+              parser: (identifier))))
+        (parser_choice
+          content: (parser_sequence
+            (parse_statement
+                name: (retvrn)
+                parser: (identifier))))))))
+
 
 =============
 Let Statement
 =============
 
 def for[u8] *> seven = {
-  val: u8,
-  let return: u8 = 7,
+  val: u8
+  let return: u8 = 7
 }
 
 ---
@@ -85,12 +87,19 @@ def for[u8] *> seven = {
             name: (identifier))
         	expr: (number_literal))))))
 
-=======
-Comment
-=======
+=============
+Nested Blocks
+=============
 
-// comment
-def for[u8] *> test = ~
+def for[u8] *> nested = {
+  val: ~
+  return: {
+    | val: if 0
+    | let val: u8 = 3
+      ~
+    let return: u8 = val
+  }
+}
 
 ---
 
@@ -100,4 +109,102 @@ def for[u8] *> test = ~
       (parserdef_ref
         (identifier)))
     (identifier)
-    (single)))
+    (parser_block
+      (parser_sequence
+        (parse_statement
+          (identifier)
+          (single))
+        (parse_statement
+          (retvrn)
+          (parser_block
+            (parser_sequence
+              (parser_choice
+                (parser_sequence
+                  (parse_statement
+                    (identifier)
+                    (unary_expression
+                      (number_literal)))))
+              (parser_choice
+                (parser_sequence
+                  (let_statement
+                    (identifier)
+                    (parserdef_ref
+                      (identifier))
+                    (number_literal))
+                    (parse_statement
+                      (single))))
+              (let_statement
+                (retvrn)
+                (parserdef_ref
+                  (identifier))
+                (identifier)))))))))
+
+=============
+Three Choices
+=============
+
+def for[u8] *> three = {
+  | if 0
+    return: u8
+  | if 1
+    return: u8
+  | return: u8
+}
+
+---
+(source_file
+  (parser_definition
+    (type_array
+      (parserdef_ref
+        (identifier)))
+    (identifier)
+    (parser_block
+      (parser_sequence
+        (parser_choice
+          (parser_sequence
+            (parse_statement
+              (unary_expression
+                (number_literal)))
+            (parse_statement
+              (retvrn)
+              (identifier))))
+        (parser_choice
+          (parser_sequence
+            (parse_statement
+              (unary_expression
+                (number_literal)))
+            (parse_statement
+              (retvrn)
+              (identifier))))
+        (parser_choice
+          (parser_sequence
+            (parse_statement
+              (retvrn)
+              (identifier))))))))
+
+
+=======
+Comment
+=======
+
+# comment
+def for[u8] *> test = {
+   # comment
+  x: u8
+ # comment
+}
+
+---
+
+(source_file
+  (parser_definition
+    (type_array
+      (parserdef_ref
+        (identifier)))
+    (identifier)
+    (parser_block
+      (parser_sequence
+        (parse_statement
+          (identifier)
+          (identifier))))))
+

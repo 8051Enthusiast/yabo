@@ -30,11 +30,11 @@ heading = re.compile(r'^={3,}\[\s*(.*?)\s*\]\={3,}$', re.MULTILINE)
 case_title = re.compile(r'^(binary|output)\s+(.+)$')
 
 # a comment that contains the error message
-# for example, '//~^ error[301] not found here'
+# for example, '#~^ error[301] not found here'
 # represents an error message that should be
 # one line above the line with the comment
 # with error code 301
-error_comment = re.compile(r'^.*//(~\^*)\s*error\[(\d+)\]\s*(.*)$')
+error_comment = re.compile(r'^.*#(~\^*)\s*error\[(\d+)\]\s*(.*)$')
 
 
 class ErrorLocation:

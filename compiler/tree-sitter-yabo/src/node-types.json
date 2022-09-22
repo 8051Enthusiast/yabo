@@ -785,10 +785,6 @@
         "required": false,
         "types": [
           {
-            "type": "parser_choice",
-            "named": true
-          },
-          {
             "type": "parser_sequence",
             "named": true
           }
@@ -800,28 +796,10 @@
     "type": "parser_choice",
     "named": true,
     "fields": {
-      "left": {
+      "content": {
         "multiple": false,
         "required": true,
         "types": [
-          {
-            "type": "parser_choice",
-            "named": true
-          },
-          {
-            "type": "parser_sequence",
-            "named": true
-          }
-        ]
-      },
-      "right": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "parser_choice",
-            "named": true
-          },
           {
             "type": "parser_sequence",
             "named": true
@@ -974,10 +952,6 @@
         },
         {
           "type": "parser_choice",
-          "named": true
-        },
-        {
-          "type": "parser_sequence",
           "named": true
         }
       ]
@@ -1590,10 +1564,6 @@
     "named": false
   },
   {
-    "type": ";",
-    "named": false
-  },
-  {
     "type": "<",
     "named": false
   },
@@ -1710,19 +1680,11 @@
     "named": true
   },
   {
-    "type": "{",
-    "named": false
-  },
-  {
     "type": "|",
     "named": false
   },
   {
     "type": "|>",
-    "named": false
-  },
-  {
-    "type": "}",
     "named": false
   },
   {

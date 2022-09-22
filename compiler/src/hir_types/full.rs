@@ -195,36 +195,35 @@ mod tests {
             r#"
 def for['t] *> nil = {}
 def for['t] *> expr1 = {
-    a: ~,
-    b: {
-        let c: int = 2,
-        d: ~,
-        ;
-        let c: int = 1,
-    },
+  a: ~
+  b: {
+    | let c: int = 2
+      d: ~
+    | let c: int = 1
+  }
 }
 def each[int] *> expr2 = {
-    x: expr1,
-    let y: int = 3 + x.a,
+  x: expr1
+  let y: int = 3 + x.a
 }
 def for['t] *> expr3 = ~
 def for[for[int]] *> expr4 = {
-    x: expr3 |> expr3,
-    let b: for[int] *> (for[int] &> expr3) = expr3,
-    y: ~ |> b,
-    let a: int = x + y,
+  x: expr3 |> expr3
+  let b: for[int] *> (for[int] &> expr3) = expr3
+  y: ~ |> b
+  let a: int = x + y
 }
 def each[int] *> expr5 = {
-    x: expr2,
-    let b: expr2 = x,
+  x: expr2
+  let b: expr2 = x
 }
 def each[int] *> expr6 = {
-    let expr3: each[int] *> expr5 = expr5,
-    b: expr3,
-    inner: {
-        let expr3: each[int] *> expr2 = expr2,
-        b: expr3,
-    },
+  let expr3: each[int] *> expr5 = expr5
+  b: expr3
+  inner: {
+    let expr3: each[int] *> expr2 = expr2
+    b: expr3
+  }
 }
             "#,
         );

@@ -216,37 +216,34 @@ pub struct LetStatement {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Block {
-    pub content: Option<BlockContent>,
+    pub content: Option<ParserSequence>,
     pub span: Span,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum BlockContent {
+pub enum ParserSequenceElement {
     Statement(Box<Statement>),
-    Sequence(Box<ParserSequence>),
     Choice(Box<ParserChoice>),
 }
 
-impl BlockContent {
+impl ParserSequenceElement {
     pub fn span(&self) -> Span {
         match self {
-            BlockContent::Statement(x) => x.span(),
-            BlockContent::Sequence(x) => x.span,
-            BlockContent::Choice(x) => x.span,
+            ParserSequenceElement::Statement(x) => x.span(),
+            ParserSequenceElement::Choice(x) => x.span,
         }
     }
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserSequence {
-    pub content: Vec<BlockContent>,
+    pub content: Vec<ParserSequenceElement>,
     pub span: Span,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserChoice {
-    pub left: BlockContent,
-    pub right: BlockContent,
+    pub content: Vec<ParserSequence>,
     pub span: Span,
 }
 
@@ -301,11 +298,10 @@ mod tests {
         let ctx = Context::mock(
             r#"
 def for[u8] *> expr1 = {
-    (
-        let b: u64 = 3,
-    ;
-	    let _: u64 = 0,
-    )
+  x: u64
+  | let b: u64 = 3
+  | | let a: u64 = 0
+    | let z: u64 = 1
 }
         "#,
         );
