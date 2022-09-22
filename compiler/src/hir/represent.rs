@@ -163,7 +163,6 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Expression<HirValSpanned> {
             ExpressionHead::Monadic(Monadic { op, inner }) => match &op.inner {
                 expr::ValUnOp::Not => dbwrite!(f, db, "!{}", &**inner),
                 expr::ValUnOp::Neg => dbwrite!(f, db, "-{}", &**inner),
-                expr::ValUnOp::Pos => dbwrite!(f, db, "+{}", &**inner),
                 expr::ValUnOp::Wiggle(right, kind) => {
                     dbwrite!(f, db, "{} {} {}", &**inner, kind, &**right)
                 }

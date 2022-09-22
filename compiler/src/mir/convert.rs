@@ -365,9 +365,6 @@ impl<'a> ConvertCtx<'a> {
                         self.f.append_ins(MirInstr::IntUn(place_ref, op, inner));
                         place_ref
                     }
-                    ValUnOp::Pos => {
-                        self.copy_if_different_heads(self.int, inner_ty, place, origin, recurse)?
-                    }
                     ValUnOp::Wiggle(constr, kind) => {
                         let place_ref = self
                             .copy_if_different_heads(self.int, inner_ty, place, origin, recurse)?;

@@ -656,7 +656,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 }
             },
             ExpressionHead::Monadic(m) => match m.op.inner {
-                ValUnOp::Not | ValUnOp::Neg | ValUnOp::Pos => {
+                ValUnOp::Not | ValUnOp::Neg => {
                     make_layout(MonoLayout::Primitive(PrimitiveType::Int))
                 }
                 ValUnOp::Wiggle(_, _) => m.inner.0,

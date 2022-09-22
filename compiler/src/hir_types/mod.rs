@@ -301,7 +301,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         inner: &(inner, _),
                     }) => (
                         match &op.inner {
-                            ValUnOp::Neg | ValUnOp::Pos | ValUnOp::Not => {
+                            ValUnOp::Neg | ValUnOp::Not => {
                                 let int = self.infctx.int();
                                 self.infctx.constrain(inner, int)?;
                                 int
