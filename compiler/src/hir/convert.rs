@@ -349,12 +349,17 @@ fn let_statement(
     context: ContextId,
 ) -> VariableSet<(DefId, Span)> {
     let val_id = ExprId(id.child(ctx.db, PathComponent::Unnamed(0)));
-    let ty_id = TExprId(id.child(ctx.db, PathComponent::Unnamed(1)));
+    let ty = if let Some(ty) = &ast.ty {
+        let ty_id = TExprId(id.child(ctx.db, PathComponent::Unnamed(1)));
+        type_expression(&ty, ctx, ty_id);
+        Some(ty_id)
+    } else {
+        None
+    };
     val_expression(&ast.expr, ctx, val_id, Some(context));
-    type_expression(&ast.ty, ctx, ty_id);
     let st = LetStatement {
         id,
-        ty: ty_id,
+        ty,
         expr: val_id,
         context,
     };

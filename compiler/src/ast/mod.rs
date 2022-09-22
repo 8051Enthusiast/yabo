@@ -210,7 +210,7 @@ pub struct ParseStatement {
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct LetStatement {
     pub name: FieldSpan,
-    pub ty: TypeExpression,
+    pub ty: Option<TypeExpression>,
     pub expr: ValExpression,
     pub span: Span,
 }
