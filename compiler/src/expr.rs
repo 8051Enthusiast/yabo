@@ -519,7 +519,6 @@ impl Display for ValBinOp {
 pub enum ValUnOp<C> {
     Not,
     Neg,
-    Pos,
     Wiggle(C, WiggleKind),
     Dot(FieldName),
 }
@@ -530,7 +529,6 @@ impl<C> ValUnOp<C> {
         Ok(match s {
             "!" => Not,
             "-" => Neg,
-            "+" => Pos,
             otherwise => return Err(otherwise),
         })
     }
@@ -539,7 +537,6 @@ impl<C> ValUnOp<C> {
         match self {
             Not => Not,
             Neg => Neg,
-            Pos => Pos,
             Wiggle(expr, kind) => Wiggle(f(expr), kind.clone()),
             Dot(atom) => Dot(atom.clone()),
         }

@@ -89,13 +89,6 @@ module.exports = grammar({
       $._statement,
       $.parser_choice,
     ),
-    //parser_choice: $ => prec.right(100, seq(
-    //  $._parser_choice_element,
-    //  repeat(seq(
-    //    $._newline,
-    //    $._parser_choice_element,
-    //  ))
-    //)),
     parser_choice: $ => seq(
       '|',
       $._indent,
@@ -212,7 +205,7 @@ module.exports = grammar({
       }));
     },
     unary_expression: $ => prec(PREC.UNARY, seq(
-      field('op', choice('-', '!', '+', 'if')),
+      field('op', choice('-', '!', 'if')),
       field('right', $._expression)
     )),
     _type_atom: $ => choice(
