@@ -378,10 +378,13 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         &mut self,
         let_statement: &hir::LetStatement,
     ) -> Result<Option<InfTypeId<'intern>>, SpannedTypeError> {
-        let ty = let_statement.ty;
-        let ty_expr = ty.lookup(self.db)?.expr;
-        let infty = self.resolve_type_expr(&ty_expr, ty)?;
-        Ok(Some(infty))
+        if let Some(ty) = let_statement.ty {
+            let ty_expr = ty.lookup(self.db)?.expr;
+            let infty = self.resolve_type_expr(&ty_expr, ty)?;
+            Ok(Some(infty))
+        } else {
+            Ok(None)
+        }
     }
     fn initialize_vars_at(
         &mut self,

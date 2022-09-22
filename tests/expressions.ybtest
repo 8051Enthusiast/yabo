@@ -15,19 +15,19 @@ export def for[int] *> test = {
     a: i16l
     unit: +
     b: i16l
-    let plus: int = a + b
-    let minus: int = a - b
-    let times: int = a * b
-    | let _: int = b if 0
-      let div: int = 0
-      let mod: int = 0
-    | let div: int = a / b
-      let mod: int = a % b
-    let bit_and: int = a & b
-    let bit_or: int = a | b
-    let bit_xor: int = a ^ b
-    let bit_not: int = !a
-    let neg: int = -a
+    let plus = a + b
+    let minus = a - b
+    let times = a * b
+    | let _ = b if 0
+      let div = 0
+      let mod = 0
+    | let div = a / b
+      let mod = a % b
+    let bit_and = a & b
+    let bit_or = a | b
+    let bit_xor = a ^ b
+    let bit_not = !a
+    let neg = -a
 }
 
 ====[ binary 1 ]====

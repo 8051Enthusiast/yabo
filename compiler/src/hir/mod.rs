@@ -539,14 +539,18 @@ impl StructCtx {
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct LetStatement {
     pub id: LetId,
-    pub ty: TExprId,
+    pub ty: Option<TExprId>,
     pub expr: ExprId,
     pub context: ContextId,
 }
 
 impl LetStatement {
     fn children(&self) -> Vec<DefId> {
-        vec![self.ty.0, self.expr.0]
+        let mut children = vec![self.expr.0];
+        if let Some(ty) = self.ty {
+            children.push(ty.0);
+        }
+        children
     }
 }
 

@@ -133,8 +133,10 @@ module.exports = grammar({
     let_statement: $ => seq(
       'let',
       field('name', $._field_name),
-      ':',
-      field('ty', $._type_expression),
+      optional(seq(
+        ':',
+        field('ty', $._type_expression),
+      )),
       '=',
       field('expr', $._expression),
     ),

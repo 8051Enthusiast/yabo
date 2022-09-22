@@ -245,11 +245,14 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                         expr,
                         context,
                     }) => {
-                        vec![
+                        let mut v = vec![
                             (id.0, expr.0, "expr".to_string(), dot::Style::Bold),
-                            (id.0, ty.0, "ty".to_string(), dot::Style::Bold),
                             (id.0, context.0, "context".to_string(), dot::Style::Dotted),
-                        ]
+                        ];
+                        if let Some(ty) = ty {
+                            v.push((id.0, ty.0, "ty".to_string(), dot::Style::Bold))
+                        }
+                        v
                     }
                     HirNode::Expr(ValExpression { id, children, .. }) => children
                         .iter()
