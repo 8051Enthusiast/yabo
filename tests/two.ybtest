@@ -1,7 +1,7 @@
 ====[ source code ]====
 export def for[int] *> test = {
-	fst: ~,
-	snd: ~,
+	fst: ~
+	snd: ~
 }
 ====[ binary 1 ]====
 01 02

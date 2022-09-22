@@ -22,12 +22,25 @@ module.exports = grammar({
     $._comment,
   ],
 
+  word: $ => $.identifier,
+
+  externals: $ => [
+    $._newline,
+    $._indent,
+    $._dedent,
+    $._block_open,
+    $._block_close,
+    $._lexer_error,
+    // unused
+    $._notoken,
+  ],
+
   rules: {
     source_file: $ => repeat($._definition),
     _definition: $ => choice(
       $.parser_definition
     ),
-    _comment: $ => token(seq('//', /[^\n]*/)),
+    _comment: $ => token(seq('#', /[^\n]*/)),
     parser_definition: $ => seq(
       optional(field('qualifier', 'export')),
       'def',
@@ -57,25 +70,38 @@ module.exports = grammar({
       field('right', $._type_expression)
     )),
     parser_block: $ => seq(
-      '{',
-      optional(
-        field('content', $._parser_block_content),
-      ),
-      '}',
+      $._block_open,
+      optional(seq(
+        $._indent,
+        field('content', $.parser_sequence),
+        $._dedent,
+      )),
+      $._block_close,
     ),
-    _parser_block_content: $ => choice(
-      $.parser_choice,
-      $.parser_sequence,
+    parser_sequence: $ => seq(
+      $._parser_sequence_element,
+      repeat(seq(
+        choice($._newline, ','),
+        $._parser_sequence_element,
+      ))
     ),
-    parser_sequence: $ => repeat1(choice(
+    _parser_sequence_element: $=> choice(
       $._statement,
-      seq('(', $._parser_block_content, ')'),
-    )),
-    parser_choice: $ => prec.left(1, seq(
-      field('left', $._parser_block_content),
-      ';',
-      field('right', $._parser_block_content),
-    )),
+      $.parser_choice,
+    ),
+    //parser_choice: $ => prec.right(100, seq(
+    //  $._parser_choice_element,
+    //  repeat(seq(
+    //    $._newline,
+    //    $._parser_choice_element,
+    //  ))
+    //)),
+    parser_choice: $ => seq(
+      '|',
+      $._indent,
+      field('content', $.parser_sequence),
+      $._dedent,
+    ),
     type_array: $ => seq(
       field('direction', choice('for', 'each')),
       '[',
@@ -110,7 +136,6 @@ module.exports = grammar({
         )
       ),
       field('parser', $._expression),
-      ',',
     ),
     let_statement: $ => seq(
       'let',
@@ -119,7 +144,6 @@ module.exports = grammar({
       field('ty', $._type_expression),
       '=',
       field('expr', $._expression),
-      ',',
     ),
     _constraint_expression: $ => choice(
       $.binary_constraint_expression,

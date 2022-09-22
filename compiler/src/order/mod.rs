@@ -398,8 +398,8 @@ mod tests {
         let ctx = Context::mock(
             r#"
 def for[u8] *> cycle = {
-    let x: int = y,
-    let y: int = x + 1,
+    let x: int = y
+    let y: int = x + 1
 }
         "#,
         );
@@ -410,8 +410,9 @@ def for[u8] *> cycle = {
         let ctx = Context::mock(
             r#"
 def for[u8] *> cycle = {
-    (let x: int = y,; x: ~,)
-    y: ~,
+    | let x: int = y
+    | x: ~
+    y: ~
 }
         "#,
         );
@@ -422,9 +423,8 @@ def for[u8] *> cycle = {
         let ctx = Context::mock(
             r#"
 def for[int] *> main = {
-    y: ~,
-    ;
-    let y: int = 0,
+    | y: ~
+    | let y: int = 0
 }
         "#,
         );
@@ -449,13 +449,12 @@ def for[int] *> main = {
 def for['a] *> first = ~
 def for['b] *> second = ~
 def for[int] *> main = {
-    a: ~,
-    b: ~,
+    a: ~
+    b: ~
     c: {
-        c: first,
-        ;
-        c: second,
-    },
+        | c: first
+        | c: second
+    }
 }
             ",
         );

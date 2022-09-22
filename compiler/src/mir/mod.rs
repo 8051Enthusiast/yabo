@@ -490,17 +490,17 @@ mod tests {
         let ctx = Context::mock(
             r"
 def for[int] *> main = {
-    a: ~,
-    b: ~,
-    e: {
-        let y: int = x + b,
-        x: ~,
-    },
-    ;
-    b: ~,
-    a: ~,
-    c: ~,
-    let d: int = b + c * a * a,
+    | a: ~
+      b: ~
+      e: {
+          let y: int = x + b
+          x: ~
+      }
+
+    | b: ~
+      a: ~
+      c: ~
+      let d: int = b + c * a * a
 }
         ",
         );

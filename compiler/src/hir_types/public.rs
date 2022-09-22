@@ -214,27 +214,26 @@ mod tests {
         let ctx = Context::mock(
             r#"
 def for['t] *> expr1 = {
-    a: ~,
-    b: ~,
+    a: ~
+    b: ~
     c: {
-        let d: int = 2,
-        e: ~,
-        ;
-        let d: int = 1,
-    },
+      | let d: int = 2
+        e: ~
+      | let d: int = 1
+    }
 }
 def each[int] *> expr2 = {
-    x: expr1,
-    (let y: int = 3,; y: ~,)
+    x: expr1
+    | let y: int = 3
+    | y: ~
 }
 def for[int] *> expr3 = ~
 def for[int] *> expr4 = {
-    x: expr3,
-    ;
-    let x: int = 3,
+    | x: expr3
+    | let x: int = 3
 }
 def for[for[int]] *> expr5 = {
-    x: ~ |> expr3,
+    x: ~ |> expr3
 }
             "#,
         );

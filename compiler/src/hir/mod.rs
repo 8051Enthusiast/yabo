@@ -639,12 +639,9 @@ mod tests {
         let ctx = Context::mock(
             r#"
 def for [u8] *> expr1 = {
-    (
-        a: u64,
-        b: u32,
-    ;
-        a: u64,
-    )
+  | a: u64
+    b: u32
+  | a: u64,
 }
         "#,
         );

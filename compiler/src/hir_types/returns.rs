@@ -211,9 +211,9 @@ def for[int] *> single = ~
         let ctx = Context::mock(
             r#"
 def for[int] *> u16l = {
-    low: ~,
-    high: ~,
-    let return: int = low + high * 256,
+    low: ~
+    high: ~
+    let return: int = low + high * 256
 }
             "#,
         );

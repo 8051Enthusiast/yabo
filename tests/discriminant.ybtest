@@ -1,17 +1,15 @@
 ====[ source code ]====
 export def for[int] *> test = {
-	tag: ~,
-	(
-		let first: int = tag if 1,
-		let extra: int = 1,
-		;
-		let second: int = 5 * tag if 2,
-		extra: ~,
-		let additional: int = extra + tag,
-		;
-		let third: int = tag if 3,
-		additional: ~,
-	)
+  tag: ~
+  | let first: int = tag if 1
+    let extra: int = 1
+  
+  | let second: int = 5 * tag if 2
+    extra: ~
+    let additional: int = extra + tag
+  
+  | let third: int = tag if 3
+    additional: ~
 }
 
 ====[ binary 1 ]====

@@ -189,7 +189,7 @@ fn struct_choice(
     pred: ParserPredecessor,
     parents: &ParentInfo,
 ) -> VariableSet<Vec<(u32, DefId, Span)>> {
-    let children = extract_non_choice(ast);
+    let children = &ast.content;
     let parents = ParentInfo {
         parent_choice: Some(id),
         ..*parents
@@ -200,7 +200,7 @@ fn struct_choice(
     for (idx, child) in children.into_iter().enumerate() {
         let subcontext_id = ContextId(id.child(ctx.db, PathComponent::Unnamed(idx as u32)));
         subcontexts.push(subcontext_id);
-        let new_vars = struct_context(child, ctx, subcontext_id, &parents);
+        let new_vars = struct_context(&child, ctx, subcontext_id, &parents);
         varset = varset
             .map(|x: VariableSet<()>| x.merge_sum(&new_vars))
             .or_else(|| Some(new_vars.without_data()));
@@ -225,19 +225,6 @@ fn struct_choice(
     varset
 }
 
-fn extract_non_choice(ast: &ast::ParserChoice) -> Vec<&ast::BlockContent> {
-    let mut left = match &ast.left {
-        ast::BlockContent::Choice(c) => extract_non_choice(c),
-        otherwise => vec![otherwise],
-    };
-    let mut right = match &ast.right {
-        ast::BlockContent::Choice(c) => extract_non_choice(c),
-        otherwise => vec![otherwise],
-    };
-    left.append(&mut right);
-    left
-}
-
 fn empty_struct_context(
     ctx: &HirConversionCtx,
     id: ContextId,
@@ -259,15 +246,12 @@ fn empty_struct_context(
 }
 
 fn struct_context(
-    ast: &ast::BlockContent,
+    ast: &ast::ParserSequence,
     ctx: &HirConversionCtx,
     id: ContextId,
     parents: &ParentInfo,
 ) -> VariableSet<(DefId, Span)> {
-    let children = match ast {
-        ast::BlockContent::Sequence(x) => x.content.iter().collect(),
-        otherwise => vec![otherwise],
-    };
+    let children = &ast.content;
     let mut children_id = BTreeSet::new();
     let mut duplicate_field = HashMap::<FieldName, HirConversionError>::new();
     let old_parents = *parents;
@@ -309,7 +293,7 @@ fn struct_context(
     };
     for child in children {
         let new_set = match child {
-            ast::BlockContent::Choice(c) => {
+            ast::ParserSequenceElement::Choice(c) => {
                 let sub_id = ChoiceId(new_id(None));
                 let choice_indirect =
                     struct_choice(c, ctx, sub_id, update_pred(sub_id.0), &parents);
@@ -319,7 +303,7 @@ fn struct_context(
                     (chin_id.0, b[0].2)
                 })
             }
-            ast::BlockContent::Statement(x) => {
+            ast::ParserSequenceElement::Statement(x) => {
                 let sub_id = new_id(x.field());
                 match x.as_ref() {
                     ast::Statement::Parse(p) => {
@@ -329,7 +313,6 @@ fn struct_context(
                     ast::Statement::Let(l) => let_statement(l, ctx, LetId(sub_id), id),
                 }
             }
-            ast::BlockContent::Sequence(_) => unreachable!(),
         };
         let (result_set, duplicate) = varset.merge_product(&new_set);
         duplicate_field.extend(duplicate.into_iter().map(|(name, duplicate, first)| {
@@ -354,7 +337,7 @@ fn struct_context(
         children: Box::new(children_id.into_iter().collect()),
         endpoints,
     };
-    ctx.insert(id.0, HirNode::Context(context), vec![ast.span()]);
+    ctx.insert(id.0, HirNode::Context(context), vec![ast.span]);
     varset
 }
 

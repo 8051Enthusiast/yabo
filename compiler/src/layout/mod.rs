@@ -766,14 +766,13 @@ mod tests {
 def for['a] *> first = ~
 def for['b] *> second = ~
 def for[int] *> main = {
-    a: ~,
-    b: ~,
+    a: ~
+    b: ~
     c: {
-        let c: for[int] *> first = first,
-        ;
-        let c: for[int] *> second = second,
-    },
-    d: c.c,
+      | let c: for[int] *> first = first
+      | let c: for[int] *> second = second
+    }
+    d: c.c
 }
         ",
         );

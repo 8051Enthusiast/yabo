@@ -1,54 +1,54 @@
 ====[ source code ]====
 def for[int] *> u8l = {
-    return: ~,
+    return: ~
 }
 
 def for[int] *> u16l = {
-	lo: ~,
-	hi: ~,
-	let return: int = lo + 256 * hi,
+	lo: ~
+	hi: ~
+	let return: int = lo + 256 * hi
 }
 
 def for[int] *> u32l = {
-	lo: u16l,
-	hi: u16l,
-	let return: int = lo | hi << 16,
+	lo: u16l
+	hi: u16l
+	let return: int = lo | hi << 16
 }
 
 def for[int] *> u64l = {
-    lo: u32l,
-    hi: u32l,
-    let return: int = lo | hi << 32,
+  lo: u32l
+  hi: u32l
+  let return: int = lo | hi << 32
 }
 
 def for[int] *> header_magic = {
-    n7f: ~,
-    e: ~,
-    l: ~,
-    f: ~,
+  n7f: ~
+  e: ~
+  l: ~
+  f: ~
 }
 
 export def for[int] *> test = {
-    ei_magic: header_magic,
-    ei_class: u8l,
-    ei_data: u8l,
-    ei_version: u8l,
-    ei_osabi: u8l,
-    ei_abiversion: u8l,
-    ~, ~, ~, ~, ~, ~, ~,
-    type: u16l,
-    machine: u16l,
-    version: u32l,
-    entry: u64l,
-    phoff: u64l,
-    shoff: u64l,
-    flags: u32l,
-    ehsize: u16l,
-    phentsize: u16l,
-    phnum: u16l,
-    shentsize: u16l,
-    shnum: u16l,
-    shstrndx: u16l,
+  ei_magic: header_magic
+  ei_class: u8l
+  ei_data: u8l
+  ei_version: u8l
+  ei_osabi: u8l
+  ei_abiversion: u8l
+  ~, ~, ~, ~, ~, ~, ~
+  type: u16l
+  machine: u16l
+  version: u32l
+  entry: u64l
+  phoff: u64l
+  shoff: u64l
+  flags: u32l
+  ehsize: u16l
+  phentsize: u16l
+  phnum: u16l
+  shentsize: u16l
+  shnum: u16l
+  shstrndx: u16l
 }
 
 ====[ binary 1 ]====
