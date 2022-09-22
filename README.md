@@ -1,4 +1,4 @@
 yabo
 ====
 
-Runtime-less functional language for defining binary structures. No codegen yet. No diagnostics yet. Very WIP.
+Runtime-minimalistic functional language for defining binary structures. Very WIP.
