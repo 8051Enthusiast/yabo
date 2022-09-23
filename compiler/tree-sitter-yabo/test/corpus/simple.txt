@@ -208,3 +208,29 @@ def for[u8] *> test = {
           (identifier)
           (identifier))))))
 
+
+====
+Args
+====
+
+def for[int] *> nonsense(x: int, y: int) = 1 + nonsense(3, 4)
+
+---
+
+(source_file
+  (parser_definition
+    from: (type_array
+      expr: (primitive_type))
+    name: (identifier)
+    argdefs: (arg_definition
+      name: (identifier)
+      ty: (primitive_type))
+    argdefs: (arg_definition
+      name: (identifier)
+      ty: (primitive_type))
+    to: (binary_expression
+      left: (number_literal)
+      right: (fun_application
+        applicant: (identifier)
+        args: (number_literal)
+        args: (number_literal)))))
