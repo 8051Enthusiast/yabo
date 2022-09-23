@@ -1,5 +1,63 @@
 [
   {
+    "type": "arg_definition",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "ty": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "(",
+            "named": false
+          },
+          {
+            "type": ")",
+            "named": false
+          },
+          {
+            "type": "binary_type_expression",
+            "named": true
+          },
+          {
+            "type": "parserdef_ref",
+            "named": true
+          },
+          {
+            "type": "primitive_type",
+            "named": true
+          },
+          {
+            "type": "type_array",
+            "named": true
+          },
+          {
+            "type": "type_constraint",
+            "named": true
+          },
+          {
+            "type": "type_var",
+            "named": true
+          },
+          {
+            "type": "unary_type_expression",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "binary_constraint_expression",
     "named": true,
     "fields": {
@@ -105,6 +163,10 @@
           },
           {
             "type": "constraint_apply",
+            "named": true
+          },
+          {
+            "type": "fun_application",
             "named": true
           },
           {
@@ -249,6 +311,10 @@
           },
           {
             "type": "constraint_apply",
+            "named": true
+          },
+          {
+            "type": "fun_application",
             "named": true
           },
           {
@@ -425,6 +491,10 @@
             "named": true
           },
           {
+            "type": "fun_application",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -513,6 +583,144 @@
     }
   },
   {
+    "type": "fun_application",
+    "named": true,
+    "fields": {
+      "applicant": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "(",
+            "named": false
+          },
+          {
+            "type": ")",
+            "named": false
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "char_literal",
+            "named": true
+          },
+          {
+            "type": "constraint_apply",
+            "named": true
+          },
+          {
+            "type": "fun_application",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "nil",
+            "named": true
+          },
+          {
+            "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parser_array",
+            "named": true
+          },
+          {
+            "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "retvrn",
+            "named": true
+          },
+          {
+            "type": "single",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          },
+          {
+            "type": "val_dot",
+            "named": true
+          }
+        ]
+      },
+      "args": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "(",
+            "named": false
+          },
+          {
+            "type": ")",
+            "named": false
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "char_literal",
+            "named": true
+          },
+          {
+            "type": "constraint_apply",
+            "named": true
+          },
+          {
+            "type": "fun_application",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "nil",
+            "named": true
+          },
+          {
+            "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parser_array",
+            "named": true
+          },
+          {
+            "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "retvrn",
+            "named": true
+          },
+          {
+            "type": "single",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          },
+          {
+            "type": "val_dot",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "let_statement",
     "named": true,
     "fields": {
@@ -538,6 +746,10 @@
           },
           {
             "type": "constraint_apply",
+            "named": true
+          },
+          {
+            "type": "fun_application",
             "named": true
           },
           {
@@ -684,6 +896,10 @@
             "named": true
           },
           {
+            "type": "fun_application",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -766,6 +982,10 @@
             "named": true
           },
           {
+            "type": "fun_application",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -841,6 +1061,16 @@
     "type": "parser_definition",
     "named": true,
     "fields": {
+      "argdefs": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "arg_definition",
+            "named": true
+          }
+        ]
+      },
       "from": {
         "multiple": true,
         "required": true,
@@ -925,6 +1155,10 @@
           },
           {
             "type": "constraint_apply",
+            "named": true
+          },
+          {
+            "type": "fun_application",
             "named": true
           },
           {
@@ -1339,6 +1573,10 @@
             "named": true
           },
           {
+            "type": "fun_application",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -1462,6 +1700,10 @@
           },
           {
             "type": "constraint_apply",
+            "named": true
+          },
+          {
+            "type": "fun_application",
             "named": true
           },
           {

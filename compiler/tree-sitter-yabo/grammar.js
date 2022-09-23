@@ -47,6 +47,7 @@ module.exports = grammar({
       field('from', $._type_expression),
       '*>',
       field('name', $.identifier),
+      optional($._arg_def_list),
       '=',
       field('to', $._expression),
     ),
@@ -85,7 +86,7 @@ module.exports = grammar({
         $._parser_sequence_element,
       ))
     ),
-    _parser_sequence_element: $=> choice(
+    _parser_sequence_element: $ => choice(
       $._statement,
       $.parser_choice,
     ),
@@ -161,6 +162,7 @@ module.exports = grammar({
     _expression: $ => choice(
       $.binary_expression,
       $.unary_expression,
+      $.fun_application,
       $.val_dot,
       $.constraint_apply,
       $.parser_array,
@@ -170,12 +172,37 @@ module.exports = grammar({
       seq('(', $._expression, ')'),
       $._atom,
     ),
-    fun_application: $ => seq(
-      $._expression,
+    _arg_list: $ => seq(
       '(',
-      $._expression,
-      ')',
+      optional(seq(
+        field('args', $._expression),
+        repeat(seq(
+          ',',
+          field('args', $._expression),
+        )),
+      )),
+      ')'
     ),
+    arg_definition: $ => seq(
+      field('name', $.identifier),
+      ':',
+      field('ty', $._type_expression),
+    ),
+    _arg_def_list: $ => seq(
+      '(',
+      optional(seq(
+        field('argdefs', $.arg_definition),
+        repeat(seq(
+          ',',
+          field('argdefs', $.arg_definition),
+        )),
+      )),
+      ')'
+    ),
+    fun_application: $ => prec(PREC.ARGS, seq(
+      field('applicant', $._expression),
+      $._arg_list,
+    )),
     binary_expression: $ => {
       const table = [
         ['else', PREC.ELSE],
