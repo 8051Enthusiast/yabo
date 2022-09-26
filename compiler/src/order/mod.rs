@@ -142,7 +142,10 @@ fn val_refs(
             .collect()),
         hir::HirNode::TExpr(_) => Ok(FxHashSet::default()),
         hir::HirNode::Array(_) => todo!(),
-        hir::HirNode::Module(_) | hir::HirNode::ParserDef(_) | hir::HirNode::Context(_) => {
+        hir::HirNode::ArgDef(_)
+        | hir::HirNode::Module(_)
+        | hir::HirNode::ParserDef(_)
+        | hir::HirNode::Context(_) => {
             panic!(
                 "attempting to get value references of invalid node {:?}",
                 node
@@ -159,6 +162,7 @@ fn pred(node: &hir::HirNode) -> Option<[ParserPredecessor; 2]> {
         | hir::HirNode::TExpr(_)
         | hir::HirNode::Array(_)
         | hir::HirNode::Block(_)
+        | hir::HirNode::ArgDef(_)
         | hir::HirNode::Module(_)
         | hir::HirNode::Context(_)
         | hir::HirNode::ChoiceIndirection(_)
@@ -221,9 +225,10 @@ fn node_subvalue_kinds(node: &hir::HirNode) -> &'static [SubValueKind] {
         hir::HirNode::Parse(_) | hir::HirNode::Block(_) | hir::HirNode::Choice(_) => {
             &[SubValueKind::Front, SubValueKind::Back, SubValueKind::Val][..]
         }
-        hir::HirNode::Let(_) | hir::HirNode::Expr(_) | hir::HirNode::ChoiceIndirection(_) => {
-            &[SubValueKind::Val][..]
-        }
+        hir::HirNode::Let(_)
+        | hir::HirNode::Expr(_)
+        | hir::HirNode::ChoiceIndirection(_)
+        | hir::HirNode::ArgDef(_) => &[SubValueKind::Val][..],
         _ => &[],
     }
 }

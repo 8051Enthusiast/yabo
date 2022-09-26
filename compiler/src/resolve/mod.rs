@@ -86,7 +86,7 @@ impl Silencable for ResolveError {
     type Out = SilencedError;
 
     fn silence(self) -> Self::Out {
-        SilencedError
+        SilencedError::new()
     }
 }
 

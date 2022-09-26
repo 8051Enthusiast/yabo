@@ -2,16 +2,19 @@ use crate::interner::FieldName;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
+
 pub trait ExpressionKind: Clone + Hash + Eq + Debug {
     type NiladicOp: Clone + Hash + Eq + Debug;
     type MonadicOp: Clone + Hash + Eq + Debug;
     type DyadicOp: Clone + Hash + Eq + Debug;
+    type VariadicOp: Clone + Hash + Eq + Debug;
 }
 
 impl<'a, K: ExpressionKind> ExpressionKind for &'a K {
     type NiladicOp = &'a K::NiladicOp;
     type MonadicOp = &'a K::MonadicOp;
     type DyadicOp = &'a K::DyadicOp;
+    type VariadicOp = &'a K::VariadicOp;
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -31,10 +34,19 @@ pub struct Dyadic<Op, Inner> {
 pub type DyadicExpr<K> = Dyadic<<K as ExpressionKind>::DyadicOp, Box<Expression<K>>>;
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct Variadic<Op, Inner> {
+    pub op: Op,
+    pub inner: Vec<Inner>,
+}
+
+pub type VariadicExpr<K> = Variadic<<K as ExpressionKind>::VariadicOp, Box<Expression<K>>>;
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum ExpressionHead<K: ExpressionKind, Inner> {
     Niladic(K::NiladicOp),
     Monadic(Monadic<K::MonadicOp, Inner>),
     Dyadic(Dyadic<K::DyadicOp, Inner>),
+    Variadic(Variadic<K::VariadicOp, Inner>),
 }
 
 impl<K: ExpressionKind, Inner> ExpressionHead<K, Inner> {
@@ -54,6 +66,11 @@ impl<K: ExpressionKind, Inner> ExpressionHead<K, Inner> {
     }
 
     #[inline]
+    pub fn new_variadic(op: K::VariadicOp, inner: Vec<Inner>) -> Self {
+        Self::Variadic(Variadic { op, inner })
+    }
+
+    #[inline]
     pub fn map_inner<NewInner>(
         self,
         mut f: impl FnMut(Inner) -> NewInner,
@@ -62,20 +79,9 @@ impl<K: ExpressionKind, Inner> ExpressionHead<K, Inner> {
             Self::Niladic(op) => ExpressionHead::new_niladic(op),
             Self::Monadic(Monadic { op, inner }) => ExpressionHead::new_monadic(op, f(inner)),
             Self::Dyadic(Dyadic { op, inner }) => ExpressionHead::new_dyadic(op, inner.map(f)),
-        }
-    }
-
-    #[inline]
-    pub fn map_op<NewKind: ExpressionKind>(
-        self,
-        niladic: impl FnOnce(K::NiladicOp) -> NewKind::NiladicOp,
-        monadic: impl FnOnce(K::MonadicOp) -> NewKind::MonadicOp,
-        dyadic: impl FnOnce(K::DyadicOp) -> NewKind::DyadicOp,
-    ) -> ExpressionHead<NewKind, Inner> {
-        match self {
-            Self::Niladic(op) => ExpressionHead::new_niladic(niladic(op)),
-            Self::Monadic(Monadic { op, inner }) => ExpressionHead::new_monadic(monadic(op), inner),
-            Self::Dyadic(Dyadic { op, inner }) => ExpressionHead::new_dyadic(dyadic(op), inner),
+            Self::Variadic(Variadic { op, inner }) => {
+                ExpressionHead::new_variadic(op, inner.into_iter().map(f).collect())
+            }
         }
     }
 
@@ -86,6 +92,9 @@ impl<K: ExpressionKind, Inner> ExpressionHead<K, Inner> {
             Self::Monadic(Monadic { op, inner }) => ExpressionHead::new_monadic(op, inner),
             Self::Dyadic(Dyadic { op, inner }) => {
                 ExpressionHead::new_dyadic(op, [&inner[0], &inner[1]])
+            }
+            Self::Variadic(Variadic { op, inner }) => {
+                ExpressionHead::new_variadic(op, inner.iter().collect())
             }
         }
     }
@@ -103,6 +112,10 @@ impl<K: ExpressionKind, T, E> ExpressionHead<K, Result<T, E>> {
                 op,
                 inner: [inner0, inner1],
             }) => Ok(ExpressionHead::new_dyadic(op, [inner0?, inner1?])),
+            ExpressionHead::Variadic(Variadic { op, inner }) => {
+                let inner = inner.into_iter().collect::<Result<Vec<_>, _>>()?;
+                Ok(ExpressionHead::new_variadic(op, inner))
+            }
         }
     }
 }
@@ -117,6 +130,10 @@ impl<'a, K: ExpressionKind, Inner: Clone> ExpressionHead<&K, &Inner> {
             Self::Dyadic(Dyadic { op, inner }) => {
                 ExpressionHead::new_dyadic((*op).clone(), [inner[0].clone(), inner[1].clone()])
             }
+            Self::Variadic(Variadic { op, inner }) => ExpressionHead::new_variadic(
+                (*op).clone(),
+                inner.into_iter().copied().cloned().collect(),
+            ),
         }
     }
 }
@@ -131,6 +148,7 @@ impl<K: ExpressionKind> Expression<K> {
             ExpressionHead::Niladic(_) => vec![],
             ExpressionHead::Monadic(m) => vec![&m.inner],
             ExpressionHead::Dyadic(d) => vec![&d.inner[0], &d.inner[1]],
+            ExpressionHead::Variadic(v) => v.inner.iter().map(|x| x.as_ref()).collect(),
         }
     }
 
@@ -152,6 +170,13 @@ impl<K: ExpressionKind> Expression<K> {
             [Box::new(inner0), Box::new(inner1)],
         ))
     }
+    #[inline]
+    pub fn new_variadic(op: K::VariadicOp, inner: Vec<Self>) -> Self {
+        Self(ExpressionHead::new_variadic(
+            op,
+            inner.into_iter().map(Box::new).collect(),
+        ))
+    }
     pub fn fold<T>(&self, f: &mut impl FnMut(ExpressionHead<&K, T>) -> T) -> T {
         let inner_folded = self.0.as_ref().map_inner(|inner| inner.fold(f));
         f(inner_folded)
@@ -167,6 +192,21 @@ impl<K: ExpressionKind> Expression<K> {
             .transpose()?;
         f(inner_folded)
     }
+    pub fn convert_no_var<ToKind: ExpressionKind>(
+        &self,
+        niladic: &mut impl FnMut(&K::NiladicOp) -> ToKind::NiladicOp,
+        monadic: &mut impl FnMut(&K::MonadicOp, &Expression<ToKind>) -> ToKind::MonadicOp,
+        dyadic: &mut impl FnMut(
+            &K::DyadicOp,
+            &Expression<ToKind>,
+            &Expression<ToKind>,
+        ) -> ToKind::DyadicOp,
+    ) -> Expression<ToKind>
+    where
+        K::VariadicOp: Ignorable,
+    {
+        self.convert(niladic, monadic, dyadic, &mut |x, _| x.ignore())
+    }
     pub fn convert<ToKind: ExpressionKind>(
         &self,
         niladic: &mut impl FnMut(&K::NiladicOp) -> ToKind::NiladicOp,
@@ -176,22 +216,35 @@ impl<K: ExpressionKind> Expression<K> {
             &Expression<ToKind>,
             &Expression<ToKind>,
         ) -> ToKind::DyadicOp,
+        variadic: &mut impl FnMut(&K::VariadicOp, &Vec<Expression<ToKind>>) -> ToKind::VariadicOp,
     ) -> Expression<ToKind> {
         match &self.0 {
             ExpressionHead::Niladic(op) => Expression::new_niladic(niladic(op)),
             ExpressionHead::Monadic(Monadic { op, inner }) => {
-                let val = inner.convert(niladic, monadic, dyadic);
+                let val = inner.convert(niladic, monadic, dyadic, variadic);
                 Expression::new_monadic(monadic(op, &val), val)
             }
             ExpressionHead::Dyadic(Dyadic { op, inner }) => {
-                let val0 = inner[0].convert(niladic, monadic, dyadic);
-                let val1 = inner[1].convert(niladic, monadic, dyadic);
+                let val0 = inner[0].convert(niladic, monadic, dyadic, variadic);
+                let val1 = inner[1].convert(niladic, monadic, dyadic, variadic);
                 Expression::new_dyadic(dyadic(op, &val0, &val1), [val0, val1])
+            }
+            ExpressionHead::Variadic(v) => {
+                let vals = v
+                    .inner
+                    .iter()
+                    .map(|x| x.convert(niladic, monadic, dyadic, variadic))
+                    .collect();
+                Expression::new_variadic(variadic(&v.op, &vals), vals)
             }
         }
     }
     pub fn convert_niladic<
-        ToKind: ExpressionKind<MonadicOp = K::MonadicOp, DyadicOp = K::DyadicOp>,
+        ToKind: ExpressionKind<
+            MonadicOp = K::MonadicOp,
+            DyadicOp = K::DyadicOp,
+            VariadicOp = K::VariadicOp,
+        >,
         E,
     >(
         &self,
@@ -207,6 +260,13 @@ impl<K: ExpressionKind> Expression<K> {
                 let val0 = inner[0].convert_niladic(niladic)?;
                 let val1 = inner[1].convert_niladic(niladic)?;
                 Ok(Expression::new_dyadic(op.clone(), [val0, val1]))
+            }
+            ExpressionHead::Variadic(Variadic { op, inner }) => {
+                let inner = inner
+                    .iter()
+                    .map(|x| x.convert_niladic(niladic))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Expression::new_variadic(op.clone(), inner))
             }
         }
     }
@@ -277,6 +337,9 @@ impl<K: ExpressionKind, T: Clone + Hash + Eq + Debug, I> ExpressionHead<KindWith
             ExpressionHead::Dyadic(Dyadic { op, inner }) => {
                 ExpressionHead::new_dyadic(op.map_data(f), inner)
             }
+            ExpressionHead::Variadic(Variadic { op, inner }) => {
+                ExpressionHead::new_variadic(op.map_data(f), inner)
+            }
         }
     }
 }
@@ -288,6 +351,7 @@ impl<T: Clone + Hash + Eq + Debug, K: ExpressionKind> ExpressionKind for KindWit
     type NiladicOp = OpWithData<K::NiladicOp, T>;
     type MonadicOp = OpWithData<K::MonadicOp, T>;
     type DyadicOp = OpWithData<K::DyadicOp, T>;
+    type VariadicOp = OpWithData<K::VariadicOp, T>;
 }
 
 impl<K: ExpressionKind, T: Clone + Hash + Eq + Debug, Inner>
@@ -298,6 +362,7 @@ impl<K: ExpressionKind, T: Clone + Hash + Eq + Debug, Inner>
             ExpressionHead::Niladic(op) => &op.data,
             ExpressionHead::Monadic(head) => &head.op.data,
             ExpressionHead::Dyadic(head) => &head.op.data,
+            ExpressionHead::Variadic(head) => &head.op.data,
         }
     }
 }
@@ -316,6 +381,9 @@ impl<T: Clone + Hash + Eq + Debug, K: ExpressionKind> Expression<KindWithData<K,
             }
             ExpressionHead::Dyadic(Dyadic { op, inner }) => {
                 Expression::new_dyadic(OpWithData::new(f(&op.data), op.inner.clone()), inner)
+            }
+            ExpressionHead::Variadic(Variadic { op, inner }) => {
+                Expression::new_variadic(OpWithData::new(f(&op.data), op.inner.clone()), inner)
             }
         }
     }
@@ -338,6 +406,10 @@ impl<T: Clone + Hash + Eq + Debug, K: ExpressionKind> Expression<KindWithData<K,
                 inner,
             )),
             ExpressionHead::Dyadic(Dyadic { op, inner }) => Ok(Expression::new_dyadic(
+                OpWithData::new(f(&op.data)?, op.inner.clone()),
+                inner,
+            )),
+            ExpressionHead::Variadic(Variadic { op, inner }) => Ok(Expression::new_variadic(
                 OpWithData::new(f(&op.data)?, op.inner.clone()),
                 inner,
             )),
@@ -365,6 +437,14 @@ impl<T: Clone + Hash + Eq + Debug, K: ExpressionKind> Expression<KindWithData<K,
                     [inner0.0.root_data(), inner1.0.root_data()],
                 ));
                 Expression::new_dyadic(OpWithData::new(new_op, op.inner.clone()), [inner0, inner1])
+            }
+            ExpressionHead::Variadic(Variadic { op, inner }) => {
+                let inner = inner.iter().map(|e| e.scan(f)).collect::<Vec<_>>();
+                let new_op = f(ExpressionHead::new_variadic(
+                    op,
+                    inner.iter().map(|e| e.0.root_data()).collect::<Vec<_>>(),
+                ));
+                Expression::new_variadic(OpWithData::new(new_op, op.inner.clone()), inner)
             }
         }
     }
@@ -395,6 +475,20 @@ impl<T: Clone + Hash + Eq + Debug, K: ExpressionKind> Expression<KindWithData<K,
                 Ok(Expression::new_dyadic(
                     OpWithData::new(new_op, op.inner.clone()),
                     [inner0, inner1],
+                ))
+            }
+            ExpressionHead::Variadic(Variadic { op, inner }) => {
+                let inner = inner
+                    .iter()
+                    .map(|e| e.try_scan(f))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let new_op = f(ExpressionHead::new_variadic(
+                    op,
+                    inner.iter().map(|e| e.0.root_data()).collect::<Vec<_>>(),
+                ))?;
+                Ok(Expression::new_variadic(
+                    OpWithData::new(new_op, op.inner.clone()),
+                    inner,
                 ))
             }
         }
@@ -565,6 +659,11 @@ impl Display for WiggleKind {
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub enum ValVarOp {
+    Call,
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum TypeBinOp {
     Ref,
     ParseArg,
@@ -660,5 +759,43 @@ impl ConstraintUnOp {
             "!" => Not,
             otherwise => return Err(otherwise),
         })
+    }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub enum Unused {}
+
+pub trait Ignorable {
+    fn ignore(&self) -> !;
+    fn ignore_as<T>(&self) -> T {
+        self.ignore()
+    }
+}
+
+impl Ignorable for Unused {
+    #[inline(always)]
+    fn ignore(&self) -> ! {
+        match *self {}
+    }
+}
+
+impl<Op: Ignorable, Data> Ignorable for OpWithData<Op, Data> {
+    #[inline(always)]
+    fn ignore(&self) -> ! {
+        self.inner.ignore()
+    }
+}
+
+impl<T: Ignorable> Ignorable for &T {
+    #[inline(always)]
+    fn ignore(&self) -> ! {
+        (*self).ignore()
+    }
+}
+
+impl<T: Ignorable, Inner> Ignorable for Variadic<T, Inner> {
+    #[inline(always)]
+    fn ignore(&self) -> ! {
+        self.op.ignore()
     }
 }

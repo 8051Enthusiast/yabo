@@ -1,12 +1,12 @@
 use fxhash::FxHashMap;
 use sha2::Digest;
-use std::fmt::Write;
+use std::{collections::BTreeMap, fmt::Write};
 
 use crate::{
     databased_display::DatabasedDisplay,
     dbformat, dbwrite,
     hash::StableHash,
-    interner::{FieldName, Identifier},
+    interner::{DefId, FieldName, Identifier},
 };
 
 use super::{flat_layouts, prop::PSize, ILayout, IMonoLayout, Layout, Layouts, MonoLayout};
@@ -21,15 +21,28 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
                 MonoLayout::Pointer => write!(f, "ptr"),
                 MonoLayout::Single => write!(f, "single"),
                 MonoLayout::Nil => write!(f, "nil"),
-                MonoLayout::Nominal(_, args) => {
+                MonoLayout::Nominal(_, from, args) => {
                     dbwrite!(f, db, "nominal[{}](", ty)?;
-                    if let Some(inner_layout) = args {
+                    if let Some(inner_layout) = from {
                         dbwrite!(f, db, "from: {}", inner_layout)?;
+                    }
+                    for (i, (_, arg)) in args.iter().enumerate() {
+                        if i > 0 || from.is_some() {
+                            write!(f, ", ")?;
+                        }
+                        dbwrite!(f, db, "{}", arg)?;
                     }
                     write!(f, ")")
                 }
-                MonoLayout::NominalParser(_) => {
-                    dbwrite!(f, db, "nominal-parser[{}]", ty)
+                MonoLayout::NominalParser(_, args) => {
+                    dbwrite!(f, db, "nominal-parser[{}](", ty)?;
+                    for (i, (layout, ty)) in args.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        dbwrite!(f, db, "{}: {}", layout, ty)?;
+                    }
+                    write!(f, ")")
                 }
                 MonoLayout::Block(_, vars) => {
                     dbwrite!(f, db, "block[{}]{{", ty)?;
@@ -53,6 +66,16 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
                 }
                 MonoLayout::ComposedParser(left, _, right) => {
                     dbwrite!(f, db, "composed[{}]({} |> {})", ty, left, right)
+                }
+                MonoLayout::Tuple(elements) => {
+                    dbwrite!(f, db, "tuple[{}](", ty)?;
+                    for (i, layout) in elements.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        dbwrite!(f, db, "{}", layout)?;
+                    }
+                    write!(f, ")")
                 }
             },
             Layout::Multi(subs) => {
@@ -121,6 +144,27 @@ impl<'a> LayoutHasher<'a> {
             }
         }
     }
+    fn hash_captures<DB: Layouts + ?Sized>(
+        &mut self,
+        state: &mut sha2::Sha256,
+        captures: &BTreeMap<DefId, ILayout<'a>>,
+        db: &DB,
+    ) {
+        let mut capture_hashes: Vec<_> = captures
+            .iter()
+            .map(|(id, layout)| {
+                let named = db.def_hash(*id);
+                let layout_hash = self.hash(layout, db);
+                (named, layout_hash)
+            })
+            .collect();
+        capture_hashes.sort_unstable_by_key(|x| x.0);
+        capture_hashes.len().update_hash(state, db);
+        for (id_hash, hash) in capture_hashes.iter() {
+            state.update(id_hash);
+            state.update(hash);
+        }
+    }
     fn hash_mono<DB: Layouts + ?Sized>(
         &mut self,
         state: &mut sha2::Sha256,
@@ -138,7 +182,7 @@ impl<'a> LayoutHasher<'a> {
             MonoLayout::Single => {
                 state.update([2]);
             }
-            MonoLayout::Nominal(def, from) => {
+            MonoLayout::Nominal(def, from, args) => {
                 state.update([3]);
                 def.0.update_hash(state, db);
                 match from {
@@ -150,10 +194,16 @@ impl<'a> LayoutHasher<'a> {
                         state.update([1]);
                     }
                 }
+                self.hash_captures(state, args, db);
             }
-            MonoLayout::NominalParser(def) => {
+            MonoLayout::NominalParser(def, args) => {
                 state.update([4]);
                 def.0.update_hash(state, db);
+                args.len().update_hash(state, db);
+                for (layout, ty) in args.iter() {
+                    state.update(self.hash(layout, db));
+                    state.update(db.type_hash(*ty));
+                }
             }
             MonoLayout::Block(def, map) => {
                 state.update([5]);
@@ -181,20 +231,7 @@ impl<'a> LayoutHasher<'a> {
             MonoLayout::BlockParser(def, map) => {
                 state.update([6]);
                 def.0.update_hash(state, db);
-                let mut capture_hashes: Vec<_> = map
-                    .iter()
-                    .map(|(id, layout)| {
-                        let named = db.def_hash(*id);
-                        let layout_hash = self.hash(layout, db);
-                        (named, layout_hash)
-                    })
-                    .collect();
-                capture_hashes.sort_unstable_by_key(|x| x.0);
-                capture_hashes.len().update_hash(state, db);
-                for (id_hash, hash) in capture_hashes.iter() {
-                    state.update(id_hash);
-                    state.update(hash);
-                }
+                self.hash_captures(state, map, db);
             }
             MonoLayout::ComposedParser(left, inner_ty, right) => {
                 state.update([7]);
@@ -204,6 +241,13 @@ impl<'a> LayoutHasher<'a> {
             }
             MonoLayout::Nil => {
                 state.update([8]);
+            }
+            MonoLayout::Tuple(elements) => {
+                state.update([9]);
+                elements.len().update_hash(state, db);
+                for layout in elements.iter() {
+                    state.update(self.hash(layout, db));
+                }
             }
         }
     }
@@ -222,6 +266,8 @@ pub enum LayoutPart {
     SingleForward,
     CurrentElement,
     Skip,
+    CreateArgs(PSize),
+    SetArg(PSize),
 }
 
 impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
@@ -240,6 +286,8 @@ impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
             LayoutPart::SingleForward => write!(f, "single_forward"),
             LayoutPart::CurrentElement => write!(f, "current_element"),
             LayoutPart::Skip => write!(f, "skip"),
+            LayoutPart::CreateArgs(p) => write!(f, "create_args_{}", p),
+            LayoutPart::SetArg(idx) => write!(f, "set_arg_{}", idx),
         }
     }
 }
@@ -270,10 +318,10 @@ impl<'a> LayoutSymbol<'a> {
                 format!("block_{}", &truncated_hex(&db.def_hash(def.0)))
             }
             MonoLayout::ComposedParser(_, _, _) => String::from("composed"),
-            MonoLayout::Nominal(id, _) => {
+            MonoLayout::Nominal(id, _, _) => {
                 dbformat!(db, "{}", &db.def_name(id.0).unwrap())
             }
-            MonoLayout::NominalParser(id) => {
+            MonoLayout::NominalParser(id, _) => {
                 dbformat!(db, "parse_{}", &db.def_name(id.0).unwrap())
             }
             MonoLayout::Primitive(_)
@@ -282,6 +330,7 @@ impl<'a> LayoutSymbol<'a> {
             | MonoLayout::Nil => {
                 dbformat!(db, "{}", &self.layout.0)
             }
+            MonoLayout::Tuple(_) => String::from("tuple"),
         };
         let layout_hex = truncated_hex(&hasher.hash(&self.layout.0, db));
         dbformat!(db, "{}${}${}", &name_prefix, &layout_hex, &self.part)

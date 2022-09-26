@@ -4,8 +4,8 @@ use crate::{
     dbpanic,
     error::SResult,
     expr::{
-        self, ConstraintBinOp, ConstraintUnOp, Dyadic, ExprIter, ExpressionHead, Monadic, ValBinOp,
-        ValUnOp, WiggleKind,
+        self, ConstraintBinOp, ConstraintUnOp, Dyadic, ExprIter, ExpressionHead, Ignorable,
+        Monadic, ValBinOp, ValUnOp, Variadic, WiggleKind,
     },
     hir::{
         self, variable_set::VarStatus, BlockId, ChoiceId, ContextId, ExprId, HirIdWrapper, HirNode,
@@ -263,13 +263,13 @@ impl<'a> ConvertCtx<'a> {
     ) -> SResult<PlaceRef> {
         let cap_ty = self.db.parser_type_at(captured)?;
         let place_ref = self.f.add_place(PlaceInfo {
-            place: Place::Field(self.f.fun.cap(), captured),
+            place: Place::Captured(self.f.fun.cap(), captured),
             ty: cap_ty,
         });
         if self.db.head_discriminant(ty) == self.db.head_discriminant(cap_ty) && place.is_none() {
             return Ok(place_ref);
         }
-        let new_place = self.new_stack_place(ty, origin);
+        let new_place = self.unwrap_or_stack(place, ty, origin);
         self.copy(place_ref, new_place);
         Ok(new_place)
     }
@@ -313,7 +313,7 @@ impl<'a> ConvertCtx<'a> {
             let cap_ty = self.db.parser_type_at(*captured)?;
             let bp_ref = |ctx: &mut Self, block| {
                 ctx.f.add_place(PlaceInfo {
-                    place: Place::Field(block, *captured),
+                    place: Place::Captured(block, *captured),
                     ty: cap_ty,
                 })
             };
@@ -449,7 +449,7 @@ impl<'a> ConvertCtx<'a> {
                             .copy_if_different_heads(left_ldt, left_ty, None, origin, lrecurse)?;
                         let right = rrecurse(self, None)?;
                         let place_ref = self.unwrap_or_stack(place, ty, origin);
-                        self.f.append_ins(MirInstr::Call(
+                        self.f.append_ins(MirInstr::ParseCall(
                             place_ref,
                             CallKind::Val,
                             left,
@@ -515,6 +515,41 @@ impl<'a> ConvertCtx<'a> {
                     }
                 }
             }
+            ExpressionHead::Variadic(Variadic { inner, .. }) => {
+                let fun_ty = inner[0].0.root_data().0;
+                let fun_ldt = self.db.least_deref_type(fun_ty)?;
+                let fun_arg_num =
+                    if let Type::FunctionArg(_, args) = self.db.lookup_intern_type(fun_ldt) {
+                        args.len()
+                    } else {
+                        unreachable!()
+                    };
+                let fun_place =
+                    self.copy_if_different_heads(fun_ldt, fun_ty, None, origin, |ctx, plc| {
+                        ctx.convert_expr(expr_id, &inner[0], plc)
+                    })?;
+                let place_ref = self.unwrap_or_stack(place, ty, origin);
+                let inner_results = inner[1..]
+                    .iter()
+                    .map(|inner| self.convert_expr(expr_id, inner, None))
+                    .collect::<Result<Vec<_>, _>>()?;
+                // fun_arg_num: 6           (available arguments)
+                // inner_results.len(): 4   (given arguments)
+                // _________________________
+                // | 5 | 4 | 3 | 2 | 1 | 0 | <- index for set_arg functions (which lowers to vtable->set_arg_info[-1 - index])
+                // |[0]|[1]|[2]|[3]|___|___| <- inner_results ([i])
+                // \_______________/\______/
+                //    applied args  unapplied
+                let first_arg_index = fun_arg_num as u64 - 1;
+                self.f.append_ins(MirInstr::ApplyArgs(
+                    place_ref,
+                    fun_place,
+                    inner_results,
+                    first_arg_index,
+                    self.retreat.error,
+                ));
+                place_ref
+            }
         })
     }
 
@@ -562,6 +597,7 @@ impl<'a> ConvertCtx<'a> {
                     Ok(())
                 }
             },
+            ExpressionHead::Variadic(v) => v.ignore(),
         }
     }
 
@@ -636,7 +672,7 @@ impl<'a> ConvertCtx<'a> {
             CallKind::Val => self.val_place_at_def(call_loc),
         }
         .unwrap();
-        self.f.append_ins(MirInstr::Call(
+        self.f.append_ins(MirInstr::ParseCall(
             target,
             call_kind,
             parser_fun,
@@ -734,6 +770,7 @@ impl<'a> ConvertCtx<'a> {
             hir::HirNode::Module(_)
             | hir::HirNode::Context(_)
             | hir::HirNode::TExpr(_)
+            | hir::HirNode::ArgDef(_)
             | hir::HirNode::Array(_) => panic!("invalid subvalue encountered"),
         };
         Ok(())
@@ -781,9 +818,10 @@ impl<'a> ConvertCtx<'a> {
                     Place::Stack(f.new_stack_ref(PlaceOrigin::Node(val.id)))
                 };
                 let ty: TypeId = match db.hir_node(val.id)? {
-                    HirNode::Let(_) | HirNode::Parse(_) | HirNode::ChoiceIndirection(_) => {
-                        db.parser_type_at(val.id)?
-                    }
+                    HirNode::Let(_)
+                    | HirNode::Parse(_)
+                    | HirNode::ChoiceIndirection(_)
+                    | HirNode::ArgDef(_) => db.parser_type_at(val.id)?,
                     HirNode::Expr(e) => db.parser_expr_at(e.id)?.0.root_data().0,
                     HirNode::Choice(_) => continue,
                     HirNode::Block(_) => continue,
@@ -885,7 +923,7 @@ impl<'a> ConvertCtx<'a> {
         let arg_place_ref = match arg_kind {
             PdArgKind::Parse => f.fun.arg(),
             PdArgKind::Thunk => {
-                let place = Place::From(f.fun.arg());
+                let place = Place::From(f.fun.cap());
                 f.add_place(PlaceInfo { place, ty: from })
             }
         };
@@ -921,11 +959,11 @@ impl<'a> ConvertCtx<'a> {
                 result: sig.thunk,
                 arg: from,
             }),
-            PdArgKind::Thunk => db.intern_type(Type::Any),
+            PdArgKind::Thunk => sig.thunk,
         };
         let arg_ty = match arg_kind {
             PdArgKind::Parse => from,
-            PdArgKind::Thunk => sig.thunk,
+            PdArgKind::Thunk => db.intern_type(Type::Any),
         };
         let mut f = FunctionWriter::new(fun_ty, arg_ty, ret_ty);
         let top_level_retreat = f.make_top_level_retreat();

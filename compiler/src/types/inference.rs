@@ -692,10 +692,10 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         parser: InfTypeId<'intern>,
         arg: InfTypeId<'intern>,
     ) -> Result<InfTypeId<'intern>, TypeError> {
-        let var = self.var();
-        let new_parser = self.intern_infty(InferenceType::ParserArg { arg, result: var });
+        let ret = self.var();
+        let new_parser = self.intern_infty(InferenceType::ParserArg { arg, result: ret });
         self.constrain(parser, new_parser)?;
-        Ok(var)
+        Ok(ret)
     }
     pub fn function_apply(
         &mut self,

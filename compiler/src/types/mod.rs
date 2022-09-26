@@ -140,7 +140,7 @@ pub enum NominalKind {
 pub struct Signature {
     pub ty_args: Arc<Vec<TypeVar>>,
     pub from: Option<TypeId>,
-    pub args: Arc<Vec<TypeId>>,
+    pub args: Option<Arc<Vec<TypeId>>>,
     pub thunk: TypeId,
 }
 
@@ -154,20 +154,20 @@ pub enum TypeError {
     ParseDefFromMismatch,
     ParserDefArgCountMismatch(usize, usize),
     UnknownTypeVar(TypeVar),
-    Silenced,
+    Silenced(SilencedError),
 }
 
 impl Silencable for TypeError {
     type Out = SilencedError;
 
     fn silence(self) -> Self::Out {
-        SilencedError
+        SilencedError::new()
     }
 }
 
 impl From<SilencedError> for TypeError {
-    fn from(_: SilencedError) -> Self {
-        TypeError::Silenced
+    fn from(x: SilencedError) -> Self {
+        TypeError::Silenced(x)
     }
 }
 

@@ -167,10 +167,11 @@ pub enum MirInstr {
     IntUn(PlaceRef, IntUnOp, PlaceRef),
     Comp(PlaceRef, Comp, PlaceRef, PlaceRef),
     StoreVal(PlaceRef, Val),
-    Call(PlaceRef, CallKind, PlaceRef, PlaceRef, ExceptionRetreat),
+    ParseCall(PlaceRef, CallKind, PlaceRef, PlaceRef, ExceptionRetreat),
     Field(PlaceRef, PlaceRef, FieldName, BBRef),
     AssertVal(PlaceRef, Atom, BBRef),
     SetDiscriminant(PlaceRef, FieldName, bool),
+    ApplyArgs(PlaceRef, PlaceRef, Vec<PlaceRef>, u64, BBRef),
     Copy(PlaceRef, PlaceRef, BBRef),
 }
 
@@ -239,6 +240,7 @@ pub enum Place {
     Return,
     Stack(StackRef),
     Field(PlaceRef, DefId),
+    Captured(PlaceRef, DefId),
     DupleField(PlaceRef, DupleField),
     From(PlaceRef),
 }
@@ -436,13 +438,13 @@ fn mir_block(db: &dyn Mirs, block: BlockId, call_kind: CallKind) -> SResult<Func
 
 fn mir_pd_val_parser(db: &dyn Mirs, pd: ParserDefId) -> SResult<Function> {
     let sig = db.parser_args(pd)?;
-    let arg_ty = sig.from.unwrap_or(db.intern_type(Type::Any));
+    let from_y = sig.from.unwrap_or(db.intern_type(Type::Any));
     let fun_ty = db.intern_type(Type::ParserArg {
         result: sig.thunk,
-        arg: arg_ty,
+        arg: from_y,
     });
     let ret_ty = sig.thunk;
-    let mut writer = FunctionWriter::new(fun_ty, arg_ty, ret_ty);
+    let mut writer = FunctionWriter::new(fun_ty, from_y, ret_ty);
     let error = writer.new_bb();
     writer.set_bb(error);
     writer.set_return(ReturnStatus::Error);
@@ -450,10 +452,19 @@ fn mir_pd_val_parser(db: &dyn Mirs, pd: ParserDefId) -> SResult<Function> {
     let ret_place = writer.fun.ret();
     let ret_place_from = writer.add_place(PlaceInfo {
         place: Place::From(ret_place),
-        ty: arg_ty,
+        ty: from_y,
     });
     let arg_place = writer.fun.arg();
     writer.append_ins(MirInstr::Copy(ret_place_from, arg_place, error));
+    if let Some(args) = sig.args {
+        let pd = pd.lookup(db)?;
+        let cap = writer.fun.cap();
+        for (arg_ty, arg_id) in args.iter().zip(pd.args.unwrap().iter()) {
+            let arg_place = writer.add_place(PlaceInfo { place: Place::Captured(cap, arg_id.0), ty: *arg_ty });
+            let ret_arg_place = writer.add_place(PlaceInfo { place: Place::Captured(ret_place, arg_id.0), ty: *arg_ty });
+            writer.append_ins(MirInstr::Copy(ret_arg_place, arg_place, error));
+        }
+    }
     writer.set_return(ReturnStatus::Ok);
     Ok(writer.fun)
 }

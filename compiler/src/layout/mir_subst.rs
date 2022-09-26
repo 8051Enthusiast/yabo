@@ -35,7 +35,7 @@ impl<'a> FunctionSubstitute<'a> {
         };
         let evaluated = ctx.block_result()[&(from, block.0)]
             .as_ref()
-            .ok_or(SilencedError)?;
+            .ok_or_else(|| SilencedError::new())?;
         let mut expr_map = FxHashMap::default();
         for (id, expr) in evaluated.expr_vals.iter() {
             for r in ExprIter::new(&expr) {
@@ -101,12 +101,12 @@ impl<'a> FunctionSubstitute<'a> {
             return Self::new_from_pd_val_parser(f, from, fun, ctx);
         }
         let lookup_layout = match arg_kind {
-            PdArgKind::Thunk => from,
+            PdArgKind::Thunk => fun,
             PdArgKind::Parse => fun.apply_arg(ctx, from)?,
         };
         let evaluated = ctx.pd_result()[&lookup_layout]
             .as_ref()
-            .ok_or(SilencedError)?;
+            .ok_or_else(|| SilencedError::new())?;
         let expr_id = pd.lookup(ctx.db)?.to;
         let mut expr_map = FxHashMap::default();
         if let Some(expr) = evaluated.expr_vals.as_ref() {
@@ -201,12 +201,15 @@ impl<'a> SubInfo<ILayout<'a>> {
                 Place::Return => self.ret,
                 Place::Stack(idx) => stack_layouts[idx.as_index()],
                 Place::Field(place, field) => {
-                    let field = ctx
+                    let field_name = ctx
                         .db
                         .def_name(field)
                         .expect("accessing non-field id as field");
-                    place_layouts[place.as_index()].access_field(ctx, field)
+                    place_layouts[place.as_index()].access_field(ctx, field_name)
                 }
+                Place::Captured(place, field) => place_layouts[place.as_index()]
+                    .get_captured(ctx, field)?
+                    .unwrap(),
                 Place::DupleField(place, duple_field) => {
                     place_layouts[place.as_index()].access_duple(ctx, duple_field)
                 }

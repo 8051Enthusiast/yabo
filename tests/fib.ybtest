@@ -1,0 +1,66 @@
+====[ source code ]====
+def for[int] *> fib(a: int) = {
+  | let return = a if 0 or 1
+  | x: fib(a - 2)
+    y: fib(a - 1)
+    let return = x + y
+}
+
+export def for[int] *> test = {
+    n: ~
+    return: fib(n)
+}
+
+====[ binary 1 ]====
+00
+
+====[ output 1 ]====
+0
+
+====[ binary 2 ]====
+01
+
+====[ output 2 ]====
+1
+
+====[ binary 3 ]====
+02
+
+====[ output 3 ]====
+1
+
+====[ binary 4 ]====
+03
+
+====[ output 4 ]====
+2
+
+====[ binary 5 ]====
+04
+
+====[ output 5 ]====
+3
+
+====[ binary 6 ]====
+05
+
+====[ output 6 ]====
+5
+
+====[ binary 7 ]====
+06
+
+====[ output 7 ]====
+8
+
+====[ binary 8 ]====
+07
+
+====[ output 8 ]====
+13
+
+====[ binary 9 ]====
+08
+
+====[ output 9 ]====
+21

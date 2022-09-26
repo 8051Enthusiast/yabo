@@ -43,10 +43,26 @@ target_struct! {
 }
 
 target_struct! {
+    pub struct ArgDescriptor {
+        pub head: i64,
+        pub offset: usize,
+    }
+}
+
+target_struct! {
     pub struct ParserVTable {
+        pub set_arg_info: [ArgDescriptor; 0],
         pub head: VTableHeader,
         //pub default_arg_impl: ParserArgImpl,
         pub apply_table: [ParserArgImpl; 0],
+    }
+}
+
+target_struct! {
+    pub struct FunctionVTable {
+        pub set_arg_info: [ArgDescriptor; 0],
+        pub head: VTableHeader,
+        pub apply_table: [fn(from: *const u8, target_head: i64, ret: *mut u8) -> i64; 0],
     }
 }
 

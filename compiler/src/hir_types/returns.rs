@@ -42,7 +42,7 @@ pub fn parser_returns(db: &dyn TyHirs, id: hir::ParserDefId) -> SResult<ParserDe
         .into_iter()
         .flatten()
         .find(|x| x.id.0 == id.0)
-        .ok_or(SilencedError)
+        .ok_or_else(|| SilencedError::new())
 }
 
 pub fn parser_returns_ssc(
@@ -69,7 +69,9 @@ pub fn parser_returns_ssc(
         .into_iter()
         .map(|def| {
             // in this loop we do not directly the inference variables we are creating yet
-            ctx.initialize_vars_at(def.id.0, &mut vars).and(Ok(def))
+            ctx.initialize_vars_at(def.id.0, &mut vars)?;
+            ctx.initialize_parserdef_args(def.id, &mut vars)?;
+            Ok(def)
         })
         .collect();
     ctx.inftypes = Rc::new(vars);
@@ -148,7 +150,7 @@ impl<'a> TypeResolver<'a> for ReturnResolver<'a> {
     fn lookup(&self, val: DefId) -> Result<EitherType<'a>, TypeError> {
         self.return_infs
             .get(&val)
-            .map_or_else(|| Err(SilencedError.into()), |inf| Ok((*inf).into()))
+            .map_or_else(|| Err(SilencedError::new().into()), |inf| Ok((*inf).into()))
     }
 
     fn name(&self) -> String {

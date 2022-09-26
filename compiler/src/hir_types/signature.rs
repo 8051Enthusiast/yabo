@@ -20,25 +20,46 @@ pub fn parser_args_error(
     let bump = Bump::new();
     let mut tcx = TypingContext::new(db, arg_resolver, loc, &bump, false);
     let from_expr = pd.from.lookup(db)?;
-    let args = Arc::new(vec![]);
     let from_infty = tcx.resolve_type_expr(&from_expr.expr, pd.from)?;
+    let mut arg_inftys = pd
+        .args
+        .as_ref()
+        .map(|x| -> Result<_, SpannedTypeError> {
+            let mut ret = Vec::new();
+            for arg in x.iter() {
+                let arg_ty = arg.lookup(db)?.ty;
+                let arg_expr = arg_ty.lookup(db)?;
+                let arg_infty = tcx.resolve_type_expr(&arg_expr.expr, arg_ty)?;
+                ret.push(arg_infty);
+            }
+            Ok(ret)
+        })
+        .transpose()?
+        .unwrap_or_default();
+    arg_inftys.push(from_infty);
     // i don't think an error can happen here, but i'm not sure
-    let (from_tys, count) = tcx
+    let (mut args, count) = tcx
         .infctx
-        .to_types_with_vars(&[from_infty][..], tcx.loc.vars.defs.len() as u32, id.0)
+        .to_types_with_vars(&arg_inftys, tcx.loc.vars.defs.len() as u32, id.0)
         .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(pd.from.0)))?;
     tcx.loc.vars.fill_anon_vars(db, count);
     let ty_args = tcx.loc.vars.var_types(db, id);
+    let from_ty = args.pop().unwrap();
+    let args = if pd.args.is_some() {
+        Some(Arc::new(args))
+    } else {
+        None
+    };
     let thunk = db.intern_type(Type::Nominal(NominalTypeHead {
         kind: NominalKind::Def,
         def: id.0,
-        parse_arg: from_tys.last().copied(),
-        fun_args: args.clone(),
+        parse_arg: Some(from_ty),
+        fun_args: args.clone().unwrap_or_default(),
         ty_args: Arc::new(ty_args),
     }));
     Ok(Signature {
         ty_args: Arc::new(tcx.loc.vars.defs),
-        from: from_tys.last().copied(),
+        from: Some(from_ty),
         args,
         thunk,
     })
@@ -70,7 +91,7 @@ impl<'a> TypeResolver<'a> for ArgResolver<'a> {
     }
 
     fn lookup(&self, _val: DefId) -> Result<EitherType<'a>, TypeError> {
-        Err(SilencedError.into())
+        Err(SilencedError::new().into())
     }
 
     type DB = dyn TyHirs + 'a;
@@ -106,8 +127,8 @@ pub fn get_parserdef(db: &dyn TyHirs, pd: DefId) -> Result<TypeId, TypeError> {
             arg: from,
         })
     }
-    if !args.args.is_empty() {
-        ret = db.intern_type(Type::FunctionArg(ret, args.args.clone()))
+    if let Some(args) = args.args {
+        ret = db.intern_type(Type::FunctionArg(ret, args.clone()))
     }
     ret = attach_forall(db, ret, &args.ty_args);
     Ok(ret)

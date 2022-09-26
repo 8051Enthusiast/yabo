@@ -12,7 +12,7 @@ use crate::{
     hir::BlockId,
     hir_types::{NominalId, TyHirs},
     interner::FieldName,
-    layout::{mir_subst::FunctionSubstitute, ILayout, Layout, MonoLayout},
+    layout::{mir_subst::FunctionSubstitute, ILayout, InternerLayout, Layout, MonoLayout},
     mir::{
         self, BBRef, CallKind, Comp, ExceptionRetreat, IntBinOp, IntUnOp, MirInstr, PlaceRef,
         ReturnStatus, Val,
@@ -46,8 +46,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let entry = cg.llvm.append_basic_block(llvm_fun, "entry");
         cg.builder.position_at_end(entry);
         let mut stack = Vec::new();
-        for layout in mir_fun.stack_layouts.iter() {
-            stack.push(cg.build_layout_alloca(layout));
+        for (idx, layout) in mir_fun.stack_layouts.iter().enumerate() {
+            stack.push(cg.build_layout_alloca(layout, &format!("stack_{}", idx)));
         }
         let mut blocks = Vec::new();
         for (bbref, _) in mir_fun.f.iter_bb() {
@@ -89,7 +89,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             mir::Place::Captures => self.fun,
             mir::Place::From(outer) => self.place_ptr(outer),
             mir::Place::Stack(stack_ref) => self.stack[stack_ref.as_index()],
-            mir::Place::Field(outer, a) => {
+            mir::Place::Field(outer, a) | mir::Place::Captured(outer, a) => {
                 let outer_layout = self.mir_fun.place(outer);
                 let outer_ptr = self.place_ptr(outer);
                 self.cg.build_field_gep(outer_layout, a, outer_ptr)
@@ -297,7 +297,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         )
     }
 
-    fn call(
+    fn parse_call(
         &mut self,
         ret: PlaceRef,
         call_kind: CallKind,
@@ -312,7 +312,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let slot = match self
             .cg
             .collected_layouts
-            .call_slots
+            .parser_slots
+            .layout_vtable_offsets
             .get(&(arg_layout, fun_layout))
         {
             Some(slot) => *slot,
@@ -401,6 +402,74 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         self.cg.builder.build_store(ret_ptr, comp_res);
     }
 
+    fn set_arg(&mut self, fun: PlaceRef, arg: PlaceRef, argnum: u64, error: BBRef) {
+        let fun_layout = self.mir_fun.place(fun);
+        let arg_layout = self.mir_fun.place(arg);
+        let fun_ptr = self.place_ptr(fun);
+        let arg_ptr = self.place_ptr(arg);
+        let ret = self.cg.build_arg_set(
+            fun_layout.maybe_mono(),
+            fun_ptr,
+            arg_layout,
+            arg_ptr,
+            argnum,
+        );
+        let ret_is_err = self.cg.builder.build_int_compare(
+            IntPredicate::EQ,
+            ret,
+            self.cg.const_i64(ReturnStatus::Error as i64),
+            "set_arg_is_err",
+        );
+        let next_bb = self
+            .cg
+            .llvm
+            .append_basic_block(self.llvm_fun, "set_arg_next");
+        self.cg
+            .builder
+            .build_conditional_branch(ret_is_err, self.bb(error), next_bb);
+        self.cg.builder.position_at_end(next_bb);
+    }
+
+    fn apply_args(
+        &mut self,
+        ret: PlaceRef,
+        fun: PlaceRef,
+        args: &[PlaceRef],
+        first_index: u64,
+        error: BBRef,
+    ) {
+        let arg_layout = args
+            .iter()
+            .map(|x| self.mir_fun.place(*x))
+            .collect::<Vec<_>>();
+        let any_ty = self.cg.compiler_database.db.intern_type(Type::Any);
+        let arg_layout_tuple = self.cg.layouts.dcx.intern.intern(InternerLayout {
+            layout: Layout::Mono(MonoLayout::Tuple(arg_layout), any_ty),
+        });
+        let fun_layout = self.mir_fun.place(fun);
+        let fun_ptr = self.place_ptr(fun);
+        let slot = *self
+            .cg
+            .collected_layouts
+            .funcall_slots
+            .layout_vtable_offsets
+            .get(&(arg_layout_tuple, fun_layout))
+            .expect("apply_args slot not available");
+        let create_fun = self
+            .cg
+            .build_fun_create_get(fun_layout.maybe_mono(), fun_ptr, slot);
+        let ret_ptr = self.place_ptr(ret);
+        let ret_head = self.head_disc(ret);
+        self.fallible_call(
+            create_fun,
+            &[fun_ptr.into(), ret_head.into(), ret_ptr.into()],
+            [self.undefined; 3],
+        );
+        for (i, arg) in args.iter().enumerate() {
+            self.set_arg(ret, *arg, first_index - i as u64, error);
+        }
+    }
+
     fn int_un(&mut self, ret: PlaceRef, op: IntUnOp, right: PlaceRef) {
         let rhs = self.build_int_load(right);
         let value = match op {
@@ -437,8 +506,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::IntUn(ret, op, right) => self.int_un(ret, op, right),
             MirInstr::Comp(ret, op, left, right) => self.comp(ret, op, left, right),
             MirInstr::StoreVal(ret, val) => self.store_val(ret, val),
-            MirInstr::Call(ret, call_kind, fun, arg, retreat) => {
-                self.call(ret, call_kind, fun, arg, retreat)
+            MirInstr::ParseCall(ret, call_kind, fun, arg, retreat) => {
+                self.parse_call(ret, call_kind, fun, arg, retreat)
             }
             MirInstr::Field(ret, place, field, error) => self.field(ret, place, field, error),
             MirInstr::AssertVal(place, val, fallback) => self.assert_value(place, val, fallback),
@@ -446,6 +515,9 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 self.set_discriminant(block, field, val)
             }
             MirInstr::Copy(to, from, error) => self.copy(to, from, error),
+            MirInstr::ApplyArgs(ret, fun, args, first_index, error) => {
+                self.apply_args(ret, fun, &args, first_index, error)
+            }
         }
     }
 

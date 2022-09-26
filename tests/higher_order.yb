@@ -1,0 +1,31 @@
+====[ source code ]====
+def for[int] *> u16l = {
+  lo: ~
+  hi: ~
+  let return = lo | hi << 8
+}
+
+def for[int] *> higher_order(f: for[int] *> 't) = {
+  first: f
+  second: f
+}
+
+export def for[int] *> test = {
+  bytes: higher_order(~)
+  shorts: higher_order(u16l)
+}
+
+====[ binary 1 ]====
+00 01 02 03 04 05
+
+====[ output 1 ]====
+{
+    bytes: {
+        first: 0,
+        second: 1
+    },
+    shorts: {
+        first: 770,
+        second: 1284
+    }
+}

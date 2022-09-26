@@ -18,7 +18,7 @@ use fxhash::{FxHashMap, FxHashSet};
 use crate::{
     expr::{self, ExpressionHead},
     hir,
-    interner::{FieldName, Identifier},
+    interner::FieldName,
     order::Orders,
     types::TypeId,
 };
@@ -28,7 +28,7 @@ pub trait AbsInt: Orders {}
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Arg {
-    Named(Identifier),
+    Named(DefId),
     From,
 }
 
@@ -322,6 +322,10 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         &self.active_block
     }
 
+    pub fn active_pd(&self) -> &Dom {
+        &self.current_pd
+    }
+
     fn eval_block_impl(
         &mut self,
         block_id: hir::BlockId,
@@ -437,9 +441,15 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         pd_id: hir::ParserDefId,
         result_type: TypeId,
         from: Dom,
+        thunk_args: &[(Dom, TypeId)],
     ) -> Result<Dom, Dom::Err> {
         let mut args = FxHashMap::default();
         args.insert(Arg::From, from);
+        let pd = pd_id.lookup(self.db)?;
+        for (idx, (arg, _)) in thunk_args.iter().enumerate() {
+            let def = pd.args.as_ref().unwrap()[idx].0;
+            args.insert(Arg::Named(def), arg.clone());
+        }
         let pd = Dom::make_thunk(self, pd_id, result_type, &args)?;
         if !self.existing_pd.contains(&(result_type, pd.clone())) {
             self.new_pd.insert((result_type, pd.clone()));

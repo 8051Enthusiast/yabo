@@ -32,7 +32,7 @@ pub fn resolve_var_ref(
         current_id = match &db.hir_node(current_id)? {
             HirNode::Block(b) => match b.super_context {
                 Some(id) => id.id(),
-                None => db.hir_parent_module(current_id)?.id(),
+                None => db.hir_parent_parserdef(current_id)?.id(),
             },
             HirNode::Module(m) => {
                 let ident = match ident {
@@ -48,6 +48,17 @@ pub fn resolve_var_ref(
                     .map(|x| x.id())
                     .unwrap_or_else(|| ctx.block_id.id()),
             },
+            HirNode::ParserDef(pd) => {
+                let id = match ident {
+                    FieldName::Ident(n) => n,
+                    // the only parent here can be a module, which does not have return identifiers either
+                    FieldName::Return => return Ok(None),
+                };
+                match db.parserdef_arg(pd.id, id)? {
+                    Some(child_id) => return Ok(Some((child_id.0, VarType::Value))),
+                    None => db.hir_parent_module(current_id)?.id(),
+                }
+            }
             _ => current_id.parent(db),
         }
     }

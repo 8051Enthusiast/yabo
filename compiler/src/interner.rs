@@ -81,6 +81,15 @@ pub enum FieldName {
     Ident(Identifier),
 }
 
+impl FieldName {
+    pub fn unwrap_ident(self) -> Identifier {
+        match self {
+            FieldName::Ident(id) => id,
+            _ => panic!("not an identifier"),
+        }
+    }
+}
+
 impl<DB: Interner + ?Sized> StableHash<DB> for FieldName {
     fn update_hash(&self, state: &mut sha2::Sha256, db: &DB) {
         match self {

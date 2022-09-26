@@ -4,7 +4,7 @@ use crate::{databased_display::DatabasedDisplay, dbwrite};
 
 use super::{
     BBRef, BlockExit, CallKind, Comp, DupleField, ExceptionRetreat, Function, IntBinOp, IntUnOp,
-    MirInstr, Mirs, Place, PlaceOrigin, PlaceRef, ReturnStatus, StackRef, Val, PdArgKind,
+    MirInstr, Mirs, PdArgKind, Place, PlaceOrigin, PlaceRef, ReturnStatus, StackRef, Val,
 };
 
 impl Display for StackRef {
@@ -34,6 +34,10 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for PlaceRef {
                     .unwrap()
                     .unwrap_named();
                 dbwrite!(f, *db, ".{}", &name)
+            }
+            Place::Captured(inner, field) => {
+                inner.db_fmt(f, &(*fun, *db))?;
+                dbwrite!(f, *db, ".cap[{}]", &field)
             }
             Place::DupleField(inner, field) => {
                 inner.db_fmt(f, &(*fun, *db))?;
@@ -137,7 +141,7 @@ impl<DB: Mirs> DatabasedDisplay<(&Function, &DB)> for MirInstr {
             MirInstr::StoreVal(target, val) => {
                 dbwrite!(f, db, "{} = load {}", target, val)
             }
-            MirInstr::Call(target, kind, fun, arg, retreat) => {
+            MirInstr::ParseCall(target, kind, fun, arg, retreat) => {
                 dbwrite!(
                     f,
                     db,
@@ -163,6 +167,16 @@ impl<DB: Mirs> DatabasedDisplay<(&Function, &DB)> for MirInstr {
             }
             MirInstr::Copy(target, origin, error) => {
                 dbwrite!(f, db, "{} = copy {}, {{error: {}}}", target, origin, error)
+            }
+            MirInstr::ApplyArgs(target, origin, args, arg_start, error) => {
+                dbwrite!(f, db, "{} = apply_args {}, (", target, origin)?;
+                for (i, arg) in args.iter().enumerate() {
+                    if i != 0 {
+                        write!(f, ", ")?;
+                    }
+                    dbwrite!(f, db, "{}", arg)?;
+                }
+                dbwrite!(f, db, "), {}, {{ error: {} }}", arg_start, error)
             }
         }
     }
