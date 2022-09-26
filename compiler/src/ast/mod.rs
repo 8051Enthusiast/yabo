@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::{
     error::{SResult, Silencable},
-    expr::*,
+    expr::{Unused, *},
     interner::{FieldName, Identifier, Interner, TypeVar},
     source::{FieldSpan, FileId, Files, IdSpan, Span, Spanned},
 };
@@ -81,18 +81,21 @@ impl ExpressionKind for AstConstraint {
     type NiladicOp = Atom;
     type MonadicOp = ConstraintUnOp;
     type DyadicOp = ConstraintBinOp;
+    type VariadicOp = Unused;
 }
 
 impl ExpressionKind for AstVal {
     type NiladicOp = ParserAtom;
     type MonadicOp = ValUnOp<Arc<ConstraintExpression>>;
     type DyadicOp = ValBinOp;
+    type VariadicOp = ValVarOp;
 }
 
 impl ExpressionKind for AstType {
     type NiladicOp = TypeAtom;
     type MonadicOp = TypeUnOp<Arc<ConstraintExpression>>;
     type DyadicOp = TypeBinOp;
+    type VariadicOp = Unused;
 }
 
 pub type TypeExpression = Expression<AstTypeSpanned>;
@@ -192,10 +195,24 @@ impl Statement {
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct ArgDefinition {
+    pub name: IdSpan,
+    pub ty: TypeExpression,
+    pub span: Span,
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct ArgDefList {
+    pub args: Vec<ArgDefinition>,
+    pub span: Span,
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDefinition {
     pub qualifier: Option<Qualifier>,
     pub name: IdSpan,
     pub from: TypeExpression,
+    pub argdefs: Option<ArgDefList>,
     pub to: ValExpression,
     pub span: Span,
 }
@@ -259,6 +276,27 @@ pub struct ParserDefRef {
     pub name: IdSpan,
     pub args: Vec<TypeExpression>,
     pub span: Span,
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct FunApplication {
+    pub applicant: ValExpression,
+    pub args: Vec<ValExpression>,
+    pub span: Span,
+}
+
+impl From<FunApplication> for Variadic<OpWithData<ValVarOp, Span>, Box<ValExpression>> {
+    fn from(app: FunApplication) -> Self {
+        let mut inner = vec![Box::new(app.applicant)];
+        inner.extend(app.args.into_iter().map(Box::new));
+        Variadic {
+            op: OpWithData {
+                data: app.span,
+                inner: ValVarOp::Call,
+            },
+            inner,
+        }
+    }
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]

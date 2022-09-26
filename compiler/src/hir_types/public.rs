@@ -29,7 +29,9 @@ fn public_expr_type_impl(
         _ => panic!("expected parse statement, let statement or parser def"),
     };
     let mut vars = FxHashMap::default();
+    let parserdef = ctx.loc.pd;
     ctx.initialize_vars_at(loc.0, &mut vars)?;
+    ctx.initialize_parserdef_args(parserdef, &mut vars)?;
     ctx.inftypes = Rc::new(vars);
     ctx.infctx.tr.inftys = ctx.inftypes.clone();
     let ret = ret.unwrap_or_else(|| ctx.infctx.var());
@@ -91,7 +93,7 @@ fn ambient_type_impl(db: &dyn TyHirs, loc: hir::ParseId) -> Result<TypeId, TypeE
             }) if *b == block.id => Some(data.0),
             _ => None,
         })
-        .ok_or(SilencedError)?;
+        .ok_or_else(|| SilencedError::new())?;
     let block_type = match db.lookup_intern_type(block_ty) {
         Type::ParserArg { result, .. } => result,
         _ => panic!("expected parser arg"),
@@ -183,7 +185,7 @@ impl<'a, 'intern> TypeResolver<'intern> for PublicResolver<'a, 'intern> {
     fn lookup(&self, val: DefId) -> Result<EitherType<'intern>, TypeError> {
         self.inftys
             .get(&val)
-            .map_or_else(|| Err(SilencedError.into()), |inf| Ok((*inf).into()))
+            .map_or_else(|| Err(SilencedError::new().into()), |inf| Ok((*inf).into()))
     }
 
     type DB = dyn TyHirs + 'a;

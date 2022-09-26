@@ -56,11 +56,11 @@ pub fn errors(db: &(impl TyHirs + ?Sized)) -> Vec<Report> {
 fn make_report(db: &(impl TyHirs + ?Sized), error: SpannedTypeError) -> Option<Report> {
     let (err, span) = match error {
         SpannedTypeError::Spanned(err, span) => (err, span),
-        SpannedTypeError::Silenced => return None,
+        SpannedTypeError::Silenced(_) => return None,
     };
     let spans = spans(db, span).expect("error getting error spans");
     let (code, message) = match err {
-        TypeError::Silenced => return None,
+        TypeError::Silenced(_) => return None,
         TypeError::UnknownTypeVar(var) => (501, dbformat!(db, "unknown type variable {}", &var)),
         TypeError::UnknownField(field) => (502, dbformat!(db, "unknown field {}", &field)),
         TypeError::UnknownParserdefName(name) => {

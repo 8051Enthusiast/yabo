@@ -1,0 +1,13 @@
+====[ source code ]====
+def for[int] *> added(x: int) = {
+	y: ~
+	let return = x + y
+}
+
+export def for[int] *> test = added(2857740885)
+
+====[ binary 1 ]====
+55
+
+====[ output 1 ]====
+2857740970

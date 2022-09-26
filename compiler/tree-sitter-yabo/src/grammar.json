@@ -81,8 +81,12 @@
           "type": "CHOICE",
           "members": [
             {
-              "type": "SYMBOL",
-              "name": "_arg_def_list"
+              "type": "FIELD",
+              "name": "argdefs",
+              "content": {
+                "type": "SYMBOL",
+                "name": "arg_def_list"
+              }
             },
             {
               "type": "BLANK"
@@ -829,7 +833,7 @@
         }
       ]
     },
-    "_arg_def_list": {
+    "arg_def_list": {
       "type": "SEQ",
       "members": [
         {
@@ -844,7 +848,7 @@
               "members": [
                 {
                   "type": "FIELD",
-                  "name": "argdefs",
+                  "name": "args",
                   "content": {
                     "type": "SYMBOL",
                     "name": "arg_definition"
@@ -861,7 +865,7 @@
                       },
                       {
                         "type": "FIELD",
-                        "name": "argdefs",
+                        "name": "args",
                         "content": {
                           "type": "SYMBOL",
                           "name": "arg_definition"

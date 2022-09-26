@@ -11,7 +11,7 @@ use fxhash::{FxHashMap, FxHashSet};
 
 use crate::absint::{AbsInt, AbsIntCtx, AbstractDomain, Arg};
 use crate::error::{IsSilenced, SResult, SilencedError};
-use crate::expr::{self, ExpressionHead, ValBinOp, ValUnOp};
+use crate::expr::{self, ExpressionHead, OpWithData, ValBinOp, ValUnOp, ValVarOp, Variadic};
 use crate::hir::{self, HirIdWrapper};
 use crate::hir_types::NominalId;
 use crate::interner::{DefId, FieldName};
@@ -23,7 +23,7 @@ use crate::types::{PrimitiveType, Type, TypeId};
 use self::prop::{PSize, SizeAlign, TargetSized, Zst};
 use self::represent::{LayoutHasher, LayoutPart, LayoutSymbol};
 
-#[derive(Clone, PartialEq, Eq, Default)]
+#[derive(Clone, PartialEq, Eq, Default, Debug)]
 pub struct StructManifestation {
     pub field_offsets: FxHashMap<DefId, PSize>,
     pub discriminant_mapping: Arc<FxHashMap<DefId, PSize>>,
@@ -79,11 +79,12 @@ pub enum MonoLayout<Inner> {
     Pointer,
     Single,
     Nil,
-    Nominal(hir::ParserDefId, Option<Inner>),
-    NominalParser(hir::ParserDefId),
+    Nominal(hir::ParserDefId, Option<Inner>, BTreeMap<DefId, Inner>),
+    NominalParser(hir::ParserDefId, Vec<(Inner, TypeId)>),
     Block(hir::BlockId, BTreeMap<FieldName, Inner>),
     BlockParser(hir::BlockId, BTreeMap<DefId, Inner>),
     ComposedParser(Inner, TypeId, Inner),
+    Tuple(Vec<Inner>),
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -125,16 +126,25 @@ impl<'a> IMonoLayout<'a> {
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Option<ILayout<'a>>, SilencedError> {
-        Ok(if let MonoLayout::Nominal(_, _) = self.mono_layout().0 {
+        Ok(if let MonoLayout::Nominal(_, _, _) = self.mono_layout().0 {
             let res_ty = self.mono_layout().1;
-            Some(ctx.eval_pd(self.inner(), res_ty).ok_or(SilencedError)?)
+            Some(
+                ctx.eval_pd(self.inner(), res_ty)
+                    .ok_or_else(SilencedError::new)?,
+            )
         } else {
             None
         })
     }
+    pub fn arg_num<DB: Layouts + ?Sized>(&self, db: &DB) -> SResult<Option<(usize, usize)>> {
+        match self.mono_layout().0 {
+            MonoLayout::NominalParser(pd, args) => Ok(db.argnum(*pd)?.map(|n| (n, args.len()))),
+            _ => Ok(None),
+        }
+    }
 }
 
-fn flat_layouts<'a, 'l>(
+pub fn flat_layouts<'a, 'l>(
     layout: &'l ILayout<'a>,
 ) -> impl ExactSizeIterator<Item = IMonoLayout<'a>> + Clone + 'l {
     match &layout.layout {
@@ -160,7 +170,7 @@ impl<'a> Uniq<InternerLayout<'a>> {
     }
 
     pub fn contains_deref(&'a self) -> bool {
-        flat_layouts(&self).any(|x| matches!(x.mono_layout().0, MonoLayout::Nominal(_, _)))
+        flat_layouts(&self).any(|x| matches!(x.mono_layout().0, MonoLayout::Nominal(_, _, _)))
     }
 
     fn map(
@@ -236,12 +246,12 @@ impl<'a> Uniq<InternerLayout<'a>> {
         let mut changed = false;
         let res = self.try_map(ctx, |layout, ctx| {
             Ok(match layout.mono_layout().0 {
-                MonoLayout::Nominal(pd, _) if Some(*pd) == target => layout.0,
-                MonoLayout::Nominal(_, _) => {
+                MonoLayout::Nominal(pd, _, _) if Some(*pd) == target => layout.0,
+                MonoLayout::Nominal(_, _, _) => {
                     changed = true;
                     let res_ty = layout.mono_layout().1;
                     ctx.eval_pd(layout.inner(), res_ty)
-                        .ok_or(SilencedError)?
+                        .ok_or_else(SilencedError::new)?
                         .typecast_impl(ctx, target)?
                         .0
                 }
@@ -251,8 +261,12 @@ impl<'a> Uniq<InternerLayout<'a>> {
         res.map(|x| (x, changed))
     }
 
-    fn get_captured(&'a self, id: DefId) -> Option<ILayout<'a>> {
-        match match &self.layout {
+    fn get_captured(
+        &'a self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+        id: DefId,
+    ) -> Result<Option<ILayout<'a>>, LayoutError> {
+        Ok(match match &self.layout {
             Layout::Mono(m, _) => m,
             Layout::Multi(_) => {
                 panic!("Attempting to get captured variable inside multi layout block")
@@ -262,10 +276,14 @@ impl<'a> Uniq<InternerLayout<'a>> {
             }
         } {
             MonoLayout::BlockParser(_, captures) => captures,
+            MonoLayout::Nominal(_, _, captures) => captures,
+            MonoLayout::NominalParser(pd, args) => {
+                return Ok(ctx.db.parserdef_arg_index(*pd, id)?.map(|i| args[i].0))
+            }
             _ => panic!("Attempting to get captured variable outside block"),
         }
         .get(&id)
-        .copied()
+        .copied())
     }
 
     fn array_primitive(&'a self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> ILayout<'a> {
@@ -293,10 +311,12 @@ impl<'a> Uniq<InternerLayout<'a>> {
             };
             let from = from.typecast(ctx, arg_type)?.0;
             match layout.mono_layout().0 {
-                MonoLayout::NominalParser(pd) => ctx.apply_thunk_arg(*pd, result_type, from),
+                MonoLayout::NominalParser(pd, args) => {
+                    ctx.apply_thunk_arg(*pd, result_type, from, args)
+                }
                 MonoLayout::BlockParser(block_id, _) => ctx
                     .eval_block(*block_id, self, from, result_type, arg_type)
-                    .ok_or(SilencedError.into()),
+                    .ok_or_else(|| SilencedError::new().into()),
                 MonoLayout::ComposedParser(first, inner_ty, second) => {
                     let first_result = first.apply_arg(ctx, from)?;
                     let casted_result = first_result.typecast(ctx, *inner_ty)?.0;
@@ -314,6 +334,46 @@ impl<'a> Uniq<InternerLayout<'a>> {
         })
     }
 
+    pub fn apply_fun(
+        &'a self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+        args: &[(ILayout<'a>, TypeId)],
+    ) -> Result<ILayout<'a>, LayoutError> {
+        self.try_map(ctx, |layout, ctx| {
+            let (result_type, arg_types) = match ctx.db.lookup_intern_type(layout.mono_layout().1) {
+                Type::FunctionArg(ret, args) => (ret, args),
+                _ => panic!("Attempting to apply function to non-function type"),
+            };
+            let typecast_args = arg_types
+                .iter()
+                .zip(args.iter())
+                .map(|(ty, (arg, _))| arg.typecast(ctx, *ty).map(|x| (x.0, *ty)))
+                .collect::<Result<Vec<_>, _>>()?;
+            match layout.mono_layout().0 {
+                MonoLayout::NominalParser(pd, present_args) => {
+                    let present_args = present_args
+                        .iter()
+                        .chain(typecast_args.iter())
+                        .copied()
+                        .collect();
+                    let layout = MonoLayout::NominalParser(*pd, present_args);
+                    let ty = if arg_types.len() == typecast_args.len() {
+                        result_type
+                    } else {
+                        ctx.db.intern_type(Type::FunctionArg(
+                            result_type,
+                            Arc::new(arg_types[typecast_args.len()..].to_vec()),
+                        ))
+                    };
+                    Ok(ctx.dcx.intern.intern(InternerLayout {
+                        layout: Layout::Mono(layout, ty),
+                    }))
+                }
+                _ => panic!("Attempting to apply function to non-function layout"),
+            }
+        })
+    }
+
     fn access_field(
         &'a self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
@@ -321,13 +381,13 @@ impl<'a> Uniq<InternerLayout<'a>> {
     ) -> ILayout<'a> {
         self.map(ctx, |layout, _| match layout.mono_layout().0 {
             MonoLayout::Block(_, fields) => fields[&field],
-            _ => panic!("Field access on non-block"),
+            _ => panic!("Field access on non-block {:?}", layout),
         })
     }
 
     fn access_from(&'a self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> ILayout<'a> {
         self.map(ctx, |layout, _| match layout.mono_layout().0 {
-            MonoLayout::Nominal(_, from) => {
+            MonoLayout::Nominal(_, from, _) => {
                 from.expect("Attempting to get 'from' field from non-from field containing nominal")
             }
             _ => panic!("Attempting to get 'from' field from non-nominal"),
@@ -366,17 +426,25 @@ impl<'a> Uniq<InternerLayout<'a>> {
             Layout::Mono(MonoLayout::ComposedParser(fst, _, snd), _) => {
                 fst.size_align(ctx)?.cat(snd.size_align(ctx)?)
             }
-            Layout::Mono(MonoLayout::Nominal(_, from), _) => from
-                .map(|layout| layout.size_align(ctx))
-                .transpose()?
-                .unwrap_or(Zst::tsize()),
-            Layout::Mono(MonoLayout::NominalParser(_), _) => Zst::tsize(),
+            Layout::Mono(MonoLayout::Nominal(id, from, args), _) => {
+                self.nominal_manifestation(ctx, *id, *from, args)?.size
+            }
+            Layout::Mono(MonoLayout::NominalParser(id, args), _) => {
+                self.nominal_parser_manifestation(ctx, *id, args)?.size
+            }
             Layout::Mono(MonoLayout::Pointer, _) => <&Zst>::tsize(),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Bit), _) => bool::tsize(),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Char), _) => char::tsize(),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int), _) => i64::tsize(),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Unit), _) => Zst::tsize(),
             Layout::Mono(MonoLayout::Single | MonoLayout::Nil, _) => Zst::tsize(),
+            Layout::Mono(MonoLayout::Tuple(elements), _) => {
+                let mut size = Zst::tsize();
+                for element in elements {
+                    size = size.cat(element.size_align(ctx)?);
+                }
+                size
+            }
             Layout::Multi(m) => m.layouts.iter().try_fold(Zst::tsize(), |sa, layout| {
                 Ok(sa.union(layout.size_align(ctx)?))
             })?,
@@ -438,6 +506,54 @@ impl<'a> Uniq<InternerLayout<'a>> {
         ctx.dcx.manifestations.insert(self, manifest.clone());
         Ok(manifest)
     }
+
+    pub fn nominal_parser_manifestation(
+        &'a self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+        id: hir::ParserDefId,
+        args: &[(ILayout<'a>, TypeId)],
+    ) -> SResult<Arc<StructManifestation>> {
+        if let Some(man) = ctx.dcx.manifestations.get(self) {
+            return Ok(man.clone());
+        }
+        let mut manifest = UnfinishedManifestation::new();
+        let arg_ids = id.lookup(ctx.db)?.args.unwrap_or_default();
+        for ((arg, _), id) in args.iter().zip(arg_ids.iter()) {
+            let sa = arg.size_align(ctx)?;
+            manifest.add_field(id.0, sa);
+        }
+        let manifest = Arc::new(manifest.finalize(Default::default()));
+        ctx.dcx.manifestations.insert(self, manifest.clone());
+        Ok(manifest)
+    }
+
+    pub fn nominal_manifestation(
+        &'a self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+        id: hir::ParserDefId,
+        from: Option<ILayout<'a>>,
+        args: &BTreeMap<DefId, ILayout<'a>>,
+    ) -> SResult<Arc<StructManifestation>> {
+        if let Some(man) = ctx.dcx.manifestations.get(self) {
+            return Ok(man.clone());
+        }
+        let mut manifest = UnfinishedManifestation::new();
+        let parserdef = id.lookup(ctx.db)?;
+        if let Some(from) = from {
+            let sa = from.size_align(ctx)?;
+            manifest.add_field(parserdef.from.0, sa);
+        }
+        for id in parserdef.args.unwrap_or_default().iter().map(|x| x.0) {
+            let sa = match args.get(&id).copied() {
+                Some(layout) => layout.size_align(ctx)?,
+                None => break,
+            };
+            manifest.add_field(id, sa);
+        }
+        let manifest = Arc::new(manifest.finalize(Default::default()));
+        ctx.dcx.manifestations.insert(self, manifest.clone());
+        Ok(manifest)
+    }
 }
 
 pub fn canon_layout<'a, 'b>(
@@ -466,13 +582,21 @@ pub fn canon_layout<'a, 'b>(
                 NominalId::Def(d) => d,
                 NominalId::Block(_) => return Err(LayoutError),
             };
-            if !n.fun_args.is_empty() {
-                // TODO(8051): i am not yet sure how to handle fun args that are in addition to the parse arg
-                // and function args are not implemented anyway so return an error for now
-                return Err(LayoutError);
-            }
             let from = n.parse_arg.map(|arg| canon_layout(ctx, arg)).transpose()?;
-            Ok(make_layout(ctx, MonoLayout::Nominal(def_id, from)))
+            let args: Vec<_> = n
+                .fun_args
+                .iter()
+                .map(|arg| canon_layout(ctx, *arg))
+                .collect::<Result<_, _>>()?;
+            let ids = def_id
+                .lookup(ctx.db)?
+                .args
+                .into_iter()
+                .flatten()
+                .map(|x| x.0)
+                .zip(args)
+                .collect();
+            Ok(make_layout(ctx, MonoLayout::Nominal(def_id, from, ids)))
         }
         Type::ParserArg { .. } | Type::FunctionArg(_, _) => Err(LayoutError),
         Type::TypeVarRef(_, _, _) | Type::Any | Type::Bot | Type::Unknown | Type::ForAll(_, _) => {
@@ -517,7 +641,7 @@ impl IsSilenced for LayoutError {
 pub type AbsLayoutCtx<'a> = AbsIntCtx<'a, ILayout<'a>>;
 
 pub struct LayoutContext<'a> {
-    intern: Interner<'a, InternerLayout<'a>>,
+    pub intern: Interner<'a, InternerLayout<'a>>,
     sizes: FxHashMap<ILayout<'a>, SizeAlign>,
     manifestations: FxHashMap<ILayout<'a>, Arc<StructManifestation>>,
     hashes: LayoutHasher<'a>,
@@ -642,13 +766,16 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ResolvedAtom::Val(id) => ctx.var_by_id(id),
                 ResolvedAtom::Single => make_layout(MonoLayout::Single),
                 ResolvedAtom::Nil => make_layout(MonoLayout::Nil),
-                ResolvedAtom::ParserDef(pd) => make_layout(MonoLayout::NominalParser(pd)),
+                ResolvedAtom::ParserDef(pd) => {
+                    make_layout(MonoLayout::NominalParser(pd, Vec::new()))
+                }
                 ResolvedAtom::Block(block_id) => {
                     let mut captures = BTreeMap::new();
                     for capture in ctx.db.captures(block_id).iter() {
                         let capture_value = ctx
                             .active_block()
-                            .and_then(|s| s.get_captured(*capture))
+                            .unwrap_or(ctx.active_pd())
+                            .get_captured(ctx, *capture)?
                             .unwrap_or_else(|| ctx.var_by_id(*capture));
                         captures.insert(*capture, capture_value);
                     }
@@ -659,8 +786,10 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ResolvedAtom::Captured(capture) => {
                     let capture_value = ctx
                         .active_block()
-                        .and_then(|s| s.get_captured(capture))
-                        .expect("Captured variable outside block");
+                        .and_then(|s| s.get_captured(ctx, capture).transpose())
+                        .unwrap_or_else(|| {
+                            Ok(ctx.active_pd().get_arg(ctx, Arg::Named(capture)).unwrap())
+                        })?;
                     capture_value
                 }
             },
@@ -705,6 +834,14 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 | ValBinOp::Modulo
                 | ValBinOp::Mul => make_layout(MonoLayout::Primitive(PrimitiveType::Int)),
             },
+            ExpressionHead::Variadic(Variadic {
+                op:
+                    OpWithData {
+                        inner: ValVarOp::Call,
+                        ..
+                    },
+                inner,
+            }) => inner[0].0.apply_fun(ctx, &inner[1..])?,
         })
     }
 
@@ -729,8 +866,8 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
         arg: crate::absint::Arg,
     ) -> Result<Self, Self::Err> {
         Ok(self.map(ctx, |l, _| match l.mono_layout().0 {
-            MonoLayout::Nominal(_, from) => match arg {
-                Arg::Named(_) => unimplemented!("args not yet implemented"),
+            MonoLayout::Nominal(_, from, args) => match arg {
+                Arg::Named(def) => args[&def],
                 Arg::From => from.expect("unexpectedly did not have from arg"),
             },
             _ => panic!("get_arg called on non-nominal layout"),
@@ -744,11 +881,14 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
         fields: &FxHashMap<Arg, Self>,
     ) -> Result<Self, Self::Err> {
         let from = fields.get(&Arg::From).map(|x| *x);
-        if fields.len() > from.iter().len() {
-            panic!("unknown args in {:?}", fields)
+        let mut args = BTreeMap::new();
+        for (arg, layout) in fields.iter() {
+            if let Arg::Named(name) = arg {
+                args.insert(*name, *layout);
+            }
         }
         let new_layout = InternerLayout {
-            layout: Layout::Mono(MonoLayout::Nominal(id, from), ty),
+            layout: Layout::Mono(MonoLayout::Nominal(id, from, args), ty),
         };
         Ok(ctx.dcx.intern.intern(new_layout))
     }
@@ -796,14 +936,14 @@ def for[int] *> main = {
         for lay in flat_layouts(&canon_2006) {
             assert_eq!(
                 lay.symbol(&mut outlayer, LayoutPart::LenImpl(0), &ctx.db),
-                "main$e16412415cc84158$len_0"
+                "main$23c87009f1f2e2ea$len_0"
             );
         }
         let main_block = outlayer.pd_result()[canon_2006].as_ref().unwrap().returned;
         for lay in flat_layouts(&main_block) {
             assert_eq!(
                 lay.symbol(&mut outlayer, LayoutPart::LenImpl(0), &ctx.db),
-                "block_1b15571abd710f7a$000fdd43004bec7e$len_0"
+                "block_1b15571abd710f7a$852cd4a3365d94c9$len_0"
             );
         }
         let field = |name| FieldName::Ident(ctx.id(name));
@@ -825,7 +965,7 @@ def for[int] *> main = {
         );
         assert_eq!(
             dbformat!(&ctx.db, "{}", &main_block.access_field(&mut outlayer, field("c")).access_field(&mut outlayer, field("c"))),
-            "nominal-parser[for[int] *> for[int] &> file[_].second] | nominal-parser[for[int] *> for[int] &> file[_].first]"
+            "nominal-parser[for[int] *> for[int] &> file[_].second]() | nominal-parser[for[int] *> for[int] &> file[_].first]()"
         );
         assert_eq!(
             dbformat!(

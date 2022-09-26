@@ -26,7 +26,7 @@ pub struct GenericParseError {
 
 impl Into<SilencedError> for GenericParseError {
     fn into(self) -> SilencedError {
-        SilencedError
+        SilencedError::new()
     }
 }
 
@@ -420,8 +420,22 @@ astify! {
     struct parser_definition = ParserDefinition {
         qualifier: quali[?],
         name: idspan[!],
+        argdefs: arg_def_list[?],
         from: expression(type_expression)[!],
         to: expression(val_expression)[!],
+    };
+}
+
+astify! {
+    struct arg_definition = ArgDefinition {
+        name: idspan[!],
+        ty: expression(type_expression)[!],
+    };
+}
+
+astify! {
+    struct arg_def_list = ArgDefList {
+        args: arg_definition[*],
     };
 }
 
@@ -491,6 +505,7 @@ astify! {
 
 astify! {
     enum val_expression = ValExpressionInner {
+        Variadic(fun_application),
         Dyadic(binary_expression),
         Monadic(unary_expression),
         Monadic(constraint_apply),
@@ -519,6 +534,13 @@ astify! {
         Niladic(with_span_data(parserdef_ref)),
         Niladic(with_span_data(type_array)),
         Niladic(with_span_data(type_var)),
+    };
+}
+
+astify! {
+    struct fun_application = FunApplication {
+        applicant: expression(val_expression)[!],
+        args: expression(val_expression)[*],
     };
 }
 

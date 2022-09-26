@@ -2,7 +2,7 @@ use crate::{
     ast::ArrayKind,
     databased_display::DatabasedDisplay,
     dbwrite,
-    expr::{Dyadic, ExpressionHead, Monadic},
+    expr::{Dyadic, ExpressionHead, Ignorable, Monadic, Variadic},
 };
 
 use super::*;
@@ -17,6 +17,7 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for HirNode {
             HirNode::Array(a) => write!(f, "Array({:?})", a.direction),
             HirNode::Block(_) => write!(f, "Block"),
             HirNode::Choice(_) => write!(f, "Choice"),
+            HirNode::ArgDef(_) => write!(f, "ArgDef"),
             HirNode::Module(_) => write!(f, "Module"),
             HirNode::Context(_) => write!(f, "Context"),
             HirNode::ParserDef(n) => {
@@ -154,6 +155,7 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Expression<HirConstraintSpanned
             ExpressionHead::Dyadic(Dyadic { op, inner }) => {
                 dbwrite!(f, db, "{} {} {}", &*inner[0], &op.inner, &*inner[1])
             }
+            ExpressionHead::Variadic(v) => v.ignore(),
         }
     }
 }
@@ -172,6 +174,16 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Expression<HirValSpanned> {
             ExpressionHead::Dyadic(Dyadic { op, inner }) => {
                 dbwrite!(f, db, "{} {} {}", &*inner[0], &op.inner, &*inner[1])
             }
+            ExpressionHead::Variadic(Variadic { inner, .. }) => {
+                dbwrite!(f, db, "{}(", &*inner[0])?;
+                for (i, arg) in inner[1..].iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    dbwrite!(f, db, "{}", &**arg)?;
+                }
+                write!(f, ")")
+            }
         }
     }
 }
@@ -186,6 +198,7 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Expression<HirTypeSpanned> {
             ExpressionHead::Dyadic(Dyadic { op, inner }) => {
                 dbwrite!(f, db, "{} {} {}", &*inner[0], &op.inner, &*inner[1])
             }
+            ExpressionHead::Variadic(v) => v.ignore(),
         }
     }
 }
@@ -298,6 +311,9 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                         );
                         v
                     }
+                    HirNode::ArgDef(ArgDef { id, ty, .. }) => {
+                        vec![(id.0, ty.0, "ty".to_string(), dot::Style::Bold)]
+                    }
                     HirNode::Choice(StructChoice {
                         id,
                         parent_context,
@@ -379,11 +395,21 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                             )
                         }))
                         .collect(),
-                    HirNode::ParserDef(ParserDef { id, from, to, .. }) => {
-                        vec![
+                    HirNode::ParserDef(ParserDef {
+                        id, from, to, args, ..
+                    }) => {
+                        let mut v = vec![
                             (id.0, from.0, "from".to_string(), dot::Style::Bold),
                             (id.0, to.0, "to".to_string(), dot::Style::Bold),
-                        ]
+                        ];
+                        if let Some(args) = args {
+                            v.extend(
+                                args.iter()
+                                    .enumerate()
+                                    .map(|(i, p)| (id.0, p.0, format!("args[{}]", i), dot::Style::Bold)),
+                            );
+                        }
+                        v
                     }
                     HirNode::ChoiceIndirection(ChoiceIndirection {
                         id,

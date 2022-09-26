@@ -222,12 +222,13 @@ def for[int] *> nonsense(x: int, y: int) = 1 + nonsense(3, 4)
     from: (type_array
       expr: (primitive_type))
     name: (identifier)
-    argdefs: (arg_definition
-      name: (identifier)
-      ty: (primitive_type))
-    argdefs: (arg_definition
-      name: (identifier)
-      ty: (primitive_type))
+    argdefs: (arg_def_list
+      args: (arg_definition
+        name: (identifier)
+        ty: (primitive_type))
+      args: (arg_definition
+        name: (identifier)
+        ty: (primitive_type)))
     to: (binary_expression
       left: (number_literal)
       right: (fun_application

@@ -3,26 +3,46 @@ pub mod diagnostic;
 use std::{collections::HashSet, error::Error};
 
 pub type SResult<T> = Result<T, SilencedError>;
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct SilencedError;
+#[derive(Clone, Debug, Default)]
+pub struct SilencedError(());
+
+impl SilencedError {
+    pub fn new() -> Self {
+        Self(())
+    }
+}
 
 impl std::fmt::Display for SilencedError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "SilencedError")
+        write!(f, "{:?}", self.0)
     }
 }
 
 impl Error for SilencedError {}
+
+impl std::cmp::PartialEq for SilencedError {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl std::cmp::Eq for SilencedError {}
+
+impl std::hash::Hash for SilencedError {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        0.hash(state);
+    }
+}
 
 pub trait Silencable {
     type Out;
     fn silence(self) -> Self::Out;
 }
 
-impl<T, E: Silencable> Silencable for Result<T, E> {
+impl<T, E: Silencable<Out = SilencedError>> Silencable for Result<T, E> where E: std::fmt::Debug {
     type Out = Result<T, SilencedError>;
     fn silence(self) -> Self::Out {
-        self.map_err(|_| SilencedError)
+        self.map_err(|e| e.silence())
     }
 }
 
@@ -36,7 +56,7 @@ impl<E: Into<SilencedError>> Silencable for E {
 impl<E: Into<SilencedError>> Silencable for Vec<E> {
     type Out = SilencedError;
     fn silence(self) -> Self::Out {
-        SilencedError
+        SilencedError::new()
     }
 }
 
@@ -102,7 +122,7 @@ macro_rules! error_type {
         impl $crate::error::Silencable for $name {
             type Out = $crate::error::SilencedError;
             fn silence(self) -> Self::Out {
-                $crate::error::SilencedError
+                $crate::error::SilencedError::new()
             }
         }
     }

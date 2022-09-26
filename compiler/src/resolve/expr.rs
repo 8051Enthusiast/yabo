@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::expr::{Atom, Expression, KindWithData, OpWithData, ValBinOp, ValUnOp};
+use crate::expr::{Atom, Expression, KindWithData, OpWithData, ValBinOp, ValUnOp, ValVarOp};
 use crate::hir::HirIdWrapper;
 use crate::resolve::refs;
 use crate::source::SpanIndex;
@@ -27,6 +27,7 @@ impl ExpressionKind for ResolvedKind {
     type NiladicOp = ResolvedAtom;
     type MonadicOp = ValUnOp<Arc<Expression<hir::HirConstraintSpanned>>>;
     type DyadicOp = ValBinOp;
+    type VariadicOp = ValVarOp;
 }
 
 pub type ResolvedExpr = Expression<KindWithData<ResolvedKind, SpanIndex>>;

@@ -50,14 +50,14 @@ pub fn parser_full_types(
 pub fn parser_type_at(db: &dyn TyHirs, id: DefId) -> SResult<TypeId> {
     let parent_pd = db.hir_parent_parserdef(id)?;
     let types = db.parser_full_types(parent_pd).silence()?;
-    let res = types.types.get(&id).copied().ok_or(SilencedError);
+    let res = types.types.get(&id).copied().ok_or_else(|| SilencedError::new());
     res
 }
 
 pub fn parser_expr_at(db: &dyn TyHirs, id: hir::ExprId) -> SResult<TypedExpression> {
     let parent_pd = db.hir_parent_parserdef(id.0)?;
     let types = db.parser_full_types(parent_pd).silence()?;
-    types.exprs.get(&id).cloned().ok_or(SilencedError)
+    types.exprs.get(&id).cloned().ok_or_else(|| SilencedError::new())
 }
 
 impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
@@ -72,6 +72,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
                 self.initialize_vars_at(block_val.root_context.0, &mut vars)?;
             }
         }
+        self.initialize_parserdef_args(pd, &mut vars)?;
         let ret = self.db.parser_returns(pd)?;
         let ret_inf = self.infctx.from_type(ret.deref);
         vars.insert(pd.0, ret_inf);
@@ -150,7 +151,7 @@ impl<'a, 'intern> TypeResolver<'intern> for FullResolver<'a, 'intern> {
             self.inftypes
                 .get(&child_id)
                 .map(|&id| id.into())
-                .ok_or(TypeError::UnknownField(name))
+                .ok_or_else(|| TypeError::UnknownField(name))
         } else {
             Ok(self.db.public_type(child_id).map(|t| t.into())?)
         }

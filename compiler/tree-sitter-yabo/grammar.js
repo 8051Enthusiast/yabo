@@ -47,7 +47,7 @@ module.exports = grammar({
       field('from', $._type_expression),
       '*>',
       field('name', $.identifier),
-      optional($._arg_def_list),
+      optional(field('argdefs', $.arg_def_list)),
       '=',
       field('to', $._expression),
     ),
@@ -188,13 +188,13 @@ module.exports = grammar({
       ':',
       field('ty', $._type_expression),
     ),
-    _arg_def_list: $ => seq(
+    arg_def_list: $ => seq(
       '(',
       optional(seq(
-        field('argdefs', $.arg_definition),
+        field('args', $.arg_definition),
         repeat(seq(
           ',',
-          field('argdefs', $.arg_definition),
+          field('args', $.arg_definition),
         )),
       )),
       ')'

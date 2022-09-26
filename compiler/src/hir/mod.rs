@@ -17,7 +17,7 @@ use crate::{
     ast::{ArrayKind, AstConstraint},
     dbpanic,
     error::{SResult, SilencedError},
-    expr::{self, Atom, Expression, ExpressionKind},
+    expr::{self, Atom, Expression, ExpressionKind, Unused},
     interner::{DefId, FieldName, HirPath, Identifier, PathComponent, TypeVar},
     source::{FileId, IndirectSpan, Span},
 };
@@ -55,6 +55,9 @@ pub trait Hirs: crate::ast::Asts + crate::types::TypeInterner {
         discriminants: bool,
     ) -> SResult<Option<usize>>;
     fn discriminant_mapping(&self, block: BlockId) -> SResult<Arc<FxHashMap<DefId, u64>>>;
+    fn argnum(&self, pd: ParserDefId) -> SResult<Option<usize>>;
+    fn parserdef_arg(&self, pd: ParserDefId, name: Identifier) -> SResult<Option<ArgDefId>>;
+    fn parserdef_arg_index(&self, pd: ParserDefId, id: DefId) -> SResult<Option<usize>>;
 }
 
 fn hir_node(db: &dyn Hirs, id: DefId) -> SResult<HirNode> {
@@ -167,12 +170,12 @@ fn hir_parent_block(db: &dyn Hirs, id: DefId) -> SResult<Option<BlockId>> {
 
 fn indirect_span(db: &dyn Hirs, span: IndirectSpan) -> SResult<Span> {
     let id = db.hir_parent_parserdef(span.0)?;
-    let collection = db.hir_parser_collection(id.0)?.ok_or(SilencedError)?;
+    let collection = db.hir_parser_collection(id.0)?.ok_or_else(|| SilencedError::new())?;
     Ok(match span.1 {
         Some(index) => collection.span_with_index(span.0, index.as_usize()),
         None => collection.default_span(span.0),
     }
-    .ok_or(SilencedError)?)
+    .ok_or_else(|| SilencedError::new())?)
 }
 
 fn indirection_targets(db: &dyn Hirs, id: DefId) -> SResult<Arc<Vec<DefId>>> {
@@ -232,6 +235,35 @@ fn discriminant_mapping(db: &dyn Hirs, block: BlockId) -> SResult<Arc<FxHashMap<
         i += 1;
     }
     Ok(Arc::new(mapping))
+}
+
+fn argnum(db: &dyn Hirs, pd: ParserDefId) -> SResult<Option<usize>> {
+    let pd = pd.lookup(db)?;
+    Ok(pd.args.map(|x| x.len()))
+}
+fn parserdef_arg(db: &dyn Hirs, pd: ParserDefId, name: Identifier) -> SResult<Option<ArgDefId>> {
+    let pd = pd.lookup(db)?;
+    let arg = pd
+        .args
+        .as_ref()
+        .map(|x| x.as_slice())
+        .unwrap_or_default()
+        .iter()
+        .find(|x| db.def_name(x.0) == Some(FieldName::Ident(name)))
+        .copied();
+    Ok(arg)
+}
+
+fn parserdef_arg_index(db: &dyn Hirs, pd: ParserDefId, id: DefId) -> SResult<Option<usize>> {
+    let pd = pd.lookup(db)?;
+    let index = pd
+        .args
+        .as_ref()
+        .map(|x| x.as_slice())
+        .unwrap_or_default()
+        .iter()
+        .position(|x| x.0 == id);
+    Ok(index)
 }
 
 macro_rules! hir_id_wrapper {
@@ -304,6 +336,7 @@ hir_node_enum! {
         Parse(ParseStatement),
         Array(ParserArray),
         Block(Block),
+        ArgDef(ArgDef),
         Choice(StructChoice),
         Module(Module),
         Context(StructCtx),
@@ -319,6 +352,7 @@ hir_id_wrapper! {
     type ParseId = Parse(ParseStatement);
     type ArrayId = Array(ParserArray);
     type BlockId = Block(Block);
+    type ArgDefId = ArgDef(ArgDef);
     type ChoiceId = Choice(StructChoice);
     type ModuleId = Module(Module);
     type ContextId = Context(StructCtx);
@@ -405,6 +439,7 @@ pub type ConstraintExpression = Expression<HirConstraintSpanned>;
 pub struct HirVal;
 
 impl ExpressionKind for HirVal {
+    type VariadicOp = expr::ValVarOp;
     type DyadicOp = expr::ValBinOp;
     type MonadicOp = expr::ValUnOp<Arc<ConstraintExpression>>;
     type NiladicOp = ParserAtom;
@@ -416,6 +451,7 @@ pub type HirValSpanned = expr::KindWithData<HirVal, SpanIndex>;
 pub struct HirType;
 
 impl ExpressionKind for HirType {
+    type VariadicOp = Unused;
     type DyadicOp = expr::TypeBinOp;
     type MonadicOp = expr::TypeUnOp<Arc<ConstraintExpression>>;
     type NiladicOp = TypeAtom;
@@ -456,16 +492,34 @@ pub enum Qualifier {
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct ArgDef {
+    pub id: ArgDefId,
+    pub name: Identifier,
+    pub ty: TExprId,
+}
+
+impl ArgDef {
+    fn children(&self) -> Vec<DefId> {
+        vec![self.ty.0]
+    }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDef {
     pub id: ParserDefId,
     pub qualifier: Qualifier,
     pub from: TExprId,
+    pub args: Option<Vec<ArgDefId>>,
     pub to: ExprId,
 }
 
 impl ParserDef {
     pub fn children(&self) -> Vec<DefId> {
-        vec![self.from.0, self.to.0]
+        let mut child = vec![self.from.0, self.to.0];
+        if let Some(args) = &self.args {
+            child.extend(args.iter().map(|x| x.0));
+        }
+        child
     }
 }
 

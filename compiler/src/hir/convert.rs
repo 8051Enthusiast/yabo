@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use fxhash::FxHashSet;
+
 use super::*;
 use crate::{ast, error::Silencable, error_type, expr::OpWithData};
 
@@ -9,6 +11,10 @@ pub enum HirConversionError {
         first: Span,
         duplicate: Span,
         name: FieldName,
+    },
+    DuplicateArg {
+        name: Identifier,
+        place: Span,
     },
     Silenced,
 }
@@ -22,7 +28,7 @@ impl From<SilencedError> for HirConversionError {
 impl Silencable for HirConversionError {
     type Out = SilencedError;
     fn silence(self) -> Self::Out {
-        SilencedError
+        SilencedError::new()
     }
 }
 
@@ -65,6 +71,7 @@ fn val_expression(
             inner: monadic.inner.map_expr(|x| Arc::new(x.map(&mut add_span))),
         },
         &mut |dyadic, _, _| dyadic.clone(),
+        &mut |variadic, _| variadic.clone(),
     );
     let expr = ValExpression {
         id,
@@ -81,7 +88,7 @@ fn convert_type_expression(
     mut add_span: &impl Fn(&Span) -> SpanIndex,
 ) -> Expression<HirTypeSpanned> {
     let expr = expr.map(add_span);
-    expr.convert(
+    expr.convert_no_var(
         &mut |niladic| {
             let new_atom = match &niladic.inner {
                 ast::TypeAtom::ParserDef(pd) => {
@@ -132,6 +139,17 @@ fn type_expression(ast: &ast::TypeExpression, ctx: &HirConversionCtx, id: TExprI
     ctx.insert(id.0, HirNode::TExpr(texpr), spans.into_inner())
 }
 
+fn arg_def(ast: &ast::ArgDefinition, ctx: &HirConversionCtx, id: ArgDefId) {
+    let ty = TExprId(id.child(ctx.db, PathComponent::Unnamed(0)));
+    type_expression(&ast.ty, ctx, ty);
+    let argdef = ArgDef {
+        id,
+        name: ast.name.inner,
+        ty,
+    };
+    ctx.insert(id.0, HirNode::ArgDef(argdef), vec![ast.name.span]);
+}
+
 fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDefId) {
     let from = TExprId(id.child(ctx.db, PathComponent::Unnamed(0)));
     let to = ExprId(id.child(ctx.db, PathComponent::Unnamed(1)));
@@ -141,13 +159,38 @@ fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDef
         Some(ast::Qualifier::Export) => Qualifier::Export,
         None => Qualifier::Regular,
     };
+    let mut names = FxHashSet::default();
+    let args = ast.argdefs.as_ref().map(|x| {
+        let mut args = Vec::new();
+        for arg in x.args.iter() {
+            if !names.insert(arg.name.inner) {
+                ctx.add_errors(Some(HirConversionError::DuplicateArg {
+                    name: arg.name.inner,
+                    place: arg.name.span,
+                }));
+                continue;
+            };
+            let arg_id = ArgDefId(id.child(
+                ctx.db,
+                PathComponent::Named(FieldName::Ident(arg.name.inner)),
+            ));
+            arg_def(arg, ctx, arg_id);
+            args.push(arg_id);
+        }
+        args
+    });
     let pdef = ParserDef {
         qualifier,
         id,
         from,
+        args,
         to,
     };
-    ctx.insert(id.0, HirNode::ParserDef(pdef), vec![ast.span]);
+    ctx.insert(
+        id.0,
+        HirNode::ParserDef(pdef),
+        vec![ast.name.span, ast.span],
+    );
 }
 
 fn block(

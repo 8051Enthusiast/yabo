@@ -1,5 +1,9 @@
-use crate::absint::{AbstractDomain, Arg};
-use std::collections::hash_map::Entry;
+use crate::{
+    absint::{AbstractDomain, Arg},
+    expr::{ValVarOp, Variadic},
+    hir::HirIdWrapper,
+};
+use std::{collections::hash_map::Entry, sync::Arc};
 
 use fxhash::{FxHashMap, FxHashSet};
 use petgraph::unionfind::UnionFind;
@@ -19,24 +23,28 @@ use super::{
 
 type LayoutSet<'a> = FxHashSet<IMonoLayout<'a>>;
 
+#[derive(Debug)]
 pub struct LayoutCollection<'a> {
     pub root: Vec<(IMonoLayout<'a>, PSize)>,
     pub arrays: LayoutSet<'a>,
     pub blocks: LayoutSet<'a>,
     pub nominals: LayoutSet<'a>,
     pub parsers: LayoutSet<'a>,
+    pub functions: LayoutSet<'a>,
     pub primitives: LayoutSet<'a>,
-    pub call_slots: FxHashMap<(ILayout<'a>, ILayout<'a>), PSize>,
-    pub parser_occupied_entries: FxHashMap<IMonoLayout<'a>, FxHashMap<PSize, ILayout<'a>>>,
+    pub parser_slots: CallSlotResult<'a>,
+    pub funcall_slots: CallSlotResult<'a>,
 }
 
 pub struct LayoutCollector<'a, 'b> {
     ctx: &'b mut AbsLayoutCtx<'a>,
-    calls: CallInfo<'a>,
+    parses: CallInfo<'a>,
+    funcalls: CallInfo<'a>,
     arrays: LayoutSet<'a>,
     blocks: LayoutSet<'a>,
     nominals: LayoutSet<'a>,
     parsers: LayoutSet<'a>,
+    functions: LayoutSet<'a>,
     root: Vec<(ILayout<'a>, IMonoLayout<'a>)>,
     processed_calls: FxHashSet<(ILayout<'a>, IMonoLayout<'a>)>,
     unprocessed: Vec<UnprocessedCall<'a>>,
@@ -52,11 +60,13 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     pub fn new(ctx: &'b mut AbsLayoutCtx<'a>) -> Self {
         LayoutCollector {
             ctx,
-            calls: Default::default(),
+            parses: Default::default(),
+            funcalls: Default::default(),
             arrays: Default::default(),
             blocks: Default::default(),
             nominals: Default::default(),
             parsers: Default::default(),
+            functions: Default::default(),
             processed_calls: Default::default(),
             unprocessed: Default::default(),
             root: Default::default(),
@@ -68,7 +78,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 MonoLayout::Pointer => {
                     self.arrays.insert(mono);
                 }
-                MonoLayout::Nominal(_, _) => {
+                MonoLayout::Nominal(_, _, _) => {
                     if self.nominals.insert(mono) {
                         self.unprocessed.push(UnprocessedCall::Nominal(mono));
                     }
@@ -76,18 +86,26 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 MonoLayout::Block(_, _) => {
                     self.blocks.insert(mono);
                 }
-                MonoLayout::NominalParser(_)
-                | MonoLayout::BlockParser(_, _)
+                MonoLayout::NominalParser(pd, args) => {
+                    let argnum = self.ctx.db.argnum(*pd).unwrap().unwrap_or(0);
+                    if args.len() == argnum {
+                        self.parsers.insert(mono);
+                    } else {
+                        self.functions.insert(mono);
+                    }
+                }
+                MonoLayout::BlockParser(_, _)
                 | MonoLayout::ComposedParser(_, _, _)
                 | MonoLayout::Single
                 | MonoLayout::Nil => {
                     self.parsers.insert(mono);
                 }
                 MonoLayout::Primitive(_) => {}
+                MonoLayout::Tuple(_) => panic!("tuples not supported yet"),
             }
         }
     }
-    fn register_call(&mut self, left: ILayout<'a>, right: ILayout<'a>) {
+    fn register_parse(&mut self, left: ILayout<'a>, right: ILayout<'a>) {
         for mono in flat_layouts(&right) {
             match mono.mono_layout().0 {
                 MonoLayout::BlockParser(_, _) => {
@@ -95,7 +113,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         self.unprocessed.push(UnprocessedCall::Block(left, mono));
                     }
                 }
-                MonoLayout::NominalParser(_) => {
+                MonoLayout::NominalParser(_, _) => {
                     if self.processed_calls.insert((left, mono)) {
                         self.unprocessed
                             .push(UnprocessedCall::NominalParser(left, mono));
@@ -104,22 +122,41 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 _ => {}
             }
         }
-        self.calls.add_call(left, right)
+        self.parses.add_call(left, right)
+    }
+    fn register_funcall(&mut self, fun: ILayout<'a>, args: Vec<ILayout<'a>>) {
+        let any_ty = self.ctx.db.intern_type(Type::Any);
+        // hack: this is just a placeholder for the argument bundle
+        let arg_tuple = self.ctx.dcx.intern.intern(InternerLayout {
+            layout: Layout::Mono(MonoLayout::Tuple(args), any_ty),
+        });
+        self.funcalls.add_call(arg_tuple, fun)
     }
     fn collect_expr(&mut self, expr: &AbstractExpression<ILayout<'a>>) {
         for part in ExprIter::new(expr) {
             let dom = part.0.root_data().val;
             self.register_layouts(dom);
-            if let ExpressionHead::Dyadic(Dyadic {
-                op:
-                    OpWithData {
-                        inner: ValBinOp::ParserApply,
-                        ..
-                    },
-                inner: [left, right],
-            }) = &part.0
-            {
-                self.register_call(&left.0.root_data().val, &right.0.root_data().val)
+            match &part.0 {
+                ExpressionHead::Dyadic(Dyadic {
+                    op:
+                        OpWithData {
+                            inner: ValBinOp::ParserApply,
+                            ..
+                        },
+                    inner: [left, right],
+                }) => self.register_parse(&left.0.root_data().val, &right.0.root_data().val),
+                ExpressionHead::Variadic(Variadic {
+                    op:
+                        OpWithData {
+                            inner: ValVarOp::Call,
+                            ..
+                        },
+                    inner: args,
+                }) => self.register_funcall(
+                    args[0].0.root_data().val,
+                    args[1..].iter().map(|x| x.0.root_data().val).collect(),
+                ),
+                _ => (),
             }
         }
     }
@@ -130,7 +167,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         for (&node, &value) in block.vals.iter() {
             if let HirNode::Parse(p) = self.ctx.db.hir_node(node)? {
                 let expr_val = block.expr_vals[&p.expr].0.root_data().val;
-                self.register_call(block.from, expr_val);
+                self.register_parse(block.from, expr_val);
             }
             self.register_layouts(value)
         }
@@ -140,7 +177,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         if let Some(val) = &pd.expr_vals {
             self.collect_expr(val);
             let root = val.0.root_data().val;
-            self.register_call(pd.from, root);
+            self.register_parse(pd.from, root);
         }
         self.register_layouts(pd.returned)
     }
@@ -158,10 +195,14 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     }
                 }
                 UnprocessedCall::NominalParser(arg, parser) => {
-                    if let (MonoLayout::NominalParser(id), ty) = parser.mono_layout() {
+                    if let (MonoLayout::NominalParser(id, thunk_args), ty) = parser.mono_layout() {
                         let mut args = FxHashMap::default();
                         let thunk_ty = self.ctx.db.parser_result(ty).unwrap();
                         args.insert(Arg::From, arg);
+                        let arg_ids = id.lookup(self.ctx.db).unwrap().args.unwrap_or_default();
+                        for (id, arg) in arg_ids.iter().zip(thunk_args.iter()) {
+                            args.insert(Arg::Named(id.0), arg.0);
+                        }
                         let thunk = ILayout::make_thunk(self.ctx, *id, thunk_ty, &args).unwrap();
                         self.register_layouts(thunk);
                     } else {
@@ -185,13 +226,16 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     arg: from,
                 });
                 let parser_layout = self.ctx.dcx.intern.intern(InternerLayout {
-                    layout: Layout::Mono(MonoLayout::NominalParser(*pd), parser_ty),
+                    layout: Layout::Mono(
+                        MonoLayout::NominalParser(*pd, Default::default()),
+                        parser_ty,
+                    ),
                 });
                 self.register_layouts(parser_layout);
                 for mono in flat_layouts(&parser_layout) {
                     self.root.push((from_layout, mono));
                 }
-                self.register_call(from_layout, parser_layout);
+                self.register_parse(from_layout, parser_layout);
             }
             self.register_layouts(thunk_layout);
         }
@@ -199,18 +243,8 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         Ok(())
     }
     pub fn into_results(self) -> LayoutCollection<'a> {
-        let call_slots = self.calls.into_layout_vtable_offsets();
-        let mut parser_occupied_entries: FxHashMap<IMonoLayout, FxHashMap<PSize, ILayout>> =
-            FxHashMap::default();
-        for ((from, parsers), &slot) in call_slots.iter() {
-            for parser in flat_layouts(&parsers) {
-                parser_occupied_entries
-                    .entry(parser)
-                    .or_default()
-                    .insert(slot, from);
-            }
-        }
-
+        let parser_slots = self.parses.into_layout_vtable_offsets();
+        let funcall_slots = self.funcalls.into_layout_vtable_offsets();
         let mut primitives = FxHashSet::default();
 
         for x in [
@@ -230,20 +264,22 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             .root
             .into_iter()
             .map(|(from, mono)| {
-                let slot = call_slots[&(from, mono.0)];
+                let slot = parser_slots.layout_vtable_offsets[&(from, mono.0)];
                 (mono, slot)
             })
             .collect();
-        LayoutCollection {
+        let collection = LayoutCollection {
             root,
             arrays: self.arrays,
             blocks: self.blocks,
             nominals: self.nominals,
             parsers: self.parsers,
+            functions: self.functions,
             primitives,
-            call_slots,
-            parser_occupied_entries,
-        }
+            parser_slots,
+            funcall_slots,
+        };
+        collection
     }
 }
 
@@ -252,11 +288,17 @@ pub struct CallInfo<'a> {
     map: FxHashMap<ILayout<'a>, FxHashSet<ILayout<'a>>>,
 }
 
+#[derive(Debug)]
+pub struct CallSlotResult<'a> {
+    pub layout_vtable_offsets: FxHashMap<(ILayout<'a>, ILayout<'a>), PSize>,
+    pub occupied_entries: FxHashMap<IMonoLayout<'a>, Arc<FxHashMap<PSize, ILayout<'a>>>>,
+}
+
 impl<'a> CallInfo<'a> {
     pub fn add_call(&mut self, arg: ILayout<'a>, parser: ILayout<'a>) {
         self.map.entry(arg).or_default().insert(parser);
     }
-    pub fn into_layout_vtable_offsets(mut self) -> FxHashMap<(ILayout<'a>, ILayout<'a>), PSize> {
+    pub fn into_layout_vtable_offsets(mut self) -> CallSlotResult<'a> {
         let mut vecs = Vec::new();
         let mut id_info = FxHashMap::default();
         for (arg_layout, parser_set) in self.map.drain() {
@@ -282,7 +324,8 @@ impl<'a> CallInfo<'a> {
                 slot_sets.push(ParserSlotStatus::new(vec.0.clone(), vec.1))
             }
         }
-        let mut res: FxHashMap<(ILayout<'a>, ILayout<'a>), PSize> = FxHashMap::default();
+        let mut layout_vtable_offsets: FxHashMap<(ILayout<'a>, ILayout<'a>), PSize> =
+            FxHashMap::default();
         for (index, slot) in slot_sets.into_iter().enumerate() {
             for id in slot.contained_ids {
                 let (arg, parsers) = match id_info.remove(&id) {
@@ -290,11 +333,28 @@ impl<'a> CallInfo<'a> {
                     None => continue,
                 };
                 for parser in parsers {
-                    res.insert((arg, parser), index as PSize);
+                    layout_vtable_offsets.insert((arg, parser), index as PSize);
                 }
             }
         }
-        res
+        let mut parser_occupied_entries: FxHashMap<IMonoLayout, FxHashMap<PSize, ILayout>> =
+            FxHashMap::default();
+        for ((from, parsers), &slot) in layout_vtable_offsets.iter() {
+            for parser in flat_layouts(&parsers) {
+                parser_occupied_entries
+                    .entry(parser)
+                    .or_default()
+                    .insert(slot, from);
+            }
+        }
+        let arc_parser_occupied_entries = parser_occupied_entries
+            .into_iter()
+            .map(|(k, v)| (k, Arc::new(v)))
+            .collect();
+        CallSlotResult {
+            layout_vtable_offsets,
+            occupied_entries: arc_parser_occupied_entries,
+        }
     }
 }
 

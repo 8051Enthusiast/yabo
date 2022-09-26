@@ -1,5 +1,21 @@
 [
   {
+    "type": "arg_def_list",
+    "named": true,
+    "fields": {
+      "args": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "arg_definition",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "arg_definition",
     "named": true,
     "fields": {
@@ -1062,11 +1078,11 @@
     "named": true,
     "fields": {
       "argdefs": {
-        "multiple": true,
+        "multiple": false,
         "required": false,
         "types": [
           {
-            "type": "arg_definition",
+            "type": "arg_def_list",
             "named": true
           }
         ]

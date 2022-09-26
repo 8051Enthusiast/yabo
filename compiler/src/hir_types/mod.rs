@@ -14,8 +14,8 @@ use sha2::Digest;
 use crate::{
     error::{IsSilenced, SResult, Silencable, SilencedError},
     expr::{
-        self, Dyadic, ExprIter, Expression, ExpressionHead, Monadic, OpWithData, TypeBinOp,
-        TypeUnOp, ValBinOp, ValUnOp,
+        self, Dyadic, ExprIter, Expression, ExpressionHead, Ignorable, Monadic, OpWithData,
+        TypeBinOp, TypeUnOp, ValBinOp, ValUnOp, Variadic,
     },
     hash::StableHash,
     hir::{walk::ChildIter, ExprId, HirIdWrapper, HirNodeKind, ParseStatement, ParserDefRef},
@@ -185,11 +185,12 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         .loc
                         .vars
                         .get_var(*v)
-                        .ok_or(SpannedTypeError::new(TypeError::UnknownTypeVar(*v), span))?;
+                        .ok_or_else(|| SpannedTypeError::new(TypeError::UnknownTypeVar(*v), span))?;
                     self.infctx
                         .intern_infty(InferenceType::TypeVarRef(self.loc.pd.0, 0, var_idx))
                 }
             },
+            ExpressionHead::Variadic(v) => v.ignore(),
         };
         Ok(ret)
     }
@@ -214,7 +215,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         let def =
             self.db
                 .parserdef_ref(self.loc.loc, pd.name.atom)?
-                .ok_or(SpannedTypeError::new(
+                .ok_or_else(|| SpannedTypeError::new(
                     TypeError::UnknownParserdefName(pd.name.atom),
                     span,
                 ))?;
@@ -226,13 +227,14 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
             }
             _ => {}
         }
-        if fun_args.len() > definition.args.len() {
+        let def_args_len = definition.args.as_ref().map(|x| x.len()).unwrap_or(0);
+        if fun_args.len() > def_args_len {
             return Err(SpannedTypeError::new(
-                TypeError::ParserDefArgCountMismatch(definition.args.len(), fun_args.len()),
+                TypeError::ParserDefArgCountMismatch(def_args_len, fun_args.len()),
                 span,
             ));
         }
-        while fun_args.len() < definition.args.len() {
+        while fun_args.len() < def_args_len {
             fun_args.push(self.infctx.var());
         }
         let ty_args = (0..definition.ty_args.len())
@@ -242,7 +244,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
             kind: NominalKind::Def,
             def: def.0,
             parse_arg: definition.from,
-            fun_args: definition.args,
+            fun_args: definition.args.unwrap_or_default(),
             ty_args: Arc::new(n_type_vars(self.db, def, definition.ty_args.len() as u32)),
         }));
         let inferred_def = self.infctx.from_type_with_args(def_type, &ty_args);
@@ -347,6 +349,10 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         },
                         a.data,
                     ),
+                    ExpressionHead::Variadic(Variadic { op, inner }) => {
+                        let args = inner[1..].into_iter().map(|(a, _)| *a).collect::<Vec<_>>();
+                        (self.infctx.function_apply(inner[0].0, &args)?, op.data)
+                    }
                 })
             })
             .map_err(|x| SpannedTypeError::new(x, span))?;
@@ -417,6 +423,25 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                 _ => continue,
             };
             vars.insert(id, ty);
+        }
+        Ok(())
+    }
+    fn initialize_parserdef_args(
+        &mut self,
+        pd: hir::ParserDefId,
+        vars: &mut FxHashMap<DefId, InfTypeId<'intern>>,
+    ) -> Result<(), SpannedTypeError> {
+        let pd = pd.lookup(self.db)?;
+        let sig = self.db.parser_args(pd.id)?;
+        for (ty, id) in sig
+            .args
+            .iter()
+            .map(|x| x.iter())
+            .flatten()
+            .zip(pd.args.into_iter().flatten())
+        {
+            let ty = self.infctx.from_type(*ty);
+            vars.insert(id.0, ty);
         }
         Ok(())
     }
@@ -663,7 +688,7 @@ impl NominalId {
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub enum SpannedTypeError {
     Spanned(TypeError, IndirectSpan),
-    Silenced,
+    Silenced(SilencedError),
 }
 
 impl SpannedTypeError {
@@ -673,8 +698,8 @@ impl SpannedTypeError {
 }
 
 impl From<SilencedError> for SpannedTypeError {
-    fn from(_: SilencedError) -> Self {
-        SpannedTypeError::Silenced
+    fn from(s: SilencedError) -> Self {
+        SpannedTypeError::Silenced(s)
     }
 }
 
@@ -682,7 +707,13 @@ impl Silencable for SpannedTypeError {
     type Out = SilencedError;
 
     fn silence(self) -> Self::Out {
-        SilencedError
+        match self {
+            SpannedTypeError::Spanned(inner, _) => match inner {
+                TypeError::Silenced(s) => s,
+                _ => SilencedError::new(),
+            },
+            SpannedTypeError::Silenced(s) => s,
+        }
     }
 }
 
@@ -690,7 +721,7 @@ impl IsSilenced for SpannedTypeError {
     fn is_silenced(&self) -> bool {
         matches!(
             self,
-            SpannedTypeError::Silenced | SpannedTypeError::Spanned(TypeError::Silenced, _)
+            SpannedTypeError::Silenced(_) | SpannedTypeError::Spanned(TypeError::Silenced(_), _)
         )
     }
 }

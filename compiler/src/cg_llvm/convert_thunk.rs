@@ -6,44 +6,95 @@ use inkwell::{
 
 use crate::{
     hir_types::DISCRIMINANT_MASK,
-    layout::{prop::TargetSized, represent::LayoutPart, IMonoLayout},
+    layout::{
+        prop::{PSize, SizeAlign, TargetSized},
+        represent::LayoutPart,
+        IMonoLayout,
+    },
 };
 
 use super::CodeGenCtx;
+
+pub enum ThunkKind<'comp> {
+    Typecast(IMonoLayout<'comp>),
+    CreateArgs {
+        from: IMonoLayout<'comp>,
+        to: IMonoLayout<'comp>,
+        slot: PSize,
+    },
+}
+
+impl<'comp> ThunkKind<'comp> {
+    pub fn copy_size<'llvm>(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> SizeAlign {
+        let size_layout = match self {
+            ThunkKind::Typecast(layout) => layout,
+            ThunkKind::CreateArgs { from, .. } => from,
+        };
+        size_layout.inner().size_align(cg.layouts).unwrap()
+    }
+    pub fn alloc_size<'llvm>(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> SizeAlign {
+        let size_layout = match self {
+            ThunkKind::Typecast(layout) => layout,
+            ThunkKind::CreateArgs { to, .. } => to,
+        };
+        size_layout.inner().size_align(cg.layouts).unwrap()
+    }
+    pub fn function<'llvm>(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
+        match self {
+            ThunkKind::Typecast(layout) => cg.typecast_fun_val(*layout),
+            ThunkKind::CreateArgs { from, slot, .. } => {
+                cg.function_create_args_fun_val(*from, *slot)
+            }
+        }
+    }
+    pub fn target_layout<'llvm>(&self) -> IMonoLayout<'comp> {
+        match self {
+            ThunkKind::Typecast(layout) => *layout,
+            ThunkKind::CreateArgs { to, .. } => *to,
+        }
+    }
+}
 
 pub struct ThunkContext<'llvm, 'comp, 'r> {
     cg: &'r mut CodeGenCtx<'llvm, 'comp>,
     thunk: FunctionValue<'llvm>,
     target_head: IntValue<'llvm>,
     from_ptr: PointerValue<'llvm>,
-    from_layout: IMonoLayout<'comp>,
+    target_layout: IMonoLayout<'comp>,
     return_ptr: PointerValue<'llvm>,
+    copy_sa: SizeAlign,
+    alloc_sa: SizeAlign,
 }
 
 impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
-    pub fn new(cg: &'r mut CodeGenCtx<'llvm, 'comp>, layout: IMonoLayout<'comp>) -> Self {
-        let thunk = cg.typecast_fun_val(layout);
+    pub fn new(cg: &'r mut CodeGenCtx<'llvm, 'comp>, kind: ThunkKind<'comp>) -> Self {
+        let thunk = kind.function(cg);
+        let copy_sa = kind.copy_size(cg);
+        let alloc_sa = kind.alloc_size(cg);
         let from_ptr = thunk.get_nth_param(0).unwrap().into_pointer_value();
         let target_head = thunk.get_nth_param(1).unwrap().into_int_value();
         let return_ptr = thunk.get_nth_param(2).unwrap().into_pointer_value();
         let entry_block = cg.llvm.append_basic_block(thunk, "entry");
+        let target_layout = kind.target_layout();
         cg.builder.position_at_end(entry_block);
         ThunkContext {
             cg,
             thunk,
             target_head,
             from_ptr,
-            from_layout: layout,
+            target_layout,
             return_ptr,
+            copy_sa,
+            alloc_sa,
         }
     }
 
     fn maybe_deref(&mut self) {
-        if self.from_layout.deref(self.cg.layouts).unwrap().is_some() {
+        if self.target_layout.deref(self.cg.layouts).unwrap().is_some() {
             let mask = self.cg.const_i64(DISCRIMINANT_MASK);
             let discriminant = self
                 .cg
-                .build_head_disc_get(Some(self.from_layout), self.from_ptr);
+                .build_head_disc_get(Some(self.target_layout), self.from_ptr);
             let masked_target = self
                 .cg
                 .builder
@@ -79,7 +130,7 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
         self.cg.builder.position_at_end(current_bb);
         let deref_fun = self
             .cg
-            .build_deref_fun_get(Some(self.from_layout), self.from_ptr);
+            .build_deref_fun_get(Some(self.target_layout), self.from_ptr);
         let ret = self.cg.build_call_with_int_ret(
             deref_fun,
             &[
@@ -108,13 +159,7 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
         copy_phi.add_incoming(&[(&self.return_ptr, check_vtable_bb)]);
 
         self.cg.builder.position_at_end(old_bb);
-        let layout_size = self
-            .from_layout
-            .inner()
-            .size_align(self.cg.layouts)
-            .unwrap()
-            .size;
-        if layout_size > <*const u8>::tsize().size {
+        if self.alloc_sa.size > <*const u8>::tsize().size {
             self.check_malloc(copy_bb, copy_phi, check_vtable_bb);
         } else {
             self.cg.builder.build_unconditional_branch(check_vtable_bb);
@@ -122,13 +167,7 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
 
         self.cg.builder.position_at_end(copy_bb);
         let target_ptr = copy_phi.as_basic_value().into_pointer_value();
-        let align = self
-            .from_layout
-            .inner()
-            .size_align(self.cg.layouts)
-            .unwrap()
-            .align() as u32;
-        if layout_size > 0 {
+        if self.copy_sa.size > 0 {
             // it is nice to be able to pass an invalid pointer
             // for ZSTs, but calling memcpy with a null pointer
             // is UB, therefore we simply don't generate it for ZSTs
@@ -136,10 +175,10 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
                 .builder
                 .build_memcpy(
                     target_ptr,
-                    align,
+                    self.copy_sa.align() as u32,
                     self.from_ptr,
-                    align,
-                    self.cg.const_size_t(layout_size),
+                    self.alloc_sa.align() as u32,
+                    self.cg.const_size_t(self.copy_sa.size),
                 )
                 .unwrap();
         }
@@ -223,18 +262,14 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
     }
 
     fn build_malloc(&mut self) -> PointerValue<'llvm> {
-        let sa = self
-            .from_layout
-            .inner()
-            .size_align(self.cg.layouts)
-            .unwrap();
+        let sa = self.alloc_sa;
         let ty = self.cg.sa_type(sa);
         let malloc_ptr = self.cg.builder.build_malloc(ty, "benloc").unwrap();
         self.cg.build_cast::<*mut u8, _>(malloc_ptr)
     }
 
     fn build_vtable_any_ptr(&mut self) -> PointerValue<'llvm> {
-        let ptr = self.cg.sym_ptr(self.from_layout, LayoutPart::VTable);
+        let ptr = self.cg.sym_ptr(self.target_layout, LayoutPart::VTable);
         self.cg.build_cast::<*const u8, _>(ptr)
     }
 

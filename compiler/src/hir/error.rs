@@ -21,20 +21,26 @@ pub fn errors(db: &(impl Hirs + ?Sized)) -> Vec<Report> {
 }
 
 fn conversion_report(error: HirConversionError) -> Option<Report> {
-    let (first, duplicate) = match error {
+    match error {
         HirConversionError::DuplicateField {
             first, duplicate, ..
-        } => (first, duplicate),
+        } => Some(
+            Report::new(
+                DiagnosticKind::Error,
+                duplicate.file,
+                "Duplicate field in block",
+            )
+            .with_code(201)
+            .with_label(
+                Label::new(duplicate).with_message("This field already appeared in this block"),
+            )
+            .with_label(Label::new(first).with_message("the previous appearnce of the field")),
+        ),
         HirConversionError::Silenced => return None,
-    };
-    Some(
-        Report::new(
-            DiagnosticKind::Error,
-            duplicate.file,
-            "Duplicate field in block",
-        )
-        .with_code(201)
-        .with_label(Label::new(duplicate).with_message("This field already appeared in this block"))
-        .with_label(Label::new(first).with_message("the previous appearnce of the field")),
-    )
+        HirConversionError::DuplicateArg { place, .. } => Some(
+            Report::new(DiagnosticKind::Error, place.file, "Duplicate argument name")
+                .with_code(202)
+                .with_label(Label::new(place).with_message("this argument is duplicate")),
+        ),
+    }
 }
