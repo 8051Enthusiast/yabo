@@ -17,9 +17,10 @@ export def for[int] *> test = {
   | let p = linear_byte
   a: ~
   s: p(a)
+  t: affine_byte(a, s)
 }
 ====[ binary 1 ]====
-00 55 55 55
+00 55 55 55 55
 ====[ output 1 ]====
 {
   "_": 0,
@@ -27,14 +28,28 @@ export def for[int] *> test = {
   "m": 85,
   "p": "fun_args",
   "s": 7310,
+  "t": 14535,
   "tag": 0
 }
 ====[ binary 2 ]====
-55 55 55 55
+55 55 55 55 55
 ====[ output 2 ]====
 {
   "a": 85,
   "p": "fun_args",
   "s": 7225,
+  "t": 14450,
   "tag": 85
+}
+====[ binary 3 ]====
+00 22 33 44 55
+====[ output 3 ]====
+{
+  "_": 0,
+  "a": 51,
+  "m": 34,
+  "p": "fun_args",
+  "s": 2363,
+  "t": 6698,
+  "tag": 0
 }
