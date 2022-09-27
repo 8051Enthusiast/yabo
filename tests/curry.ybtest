@@ -1,0 +1,40 @@
+====[ source code ]====
+def for[int] *> linear_byte(m: int) = {
+  byte: ~
+  let return = m * byte
+}
+
+def for[int] *> affine_byte(m: int, a: int) = {
+  byte: ~
+  let return = m * byte + a
+}
+
+export def for[int] *> test = {
+  tag: ~
+  | let _ = tag if 0
+    m: ~
+    let p = affine_byte(m)
+  | let p = linear_byte
+  a: ~
+  s: p(a)
+}
+====[ binary 1 ]====
+00 55 55 55
+====[ output 1 ]====
+{
+  "_": 0,
+  "a": 85,
+  "m": 85,
+  "p": "fun_args",
+  "s": 7310,
+  "tag": 0
+}
+====[ binary 2 ]====
+55 55 55 55
+====[ output 2 ]====
+{
+  "a": 85,
+  "p": "fun_args",
+  "s": 7225,
+  "tag": 85
+}

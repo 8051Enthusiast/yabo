@@ -290,6 +290,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             .substitute_typevar(unsub_from_ty, self.type_substitutions.clone());
         // to make sure
         self.call_needs_fixpoint.remove(&self.depth);
+        let old_active_block = self.active_block.take();
 
         let result = self.eval_pd_expr(pd.clone(), &parserdef, from_ty);
         let result = self.strip_error(result);
@@ -299,6 +300,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             ret = self.eval_pd_fixpoint(pd.clone(), ret, &parserdef, from_ty);
         }
 
+        self.active_block = old_active_block;
         self.type_substitutions = old_type_substitutions;
         self.current_pd = old_pd;
         self.active_calls.remove(&pd);

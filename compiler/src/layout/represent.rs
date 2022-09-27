@@ -54,8 +54,8 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
                     }
                     write!(f, "}}")
                 }
-                MonoLayout::BlockParser(_, captures) => {
-                    dbwrite!(f, db, "block-parser[{}]{{", ty)?;
+                MonoLayout::BlockParser(bd, captures) => {
+                    dbwrite!(f, db, "block-parser[{}, {}]{{", &bd.0, ty)?;
                     for (i, (capture, layout)) in captures.iter().enumerate() {
                         if i > 0 {
                             write!(f, ", ")?;
