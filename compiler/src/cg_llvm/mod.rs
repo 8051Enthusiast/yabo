@@ -38,8 +38,8 @@ use crate::{
         prop::{CodegenTypeContext, PSize, SizeAlign, TargetSized},
         represent::{truncated_hex, LayoutPart},
         vtable::{
-            self, ArrayVTableFields, BlockVTableFields, NominalVTableFields, ParserArgImplFields,
-            ParserVTableFields, VTableHeaderFields,
+            self, ArrayVTableFields, BlockVTableFields, FunctionVTableFields, NominalVTableFields,
+            ParserArgImplFields, ParserVTableFields, VTableHeaderFields,
         },
         AbsLayoutCtx, ILayout, IMonoLayout, Layout, LayoutError, MonoLayout,
     },
@@ -156,6 +156,26 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         panic!("could not find symbol {sym}");
     }
+
+    fn build_get_vtable_tag(&mut self, layout: IMonoLayout<'comp>) -> PointerValue<'llvm> {
+        let vtable = self.sym_ptr(layout, LayoutPart::VTable);
+        let vtable_ty = vtable.get_type().get_element_type().into_struct_type();
+        let header = if matches!(
+            vtable_ty.get_field_type_at_index(0),
+            Some(BasicTypeEnum::ArrayType(_))
+        ) {
+            unsafe {
+                vtable.const_in_bounds_gep(&[
+                    self.llvm.i32_type().const_int(0, false),
+                    self.llvm.i32_type().const_int(1, false),
+                ])
+            }
+        } else {
+            vtable
+        };
+        header.const_cast(self.any_ptr())
+    }
+
     fn sym_callable(
         &mut self,
         layout: IMonoLayout<'comp>,
@@ -315,14 +335,15 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         } else {
             panic!("trying to get parser set arg struct for non-nominal-parser layout");
         };
-        let (arg_layout, ty) = args[argnum as usize];
+        let parserdef_args = pd.lookup(&self.compiler_database.db).unwrap().args.unwrap();
+        let arg_index = parserdef_args.len() - argnum as usize - 1;
+        let (arg_layout, ty) = args[arg_index];
         let head = self.compiler_database.db.head_discriminant(ty)
             | matches!(&arg_layout.layout, Layout::Multi(_)) as i64;
         // needed so that the manifestation exists
         let _ = layout.inner().size_align(self.layouts).unwrap();
         let manifestation = self.layouts.dcx.manifestation(layout.inner());
-        let parserdef_args = pd.lookup(&self.compiler_database.db).unwrap().args.unwrap();
-        let arg_defid = parserdef_args[argnum as usize];
+        let arg_defid = parserdef_args[arg_index];
         let field_offset = manifestation.field_offsets[&arg_defid.0];
         (head, field_offset)
     }
@@ -608,8 +629,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .unwrap()
             .unwrap_or((0, 0));
         let mut arg_impls = Vec::with_capacity(total_args);
+        // /  settable args  \/   non-settable args  \
+        // | [0] | [1] | [2] | [3] | [4] | [5] | [6] | array indices
+        // |  6  |  5  |  4  |  3  |  2  |  1  |  0  | arg num
+        // -------------------------------------------
         for i in 0..settable_args {
-            arg_impls.push(self.parser_set_arg_struct_val(layout, i as PSize));
+            let argnum = total_args - i - 1;
+            arg_impls.push(self.parser_set_arg_struct_val(layout, argnum as PSize));
         }
         let struct_ty = vtable::ArgDescriptor::struct_type(self);
         let zero_struct = struct_ty.const_zero();
@@ -833,9 +859,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         match layout {
             Some(mono) => self.sym_callable(mono, LayoutPart::CreateArgs(slot)),
             None => self
-                .vtable_get::<vtable::ParserVTable>(
+                .vtable_get::<vtable::FunctionVTable>(
                     ptr,
-                    &[ParserVTableFields::apply_table as u64, slot],
+                    &[FunctionVTableFields::apply_table as u64, slot],
                 )
                 .into_pointer_value()
                 .try_into()
@@ -931,7 +957,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 arginfo_ptr,
                 &[
                     self.const_i64(-1 - argnum as i64),
-                    self.const_i64(vtable::ArgDescriptorFields::head as i64),
+                    self.llvm
+                        .i32_type()
+                        .const_int(vtable::ArgDescriptorFields::head as u64, false),
                 ],
                 "",
             )
@@ -941,7 +969,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 arginfo_ptr,
                 &[
                     self.const_i64(-1 - argnum as i64),
-                    self.const_i64(vtable::ArgDescriptorFields::offset as i64),
+                    self.llvm
+                        .i32_type()
+                        .const_int(vtable::ArgDescriptorFields::offset as u64, false),
                 ],
                 "",
             )
@@ -953,13 +983,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn build_arg_set(
         &mut self,
-        fun_layout: Option<IMonoLayout<'comp>>,
+        fun_layout: ILayout<'comp>,
         fun: PointerValue<'llvm>,
         arg_layout: ILayout<'comp>,
         arg: PointerValue<'llvm>,
         argnum: PSize,
     ) -> IntValue<'llvm> {
-        let (head, offset) = match fun_layout {
+        let (head, offset) = match fun_layout.maybe_mono() {
             Some(mono) => {
                 let (head, offset) = self.arg_disc_and_offset(mono, argnum);
                 (self.const_i64(head), self.const_size_t(offset))
@@ -967,12 +997,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             None => self.build_vtable_arg_set_info_get(fun, argnum),
         };
         let fun_any_ptr = self.build_cast::<*mut u8, _>(fun);
-        let fun_arg_ptr = unsafe { self.builder.build_in_bounds_gep(fun_any_ptr, &[offset], "") };
+        let fun_mono_ptr = self.build_mono_ptr(fun_any_ptr, fun_layout);
+        let fun_arg_ptr = unsafe {
+            self.builder
+                .build_in_bounds_gep(fun_mono_ptr, &[offset], "")
+        };
         let typecast_fun = self.build_typecast_fun_get(arg_layout.maybe_mono(), arg);
-        let mono_pointer = self.build_mono_ptr(arg, arg_layout);
+        let arg_mono_ptr = self.build_mono_ptr(arg, arg_layout);
         self.build_call_with_int_ret(
             typecast_fun,
-            &[mono_pointer.into(), head.into(), fun_arg_ptr.into()],
+            &[arg_mono_ptr.into(), head.into(), fun_arg_ptr.into()],
         )
     }
 

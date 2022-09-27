@@ -570,6 +570,22 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                 }
             }
 
+            (FunctionArgs { result, args }, FunctionArgs { args: args2, .. })
+                if args.len() > args2.len() =>
+            {
+                let inner_args = self.intern_infty_slice(&args[args2.len()..]);
+                let inner_ty = self.intern_infty(FunctionArgs {
+                    result: *result,
+                    args: inner_args,
+                });
+                let outer_args = self.intern_infty_slice(&args[..args2.len()]);
+                let outer_ty = self.intern_infty(FunctionArgs {
+                    result: inner_ty,
+                    args: outer_args,
+                });
+                self.constrain(outer_ty, upper)
+            }
+
             _ => Err(TypeError::HeadMismatch(
                 lower.value().try_into().unwrap(),
                 upper.value().try_into().unwrap(),

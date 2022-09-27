@@ -407,13 +407,9 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let arg_layout = self.mir_fun.place(arg);
         let fun_ptr = self.place_ptr(fun);
         let arg_ptr = self.place_ptr(arg);
-        let ret = self.cg.build_arg_set(
-            fun_layout.maybe_mono(),
-            fun_ptr,
-            arg_layout,
-            arg_ptr,
-            argnum,
-        );
+        let ret = self
+            .cg
+            .build_arg_set(fun_layout, fun_ptr, arg_layout, arg_ptr, argnum);
         let ret_is_err = self.cg.builder.build_int_compare(
             IntPredicate::EQ,
             ret,
@@ -458,11 +454,12 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let create_fun = self
             .cg
             .build_fun_create_get(fun_layout.maybe_mono(), fun_ptr, slot);
+        let fun_mono_ptr = self.cg.build_mono_ptr(fun_ptr, fun_layout);
         let ret_ptr = self.place_ptr(ret);
         let ret_head = self.head_disc(ret);
         self.fallible_call(
             create_fun,
-            &[fun_ptr.into(), ret_head.into(), ret_ptr.into()],
+            &[fun_mono_ptr.into(), ret_head.into(), ret_ptr.into()],
             [self.undefined; 3],
         );
         for (i, arg) in args.iter().enumerate() {

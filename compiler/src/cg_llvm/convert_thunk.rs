@@ -8,7 +8,6 @@ use crate::{
     hir_types::DISCRIMINANT_MASK,
     layout::{
         prop::{PSize, SizeAlign, TargetSized},
-        represent::LayoutPart,
         IMonoLayout,
     },
 };
@@ -269,8 +268,7 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
     }
 
     fn build_vtable_any_ptr(&mut self) -> PointerValue<'llvm> {
-        let ptr = self.cg.sym_ptr(self.target_layout, LayoutPart::VTable);
-        self.cg.build_cast::<*const u8, _>(ptr)
+        self.cg.build_get_vtable_tag(self.target_layout)
     }
 
     pub fn build(mut self) -> FunctionValue<'llvm> {

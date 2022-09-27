@@ -365,9 +365,10 @@ impl<'a> Uniq<InternerLayout<'a>> {
                             Arc::new(arg_types[typecast_args.len()..].to_vec()),
                         ))
                     };
-                    Ok(ctx.dcx.intern.intern(InternerLayout {
+                    let res = ctx.dcx.intern.intern(InternerLayout {
                         layout: Layout::Mono(layout, ty),
-                    }))
+                    });
+                    Ok(res)
                 }
                 _ => panic!("Attempting to apply function to non-function layout"),
             }
@@ -771,7 +772,8 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 }
                 ResolvedAtom::Block(block_id) => {
                     let mut captures = BTreeMap::new();
-                    for capture in ctx.db.captures(block_id).iter() {
+                    let capture_ids = ctx.db.captures(block_id);
+                    for capture in capture_ids.iter() {
                         let capture_value = ctx
                             .active_block()
                             .unwrap_or(ctx.active_pd())
@@ -779,9 +781,10 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                             .unwrap_or_else(|| ctx.var_by_id(*capture));
                         captures.insert(*capture, capture_value);
                     }
-                    ctx.dcx.intern.intern(InternerLayout {
+                    let res = ctx.dcx.intern.intern(InternerLayout {
                         layout: Layout::Mono(MonoLayout::BlockParser(block_id, captures), ret_type),
-                    })
+                    });
+                    res
                 }
                 ResolvedAtom::Captured(capture) => {
                     let capture_value = ctx
