@@ -644,6 +644,9 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     ) -> InfTypeId<'intern> {
         self.intern_infty(InferenceType::ParserArg { result, arg })
     }
+    pub fn array(&mut self, kind: ArrayKind, inner: InfTypeId<'intern>) -> InfTypeId<'intern> {
+        self.intern_infty(InferenceType::Loop(kind, inner))
+    }
     pub fn array_call(
         &mut self,
         kind: ArrayKind,

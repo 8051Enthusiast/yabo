@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use fxhash::FxHashSet;
 
 use super::*;
-use crate::{ast, error::Silencable, error_type, expr::OpWithData};
+use crate::{ast, error::Silencable, error_type, expr::OpWithData, source::Spanned};
 
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum HirConversionError {
@@ -88,7 +88,7 @@ fn convert_type_expression(
     mut add_span: &impl Fn(&Span) -> SpanIndex,
 ) -> Expression<HirTypeSpanned> {
     let expr = expr.map(add_span);
-    expr.convert_no_var(
+    expr.convert(
         &mut |niladic| {
             let new_atom = match &niladic.inner {
                 ast::TypeAtom::ParserDef(pd) => {
@@ -127,6 +127,7 @@ fn convert_type_expression(
             inner: monadic.inner.map_expr(|x| Arc::new(x.map(&mut add_span))),
         },
         &mut |dyadic, _, _| dyadic.clone(),
+        &mut |variadic, _| variadic.clone(),
     )
 }
 
@@ -153,7 +154,27 @@ fn arg_def(ast: &ast::ArgDefinition, ctx: &HirConversionCtx, id: ArgDefId) {
 fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDefId) {
     let from = TExprId(id.child(ctx.db, PathComponent::Unnamed(0)));
     let to = ExprId(id.child(ctx.db, PathComponent::Unnamed(1)));
-    type_expression(&ast.from, ctx, from);
+    if let Some(f) = &ast.from {
+        type_expression(f, ctx, from);
+    } else {
+        let span = ast.name.span;
+        // desugars to each[int]
+        let expr = Expression::new_niladic(OpWithData {
+            inner: ast::TypeAtom::Array(Box::new(ast::TypeArray {
+                direction: Spanned {
+                    inner: ArrayKind::Each,
+                    span,
+                },
+                expr: Expression::new_niladic(OpWithData {
+                    inner: ast::TypeAtom::Primitive(ast::TypePrimitive::Int),
+                    data: ast.span,
+                }),
+                span,
+            })),
+            data: ast.span,
+        });
+        type_expression(&expr, ctx, from);
+    }
     val_expression(&ast.to, ctx, to, None);
     let qualifier = match ast.qualifier {
         Some(ast::Qualifier::Export) => Qualifier::Export,

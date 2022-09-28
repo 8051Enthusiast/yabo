@@ -319,6 +319,9 @@ macro_rules! astify {
             $(let mut $name = Vec::new();)+
             iter_children(db, fd, c, |_, cursor| {
                 let field = cursor.field_name();
+                if cursor.node().kind() == "(" || cursor.node().kind() == ")" {
+                    return Ok(());
+                }
                 match field {
                     $(Some(stringify!($name)) => $name.push($fun$(($fun_inner))?(db, fd, cursor.clone())?)),+,
                     Some(other) => panic!("Unknown field {} in struct {}", other, stringify!($new)),
@@ -346,7 +349,7 @@ macro_rules! astify {
                     stringify!($new),
                 ),
             });
-//            eprintln!("Leave {}", stringify!($new));
+ //           eprintln!("Leave {}", stringify!($new));
             ret
         }
     };
@@ -421,7 +424,7 @@ astify! {
         qualifier: quali[?],
         name: idspan[!],
         argdefs: arg_def_list[?],
-        from: expression(type_expression)[!],
+        from: expression(type_expression)[?],
         to: expression(val_expression)[!],
     };
 }
@@ -527,6 +530,7 @@ astify! {
 
 astify! {
     enum type_expression = TypeExpressionInner {
+        Variadic(type_fun_application),
         Dyadic(binary_type_expression),
         Monadic(unary_type_expression),
         Monadic(type_constraint),
@@ -541,6 +545,13 @@ astify! {
     struct fun_application = FunApplication {
         applicant: expression(val_expression)[!],
         args: expression(val_expression)[*],
+    };
+}
+
+astify! {
+    struct type_fun_application = TypeFunApplication {
+        result: expression(type_expression)[!],
+        args: expression(type_expression)[*],
     };
 }
 

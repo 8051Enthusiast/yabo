@@ -17,7 +17,7 @@ use crate::{
     ast::{ArrayKind, AstConstraint},
     dbpanic,
     error::{SResult, SilencedError},
-    expr::{self, Atom, Expression, ExpressionKind, Unused},
+    expr::{self, Atom, Expression, ExpressionKind},
     interner::{DefId, FieldName, HirPath, Identifier, PathComponent, TypeVar},
     source::{FileId, IndirectSpan, Span},
 };
@@ -451,7 +451,7 @@ pub type HirValSpanned = expr::KindWithData<HirVal, SpanIndex>;
 pub struct HirType;
 
 impl ExpressionKind for HirType {
-    type VariadicOp = Unused;
+    type VariadicOp = expr::TypeVarOp;
     type DyadicOp = expr::TypeBinOp;
     type MonadicOp = expr::TypeUnOp<Arc<ConstraintExpression>>;
     type NiladicOp = TypeAtom;
