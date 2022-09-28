@@ -32,14 +32,14 @@ pub struct LayoutCollection<'a> {
     pub parsers: LayoutSet<'a>,
     pub functions: LayoutSet<'a>,
     pub primitives: LayoutSet<'a>,
-    pub parser_slots: CallSlotResult<'a>,
-    pub funcall_slots: CallSlotResult<'a>,
+    pub parser_slots: CallSlotResult<'a, ILayout<'a>>,
+    pub funcall_slots: CallSlotResult<'a, ILayout<'a>>,
 }
 
 pub struct LayoutCollector<'a, 'b> {
     ctx: &'b mut AbsLayoutCtx<'a>,
-    parses: CallInfo<'a>,
-    funcalls: CallInfo<'a>,
+    parses: CallInfo<'a, ILayout<'a>>,
+    funcalls: CallInfo<'a, ILayout<'a>>,
     arrays: LayoutSet<'a>,
     blocks: LayoutSet<'a>,
     nominals: LayoutSet<'a>,
@@ -283,22 +283,29 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     }
 }
 
-#[derive(Default)]
-pub struct CallInfo<'a> {
-    map: FxHashMap<ILayout<'a>, FxHashSet<ILayout<'a>>>,
+pub struct CallInfo<'a, Arg: std::hash::Hash + Eq + Copy> {
+    map: FxHashMap<Arg, FxHashSet<ILayout<'a>>>,
+}
+
+impl<'a, Arg: std::hash::Hash + Eq + Copy> Default for CallInfo<'a, Arg> {
+    fn default() -> Self {
+        Self {
+            map: FxHashMap::default(),
+        }
+    }
 }
 
 #[derive(Debug)]
-pub struct CallSlotResult<'a> {
-    pub layout_vtable_offsets: FxHashMap<(ILayout<'a>, ILayout<'a>), PSize>,
-    pub occupied_entries: FxHashMap<IMonoLayout<'a>, Arc<FxHashMap<PSize, ILayout<'a>>>>,
+pub struct CallSlotResult<'a, Arg> {
+    pub layout_vtable_offsets: FxHashMap<(Arg, ILayout<'a>), PSize>,
+    pub occupied_entries: FxHashMap<IMonoLayout<'a>, Arc<FxHashMap<PSize, Arg>>>,
 }
 
-impl<'a> CallInfo<'a> {
-    pub fn add_call(&mut self, arg: ILayout<'a>, parser: ILayout<'a>) {
+impl<'a, Arg: std::hash::Hash + Eq + Copy> CallInfo<'a, Arg> {
+    pub fn add_call(&mut self, arg: Arg, parser: ILayout<'a>) {
         self.map.entry(arg).or_default().insert(parser);
     }
-    pub fn into_layout_vtable_offsets(mut self) -> CallSlotResult<'a> {
+    pub fn into_layout_vtable_offsets(mut self) -> CallSlotResult<'a, Arg> {
         let mut vecs = Vec::new();
         let mut id_info = FxHashMap::default();
         for (arg_layout, parser_set) in self.map.drain() {
@@ -324,7 +331,7 @@ impl<'a> CallInfo<'a> {
                 slot_sets.push(ParserSlotStatus::new(vec.0.clone(), vec.1))
             }
         }
-        let mut layout_vtable_offsets: FxHashMap<(ILayout<'a>, ILayout<'a>), PSize> =
+        let mut layout_vtable_offsets: FxHashMap<(Arg, ILayout<'a>), PSize> =
             FxHashMap::default();
         for (index, slot) in slot_sets.into_iter().enumerate() {
             for id in slot.contained_ids {
@@ -337,14 +344,14 @@ impl<'a> CallInfo<'a> {
                 }
             }
         }
-        let mut parser_occupied_entries: FxHashMap<IMonoLayout, FxHashMap<PSize, ILayout>> =
+        let mut parser_occupied_entries: FxHashMap<IMonoLayout, FxHashMap<PSize, Arg>> =
             FxHashMap::default();
         for ((from, parsers), &slot) in layout_vtable_offsets.iter() {
             for parser in flat_layouts(&parsers) {
                 parser_occupied_entries
                     .entry(parser)
                     .or_default()
-                    .insert(slot, from);
+                    .insert(slot, *from);
             }
         }
         let arc_parser_occupied_entries = parser_occupied_entries
