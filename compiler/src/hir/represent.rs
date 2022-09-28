@@ -2,7 +2,7 @@ use crate::{
     ast::ArrayKind,
     databased_display::DatabasedDisplay,
     dbwrite,
-    expr::{Dyadic, ExpressionHead, Ignorable, Monadic, Variadic},
+    expr::{Dyadic, ExpressionHead, Ignorable, Monadic, OpWithData, Variadic},
 };
 
 use super::*;
@@ -193,12 +193,28 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Expression<HirTypeSpanned> {
             ExpressionHead::Niladic(a) => a.inner.db_fmt(f, db),
             ExpressionHead::Monadic(Monadic { op, inner }) => match &op.inner {
                 expr::TypeUnOp::Wiggle(right) => dbwrite!(f, db, "{} ~ {}", &**inner, &**right),
-                expr::TypeUnOp::Ref => dbwrite!(f, db, "&{}", &**inner),
+                expr::TypeUnOp::ByteParser => dbwrite!(f, db, "*{}", &**inner),
             },
             ExpressionHead::Dyadic(Dyadic { op, inner }) => {
                 dbwrite!(f, db, "{} {} {}", &*inner[0], &op.inner, &*inner[1])
             }
-            ExpressionHead::Variadic(v) => v.ignore(),
+            ExpressionHead::Variadic(Variadic {
+                op:
+                    OpWithData {
+                        inner: expr::TypeVarOp::Call,
+                        ..
+                    },
+                inner,
+            }) => {
+                dbwrite!(f, db, "{}(", &*inner[0])?;
+                for (i, arg) in inner[1..].iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    dbwrite!(f, db, "{}", &**arg)?;
+                }
+                write!(f, ")")
+            }
         }
     }
 }
@@ -403,11 +419,9 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                             (id.0, to.0, "to".to_string(), dot::Style::Bold),
                         ];
                         if let Some(args) = args {
-                            v.extend(
-                                args.iter()
-                                    .enumerate()
-                                    .map(|(i, p)| (id.0, p.0, format!("args[{}]", i), dot::Style::Bold)),
-                            );
+                            v.extend(args.iter().enumerate().map(|(i, p)| {
+                                (id.0, p.0, format!("args[{}]", i), dot::Style::Bold)
+                            }));
                         }
                         v
                     }

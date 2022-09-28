@@ -695,15 +695,15 @@ impl Display for TypeBinOp {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum TypeUnOp<C> {
+    ByteParser,
     Wiggle(C),
-    Ref,
 }
 
 impl<C> TypeUnOp<C> {
     pub fn parse_from_str(s: &str) -> Result<Self, &str> {
         use TypeUnOp::*;
         Ok(match s {
-            "&>" => Ref,
+            "*" => ByteParser,
             otherwise => return Err(otherwise),
         })
     }
@@ -711,9 +711,14 @@ impl<C> TypeUnOp<C> {
         use TypeUnOp::*;
         match self {
             Wiggle(expr) => Wiggle(f(expr)),
-            Ref => Ref,
+            ByteParser => ByteParser
         }
     }
+}
+
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
+pub enum TypeVarOp {
+    Call
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]

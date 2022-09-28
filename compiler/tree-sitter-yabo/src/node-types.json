@@ -62,6 +62,10 @@
             "named": true
           },
           {
+            "type": "type_fun_application",
+            "named": true
+          },
+          {
             "type": "type_var",
             "named": true
           },
@@ -410,6 +414,10 @@
             "named": true
           },
           {
+            "type": "type_fun_application",
+            "named": true
+          },
+          {
             "type": "type_var",
             "named": true
           },
@@ -459,6 +467,10 @@
           },
           {
             "type": "type_constraint",
+            "named": true
+          },
+          {
+            "type": "type_fun_application",
             "named": true
           },
           {
@@ -853,6 +865,10 @@
             "named": true
           },
           {
+            "type": "type_fun_application",
+            "named": true
+          },
+          {
             "type": "type_var",
             "named": true
           },
@@ -1089,7 +1105,7 @@
       },
       "from": {
         "multiple": true,
-        "required": true,
+        "required": false,
         "types": [
           {
             "type": "(",
@@ -1117,6 +1133,10 @@
           },
           {
             "type": "type_constraint",
+            "named": true
+          },
+          {
+            "type": "type_fun_application",
             "named": true
           },
           {
@@ -1277,6 +1297,10 @@
             "named": true
           },
           {
+            "type": "type_fun_application",
+            "named": true
+          },
+          {
             "type": "type_var",
             "named": true
           },
@@ -1316,6 +1340,10 @@
           },
           {
             "type": "type_constraint",
+            "named": true
+          },
+          {
+            "type": "type_fun_application",
             "named": true
           },
           {
@@ -1416,6 +1444,10 @@
             "named": true
           },
           {
+            "type": "type_fun_application",
+            "named": true
+          },
+          {
             "type": "type_var",
             "named": true
           },
@@ -1464,6 +1496,10 @@
             "named": true
           },
           {
+            "type": "type_fun_application",
+            "named": true
+          },
+          {
             "type": "type_var",
             "named": true
           },
@@ -1509,6 +1545,104 @@
           },
           {
             "type": "unary_constraint_expression",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "type_fun_application",
+    "named": true,
+    "fields": {
+      "args": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "(",
+            "named": false
+          },
+          {
+            "type": ")",
+            "named": false
+          },
+          {
+            "type": "binary_type_expression",
+            "named": true
+          },
+          {
+            "type": "parserdef_ref",
+            "named": true
+          },
+          {
+            "type": "primitive_type",
+            "named": true
+          },
+          {
+            "type": "type_array",
+            "named": true
+          },
+          {
+            "type": "type_constraint",
+            "named": true
+          },
+          {
+            "type": "type_fun_application",
+            "named": true
+          },
+          {
+            "type": "type_var",
+            "named": true
+          },
+          {
+            "type": "unary_type_expression",
+            "named": true
+          }
+        ]
+      },
+      "result": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "(",
+            "named": false
+          },
+          {
+            "type": ")",
+            "named": false
+          },
+          {
+            "type": "binary_type_expression",
+            "named": true
+          },
+          {
+            "type": "parserdef_ref",
+            "named": true
+          },
+          {
+            "type": "primitive_type",
+            "named": true
+          },
+          {
+            "type": "type_array",
+            "named": true
+          },
+          {
+            "type": "type_constraint",
+            "named": true
+          },
+          {
+            "type": "type_fun_application",
+            "named": true
+          },
+          {
+            "type": "type_var",
+            "named": true
+          },
+          {
+            "type": "unary_type_expression",
             "named": true
           }
         ]
@@ -1641,7 +1775,7 @@
         "required": true,
         "types": [
           {
-            "type": "*>",
+            "type": "*",
             "named": false
           }
         ]
@@ -1676,6 +1810,10 @@
           },
           {
             "type": "type_constraint",
+            "named": true
+          },
+          {
+            "type": "type_fun_application",
             "named": true
           },
           {

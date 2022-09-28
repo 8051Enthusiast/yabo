@@ -95,7 +95,7 @@ impl ExpressionKind for AstType {
     type NiladicOp = TypeAtom;
     type MonadicOp = TypeUnOp<Arc<ConstraintExpression>>;
     type DyadicOp = TypeBinOp;
-    type VariadicOp = Unused;
+    type VariadicOp = TypeVarOp;
 }
 
 pub type TypeExpression = Expression<AstTypeSpanned>;
@@ -211,7 +211,7 @@ pub struct ArgDefList {
 pub struct ParserDefinition {
     pub qualifier: Option<Qualifier>,
     pub name: IdSpan,
-    pub from: TypeExpression,
+    pub from: Option<TypeExpression>,
     pub argdefs: Option<ArgDefList>,
     pub to: ValExpression,
     pub span: Span,
@@ -293,6 +293,27 @@ impl From<FunApplication> for Variadic<OpWithData<ValVarOp, Span>, Box<ValExpres
             op: OpWithData {
                 data: app.span,
                 inner: ValVarOp::Call,
+            },
+            inner,
+        }
+    }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct TypeFunApplication {
+    pub result: TypeExpression,
+    pub args: Vec<TypeExpression>,
+    pub span: Span,
+}
+
+impl From<TypeFunApplication> for Variadic<OpWithData<TypeVarOp, Span>, Box<TypeExpression>> {
+    fn from(app: TypeFunApplication) -> Self {
+        let mut inner = vec![Box::new(app.result)];
+        inner.extend(app.args.into_iter().map(Box::new));
+        Variadic {
+            op: OpWithData {
+                data: app.span,
+                inner: TypeVarOp::Call,
             },
             inner,
         }

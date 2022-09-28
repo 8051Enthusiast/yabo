@@ -12,9 +12,10 @@ use fxhash::FxHashMap;
 use sha2::Digest;
 
 use crate::{
+    ast::ArrayKind,
     error::{IsSilenced, SResult, Silencable, SilencedError},
     expr::{
-        self, Dyadic, ExprIter, Expression, ExpressionHead, Ignorable, Monadic, OpWithData,
+        self, Dyadic, ExprIter, Expression, ExpressionHead, Monadic, OpWithData,
         TypeBinOp, TypeUnOp, ValBinOp, ValUnOp, Variadic,
     },
     hash::StableHash,
@@ -23,7 +24,10 @@ use crate::{
     resolve::{self, expr::ResolvedAtom},
     source::{IndirectSpan, SpanIndex},
     types::{
-        inference::{InfTypeId, InferenceContext, InferenceType, NominalInfHead, TypeResolver},
+        inference::{
+            InfTypeId, InfTypeInterner, InferenceContext, InferenceType, NominalInfHead,
+            TypeResolver,
+        },
         EitherType, NominalKind, NominalTypeHead, PrimitiveType, Signature, Type, TypeError,
         TypeId,
     },
@@ -158,14 +162,23 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         }) => self.resolve_type_expr_parserdef_ref(pd, Some(from), span, id)?,
                         _ => self.resolve_type_expr(right, id)?,
                     };
-                    self.infctx.intern_infty(InferenceType::ParserArg {
-                        result: inner,
-                        arg: from,
-                    })
+                    self.infctx.parser(inner, from)
                 }
             },
             ExpressionHead::Monadic(Monadic { op, inner }) => match &op.inner {
-                TypeUnOp::Ref | TypeUnOp::Wiggle(_) => self.resolve_type_expr(inner, id)?,
+                TypeUnOp::Wiggle(_) => self.resolve_type_expr(inner, id)?,
+                TypeUnOp::ByteParser => {
+                    let int = self.infctx.int();
+                    let from = self.infctx.array(ArrayKind::Each, int);
+                    let inner = match &inner.0 {
+                        ExpressionHead::Niladic(OpWithData {
+                            inner: hir::TypeAtom::ParserDef(pd),
+                            ..
+                        }) => self.resolve_type_expr_parserdef_ref(pd, Some(from), span, id)?,
+                        _ => self.resolve_type_expr(inner, id)?,
+                    };
+                    self.infctx.parser(inner, from)
+                }
             },
             ExpressionHead::Niladic(op) => match &op.inner {
                 hir::TypeAtom::Primitive(hir::TypePrimitive::Int) => self.infctx.int(),
@@ -181,16 +194,25 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         .intern_infty(InferenceType::Loop(a.direction, inner))
                 }
                 hir::TypeAtom::TypeVar(v) => {
-                    let var_idx = self
-                        .loc
-                        .vars
-                        .get_var(*v)
-                        .ok_or_else(|| SpannedTypeError::new(TypeError::UnknownTypeVar(*v), span))?;
+                    let var_idx = self.loc.vars.get_var(*v).ok_or_else(|| {
+                        SpannedTypeError::new(TypeError::UnknownTypeVar(*v), span)
+                    })?;
                     self.infctx
                         .intern_infty(InferenceType::TypeVarRef(self.loc.pd.0, 0, var_idx))
                 }
             },
-            ExpressionHead::Variadic(v) => v.ignore(),
+            ExpressionHead::Variadic(Variadic { op, inner }) => match op.inner {
+                expr::TypeVarOp::Call => {
+                    let mut inner_ty = Vec::with_capacity(inner.len());
+                    for arg in inner {
+                        inner_ty.push(self.resolve_type_expr(arg, id)?);
+                    }
+                    let args = self.infctx.intern_infty_slice(&inner_ty[1..]);
+                    let result = inner_ty[0];
+                    self.infctx
+                        .intern_infty(InferenceType::FunctionArgs { result, args })
+                }
+            },
         };
         Ok(ret)
     }
@@ -212,13 +234,12 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
             .iter()
             .map(|x| self.resolve_type_expr(x, id))
             .collect::<Result<Vec<_>, _>>()?;
-        let def =
-            self.db
-                .parserdef_ref(self.loc.loc, pd.name.atom)?
-                .ok_or_else(|| SpannedTypeError::new(
-                    TypeError::UnknownParserdefName(pd.name.atom),
-                    span,
-                ))?;
+        let def = self
+            .db
+            .parserdef_ref(self.loc.loc, pd.name.atom)?
+            .ok_or_else(|| {
+                SpannedTypeError::new(TypeError::UnknownParserdefName(pd.name.atom), span)
+            })?;
         let definition = self.db.parser_args(def)?;
         match (parse_arg, definition.from) {
             (None, Some(_)) => parse_arg = Some(self.infctx.var()),

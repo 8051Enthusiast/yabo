@@ -13,6 +13,8 @@ const PREC = {
   ELSE: 11,
   DOT: 12,
   ARGS: 13,
+  PARSERTYPE: 14,
+  PARSERDEF: 15,
 };
 module.exports = grammar({
   name: 'yabo',
@@ -44,14 +46,22 @@ module.exports = grammar({
     parser_definition: $ => seq(
       optional(field('qualifier', 'export')),
       'def',
-      field('from', $._type_expression),
-      '*>',
-      field('name', $.identifier),
-      optional(field('argdefs', $.arg_def_list)),
+      prec(PREC.PARSERDEF, seq(
+        choice(
+          seq(
+            field('from', $._type_expression),
+            '*>',
+          ),
+          '*',
+        ),
+        field('name', $.identifier),
+        optional(field('argdefs', $.arg_def_list)),
+      )),
       '=',
       field('to', $._expression),
     ),
     _type_expression: $ => choice(
+      $.type_fun_application,
       $.binary_type_expression,
       $.unary_type_expression,
       $.type_constraint,
@@ -60,14 +70,14 @@ module.exports = grammar({
       seq('(', $._type_expression, ')'),
     ),
     binary_type_expression: $ => choice(
-      prec.left(PREC.PARSE, seq(
+      prec.left(PREC.PARSERTYPE, seq(
         field('left', $._type_expression),
         field('op', '*>'),
         field('right', $._type_expression),
       )),
     ),
-    unary_type_expression: $ => prec(PREC.UNARY, seq(
-      field('op', choice('*>')),
+    unary_type_expression: $ => prec(PREC.PARSERTYPE + 1, seq(
+      field('op', '*'),
       field('right', $._type_expression)
     )),
     parser_block: $ => seq(
@@ -202,6 +212,21 @@ module.exports = grammar({
     fun_application: $ => prec(PREC.ARGS, seq(
       field('applicant', $._expression),
       $._arg_list,
+    )),
+    _type_arg_list: $ => seq(
+      '(',
+      optional(seq(
+        field('args', $._type_expression),
+        repeat(seq(
+          ',',
+          field('args', $._type_expression),
+        )),
+      )),
+      ')'
+    ),
+    type_fun_application: $ => prec(PREC.ARGS, seq(
+      field('result', $._type_expression),
+      $._type_arg_list,
     )),
     binary_expression: $ => {
       const table = [
