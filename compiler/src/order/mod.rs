@@ -145,6 +145,7 @@ fn val_refs(
         hir::HirNode::ArgDef(_)
         | hir::HirNode::Module(_)
         | hir::HirNode::ParserDef(_)
+        | hir::HirNode::Import(_)
         | hir::HirNode::Context(_) => {
             panic!(
                 "attempting to get value references of invalid node {:?}",
@@ -158,16 +159,7 @@ fn pred(node: &hir::HirNode) -> Option<[ParserPredecessor; 2]> {
     Some(match node {
         hir::HirNode::Choice(c) => [c.front, c.back],
         hir::HirNode::Parse(c) => [c.front, c.back],
-        hir::HirNode::Expr(_)
-        | hir::HirNode::TExpr(_)
-        | hir::HirNode::Array(_)
-        | hir::HirNode::Block(_)
-        | hir::HirNode::ArgDef(_)
-        | hir::HirNode::Module(_)
-        | hir::HirNode::Context(_)
-        | hir::HirNode::ChoiceIndirection(_)
-        | hir::HirNode::ParserDef(_)
-        | hir::HirNode::Let(_) => return None,
+        _ => return None,
     })
 }
 

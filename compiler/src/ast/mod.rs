@@ -16,27 +16,47 @@ use convert::ParseResult;
 #[salsa::query_group(AstDatabase)]
 pub trait Asts: Files + Interner {
     fn ast(&self, fd: FileId) -> ParseResult<Arc<Module>>;
-    fn symbols(&self, fd: FileId) -> SResult<Vec<Identifier>>;
-    fn top_level_statement(
-        &self,
-        fd: FileId,
-        id: Identifier,
-    ) -> SResult<Option<Arc<ParserDefinition>>>;
+    fn symbols(&self, fd: FileId) -> SResult<Vec<(Identifier, bool)>>;
+    fn imports(&self, fd: FileId) -> SResult<Vec<IdSpan>>;
+    fn top_level_statement(&self, fd: FileId, id: Identifier)
+        -> SResult<Option<TopLevelStatement>>;
+    #[salsa::input]
+    fn import_id(&self, fd: FileId, id: Identifier) -> SResult<FileId>;
 }
 
 fn ast(db: &dyn Asts, fd: FileId) -> ParseResult<Arc<Module>> {
     convert::parse(db, fd).map(Arc::new)
 }
 
-fn symbols(db: &dyn Asts, fd: FileId) -> SResult<Vec<Identifier>> {
+fn symbols(db: &dyn Asts, fd: FileId) -> SResult<Vec<(Identifier, bool)>> {
     let mut syms: Vec<_> = db
         .ast(fd)
         .silence()?
         .tl_statements
         .iter()
-        .map(|st| st.name.inner)
+        .map(|st| {
+            (
+                st.name(),
+                matches!(st, TopLevelStatement::ParserDefinition(_)),
+            )
+        })
         .collect();
-    syms.sort();
+    syms.sort_unstable();
+    Ok(syms)
+}
+
+fn imports(db: &dyn Asts, fd: FileId) -> SResult<Vec<IdSpan>> {
+    let mut syms: Vec<_> = db
+        .ast(fd)
+        .silence()?
+        .tl_statements
+        .iter()
+        .filter_map(|st| match st {
+            TopLevelStatement::Import(imp) => Some(imp.name.clone()),
+            _ => None,
+        })
+        .collect();
+    syms.sort_unstable_by_key(|x| x.inner);
     Ok(syms)
 }
 
@@ -44,13 +64,13 @@ fn top_level_statement(
     db: &dyn Asts,
     fd: FileId,
     id: Identifier,
-) -> SResult<Option<Arc<ParserDefinition>>> {
+) -> SResult<Option<TopLevelStatement>> {
     Ok(db
         .ast(fd)
         .silence()?
         .tl_statements
         .iter()
-        .find(|st| st.name.inner == id)
+        .find(|st| st.name() == id)
         .cloned())
 }
 
@@ -169,7 +189,7 @@ impl From<Block> for ParserAtom {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Module {
-    pub tl_statements: Vec<Arc<ParserDefinition>>,
+    pub tl_statements: Vec<TopLevelStatement>,
     pub 亘: Span,
 }
 
@@ -204,6 +224,27 @@ pub struct ArgDefinition {
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ArgDefList {
     pub args: Vec<ArgDefinition>,
+    pub span: Span,
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub enum TopLevelStatement {
+    ParserDefinition(Arc<ParserDefinition>),
+    Import(Import),
+}
+
+impl TopLevelStatement {
+    fn name(&self) -> Identifier {
+        match self {
+            TopLevelStatement::ParserDefinition(x) => x.name.inner,
+            TopLevelStatement::Import(i) => i.name.inner,
+        }
+    }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct Import {
+    pub name: IdSpan,
     pub span: Span,
 }
 
@@ -367,6 +408,6 @@ def for[u8] *> expr1 = {
         );
         let main = FileId::default();
         ctx.db.ast(main).unwrap();
-        assert_eq!(ctx.db.symbols(main), Ok(vec![ctx.id("expr1")]));
+        assert_eq!(ctx.db.symbols(main), Ok(vec![(ctx.id("expr1"), true)]));
     }
 }

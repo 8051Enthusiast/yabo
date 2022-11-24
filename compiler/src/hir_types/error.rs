@@ -15,7 +15,7 @@ use crate::{
 use super::{SpannedTypeError, TyHirs};
 
 pub fn errors(db: &(impl TyHirs + ?Sized)) -> Vec<Report> {
-    let modules = [db.root_id()];
+    let modules = db.all_modules();
     let parsers = db.all_parserdefs();
     let mut sscs: FxHashSet<FunctionSscId> = Default::default();
     for module in modules {

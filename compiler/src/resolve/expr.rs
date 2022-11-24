@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use crate::expr::{Atom, Expression, KindWithData, OpWithData, ValBinOp, ValUnOp, ValVarOp};
+use crate::expr::{
+    Atom, Expression, ExpressionHead, KindWithData, OpWithData, ValBinOp, ValUnOp, ValVarOp,
+};
 use crate::hir::HirIdWrapper;
 use crate::resolve::refs;
 use crate::source::SpanIndex;
@@ -38,35 +40,102 @@ pub fn resolve_expr_error(
 ) -> Result<Arc<ResolvedExpr>, ResolveError> {
     let expr = expr_id.lookup(db)?.expr;
     let parent_block = db.hir_parent_block(expr_id.0)?;
-    expr.convert_niladic(&mut |x| {
-        let inner = match &x.inner {
-            hir::ParserAtom::Atom(Atom::Number(s)) => ResolvedAtom::Number(*s),
-            hir::ParserAtom::Atom(Atom::Char(s)) => ResolvedAtom::Char(*s),
-            hir::ParserAtom::Single => ResolvedAtom::Single,
-            hir::ParserAtom::Nil => ResolvedAtom::Nil,
-            hir::ParserAtom::Block(b) => ResolvedAtom::Block(*b),
-            hir::ParserAtom::Atom(Atom::Field(f)) => {
-                let (id, kind) = refs::resolve_var_ref(db, expr_id.0, *f)?
-                    .ok_or(ResolveError::Unresolved(expr_id, x.data, *f))?;
-                match kind {
-                    refs::VarType::ParserDef => ResolvedAtom::ParserDef(hir::ParserDefId(id)),
-                    refs::VarType::Value => {
-                        let is_captured = parent_block
-                            .map(|x| !x.0.is_ancestor_of(db, id))
-                            .unwrap_or(false);
-                        if is_captured {
-                            ResolvedAtom::Captured(id)
-                        } else {
-                            ResolvedAtom::Val(id)
-                        }
-                    }
-                }
+    let new_resolved_atom = |loc, name, span| {
+        let (id, kind) = match refs::resolve_var_ref(db, loc, name)? {
+            refs::Resolved::Value(id, kind) => (id, kind),
+            refs::Resolved::Module(m) => return Ok(Err(m)),
+            refs::Resolved::Unresolved => {
+                return Err(ResolveError::Unresolved(expr_id, span, name))
             }
         };
-        Ok(OpWithData {
-            inner,
-            data: x.data,
-        })
-    })
-    .map(Arc::new)
+        Ok(Ok(match kind {
+            refs::VarType::ParserDef => ResolvedAtom::ParserDef(hir::ParserDefId(id)),
+            refs::VarType::Value => {
+                let is_captured = parent_block
+                    .map(|x| !x.0.is_ancestor_of(db, id))
+                    .unwrap_or(false);
+                if is_captured {
+                    ResolvedAtom::Captured(id)
+                } else {
+                    ResolvedAtom::Val(id)
+                }
+            }
+        }))
+    };
+    let root_span = expr.0.root_data().clone();
+    let expr = expr.try_fold(&mut |head| -> Result<
+        Result<ResolvedExpr, hir::ModuleId>,
+        ResolveError,
+    > {
+        match &head {
+            ExpressionHead::Niladic(nil) => {
+                let new = match &nil.inner {
+                    hir::ParserAtom::Atom(Atom::Number(s)) => ResolvedAtom::Number(*s),
+                    hir::ParserAtom::Atom(Atom::Char(s)) => ResolvedAtom::Char(*s),
+                    hir::ParserAtom::Single => ResolvedAtom::Single,
+                    hir::ParserAtom::Nil => ResolvedAtom::Nil,
+                    hir::ParserAtom::Block(b) => ResolvedAtom::Block(*b),
+                    hir::ParserAtom::Atom(Atom::Field(f)) => {
+                        match new_resolved_atom(expr_id.0, *f, nil.data)? {
+                            Ok(k) => k,
+                            Err(m) => return Ok(Err(m)),
+                        }
+                    }
+                };
+                return Ok(Ok(Expression::new_niladic(OpWithData {
+                    data: nil.data,
+                    inner: new,
+                })));
+            }
+            ExpressionHead::Monadic(m) => match &m.op.inner {
+                ValUnOp::Dot(name) => {
+                    if let Err(module) = m.inner {
+                        match new_resolved_atom(module.0, *name, m.op.data)? {
+                            Ok(new) => {
+                                return Ok(Ok(Expression::new_niladic(OpWithData {
+                                    data: m.op.data,
+                                    inner: new,
+                                })))
+                            }
+                            Err(m) => return Ok(Err(m)),
+                        };
+                    };
+                }
+                _ => {}
+            },
+            _ => {}
+        };
+        let root_span = head.root_data().clone();
+        let r = head.try_map_inner(|f| {
+            f.map_err(|_| ResolveError::ModuleInExpression(expr_id, root_span))
+        })?;
+        match r {
+            ExpressionHead::Niladic(_) => unreachable!(),
+            ExpressionHead::Monadic(m) => Ok(Ok(Expression::new_monadic(
+                OpWithData {
+                    data: m.op.data,
+                    inner: m.op.inner,
+                },
+                m.inner,
+            ))),
+            ExpressionHead::Dyadic(d) => Ok(Ok(Expression::new_dyadic(
+                OpWithData {
+                    data: d.op.data,
+                    inner: d.op.inner,
+                },
+                d.inner,
+            ))),
+            ExpressionHead::Variadic(v) => Ok(Ok(Expression::new_variadic(
+                OpWithData {
+                    data: v.op.data,
+                    inner: v.op.inner,
+                },
+                v.inner,
+            ))),
+        }
+    })?;
+    match expr {
+        Ok(x) => Ok(Arc::new(x)),
+        Err(_) => Err(ResolveError::ModuleInExpression(expr_id, root_span)),
+    }
 }

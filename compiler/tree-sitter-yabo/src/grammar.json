@@ -6,15 +6,19 @@
       "type": "REPEAT",
       "content": {
         "type": "SYMBOL",
-        "name": "_definition"
+        "name": "_top_level_statement"
       }
     },
-    "_definition": {
+    "_top_level_statement": {
       "type": "CHOICE",
       "members": [
         {
           "type": "SYMBOL",
           "name": "parser_definition"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "import"
         }
       ]
     },
@@ -126,6 +130,23 @@
           "content": {
             "type": "SYMBOL",
             "name": "_expression"
+          }
+        }
+      ]
+    },
+    "import": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "import"
+        },
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "identifier"
           }
         }
       ]

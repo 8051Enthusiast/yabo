@@ -5,14 +5,16 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::io::Error;
 use std::num::NonZeroU32;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ariadne::{Cache, FnCache};
+use fxhash::FxHashMap;
 
 use crate::context::LivingInTheDatabase;
 use crate::databased_display::DatabasedDisplay;
 use crate::hash::StableHash;
-use crate::interner::{DefId, FieldName, Identifier};
+use crate::interner::{DefId, FieldName, Identifier, Interner};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Span {
@@ -145,6 +147,94 @@ impl FileCollection {
     }
 }
 
+pub struct FileResolver<'collection> {
+    files: &'collection mut FileCollection,
+    paths: FxHashMap<PathBuf, Option<FileId>>,
+    absolute_mods: FxHashMap<Identifier, FileId>,
+    relative_mods: FxHashMap<(PathBuf, Identifier), Option<FileId>>,
+}
+
+impl<'collection> FileResolver<'collection> {
+    pub fn new(files: &'collection mut FileCollection) -> Self {
+        FileResolver {
+            files,
+            paths: FxHashMap::default(),
+            absolute_mods: FxHashMap::default(),
+            relative_mods: FxHashMap::default(),
+        }
+    }
+    fn file_path(&self, dir: &Path, name: &str) -> Option<PathBuf> {
+        let mut path = dir.to_path_buf();
+        let name_with_suffix = format!("{}.yb", name);
+        path.push(name_with_suffix);
+        if path.exists() {
+            return Some(path);
+        }
+        path.pop();
+        path.push(name);
+        path.push("mod.yb");
+        path.exists().then(|| path)
+    }
+    fn add_file(
+        &mut self,
+        db: &mut (impl Interner + Files + ?Sized),
+        path: PathBuf,
+        origin: FileId,
+        span: Span,
+        name: Identifier,
+    ) -> Result<FileId, FileLoadError> {
+        if let Some(id) = self.paths.get(&path) {
+            return id.ok_or(FileLoadError::Silenced);
+        }
+        let id =
+            self.files
+                .add(&path.to_string_lossy())
+                .map_err(|error| FileLoadError::LoadError {
+                    source: (origin, span),
+                    name: name.to_owned(),
+                    error,
+                });
+        self.paths.insert(path, id.as_ref().ok().cloned());
+        if let Ok(id) = id {
+            db.set_input_file(id, Arc::new(self.files.file_data(id).clone()));
+        }
+        id
+    }
+    pub fn resolve(
+        &mut self,
+        db: &mut (impl Interner + Files + ?Sized),
+        origin: FileId,
+        name: Identifier,
+        span: Span,
+    ) -> Result<FileId, FileLoadError> {
+        let name_str = db.lookup_intern_identifier(name).name;
+        if let Some(f) = self.absolute_mods.get(&name) {
+            return Ok(*f);
+        }
+        let Some(origin_path) = self.files.path(origin) else {
+            return Err(FileLoadError::DoesNotExist { source: (origin, span), name });
+        };
+        let path_dir = Path::new(&origin_path).parent().unwrap();
+        // have to think more about what to do when canonicalization failed, as we don't want duplicate errors
+        // or the same file as two different files
+        let path_dir = path_dir.canonicalize().unwrap_or(path_dir.to_path_buf());
+        if let Some(file_id) = self.relative_mods.get(&(path_dir.clone(), name)) {
+            return file_id.ok_or(FileLoadError::Silenced);
+        }
+
+        let new_file_path =
+            self.file_path(&path_dir, &name_str)
+                .ok_or_else(|| FileLoadError::DoesNotExist {
+                    source: (origin, span),
+                    name: name.to_owned(),
+                });
+        let new_file_path = new_file_path.and_then(|x| self.add_file(db, x, origin, span, name));
+        self.relative_mods
+            .insert((path_dir, name), new_file_path.as_ref().ok().cloned());
+        new_file_path
+    }
+}
+
 type CacheFn<'a> = Box<dyn for<'b> Fn(&'b usize) -> Result<String, Box<dyn Debug>> + 'a>;
 
 pub struct AriadneCache<'a, DB: ?Sized> {
@@ -179,6 +269,9 @@ where
 
 #[salsa::query_group(FileDatabase)]
 pub trait Files: salsa::Database {
+    #[salsa::input]
+    fn all_files(&self) -> Arc<Vec<FileId>>;
+
     #[salsa::input]
     fn input_file(&self, id: FileId) -> Arc<FileData>;
 
@@ -305,4 +398,18 @@ impl IndirectSpan {
     pub fn default_span(id: DefId) -> Self {
         Self(id, None)
     }
+}
+
+#[derive(Debug)]
+pub enum FileLoadError {
+    LoadError {
+        source: (FileId, Span),
+        name: Identifier,
+        error: Error,
+    },
+    DoesNotExist {
+        source: (FileId, Span),
+        name: Identifier,
+    },
+    Silenced,
 }

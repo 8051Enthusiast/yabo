@@ -3,25 +3,29 @@ use std::process::Command;
 use std::sync::Arc;
 
 use bumpalo::Bump;
+use fxhash::FxHashSet;
 use inkwell::support::LLVMString;
 use tempfile::NamedTempFile;
 
 use crate::absint::AbsIntDatabase;
-use crate::ast::AstDatabase;
+use crate::ast::{AstDatabase, Asts};
 use crate::cg_llvm::{self, CodeGenCtx};
 use crate::config::{Config, ConfigDatabase, Configs};
-use crate::error::Report;
+use crate::error::diagnostic::{DiagnosticKind, Label};
+use crate::error::{Report, SilencedError};
 use crate::hir::represent::HirGraph;
 use crate::hir::{HirDatabase, Hirs};
 use crate::hir_types::{HirTypesDatabase, TyHirs};
 use crate::interner::{Identifier, IdentifierName, Interner, InternerDatabase};
 use crate::layout::{self, instantiate, InternerLayout, LayoutContext, LayoutDatabase};
-use crate::low_effort_interner;
 use crate::mir::{print_all_mir, MirDatabase};
 use crate::order::OrdersDatabase;
 use crate::resolve::ResolveDatabase;
-use crate::source::{AriadneCache, FileCollection, FileDatabase};
+use crate::source::{
+    AriadneCache, FileCollection, FileDatabase, FileId, FileLoadError, FileResolver, Files,
+};
 use crate::types::TypeInternerDatabase;
+use crate::{dbformat, low_effort_interner};
 
 #[salsa::database(
     InternerDatabase,
@@ -47,6 +51,7 @@ impl salsa::Database for LivingInTheDatabase {}
 pub struct Context {
     pub fc: FileCollection,
     pub db: LivingInTheDatabase,
+    collection_reports: Vec<Report>,
 }
 
 const ERROR_FNS: &[fn(&LivingInTheDatabase) -> Vec<Report>] = &[
@@ -58,9 +63,78 @@ const ERROR_FNS: &[fn(&LivingInTheDatabase) -> Vec<Report>] = &[
 ];
 
 impl Context {
-    pub fn update_db(&mut self) {
-        self.fc.insert_into_db(&mut self.db);
+    pub fn update_db(&mut self, roots: &[FileId]) {
+        for root in roots {
+            self.db
+                .set_input_file(*root, Arc::new(self.fc.file_data(*root).clone()));
+        }
+        self.collect_files(roots)
     }
+
+    fn collect_files(&mut self, roots: &[FileId]) {
+        let mut errors = Vec::new();
+        let mut existing_files = FxHashSet::default();
+        let mut new_files = Vec::from(roots);
+        let mut resolver = FileResolver::new(&mut self.fc);
+        while let Some(f) = new_files.pop() {
+            if !existing_files.insert(f) {
+                continue;
+            }
+            let Ok(imports) = self.db.imports(f) else {
+                continue
+            };
+            for import in imports.iter() {
+                let imported_file =
+                    match resolver.resolve(&mut self.db, f, import.inner, import.span) {
+                        Ok(imported_file) => imported_file,
+                        Err(e) => {
+                            match e {
+                                FileLoadError::LoadError {
+                                    source,
+                                    name,
+                                    error,
+                                } => errors.push(
+                                    Report::new(
+                                        DiagnosticKind::Error,
+                                        source.0,
+                                        &dbformat!(
+                                            &self.db,
+                                            "Could not load {}: {}",
+                                            &name,
+                                            &error
+                                        ),
+                                    )
+                                    .with_code(150)
+                                    .with_label(Label::new(source.1).with_message("imported here")),
+                                ),
+                                FileLoadError::DoesNotExist { source, name } => errors.push(
+                                    Report::new(
+                                        DiagnosticKind::Error,
+                                        source.0,
+                                        &dbformat!(&self.db, "Could not find {}", &name),
+                                    )
+                                    .with_code(151)
+                                    .with_label(Label::new(source.1).with_message("imported here")),
+                                ),
+                                FileLoadError::Silenced => (),
+                            };
+                            self.db
+                                .set_import_id(f, import.inner, Err(SilencedError::new()));
+                            continue;
+                        }
+                    };
+                self.db.set_import_id(f, import.inner, Ok(imported_file));
+                if !existing_files.contains(&imported_file) {
+                    new_files.push(imported_file);
+                }
+            }
+        }
+        let mut existing_vec = existing_files.into_iter().collect::<Vec<_>>();
+        existing_vec.sort_unstable();
+        self.db.set_all_files(Arc::new(existing_vec));
+        self.collection_reports = errors;
+    }
+
     pub fn id(&self, string: &str) -> Identifier {
         self.db.intern_identifier(IdentifierName {
             name: string.to_string(),
@@ -69,15 +143,14 @@ impl Context {
     #[cfg(test)]
     pub fn mock(s: &str) -> Self {
         let mut ctx = Self::default();
-        ctx.fc.add_anon(s);
-        ctx.update_db();
+        let anon = ctx.fc.add_anon(s);
+        ctx.update_db(&[anon]);
         ctx
     }
     pub fn parser(&self, s: &str) -> crate::hir::ParserDefId {
         use crate::{
             hir::ParserDefId,
             interner::{FieldName, HirPath},
-            source::FileId,
         };
 
         let fd = FileId::default();
@@ -90,8 +163,8 @@ impl Context {
         let config = Arc::new(config);
         self.db.set_config(config);
     }
-    pub fn diagnostics(&self) -> Vec<Report> {
-        let mut ret = Vec::new();
+    fn diagnostics(&self) -> Vec<Report> {
+        let mut ret = self.collection_reports.clone();
         ERROR_FNS.iter().for_each(|f| {
             ret.extend(f(&self.db));
         });

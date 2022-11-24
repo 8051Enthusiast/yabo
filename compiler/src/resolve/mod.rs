@@ -6,14 +6,16 @@ mod refs;
 use std::collections::BTreeSet;
 use std::{collections::BTreeMap, sync::Arc};
 
+use fxhash::FxHashMap;
 use parserdef_ssc::{mod_parser_ssc, parser_ssc};
+use petgraph::Graph;
 
 use crate::error::{Silencable, SilencedError};
 use crate::expr::{ExprIter, ExpressionHead, OpWithData};
 use crate::hir::walk::ChildIter;
 use crate::hir::{ExprId, HirIdWrapper};
 use crate::interner::{DefId, FieldName, Identifier};
-use crate::source::SpanIndex;
+use crate::source::{FileId, SpanIndex};
 use crate::{error::SResult, hir};
 
 use self::expr::resolve_expr_error;
@@ -34,6 +36,42 @@ pub trait Resolves: crate::hir::Hirs {
     fn resolve_expr(&self, expr_id: hir::ExprId) -> SResult<Arc<ResolvedExpr>>;
     fn captures(&self, id: hir::BlockId) -> Arc<BTreeSet<DefId>>;
     fn parserdef_ref(&self, loc: DefId, name: Identifier) -> SResult<Option<hir::ParserDefId>>;
+    fn cyclic_import(&self) -> Option<Arc<Vec<ResolveError>>>;
+}
+
+fn cyclic_import(db: &dyn Resolves) -> Option<Arc<Vec<ResolveError>>> {
+    let mut graph = Graph::new();
+    let mut index_map = FxHashMap::default();
+    for module in db.all_modules() {
+        let file = db.lookup_intern_hir_path(module.0).path()[0].unwrap_file();
+        let index = graph.add_node(file);
+        index_map.insert(file, index);
+    }
+    for module in db.all_modules() {
+        let file = db.lookup_intern_hir_path(module.0).path()[0].unwrap_file();
+        let from = index_map[&file];
+        let Ok(imports) = db.imports(file) else {continue};
+        for import_name in imports.iter() {
+            let Ok(to) = db.import_id(file, import_name.inner) else {continue};
+            let to = index_map[&to];
+            graph.add_edge(from, to, ());
+        }
+    }
+    let sscs = petgraph::algo::kosaraju_scc(&graph);
+    let mut errors = Vec::new();
+    for ssc in sscs {
+        let contains_cycle = ssc.len() > 1 || graph.contains_edge(ssc[0], ssc[0]);
+        if !contains_cycle {
+            continue;
+        }
+        let files: Vec<_> = ssc.iter().map(|index| graph[*index]).collect();
+        errors.push(ResolveError::CyclicImport(Arc::new(files)));
+    }
+    if errors.is_empty() {
+        None
+    } else {
+        Some(Arc::new(errors))
+    }
 }
 
 fn resolve_expr(db: &dyn Resolves, expr_id: hir::ExprId) -> SResult<Arc<ResolvedExpr>> {
@@ -73,6 +111,8 @@ pub fn captures(db: &dyn Resolves, id: hir::BlockId) -> Arc<BTreeSet<DefId>> {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ResolveError {
     Unresolved(ExprId, SpanIndex, FieldName),
+    CyclicImport(Arc<Vec<FileId>>),
+    ModuleInExpression(ExprId, SpanIndex),
     Silenced,
 }
 

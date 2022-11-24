@@ -13,17 +13,19 @@ use super::{Orders, SubValue};
 
 pub fn errors(db: &(impl Orders + ?Sized)) -> Vec<Report> {
     let mut reports = Vec::new();
-    for node in hir::walk::ChildIter::new(db.root_id().0, db) {
-        let block = match node {
-            hir::HirNode::Block(b) => b,
-            _ => continue,
-        };
-        let serial_error = match db.block_serialization(block.id) {
-            Err(e) => e,
-            Ok(_) => continue,
-        };
-        for error in serial_error.use_error().iter() {
-            reports.extend(block_serialization_error(db, error))
+    for module in db.all_modules() {
+        for node in hir::walk::ChildIter::new(module.0, db) {
+            let block = match node {
+                hir::HirNode::Block(b) => b,
+                _ => continue,
+            };
+            let serial_error = match db.block_serialization(block.id) {
+                Err(e) => e,
+                Ok(_) => continue,
+            };
+            for error in serial_error.use_error().iter() {
+                reports.extend(block_serialization_error(db, error))
+            }
         }
     }
     reports
