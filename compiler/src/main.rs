@@ -38,7 +38,7 @@ enum EmitKind {
 struct Args {
     #[clap(short = 'j', long)]
     output_json: bool,
-    #[clap(short, long, arg_enum, default_value = "shared-lib")]
+    #[clap(short, long, value_enum, default_value = "shared-lib")]
     emit: EmitKind,
     infile: String,
     outfile: OsString,
