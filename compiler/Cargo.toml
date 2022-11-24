@@ -10,22 +10,22 @@ license = "MIT"
 [dependencies]
 fxhash = "0.2.1"
 salsa = "0.16.1"
-thiserror = "1.0.31"
+thiserror = "1.0.37"
 tree-sitter-yabo = { path = "tree-sitter-yabo", version = "0.0.1" }
-tree-sitter = "0.20.8"
+tree-sitter = "0.20.9"
 dot = "0.1.4"
 petgraph = "0.6.2"
 ariadne = "0.1.5"
 enumflags2 = "0.7.5"
-bumpalo = "3.10.0"
-sha2 = "0.10.2"
-paste = "1.0.7"
+bumpalo = "3.11.1"
+sha2 = "0.10.6"
+paste = "1.0.9"
 inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm13-0"] }
-clap = { version = "3.2.17", features = ["default", "clap_derive", "derive"] }
+clap = { version = "4.0.27", features = ["default", "derive"] }
 tempfile = "3.3.0"
-serde_json = "1"
-serde = { version = "1", features = ["derive"] }
+serde_json = "1.0.89"
+serde = { version = "1.0.147", features = ["derive"] }
 backtrace = "0.3.66"
 
 [build-dependencies]
-cc = "1.0.73"
+cc = "1.0.77"
