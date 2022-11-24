@@ -36,7 +36,7 @@ enum EmitKind {
 #[derive(Parser)]
 #[clap(author, version, about)]
 struct Args {
-    #[clap(short, long)]
+    #[clap(short = 'j', long)]
     output_json: bool,
     #[clap(short, long, arg_enum, default_value = "shared-lib")]
     emit: EmitKind,
