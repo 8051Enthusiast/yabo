@@ -1,11 +1,16 @@
-use std::{sync::Arc, collections::{BTreeMap, HashMap}};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
 
 use petgraph::Graph;
 
-use crate::{error::{SResult, SilencedError}, hir::{self, HirIdWrapper}};
+use crate::{
+    error::{SResult, SilencedError},
+    hir::{self, HirIdWrapper},
+};
 
-use super::{Resolves, refs};
-
+use super::{refs, Resolves};
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub struct FunctionSscId(salsa::InternId);
@@ -30,6 +35,9 @@ pub fn mod_parser_ssc(
     db: &dyn Resolves,
     module: hir::ModuleId,
 ) -> SResult<Arc<BTreeMap<hir::ParserDefId, FunctionSscId>>> {
+    if db.cyclic_import().is_some() {
+        return Err(SilencedError::new());
+    }
     let mut graph = Graph::new();
     let module = module.lookup(db)?;
     let mut index_map = HashMap::new();
@@ -39,7 +47,7 @@ pub fn mod_parser_ssc(
     }
     for &parser in module.defs.values() {
         let from = index_map[&parser];
-        for refs in refs::find_parser_refs(db, parser.0)? {
+        for refs in refs::find_parser_refs_within_mod(db, parser.0)? {
             let to = index_map[&refs];
             graph.add_edge(from, to, ());
         }

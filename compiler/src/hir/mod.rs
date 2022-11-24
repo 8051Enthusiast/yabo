@@ -14,7 +14,7 @@ use std::{
 };
 
 use crate::{
-    ast::{ArrayKind, AstConstraint},
+    ast::{ArrayKind, AstConstraint, TopLevelStatement},
     dbpanic,
     error::{SResult, SilencedError},
     expr::{self, Atom, Expression, ExpressionKind},
@@ -36,7 +36,7 @@ use self::{convert::HirConversionErrors, walk::ChildIter};
 pub trait Hirs: crate::ast::Asts + crate::types::TypeInterner {
     fn hir_parser_collection(&self, did: DefId) -> SResult<Option<HirParserCollection>>;
     fn hir_node(&self, id: DefId) -> SResult<HirNode>;
-    fn root_id(&self) -> ModuleId;
+    fn all_modules(&self) -> Vec<ModuleId>;
     fn all_def_ids(&self) -> Vec<DefId>;
     fn all_parserdefs(&self) -> Vec<ParserDefId>;
     fn all_exported_parserdefs(&self) -> Vec<ParserDefId>;
@@ -72,6 +72,17 @@ fn hir_node(db: &dyn Hirs, id: DefId) -> SResult<HirNode> {
             &id
         ),
     };
+    if let Some(TopLevelStatement::Import(_)) = db.top_level_statement(file, fid.unwrap_ident())? {
+        assert!(path.path().len() == 2);
+        let name = fid.unwrap_ident();
+        let mod_file = db.import_id(file, name)?;
+        let mod_path = db.intern_hir_path(HirPath::new_file(mod_file));
+        return Ok(HirNode::Import(Import {
+            id: ImportId(id),
+            name,
+            mod_ref: ModuleId(mod_path),
+        }));
+    }
     let collection_id = db.intern_hir_path(HirPath::new_fid(file, *fid));
     let hir_ctx = db
         .hir_parser_collection(collection_id)?
@@ -83,9 +94,14 @@ fn hir_node(db: &dyn Hirs, id: DefId) -> SResult<HirNode> {
         .clone())
 }
 
-fn root_id(db: &dyn Hirs) -> ModuleId {
-    let root_path = HirPath::new_file(FileId::default());
-    ModuleId(db.intern_hir_path(root_path))
+fn all_modules(db: &dyn Hirs) -> Vec<ModuleId> {
+    db.all_files()
+        .iter()
+        .map(|id| {
+            let path = HirPath::new_file(*id);
+            ModuleId(db.intern_hir_path(path))
+        })
+        .collect()
 }
 
 fn all_parserdef_blocks(db: &dyn Hirs, pd: ParserDefId) -> Arc<Vec<BlockId>> {
@@ -99,34 +115,38 @@ fn all_parserdef_blocks(db: &dyn Hirs, pd: ParserDefId) -> Arc<Vec<BlockId>> {
 }
 
 fn all_def_ids(db: &dyn Hirs) -> Vec<DefId> {
-    let root = db.root_id();
-    let module = match root.lookup(db) {
-        Ok(m) => m,
-        Err(_) => return Vec::new(),
-    };
-    let collections: Vec<_> = module
-        .defs
-        .values()
-        .map(|id| db.hir_parser_collection(id.0))
-        .collect();
-    let mut ret = vec![root.0];
-    for c in collections {
-        let collection = match c {
-            Err(_) | Ok(None) => continue,
-            Ok(Some(col)) => col,
-        };
-        ret.extend(collection.map.keys().cloned())
+    let mut ret = Vec::new();
+    for module in db
+        .all_modules()
+        .into_iter()
+        .flat_map(|module| module.lookup(db))
+    {
+        let collections: Vec<_> = module
+            .defs
+            .values()
+            .map(|id| db.hir_parser_collection(id.0))
+            .collect();
+        ret.push(module.id.0);
+        for c in collections {
+            let collection = match c {
+                Err(_) | Ok(None) => continue,
+                Ok(Some(col)) => col,
+            };
+            ret.extend(collection.map.keys().cloned())
+        }
     }
     ret
 }
 
 fn all_parserdefs(db: &dyn Hirs) -> Vec<ParserDefId> {
-    let root = db.root_id();
-    let module = match root.lookup(db) {
-        Ok(m) => m,
-        Err(_) => return Vec::new(),
-    };
-    let ret: Vec<_> = module.defs.values().cloned().collect();
+    let mut ret = Vec::new();
+    for module in db
+        .all_modules()
+        .into_iter()
+        .flat_map(|module| module.lookup(db))
+    {
+        ret.extend(module.defs.values().cloned());
+    }
     ret
 }
 
@@ -170,7 +190,9 @@ fn hir_parent_block(db: &dyn Hirs, id: DefId) -> SResult<Option<BlockId>> {
 
 fn indirect_span(db: &dyn Hirs, span: IndirectSpan) -> SResult<Span> {
     let id = db.hir_parent_parserdef(span.0)?;
-    let collection = db.hir_parser_collection(id.0)?.ok_or_else(|| SilencedError::new())?;
+    let collection = db
+        .hir_parser_collection(id.0)?
+        .ok_or_else(|| SilencedError::new())?;
     Ok(match span.1 {
         Some(index) => collection.span_with_index(span.0, index.as_usize()),
         None => collection.default_span(span.0),
@@ -336,6 +358,7 @@ hir_node_enum! {
         Parse(ParseStatement),
         Array(ParserArray),
         Block(Block),
+        Import(Import),
         ArgDef(ArgDef),
         Choice(StructChoice),
         Module(Module),
@@ -352,6 +375,7 @@ hir_id_wrapper! {
     type ParseId = Parse(ParseStatement);
     type ArrayId = Array(ParserArray);
     type BlockId = Block(Block);
+    type ImportId = Import(Import);
     type ArgDefId = ArgDef(ArgDef);
     type ChoiceId = Choice(StructChoice);
     type ModuleId = Module(Module);
@@ -397,7 +421,7 @@ impl HirParserCollection {
 pub struct Module {
     pub id: ModuleId,
     pub defs: BTreeMap<Identifier, ParserDefId>,
-    pub submods: BTreeMap<Identifier, ModuleId>,
+    pub imports: BTreeMap<Identifier, ImportId>,
 }
 
 impl Module {
@@ -405,28 +429,29 @@ impl Module {
         self.defs
             .values()
             .map(|x| x.0)
-            .chain(self.submods.values().map(|x| x.0))
+            .chain(self.imports.values().map(|x| x.0))
             .collect()
     }
 }
 
 fn module_file(db: &dyn Hirs, file: FileId) -> Result<Module, SilencedError> {
     let id = ModuleId(db.intern_hir_path(HirPath::new_file(file)));
-    let defs = db
-        .symbols(file)?
+    let symbols = db.symbols(file)?;
+    let defs = symbols
         .iter()
-        .map(|sym| {
-            (
-                *sym,
-                ParserDefId(db.intern_hir_path(HirPath::new_fid(file, FieldName::Ident(*sym)))),
-            )
+        .flat_map(|(sym, is_parserdef)| {
+            let path = db.intern_hir_path(HirPath::new_fid(file, FieldName::Ident(*sym)));
+            is_parserdef.then(|| (*sym, ParserDefId(path)))
         })
         .collect();
-    Ok(Module {
-        id,
-        defs,
-        submods: BTreeMap::new(),
-    })
+    let imports = symbols
+        .iter()
+        .flat_map(|(sym, is_parserdef)| {
+            let path = db.intern_hir_path(HirPath::new_fid(file, FieldName::Ident(*sym)));
+            (!*is_parserdef).then(|| (*sym, ImportId(path)))
+        })
+        .collect();
+    Ok(Module { id, defs, imports })
 }
 
 pub type HirConstraint = AstConstraint;
@@ -470,6 +495,19 @@ pub struct ValExpression {
 impl ValExpression {
     fn children(&self) -> Vec<DefId> {
         self.children.clone()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Import {
+    pub id: ImportId,
+    pub name: Identifier,
+    pub mod_ref: ModuleId,
+}
+
+impl Import {
+    fn children(&self) -> Vec<DefId> {
+        vec![]
     }
 }
 

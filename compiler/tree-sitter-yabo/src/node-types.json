@@ -749,6 +749,22 @@
     }
   },
   {
+    "type": "import",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "let_statement",
     "named": true,
     "fields": {
@@ -1386,6 +1402,10 @@
       "multiple": true,
       "required": false,
       "types": [
+        {
+          "type": "import",
+          "named": true
+        },
         {
           "type": "parser_definition",
           "named": true
@@ -2078,6 +2098,10 @@
   },
   {
     "type": "if",
+    "named": false
+  },
+  {
+    "type": "import",
     "named": false
   },
   {

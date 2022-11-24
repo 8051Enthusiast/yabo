@@ -38,9 +38,10 @@ module.exports = grammar({
   ],
 
   rules: {
-    source_file: $ => repeat($._definition),
-    _definition: $ => choice(
-      $.parser_definition
+    source_file: $ => repeat($._top_level_statement),
+    _top_level_statement: $ => choice(
+      $.parser_definition,
+      $.import
     ),
     _comment: $ => token(seq('#', /[^\n]*/)),
     parser_definition: $ => seq(
@@ -59,6 +60,10 @@ module.exports = grammar({
       )),
       '=',
       field('to', $._expression),
+    ),
+    import: $ => seq(
+      'import',
+      field('name', $.identifier),
     ),
     _type_expression: $ => choice(
       $.type_fun_application,

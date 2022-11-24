@@ -1,14 +1,20 @@
-use crate::{error::{Report, diagnostic::{DiagnosticKind, Label}}, source::FileId};
+use crate::error::{
+    diagnostic::{DiagnosticKind, Label},
+    Report,
+};
 
 use super::{convert::GenericParseError, Asts};
 
 pub fn errors(db: &(impl Asts + ?Sized)) -> Vec<Report> {
-    let fid = FileId::default();
-    let errors = match db.ast(fid) {
-        Ok(_) => return vec![],
-        Err(e) => e,
-    };
-    errors.into_iter().map(|x| parse_error_report(x)).collect()
+    let mut ret = Vec::new();
+    for fid in db.all_files().iter() {
+        let errors = match db.ast(*fid) {
+            Ok(_) => continue,
+            Err(e) => e,
+        };
+        ret.extend(errors.into_iter().map(|x| parse_error_report(x)))
+    }
+    ret
 }
 
 fn parse_error_report(f: GenericParseError) -> Report {

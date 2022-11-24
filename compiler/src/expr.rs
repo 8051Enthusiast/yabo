@@ -86,6 +86,28 @@ impl<K: ExpressionKind, Inner> ExpressionHead<K, Inner> {
     }
 
     #[inline]
+    pub fn try_map_inner<NewInner, Error>(
+        self,
+        mut f: impl FnMut(Inner) -> Result<NewInner, Error>,
+    ) -> Result<ExpressionHead<K, NewInner>, Error> {
+        match self {
+            Self::Niladic(op) => Ok(ExpressionHead::new_niladic(op)),
+            Self::Monadic(Monadic { op, inner }) => Ok(ExpressionHead::new_monadic(op, f(inner)?)),
+            Self::Dyadic(Dyadic {
+                op,
+                inner: [lhs, rhs],
+            }) => {
+                let inner = [f(lhs)?, f(rhs)?];
+                Ok(ExpressionHead::new_dyadic(op, inner))
+            }
+            Self::Variadic(Variadic { op, inner }) => Ok(ExpressionHead::new_variadic(
+                op,
+                inner.into_iter().map(f).collect::<Result<_, _>>()?,
+            )),
+        }
+    }
+
+    #[inline]
     pub fn as_ref(&self) -> ExpressionHead<&K, &Inner> {
         match self {
             Self::Niladic(op) => ExpressionHead::new_niladic(op),
@@ -182,12 +204,11 @@ impl<K: ExpressionKind> Expression<K> {
         f(inner_folded)
     }
     pub fn try_fold<T, E>(
-        &self,
-        f: &mut impl FnMut(ExpressionHead<&K, T>) -> Result<T, E>,
+        self,
+        f: &mut impl FnMut(ExpressionHead<K, T>) -> Result<T, E>,
     ) -> Result<T, E> {
         let inner_folded = self
             .0
-            .as_ref()
             .map_inner(|inner| inner.try_fold(f))
             .transpose()?;
         f(inner_folded)
@@ -711,14 +732,14 @@ impl<C> TypeUnOp<C> {
         use TypeUnOp::*;
         match self {
             Wiggle(expr) => Wiggle(f(expr)),
-            ByteParser => ByteParser
+            ByteParser => ByteParser,
         }
     }
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub enum TypeVarOp {
-    Call
+    Call,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]

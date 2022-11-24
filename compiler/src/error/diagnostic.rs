@@ -1,6 +1,7 @@
 use crate::source::{FileId, Files, Span};
 use serde::Serialize;
 
+#[derive(Clone)]
 pub struct Label {
     pub span: Span,
     pub message: Option<String>,
@@ -28,6 +29,7 @@ pub enum DiagnosticKind {
     Warning,
 }
 
+#[derive(Clone)]
 pub struct Diagnostic {
     pub kind: DiagnosticKind,
     pub file: FileId,

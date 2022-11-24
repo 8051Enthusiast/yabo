@@ -48,8 +48,6 @@ fn main() {
     let args = Args::parse();
     let infile = &args.infile;
     let mut context = Context::default();
-    context.fc.add(&infile).expect("Could not read file");
-    context.update_db();
     context.set_config(Config {
         target_triple: String::from("x86_64-pc-linux-gnu"),
         // if x86-64 was so great,,,
@@ -57,6 +55,8 @@ fn main() {
         target_features: String::from(""),
         output_json: args.output_json,
     });
+    let main = context.fc.add(&infile).expect("Could not read file");
+    context.update_db(&[main]);
     if context.print_diagnostics() {
         if !args.output_json {
             exit_with_message("Errors occured during compilation");

@@ -22,11 +22,17 @@ pub fn parserdef_ref(
     Ok(parent_module.lookup(db)?.defs.get(&name).copied())
 }
 
+pub enum Resolved {
+    Value(DefId, VarType),
+    Module(hir::ModuleId),
+    Unresolved,
+}
+
 pub fn resolve_var_ref(
     db: &(impl Resolves + ?Sized),
     loc: DefId,
     ident: FieldName,
-) -> SResult<Option<(DefId, VarType)>> {
+) -> SResult<Resolved> {
     let mut current_id = loc;
     loop {
         current_id = match &db.hir_node(current_id)? {
@@ -37,12 +43,20 @@ pub fn resolve_var_ref(
             HirNode::Module(m) => {
                 let ident = match ident {
                     FieldName::Ident(n) => n,
-                    FieldName::Return => return Ok(None),
+                    FieldName::Return => return Ok(Resolved::Unresolved),
                 };
-                return Ok(m.defs.get(&ident).map(|s| (s.id(), VarType::ParserDef)));
+                match m.defs.get(&ident) {
+                    Some(s) => return Ok(Resolved::Value(s.id(), VarType::ParserDef)),
+                    None => (),
+                }
+                if let Some(import) = m.imports.get(&ident) {
+                    return Ok(Resolved::Module(import.lookup(db)?.mod_ref));
+                } else {
+                    return Ok(Resolved::Unresolved);
+                }
             }
             HirNode::Context(ctx) => match ctx.vars.get(ident) {
-                Some(id) => return Ok(Some((*id.inner(), VarType::Value))),
+                Some(id) => return Ok(Resolved::Value(*id.inner(), VarType::Value)),
                 None => ctx
                     .parent_context
                     .map(|x| x.id())
@@ -52,10 +66,10 @@ pub fn resolve_var_ref(
                 let id = match ident {
                     FieldName::Ident(n) => n,
                     // the only parent here can be a module, which does not have return identifiers either
-                    FieldName::Return => return Ok(None),
+                    FieldName::Return => return Ok(Resolved::Unresolved),
                 };
                 match db.parserdef_arg(pd.id, id)? {
-                    Some(child_id) => return Ok(Some((child_id.0, VarType::Value))),
+                    Some(child_id) => return Ok(Resolved::Value(child_id.0, VarType::Value)),
                     None => db.hir_parent_module(current_id)?.id(),
                 }
             }
@@ -87,11 +101,14 @@ pub fn expr_parser_refs<'a>(
 ) -> impl Iterator<Item = hir::ParserDefId> + 'a {
     expr_idents(expr)
         .into_iter()
-        .flat_map(move |ident| resolve_var_ref(db, context, ident).ok()?)
-        .flat_map(|(id, ty)| matches!(ty, VarType::ParserDef).then(|| hir::ParserDefId(id)))
+        .flat_map(move |ident| resolve_var_ref(db, context, ident).ok())
+        .flat_map(|resolved| match resolved {
+            Resolved::Value(id, VarType::ParserDef) => Some(hir::ParserDefId(id)),
+            _ => None,
+        })
 }
 
-pub fn find_parser_refs(
+pub fn find_parser_refs_within_mod(
     db: &(impl Resolves + ?Sized),
     id: DefId,
 ) -> SResult<Vec<hir::ParserDefId>> {

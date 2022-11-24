@@ -3,7 +3,13 @@ use std::collections::HashMap;
 use fxhash::FxHashSet;
 
 use super::*;
-use crate::{ast, error::Silencable, error_type, expr::OpWithData, source::Spanned};
+use crate::{
+    ast::{self, TopLevelStatement},
+    error::Silencable,
+    error_type,
+    expr::OpWithData,
+    source::Spanned,
+};
 
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum HirConversionError {
@@ -542,8 +548,8 @@ pub fn hir_parser_collection(
     let file = path.path()[0].unwrap_file();
     let id = path.path()[1].unwrap_ident();
     let parser = match db.top_level_statement(file, id)? {
-        None => return Ok(None),
-        Some(x) => x,
+        None | Some(TopLevelStatement::Import(_)) => return Ok(None),
+        Some(TopLevelStatement::ParserDefinition(x)) => x,
     };
     parser_def(&parser, &ctx, ParserDefId(did));
     Ok(Some(ctx.collection.into_inner()))

@@ -771,6 +771,7 @@ impl<'a> ConvertCtx<'a> {
             | hir::HirNode::Context(_)
             | hir::HirNode::TExpr(_)
             | hir::HirNode::ArgDef(_)
+            | hir::HirNode::Import(_)
             | hir::HirNode::Array(_) => panic!("invalid subvalue encountered"),
         };
         Ok(())
@@ -829,6 +830,7 @@ impl<'a> ConvertCtx<'a> {
                     | HirNode::Array(_)
                     | HirNode::Module(_)
                     | HirNode::Context(_)
+                    | HirNode::Import(_)
                     | HirNode::ParserDef(_) => {
                         dbpanic!(db, "subvalue {} should not occur here", &val)
                     }

@@ -17,6 +17,7 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for HirNode {
             HirNode::Array(a) => write!(f, "Array({:?})", a.direction),
             HirNode::Block(_) => write!(f, "Block"),
             HirNode::Choice(_) => write!(f, "Choice"),
+            HirNode::Import(_) => write!(f, "Import"),
             HirNode::ArgDef(_) => write!(f, "ArgDef"),
             HirNode::Module(_) => write!(f, "Module"),
             HirNode::Context(_) => write!(f, "Context"),
@@ -327,6 +328,9 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                         );
                         v
                     }
+                    HirNode::Import(Import { id, mod_ref, .. }) => {
+                        vec![(id.0, mod_ref.0, "mod_ref".to_string(), dot::Style::Dotted)]
+                    }
                     HirNode::ArgDef(ArgDef { id, ty, .. }) => {
                         vec![(id.0, ty.0, "ty".to_string(), dot::Style::Bold)]
                     }
@@ -392,7 +396,7 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                         }
                         v
                     }
-                    HirNode::Module(Module { id, defs, submods }) => defs
+                    HirNode::Module(Module { id, defs, imports }) => defs
                         .iter()
                         .map(|(ident, def)| {
                             (
@@ -402,7 +406,7 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                                 dot::Style::Bold,
                             )
                         })
-                        .chain(submods.iter().map(|(ident, module)| {
+                        .chain(imports.iter().map(|(ident, module)| {
                             (
                                 id.0,
                                 module.0,

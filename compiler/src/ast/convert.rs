@@ -108,7 +108,7 @@ fn module(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Module> {
     let node = check_error(db, fd, c.node())?;
     let mut statements = Vec::new();
     iter_children(db, fd, c, |_, cursor| {
-        statements.push(Arc::new(parser_definition(db, fd, cursor)?));
+        statements.push(top_level_statement(db, fd, cursor)?);
         Ok(())
     })?;
     Ok(Module {
@@ -417,6 +417,19 @@ where
             data: span_from_node(fd, &node),
         })
     }
+}
+
+astify! {
+    enum top_level_statement = TopLevelStatement {
+        ParserDefinition(parser_definition),
+        Import(import),
+    };
+}
+
+astify! {
+    struct import = Import {
+        name: idspan[!],
+    };
 }
 
 astify! {
