@@ -161,7 +161,10 @@ impl Silencable for TypeError {
     type Out = SilencedError;
 
     fn silence(self) -> Self::Out {
-        SilencedError::new()
+        match self {
+            TypeError::Silenced(e) => e,
+            _ => SilencedError::new(),
+        }
     }
 }
 

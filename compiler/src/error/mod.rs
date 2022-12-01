@@ -1,11 +1,28 @@
 pub mod diagnostic;
 
-use std::{collections::HashSet, error::Error};
+use std::{collections::HashSet, error::Error, sync::Arc};
 
 pub type SResult<T> = Result<T, SilencedError>;
-#[derive(Clone, Debug, Default)]
+
+// in debug mode we want to capture backtraces on silent errors
+// since they might indicate bugs in the compiler, but in release
+// capture backtraces is expensive so we don't do it
+#[cfg(debug_assertions)]
+#[derive(Clone, Debug)]
+pub struct SilencedError(Arc<std::backtrace::Backtrace>);
+
+#[cfg(not(debug_assertions))]
+#[derive(Clone, Debug)]
 pub struct SilencedError(());
 
+#[cfg(debug_assertions)]
+impl SilencedError {
+    pub fn new() -> Self {
+        Self(Arc::new(std::backtrace::Backtrace::capture()))
+    }
+}
+
+#[cfg(not(debug_assertions))]
 impl SilencedError {
     pub fn new() -> Self {
         Self(())
@@ -14,7 +31,7 @@ impl SilencedError {
 
 impl std::fmt::Display for SilencedError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self.0)
+        write!(f, "{:#?}", self.0)
     }
 }
 

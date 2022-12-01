@@ -242,8 +242,12 @@ impl<DB: Mirs> DatabasedDisplay<DB> for Function {
 }
 
 pub fn print_all_mir<DB: Mirs, W: Write>(db: &DB, w: &mut W) -> std::io::Result<()> {
-    let convert_error_ignore =
-        |_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "could not get mir");
+    let convert_error_ignore = |e| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("could not get mir: {}", e),
+        )
+    };
     for pd in db.all_parserdefs() {
         dbwrite!(
             w,
