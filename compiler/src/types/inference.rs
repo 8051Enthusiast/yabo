@@ -424,8 +424,8 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         self.tr.signature(ty)
     }
     pub fn lookup(&mut self, val: DefId) -> Result<InfTypeId<'intern>, TypeError> {
-        let ret = match self.tr.lookup(val)? {
-            EitherType::Regular(result_type) => {
+        let ret = match self.tr.lookup(val) {
+            Ok(EitherType::Regular(result_type)) => {
                 let ret = self.from_type(result_type);
                 if self.trace {
                     dbeprintln!(
@@ -438,7 +438,9 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                 }
                 ret
             }
-            EitherType::Inference(infty) => infty,
+            Ok(EitherType::Inference(infty)) => infty,
+            Err(TypeError::Silenced(_)) => self.unknown(),
+            Err(e) => return Err(e),
         };
         Ok(ret)
     }
