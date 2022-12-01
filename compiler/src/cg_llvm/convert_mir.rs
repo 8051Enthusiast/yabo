@@ -292,7 +292,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let ret = self.place_ptr(ret);
         self.fallible_call(
             fun,
-            &[ret.into(), target_head.into(), shifted_place_ptr.into()],
+            &[shifted_place_ptr.into(), target_head.into(), ret.into()],
             [self.undefined, self.undefined, self.bb(error)],
         )
     }
