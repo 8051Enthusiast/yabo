@@ -106,6 +106,7 @@ fn val_refs(
             let mut ret = FxHashSet::default();
             ret.insert((SubValue::new_val(p.expr.0), true));
             ret.insert((SubValue::new_front(p.id.id()), true));
+            ret.insert((SubValue::new_back(p.id.id()), false));
             Ok(ret)
         }
         hir::HirNode::Block(block) => Ok(block
