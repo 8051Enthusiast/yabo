@@ -254,6 +254,21 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                     "cmp_assert_char",
                 )
             }
+            Atom::Bool(bool) => {
+                let bool = self.cg.llvm.i8_type().const_int(bool as u64, false);
+                let bool_ptr = self.place_ptr(place);
+                let num_actual = self
+                    .cg
+                    .builder
+                    .build_load(bool_ptr, "ld_assert_bool")
+                    .into_int_value();
+                self.cg.builder.build_int_compare(
+                    IntPredicate::EQ,
+                    bool,
+                    num_actual,
+                    "cmp_assert_bool",
+                )
+            }
         };
         let next_block = self.cg.llvm.append_basic_block(self.llvm_fun, "");
         let fallback_block = self.bb(fallback);
@@ -356,6 +371,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let llvm_val = match val {
             Val::Char(c) => self.cg.llvm.i32_type().const_int(c as u64, false),
             Val::Int(i) => self.cg.const_i64(i),
+            Val::Bool(b) => self.cg.llvm.i8_type().const_int(b as u64, false),
         };
         let casted_ret_ptr = self
             .cg

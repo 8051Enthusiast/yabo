@@ -300,6 +300,19 @@ impl<'a> ConvertCtx<'a> {
         place_ref
     }
 
+    fn load_bool(
+        &mut self,
+        b: bool,
+        ty: TypeId,
+        place: Option<PlaceRef>,
+        origin: PlaceOrigin,
+    ) -> PlaceRef {
+        let place_ref = self.unwrap_or_stack(place, ty, origin);
+        self.f
+            .append_ins(MirInstr::StoreVal(place_ref, Val::Bool(b)));
+        place_ref
+    }
+
     fn create_block_parser(
         &mut self,
         block: BlockId,
@@ -346,6 +359,7 @@ impl<'a> ConvertCtx<'a> {
                 ResolvedAtom::Captured(cap) => self.load_captured(*cap, ty, place, origin)?,
                 ResolvedAtom::Number(n) => self.load_int(*n, ty, place, origin),
                 ResolvedAtom::Char(c) => self.load_char(*c, ty, place, origin),
+                ResolvedAtom::Bool(b) => self.load_bool(*b, ty, place, origin),
                 ResolvedAtom::ParserDef(_) | ResolvedAtom::Single | ResolvedAtom::Nil => {
                     self.unwrap_or_stack(place, ty, origin)
                 }

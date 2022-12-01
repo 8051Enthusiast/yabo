@@ -306,6 +306,7 @@ module.exports = grammar({
     _literal: $ => choice(
       $.number_literal,
       $.char_literal,
+      $.bool_literal,
     ),
     primitive_type: $ => choice(
       'int',
@@ -329,6 +330,10 @@ module.exports = grammar({
         token.immediate(/[^\n']/)
       ),
       '\'',
+    ),
+    bool_literal: $ => choice(
+      'true',
+      'false',
     ),
   }
 });

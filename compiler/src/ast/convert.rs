@@ -516,6 +516,7 @@ astify! {
         Field(identifier),
         Number(number_literal),
         Char(char_literal),
+        Bool(bool_literal),
     };
 }
 
@@ -737,6 +738,15 @@ fn char_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<u32> {
         .filter(|_| it.next().is_none())
         .ok_or_else(|| vec![GenericParseError { loc: span }])?;
     Ok(first as u32)
+}
+
+fn bool_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<bool> {
+    let str = node_to_string(db, fd, c)?;
+    match &*str {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => panic!("unknown bool literal: {}", str),
+    }
 }
 
 fn node_to_string(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<String> {

@@ -17,6 +17,7 @@ pub enum ResolvedAtom {
     ParserDef(hir::ParserDefId),
     Number(i64),
     Char(u32),
+    Bool(bool),
     Single,
     Nil,
     Block(hir::BlockId),
@@ -72,6 +73,7 @@ pub fn resolve_expr_error(
                 let new = match &nil.inner {
                     hir::ParserAtom::Atom(Atom::Number(s)) => ResolvedAtom::Number(*s),
                     hir::ParserAtom::Atom(Atom::Char(s)) => ResolvedAtom::Char(*s),
+                    hir::ParserAtom::Atom(Atom::Bool(s)) => ResolvedAtom::Bool(*s),
                     hir::ParserAtom::Single => ResolvedAtom::Single,
                     hir::ParserAtom::Nil => ResolvedAtom::Nil,
                     hir::ParserAtom::Block(b) => ResolvedAtom::Block(*b),

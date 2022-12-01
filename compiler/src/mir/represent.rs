@@ -102,6 +102,7 @@ impl Display for Val {
         match self {
             Val::Char(c) => write!(f, "'{}'", char::try_from(*c).unwrap()),
             Val::Int(i) => write!(f, "{}", i),
+            Val::Bool(b) => write!(f, "{}", b),
         }
     }
 }
