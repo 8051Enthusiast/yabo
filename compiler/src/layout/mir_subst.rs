@@ -205,7 +205,7 @@ impl<'a> SubInfo<ILayout<'a>> {
                         .db
                         .def_name(field)
                         .expect("accessing non-field id as field");
-                    place_layouts[place.as_index()].access_field(ctx, field_name)
+                    place_layouts[place.as_index()].access_field(ctx, field_name)?
                 }
                 Place::Captured(place, field) => place_layouts[place.as_index()]
                     .get_captured(ctx, field)?
