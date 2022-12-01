@@ -207,10 +207,7 @@ impl<K: ExpressionKind> Expression<K> {
         self,
         f: &mut impl FnMut(ExpressionHead<K, T>) -> Result<T, E>,
     ) -> Result<T, E> {
-        let inner_folded = self
-            .0
-            .map_inner(|inner| inner.try_fold(f))
-            .transpose()?;
+        let inner_folded = self.0.map_inner(|inner| inner.try_fold(f)).transpose()?;
         f(inner_folded)
     }
     pub fn convert_no_var<ToKind: ExpressionKind>(
@@ -547,6 +544,7 @@ pub enum Atom {
     Field(FieldName),
     Number(i64),
     Char(u32),
+    Bool(bool),
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]

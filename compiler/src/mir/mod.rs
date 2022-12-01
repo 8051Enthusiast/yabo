@@ -159,6 +159,7 @@ pub enum PdArgKind {
 pub enum Val {
     Char(u32),
     Int(i64),
+    Bool(bool),
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]

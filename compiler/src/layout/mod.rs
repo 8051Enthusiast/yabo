@@ -769,6 +769,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
             ExpressionHead::Niladic(n) => match n.inner {
                 ResolvedAtom::Char(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Char)),
                 ResolvedAtom::Number(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Int)),
+                ResolvedAtom::Bool(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Bit)),
                 ResolvedAtom::Val(id) => ctx.var_by_id(id),
                 ResolvedAtom::Single => make_layout(MonoLayout::Single),
                 ResolvedAtom::Nil => make_layout(MonoLayout::Nil),

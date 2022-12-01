@@ -15,8 +15,8 @@ use crate::{
     ast::ArrayKind,
     error::{IsSilenced, SResult, Silencable, SilencedError},
     expr::{
-        self, Dyadic, ExprIter, Expression, ExpressionHead, Monadic, OpWithData,
-        TypeBinOp, TypeUnOp, ValBinOp, ValUnOp, Variadic,
+        self, Dyadic, ExprIter, Expression, ExpressionHead, Monadic, OpWithData, TypeBinOp,
+        TypeUnOp, ValBinOp, ValUnOp, Variadic,
     },
     hash::StableHash,
     hir::{walk::ChildIter, ExprId, HirIdWrapper, HirNodeKind, ParseStatement, ParserDefRef},
@@ -310,8 +310,9 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                             }
                             LesserEq | Lesser | GreaterEq | Greater => {
                                 let bit = self.infctx.bit();
-                                self.infctx.constrain(left, bit)?;
-                                self.infctx.constrain(right, bit)?;
+                                let int = self.infctx.int();
+                                self.infctx.constrain(left, int)?;
+                                self.infctx.constrain(right, int)?;
                                 bit
                             }
                             Else => self.infctx.one_of(&[left, right])?,
@@ -340,6 +341,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         match &a.inner {
                             ResolvedAtom::Char(_) => self.infctx.char(),
                             ResolvedAtom::Number(_) => self.infctx.int(),
+                            ResolvedAtom::Bool(_) => self.infctx.bit(),
                             ResolvedAtom::Single => self.infctx.single(),
                             ResolvedAtom::Nil => self.infctx.nil(),
                             ResolvedAtom::Block(b) => {

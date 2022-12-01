@@ -1852,6 +1852,10 @@
         {
           "type": "SYMBOL",
           "name": "char_literal"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "bool_literal"
         }
       ]
     },
@@ -1935,6 +1939,19 @@
         {
           "type": "STRING",
           "value": "'"
+        }
+      ]
+    },
+    "bool_literal": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "true"
+        },
+        {
+          "type": "STRING",
+          "value": "false"
         }
       ]
     }

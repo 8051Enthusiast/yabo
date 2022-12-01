@@ -141,6 +141,7 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Atom {
             Atom::Field(FieldName::Return) => write!(f, "return"),
             Atom::Number(a) => write!(f, "{}", a),
             Atom::Char(a) => write!(f, "'{}'", a),
+            Atom::Bool(a) => write!(f, "{}", a),
         }
     }
 }
