@@ -379,10 +379,15 @@ impl<'a> Uniq<InternerLayout<'a>> {
         &'a self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
         field: FieldName,
-    ) -> ILayout<'a> {
-        self.map(ctx, |layout, _| match layout.mono_layout().0 {
-            MonoLayout::Block(_, fields) => fields[&field],
-            _ => panic!("Field access on non-block {:?}", layout),
+    ) -> Result<ILayout<'a>, LayoutError> {
+        self.try_map(ctx, |layout, ctx| {
+            let ty = layout.mono_layout().1;
+            let ldt = ctx.db.least_deref_type(ty)?;
+            let casted_layout = layout.0.typecast(ctx, ldt)?.0;
+            Ok(casted_layout.map(ctx, |layout, _| match layout.mono_layout().0 {
+                MonoLayout::Block(_, fields) => fields[&field],
+                _ => panic!("Field access on non-block {:?}", layout),
+            }))
         })
     }
 
@@ -801,7 +806,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                     make_layout(MonoLayout::Primitive(PrimitiveType::Int))
                 }
                 ValUnOp::Wiggle(_, _) => m.inner.0,
-                ValUnOp::Dot(a) => m.inner.0.access_field(ctx, a),
+                ValUnOp::Dot(a) => m.inner.0.access_field(ctx, a)?,
             },
             ExpressionHead::Dyadic(d) => match d.op.inner {
                 ValBinOp::ParserApply => d.inner[1].0.apply_arg(ctx, d.inner[0].0)?,
@@ -954,7 +959,7 @@ def for[int] *> main = {
             dbformat!(
                 &ctx.db,
                 "{}",
-                &main_block.access_field(&mut outlayer, field("a"))
+                &main_block.access_field(&mut outlayer, field("a")).unwrap(),
             ),
             "int"
         );
@@ -962,19 +967,19 @@ def for[int] *> main = {
             dbformat!(
                 &ctx.db,
                 "{}",
-                &main_block.access_field(&mut outlayer, field("b"))
+                &main_block.access_field(&mut outlayer, field("b")).unwrap(),
             ),
             "int"
         );
         assert_eq!(
-            dbformat!(&ctx.db, "{}", &main_block.access_field(&mut outlayer, field("c")).access_field(&mut outlayer, field("c"))),
+            dbformat!(&ctx.db, "{}", &main_block.access_field(&mut outlayer, field("c")).unwrap().access_field(&mut outlayer, field("c")).unwrap()),
             "nominal-parser[for[int] *> for[int] &> file[_].second]() | nominal-parser[for[int] *> for[int] &> file[_].first]()"
         );
         assert_eq!(
             dbformat!(
                 &ctx.db,
                 "{}",
-                &main_block.access_field(&mut outlayer, field("d"))
+                &main_block.access_field(&mut outlayer, field("d")).unwrap(),
             ),
             "int"
         );

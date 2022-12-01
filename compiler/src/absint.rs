@@ -244,7 +244,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             ret = widened_return.as_ref().map(|(x, _)| x.returned.clone());
             let stop = widened_return
                 .as_ref()
-                .map(|(_, changed)| *changed)
+                .map(|(_, changed)| !*changed)
                 .unwrap_or(true);
             self.set_pd_ret(widened_return.map(|x| x.0));
             if stop {
