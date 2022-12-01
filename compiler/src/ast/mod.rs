@@ -98,7 +98,7 @@ pub type AstTypeBinOp = OpWithData<TypeBinOp, Span>;
 pub type AstTypeUnOp = OpWithData<TypeUnOp<Arc<ConstraintExpression>>, Span>;
 
 impl ExpressionKind for AstConstraint {
-    type NiladicOp = Atom;
+    type NiladicOp = ConstraintAtom;
     type MonadicOp = ConstraintUnOp;
     type DyadicOp = ConstraintBinOp;
     type VariadicOp = Unused;
@@ -133,6 +133,18 @@ pub enum TypeAtom {
     Primitive(TypePrimitive),
     Array(Box<TypeArray>),
     TypeVar(TypeVar),
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub enum ConstraintAtom {
+    Atom(Atom),
+    Range(i64, i64),
+}
+
+impl From<Atom> for ConstraintAtom {
+    fn from(a: Atom) -> Self {
+        ConstraintAtom::Atom(a)
+    }
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
@@ -358,6 +370,19 @@ impl From<TypeFunApplication> for Variadic<OpWithData<TypeVarOp, Span>, Box<Type
             },
             inner,
         }
+    }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct Range {
+    pub start: i64,
+    pub end: i64,
+    pub span: Span,
+}
+
+impl From<Range> for ConstraintAtom {
+    fn from(value: Range) -> Self {
+        ConstraintAtom::Range(value.start, value.end)
     }
 }
 

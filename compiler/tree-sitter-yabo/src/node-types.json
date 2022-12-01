@@ -106,6 +106,10 @@
             "named": true
           },
           {
+            "type": "range",
+            "named": true
+          },
+          {
             "type": "retvrn",
             "named": true
           },
@@ -151,6 +155,10 @@
           },
           {
             "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "range",
             "named": true
           },
           {
@@ -625,6 +633,10 @@
           },
           {
             "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "range",
             "named": true
           },
           {
@@ -1443,6 +1455,32 @@
     "fields": {}
   },
   {
+    "type": "range",
+    "named": true,
+    "fields": {
+      "end": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "number_literal",
+            "named": true
+          }
+        ]
+      },
+      "start": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "number_literal",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "single",
     "named": true,
     "fields": {}
@@ -1614,6 +1652,10 @@
           },
           {
             "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "range",
             "named": true
           },
           {
@@ -2079,6 +2121,10 @@
   },
   {
     "type": ".",
+    "named": false
+  },
+  {
+    "type": "..",
     "named": false
   },
   {

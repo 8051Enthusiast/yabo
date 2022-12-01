@@ -1,5 +1,5 @@
 use crate::{
-    ast::ArrayKind,
+    ast::{ArrayKind, ConstraintAtom},
     databased_display::DatabasedDisplay,
     dbwrite,
     expr::{Dyadic, ExpressionHead, Ignorable, Monadic, OpWithData, Variadic},
@@ -142,6 +142,17 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for Atom {
             Atom::Number(a) => write!(f, "{}", a),
             Atom::Char(a) => write!(f, "'{}'", a),
             Atom::Bool(a) => write!(f, "{}", a),
+        }
+    }
+}
+
+impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for ConstraintAtom {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
+        match self {
+            ConstraintAtom::Atom(a) => a.db_fmt(f, db),
+            ConstraintAtom::Range(start, end) => {
+                dbwrite!(f, db, "{}..{}", start, end)
+            }
         }
     }
 }
