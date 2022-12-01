@@ -159,7 +159,7 @@ module.exports = grammar({
     _constraint_expression: $ => choice(
       $.binary_constraint_expression,
       $.unary_constraint_expression,
-      $._atom,
+      $._constraint_atom,
     ),
     binary_constraint_expression: $ => choice(
       prec.left(PREC.OR, seq(
@@ -273,6 +273,15 @@ module.exports = grammar({
       $.type_var,
       $.parserdef_ref,
     ),
+    range: $ => seq(
+      field('start', $.number_literal),
+      '..',
+      field('end', $.number_literal),
+    ),
+    _constraint_atom: $ => choice(
+      $._atom,
+      $.range,
+    ),
     val_dot: $ => prec.left(PREC.DOT, seq(
       field('left', $._expression),
       field('op', '.'),
@@ -323,7 +332,7 @@ module.exports = grammar({
     ),
     retvrn: $ => 'return',
     identifier: $ => /[A-Za-z_][A-Za-z_0-9]*/,
-    number_literal: $ => /[0-9]+|0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+/,
+    number_literal: $ => /-?([0-9]+|0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+)/,
     char_literal: $ => seq(
       '\'',
       choice(

@@ -8,6 +8,7 @@ use inkwell::{
 };
 
 use crate::{
+    ast::ConstraintAtom,
     expr::Atom,
     hir::BlockId,
     hir_types::{NominalId, TyHirs},
@@ -197,16 +198,16 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         self.cg.builder.build_store(byte_ptr, modified_byte);
     }
 
-    fn assert_value(&mut self, place: PlaceRef, val: Atom, fallback: BBRef) {
+    fn assert_value(&mut self, place: PlaceRef, val: ConstraintAtom, fallback: BBRef) {
         let cond = match val {
-            Atom::Field(field) => {
+            ConstraintAtom::Atom(Atom::Field(field)) => {
                 let (byte_ptr, shifted_bit) = match self.discriminant_info(place, field) {
                     Some(x) => x,
                     None => return,
                 };
                 self.cg.build_discriminant_check(byte_ptr, shifted_bit)
             }
-            Atom::Number(num) => {
+            ConstraintAtom::Atom(Atom::Number(num)) => {
                 let num = self.cg.const_i64(num);
                 let num_ptr = self.place_ptr(place);
                 let cast_num_ptr = self
@@ -230,7 +231,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                     "cmp_assert_num",
                 )
             }
-            Atom::Char(num) => {
+            ConstraintAtom::Atom(Atom::Char(num)) => {
                 let num = self.cg.llvm.i32_type().const_int(num as u64, false);
                 let num_ptr = self.place_ptr(place);
                 let cast_num_ptr = self
@@ -254,7 +255,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                     "cmp_assert_char",
                 )
             }
-            Atom::Bool(bool) => {
+            ConstraintAtom::Atom(Atom::Bool(bool)) => {
                 let bool = self.cg.llvm.i8_type().const_int(bool as u64, false);
                 let bool_ptr = self.place_ptr(place);
                 let num_actual = self
@@ -268,6 +269,40 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                     num_actual,
                     "cmp_assert_bool",
                 )
+            }
+            ConstraintAtom::Range(start, end) => {
+                let start = self.cg.const_i64(start);
+                let end = self.cg.const_i64(end);
+                let num_ptr = self.place_ptr(place);
+                let cast_num_ptr = self
+                    .cg
+                    .builder
+                    .build_bitcast(
+                        num_ptr,
+                        self.cg.llvm.i64_type().ptr_type(AddressSpace::Generic),
+                        "cast_assert_range",
+                    )
+                    .into_pointer_value();
+                let num_actual = self
+                    .cg
+                    .builder
+                    .build_load(cast_num_ptr, "ld_assert_range")
+                    .into_int_value();
+                let cmp_start = self.cg.builder.build_int_compare(
+                    IntPredicate::SGE,
+                    num_actual,
+                    start,
+                    "cmp_assert_range",
+                );
+                let cmp_end = self.cg.builder.build_int_compare(
+                    IntPredicate::SLE,
+                    num_actual,
+                    end,
+                    "cmp_assert_range",
+                );
+                self.cg
+                    .builder
+                    .build_and(cmp_start, cmp_end, "cmp_assert_range")
             }
         };
         let next_block = self.cg.llvm.append_basic_block(self.llvm_fun, "");

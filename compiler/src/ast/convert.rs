@@ -512,6 +512,13 @@ astify! {
 }
 
 astify! {
+    struct range = Range {
+        start: number_literal[!],
+        end: number_literal[!],
+    };
+}
+
+astify! {
     enum atom = Atom {
         Field(identifier),
         Number(number_literal),
@@ -538,6 +545,7 @@ astify! {
     enum constraint_expression = ConstraintExpressionInner {
         Dyadic(binary_constraint_expression),
         Monadic(unary_constraint_expression),
+        Niladic(with_span_data(range)),
         Niladic(with_span_data(atom..)),
     };
 }

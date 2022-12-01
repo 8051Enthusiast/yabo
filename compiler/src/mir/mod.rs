@@ -7,12 +7,12 @@ use fxhash::FxHashMap;
 
 use crate::{
     error::{SResult, Silencable},
-    expr::{Atom, ValBinOp, ValUnOp},
+    expr::{ValBinOp, ValUnOp},
     hir::{BlockId, ExprId, HirIdWrapper, ParserDefId},
     interner::{DefId, FieldName},
     order::{Orders, SubValue},
     source::SpanIndex,
-    types::{Type, TypeId},
+    types::{Type, TypeId}, ast::ConstraintAtom,
 };
 
 use self::convert::ConvertCtx;
@@ -170,7 +170,7 @@ pub enum MirInstr {
     StoreVal(PlaceRef, Val),
     ParseCall(PlaceRef, CallKind, PlaceRef, PlaceRef, ExceptionRetreat),
     Field(PlaceRef, PlaceRef, FieldName, BBRef),
-    AssertVal(PlaceRef, Atom, BBRef),
+    AssertVal(PlaceRef, ConstraintAtom, BBRef),
     SetDiscriminant(PlaceRef, FieldName, bool),
     ApplyArgs(PlaceRef, PlaceRef, Vec<PlaceRef>, u64, BBRef),
     Copy(PlaceRef, PlaceRef, BBRef),
@@ -461,8 +461,14 @@ fn mir_pd_val_parser(db: &dyn Mirs, pd: ParserDefId) -> SResult<Function> {
         let pd = pd.lookup(db)?;
         let cap = writer.fun.cap();
         for (arg_ty, arg_id) in args.iter().zip(pd.args.unwrap().iter()) {
-            let arg_place = writer.add_place(PlaceInfo { place: Place::Captured(cap, arg_id.0), ty: *arg_ty });
-            let ret_arg_place = writer.add_place(PlaceInfo { place: Place::Captured(ret_place, arg_id.0), ty: *arg_ty });
+            let arg_place = writer.add_place(PlaceInfo {
+                place: Place::Captured(cap, arg_id.0),
+                ty: *arg_ty,
+            });
+            let ret_arg_place = writer.add_place(PlaceInfo {
+                place: Place::Captured(ret_place, arg_id.0),
+                ty: *arg_ty,
+            });
             writer.append_ins(MirInstr::Copy(ret_arg_place, arg_place, error));
         }
     }
