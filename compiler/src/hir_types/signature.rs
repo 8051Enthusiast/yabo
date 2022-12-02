@@ -82,8 +82,8 @@ impl<'a> TypeResolver<'a> for ArgResolver<'a> {
         Ok(self.0.intern_type(Type::Unknown).into())
     }
 
-    fn deref(&self, _ty: &NominalInfHead<'a>) -> Result<Option<TypeId>, TypeError> {
-        Ok(Some(self.0.intern_type(Type::Unknown)))
+    fn deref(&self, _ty: &NominalInfHead<'a>) -> Result<Option<EitherType<'a>>, TypeError> {
+        Ok(Some(EitherType::Regular(self.0.intern_type(Type::Unknown))))
     }
 
     fn signature(&self, ty: &NominalInfHead<'a>) -> Result<Signature, TypeError> {

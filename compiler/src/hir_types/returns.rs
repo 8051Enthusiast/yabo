@@ -131,15 +131,15 @@ impl<'a> TypeResolver<'a> for ReturnResolver<'a> {
         Ok(self.db.intern_type(Type::Unknown).into())
     }
 
-    fn deref(&self, ty: &NominalInfHead<'a>) -> Result<Option<TypeId>, TypeError> {
-        if self.return_infs.get(&ty.def).is_some() {
-            Ok(Some(self.db.intern_type(Type::Unknown)))
+    fn deref(&self, ty: &NominalInfHead<'a>) -> Result<Option<EitherType<'a>>, TypeError> {
+        if let Some(deref_ty) = self.return_infs.get(&ty.def) {
+            Ok(Some(EitherType::Inference(*deref_ty)))
         } else {
             let id = match NominalId::from_nominal_inf_head(ty) {
                 NominalId::Def(d) => d,
                 NominalId::Block(_) => return Ok(None),
             };
-            Ok(Some(self.db.parser_returns(id)?.deref))
+            Ok(Some(EitherType::Regular(self.db.parser_returns(id)?.deref)))
         }
     }
 
@@ -159,7 +159,7 @@ impl<'a> TypeResolver<'a> for ReturnResolver<'a> {
             if i > 0 {
                 ret.push_str(", ");
             }
-            ret.push_str(&dbformat!(self.db, "{}, ", id));
+            ret.push_str(&dbformat!(self.db, "{}", id));
         }
         ret.push(')');
         ret

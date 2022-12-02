@@ -428,7 +428,12 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                         }))
                         .collect(),
                     HirNode::ParserDef(ParserDef {
-                        id, from, to, args, ..
+                        id,
+                        from,
+                        to,
+                        args,
+                        ret_ty,
+                        ..
                     }) => {
                         let mut v = vec![
                             (id.0, from.0, "from".to_string(), dot::Style::Bold),
@@ -438,6 +443,9 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                             v.extend(args.iter().enumerate().map(|(i, p)| {
                                 (id.0, p.0, format!("args[{}]", i), dot::Style::Bold)
                             }));
+                        }
+                        if let Some(ret_ty) = ret_ty {
+                            v.push((id.0, ret_ty.0, "ret_ty".to_string(), dot::Style::Bold));
                         }
                         v
                     }

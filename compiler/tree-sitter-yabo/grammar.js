@@ -58,6 +58,12 @@ module.exports = grammar({
         field('name', $.identifier),
         optional(field('argdefs', $.arg_def_list)),
       )),
+      optional(
+        seq(
+          ':',
+          field('ret_ty', $._type_expression),
+        )
+      ),
       '=',
       field('to', $._expression),
     ),

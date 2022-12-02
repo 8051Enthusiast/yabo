@@ -50,14 +50,22 @@ pub fn parser_full_types(
 pub fn parser_type_at(db: &dyn TyHirs, id: DefId) -> SResult<TypeId> {
     let parent_pd = db.hir_parent_parserdef(id)?;
     let types = db.parser_full_types(parent_pd).silence()?;
-    let res = types.types.get(&id).copied().ok_or_else(|| SilencedError::new());
+    let res = types
+        .types
+        .get(&id)
+        .copied()
+        .ok_or_else(|| SilencedError::new());
     res
 }
 
 pub fn parser_expr_at(db: &dyn TyHirs, id: hir::ExprId) -> SResult<TypedExpression> {
     let parent_pd = db.hir_parent_parserdef(id.0)?;
     let types = db.parser_full_types(parent_pd).silence()?;
-    types.exprs.get(&id).cloned().ok_or_else(|| SilencedError::new())
+    types
+        .exprs
+        .get(&id)
+        .cloned()
+        .ok_or_else(|| SilencedError::new())
 }
 
 impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
@@ -157,12 +165,15 @@ impl<'a, 'intern> TypeResolver<'intern> for FullResolver<'a, 'intern> {
         }
     }
 
-    fn deref(&self, ty: &NominalInfHead<'intern>) -> Result<Option<TypeId>, TypeError> {
+    fn deref(
+        &self,
+        ty: &NominalInfHead<'intern>,
+    ) -> Result<Option<EitherType<'intern>>, TypeError> {
         let id = match NominalId::from_nominal_inf_head(ty) {
             NominalId::Def(d) => d,
             NominalId::Block(_) => return Ok(None),
         };
-        Ok(Some(self.db.parser_returns(id)?.deref))
+        Ok(Some(EitherType::Regular(self.db.parser_returns(id)?.deref)))
     }
 
     fn signature(&self, ty: &NominalInfHead<'intern>) -> Result<Signature, TypeError> {

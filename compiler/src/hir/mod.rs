@@ -549,6 +549,7 @@ pub struct ParserDef {
     pub from: TExprId,
     pub args: Option<Vec<ArgDefId>>,
     pub to: ExprId,
+    pub ret_ty: Option<TExprId>,
 }
 
 impl ParserDef {
@@ -556,6 +557,9 @@ impl ParserDef {
         let mut child = vec![self.from.0, self.to.0];
         if let Some(args) = &self.args {
             child.extend(args.iter().map(|x| x.0));
+        }
+        if let Some(ret_ty) = self.ret_ty {
+            child.push(ret_ty.0);
         }
         child
     }

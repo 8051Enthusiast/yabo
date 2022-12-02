@@ -1246,6 +1246,52 @@
           }
         ]
       },
+      "ret_ty": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "(",
+            "named": false
+          },
+          {
+            "type": ")",
+            "named": false
+          },
+          {
+            "type": "binary_type_expression",
+            "named": true
+          },
+          {
+            "type": "parserdef_ref",
+            "named": true
+          },
+          {
+            "type": "primitive_type",
+            "named": true
+          },
+          {
+            "type": "type_array",
+            "named": true
+          },
+          {
+            "type": "type_constraint",
+            "named": true
+          },
+          {
+            "type": "type_fun_application",
+            "named": true
+          },
+          {
+            "type": "type_var",
+            "named": true
+          },
+          {
+            "type": "unary_type_expression",
+            "named": true
+          }
+        ]
+      },
       "to": {
         "multiple": true,
         "required": true,
