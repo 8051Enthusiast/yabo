@@ -181,6 +181,13 @@ fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDef
         });
         type_expression(&expr, ctx, from);
     }
+    let ret_ty = if let Some(f) = &ast.ret_ty {
+        let ret_ty = TExprId(id.child(ctx.db, PathComponent::Unnamed(2)));
+        type_expression(f, ctx, ret_ty);
+        Some(ret_ty)
+    } else {
+        None
+    };
     val_expression(&ast.to, ctx, to, None);
     let qualifier = match ast.qualifier {
         Some(ast::Qualifier::Export) => Qualifier::Export,
@@ -212,6 +219,7 @@ fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDef
         from,
         args,
         to,
+        ret_ty,
     };
     ctx.insert(
         id.0,

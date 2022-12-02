@@ -267,6 +267,7 @@ pub struct ParserDefinition {
     pub from: Option<TypeExpression>,
     pub argdefs: Option<ArgDefList>,
     pub to: ValExpression,
+    pub ret_ty: Option<TypeExpression>,
     pub span: Span,
 }
 

@@ -170,12 +170,15 @@ impl<'a, 'intern> TypeResolver<'intern> for PublicResolver<'a, 'intern> {
         Ok(self.db.intern_type(Type::Unknown).into())
     }
 
-    fn deref(&self, ty: &NominalInfHead<'intern>) -> Result<Option<TypeId>, TypeError> {
+    fn deref(
+        &self,
+        ty: &NominalInfHead<'intern>,
+    ) -> Result<Option<EitherType<'intern>>, TypeError> {
         let id = match NominalId::from_nominal_inf_head(ty) {
             NominalId::Def(d) => d,
             NominalId::Block(_) => return Ok(None),
         };
-        Ok(Some(self.db.parser_returns(id)?.deref))
+        Ok(Some(EitherType::Regular(self.db.parser_returns(id)?.deref)))
     }
 
     fn signature(&self, ty: &NominalInfHead<'intern>) -> Result<Signature, TypeError> {

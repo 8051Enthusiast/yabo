@@ -431,11 +431,18 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         self.infctx.var()
                     }
                 }
-                hir::HirNode::Parse(_)
-                | hir::HirNode::ChoiceIndirection(_)
-                | hir::HirNode::ParserDef(_) => {
+                hir::HirNode::Parse(_) | hir::HirNode::ChoiceIndirection(_) => {
                     self.set_current_loc(id);
                     self.infctx.var()
+                }
+                hir::HirNode::ParserDef(pd) => {
+                    self.set_current_loc(id);
+                    if let Some(texpr) = pd.ret_ty {
+                        let texpr = texpr.lookup(self.db)?;
+                        self.resolve_type_expr(&texpr.expr, texpr.id)?
+                    } else {
+                        self.infctx.var()
+                    }
                 }
                 hir::HirNode::Block(block) => {
                     if block.returns {

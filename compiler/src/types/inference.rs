@@ -1,6 +1,7 @@
-use std::ops::Deref;
+use std::{convert::Infallible, ops::Deref};
 
 use bumpalo::Bump;
+use fxhash::FxHashMap;
 
 use crate::low_effort_interner::{self, Uniq};
 
@@ -355,7 +356,8 @@ pub trait TypeResolver<'intern> {
         ty: &NominalInfHead<'intern>,
         name: FieldName,
     ) -> Result<EitherType<'intern>, TypeError>;
-    fn deref(&self, ty: &NominalInfHead<'intern>) -> Result<Option<TypeId>, TypeError>;
+    fn deref(&self, ty: &NominalInfHead<'intern>)
+        -> Result<Option<EitherType<'intern>>, TypeError>;
     fn signature(&self, ty: &NominalInfHead<'intern>) -> Result<Signature, TypeError>;
     fn lookup(&self, val: DefId) -> Result<EitherType<'intern>, TypeError>;
     fn parserdef(&self, pd: DefId) -> Result<EitherType<'intern>, TypeError>;
@@ -403,22 +405,36 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         &mut self,
         ty: &NominalInfHead<'intern>,
     ) -> Result<Option<InfTypeId<'intern>>, TypeError> {
-        let ret = self
-            .tr
-            .deref(ty)?
-            .map(|x| self.from_type_with_args(x, &ty.ty_args));
-        if self.trace {
-            if let Some(x) = ret {
+        if let Some(deref_ty) = self.tr.deref(ty)? {
+            let ret = match deref_ty {
+                EitherType::Regular(deref_ty) => self.from_type_with_args(deref_ty, &ty.ty_args),
+                // if we return an inference type, inference variables as return types from recursive calls
+                // would cause weird higher-ranked inference which i don't want to deal with so the variables
+                // are replaced with unknowns
+                EitherType::Inference(deref_ty) => {
+                    let unknown = self.unknown();
+                    let mut replacements = FxHashMap::default();
+                    // also replace the type variables with the ones in the infhead
+                    for (i, replacement) in ty.ty_args.iter().enumerate() {
+                        let ty_var = self.type_var(ty.def, i as u32);
+                        replacements.insert(ty_var, *replacement);
+                    }
+                    self.replace_infvars_with(deref_ty, &mut replacements, unknown)
+                }
+            };
+            if self.trace {
                 dbeprintln!(
                     self.tr.db(),
                     "[{}] deref {}: {}",
                     &self.tr.name(),
                     &ty.def,
-                    &x
+                    &ret
                 );
             }
+            Ok(Some(ret))
+        } else {
+            Ok(None)
         }
-        Ok(ret)
     }
     pub fn signature(&self, ty: &NominalInfHead<'intern>) -> Result<Signature, TypeError> {
         self.tr.signature(ty)
@@ -639,6 +655,10 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
             arg: for_loop,
         })
     }
+    pub fn type_var(&mut self, id: DefId, index: u32) -> InfTypeId<'intern> {
+        let inftype = InferenceType::TypeVarRef(id, 0, index);
+        self.intern_infty(inftype)
+    }
     pub fn parser(
         &mut self,
         result: InfTypeId<'intern>,
@@ -741,6 +761,26 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         let infer_access = self.intern_infty(InferenceType::InferField(name, var));
         self.constrain(accessed, infer_access)?;
         Ok(var)
+    }
+    pub fn replace_infvars_with(
+        &mut self,
+        ty: InfTypeId<'intern>,
+        replace_map: &mut FxHashMap<InfTypeId<'intern>, InfTypeId<'intern>>,
+        infvar_replace: InfTypeId<'intern>,
+    ) -> InfTypeId<'intern> {
+        if let Some(&cached) = replace_map.get(&ty) {
+            return cached;
+        }
+        let res = if let InferenceType::Var(_) = ty.0 .1 {
+            infvar_replace
+        } else {
+            ty.try_map_children(self, |this, child, _| -> Result<_, Infallible> {
+                Ok(this.replace_infvars_with(child, replace_map, infvar_replace))
+            })
+            .unwrap()
+        };
+        replace_map.insert(ty, res);
+        res
     }
     pub fn from_type(&mut self, ty: TypeId) -> InfTypeId<'intern> {
         let ty = self.tr.db().lookup_intern_type(ty);

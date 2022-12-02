@@ -439,6 +439,7 @@ astify! {
         argdefs: arg_def_list[?],
         from: expression(type_expression)[?],
         to: expression(val_expression)[!],
+        ret_ty: expression(type_expression)[?],
     };
 }
 
