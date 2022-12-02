@@ -384,10 +384,12 @@ impl<'a> Uniq<InternerLayout<'a>> {
             let ty = layout.mono_layout().1;
             let ldt = ctx.db.least_deref_type(ty)?;
             let casted_layout = layout.0.typecast(ctx, ldt)?.0;
-            Ok(casted_layout.map(ctx, |layout, _| match layout.mono_layout().0 {
-                MonoLayout::Block(_, fields) => fields[&field],
-                _ => panic!("Field access on non-block {:?}", layout),
-            }))
+            Ok(
+                casted_layout.map(ctx, |layout, _| match layout.mono_layout().0 {
+                    MonoLayout::Block(_, fields) => fields[&field],
+                    _ => panic!("Field access on non-block {:?}", layout),
+                }),
+            )
         })
     }
 
@@ -770,7 +772,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ResolvedAtom::Char(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Char)),
                 ResolvedAtom::Number(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Int)),
                 ResolvedAtom::Bool(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Bit)),
-                ResolvedAtom::Val(id) => ctx.var_by_id(id),
+                ResolvedAtom::Val(id) => ctx.var_by_id(id)?,
                 ResolvedAtom::Single => make_layout(MonoLayout::Single),
                 ResolvedAtom::Nil => make_layout(MonoLayout::Nil),
                 ResolvedAtom::ParserDef(pd) => {
@@ -783,8 +785,11 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                         let capture_value = ctx
                             .active_block()
                             .unwrap_or(ctx.active_pd())
-                            .get_captured(ctx, *capture)?
-                            .unwrap_or_else(|| ctx.var_by_id(*capture));
+                            .get_captured(ctx, *capture)?;
+                        let capture_value = match capture_value {
+                            Some(x) => x,
+                            None => ctx.var_by_id(*capture)?,
+                        };
                         captures.insert(*capture, capture_value);
                     }
                     let res = ctx.dcx.intern.intern(InternerLayout {

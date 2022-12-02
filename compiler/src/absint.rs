@@ -309,10 +309,14 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         ret
     }
 
-    pub fn var_by_id(&self, id: DefId) -> Dom {
-        match self.block_vars.get(&id) {
-            Some(v) => v.clone(),
-            None => dbpanic!(self.db, "Did not find variable {}", &id,),
+    pub fn var_by_id(&mut self, id: DefId) -> Result<Dom, Dom::Err> {
+        if self.active_block.is_some() {
+            match self.block_vars.get(&id) {
+                Some(v) => Ok(v.clone()),
+                None => dbpanic!(self.db, "Did not find variable {}", &id,),
+            }
+        } else {
+            self.current_pd.clone().get_arg(self, Arg::Named(id))
         }
     }
 
@@ -376,7 +380,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                     .try_fold(
                         None,
                         |acc: Option<Dom>, (_, choice_id)| -> Result<_, Dom::Err> {
-                            let new = self.var_by_id(*choice_id);
+                            let new = self.var_by_id(*choice_id)?;
                             let derefed = new.typecast(self, result_ty)?.0;
                             match acc {
                                 None => Ok(Some(derefed)),
@@ -392,7 +396,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
 
         if block.returns {
             let ret = block.root_context.0.child_field(self.db, FieldName::Return);
-            let ret = self.var_by_id(ret);
+            let ret = self.var_by_id(ret)?;
             return Ok(ret);
         }
 
@@ -400,8 +404,8 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         let vars = root_context
             .vars
             .iter()
-            .map(|(name, id)| (*name, self.var_by_id(*id.inner())))
-            .collect::<FxHashMap<_, _>>();
+            .map(|(name, id)| Ok((*name, self.var_by_id(*id.inner())?)))
+            .collect::<Result<FxHashMap<_, _>, Dom::Err>>()?;
         Dom::make_block(self, block_id, result_type, &vars)
     }
 
