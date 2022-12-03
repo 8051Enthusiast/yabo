@@ -6,13 +6,14 @@ use std::num::NonZeroU32;
 use fxhash::FxHashMap;
 
 use crate::{
+    ast::ConstraintAtom,
     error::{SResult, Silencable},
     expr::{ValBinOp, ValUnOp},
     hir::{BlockId, ExprId, HirIdWrapper, ParserDefId},
     interner::{DefId, FieldName},
     order::{Orders, SubValue},
     source::SpanIndex,
-    types::{Type, TypeId}, ast::ConstraintAtom,
+    types::{Type, TypeId},
 };
 
 use self::convert::ConvertCtx;
