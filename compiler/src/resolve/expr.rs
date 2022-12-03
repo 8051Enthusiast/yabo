@@ -55,7 +55,8 @@ pub fn resolve_expr_error(
                 let is_captured = parent_block
                     .map(|x| !x.0.is_ancestor_of(db, id))
                     .unwrap_or(false);
-                if is_captured {
+                let is_arg = db.hir_node(id)?.is_kind(hir::HirNodeKind::ArgDef.into());
+                if is_captured || is_arg {
                     ResolvedAtom::Captured(id)
                 } else {
                     ResolvedAtom::Val(id)
