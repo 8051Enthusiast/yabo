@@ -154,9 +154,16 @@ impl<DB: Mirs> DatabasedDisplay<(&Function, &DB)> for MirInstr {
                     retreat
                 )
             }
-            MirInstr::Field(target, inner, field, error) => {
+            MirInstr::Field(target, inner, field, error, backtrack) => {
                 dbwrite!(f, db, "{} = access_field {}.", target, inner)?;
-                dbwrite!(f, db.1, "{} {{error: {}}}", field, error)
+                dbwrite!(
+                    f,
+                    db.1,
+                    "{} {{error: {}, backtrack: {}}}",
+                    field,
+                    error,
+                    backtrack
+                )
             }
             MirInstr::AssertVal(target, sub, inner) => {
                 dbwrite!(f, db, "assert_val {}.", target)?;

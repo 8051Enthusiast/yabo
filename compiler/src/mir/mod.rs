@@ -170,7 +170,7 @@ pub enum MirInstr {
     Comp(PlaceRef, Comp, PlaceRef, PlaceRef),
     StoreVal(PlaceRef, Val),
     ParseCall(PlaceRef, CallKind, PlaceRef, PlaceRef, ExceptionRetreat),
-    Field(PlaceRef, PlaceRef, FieldName, BBRef),
+    Field(PlaceRef, PlaceRef, FieldName, BBRef, BBRef),
     AssertVal(PlaceRef, ConstraintAtom, BBRef),
     SetDiscriminant(PlaceRef, FieldName, bool),
     ApplyArgs(PlaceRef, PlaceRef, Vec<PlaceRef>, u64, BBRef),
