@@ -605,8 +605,7 @@ impl ChoiceIndirection {
 pub struct StructChoice {
     pub id: ChoiceId,
     pub parent_context: ContextId,
-    pub front: ParserPredecessor,
-    pub back: ParserPredecessor,
+    pub endpoints: Option<[ParserPredecessor; 2]>,
     pub subcontexts: Vec<ContextId>,
 }
 
