@@ -9,14 +9,18 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ariadne::{Cache, FnCache};
+use dirs::data_dir;
 use fxhash::FxHashMap;
 
 use crate::context::LivingInTheDatabase;
 use crate::databased_display::DatabasedDisplay;
+use crate::dbformat;
+use crate::error::diagnostic::{DiagnosticKind, Label};
+use crate::error::Report;
 use crate::hash::StableHash;
-use crate::interner::{DefId, FieldName, Identifier, Interner};
+use crate::interner::{DefId, FieldName, Identifier, IdentifierName, Interner};
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Span {
     pub lo: u32,
     pub hi: u32,
@@ -163,6 +167,7 @@ impl<'collection> FileResolver<'collection> {
             relative_mods: FxHashMap::default(),
         }
     }
+
     fn file_path(&self, dir: &Path, name: &str) -> Option<PathBuf> {
         let mut path = dir.to_path_buf();
         let name_with_suffix = format!("{}.yb", name);
@@ -175,6 +180,7 @@ impl<'collection> FileResolver<'collection> {
         path.push("mod.yb");
         path.exists().then(|| path)
     }
+
     fn add_file(
         &mut self,
         db: &mut (impl Interner + Files + ?Sized),
@@ -200,6 +206,7 @@ impl<'collection> FileResolver<'collection> {
         }
         id
     }
+
     pub fn resolve(
         &mut self,
         db: &mut (impl Interner + Files + ?Sized),
@@ -232,6 +239,45 @@ impl<'collection> FileResolver<'collection> {
         self.relative_mods
             .insert((path_dir, name), new_file_path.as_ref().ok().cloned());
         new_file_path
+    }
+
+    pub fn add_std(
+        &mut self,
+        db: &mut (impl Interner + Files + ?Sized),
+    ) -> Result<bool, FileLoadError> {
+        let std_ident = db.intern_identifier(IdentifierName::new("std".into()));
+        if self.absolute_mods.contains_key(&std_ident) {
+            return Ok(true);
+        }
+        let std_env_path = std::env::var_os("YABO_STD_PATH");
+        let std_dir = if let Some(std_env_path) = std_env_path {
+            PathBuf::from(std_env_path)
+        } else {
+            let Some(mut yabo_dir) = data_dir() else {
+                return Ok(false);
+            };
+            yabo_dir.push("yabo");
+            yabo_dir
+        };
+        let Some(std_dir) = self.file_path(&std_dir, "std") else {
+            return Ok(false);
+        };
+        // note that we can not really give a good span here, as the std is not really loaded by any one file
+        let file = self.add_file(db, std_dir, FileId::default(), Span::default(), std_ident)?;
+        self.absolute_mods.insert(std_ident, file);
+        Ok(true)
+    }
+
+    pub fn add_absolute_mod_path(
+        &mut self,
+        db: &mut (impl Interner + Files + ?Sized),
+        path: PathBuf,
+        name: &str,
+    ) -> Result<(), FileLoadError> {
+        let name = db.intern_identifier(IdentifierName::new(name.into()));
+        let file = self.add_file(db, path, FileId::default(), Span::default(), name)?;
+        self.absolute_mods.insert(name, file);
+        Ok(())
     }
 }
 
@@ -412,4 +458,34 @@ pub enum FileLoadError {
         name: Identifier,
     },
     Silenced,
+}
+
+impl FileLoadError {
+    pub fn into_report(self, db: &(impl ?Sized + Files + Interner)) -> Option<Report> {
+        match self {
+            FileLoadError::LoadError {
+                source,
+                name,
+                error,
+            } => Some(
+                Report::new(
+                    DiagnosticKind::Error,
+                    source.0,
+                    &dbformat!(db, "Could not load {}: {}", &name, &error),
+                )
+                .with_code(150)
+                .with_label(Label::new(source.1).with_message("imported here")),
+            ),
+            FileLoadError::DoesNotExist { source, name } => Some(
+                Report::new(
+                    DiagnosticKind::Error,
+                    source.0,
+                    &dbformat!(db, "Could not find {}", &name),
+                )
+                .with_code(151)
+                .with_label(Label::new(source.1).with_message("imported here")),
+            ),
+            FileLoadError::Silenced => None,
+        }
+    }
 }

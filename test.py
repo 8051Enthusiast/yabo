@@ -76,6 +76,7 @@ class ErrorLocation:
 
 
 current_script_dir = os.path.dirname(os.path.realpath(__file__))
+std_path = os.path.join(current_script_dir, 'std', 'mod.yb')
 
 
 def build_compiler_binary():
@@ -121,7 +122,9 @@ class CompiledSource:
             with open(sourcepath, 'w', encoding='utf-8') as sourcefile:
                 sourcefile.write(source)
             with subprocess.Popen(
-                [compiler_path, "--output-json", sourcepath, self.compiled],
+                [compiler_path, "--output-json",
+                 "--module", f"std={std_path}",
+                 sourcepath, self.compiled],
                 stderr=subprocess.PIPE
             ) as compiler:
                 self.stderr = compiler.communicate()[1].decode('utf-8')

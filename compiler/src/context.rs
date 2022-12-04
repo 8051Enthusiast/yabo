@@ -1,4 +1,5 @@
 use std::ffi::OsStr;
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
 
@@ -11,21 +12,18 @@ use crate::absint::AbsIntDatabase;
 use crate::ast::{AstDatabase, Asts};
 use crate::cg_llvm::{self, CodeGenCtx};
 use crate::config::{Config, ConfigDatabase, Configs};
-use crate::error::diagnostic::{DiagnosticKind, Label};
 use crate::error::{Report, SilencedError};
 use crate::hir::represent::HirGraph;
 use crate::hir::{HirDatabase, Hirs};
 use crate::hir_types::{HirTypesDatabase, TyHirs};
 use crate::interner::{Identifier, IdentifierName, Interner, InternerDatabase};
 use crate::layout::{self, instantiate, InternerLayout, LayoutContext, LayoutDatabase};
+use crate::low_effort_interner;
 use crate::mir::{print_all_mir, MirDatabase};
 use crate::order::OrdersDatabase;
 use crate::resolve::ResolveDatabase;
-use crate::source::{
-    AriadneCache, FileCollection, FileDatabase, FileId, FileLoadError, FileResolver, Files,
-};
+use crate::source::{AriadneCache, FileCollection, FileDatabase, FileId, FileResolver, Files};
 use crate::types::TypeInternerDatabase;
-use crate::{dbformat, low_effort_interner};
 
 #[salsa::database(
     InternerDatabase,
@@ -63,19 +61,29 @@ const ERROR_FNS: &[fn(&LivingInTheDatabase) -> Vec<Report>] = &[
 ];
 
 impl Context {
-    pub fn update_db(&mut self, roots: &[FileId]) {
+    pub fn update_db(&mut self, roots: &[FileId], absolute_mod_paths: &[(&str, &str)]) {
         for root in roots {
             self.db
                 .set_input_file(*root, Arc::new(self.fc.file_data(*root).clone()));
         }
-        self.collect_files(roots)
+        self.collect_files(roots, absolute_mod_paths)
     }
 
-    fn collect_files(&mut self, roots: &[FileId]) {
+    fn collect_files(&mut self, roots: &[FileId], absolute_mod_paths: &[(&str, &str)]) {
         let mut errors = Vec::new();
         let mut existing_files = FxHashSet::default();
         let mut new_files = Vec::from(roots);
         let mut resolver = FileResolver::new(&mut self.fc);
+        for (modname, path) in absolute_mod_paths {
+            if let Err(e) =
+                resolver.add_absolute_mod_path(&mut self.db, PathBuf::from(path), &modname)
+            {
+                errors.extend(e.into_report(&self.db))
+            }
+        }
+        if let Err(e) = resolver.add_std(&mut self.db) {
+            errors.extend(e.into_report(&self.db))
+        }
         while let Some(f) = new_files.pop() {
             if !existing_files.insert(f) {
                 continue;
@@ -88,36 +96,7 @@ impl Context {
                     match resolver.resolve(&mut self.db, f, import.inner, import.span) {
                         Ok(imported_file) => imported_file,
                         Err(e) => {
-                            match e {
-                                FileLoadError::LoadError {
-                                    source,
-                                    name,
-                                    error,
-                                } => errors.push(
-                                    Report::new(
-                                        DiagnosticKind::Error,
-                                        source.0,
-                                        &dbformat!(
-                                            &self.db,
-                                            "Could not load {}: {}",
-                                            &name,
-                                            &error
-                                        ),
-                                    )
-                                    .with_code(150)
-                                    .with_label(Label::new(source.1).with_message("imported here")),
-                                ),
-                                FileLoadError::DoesNotExist { source, name } => errors.push(
-                                    Report::new(
-                                        DiagnosticKind::Error,
-                                        source.0,
-                                        &dbformat!(&self.db, "Could not find {}", &name),
-                                    )
-                                    .with_code(151)
-                                    .with_label(Label::new(source.1).with_message("imported here")),
-                                ),
-                                FileLoadError::Silenced => (),
-                            };
+                            errors.extend(e.into_report(&self.db));
                             self.db
                                 .set_import_id(f, import.inner, Err(SilencedError::new()));
                             continue;
@@ -144,7 +123,7 @@ impl Context {
     pub fn mock(s: &str) -> Self {
         let mut ctx = Self::default();
         let anon = ctx.fc.add_anon(s);
-        ctx.update_db(&[anon]);
+        ctx.update_db(&[anon], &[]);
         ctx
     }
     pub fn parser(&self, s: &str) -> crate::hir::ParserDefId {

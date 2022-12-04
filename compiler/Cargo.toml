@@ -25,6 +25,7 @@ clap = { version = "4.0.27", features = ["default", "derive"] }
 tempfile = "3.3.0"
 serde_json = "1.0.89"
 serde = { version = "1.0.147", features = ["derive"] }
+dirs = "4.0.0"
 
 [build-dependencies]
 cc = "1.0.77"
