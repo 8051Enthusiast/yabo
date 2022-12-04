@@ -67,8 +67,8 @@ impl<'a> FunctionSubstitute<'a> {
             expr: expr_map,
             vals,
         };
-        let stack_layouts = sub_info.stack_layouts(&f);
-        let place_layouts = sub_info.place_layouts(&f, &stack_layouts, ctx)?;
+        let mut stack_layouts = sub_info.stack_layouts(&f);
+        let place_layouts = sub_info.place_layouts(&f, &mut stack_layouts, ctx)?;
         Ok(FunctionSubstitute {
             f,
             stack_layouts,
@@ -127,8 +127,8 @@ impl<'a> FunctionSubstitute<'a> {
             expr: expr_map,
             vals,
         };
-        let stack_layouts = sub_info.stack_layouts(&f);
-        let place_layouts = sub_info.place_layouts(&f, &stack_layouts, ctx)?;
+        let mut stack_layouts = sub_info.stack_layouts(&f);
+        let place_layouts = sub_info.place_layouts(&f, &mut stack_layouts, ctx)?;
         Ok(FunctionSubstitute {
             f,
             stack_layouts,
@@ -150,8 +150,8 @@ impl<'a> FunctionSubstitute<'a> {
             expr: Default::default(),
             vals: Default::default(),
         };
-        let stack_layouts = sub_info.stack_layouts(&f);
-        let place_layouts = sub_info.place_layouts(&f, &stack_layouts, ctx)?;
+        let mut stack_layouts = sub_info.stack_layouts(&f);
+        let place_layouts = sub_info.place_layouts(&f, &mut stack_layouts, ctx)?;
         Ok(FunctionSubstitute {
             f,
             stack_layouts,
@@ -190,7 +190,7 @@ impl<'a> SubInfo<ILayout<'a>> {
     fn place_layouts(
         &self,
         f: &Function,
-        stack_layouts: &[ILayout<'a>],
+        stack_layouts: &mut [ILayout<'a>],
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Vec<ILayout<'a>>, LayoutError> {
         let mut place_layouts: Vec<ILayout<'a>> = Vec::new();
@@ -216,6 +216,12 @@ impl<'a> SubInfo<ILayout<'a>> {
                 Place::From(place) => place_layouts[place.as_index()].access_from(ctx),
             };
             let cast_layout = layout.typecast(ctx, place_info.ty)?.0;
+            // we need to make sure that the stack layouts are casted to the right type, but
+            // we didn't have that information when we created the stack layouts, so we cast
+            // it if we encounter a stack place here
+            if let Place::Stack(idx) = place_info.place {
+                stack_layouts[idx.as_index()] = cast_layout;
+            }
             place_layouts.push(cast_layout);
         }
         Ok(place_layouts)
