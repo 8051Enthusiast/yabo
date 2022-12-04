@@ -418,6 +418,7 @@ impl<'a> ConvertCtx<'a> {
                             block_ref,
                             *field,
                             self.retreat.error,
+                            self.retreat.backtrack,
                         ));
                         place_ref
                     }

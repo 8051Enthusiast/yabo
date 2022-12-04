@@ -313,7 +313,14 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         self.cg.builder.position_at_end(next_block);
     }
 
-    fn field(&mut self, ret: PlaceRef, place: PlaceRef, field: FieldName, error: BBRef) {
+    fn field(
+        &mut self,
+        ret: PlaceRef,
+        place: PlaceRef,
+        field: FieldName,
+        error: BBRef,
+        backtrack: BBRef,
+    ) {
         let place_ptr = self.place_ptr(place);
         let layout = self.mir_fun.place(place);
         let shifted_place_ptr = self.cg.build_mono_ptr(place_ptr, layout);
@@ -343,7 +350,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         self.fallible_call(
             fun,
             &[shifted_place_ptr.into(), target_head.into(), ret.into()],
-            [self.undefined, self.undefined, self.bb(error)],
+            [self.bb(backtrack), self.undefined, self.bb(error)],
         )
     }
 
@@ -557,7 +564,9 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::ParseCall(ret, call_kind, fun, arg, retreat) => {
                 self.parse_call(ret, call_kind, fun, arg, retreat)
             }
-            MirInstr::Field(ret, place, field, error) => self.field(ret, place, field, error),
+            MirInstr::Field(ret, place, field, error, backtrack) => {
+                self.field(ret, place, field, error, backtrack)
+            }
             MirInstr::AssertVal(place, val, fallback) => self.assert_value(place, val, fallback),
             MirInstr::SetDiscriminant(block, field, val) => {
                 self.set_discriminant(block, field, val)
