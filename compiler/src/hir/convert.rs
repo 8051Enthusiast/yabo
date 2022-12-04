@@ -107,10 +107,14 @@ fn convert_type_expression(
                         .iter()
                         .map(|x| convert_type_expression(x, add_span))
                         .collect();
-                    let name = IndexSpanned {
-                        span: add_span(&pd.name.span),
-                        atom: pd.name.inner,
-                    };
+                    let name = pd
+                        .name
+                        .iter()
+                        .map(|name| IndexSpanned {
+                            span: add_span(&name.span),
+                            atom: name.inner,
+                        })
+                        .collect();
                     TypeAtom::ParserDef(Box::new(ParserDefRef { from, name, args }))
                 }
                 ast::TypeAtom::Array(arr) => {

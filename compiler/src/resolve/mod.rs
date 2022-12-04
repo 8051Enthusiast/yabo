@@ -35,7 +35,7 @@ pub trait Resolves: crate::hir::Hirs {
     fn resolve_expr_error(&self, expr_id: hir::ExprId) -> Result<Arc<ResolvedExpr>, ResolveError>;
     fn resolve_expr(&self, expr_id: hir::ExprId) -> SResult<Arc<ResolvedExpr>>;
     fn captures(&self, id: hir::BlockId) -> Arc<BTreeSet<DefId>>;
-    fn parserdef_ref(&self, loc: DefId, name: Identifier) -> SResult<Option<hir::ParserDefId>>;
+    fn parserdef_ref(&self, loc: DefId, name: Vec<Identifier>) -> SResult<Option<hir::ParserDefId>>;
     fn cyclic_import(&self) -> Option<Arc<Vec<ResolveError>>>;
 }
 
