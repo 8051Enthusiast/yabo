@@ -1,0 +1,53 @@
+====[ source code ]====
+import std
+
+def *priority = {
+  x: ~
+  | let return = x if 0x61..0x7a - 0x60
+  | let return = x if 0x41..0x5a - 0x40 + 26
+}
+
+def *bitset(xs: std.list[*priority], n: int, bits: int): int = {
+  | let _ = n if 0
+    let return = bits
+  | let new_bits = 1 << xs.this | bits
+    return: bitset(xs.next, n - 1, new_bits)
+}
+
+def *is_nonzero(n: int) = {
+  | let return = n if 0
+  | let return = 1
+}
+
+def *bit_index(n: int) = {
+  let n5 = (n | n >> 32) & 0xffffffff
+  let n4 = (n5 | n5 >> 16) & 0xffff
+  let n3 = (n4 | n4 >> 8) & 0xff
+  let n2 = (n3 | n3 >> 4) & 0xf
+  let n1 = (n2 | n2 >> 2) & 0x3
+  bit5: is_nonzero(n & 0x7fffffff00000000)
+  bit4: is_nonzero(n & 0xffff0000)
+  bit3: is_nonzero(n4 & 0xff00)
+  bit2: is_nonzero(n3 & 0xf0)
+  bit1: is_nonzero(n2 & 0xc)
+  bit0: is_nonzero(n1 & 0x2)
+  let return = bit5 << 5 | bit4 << 4 | bit3 << 3 | bit2 << 2 | bit1 << 1 | bit0
+}
+
+export def *test = {
+  line: std.list(priority)
+  line_len: std.len(line)
+  second_half: std.skip(line, line_len / 2)
+  first_set: bitset(line, line_len / 2, 0)
+  second_set: bitset(second_half, line_len / 2, 0)
+  let intersection = first_set & second_set
+  return: bit_index(intersection)
+}
+====[ binary 1 ]====
+506d6d647a715072567650777754574277670a
+====[ output 1 ]====
+42
+====[ binary 2 ]====
+7474674a7452474a516374545a745a540a
+====[ output 2 ]====
+20
