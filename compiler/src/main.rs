@@ -40,6 +40,8 @@ struct Args {
     output_json: bool,
     #[clap(short, long, value_enum, default_value = "shared-lib")]
     emit: EmitKind,
+    #[clap(short, long)]
+    module: Vec<String>,
     infile: String,
     outfile: OsString,
 }
@@ -47,6 +49,20 @@ struct Args {
 fn main() {
     let args = Args::parse();
     let infile = &args.infile;
+    let modules: Vec<_> = args
+        .module
+        .iter()
+        .map(|x| {
+            let a = x.splitn(2, '=').collect::<Vec<_>>();
+            match a.as_slice() {
+                [a, b] => (*a, *b),
+                [a] => {
+                    exit_with_message(&format!("Missing '=' in module specifier {}", a));
+                }
+                _ => unreachable!(),
+            }
+        })
+        .collect();
     let mut context = Context::default();
     context.set_config(Config {
         target_triple: String::from("x86_64-pc-linux-gnu"),
@@ -56,7 +72,7 @@ fn main() {
         output_json: args.output_json,
     });
     let main = context.fc.add(&infile).expect("Could not read file");
-    context.update_db(&[main]);
+    context.update_db(&[main], &modules);
     if context.print_diagnostics() {
         if !args.output_json {
             exit_with_message("Errors occured during compilation");

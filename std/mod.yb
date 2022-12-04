@@ -1,0 +1,172 @@
+# Backtracks if the argument is false.
+def for['t] *> assert(big: bit) = {
+  let _ = big if true
+}
+
+# Parses a single byte in the given base.
+# The base must be between 2 and 36.
+# For 0 <= i < 10, the digit is the corresponding ASCII digit.
+# For 10 <= i < 36, the digit is the corresponding ASCII letter from A to Z.
+# The result is the value of the digit.
+def for[int] *> digit(base: int) = {
+  x: ~
+  | let value = x if 0x30..0x39 - 0x30
+  | let value = x if 0x41..0x5a - 0x41 + 10
+  | let value = x if 0x61..0x7a - 0x61 + 10
+  assert(base > value)
+  let return = value
+}
+
+def for[int] *> number_acc(base: int, n: int): int = {
+  x: digit(base)
+  let s = n * base + x
+  | return: number_acc(base, s)
+  | let return = s
+}
+
+# Parses a number in the given base.
+def for[int] *> basenum(base: int) = number_acc(base, 0)
+
+# Returns the maxiumum of a and b.
+def *max(a: int, b: int) = {
+  | assert(a > b)
+    let return = a
+  | let return = b
+}
+
+def for['t] *> summap_acc(f: for['t] *> int, acc: int): int = {
+  x: f
+  | return: summap_acc(f, x + acc)
+  | let return = x + acc
+}
+
+# With f being a parser returning an int, returns the sum of all the ints
+# until the parser fails.
+def for['t] *> summap(f: for['t] *> int) = summap_acc(f, 0)
+
+# Returns a cons-list of the given parser contingent in memory.
+def *list(element: *'r) = {
+  | this: element
+    next: list(element)
+  | +
+}
+
+# Returns the length of a given list.
+def *len(xs: list) = {
+  | inner_len: len(xs.next)
+    let return = inner_len + 1
+  | let return = 0
+}
+
+# Skips the first n elements of a list xs.
+def *skip(xs: list, n: int): list = {
+  | let _ = n if 0
+    let return = xs
+  | return: skip(xs.next, n - 1)
+}
+
+# Parses an 8-bit little endian unsigned integer.
+def for[int] *> u8l = ~
+
+# Parses an 8-bit big endian unsigned integer.
+def for[int] *> u8b = ~
+
+# Parses an 8-bit little endian signed integer.
+def for[int] *> i8l = {
+  x: ~
+  | let return = x if 0x00..0x7f
+  | let return = x - 0x100
+}
+
+# Parses an 8-bit big endian signed integer.
+def for[int] *> i8b = {
+  x: ~
+  | let return = x if 0x00..0x7f
+  | let return = x - 0x100
+}
+
+# Parses a 16-bit little endian unsigned integer.
+def for[int] *> u16l = {
+  lo: ~
+  hi: ~
+  let return = lo | hi << 8
+}
+
+# Parses a 16-bit big endian unsigned integer.
+def for[int] *> u16b = {
+  hi: ~
+  lo: ~
+  let return = lo | hi << 8
+}
+
+# Parses a 16-bit little endian signed integer.
+def for[int] *> i16l = {
+  lo: ~
+  hi: i8l
+  let return = lo | hi << 8
+}
+
+# Parses a 16-bit big endian signed integer.
+def for[int] *> i16b = {
+  hi: i8b
+  lo: ~
+  let return = lo | hi << 8
+}
+
+# Parses a 32-bit little endian unsigned integer.
+def for[int] *> u32l = {
+  lo: u16l
+  hi: u16l
+  let return = lo | hi << 16
+}
+
+# Parses a 32-bit big endian unsigned integer.
+def for[int] *> u32b = {
+  hi: u16b
+  lo: u16b
+  let return = lo | hi << 16
+}
+
+# Parses a 32-bit little endian signed integer.
+def for[int] *> i32l = {
+  lo: u16l
+  hi: i16l
+  let return = lo | hi << 16
+}
+
+# Parses a 32-bit big endian signed integer.
+def for[int] *> i32b = {
+  hi: i16b
+  lo: u16b
+  let return = lo | hi << 16
+}
+
+# Parses a 64-bit little endian signed integer.
+def for[int] *> i64l = {
+  lo: u32l
+  hi: i32l
+  let return = lo | hi << 32
+}
+
+# Parses a 64-bit big endian signed integer.
+def for[int] *> i64b = {
+  hi: i32b
+  lo: u32b
+  let return = lo | hi << 32
+}
+
+# Parses a newline
+def for[int] *> newline = {
+  x: ~
+  | let return = x if 0x0a
+  | let return = x if 0x0d
+  | | y: ~
+      let _ = y if 0x0a
+    | +
+}
+
+# Parses a specific byte or fails
+def for[int] *> byteval(x: int) = {
+  y: ~
+  assert(x == y)
+}
