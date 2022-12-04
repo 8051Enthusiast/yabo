@@ -311,7 +311,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                                 self.infctx.constrain(right, int)?;
                                 int
                             }
-                            LesserEq | Lesser | GreaterEq | Greater => {
+                            LesserEq | Lesser | GreaterEq | Greater | Uneq | Equals => {
                                 let bit = self.infctx.bit();
                                 let int = self.infctx.int();
                                 self.infctx.constrain(left, int)?;
@@ -321,7 +321,6 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                             Else => self.infctx.one_of(&[left, right])?,
                             Compose => self.infctx.parser_compose(left, right)?,
                             ParserApply => self.infctx.parser_apply(right, left)?,
-                            Uneq | Equals => todo!(),
                         },
                         op.data,
                     ),
