@@ -16,10 +16,17 @@ pub enum VarType {
 pub fn parserdef_ref(
     db: &(impl Resolves + ?Sized),
     loc: DefId,
-    name: Identifier,
+    name: Vec<Identifier>,
 ) -> SResult<Option<hir::ParserDefId>> {
-    let parent_module = db.hir_parent_module(loc)?;
-    Ok(parent_module.lookup(db)?.defs.get(&name).copied())
+    let mut current_module = db.hir_parent_module(loc)?;
+    for modname in name[..name.len() - 1].iter() {
+        let Some(import) = current_module.lookup(db)?.imports.get(modname).copied() else {
+            return Ok(None);
+        };
+        current_module = import.lookup(db)?.mod_ref;
+    }
+    let final_name = name.last().unwrap();
+    Ok(current_module.lookup(db)?.defs.get(final_name).copied())
 }
 
 pub enum Resolved {

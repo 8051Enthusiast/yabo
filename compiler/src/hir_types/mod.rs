@@ -236,9 +236,12 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
             .collect::<Result<Vec<_>, _>>()?;
         let def = self
             .db
-            .parserdef_ref(self.loc.loc, pd.name.atom)?
+            .parserdef_ref(self.loc.loc, pd.name.iter().map(|x| x.atom).collect())?
             .ok_or_else(|| {
-                SpannedTypeError::new(TypeError::UnknownParserdefName(pd.name.atom), span)
+                SpannedTypeError::new(
+                    TypeError::UnknownParserdefName(pd.name.last().unwrap().atom),
+                    span,
+                )
             })?;
         let definition = self.db.parser_args(def)?;
         match (parse_arg, definition.from) {

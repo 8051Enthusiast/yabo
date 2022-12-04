@@ -99,7 +99,12 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for ParserDefRef {
         if let Some(fr) = self.from.as_ref() {
             dbwrite!(f, db, "{} &> ", fr)?;
         }
-        dbwrite!(f, db, "{}", &self.name.atom)?;
+        for (i, field) in self.name.iter().enumerate() {
+            if i > 0 {
+                dbwrite!(f, db, ".")?;
+            }
+            dbwrite!(f, db, "{}", &field.atom)?;
+        }
         if !self.args.is_empty() {
             write!(f, "[")?;
             for (i, arg) in self.args.iter().enumerate() {

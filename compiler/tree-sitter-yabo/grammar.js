@@ -300,7 +300,13 @@ module.exports = grammar({
           '&>'
         )
       ),
-      field('name', $.identifier),
+      seq(
+        field('name', $.identifier),
+        repeat(seq(
+          '.',
+          field('name', $.identifier),
+        )),
+      ),
       optional(
         seq(
           '[',

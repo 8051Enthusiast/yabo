@@ -493,7 +493,7 @@ astify! {
 astify! {
     struct parserdef_ref = ParserDefRef {
         from: expression(type_expression)[?],
-        name: idspan[!],
+        name: idspan[*],
         args: expression(type_expression)[*],
     };
 }

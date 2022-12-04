@@ -327,7 +327,7 @@ pub enum Qualifier {
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDefRef {
     pub from: Option<TypeExpression>,
-    pub name: IdSpan,
+    pub name: Vec<IdSpan>,
     pub args: Vec<TypeExpression>,
     pub span: Span,
 }
