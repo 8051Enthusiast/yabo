@@ -304,11 +304,12 @@ module.exports = grammar({
       optional(
         seq(
           '[',
-          repeat(
-            seq(
-              field('args', $._type_expression),
+          seq(
+            field('args', $._type_expression),
+            repeat(seq(
               ',',
-            )
+              field('args', $._type_expression),
+            )),
           ),
           ']',
         )
