@@ -243,7 +243,7 @@ fn block(
     };
     let returns = match &ast.content {
         Some(c) => {
-            let vars = struct_context(c, ctx, context_id, &parents);
+            let (vars, _) = struct_context(c, ctx, context_id, &parents);
             vars.get(FieldName::Return).is_some()
         }
         None => {
@@ -267,7 +267,7 @@ fn struct_choice(
     id: ChoiceId,
     pred: ParserPredecessor,
     parents: &ParentInfo,
-) -> VariableSet<Vec<(u32, DefId, Span)>> {
+) -> (VariableSet<Vec<(u32, DefId, Span)>>, bool) {
     let children = &ast.content;
     let parents = ParentInfo {
         parent_choice: Some(id),
@@ -276,10 +276,12 @@ fn struct_choice(
     let mut subcontexts = Vec::new();
     let mut varset = None;
     let mut subvars = Vec::new();
+    let mut has_non_zero_len = false;
     for (idx, child) in children.into_iter().enumerate() {
         let subcontext_id = ContextId(id.child(ctx.db, PathComponent::Unnamed(idx as u32)));
         subcontexts.push(subcontext_id);
-        let new_vars = struct_context(&child, ctx, subcontext_id, &parents);
+        let (new_vars, non_zero_len_context) = struct_context(&child, ctx, subcontext_id, &parents);
+        has_non_zero_len |= non_zero_len_context;
         varset = varset
             .map(|x: VariableSet<()>| x.merge_sum(&new_vars))
             .or_else(|| Some(new_vars.without_data()));
@@ -293,15 +295,22 @@ fn struct_choice(
             .collect::<Vec<(u32, DefId, Span)>>()
     });
 
+    let endpoints = if has_non_zero_len {
+        Some([
+            pred,
+            ParserPredecessor::ChildOf(parents.parent_context.unwrap()),
+        ])
+    } else {
+        None
+    };
     let choice = StructChoice {
         id,
         parent_context: parents.parent_context.unwrap(),
-        front: pred,
-        back: ParserPredecessor::ChildOf(parents.parent_context.unwrap()),
+        endpoints,
         subcontexts,
     };
     ctx.insert(id.0, HirNode::Choice(choice), vec![ast.span]);
-    varset
+    (varset, has_non_zero_len)
 }
 
 fn empty_struct_context(
@@ -329,7 +338,7 @@ fn struct_context(
     ctx: &HirConversionCtx,
     id: ContextId,
     parents: &ParentInfo,
-) -> VariableSet<(DefId, Span)> {
+) -> (VariableSet<(DefId, Span)>, bool) {
     let children = &ast.content;
     let mut children_id = BTreeSet::new();
     let mut duplicate_field = HashMap::<FieldName, HirConversionError>::new();
@@ -342,19 +351,19 @@ fn struct_context(
     let mut varset = VariableSet::new();
     let mut pred = ParserPredecessor::ChildOf(id);
     let mut endpoints = None;
-    let mut update_pred = |new| {
-        let old = pred;
+    let mut update_pred = |pred: &mut ParserPredecessor, new| {
+        let old = *pred;
         let new_pred = ParserPredecessor::After(new);
         endpoints = Some(
             endpoints
                 .map(|(front, _)| (front, new))
                 .unwrap_or((new, new)),
         );
-        match pred {
+        match *pred {
             ParserPredecessor::After(id) => ctx.modify_back_predecessor(id, new_pred),
             ParserPredecessor::ChildOf(_) => (),
         }
-        pred = new_pred;
+        *pred = new_pred;
         old
     };
     let mut new_id = |d: Option<FieldName>| {
@@ -374,8 +383,10 @@ fn struct_context(
         let new_set = match child {
             ast::ParserSequenceElement::Choice(c) => {
                 let sub_id = ChoiceId(new_id(None));
-                let choice_indirect =
-                    struct_choice(c, ctx, sub_id, update_pred(sub_id.0), &parents);
+                let (choice_indirect, nonzero_len) = struct_choice(c, ctx, sub_id, pred, &parents);
+                if nonzero_len {
+                    update_pred(&mut pred, sub_id.0);
+                }
                 choice_indirect.map(|ident, b| {
                     let chin_id = ChoiceIndirectId(new_id(Some(ident)));
                     choice_indirection(b, ctx, chin_id, id, sub_id);
@@ -386,7 +397,13 @@ fn struct_context(
                 let sub_id = new_id(x.field());
                 match x.as_ref() {
                     ast::Statement::Parse(p) => {
-                        let set = parse_statement(p, ctx, ParseId(sub_id), update_pred(sub_id), id);
+                        let set = parse_statement(
+                            p,
+                            ctx,
+                            ParseId(sub_id),
+                            update_pred(&mut pred, sub_id),
+                            id,
+                        );
                         set
                     }
                     ast::Statement::Let(l) => let_statement(l, ctx, LetId(sub_id), id),
@@ -417,7 +434,7 @@ fn struct_context(
         endpoints,
     };
     ctx.insert(id.0, HirNode::Context(context), vec![ast.span]);
-    varset
+    (varset, endpoints.is_some())
 }
 
 fn let_statement(
@@ -537,7 +554,9 @@ impl<'a> HirConversionCtx<'a> {
                 HirNode::Parse(p)
             }
             HirNode::Choice(mut c) => {
-                c.back = pred;
+                c.endpoints
+                    .as_mut()
+                    .expect("try to modify back predecessor of choice without endpoints")[1] = pred;
                 HirNode::Choice(c)
             }
             _ => panic!("cannot set predecessor of non-parsing hir node"),

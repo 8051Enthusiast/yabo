@@ -157,11 +157,11 @@ fn val_refs(
 }
 
 fn pred(node: &hir::HirNode) -> Option<[ParserPredecessor; 2]> {
-    Some(match node {
-        hir::HirNode::Choice(c) => [c.front, c.back],
-        hir::HirNode::Parse(c) => [c.front, c.back],
-        _ => return None,
-    })
+    match node {
+        hir::HirNode::Choice(c) => c.endpoints,
+        hir::HirNode::Parse(c) => Some([c.front, c.back]),
+        _ => None,
+    }
 }
 
 fn between_parser_refs(
@@ -191,14 +191,15 @@ fn inner_parser_refs(db: &dyn Orders, node: &hir::HirNode) -> SResult<FxHashSet<
             ret.insert(SubValue::new_front(p.id.id()));
             Ok(ret)
         }
+        hir::HirNode::Choice(c) if c.endpoints.is_none() => Ok(FxHashSet::default()),
         hir::HirNode::Choice(c) => {
             let mut ret = FxHashSet::default();
             for ctx in c.subcontexts.iter() {
                 if let Some((_, back)) = ctx.lookup(db)?.endpoints {
                     ret.insert(SubValue::new_back(back));
                 }
-                ret.insert(SubValue::new_val(c.id.0));
             }
+            ret.insert(SubValue::new_val(c.id.0));
             Ok(ret)
         }
         hir::HirNode::Block(b) => {
@@ -215,6 +216,7 @@ fn inner_parser_refs(db: &dyn Orders, node: &hir::HirNode) -> SResult<FxHashSet<
 
 fn node_subvalue_kinds(node: &hir::HirNode) -> &'static [SubValueKind] {
     match node {
+        hir::HirNode::Choice(c) if c.endpoints.is_none() => &[SubValueKind::Val][..],
         hir::HirNode::Parse(_) | hir::HirNode::Block(_) | hir::HirNode::Choice(_) => {
             &[SubValueKind::Front, SubValueKind::Back, SubValueKind::Val][..]
         }

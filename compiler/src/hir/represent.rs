@@ -350,8 +350,8 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                         id,
                         parent_context,
                         subcontexts,
-                        front,
-                        back,
+                        endpoints,
+                        ..
                     }) => {
                         let mut v: Vec<_> = subcontexts
                             .iter()
@@ -366,10 +366,12 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                             "parent_context".to_string(),
                             dot::Style::Dotted,
                         ));
-                        let [f, b] = [front.id(), back.id()];
-                        let [fs, bs] = [parser_pred(&front), parser_pred(&back)];
-                        v.push((id.0, f, fs, dot::Style::Dotted));
-                        v.push((id.0, b, bs, dot::Style::Dotted));
+                        if let Some([front, back]) = endpoints {
+                            let [f, b] = [front.id(), back.id()];
+                            let [fs, bs] = [parser_pred(&front), parser_pred(&back)];
+                            v.push((id.0, f, fs, dot::Style::Dotted));
+                            v.push((id.0, b, bs, dot::Style::Dotted));
+                        }
                         v
                     }
                     HirNode::Context(StructCtx {

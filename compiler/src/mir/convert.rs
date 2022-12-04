@@ -770,7 +770,13 @@ impl<'a> ConvertCtx<'a> {
                 self.change_context(c.parent_context);
                 match sub_value.kind {
                     SubValueKind::Val => self.end_choice(&c.subcontexts, c.id),
-                    SubValueKind::Front => self.copy_predecessor(c.front, c.id.0),
+                    SubValueKind::Front => {
+                        if let Some([front, _]) = c.endpoints {
+                            self.copy_predecessor(front, c.id.0)
+                        } else {
+                            return Ok(());
+                        }
+                    }
                     // pushed by individual contexts
                     SubValueKind::Back => return Ok(()),
                 }
