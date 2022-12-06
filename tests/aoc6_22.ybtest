@@ -1,0 +1,49 @@
+====[ source code ]====
+import std
+def *find(needle: *'r, distance: int): int = {
+  | needle
+    let return = distance
+  | ~, return: find(needle, distance + 1)
+}
+
+def *uniqc(bitset: int) = {
+  char: ~
+  let bit = 1 << (char if 0x61..0x7a - 0x61)
+  let return = (bit & bitset) if 0 | bit | bitset
+}
+
+def *repeat_fold(f: *int(int), start: int, n: int): int = {
+  | std.assert(n == 0)
+    let return = start
+  | next: f(start)
+    return: repeat_fold(f, next, n - 1)
+}
+
+def *marker = repeat_fold(uniqc, 0, 4)
+
+export def *test = find(marker, 4)
+
+====[ binary 1 ]====
+6d6a716a70716d67626c6a737068647a746e766a667177726367736d6c62
+====[ output 1 ]====
+7
+
+====[ binary 2 ]====
+627677626a706c626776626873726c7067646d6a71776674766e637a
+====[ output 2 ]====
+5
+
+====[ binary 3 ]====
+6e707064766a7468716c6470776e6371737a76667462726d6a6c6867
+====[ output 3 ]====
+6
+
+====[ binary 3 ]====
+6e7a6e726e6672666e746a666d7666776d7a64666a6c7674716e62686370727367
+====[ output 3 ]====
+10
+
+====[ binary 4 ]====
+7a63667a66777a7a7166726c6a777a6c72666e7071646268746d736367766a77
+====[ output 4 ]====
+11
