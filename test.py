@@ -13,7 +13,7 @@ import multiprocessing
 import yabo
 
 TARGET_RELEASE = 'debug'
-BINARY_NAME = 'yabo'
+BINARY_NAME = 'yaboc'
 
 # test files are structured as follows:
 # ====[ source code ]====
@@ -80,7 +80,7 @@ std_path = os.path.join(current_script_dir, 'std', 'mod.yb')
 
 
 def build_compiler_binary():
-    compiler_dir = os.path.join(current_script_dir, 'compiler')
+    compiler_dir = os.path.join(current_script_dir, 'crates', 'yaboc')
     os.chdir(compiler_dir)
     with subprocess.Popen(
             ['cargo', 'metadata', '--format-version=1'], stdout=subprocess.PIPE) as cargo_metadata:
@@ -94,9 +94,9 @@ def build_compiler_binary():
 
 
 def run_compiler_unit_tests():
-    compiler_dir = os.path.join(current_script_dir, 'compiler')
+    compiler_dir = os.path.join(current_script_dir, 'crates', 'yaboc')
     os.chdir(compiler_dir)
-    cargo_args = ['cargo', 'test']
+    cargo_args = ['cargo', 'test', '--workspace']
     if TARGET_RELEASE == 'release':
         cargo_args.append('--release')
     cargo_test = subprocess.run(cargo_args, check=False)

@@ -1,0 +1,14 @@
+[package]
+name = "yaboc-hir"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+
+[dependencies]
+salsa = "0.16.1"
+yaboc-base = { path = "../yaboc-base" }
+yaboc-ast = { path = "../yaboc-ast" }
+fxhash = "0.2.1"
+enumflags2 = "0.7.5"
+dot = "0.1.4"

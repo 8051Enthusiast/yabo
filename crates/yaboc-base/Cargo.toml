@@ -1,0 +1,15 @@
+[package]
+name = "yaboc-base"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+
+[dependencies]
+ariadne = "0.1.5"
+bumpalo = "3.11.1"
+dirs = "4.0.0"
+fxhash = "0.2.1"
+salsa = "0.16.1"
+serde = { version = "1.0.149", features = ["derive"] }
+sha2 = "0.10.6"

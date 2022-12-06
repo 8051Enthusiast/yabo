@@ -1,0 +1,17 @@
+[package]
+name = "yaboc-order"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+
+[dependencies]
+salsa = "0.16.1"
+yaboc-base = { path = "../yaboc-base" }
+yaboc-ast = { path = "../yaboc-ast" }
+yaboc-hir = { path = "../yaboc-hir" }
+yaboc-resolve = { path = "../yaboc-resolve" }
+yaboc-types = { path = "../yaboc-types" }
+yaboc-hir-types = { path = "../yaboc-hir-types" }
+fxhash = "0.2.1"
+petgraph = "0.6.2"
