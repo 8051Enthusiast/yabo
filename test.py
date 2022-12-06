@@ -338,8 +338,12 @@ class TestFile:
             kind = match.group(1)
             test_name = match.group(2)
             if kind == 'binary':
+                if test_name in binary_cases:
+                    raise Exception('Duplicate binary name: ' + test_name)
                 binary_cases[test_name] = subtext
             elif kind == 'output':
+                if test_name in output_cases:
+                    raise Exception('Duplicate output name: ' + test_name)
                 output_cases[test_name] = subtext
 
         for (test_name, hexdump) in binary_cases.items():
