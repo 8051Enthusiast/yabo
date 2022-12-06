@@ -1,5 +1,4 @@
 ====[ source code ]====
-import std
 def *find(needle: *'r, distance: int): int = {
   | needle
     let return = distance
@@ -12,9 +11,8 @@ def *uniqc(bitset: int) = {
   let return = (bit & bitset) if 0 | bit | bitset
 }
 
-def *repeat_fold(f: *int(int), start: int, n: int): int = {
-  | std.assert(n == 0)
-    let return = start
+def *repeat_fold(f: *'t('t), start: 't, n: int): int = {
+  | let return = n if 0
   | next: f(start)
     return: repeat_fold(f, next, n - 1)
 }
