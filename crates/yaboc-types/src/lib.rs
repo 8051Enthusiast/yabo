@@ -17,7 +17,7 @@ use yaboc_base::{
 
 use self::{
     inference::InfTypeId,
-    to_type::{TypeConvertMemo, VarStack},
+    to_type::{TypeConvertMemo, TyVars},
 };
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -64,7 +64,7 @@ pub enum Type {
     Bot,
     Unknown,
     Primitive(PrimitiveType),
-    TypeVarRef(DefId, u32, u32),
+    TypeVarRef(DefId, u32),
     ForAll(TypeId, Arc<Vec<TypeVar>>),
     Nominal(NominalTypeHead),
     Loop(ArrayKind, TypeId),
@@ -74,7 +74,7 @@ pub enum Type {
 
 pub fn type_contains_unknown(db: &dyn TypeInterner, id: TypeId) -> bool {
     match db.lookup_intern_type(id) {
-        Type::Any | Type::Bot | Type::Primitive(_) | Type::TypeVarRef(_, _, _) => false,
+        Type::Any | Type::Bot | Type::Primitive(_) | Type::TypeVarRef(_, _) => false,
         Type::Unknown => true,
         Type::ForAll(inner, _) => db.type_contains_unknown(inner),
         Type::Nominal(NominalTypeHead {
@@ -98,7 +98,7 @@ pub fn type_contains_unknown(db: &dyn TypeInterner, id: TypeId) -> bool {
 pub fn type_contains_typevar(db: &dyn TypeInterner, id: TypeId) -> bool {
     match db.lookup_intern_type(id) {
         Type::Any | Type::Bot | Type::Unknown | Type::Primitive(_) => false,
-        Type::TypeVarRef(_, _, _) => true,
+        Type::TypeVarRef(_, _) => true,
         Type::ForAll(inner, _) => db.type_contains_typevar(inner),
         Type::Nominal(NominalTypeHead {
             parse_arg,
@@ -123,7 +123,7 @@ pub enum TypeHead {
     Any,
     Bot,
     Primitive(PrimitiveType),
-    TypeVarRef(DefId, u32, u32),
+    TypeVarRef(DefId, u32),
     Nominal(DefId),
     Loop(ArrayKind),
     ParserArg,
@@ -207,7 +207,7 @@ pub fn substitute_typevar(
     replacements: Arc<Vec<TypeId>>,
 ) -> TypeId {
     match db.lookup_intern_type(ty) {
-        Type::TypeVarRef(_, _, i) => replacements[i as usize],
+        Type::TypeVarRef(_, i) => replacements[i as usize],
         Type::Nominal(mut nom) => {
             let parse_arg = nom
                 .parse_arg

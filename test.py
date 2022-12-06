@@ -96,7 +96,7 @@ def build_compiler_binary():
 def run_compiler_unit_tests():
     compiler_dir = os.path.join(current_script_dir, 'crates', 'yaboc')
     os.chdir(compiler_dir)
-    cargo_args = ['cargo', 'test', '--workspace']
+    cargo_args = ['cargo', 'nextest', 'run', '--workspace']
     if TARGET_RELEASE == 'release':
         cargo_args.append('--release')
     cargo_test = subprocess.run(cargo_args, check=False)

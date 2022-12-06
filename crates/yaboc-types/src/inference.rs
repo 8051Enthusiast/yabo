@@ -17,7 +17,7 @@ pub enum InferenceType<'intern> {
     Any,
     Bot,
     Primitive(PrimitiveType),
-    TypeVarRef(DefId, u32, u32),
+    TypeVarRef(DefId, u32),
     Var(VarId),
     Unknown,
     Nominal(NominalInfHead<'intern>),
@@ -67,7 +67,7 @@ pub enum InfTypeHead {
     Any,
     Bot,
     Primitive(PrimitiveType),
-    TypeVarRef(DefId, u32, u32),
+    TypeVarRef(DefId, u32),
     Nominal(DefId),
     Loop(ArrayKind),
     ParserArg,
@@ -83,7 +83,7 @@ impl<'intern> From<InfTypeId<'intern>> for InfTypeHead {
             InferenceType::Any => InfTypeHead::Any,
             InferenceType::Bot => InfTypeHead::Bot,
             InferenceType::Primitive(p) => InfTypeHead::Primitive(*p),
-            InferenceType::TypeVarRef(def, id, depth) => InfTypeHead::TypeVarRef(*def, *id, *depth),
+            InferenceType::TypeVarRef(def, id) => InfTypeHead::TypeVarRef(*def, *id),
             InferenceType::Nominal(head) => InfTypeHead::Nominal(head.def),
             InferenceType::Loop(kind, _) => InfTypeHead::Loop(*kind),
             InferenceType::ParserArg { .. } => InfTypeHead::ParserArg,
@@ -245,7 +245,7 @@ impl<'intern> InfTypeId<'intern> {
             | (InferenceType::Primitive(_), InferenceType::Primitive(_))
             | (InferenceType::Var(_), InferenceType::Var(_))
             | (InferenceType::Unknown, InferenceType::Unknown)
-            | (InferenceType::TypeVarRef(_, _, _), InferenceType::TypeVarRef(_, _, _))
+            | (InferenceType::TypeVarRef(_, _), InferenceType::TypeVarRef(_, _))
                 if self == other => {}
             _ => return Err(None),
         };
@@ -306,7 +306,7 @@ impl<'intern> TryFrom<&InferenceType<'intern>> for TypeHead {
             InferenceType::Any => TypeHead::Any,
             InferenceType::Bot => TypeHead::Bot,
             &InferenceType::Primitive(p) => TypeHead::Primitive(p),
-            &InferenceType::TypeVarRef(id, lvl, idx) => TypeHead::TypeVarRef(id, lvl, idx),
+            &InferenceType::TypeVarRef(id, idx) => TypeHead::TypeVarRef(id, idx),
             InferenceType::Nominal(NominalInfHead { def, .. }) => TypeHead::Nominal(*def),
             InferenceType::Loop(kind, _) => TypeHead::Loop(*kind),
             InferenceType::ParserArg { .. } => TypeHead::ParserArg,
@@ -656,7 +656,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         })
     }
     pub fn type_var(&mut self, id: DefId, index: u32) -> InfTypeId<'intern> {
-        let inftype = InferenceType::TypeVarRef(id, 0, index);
+        let inftype = InferenceType::TypeVarRef(id, index);
         self.intern_infty(inftype)
     }
     pub fn parser(
@@ -803,10 +803,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
             );
         }
         let ty = self.tr.db().lookup_intern_type(ty);
-        let vars = VarStack {
-            cur: args,
-            next: None,
-        };
+        let vars = TyVars { cur: args };
         match &ty {
             // we ignore the args here and replace with our own args
             Type::ForAll(inner, _args) => {
@@ -822,7 +819,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     fn from_type_internal(
         &mut self,
         ty: &Type,
-        var_stack: Option<&VarStack<'_, 'intern>>,
+        var_stack: Option<&TyVars<'_, 'intern>>,
     ) -> InfTypeId<'intern> {
         let mut recurse =
             |x| self.from_type_internal(&self.tr.db().lookup_intern_type(x), var_stack);
@@ -831,18 +828,13 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
             Type::Bot => InferenceType::Bot,
             Type::Unknown => InferenceType::Unknown,
             Type::Primitive(p) => InferenceType::Primitive(*p),
-            Type::TypeVarRef(loc, level, index) => {
-                match var_stack.and_then(|x| x.resolve(*level, *index)) {
-                    Some(x) => return x,
-                    None => InferenceType::TypeVarRef(*loc, *level, *index),
-                }
-            }
+            Type::TypeVarRef(loc, index) => match var_stack.and_then(|x| x.resolve(*index)) {
+                Some(x) => return x,
+                None => InferenceType::TypeVarRef(*loc, *index),
+            },
             Type::ForAll(inner, defvars) => {
                 let current = defvars.iter().map(|_| self.var()).collect::<Vec<_>>();
-                let new_stack = VarStack {
-                    cur: &current,
-                    next: var_stack,
-                };
+                let new_stack = TyVars { cur: &current };
                 let inner = self.tr.db().lookup_intern_type(*inner);
                 return self.from_type_internal(&inner, Some(&new_stack));
             }

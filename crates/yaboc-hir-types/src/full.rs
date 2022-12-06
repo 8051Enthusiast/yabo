@@ -193,101 +193,100 @@ impl<'a, 'intern> TypeResolver<'intern> for FullResolver<'a, 'intern> {
     }
 }
 
-//#[cfg(test)]
-//mod tests {
-//    use crate::hir::Hirs;
-//    use hir::Parser;
-//    use yaboc_ast::import::Import;
-//    use yaboc_base::databased_display::DatabasedDisplay;
-//    use yaboc_base::Context;
-//    use yaboc_types::TypeInterner;
-//
-//    use super::*;
-//
-//    #[test]
-//    fn test_type_expr() {
-//        let ctx = Context::<crate::tests::HirTypesTestDatabase>::mock(
-//            r#"
-//def for['t] *> nil = {}
-//def for['t] *> expr1 = {
-//  a: ~
-//  b: {
-//    | let c: int = 2
-//      d: ~
-//    | let c: int = 1
-//  }
-//}
-//def each[int] *> expr2 = {
-//  x: expr1
-//  let y: int = 3 + x.a
-//}
-//def for['t] *> expr3 = ~
-//def for[for[int]] *> expr4 = {
-//  x: expr3 |> expr3
-//  let b: for[int] *> (for[int] &> expr3) = expr3
-//  y: ~ |> b
-//  let a: int = x + y
-//}
-//def each[int] *> expr5 = {
-//  x: expr2
-//  let b: expr2 = x
-//}
-//def each[int] *> expr6 = {
-//  let expr3: each[int] *> expr5 = expr5
-//  b: expr3
-//  inner: {
-//    let expr3: each[int] *> expr2 = expr2
-//    b: expr3
-//  }
-//}
-//            "#,
-//        );
-//        let full_type = |name: &str, fields: &[&str]| {
-//            let p = ctx.parser(name);
-//            let mut ret = ctx.db.parser_returns(p).unwrap().deref;
-//            for x in fields {
-//                let block = ctx.db.lookup_intern_type(ret);
-//                let def_id = match &block {
-//                    Type::Nominal(n) => n.def,
-//                    _ => panic!("expected nominal type"),
-//                };
-//                let block = hir::BlockId::extract(ctx.db.hir_node(def_id).unwrap());
-//                let root_context = block.root_context;
-//                let ident_field = ctx.id(x);
-//                let child = root_context
-//                    .0
-//                    .child(&ctx.db, PathComponent::Named(FieldName::Ident(ident_field)));
-//                ret = ctx.db.parser_type_at(child).unwrap();
-//            }
-//            ret.to_db_string(&ctx.db)
-//        };
-//        assert_eq!(full_type("expr1", &["a"]), "'t");
-//        assert_eq!(full_type("expr1", &["b", "c"]), "int");
-//        assert_eq!(full_type("expr1", &["b", "d"]), "'t");
-//        assert_eq!(full_type("expr2", &["x"]), "for[int] &> file[_].expr1");
-//        assert_eq!(full_type("expr2", &["y"]), "int");
-//        assert_eq!(full_type("expr4", &["x"]), "for[int] &> file[_].expr3");
-//        assert_eq!(
-//            full_type("expr4", &["b"]),
-//            "for[int] *> for[int] &> file[_].expr3"
-//        );
-//        assert_eq!(full_type("expr4", &["y"]), "for[int] &> file[_].expr3");
-//        assert_eq!(full_type("expr4", &["a"]), "int");
-//        assert_eq!(full_type("expr5", &["x"]), "each[int] &> file[_].expr2");
-//        assert_eq!(full_type("expr5", &["b"]), "each[int] &> file[_].expr2");
-//        assert_eq!(
-//            full_type("expr6", &["expr3"]),
-//            "each[int] *> each[int] &> file[_].expr5"
-//        );
-//        assert_eq!(full_type("expr6", &["b"]), "each[int] &> file[_].expr5");
-//        assert_eq!(
-//            full_type("expr6", &["inner", "expr3"]),
-//            "each[int] *> each[int] &> file[_].expr2"
-//        );
-//        assert_eq!(
-//            full_type("expr6", &["inner", "b"]),
-//            "each[int] &> file[_].expr2"
-//        );
-//    }
-//}
-//
+#[cfg(test)]
+mod tests {
+    use crate::hir::Hirs;
+    use hir::Parser;
+    use yaboc_ast::import::Import;
+    use yaboc_base::databased_display::DatabasedDisplay;
+    use yaboc_base::Context;
+    use yaboc_types::TypeInterner;
+
+    use super::*;
+
+    #[test]
+    fn test_type_expr() {
+        let ctx = Context::<crate::tests::HirTypesTestDatabase>::mock(
+            r#"
+def for['t] *> nil = {}
+def for['t] *> expr1 = {
+  a: ~
+  b: {
+    | let c: int = 2
+      d: ~
+    | let c: int = 1
+  }
+}
+def each[int] *> expr2 = {
+  x: expr1
+  let y: int = 3 + x.a
+}
+def for['t] *> expr3 = ~
+def for[for[int]] *> expr4 = {
+  x: expr3 |> expr3
+  let b: for[int] *> (for[int] &> expr3) = expr3
+  y: ~ |> b
+  let a: int = x + y
+}
+def each[int] *> expr5 = {
+  x: expr2
+  let b: expr2 = x
+}
+def each[int] *> expr6 = {
+  let expr3: each[int] *> expr5 = expr5
+  b: expr3
+  inner: {
+    let expr3: each[int] *> expr2 = expr2
+    b: expr3
+  }
+}
+            "#,
+        );
+        let full_type = |name: &str, fields: &[&str]| {
+            let p = ctx.parser(name);
+            let mut ret = ctx.db.parser_returns(p).unwrap().deref;
+            for x in fields {
+                let block = ctx.db.lookup_intern_type(ret);
+                let def_id = match &block {
+                    Type::Nominal(n) => n.def,
+                    _ => panic!("expected nominal type"),
+                };
+                let block = hir::BlockId::extract(ctx.db.hir_node(def_id).unwrap());
+                let root_context = block.root_context;
+                let ident_field = ctx.id(x);
+                let child = root_context
+                    .0
+                    .child(&ctx.db, PathComponent::Named(FieldName::Ident(ident_field)));
+                ret = ctx.db.parser_type_at(child).unwrap();
+            }
+            ret.to_db_string(&ctx.db)
+        };
+        assert_eq!(full_type("expr1", &["a"]), "'0");
+        assert_eq!(full_type("expr1", &["b", "c"]), "int");
+        assert_eq!(full_type("expr1", &["b", "d"]), "'0");
+        assert_eq!(full_type("expr2", &["x"]), "for[int] &> file[_].expr1");
+        assert_eq!(full_type("expr2", &["y"]), "int");
+        assert_eq!(full_type("expr4", &["x"]), "for[int] &> file[_].expr3");
+        assert_eq!(
+            full_type("expr4", &["b"]),
+            "for[int] *> for[int] &> file[_].expr3"
+        );
+        assert_eq!(full_type("expr4", &["y"]), "for[int] &> file[_].expr3");
+        assert_eq!(full_type("expr4", &["a"]), "int");
+        assert_eq!(full_type("expr5", &["x"]), "each[int] &> file[_].expr2");
+        assert_eq!(full_type("expr5", &["b"]), "each[int] &> file[_].expr2");
+        assert_eq!(
+            full_type("expr6", &["expr3"]),
+            "each[int] *> each[int] &> file[_].expr5"
+        );
+        assert_eq!(full_type("expr6", &["b"]), "each[int] &> file[_].expr5");
+        assert_eq!(
+            full_type("expr6", &["inner", "expr3"]),
+            "each[int] *> each[int] &> file[_].expr2"
+        );
+        assert_eq!(
+            full_type("expr6", &["inner", "b"]),
+            "each[int] &> file[_].expr2"
+        );
+    }
+}

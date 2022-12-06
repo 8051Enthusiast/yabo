@@ -9,17 +9,13 @@ use super::{
     NominalTypeHead, Type, TypeError, TypeId, TypeInterner,
 };
 
-pub struct VarStack<'a, 'intern> {
+pub struct TyVars<'a, 'intern> {
     pub(crate) cur: &'a [InfTypeId<'intern>],
-    pub(crate) next: Option<&'a VarStack<'a, 'intern>>,
 }
 
-impl<'a, 'intern> VarStack<'a, 'intern> {
-    pub fn resolve(&'a self, level: u32, index: u32) -> Option<InfTypeId<'intern>> {
-        match level {
-            0 => self.cur.get(index as usize).copied(),
-            1.. => self.next?.resolve(level - 1, index),
-        }
+impl<'a, 'intern> TyVars<'a, 'intern> {
+    pub fn resolve(&'a self, index: u32) -> Option<InfTypeId<'intern>> {
+        self.cur.get(index as usize).copied()
     }
 }
 
@@ -370,7 +366,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                 }
                 if !contains_non_var {
                     if let Some((id, ref mut n)) = self.var_count {
-                        result = self.ctx.intern_infty(InferenceType::TypeVarRef(id, 0, *n));
+                        result = self.ctx.intern_infty(InferenceType::TypeVarRef(id, *n));
                         self.ctx.equal(result, infty)?;
                         *n += 1;
                     }
@@ -392,7 +388,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
         let res = match infty.value() {
             InferenceType::Any => Type::Any,
             InferenceType::Bot => Type::Bot,
-            InferenceType::TypeVarRef(loc, level, index) => Type::TypeVarRef(*loc, *level, *index),
+            InferenceType::TypeVarRef(loc, index) => Type::TypeVarRef(*loc, *index),
             InferenceType::Primitive(p) => Type::Primitive(*p),
             InferenceType::Var(..) => {
                 panic!("Internal Compiler Error: normalized inference type contains variable");

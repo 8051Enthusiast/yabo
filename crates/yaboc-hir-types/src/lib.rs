@@ -100,7 +100,7 @@ pub fn head_discriminant(db: &dyn TyHirs, ty: TypeId) -> i64 {
             // the lowest two bits are for flags so they get zeroed out
             i64::from_le_bytes(def_hash) & DISCRIMINANT_MASK | i64::MIN
         }
-        Type::TypeVarRef(_, _, _) | Type::Any | Type::Bot | Type::Unknown => 0,
+        Type::TypeVarRef(_, _) | Type::Any | Type::Bot | Type::Unknown => 0,
     }
 }
 pub type TypedExpression = Expression<TypedHirVal<(TypeId, SpanIndex)>>;
@@ -194,7 +194,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         SpannedTypeError::new(TypeError::UnknownTypeVar(*v), span)
                     })?;
                     self.infctx
-                        .intern_infty(InferenceType::TypeVarRef(self.loc.pd.0, 0, var_idx))
+                        .intern_infty(InferenceType::TypeVarRef(self.loc.pd.0, var_idx))
                 }
             },
             ExpressionHead::Variadic(Variadic { op, inner }) => match op.inner {
@@ -357,7 +357,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                                     let ty_vars = (0..self.loc.vars.defs.len() as u32)
                                         .map(|i| {
                                             self.infctx
-                                                .intern_infty(InferenceType::TypeVarRef(pd.0, 0, i))
+                                                .intern_infty(InferenceType::TypeVarRef(pd.0, i))
                                         })
                                         .collect::<Vec<_>>();
                                     self.infctx.block_call(b.0, &ty_vars)?
@@ -660,7 +660,7 @@ impl TypeVarCollection {
 
 fn n_type_vars(db: &(impl TyHirs + ?Sized), id: hir::ParserDefId, n: u32) -> Vec<TypeId> {
     (0..n)
-        .map(|i| db.intern_type(Type::TypeVarRef(id.0, 0, i)))
+        .map(|i| db.intern_type(Type::TypeVarRef(id.0, i)))
         .collect()
 }
 

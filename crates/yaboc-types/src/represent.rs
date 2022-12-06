@@ -19,8 +19,8 @@ impl<'a, DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeId<'a> {
                 super::PrimitiveType::Char => write!(f, "char"),
                 super::PrimitiveType::Unit => write!(f, "unit"),
             },
-            InferenceType::TypeVarRef(loc, level, index) => {
-                dbwrite!(f, db, "<Var Ref ({}, {}, {})>", loc, level, index)
+            InferenceType::TypeVarRef(loc, index) => {
+                dbwrite!(f, db, "<Var Ref ({}, {})>", loc, index)
             }
             InferenceType::Nominal(n) => {
                 if let NominalKind::Block = n.kind {
@@ -102,10 +102,9 @@ impl<DB: TypeInterner + ?Sized> StableHash<DB> for TypeId {
                 state.update([3]);
                 p.update_hash(state, db)
             }
-            Type::TypeVarRef(def, layer, index) => {
+            Type::TypeVarRef(def, index) => {
                 state.update([4]);
                 def.update_hash(state, db);
-                layer.update_hash(state, db);
                 index.update_hash(state, db);
             }
             Type::ForAll(inner, x) => {
@@ -162,15 +161,8 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for TypeHead {
             TypeHead::Any => write!(f, "any type"),
             TypeHead::Bot => write!(f, "bottom type"),
             TypeHead::Primitive(p) => p.db_fmt(f, db),
-            TypeHead::TypeVarRef(def, level, index) => {
-                // FIXME: see if there is a way to display the actual name of the reference
-                //                let vars = TypeVarCollection::at_id(db, ParserDefId(*def));
-                //                if let Ok(v) = vars {
-                //                    if let Some(x) = v.defs.get(*index as usize) {
-                //                        return dbwrite!(f, db, "{}", x);
-                //                    }
-                //                }
-                dbwrite!(f, db, "<Var Ref ({}, {}, {})>", def, &level, &index)
+            TypeHead::TypeVarRef(_, index) => {
+                dbwrite!(f, db, "'{}", &index)
             }
             TypeHead::Nominal(def) => {
                 dbwrite!(f, db, "{}", def)
@@ -193,14 +185,8 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for TypeId {
             Type::Any => write!(f, "any"),
             Type::Bot => write!(f, "bot"),
             Type::Primitive(p) => p.db_fmt(f, db),
-            Type::TypeVarRef(loc, level, index) => {
-                //                let vars = TypeVarCollection::at_id(db, ParserDefId(loc));
-                //                if let Ok(v) = vars {
-                //                    if let Some(x) = v.defs.get(index as usize) {
-                //                        return dbwrite!(f, db, "{}", x);
-                //                    }
-                //                }
-                dbwrite!(f, db, "<Var Ref ({}, {}, {})>", &loc, &level, &index)
+            Type::TypeVarRef(_, index) => {
+                dbwrite!(f, db, "'{}", &index)
             }
             Type::ForAll(inner, vars) => {
                 write!(f, "forall ")?;
