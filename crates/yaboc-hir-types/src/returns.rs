@@ -176,56 +176,56 @@ pub struct ParserDefType {
     pub deref: TypeId,
 }
 
-//#[cfg(test)]
-//mod tests {
-//    use crate::tests::HirTypesTestDatabase;
-//    use hir::Parser;
-//    use yaboc_ast::import::Import;
-//    use yaboc_base::databased_display::DatabasedDisplay;
-//    use yaboc_base::Context;
-//
-//    use super::*;
-//    #[test]
-//    fn return_types() {
-//        let ctx = Context::<HirTypesTestDatabase>::mock(
-//            r#"
-//def for['t] *> nil = {}
-//def nil *> expr1 = {}
-//def for[int] *> single = ~
-//            "#,
-//        );
-//        let return_type = |name| {
-//            let p = ctx.parser(name);
-//            ctx.db
-//                .parser_returns(p)
-//                .unwrap()
-//                .deref
-//                .to_db_string(&ctx.db)
-//        };
-//        assert_eq!(
-//            return_type("nil"),
-//            "<anonymous block for['t] &> file[_].nil.1.0>"
-//        );
-//        assert_eq!(
-//            return_type("expr1"),
-//            "<anonymous block for['1] &> file[_].nil &> file[_].expr1.1.0>"
-//        );
-//        assert_eq!(return_type("single"), "int");
-//    }
-//    #[test]
-//    fn block_with_return() {
-//        let ctx = Context::<HirTypesTestDatabase>::mock(
-//            r#"
-//def for[int] *> u16l = {
-//    low: ~
-//    high: ~
-//    let return: int = low + high * 256
-//}
-//            "#,
-//        );
-//        let parser = ctx.parser("u16l");
-//        let ret = ctx.db.parser_returns(parser).unwrap().deref;
-//        assert_eq!(ret.to_db_string(&ctx.db), "int");
-//    }
-//}
-//
+#[cfg(test)]
+mod tests {
+    use crate::tests::HirTypesTestDatabase;
+    use hir::Parser;
+    use yaboc_ast::import::Import;
+    use yaboc_base::databased_display::DatabasedDisplay;
+    use yaboc_base::Context;
+
+    use super::*;
+    #[test]
+    fn return_types() {
+        let ctx = Context::<HirTypesTestDatabase>::mock(
+            r#"
+def for['t] *> nil = {}
+def nil *> expr1 = {}
+def for[int] *> single = ~
+            "#,
+        );
+        let return_type = |name| {
+            let p = ctx.parser(name);
+            ctx.db
+                .parser_returns(p)
+                .unwrap()
+                .deref
+                .to_db_string(&ctx.db)
+        };
+        assert_eq!(
+            return_type("nil"),
+            "<anonymous block for['0] &> file[_].nil.1.0>"
+        );
+        assert_eq!(
+            return_type("expr1"),
+            "<anonymous block for['0] &> file[_].nil &> file[_].expr1.1.0>"
+        );
+        assert_eq!(return_type("single"), "int");
+    }
+    #[test]
+    fn block_with_return() {
+        let ctx = Context::<HirTypesTestDatabase>::mock(
+            r#"
+def for[int] *> u16l = {
+    low: ~
+    high: ~
+    let return: int = low + high * 256
+}
+            "#,
+        );
+        let parser = ctx.parser("u16l");
+        let ret = ctx.db.parser_returns(parser).unwrap().deref;
+        assert_eq!(ret.to_db_string(&ctx.db), "int");
+    }
+}
+

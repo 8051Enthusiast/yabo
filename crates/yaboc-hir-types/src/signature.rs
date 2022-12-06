@@ -142,40 +142,40 @@ pub fn attach_forall(db: &dyn TyHirs, ty: TypeId, ty_args: &Arc<Vec<TypeVar>>) -
     db.intern_type(Type::ForAll(ty, ty_args.clone()))
 }
 
-//#[cfg(test)]
-//mod tests {
-//    use crate::tests::HirTypesTestDatabase;
-//    use hir::Parser;
-//    use yaboc_ast::import::Import;
-//    use yaboc_base::databased_display::DatabasedDisplay;
-//    use yaboc_base::Context;
-//
-//    use super::*;
-//    #[test]
-//    fn arg_types() {
-//        let ctx = Context::<HirTypesTestDatabase>::mock(
-//            r#"
-//def for[int] *> expr1 = {}
-//def for[for[int] &> expr1] *> expr2 = {}
-//def for['x] *> expr3 = {}
-//def each[for[expr1] *> expr2] *> expr4 = {}
-//def each[expr3] *> expr5 = {}
-//            "#,
-//        );
-//        let arg_type = |name| {
-//            let p = ctx.parser(name);
-//            ctx.db
-//                .parser_args(p)
-//                .unwrap()
-//                .from
-//                .unwrap()
-//                .to_db_string(&ctx.db)
-//        };
-//        assert_eq!("for[int]", arg_type("expr1"));
-//        assert_eq!("for[for[int] &> file[_].expr1]", arg_type("expr2"));
-//        assert_eq!("for['x]", arg_type("expr3"));
-//        assert_eq!("each[for[for[int] &> file[_].expr1] *> for[for[int] &> file[_].expr1] &> file[_].expr2]", arg_type("expr4"));
-//        assert_eq!("each[for['1] &> file[_].expr3]", arg_type("expr5"));
-//    }
-//}
-//
+#[cfg(test)]
+mod tests {
+    use crate::tests::HirTypesTestDatabase;
+    use hir::Parser;
+    use yaboc_ast::import::Import;
+    use yaboc_base::databased_display::DatabasedDisplay;
+    use yaboc_base::Context;
+
+    use super::*;
+    #[test]
+    fn arg_types() {
+        let ctx = Context::<HirTypesTestDatabase>::mock(
+            r#"
+def for[int] *> expr1 = {}
+def for[for[int] &> expr1] *> expr2 = {}
+def for['x] *> expr3 = {}
+def each[for[expr1] *> expr2] *> expr4 = {}
+def each[expr3] *> expr5 = {}
+            "#,
+        );
+        let arg_type = |name| {
+            let p = ctx.parser(name);
+            ctx.db
+                .parser_args(p)
+                .unwrap()
+                .from
+                .unwrap()
+                .to_db_string(&ctx.db)
+        };
+        assert_eq!("for[int]", arg_type("expr1"));
+        assert_eq!("for[for[int] &> file[_].expr1]", arg_type("expr2"));
+        assert_eq!("for['0]", arg_type("expr3"));
+        assert_eq!("each[for[for[int] &> file[_].expr1] *> for[for[int] &> file[_].expr1] &> file[_].expr2]", arg_type("expr4"));
+        assert_eq!("each[for['0] &> file[_].expr3]", arg_type("expr5"));
+    }
+}
+

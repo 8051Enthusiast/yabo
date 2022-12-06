@@ -206,77 +206,76 @@ impl<'a, 'intern> TypeResolver<'intern> for PublicResolver<'a, 'intern> {
     }
 }
 
-//#[cfg(test)]
-//mod tests {
-//    use crate::hir::Hirs;
-//    use crate::tests::HirTypesTestDatabase;
-//    use hir::Parser;
-//    use yaboc_ast::import::Import;
-//    use yaboc_base::databased_display::DatabasedDisplay;
-//    use yaboc_base::interner::PathComponent;
-//    use yaboc_base::Context;
-//    use yaboc_types::TypeInterner;
-//
-//    use super::*;
-//    #[test]
-//    fn public_types() {
-//        let ctx = Context::<HirTypesTestDatabase>::mock(
-//            r#"
-//def for['t] *> expr1 = {
-//    a: ~
-//    b: ~
-//    c: {
-//      | let d: int = 2
-//        e: ~
-//      | let d: int = 1
-//    }
-//}
-//def each[int] *> expr2 = {
-//    x: expr1
-//    | let y: int = 3
-//    | y: ~
-//}
-//def for[int] *> expr3 = ~
-//def for[int] *> expr4 = {
-//    | x: expr3
-//    | let x: int = 3
-//}
-//def for[for[int]] *> expr5 = {
-//    x: ~ |> expr3
-//}
-//            "#,
-//        );
-//        let public_type = |name: &str, fields: &[&str]| {
-//            let p = ctx.parser(name);
-//            let mut ret = ctx.db.parser_returns(p).unwrap().deref;
-//            for x in fields {
-//                let block = ctx.db.lookup_intern_type(ret);
-//                let def_id = match &block {
-//                    Type::Nominal(n) => n.def,
-//                    _ => panic!("expected nominal type"),
-//                };
-//                let block = hir::BlockId::extract(ctx.db.hir_node(def_id).unwrap());
-//                let root_context = block.root_context;
-//                let ident_field = ctx.id(x);
-//                let child = root_context
-//                    .0
-//                    .child(&ctx.db, PathComponent::Named(FieldName::Ident(ident_field)));
-//                ret = ctx.db.public_type(child).unwrap();
-//            }
-//            ret.to_db_string(&ctx.db)
-//        };
-//        assert_eq!("'t", public_type("expr1", &["a"]));
-//        assert_eq!("'t", public_type("expr1", &["b"]));
-//        assert_eq!(
-//            "<anonymous block for['t] &> file[_].expr1.1.0.0.c.0.0>",
-//            public_type("expr1", &["c"])
-//        );
-//        assert_eq!("int", public_type("expr1", &["c", "d"]));
-//        assert_eq!("'t", public_type("expr1", &["c", "e"]));
-//        assert_eq!("for[int] &> file[_].expr1", public_type("expr2", &["x"]));
-//        assert_eq!("int", public_type("expr2", &["y"]));
-//        assert_eq!("int", public_type("expr4", &["x"]));
-//        assert_eq!("for[int] &> file[_].expr3", public_type("expr5", &["x"]));
-//    }
-//}
-//
+#[cfg(test)]
+mod tests {
+    use crate::hir::Hirs;
+    use crate::tests::HirTypesTestDatabase;
+    use hir::Parser;
+    use yaboc_ast::import::Import;
+    use yaboc_base::databased_display::DatabasedDisplay;
+    use yaboc_base::interner::PathComponent;
+    use yaboc_base::Context;
+    use yaboc_types::TypeInterner;
+
+    use super::*;
+    #[test]
+    fn public_types() {
+        let ctx = Context::<HirTypesTestDatabase>::mock(
+            r#"
+def for['t] *> expr1 = {
+    a: ~
+    b: ~
+    c: {
+      | let d: int = 2
+        e: ~
+      | let d: int = 1
+    }
+}
+def each[int] *> expr2 = {
+    x: expr1
+    | let y: int = 3
+    | y: ~
+}
+def for[int] *> expr3 = ~
+def for[int] *> expr4 = {
+    | x: expr3
+    | let x: int = 3
+}
+def for[for[int]] *> expr5 = {
+    x: ~ |> expr3
+}
+            "#,
+        );
+        let public_type = |name: &str, fields: &[&str]| {
+            let p = ctx.parser(name);
+            let mut ret = ctx.db.parser_returns(p).unwrap().deref;
+            for x in fields {
+                let block = ctx.db.lookup_intern_type(ret);
+                let def_id = match &block {
+                    Type::Nominal(n) => n.def,
+                    _ => panic!("expected nominal type"),
+                };
+                let block = hir::BlockId::extract(ctx.db.hir_node(def_id).unwrap());
+                let root_context = block.root_context;
+                let ident_field = ctx.id(x);
+                let child = root_context
+                    .0
+                    .child(&ctx.db, PathComponent::Named(FieldName::Ident(ident_field)));
+                ret = ctx.db.public_type(child).unwrap();
+            }
+            ret.to_db_string(&ctx.db)
+        };
+        assert_eq!("'0", public_type("expr1", &["a"]));
+        assert_eq!("'0", public_type("expr1", &["b"]));
+        assert_eq!(
+            "<anonymous block for['0] &> file[_].expr1.1.0.0.c.0.0>",
+            public_type("expr1", &["c"])
+        );
+        assert_eq!("int", public_type("expr1", &["c", "d"]));
+        assert_eq!("'0", public_type("expr1", &["c", "e"]));
+        assert_eq!("for[int] &> file[_].expr1", public_type("expr2", &["x"]));
+        assert_eq!("int", public_type("expr2", &["y"]));
+        assert_eq!("int", public_type("expr4", &["x"]));
+        assert_eq!("for[int] &> file[_].expr3", public_type("expr5", &["x"]));
+    }
+}
