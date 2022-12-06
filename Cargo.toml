@@ -1,0 +1,7 @@
+[workspace]
+members = ["crates/*"]
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+description = "runtimeless functional language for defining binary parsers"
+license = "MIT"
