@@ -104,7 +104,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     }
 
     fn head_disc(&mut self, place: PlaceRef) -> IntValue<'llvm> {
-        let place_ty = self.mir_fun.f.place(place).ty;
+        let place_ty = self.mir_fun.place_ty(place);
         let place_layout = self.mir_fun.place(place);
         let mut disc = self.cg.compiler_database.db.head_discriminant(place_ty);
         if let Layout::Multi(_) = place_layout.layout {
@@ -330,7 +330,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             }
             FieldName::Ident(ident) => ident,
         };
-        let ty = self.mir_fun.f.place(place).ty;
+        let ty = self.mir_fun.place_ty(place);
         let block = match self.cg.compiler_database.db.lookup_intern_type(ty) {
             Type::Nominal(nom) => {
                 let id = NominalId::from_nominal_head(&nom);

@@ -74,6 +74,7 @@ pub struct PdEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
     pub returned: Dom,
     pub from: Dom,
     pub expr_vals: Option<AbstractExpression<Dom>>,
+    pub typesubst: Arc<Vec<TypeId>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -82,6 +83,7 @@ pub struct BlockEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
     pub from: Dom,
     pub vals: FxHashMap<DefId, Dom>,
     pub returned: Dom,
+    pub typesubst: Arc<Vec<TypeId>>,
 }
 
 pub struct AbsIntCtx<'a, Dom: AbstractDomain<'a>> {
@@ -221,6 +223,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             returned: ret_val,
             from,
             expr_vals: Some(expr_vals),
+            typesubst: self.type_substitutions.clone(),
         };
         Ok(ret)
     }
@@ -253,6 +256,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         }
     }
     pub fn eval_pd(&mut self, pd: Dom, ty: TypeId) -> Option<Dom> {
+        let new_type_substitutions = self.type_substitutions(ty);
         // TODO(8051): work out a way to cache when possible
         // we can't always cache because of fixpoints invalidating the cache
         if let Some(&depth) = self.active_calls.get(&pd) {
@@ -267,6 +271,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                     returned: bottom.clone(),
                     from: bottom.clone(),
                     expr_vals: None,
+                    typesubst: new_type_substitutions,
                 }),
             );
             return Some(bottom);
@@ -274,7 +279,6 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         self.depth += 1;
         self.active_calls.insert(pd.clone(), self.depth);
         let old_pd = std::mem::replace(&mut self.current_pd, pd.clone());
-        let new_type_substitutions = self.type_substitutions(ty);
         let old_type_substitutions =
             std::mem::replace(&mut self.type_substitutions, new_type_substitutions);
         let parserdef = match self.db.lookup_intern_type(ty) {
@@ -436,6 +440,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             from: from.clone(),
             vals: old_block_vars,
             returned,
+            typesubst: self.type_substitutions.clone(),
         });
         self.block_result.insert((from, block), evaluated);
 

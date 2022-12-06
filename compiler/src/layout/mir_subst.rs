@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use fxhash::FxHashMap;
 
 use crate::{
@@ -8,7 +10,7 @@ use crate::{
     interner::DefId,
     mir::{CallKind, Function, PdArgKind, Place, PlaceOrigin, PlaceRef, StackRef},
     source::SpanIndex,
-    types::{PrimitiveType, Type},
+    types::{PrimitiveType, Type, TypeId},
 };
 
 use super::{ILayout, IMonoLayout, InternerLayout, Layout, LayoutError, MonoLayout};
@@ -16,7 +18,7 @@ use super::{ILayout, IMonoLayout, InternerLayout, Layout, LayoutError, MonoLayou
 pub struct FunctionSubstitute<'a> {
     pub f: Function,
     pub stack_layouts: Vec<ILayout<'a>>,
-    pub place_layouts: Vec<ILayout<'a>>,
+    pub place_layouts: Vec<(ILayout<'a>, TypeId)>,
 }
 
 impl<'a> FunctionSubstitute<'a> {
@@ -36,6 +38,7 @@ impl<'a> FunctionSubstitute<'a> {
         let evaluated = ctx.block_result()[&(from, block.0)]
             .as_ref()
             .ok_or_else(|| SilencedError::new())?;
+        let subst = evaluated.typesubst.clone();
         let mut expr_map = FxHashMap::default();
         for (id, expr) in evaluated.expr_vals.iter() {
             for r in ExprIter::new(&expr) {
@@ -66,6 +69,7 @@ impl<'a> FunctionSubstitute<'a> {
             ret,
             expr: expr_map,
             vals,
+            subst,
         };
         let mut stack_layouts = sub_info.stack_layouts(&f);
         let place_layouts = sub_info.place_layouts(&f, &mut stack_layouts, ctx)?;
@@ -97,9 +101,6 @@ impl<'a> FunctionSubstitute<'a> {
         arg_kind: PdArgKind,
         call_kind: CallKind,
     ) -> Result<Self, LayoutError> {
-        if arg_kind == PdArgKind::Parse && call_kind == CallKind::Val {
-            return Self::new_from_pd_val_parser(f, from, fun, ctx);
-        }
         let lookup_layout = match arg_kind {
             PdArgKind::Thunk => fun,
             PdArgKind::Parse => fun.apply_arg(ctx, from)?,
@@ -107,6 +108,10 @@ impl<'a> FunctionSubstitute<'a> {
         let evaluated = ctx.pd_result()[&lookup_layout]
             .as_ref()
             .ok_or_else(|| SilencedError::new())?;
+        let subst = evaluated.typesubst.clone();
+        if arg_kind == PdArgKind::Parse && call_kind == CallKind::Val {
+            return Self::new_from_pd_val_parser(f, from, fun, subst, ctx);
+        }
         let expr_id = pd.lookup(ctx.db)?.to;
         let mut expr_map = FxHashMap::default();
         if let Some(expr) = evaluated.expr_vals.as_ref() {
@@ -126,6 +131,7 @@ impl<'a> FunctionSubstitute<'a> {
             ret,
             expr: expr_map,
             vals,
+            subst,
         };
         let mut stack_layouts = sub_info.stack_layouts(&f);
         let place_layouts = sub_info.place_layouts(&f, &mut stack_layouts, ctx)?;
@@ -140,6 +146,7 @@ impl<'a> FunctionSubstitute<'a> {
         f: Function,
         from: ILayout<'a>,
         fun: ILayout<'a>,
+        subst: Arc<Vec<TypeId>>,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
         let ret = fun.apply_arg(ctx, from)?;
@@ -149,6 +156,7 @@ impl<'a> FunctionSubstitute<'a> {
             ret,
             expr: Default::default(),
             vals: Default::default(),
+            subst,
         };
         let mut stack_layouts = sub_info.stack_layouts(&f);
         let place_layouts = sub_info.place_layouts(&f, &mut stack_layouts, ctx)?;
@@ -160,7 +168,11 @@ impl<'a> FunctionSubstitute<'a> {
     }
 
     pub fn place(&self, place: PlaceRef) -> ILayout<'a> {
-        self.place_layouts[place.as_index()]
+        self.place_layouts[place.as_index()].0
+    }
+
+    pub fn place_ty(&self, place: PlaceRef) -> TypeId {
+        self.place_layouts[place.as_index()].1
     }
 
     pub fn stack(&self, stack: StackRef) -> ILayout<'a> {
@@ -174,6 +186,7 @@ struct SubInfo<T> {
     ret: T,
     expr: FxHashMap<(ExprId, SpanIndex), T>,
     vals: FxHashMap<DefId, T>,
+    subst: Arc<Vec<TypeId>>,
 }
 
 impl<'a> SubInfo<ILayout<'a>> {
@@ -192,8 +205,8 @@ impl<'a> SubInfo<ILayout<'a>> {
         f: &Function,
         stack_layouts: &mut [ILayout<'a>],
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
-    ) -> Result<Vec<ILayout<'a>>, LayoutError> {
-        let mut place_layouts: Vec<ILayout<'a>> = Vec::new();
+    ) -> Result<Vec<(ILayout<'a>, TypeId)>, LayoutError> {
+        let mut place_layouts: Vec<(ILayout<'a>, TypeId)> = Vec::new();
         for (_, place_info) in f.iter_places() {
             let layout = match place_info.place {
                 Place::Captures => self.fun,
@@ -205,24 +218,28 @@ impl<'a> SubInfo<ILayout<'a>> {
                         .db
                         .def_name(field)
                         .expect("accessing non-field id as field");
-                    place_layouts[place.as_index()].access_field(ctx, field_name)?
+                    place_layouts[place.as_index()]
+                        .0
+                        .access_field(ctx, field_name)?
                 }
                 Place::Captured(place, field) => place_layouts[place.as_index()]
+                    .0
                     .get_captured(ctx, field)?
                     .unwrap(),
-                Place::DupleField(place, duple_field) => {
-                    place_layouts[place.as_index()].access_duple(ctx, duple_field)
-                }
-                Place::From(place) => place_layouts[place.as_index()].access_from(ctx),
+                Place::DupleField(place, duple_field) => place_layouts[place.as_index()]
+                    .0
+                    .access_duple(ctx, duple_field),
+                Place::From(place) => place_layouts[place.as_index()].0.access_from(ctx),
             };
-            let cast_layout = layout.typecast(ctx, place_info.ty)?.0;
+            let ty = ctx.db.substitute_typevar(place_info.ty, self.subst.clone());
+            let cast_layout = layout.typecast(ctx, ty)?.0;
             // we need to make sure that the stack layouts are casted to the right type, but
             // we didn't have that information when we created the stack layouts, so we cast
             // it if we encounter a stack place here
             if let Place::Stack(idx) = place_info.place {
                 stack_layouts[idx.as_index()] = cast_layout;
             }
-            place_layouts.push(cast_layout);
+            place_layouts.push((cast_layout, ty));
         }
         Ok(place_layouts)
     }
