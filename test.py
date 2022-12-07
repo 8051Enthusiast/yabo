@@ -77,10 +77,9 @@ class ErrorLocation:
 
 current_script_dir = os.path.dirname(os.path.realpath(__file__))
 std_path = os.path.join(current_script_dir, 'std', 'mod.yb')
-
+compiler_dir = os.path.join(current_script_dir, 'crates', 'yaboc')
 
 def build_compiler_binary():
-    compiler_dir = os.path.join(current_script_dir, 'crates', 'yaboc')
     os.chdir(compiler_dir)
     with subprocess.Popen(
             ['cargo', 'metadata', '--format-version=1'], stdout=subprocess.PIPE) as cargo_metadata:
@@ -92,9 +91,12 @@ def build_compiler_binary():
         subprocess.run(cargo_args, check=True)
         return os.path.join(cargo_metadata_output['target_directory'], TARGET_RELEASE, BINARY_NAME)
 
+def run_clippy():
+    os.chdir(current_script_dir)
+    cargo_args = ['cargo', 'clippy', '--workspace']
+    subprocess.run(cargo_args, check=False)
 
 def run_compiler_unit_tests():
-    compiler_dir = os.path.join(current_script_dir, 'crates', 'yaboc')
     os.chdir(compiler_dir)
     cargo_args = ['cargo', 'nextest', 'run', '--workspace']
     if TARGET_RELEASE == 'release':
@@ -412,6 +414,7 @@ def run_tests(target_dir: str) -> int:
         results = pool.map(run_test, files)
         return sum(results)
 
+run_clippy()
 
 if not run_compiler_unit_tests():
     sys.exit(1)
@@ -422,4 +425,4 @@ if total_failed != 0:
     sys.exit(1)
 else:
     print('All tests passed')
-    sys.exit(0)
+    sys.exit(1)
