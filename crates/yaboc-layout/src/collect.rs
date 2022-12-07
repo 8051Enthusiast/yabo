@@ -180,7 +180,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             match mono {
                 UnprocessedCall::Nominal(mono) => {
                     if let Some(pd) = &self.ctx.pd_result()[&mono.0].clone() {
-                        self.collect_pd(&pd)
+                        self.collect_pd(pd)
                     }
                 }
                 UnprocessedCall::Block(arg, parser) => {
@@ -261,7 +261,8 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 (mono, slot)
             })
             .collect();
-        let collection = LayoutCollection {
+
+        LayoutCollection {
             root,
             arrays: self.arrays,
             blocks: self.blocks,
@@ -271,8 +272,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             primitives,
             parser_slots,
             funcall_slots,
-        };
-        collection
+        }
     }
 }
 
@@ -304,7 +304,7 @@ impl<'a, Arg: std::hash::Hash + Eq + Copy> CallInfo<'a, Arg> {
         for (arg_layout, parser_set) in self.map.drain() {
             let mut pog = ParserOffsetGroups::new(parser_set);
             let mut layout_map = pog.layout_map();
-            let mut sorted_vecs = pog.to_sets();
+            let mut sorted_vecs = pog.get_sets();
             for (index, set) in sorted_vecs.drain() {
                 let parser_layouts = match layout_map.remove(&index) {
                     Some(x) => x,
@@ -339,7 +339,7 @@ impl<'a, Arg: std::hash::Hash + Eq + Copy> CallInfo<'a, Arg> {
         let mut parser_occupied_entries: FxHashMap<IMonoLayout, FxHashMap<PSize, Arg>> =
             FxHashMap::default();
         for ((from, parsers), &slot) in layout_vtable_offsets.iter() {
-            for parser in flat_layouts(&parsers) {
+            for parser in flat_layouts(parsers) {
                 parser_occupied_entries
                     .entry(parser)
                     .or_default()
@@ -423,7 +423,7 @@ impl<'a> ParserOffsetGroups<'a> {
     }
     fn init_union_find(&mut self) {
         for parser_layout in self.parser_set.iter() {
-            let flat_id_iter = flat_layouts(&parser_layout).map(|x| self.mono_parsers[&x]);
+            let flat_id_iter = flat_layouts(parser_layout).map(|x| self.mono_parsers[&x]);
             for (second, first) in flat_id_iter.clone().skip(1).zip(flat_id_iter) {
                 self.union_find.union(first, second);
             }
@@ -439,7 +439,7 @@ impl<'a> ParserOffsetGroups<'a> {
         }
         res
     }
-    pub fn to_sets(&mut self) -> FxHashMap<u32, LayoutSet<'a>> {
+    pub fn get_sets(&mut self) -> FxHashMap<u32, LayoutSet<'a>> {
         let mut res: FxHashMap<u32, LayoutSet> = FxHashMap::default();
         for (mono, index) in self.mono_parsers.iter() {
             let repr = self.union_find.find_mut(*index);

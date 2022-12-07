@@ -66,7 +66,7 @@ pub fn resolve_expr_error(
             }
         }))
     };
-    let root_span = expr.0.root_data().clone();
+    let root_span = *expr.0.root_data();
     let expr = expr.try_fold(&mut |head| -> Result<
         Result<ResolvedExpr, hir::ModuleId>,
         ResolveError,
@@ -92,8 +92,8 @@ pub fn resolve_expr_error(
                     inner: new,
                 })));
             }
-            ExpressionHead::Monadic(m) => match &m.op.inner {
-                ValUnOp::Dot(name) => {
+            ExpressionHead::Monadic(m) => {
+                if let ValUnOp::Dot(name) = &m.op.inner {
                     if let Err(module) = m.inner {
                         match new_resolved_atom(module.0, *name, m.op.data)? {
                             Ok(new) => {
@@ -106,11 +106,10 @@ pub fn resolve_expr_error(
                         };
                     };
                 }
-                _ => {}
-            },
+            }
             _ => {}
         };
-        let root_span = head.root_data().clone();
+        let root_span = *head.root_data();
         let r = head.try_map_inner(|f| {
             f.map_err(|_| ResolveError::ModuleInExpression(expr_id, root_span))
         })?;

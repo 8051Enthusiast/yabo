@@ -36,7 +36,7 @@ fn conversion_report(error: HirConversionError) -> Option<Report> {
             )
             .with_label(Label::new(first).with_message("the previous appearnce of the field")),
         ),
-        HirConversionError::Silenced => return None,
+        HirConversionError::Silenced => None,
         HirConversionError::DuplicateArg { place, .. } => Some(
             Report::new(DiagnosticKind::Error, place.file, "Duplicate argument name")
                 .with_code(202)

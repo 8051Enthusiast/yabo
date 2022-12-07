@@ -23,7 +23,7 @@ fn public_expr_type_impl(
         hir::HirNode::Parse(p) => (ctx.parse_statement_types(&p)?, None),
         hir::HirNode::ParserDef(pd) => {
             let ret = db.parser_returns(pd.id)?.deref;
-            let ret = ctx.infctx.from_type(ret);
+            let ret = ctx.infctx.convert_type_into_inftype(ret);
             (ctx.parserdef_types(&pd)?, Some(ret))
         }
         _ => panic!("expected parse statement, let statement or parser def"),
@@ -61,7 +61,7 @@ fn public_type_impl(db: &dyn TyHirs, loc: DefId) -> Result<TypeId, TypeError> {
             for (_, choice_id) in ind.choices.iter() {
                 // todo
                 let choice_ty = db.public_type(*choice_id)?;
-                let intfy = ctx.infctx.from_type(choice_ty);
+                let intfy = ctx.infctx.convert_type_into_inftype(choice_ty);
                 ctx.infctx.constrain(intfy, ret)?;
             }
             ctx.inftype_to_concrete_type(ret)?
@@ -93,7 +93,7 @@ fn ambient_type_impl(db: &dyn TyHirs, loc: hir::ParseId) -> Result<TypeId, TypeE
             }) if *b == block.id => Some(data.0),
             _ => None,
         })
-        .ok_or_else(|| SilencedError::new())?;
+        .ok_or_else(SilencedError::new)?;
     let block_type = match db.lookup_intern_type(block_ty) {
         Type::ParserArg { result, .. } => result,
         _ => panic!("expected parser arg"),
@@ -114,7 +114,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern, PublicResolver<'a, 'intern>> {
         parse: &ParseStatement,
     ) -> Result<Option<InfTypeId<'intern>>, SpannedTypeError> {
         let from = self.db.ambient_type(parse.id)?;
-        let infty = self.infctx.from_type(from);
+        let infty = self.infctx.convert_type_into_inftype(from);
         Ok(Some(infty))
     }
     pub fn parserdef_types(
@@ -155,7 +155,7 @@ impl<'a, 'intern> PublicResolver<'a, 'intern> {
             db,
             public_resolver,
             typeloc,
-            &bump,
+            bump,
             false,
         ))
     }

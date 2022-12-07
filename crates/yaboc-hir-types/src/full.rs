@@ -50,22 +50,14 @@ pub fn parser_full_types(
 pub fn parser_type_at(db: &dyn TyHirs, id: DefId) -> SResult<TypeId> {
     let parent_pd = db.hir_parent_parserdef(id)?;
     let types = db.parser_full_types(parent_pd).silence()?;
-    let res = types
-        .types
-        .get(&id)
-        .copied()
-        .ok_or_else(|| SilencedError::new());
+    let res = types.types.get(&id).copied().ok_or_else(SilencedError::new);
     res
 }
 
 pub fn parser_expr_at(db: &dyn TyHirs, id: hir::ExprId) -> SResult<TypedExpression> {
     let parent_pd = db.hir_parent_parserdef(id.0)?;
     let types = db.parser_full_types(parent_pd).silence()?;
-    types
-        .exprs
-        .get(&id)
-        .cloned()
-        .ok_or_else(|| SilencedError::new())
+    types.exprs.get(&id).cloned().ok_or_else(SilencedError::new)
 }
 
 impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
@@ -82,7 +74,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
         }
         self.initialize_parserdef_args(pd, &mut vars)?;
         let ret = self.db.parser_returns(pd)?;
-        let ret_inf = self.infctx.from_type(ret.deref);
+        let ret_inf = self.infctx.convert_type_into_inftype(ret.deref);
         vars.insert(pd.0, ret_inf);
         let vars = Rc::new(vars);
         self.infctx.tr.inftypes = vars.clone();
@@ -104,7 +96,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {
                     Ok(ty) => ty,
                     Err(_) => continue,
                 };
-                let public_inftype = self.infctx.from_type(public_type);
+                let public_inftype = self.infctx.convert_type_into_inftype(public_type);
                 let current_inftype = self.infctx.tr.inftypes[child];
                 self.infctx
                     .constrain(current_inftype, public_inftype)

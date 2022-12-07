@@ -17,7 +17,7 @@ use yaboc_base::{
 
 use self::{
     inference::InfTypeId,
-    to_type::{TypeConvertMemo, TyVars},
+    to_type::{TyVars, TypeConvertMemo},
 };
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -230,12 +230,12 @@ pub fn substitute_typevar(
             db.intern_type(Type::Nominal(nom))
         }
         Type::Loop(kind, inner) => {
-            let inner = substitute_typevar(db, inner, replacements.clone());
+            let inner = substitute_typevar(db, inner, replacements);
             db.intern_type(Type::Loop(kind, inner))
         }
         Type::ParserArg { result, arg } => {
             let result = substitute_typevar(db, result, replacements.clone());
-            let arg = substitute_typevar(db, arg, replacements.clone());
+            let arg = substitute_typevar(db, arg, replacements);
             db.intern_type(Type::ParserArg { result, arg })
         }
         Type::FunctionArg(result, args) => {
@@ -247,8 +247,8 @@ pub fn substitute_typevar(
             );
             db.intern_type(Type::FunctionArg(result, args))
         }
-        Type::ForAll(inner, _) => return inner,
-        Type::Any | Type::Bot | Type::Unknown | Type::Primitive(_) => return ty,
+        Type::ForAll(inner, _) => inner,
+        Type::Any | Type::Bot | Type::Unknown | Type::Primitive(_) => ty,
     }
 }
 

@@ -123,7 +123,7 @@ impl ContextData {
                 .remove(choice)
                 .unwrap_or_default();
             for (i, &ctx) in subcontx.iter().enumerate() {
-                let next_context = subcontx.get(i + 1).map(|x| *x).or(backtracks_to);
+                let next_context = subcontx.get(i + 1).copied().or(backtracks_to);
                 Self::build_subcontext(
                     db,
                     ctx,
@@ -157,7 +157,7 @@ impl<'a> ConvertCtx<'a> {
                 kind: SubValueKind::Val,
                 id,
             })
-            .map(|x| *x)
+            .copied()
     }
 
     fn front_place_at_def(&self, id: DefId) -> Option<PlaceRef> {
@@ -166,7 +166,7 @@ impl<'a> ConvertCtx<'a> {
                 kind: SubValueKind::Front,
                 id,
             })
-            .map(|x| *x)
+            .copied()
     }
 
     fn back_place_at_def(&self, id: DefId) -> Option<PlaceRef> {
@@ -175,7 +175,7 @@ impl<'a> ConvertCtx<'a> {
                 kind: SubValueKind::Back,
                 id,
             })
-            .map(|x| *x)
+            .copied()
     }
 
     pub fn change_context(&mut self, context: ContextId) {
@@ -370,7 +370,7 @@ impl<'a> ConvertCtx<'a> {
             ExpressionHead::Monadic(Monadic { op, inner }) => {
                 let inner_ty = inner.0.root_data().0;
                 let inner_origin = PlaceOrigin::Expr(expr_id, inner.0.root_data().1);
-                let recurse = |ctx: &mut Self, plc| ctx.convert_expr(expr_id, &inner, plc);
+                let recurse = |ctx: &mut Self, plc| ctx.convert_expr(expr_id, inner, plc);
                 match &op.inner {
                     ValUnOp::Not | ValUnOp::Neg => {
                         let op: IntUnOp = (&op.inner).try_into().unwrap();
@@ -398,7 +398,7 @@ impl<'a> ConvertCtx<'a> {
                             WiggleKind::Wiggly => self.retreat.error,
                         };
                         let cont = self.f.new_bb();
-                        self.convert_constraint(&constr, ldt_ref, cont)?;
+                        self.convert_constraint(constr, ldt_ref, cont)?;
                         self.f.set_bb(cont);
                         self.retreat.backtrack = old_backtrack;
                         place_ref
@@ -610,19 +610,19 @@ impl<'a> ConvertCtx<'a> {
             ExpressionHead::Dyadic(Dyadic { op, inner }) => match op.inner {
                 ConstraintBinOp::And => {
                     let right_bb = self.f.new_bb();
-                    self.convert_constraint(&*inner[0], val, right_bb)?;
+                    self.convert_constraint(&inner[0], val, right_bb)?;
                     self.f.set_bb(right_bb);
-                    self.convert_constraint(&*inner[1], val, cont)?;
+                    self.convert_constraint(&inner[1], val, cont)?;
                     Ok(())
                 }
                 ConstraintBinOp::Or => {
                     let right_bb = self.f.new_bb();
                     let old_backtrack = self.retreat.backtrack;
                     self.retreat.backtrack = right_bb;
-                    self.convert_constraint(&*inner[0], val, cont)?;
+                    self.convert_constraint(&inner[0], val, cont)?;
                     self.f.set_bb(right_bb);
                     self.retreat.backtrack = old_backtrack;
-                    self.convert_constraint(&*inner[1], val, cont)?;
+                    self.convert_constraint(&inner[1], val, cont)?;
                     Ok(())
                 }
             },
@@ -986,7 +986,7 @@ impl<'a> ConvertCtx<'a> {
         arg_kind: PdArgKind,
     ) -> SResult<Self> {
         let sig = db.parser_args(id)?;
-        let from = sig.from.unwrap_or(db.intern_type(Type::Any));
+        let from = sig.from.unwrap_or_else(|| db.intern_type(Type::Any));
         let ret_ty = match call_kind {
             CallKind::Len => from,
             CallKind::Val => db.parser_returns(id)?.deref,

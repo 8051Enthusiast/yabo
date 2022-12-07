@@ -257,7 +257,7 @@ impl<'intern> Deref for InfTypeId<'intern> {
     type Target = InferenceType<'intern>;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.0
     }
 }
 
@@ -386,7 +386,9 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         name: FieldName,
     ) -> Result<InfTypeId<'intern>, TypeError> {
         let ret = match self.tr.field_type(ty, name)? {
-            EitherType::Regular(result_type) => self.from_type_with_args(result_type, &ty.ty_args),
+            EitherType::Regular(result_type) => {
+                self.convert_type_into_inftype_with_args(result_type, ty.ty_args)
+            }
             EitherType::Inference(infty) => infty,
         };
         if self.trace {
@@ -407,7 +409,9 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     ) -> Result<Option<InfTypeId<'intern>>, TypeError> {
         if let Some(deref_ty) = self.tr.deref(ty)? {
             let ret = match deref_ty {
-                EitherType::Regular(deref_ty) => self.from_type_with_args(deref_ty, &ty.ty_args),
+                EitherType::Regular(deref_ty) => {
+                    self.convert_type_into_inftype_with_args(deref_ty, ty.ty_args)
+                }
                 // if we return an inference type, inference variables as return types from recursive calls
                 // would cause weird higher-ranked inference which i don't want to deal with so the variables
                 // are replaced with unknowns
@@ -442,7 +446,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     pub fn lookup(&mut self, val: DefId) -> Result<InfTypeId<'intern>, TypeError> {
         let ret = match self.tr.lookup(val) {
             Ok(EitherType::Regular(result_type)) => {
-                let ret = self.from_type(result_type);
+                let ret = self.convert_type_into_inftype(result_type);
                 if self.trace {
                     dbeprintln!(
                         self.tr.db(),
@@ -463,7 +467,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     pub fn parserdef(&mut self, pd: DefId) -> Result<InfTypeId<'intern>, TypeError> {
         let ret = match self.tr.parserdef(pd)? {
             EitherType::Regular(result_type) => {
-                let ret = self.from_type(result_type);
+                let ret = self.convert_type_into_inftype(result_type);
                 if self.trace {
                     dbeprintln!(
                         self.tr.db(),
@@ -578,7 +582,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
 
             (Nominal(l), _) => {
                 // if they are not the same head, try upcasting/dereferencing/evaluating
-                if let Some(deref) = self.deref(&l)? {
+                if let Some(deref) = self.deref(l)? {
                     self.constrain(deref, upper)
                 } else {
                     Err(TypeError::HeadMismatch(
@@ -782,11 +786,11 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         replace_map.insert(ty, res);
         res
     }
-    pub fn from_type(&mut self, ty: TypeId) -> InfTypeId<'intern> {
+    pub fn convert_type_into_inftype(&mut self, ty: TypeId) -> InfTypeId<'intern> {
         let ty = self.tr.db().lookup_intern_type(ty);
-        self.from_type_internal(&ty, None)
+        self.convert_type_into_inftype_internal(&ty, None)
     }
-    pub fn from_type_with_args(
+    pub fn convert_type_into_inftype_with_args(
         &mut self,
         ty: TypeId,
         args: &[InfTypeId<'intern>],
@@ -811,18 +815,19 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                     panic!("Internal Compiler Error: forall args has different length from substituted args!");
                 }
                 let inner = self.tr.db().lookup_intern_type(*inner);
-                self.from_type_internal(&inner, Some(&vars))
+                self.convert_type_into_inftype_internal(&inner, Some(&vars))
             }
-            _ => self.from_type_internal(&ty, Some(&vars)),
+            _ => self.convert_type_into_inftype_internal(&ty, Some(&vars)),
         }
     }
-    fn from_type_internal(
+    fn convert_type_into_inftype_internal(
         &mut self,
         ty: &Type,
         var_stack: Option<&TyVars<'_, 'intern>>,
     ) -> InfTypeId<'intern> {
-        let mut recurse =
-            |x| self.from_type_internal(&self.tr.db().lookup_intern_type(x), var_stack);
+        let mut recurse = |x| {
+            self.convert_type_into_inftype_internal(&self.tr.db().lookup_intern_type(x), var_stack)
+        };
         let ret = match ty {
             Type::Any => InferenceType::Any,
             Type::Bot => InferenceType::Bot,
@@ -836,7 +841,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                 let current = defvars.iter().map(|_| self.var()).collect::<Vec<_>>();
                 let new_stack = TyVars { cur: &current };
                 let inner = self.tr.db().lookup_intern_type(*inner);
-                return self.from_type_internal(&inner, Some(&new_stack));
+                return self.convert_type_into_inftype_internal(&inner, Some(&new_stack));
             }
             Type::Nominal(NominalTypeHead {
                 kind,
@@ -884,7 +889,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     }
     pub fn to_type(&mut self, infty: InfTypeId<'intern>) -> Result<TypeId, TypeError> {
         let mut converter = TypeConvertMemo::new(self);
-        converter.to_type_internal(infty)
+        converter.convert_to_type_internal(infty)
     }
     pub fn to_types_with_vars(
         &mut self,
@@ -895,7 +900,8 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         let mut converter = TypeConvertMemo::new(self);
         let mut ret = Vec::new();
         for infty in inftys {
-            let (new_ty, new_n) = converter.to_type_internal_with_vars(*infty, n_vars, at)?;
+            let (new_ty, new_n) =
+                converter.convert_to_type_internal_with_vars(*infty, n_vars, at)?;
             n_vars = new_n;
             ret.push(new_ty);
         }

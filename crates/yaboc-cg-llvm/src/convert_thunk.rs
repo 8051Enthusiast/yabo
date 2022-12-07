@@ -44,7 +44,7 @@ impl<'comp> ThunkKind<'comp> {
             }
         }
     }
-    pub fn target_layout<'llvm>(&self) -> IMonoLayout<'comp> {
+    pub fn target_layout(&self) -> IMonoLayout<'comp> {
         match self {
             ThunkKind::Typecast(layout) => *layout,
             ThunkKind::CreateArgs { to, .. } => *to,

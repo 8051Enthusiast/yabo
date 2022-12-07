@@ -33,11 +33,11 @@ impl<'a> FunctionSubstitute<'a> {
         };
         let evaluated = ctx.block_result()[&(from, block.0)]
             .as_ref()
-            .ok_or_else(|| SilencedError::new())?;
+            .ok_or_else(SilencedError::new)?;
         let subst = evaluated.typesubst.clone();
         let mut expr_map = FxHashMap::default();
         for (id, expr) in evaluated.expr_vals.iter() {
-            for r in ExprIter::new(&expr) {
+            for r in ExprIter::new(expr) {
                 let AbstractExprInfo { val, span, .. } = *r.0.root_data();
                 expr_map.insert((*id, span), val);
             }
@@ -102,7 +102,7 @@ impl<'a> FunctionSubstitute<'a> {
         };
         let evaluated = ctx.pd_result()[&lookup_layout]
             .as_ref()
-            .ok_or_else(|| SilencedError::new())?;
+            .ok_or_else(SilencedError::new)?;
         let subst = evaluated.typesubst.clone();
         if arg_kind == PdArgKind::Parse && call_kind == CallKind::Val {
             return Self::new_from_pd_val_parser(f, from, fun, subst, ctx);
@@ -110,7 +110,7 @@ impl<'a> FunctionSubstitute<'a> {
         let expr_id = pd.lookup(ctx.db)?.to;
         let mut expr_map = FxHashMap::default();
         if let Some(expr) = evaluated.expr_vals.as_ref() {
-            for r in ExprIter::new(&expr) {
+            for r in ExprIter::new(expr) {
                 let AbstractExprInfo { val, span, .. } = *r.0.root_data();
                 expr_map.insert((expr_id, span), val);
             }

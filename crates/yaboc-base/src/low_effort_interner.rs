@@ -85,7 +85,7 @@ impl<'a, T: Eq + Hash + Copy> Interner<'a, [T]> {
     }
 }
 
-impl<'a, DB, T: DatabasedDisplay<DB>> DatabasedDisplay<DB> for Uniq<T> {
+impl<DB, T: DatabasedDisplay<DB>> DatabasedDisplay<DB> for Uniq<T> {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         self.1.db_fmt(f, db)
     }

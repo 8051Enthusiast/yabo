@@ -15,16 +15,22 @@ pub struct SilencedError(Arc<std::backtrace::Backtrace>);
 #[derive(Clone, Debug)]
 pub struct SilencedError(());
 
-#[cfg(debug_assertions)]
 impl SilencedError {
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[cfg(debug_assertions)]
+impl Default for SilencedError {
+    fn default() -> Self {
         Self(Arc::new(std::backtrace::Backtrace::capture()))
     }
 }
 
 #[cfg(not(debug_assertions))]
-impl SilencedError {
-    pub fn new() -> Self {
+impl Default for SilencedError {
+    fn default() -> Self {
         Self(())
     }
 }
@@ -76,7 +82,7 @@ impl<E: Into<SilencedError>> Silencable for E {
 impl<E: Into<SilencedError>> Silencable for Vec<E> {
     type Out = SilencedError;
     fn silence(self) -> Self::Out {
-        SilencedError::new()
+        SilencedError::default()
     }
 }
 

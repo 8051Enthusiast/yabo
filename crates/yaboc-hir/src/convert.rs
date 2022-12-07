@@ -43,14 +43,14 @@ fn val_expression(
 ) {
     let spans = RefCell::new(Vec::new());
     let mut children = Vec::new();
-    let mut add_span = SpanIndex::add_span(&spans);
+    let add_span = SpanIndex::add_span(&spans);
     let mut new_id = || {
         let index: u32 = u32::try_from(children.len()).unwrap();
         let new_id = id.child(ctx.db, PathComponent::Unnamed(index));
         children.push(new_id);
         new_id
     };
-    let expr: Expression<HirValSpanned> = ast.map(&mut add_span).convert(
+    let expr: Expression<HirValSpanned> = ast.map(&add_span).convert(
         &mut |niladic| {
             let inner = match &niladic.inner {
                 ast::ParserAtom::Atom(atom) => ParserAtom::Atom(atom.clone()),
@@ -69,7 +69,7 @@ fn val_expression(
         },
         &mut |monadic, _| OpWithData {
             data: monadic.data,
-            inner: monadic.inner.map_expr(|x| Arc::new(x.map(&mut add_span))),
+            inner: monadic.inner.map_expr(|x| Arc::new(x.map(&add_span))),
         },
         &mut |dyadic, _, _| dyadic.clone(),
         &mut |variadic, _| variadic.clone(),
@@ -86,7 +86,7 @@ fn val_expression(
 
 fn convert_type_expression(
     expr: &ast::TypeExpression,
-    mut add_span: &impl Fn(&Span) -> SpanIndex,
+    add_span: &impl Fn(&Span) -> SpanIndex,
 ) -> Expression<HirTypeSpanned> {
     let expr = expr.map(add_span);
     expr.convert(
@@ -129,7 +129,7 @@ fn convert_type_expression(
         },
         &mut |monadic, _| OpWithData {
             data: monadic.data,
-            inner: monadic.inner.map_expr(|x| Arc::new(x.map(&mut add_span))),
+            inner: monadic.inner.map_expr(|x| Arc::new(x.map(&add_span))),
         },
         &mut |dyadic, _, _| dyadic.clone(),
         &mut |variadic, _| variadic.clone(),
@@ -138,8 +138,8 @@ fn convert_type_expression(
 
 fn type_expression(ast: &ast::TypeExpression, ctx: &HirConversionCtx, id: TExprId) {
     let spans = RefCell::new(Vec::new());
-    let mut add_span = SpanIndex::add_span(&spans);
-    let texpr = convert_type_expression(ast, &mut add_span);
+    let add_span = SpanIndex::add_span(&spans);
+    let texpr = convert_type_expression(ast, &add_span);
     let texpr = TypeExpression { id, expr: texpr };
     drop(add_span);
     ctx.insert(id.0, HirNode::TExpr(texpr), spans.into_inner())
@@ -276,10 +276,10 @@ fn struct_choice(
     let mut varset = None;
     let mut subvars = Vec::new();
     let mut has_non_zero_len = false;
-    for (idx, child) in children.into_iter().enumerate() {
+    for (idx, child) in children.iter().enumerate() {
         let subcontext_id = ContextId(id.child(ctx.db, PathComponent::Unnamed(idx as u32)));
         subcontexts.push(subcontext_id);
-        let (new_vars, non_zero_len_context) = struct_context(&child, ctx, subcontext_id, &parents);
+        let (new_vars, non_zero_len_context) = struct_context(child, ctx, subcontext_id, &parents);
         has_non_zero_len |= non_zero_len_context;
         varset = varset
             .map(|x: VariableSet<()>| x.merge_sum(&new_vars))
@@ -396,14 +396,7 @@ fn struct_context(
                 let sub_id = new_id(x.field());
                 match x.as_ref() {
                     ast::Statement::Parse(p) => {
-                        let set = parse_statement(
-                            p,
-                            ctx,
-                            ParseId(sub_id),
-                            update_pred(&mut pred, sub_id),
-                            id,
-                        );
-                        set
+                        parse_statement(p, ctx, ParseId(sub_id), update_pred(&mut pred, sub_id), id)
                     }
                     ast::Statement::Let(l) => let_statement(l, ctx, LetId(sub_id), id),
                 }
@@ -445,7 +438,7 @@ fn let_statement(
     let val_id = ExprId(id.child(ctx.db, PathComponent::Unnamed(0)));
     let ty = if let Some(ty) = &ast.ty {
         let ty_id = TExprId(id.child(ctx.db, PathComponent::Unnamed(1)));
-        type_expression(&ty, ctx, ty_id);
+        type_expression(ty, ctx, ty_id);
         Some(ty_id)
     } else {
         None

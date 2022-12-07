@@ -1,3 +1,4 @@
+#![allow(clippy::type_complexity)]
 mod convert;
 pub mod error;
 pub mod represent;
@@ -191,12 +192,12 @@ fn indirect_span(db: &dyn Hirs, span: IndirectSpan) -> SResult<Span> {
     let id = db.hir_parent_parserdef(span.0)?;
     let collection = db
         .hir_parser_collection(id.0)?
-        .ok_or_else(|| SilencedError::new())?;
-    Ok(match span.1 {
+        .ok_or_else(SilencedError::new)?;
+    match span.1 {
         Some(index) => collection.span_with_index(span.0, index.as_usize()),
         None => collection.default_span(span.0),
     }
-    .ok_or_else(|| SilencedError::new())?)
+    .ok_or_else(SilencedError::new)
 }
 
 fn indirection_targets(db: &dyn Hirs, id: DefId) -> SResult<Arc<Vec<DefId>>> {
@@ -249,11 +250,9 @@ fn sorted_field_index(
 
 fn discriminant_mapping(db: &dyn Hirs, block: BlockId) -> SResult<Arc<FxHashMap<DefId, u64>>> {
     let mut mapping = FxHashMap::default();
-    let mut i = 0;
     let root_ctx = block.lookup(db)?.root_context.0;
-    for field in db.sorted_block_fields(block, true)?.iter() {
-        mapping.insert(root_ctx.child_field(db, *field), i);
-        i += 1;
+    for (i, field) in db.sorted_block_fields(block, true)?.iter().enumerate() {
+        mapping.insert(root_ctx.child_field(db, *field), i as u64);
     }
     Ok(Arc::new(mapping))
 }
@@ -266,8 +265,7 @@ fn parserdef_arg(db: &dyn Hirs, pd: ParserDefId, name: Identifier) -> SResult<Op
     let pd = pd.lookup(db)?;
     let arg = pd
         .args
-        .as_ref()
-        .map(|x| x.as_slice())
+        .as_deref()
         .unwrap_or_default()
         .iter()
         .find(|x| db.def_name(x.0) == Some(FieldName::Ident(name)))
@@ -279,8 +277,7 @@ fn parserdef_arg_index(db: &dyn Hirs, pd: ParserDefId, id: DefId) -> SResult<Opt
     let pd = pd.lookup(db)?;
     let index = pd
         .args
-        .as_ref()
-        .map(|x| x.as_slice())
+        .as_deref()
         .unwrap_or_default()
         .iter()
         .position(|x| x.0 == id);
@@ -387,6 +384,9 @@ pub trait HirIdWrapper: Copy {
     type Inner;
     fn id(self) -> DefId;
     fn extract(node: HirNode) -> Self::Inner;
+    /// Makes a new wrapped value from a DefId without checking if the DefId is valid.
+    /// # Safety
+    /// The DefId must be valid, otherwise this can potentially cause UB.
     unsafe fn new_unchecked(id: DefId) -> Self;
     fn child<DB: Hirs + ?Sized>(self, db: &DB, add: PathComponent) -> DefId {
         self.id().child(db, add)
@@ -447,7 +447,7 @@ fn module_file(db: &dyn Hirs, file: FileId) -> Result<Module, SilencedError> {
         .iter()
         .flat_map(|(sym, is_parserdef)| {
             let path = db.intern_hir_path(HirPath::new_fid(file, FieldName::Ident(*sym)));
-            (!*is_parserdef).then(|| (*sym, ImportId(path)))
+            (!*is_parserdef).then_some((*sym, ImportId(path)))
         })
         .collect();
     Ok(Module { id, defs, imports })

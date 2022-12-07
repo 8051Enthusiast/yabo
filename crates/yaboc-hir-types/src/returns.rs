@@ -42,7 +42,7 @@ pub fn parser_returns(db: &dyn TyHirs, id: hir::ParserDefId) -> SResult<ParserDe
         .into_iter()
         .flatten()
         .find(|x| x.id.0 == id.0)
-        .ok_or_else(|| SilencedError::new())
+        .ok_or_else(SilencedError::new)
 }
 
 pub fn parser_returns_ssc(
@@ -228,4 +228,3 @@ def for[int] *> u16l = {
         assert_eq!(ret.to_db_string(&ctx.db), "int");
     }
 }
-

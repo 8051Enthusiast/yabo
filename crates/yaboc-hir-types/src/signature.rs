@@ -129,7 +129,7 @@ pub fn get_parserdef(db: &dyn TyHirs, pd: DefId) -> Result<TypeId, TypeError> {
         })
     }
     if let Some(args) = args.args {
-        ret = db.intern_type(Type::FunctionArg(ret, args.clone()))
+        ret = db.intern_type(Type::FunctionArg(ret, args))
     }
     ret = attach_forall(db, ret, &args.ty_args);
     Ok(ret)
@@ -178,4 +178,3 @@ def each[expr3] *> expr5 = {}
         assert_eq!("each[for['0] &> file[_].expr3]", arg_type("expr5"));
     }
 }
-

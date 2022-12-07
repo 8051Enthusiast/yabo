@@ -93,9 +93,9 @@ impl FieldName {
 impl<DB: Interner + ?Sized> StableHash<DB> for FieldName {
     fn update_hash(&self, state: &mut sha2::Sha256, db: &DB) {
         match self {
-            FieldName::Return => state.update(&[0]),
+            FieldName::Return => state.update([0]),
             FieldName::Ident(id) => {
-                state.update(&[1]);
+                state.update([1]);
                 id.update_hash(state, db)
             }
         }

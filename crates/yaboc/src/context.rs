@@ -90,8 +90,8 @@ impl Driver {
         f: impl FnOnce(CodeGenCtx) -> Result<(), LLVMString>,
     ) -> Result<(), String> {
         let llvm = inkwell::context::Context::create();
-        let mut bump = Bump::new();
-        let intern = low_effort_interner::Interner::<InternedLayout>::new(&mut bump);
+        let bump = Bump::new();
+        let intern = low_effort_interner::Interner::<InternedLayout>::new(&bump);
         let layout_ctx = LayoutContext::new(intern);
         let exported_pds = self.db.all_exported_parserdefs();
         let exported_tys: Vec<_> = exported_pds

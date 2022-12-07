@@ -26,7 +26,7 @@ impl salsa::InternKey for FunctionSscId {
 pub fn parser_ssc(db: &dyn Resolves, id: hir::ParserDefId) -> SResult<FunctionSscId> {
     let module = db.hir_parent_module(id.0)?;
     let sscs = db.mod_parser_ssc(module)?;
-    sscs.get(&id).copied().ok_or_else(|| SilencedError::new())
+    sscs.get(&id).copied().ok_or_else(SilencedError::new)
 }
 
 pub fn mod_parser_ssc(

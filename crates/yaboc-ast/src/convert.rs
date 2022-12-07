@@ -24,8 +24,8 @@ pub struct GenericParseError {
     pub(super) loc: Span,
 }
 
-impl Into<SilencedError> for GenericParseError {
-    fn into(self) -> SilencedError {
+impl From<GenericParseError> for SilencedError {
+    fn from(_val: GenericParseError) -> Self {
         SilencedError::new()
     }
 }
@@ -594,14 +594,14 @@ astify! {
     };
 }
 
-impl Into<MonadicExpr<AstValSpanned>> for ConstraintApply {
-    fn into(self) -> MonadicExpr<AstValSpanned> {
+impl From<ConstraintApply> for MonadicExpr<AstValSpanned> {
+    fn from(val: ConstraintApply) -> Self {
         Monadic {
             op: OpWithData {
-                data: self.op.span,
-                inner: ValUnOp::Wiggle(Arc::new(self.right), self.op.inner),
+                data: val.op.span,
+                inner: ValUnOp::Wiggle(Arc::new(val.right), val.op.inner),
             },
-            inner: Box::new(self.left),
+            inner: Box::new(val.left),
         }
     }
 }
@@ -622,14 +622,14 @@ astify! {
     };
 }
 
-impl Into<MonadicExpr<AstTypeSpanned>> for TypeConstraint {
-    fn into(self) -> MonadicExpr<AstTypeSpanned> {
+impl From<TypeConstraint> for MonadicExpr<AstTypeSpanned> {
+    fn from(val: TypeConstraint) -> Self {
         Monadic {
             op: OpWithData {
-                data: self.op.span,
-                inner: TypeUnOp::Wiggle(Arc::new(self.right)),
+                data: val.op.span,
+                inner: TypeUnOp::Wiggle(Arc::new(val.right)),
             },
-            inner: Box::new(self.left),
+            inner: Box::new(val.left),
         }
     }
 }
@@ -650,14 +650,14 @@ astify! {
     };
 }
 
-impl Into<MonadicExpr<AstValSpanned>> for ValDot {
-    fn into(self) -> MonadicExpr<AstValSpanned> {
+impl From<ValDot> for MonadicExpr<AstValSpanned> {
+    fn from(val: ValDot) -> Self {
         Monadic {
             op: OpWithData {
-                data: self.op.span,
-                inner: ValUnOp::Dot(self.right.inner),
+                data: val.op.span,
+                inner: ValUnOp::Dot(val.right.inner),
             },
-            inner: Box::new(self.left),
+            inner: Box::new(val.left),
         }
     }
 }
@@ -738,8 +738,8 @@ fn number_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<i64> 
 fn char_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<u32> {
     let Spanned { inner, span } = spanned(node_to_string)(db, fd, c)?;
     let without_quotes = inner
-        .strip_prefix("'")
-        .and_then(|s| s.strip_suffix("'"))
+        .strip_prefix('\'')
+        .and_then(|s| s.strip_suffix('\''))
         .ok_or_else(|| vec![GenericParseError { loc: span }])?;
     let mut it = without_quotes.chars();
     let first = it

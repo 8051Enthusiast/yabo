@@ -142,7 +142,7 @@ impl<K: ExpressionKind, T, E> ExpressionHead<K, Result<T, E>> {
     }
 }
 
-impl<'a, K: ExpressionKind, Inner: Clone> ExpressionHead<&K, &Inner> {
+impl<K: ExpressionKind, Inner: Clone> ExpressionHead<&K, &Inner> {
     pub fn make_owned(&self) -> ExpressionHead<K, Inner> {
         match self {
             Self::Niladic(op) => ExpressionHead::new_niladic((*op).clone()),
@@ -154,7 +154,7 @@ impl<'a, K: ExpressionKind, Inner: Clone> ExpressionHead<&K, &Inner> {
             }
             Self::Variadic(Variadic { op, inner }) => ExpressionHead::new_variadic(
                 (*op).clone(),
-                inner.into_iter().copied().cloned().collect(),
+                inner.iter().copied().cloned().collect(),
             ),
         }
     }
@@ -472,7 +472,7 @@ impl<T: Clone + Hash + Eq + Debug, K: ExpressionKind> Expression<KindWithData<K,
     ) -> Result<Expression<KindWithData<K, ToT>>, E> {
         match &self.0 {
             ExpressionHead::Niladic(op) => Ok(Expression::new_niladic(OpWithData::new(
-                f(ExpressionHead::new_niladic(op)).map_err(|e| e)?,
+                f(ExpressionHead::new_niladic(op))?,
                 op.inner.clone(),
             ))),
             ExpressionHead::Monadic(Monadic { op, inner }) => {
@@ -651,7 +651,7 @@ impl<C> ValUnOp<C> {
             Not => Not,
             Neg => Neg,
             Wiggle(expr, kind) => Wiggle(f(expr), kind.clone()),
-            Dot(atom) => Dot(atom.clone()),
+            Dot(atom) => Dot(*atom),
         }
     }
 }
