@@ -1,3 +1,4 @@
+#![allow(clippy::type_complexity)]
 pub mod collect;
 pub mod mir_subst;
 pub mod prop;
@@ -170,7 +171,7 @@ impl<'a> ILayout<'a> {
     }
 
     pub fn contains_deref(&self) -> bool {
-        flat_layouts(&self).any(|x| matches!(x.mono_layout().0, MonoLayout::Nominal(_, _, _)))
+        flat_layouts(self).any(|x| matches!(x.mono_layout().0, MonoLayout::Nominal(_, _, _)))
     }
 
     fn map(
@@ -450,7 +451,7 @@ impl<'a> ILayout<'a> {
                 size
             }
             Layout::Multi(m) => m.layouts.iter().try_fold(Zst::tsize(), |sa, layout| {
-                Ok(sa.union(layout.size_align(ctx)?))
+                Ok::<_, SilencedError>(sa.union(layout.size_align(ctx)?))
             })?,
         };
         ctx.dcx.sizes.insert(self, ret);
@@ -572,10 +573,8 @@ pub fn canon_layout<'a, 'b>(
         Type::Loop(_, inner_ty) => {
             let inner_type = ctx.db.lookup_intern_type(inner_ty);
             match inner_type {
-                Type::Primitive(PrimitiveType::Int) => {
-                    return Ok(make_layout(ctx, MonoLayout::Pointer))
-                }
-                _ => return Err(LayoutError),
+                Type::Primitive(PrimitiveType::Int) => Ok(make_layout(ctx, MonoLayout::Pointer)),
+                _ => Err(LayoutError),
             }
         }
         Type::Nominal(n) => {
@@ -884,7 +883,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
         ty: TypeId,
         fields: &FxHashMap<Arg, Self>,
     ) -> Result<Self, Self::Err> {
-        let from = fields.get(&Arg::From).map(|x| *x);
+        let from = fields.get(&Arg::From).copied();
         let mut args = BTreeMap::new();
         for (arg, layout) in fields.iter() {
             if let Arg::Named(name) = arg {
@@ -956,8 +955,8 @@ def for[int] *> main = {
 }
         ",
         );
-        let mut bump = Bump::new();
-        let intern = Interner::<InternedLayout>::new(&mut bump);
+        let bump = Bump::new();
+        let intern = Interner::<InternedLayout>::new(&bump);
         let layout_ctx = LayoutContext::new(intern);
         let mut outlayer = AbsIntCtx::<ILayout>::new(&ctx.db, layout_ctx);
         let main = ctx.parser("main");

@@ -230,7 +230,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .size_align(self.layouts)
             .expect("Could not get size/alignment of layout");
         let ty = self.sa_type(sa);
-        let ptr = self.builder.build_alloca(ty, &format!("alloca"));
+        let ptr = self.builder.build_alloca(ty, "alloca");
         let u8_ptr_ty = self.llvm.i8_type().ptr_type(AddressSpace::Generic);
         self.builder
             .build_bitcast(ptr, u8_ptr_ty, name)
@@ -482,7 +482,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 }
 
-fn get_fun_args<'llvm, const N: usize>(fun: FunctionValue<'llvm>) -> [BasicValueEnum<'llvm>; N] {
+fn get_fun_args<const N: usize>(fun: FunctionValue<'_>) -> [BasicValueEnum<'_>; N] {
     std::array::from_fn(|i| fun.get_nth_param(i as u32).unwrap())
 }
 

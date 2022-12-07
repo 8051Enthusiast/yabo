@@ -96,7 +96,7 @@ impl Polarity for PositivePolarity {
         let mut other_ty = other;
         loop {
             other_upset.insert(TypeHead::try_from(other_ty).unwrap(), other_ty.clone());
-            match next(&other_ty)? {
+            match next(other_ty)? {
                 Some(n) => other_ty = n,
                 None => break,
             }
@@ -110,7 +110,7 @@ impl Polarity for PositivePolarity {
                 res = Some(ctx.join_inftype(other, nom)?);
                 break;
             }
-            match next(&nom_ty)? {
+            match next(nom_ty)? {
                 Some(n) => nom_ty = n,
                 None => break,
             }
@@ -154,10 +154,10 @@ impl Polarity for NegativePolarity {
         let mut nom_ty = nom;
         loop {
             if TypeHead::try_from(nom_ty).unwrap() == otherhead {
-                let [a_id, b_id] = [&nom_ty, other].map(|x| ctx.ctx.intern_infty(x.clone()));
+                let [a_id, b_id] = [nom_ty, other].map(|x| ctx.ctx.intern_infty(x.clone()));
                 return ctx.meet_inftype(a_id, b_id);
             }
-            match next(&nom_ty)? {
+            match next(nom_ty)? {
                 Some(n) => nom_ty = n,
                 None => break,
             }
@@ -168,7 +168,7 @@ impl Polarity for NegativePolarity {
                 let [a_id, b_id] = [other_ty, nom].map(|x| ctx.ctx.intern_infty(x.clone()));
                 return ctx.meet_inftype(a_id, b_id);
             }
-            match next(&other_ty)? {
+            match next(other_ty)? {
                 Some(n) => other_ty = n,
                 None => break,
             }
@@ -377,7 +377,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
         };
         self.normalize.leave_fun(infty, res)
     }
-    pub(crate) fn to_type_internal(
+    pub(crate) fn convert_to_type_internal(
         &mut self,
         infty: InfTypeId<'intern>,
     ) -> Result<TypeId, TypeError> {
@@ -402,16 +402,18 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                 ty_args,
                 internal: _,
             }) => {
-                let parse_arg = parse_arg.map(|x| self.to_type_internal(x)).transpose()?;
+                let parse_arg = parse_arg
+                    .map(|x| self.convert_to_type_internal(x))
+                    .transpose()?;
                 let fun_args = fun_args
                     .iter()
                     .copied()
-                    .map(|x| self.to_type_internal(x))
+                    .map(|x| self.convert_to_type_internal(x))
                     .collect::<Result<_, _>>()?;
                 let ty_args = ty_args
                     .iter()
                     .copied()
-                    .map(|x| self.to_type_internal(x))
+                    .map(|x| self.convert_to_type_internal(x))
                     .collect::<Result<_, _>>()?;
                 Type::Nominal(NominalTypeHead {
                     kind: *kind,
@@ -421,17 +423,19 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                     ty_args: Arc::new(ty_args),
                 })
             }
-            InferenceType::Loop(kind, inner) => Type::Loop(*kind, self.to_type_internal(*inner)?),
+            InferenceType::Loop(kind, inner) => {
+                Type::Loop(*kind, self.convert_to_type_internal(*inner)?)
+            }
             InferenceType::ParserArg { result, arg } => Type::ParserArg {
-                result: self.to_type_internal(*result)?,
-                arg: self.to_type_internal(*arg)?,
+                result: self.convert_to_type_internal(*result)?,
+                arg: self.convert_to_type_internal(*arg)?,
             },
             InferenceType::FunctionArgs { result, args } => {
                 let args = args
                     .iter()
-                    .map(|&x| self.to_type_internal(x))
+                    .map(|&x| self.convert_to_type_internal(x))
                     .collect::<Result<_, _>>()?;
-                Type::FunctionArg(self.to_type_internal(*result)?, Arc::new(args))
+                Type::FunctionArg(self.convert_to_type_internal(*result)?, Arc::new(args))
             }
             InferenceType::InferField(_, _) => {
                 panic!("Internal Compiler Error: InferField in normalized inference type")
@@ -440,14 +444,14 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
         self.convert
             .leave_fun(infty, self.ctx.tr.db().intern_type(res))
     }
-    pub(crate) fn to_type_internal_with_vars(
+    pub(crate) fn convert_to_type_internal_with_vars(
         &mut self,
         infty: InfTypeId<'intern>,
         n_vars: u32,
         at: DefId,
     ) -> Result<(TypeId, u32), TypeError> {
         self.var_count = Some((at, n_vars));
-        let ret = self.to_type_internal(infty);
+        let ret = self.convert_to_type_internal(infty);
         let new_var_count = self.var_count.take().unwrap().1;
         ret.map(|x| (x, new_var_count))
     }

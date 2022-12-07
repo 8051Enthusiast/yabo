@@ -50,9 +50,8 @@ pub fn resolve_var_ref(
                     FieldName::Ident(n) => n,
                     FieldName::Return => return Ok(Resolved::Unresolved),
                 };
-                match m.defs.get(&ident) {
-                    Some(s) => return Ok(Resolved::Value(s.id(), VarType::ParserDef)),
-                    None => (),
+                if let Some(s) = m.defs.get(&ident) {
+                    return Ok(Resolved::Value(s.id(), VarType::ParserDef));
                 }
                 if let Some(import) = m.imports.get(&ident) {
                     return Ok(Resolved::Module(import.lookup(db)?.mod_ref));

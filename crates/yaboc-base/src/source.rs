@@ -177,7 +177,7 @@ impl<'collection> FileResolver<'collection> {
         path.pop();
         path.push(name);
         path.push("mod.yb");
-        path.exists().then(|| path)
+        path.exists().then_some(path)
     }
 
     fn add_file(
@@ -223,7 +223,9 @@ impl<'collection> FileResolver<'collection> {
         let path_dir = Path::new(&origin_path).parent().unwrap();
         // have to think more about what to do when canonicalization failed, as we don't want duplicate errors
         // or the same file as two different files
-        let path_dir = path_dir.canonicalize().unwrap_or(path_dir.to_path_buf());
+        let path_dir = path_dir
+            .canonicalize()
+            .unwrap_or_else(|_| path_dir.to_path_buf());
         if let Some(file_id) = self.relative_mods.get(&(path_dir.clone(), name)) {
             return file_id.ok_or(FileLoadError::Silenced);
         }

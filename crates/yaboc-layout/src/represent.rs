@@ -93,15 +93,14 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
     }
 }
 
+#[derive(Default)]
 pub struct LayoutHasher<'a> {
     map: FxHashMap<ILayout<'a>, [u8; 32]>,
 }
 
 impl<'a> LayoutHasher<'a> {
     pub fn new() -> Self {
-        Self {
-            map: Default::default(),
-        }
+        Default::default()
     }
 
     pub fn hash<DB: Layouts + ?Sized>(&mut self, layout: ILayout<'a>, db: &DB) -> [u8; 32] {

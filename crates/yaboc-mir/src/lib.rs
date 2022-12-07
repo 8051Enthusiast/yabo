@@ -330,7 +330,7 @@ impl Function {
         (0..self.place.len()).map(|x| {
             (
                 PlaceRef(NonZeroU32::new((x + 1) as u32).unwrap()),
-                self.place[x].clone(),
+                self.place[x],
             )
         })
     }
@@ -440,7 +440,7 @@ fn mir_block(db: &dyn Mirs, block: BlockId, call_kind: CallKind) -> SResult<Func
 
 fn mir_pd_val_parser(db: &dyn Mirs, pd: ParserDefId) -> SResult<Function> {
     let sig = db.parser_args(pd)?;
-    let from_y = sig.from.unwrap_or(db.intern_type(Type::Any));
+    let from_y = sig.from.unwrap_or_else(|| db.intern_type(Type::Any));
     let fun_ty = db.intern_type(Type::ParserArg {
         result: sig.thunk,
         arg: from_y,

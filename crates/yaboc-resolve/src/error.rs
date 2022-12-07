@@ -65,7 +65,7 @@ fn make_report(db: &(impl Resolves + ?Sized), err: &ResolveError) -> Option<Repo
             let report = Report::new(
                 DiagnosticKind::Error,
                 file,
-                &"modules cannot be used as values in expressions",
+                "modules cannot be used as values in expressions",
             )
             .with_code(303)
             .with_label(Label::new(span).with_message("module used here"));

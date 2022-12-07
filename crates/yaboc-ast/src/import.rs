@@ -34,7 +34,7 @@ impl<DB: Asts + Default> Import for Context<DB> {
         let mut resolver = FileResolver::new(&mut self.fc);
         for (modname, path) in absolute_mod_paths {
             if let Err(e) =
-                resolver.add_absolute_mod_path(&mut self.db, PathBuf::from(path), &modname)
+                resolver.add_absolute_mod_path(&mut self.db, PathBuf::from(path), modname)
             {
                 errors.extend(e.into_report(&self.db))
             }

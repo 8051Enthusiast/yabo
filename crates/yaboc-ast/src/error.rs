@@ -12,7 +12,7 @@ pub fn errors(db: &(impl Asts + ?Sized)) -> Vec<Report> {
             Ok(_) => continue,
             Err(e) => e,
         };
-        ret.extend(errors.into_iter().map(|x| parse_error_report(x)))
+        ret.extend(errors.into_iter().map(parse_error_report))
     }
     ret
 }

@@ -53,7 +53,7 @@ fn main() {
         target_features: String::from(""),
         output_json: args.output_json,
     });
-    let main = context.fc.add(&infile).expect("Could not read file");
+    let main = context.fc.add(infile).expect("Could not read file");
     context.update_db(&[main], &modules);
     if context.print_diagnostics() {
         if !args.output_json {

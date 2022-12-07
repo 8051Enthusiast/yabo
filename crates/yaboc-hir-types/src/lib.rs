@@ -267,7 +267,9 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
             fun_args: definition.args.unwrap_or_default(),
             ty_args: Arc::new(n_type_vars(self.db, def, definition.ty_args.len() as u32)),
         }));
-        let inferred_def = self.infctx.from_type_with_args(def_type, &ty_args);
+        let inferred_def = self
+            .infctx
+            .convert_type_into_inftype_with_args(def_type, &ty_args);
         let fun_args = self.infctx.slice_interner.intern_slice(&fun_args);
         let ty_args = self.infctx.slice_interner.intern_slice(&ty_args);
         let ret = self
@@ -371,7 +373,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         a.data,
                     ),
                     ExpressionHead::Variadic(Variadic { op, inner }) => {
-                        let args = inner[1..].into_iter().map(|(a, _)| *a).collect::<Vec<_>>();
+                        let args = inner[1..].iter().map(|(a, _)| *a).collect::<Vec<_>>();
                         (self.infctx.function_apply(inner[0].0, &args)?, op.data)
                     }
                 })
@@ -464,11 +466,10 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         for (ty, id) in sig
             .args
             .iter()
-            .map(|x| x.iter())
-            .flatten()
+            .flat_map(|x| x.iter())
             .zip(pd.args.into_iter().flatten())
         {
-            let ty = self.infctx.from_type(*ty);
+            let ty = self.infctx.convert_type_into_inftype(*ty);
             vars.insert(id.0, ty);
         }
         Ok(())
@@ -503,7 +504,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
     fn type_parserdef(&mut self, pd: hir::ParserDefId) -> Result<(), SpannedTypeError> {
         let parserdef = pd.lookup(self.db)?;
         let sig = self.db.parser_args(pd)?;
-        let ambient = sig.from.map(|ty| self.infctx.from_type(ty));
+        let ambient = sig.from.map(|ty| self.infctx.convert_type_into_inftype(ty));
         self.set_ambient_type(ambient);
 
         let expr = parserdef.to.lookup(self.db)?;
