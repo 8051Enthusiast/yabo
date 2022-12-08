@@ -9,12 +9,12 @@ use yaboc_base::{
     error::SResult,
     interner::{DefId, FieldName, PathComponent},
 };
+use yaboc_dependents::{BlockSerialization, SubValue, SubValueKind};
 use yaboc_hir::{
     self as hir, variable_set::VarStatus, BlockId, ChoiceId, ContextId, ExprId, HirIdWrapper,
     HirNode, ParserDefId, ParserPredecessor,
 };
 use yaboc_hir_types::TypedExpression;
-use yaboc_order::{BlockSerialization, SubValue, SubValueKind};
 use yaboc_resolve::expr::ResolvedAtom;
 use yaboc_types::{PrimitiveType, Type, TypeId};
 

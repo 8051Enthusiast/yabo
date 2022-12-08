@@ -1,5 +1,5 @@
 [package]
-name = "yaboc-order"
+name = "yaboc-dependents"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

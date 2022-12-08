@@ -13,5 +13,5 @@ yaboc-hir = { path = "../yaboc-hir" }
 yaboc-resolve = { path = "../yaboc-resolve" }
 yaboc-types = { path = "../yaboc-types" }
 yaboc-hir-types = { path = "../yaboc-hir-types" }
-yaboc-order = { path = "../yaboc-order" }
+yaboc-dependents = { path = "../yaboc-dependents" }
 fxhash = "0.2.1"

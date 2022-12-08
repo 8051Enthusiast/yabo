@@ -941,11 +941,11 @@ dependencies = [
  "yaboc-base",
  "yaboc-cg-llvm",
  "yaboc-database",
+ "yaboc-dependents",
  "yaboc-hir",
  "yaboc-hir-types",
  "yaboc-layout",
  "yaboc-mir",
- "yaboc-order",
  "yaboc-resolve",
  "yaboc-types",
 ]
@@ -958,9 +958,9 @@ dependencies = [
  "salsa",
  "yaboc-ast",
  "yaboc-base",
+ "yaboc-dependents",
  "yaboc-hir",
  "yaboc-hir-types",
- "yaboc-order",
  "yaboc-resolve",
  "yaboc-types",
 ]
@@ -1002,11 +1002,11 @@ dependencies = [
  "yaboc-ast",
  "yaboc-base",
  "yaboc-database",
+ "yaboc-dependents",
  "yaboc-hir",
  "yaboc-hir-types",
  "yaboc-layout",
  "yaboc-mir",
- "yaboc-order",
  "yaboc-resolve",
  "yaboc-types",
 ]
@@ -1019,11 +1019,26 @@ dependencies = [
  "yaboc-absint",
  "yaboc-ast",
  "yaboc-base",
+ "yaboc-dependents",
  "yaboc-hir",
  "yaboc-hir-types",
  "yaboc-layout",
  "yaboc-mir",
- "yaboc-order",
+ "yaboc-resolve",
+ "yaboc-types",
+]
+
+[[package]]
+name = "yaboc-dependents"
+version = "0.1.0"
+dependencies = [
+ "fxhash",
+ "petgraph",
+ "salsa",
+ "yaboc-ast",
+ "yaboc-base",
+ "yaboc-hir",
+ "yaboc-hir-types",
  "yaboc-resolve",
  "yaboc-types",
 ]
@@ -1067,10 +1082,10 @@ dependencies = [
  "yaboc-absint",
  "yaboc-ast",
  "yaboc-base",
+ "yaboc-dependents",
  "yaboc-hir",
  "yaboc-hir-types",
  "yaboc-mir",
- "yaboc-order",
  "yaboc-resolve",
  "yaboc-types",
 ]
@@ -1083,22 +1098,7 @@ dependencies = [
  "salsa",
  "yaboc-ast",
  "yaboc-base",
- "yaboc-hir",
- "yaboc-hir-types",
- "yaboc-order",
- "yaboc-resolve",
- "yaboc-types",
-]
-
-[[package]]
-name = "yaboc-order"
-version = "0.1.0"
-dependencies = [
- "fxhash",
- "petgraph",
- "salsa",
- "yaboc-ast",
- "yaboc-base",
+ "yaboc-dependents",
  "yaboc-hir",
  "yaboc-hir-types",
  "yaboc-resolve",

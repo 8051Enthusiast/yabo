@@ -908,10 +908,10 @@ mod tests {
     use yaboc_base::{
         config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase, Context,
     };
+    use yaboc_dependents::DependentsDatabase;
     use yaboc_hir::{HirDatabase, Parser};
     use yaboc_hir_types::{HirTypesDatabase, TyHirs};
     use yaboc_mir::MirDatabase;
-    use yaboc_order::OrdersDatabase;
     use yaboc_resolve::ResolveDatabase;
     use yaboc_types::TypeInternerDatabase;
 
@@ -924,7 +924,7 @@ mod tests {
         ResolveDatabase,
         TypeInternerDatabase,
         HirTypesDatabase,
-        OrdersDatabase,
+        DependentsDatabase,
         MirDatabase,
         AbsIntDatabase,
         LayoutDatabase

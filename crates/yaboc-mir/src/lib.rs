@@ -12,8 +12,8 @@ use yaboc_base::{
     interner::{DefId, FieldName},
     source::SpanIndex,
 };
+use yaboc_dependents::{Dependents, SubValue};
 use yaboc_hir::{BlockId, ExprId, HirIdWrapper, ParserDefId};
-use yaboc_order::{Orders, SubValue};
 use yaboc_types::{Type, TypeId};
 
 use self::convert::ConvertCtx;
@@ -21,7 +21,7 @@ use self::convert::ConvertCtx;
 pub use represent::print_all_mir;
 
 #[salsa::query_group(MirDatabase)]
-pub trait Mirs: Orders {
+pub trait Mirs: Dependents {
     fn mir_block(&self, block: BlockId, call_kind: CallKind) -> SResult<Function>;
     fn mir_pd(
         &self,
@@ -504,9 +504,9 @@ mod tests {
     use yaboc_base::{
         config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase, Context,
     };
+    use yaboc_dependents::DependentsDatabase;
     use yaboc_hir::{HirDatabase, Hirs, Parser};
     use yaboc_hir_types::HirTypesDatabase;
-    use yaboc_order::OrdersDatabase;
     use yaboc_resolve::ResolveDatabase;
     use yaboc_types::TypeInternerDatabase;
 
@@ -519,7 +519,7 @@ mod tests {
         ResolveDatabase,
         TypeInternerDatabase,
         HirTypesDatabase,
-        OrdersDatabase,
+        DependentsDatabase,
         MirDatabase
     )]
     #[derive(Default)]

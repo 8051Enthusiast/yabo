@@ -1,8 +1,8 @@
 use yaboc_base::{databased_display::DatabasedDisplay, dbwrite};
 
-use super::{Orders, SubValue};
+use super::{Dependents, SubValue};
 
-impl<DB: Orders + ?Sized> DatabasedDisplay<DB> for SubValue {
+impl<DB: Dependents + ?Sized> DatabasedDisplay<DB> for SubValue {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self.kind {
             super::SubValueKind::Val => dbwrite!(f, db, "val({})", &self.id),
