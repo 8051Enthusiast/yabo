@@ -273,10 +273,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         };
         let fun_any_ptr = self.build_cast::<*mut u8, _>(fun);
         let fun_mono_ptr = self.build_mono_ptr(fun_any_ptr, fun_layout);
-        let fun_arg_ptr = unsafe {
-            self.builder
-                .build_in_bounds_gep(fun_mono_ptr, &[offset], "")
-        };
+        let fun_arg_ptr = self.build_byte_gep(fun_mono_ptr, offset, "");
         let typecast_fun = self.build_typecast_fun_get(arg_layout.maybe_mono(), arg);
         let arg_mono_ptr = self.build_mono_ptr(arg, arg_layout);
         self.build_call_with_int_ret(

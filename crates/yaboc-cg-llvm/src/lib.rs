@@ -329,10 +329,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .const_int(disc_offset + inner_offset / 8, false);
         let bit_offset = inner_offset % 8;
         let shifted_bit = self.llvm.i8_type().const_int(1 << bit_offset, false);
-        let byte_ptr = unsafe {
-            self.builder
-                .build_in_bounds_gep(block_ptr, &[byte_offset], "gepdisc")
-        };
+        let byte_ptr = self.build_byte_gep(block_ptr, byte_offset, "gepdisc");
         Some((byte_ptr, shifted_bit))
     }
 
@@ -368,6 +365,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         R::try_from(casted).expect("could not cast")
     }
 
+    fn build_byte_gep(
+        &mut self,
+        ptr: PointerValue<'llvm>,
+        int: IntValue<'llvm>,
+        name: &str,
+    ) -> PointerValue<'llvm> {
+        assert!(ptr.get_type() == self.any_ptr());
+        unsafe { self.builder.build_in_bounds_gep(ptr, &[int], name) }
+    }
+
     fn build_field_gep(
         &mut self,
         layout: ILayout<'comp>,
@@ -376,10 +383,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> PointerValue<'llvm> {
         let offset = self.layouts.dcx.manifestation(layout).field_offsets[&field];
         let offset_llvm_int = self.llvm.i64_type().const_int(offset, false);
-        unsafe {
-            self.builder
-                .build_in_bounds_gep(ptr, &[offset_llvm_int], "")
-        }
+        self.build_byte_gep(ptr, offset_llvm_int, "gepfield")
     }
 
     fn build_duple_gep(
@@ -404,7 +408,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             ),
         };
         let llvm_int = self.llvm.i64_type().const_int(offset, false);
-        unsafe { self.builder.build_in_bounds_gep(ptr, &[llvm_int], "") }
+        self.build_byte_gep(ptr, llvm_int, "gepduple")
     }
 
     fn build_mono_ptr(
@@ -417,10 +421,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             Layout::Mono(_, _) => place_ptr,
             Layout::Multi(_) => {
                 let ptr_width = self.any_ptr().size_of();
-                unsafe {
-                    self.builder
-                        .build_in_bounds_gep(place_ptr, &[ptr_width], "ml_ptr_skip")
-                }
+                self.build_byte_gep(place_ptr, ptr_width, "ml_ptr_skip")
             }
         }
     }

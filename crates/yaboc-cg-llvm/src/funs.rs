@@ -203,10 +203,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .builder
             .build_load(from_ptr, "load_ptr")
             .into_pointer_value();
-        let inc_ptr = unsafe {
-            self.builder
-                .build_in_bounds_gep(ptr, &[self.const_i64(1)], "inc_ptr")
-        };
+        let inc_ptr = self.build_byte_gep(ptr, self.const_i64(1), "inc_ptr");
         self.builder.build_store(to_ptr, inc_ptr);
         self.builder
             .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)));
@@ -227,7 +224,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .builder
             .build_load(from_ptr, "load_ptr")
             .into_pointer_value();
-        let inc_ptr = unsafe { self.builder.build_in_bounds_gep(ptr, &[len], "inc_ptr") };
+        let inc_ptr = self.build_byte_gep(ptr, len, "inc_ptr");
         self.builder.build_store(to_ptr, inc_ptr);
         self.builder
             .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)));
