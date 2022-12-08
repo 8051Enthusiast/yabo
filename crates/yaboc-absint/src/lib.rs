@@ -9,17 +9,17 @@ use yaboc_base::{
     interner::{DefId, FieldName},
     source::SpanIndex,
 };
+use yaboc_dependents::{Dependents, SubValueKind};
 use yaboc_hir as hir;
 use yaboc_hir::HirIdWrapper;
 use yaboc_hir_types::NominalId;
-use yaboc_order::{Orders, SubValueKind};
 use yaboc_resolve::expr::ResolvedKind;
 use yaboc_types::{Type, TypeId};
 
 use fxhash::{FxHashMap, FxHashSet};
 
 #[salsa::query_group(AbsIntDatabase)]
-pub trait AbsInt: Orders {}
+pub trait AbsInt: Dependents {}
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Arg {

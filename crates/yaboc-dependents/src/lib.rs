@@ -18,8 +18,8 @@ use petgraph::{graph::NodeIndex, Graph};
 
 use fxhash::{FxHashMap, FxHashSet};
 
-#[salsa::query_group(OrdersDatabase)]
-pub trait Orders: TyHirs {
+#[salsa::query_group(DependentsDatabase)]
+pub trait Dependents: TyHirs {
     fn block_serialization(
         &self,
         id: hir::BlockId,
@@ -65,7 +65,7 @@ impl SubValue {
 }
 
 fn val_refs(
-    db: &dyn Orders,
+    db: &dyn Dependents,
     node: &hir::HirNode,
     parent_block: hir::BlockId,
 ) -> SResult<FxHashSet<(SubValue, bool)>> {
@@ -165,7 +165,7 @@ fn pred(node: &hir::HirNode) -> Option<[ParserPredecessor; 2]> {
 }
 
 fn between_parser_refs(
-    db: &dyn Orders,
+    db: &dyn Dependents,
     node: &hir::HirNode,
     parent_block: hir::BlockId,
 ) -> SResult<Option<SubValue>> {
@@ -183,7 +183,7 @@ fn between_parser_refs(
     }))
 }
 
-fn inner_parser_refs(db: &dyn Orders, node: &hir::HirNode) -> SResult<FxHashSet<SubValue>> {
+fn inner_parser_refs(db: &dyn Dependents, node: &hir::HirNode) -> SResult<FxHashSet<SubValue>> {
     match node {
         hir::HirNode::Parse(p) => {
             let mut ret = FxHashSet::default();
@@ -234,7 +234,7 @@ pub struct DependencyGraph {
 }
 
 impl DependencyGraph {
-    fn init_nodes(&mut self, db: &dyn Orders, block: hir::BlockId) -> SResult<()> {
+    fn init_nodes(&mut self, db: &dyn Dependents, block: hir::BlockId) -> SResult<()> {
         for hir_node in hir::walk::ChildIter::new(block.lookup(db)?.root_context.0, db)
             .without_kinds(hir::HirNodeKind::Block)
             .chain(std::iter::once(db.hir_node(block.id())?))
@@ -255,7 +255,7 @@ impl DependencyGraph {
 
     fn add_edges(
         &mut self,
-        db: &dyn Orders,
+        db: &dyn Dependents,
         from: SubValue,
         to: impl IntoIterator<Item = (SubValue, bool)>,
     ) {
@@ -268,7 +268,7 @@ impl DependencyGraph {
         }
     }
 
-    fn init_edges(&mut self, db: &dyn Orders, block: hir::BlockId) -> SResult<()> {
+    fn init_edges(&mut self, db: &dyn Dependents, block: hir::BlockId) -> SResult<()> {
         for &sub_value in self.val_map.clone().keys() {
             let hir_node = db.hir_node(sub_value.id)?;
             match sub_value.kind {
@@ -294,7 +294,7 @@ impl DependencyGraph {
         Ok(())
     }
 
-    pub fn new(db: &dyn Orders, block: hir::BlockId) -> SResult<Self> {
+    pub fn new(db: &dyn Dependents, block: hir::BlockId) -> SResult<Self> {
         let mut ret = Self {
             val_map: FxHashMap::default(),
             graph: Graph::new(),
@@ -331,7 +331,7 @@ impl From<SilencedError> for BlockSerializationError {
 }
 
 pub fn block_serialization(
-    db: &dyn Orders,
+    db: &dyn Dependents,
     block: hir::BlockId,
 ) -> Result<BlockSerialization, BlockSerializationError> {
     let graph = match DependencyGraph::new(db, block) {
@@ -409,17 +409,17 @@ mod tests {
         ResolveDatabase,
         TypeInternerDatabase,
         HirTypesDatabase,
-        OrdersDatabase
+        DependentsDatabase
     )]
     #[derive(Default)]
-    pub struct OrderTestDatabase {
-        storage: salsa::Storage<OrderTestDatabase>,
+    pub struct DependentsTestDatabase {
+        storage: salsa::Storage<DependentsTestDatabase>,
     }
 
-    impl salsa::Database for OrderTestDatabase {}
+    impl salsa::Database for DependentsTestDatabase {}
     #[test]
     fn simple_cycle() {
-        let ctx = Context::<OrderTestDatabase>::mock(
+        let ctx = Context::<DependentsTestDatabase>::mock(
             r#"
 def for[u8] *> cycle = {
     let x: int = y
@@ -431,7 +431,7 @@ def for[u8] *> cycle = {
     }
     #[test]
     fn parser_cycle() {
-        let ctx = Context::<OrderTestDatabase>::mock(
+        let ctx = Context::<DependentsTestDatabase>::mock(
             r#"
 def for[u8] *> cycle = {
     | let x: int = y
@@ -444,7 +444,7 @@ def for[u8] *> cycle = {
     }
     #[test]
     fn choice_indirection() {
-        let ctx = Context::<OrderTestDatabase>::mock(
+        let ctx = Context::<DependentsTestDatabase>::mock(
             r#"
 def for[int] *> main = {
     | y: ~
@@ -468,7 +468,7 @@ def for[int] *> main = {
     }
     #[test]
     fn inner_choice() {
-        let ctx = Context::<OrderTestDatabase>::mock(
+        let ctx = Context::<DependentsTestDatabase>::mock(
             r"
 def for['a] *> first = ~
 def for['b] *> second = ~

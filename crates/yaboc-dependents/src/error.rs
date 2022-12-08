@@ -9,9 +9,9 @@ use yaboc_base::{
 };
 use yaboc_hir as hir;
 
-use super::{Orders, SubValue};
+use super::{Dependents, SubValue};
 
-pub fn errors(db: &(impl Orders + ?Sized)) -> Vec<Report> {
+pub fn errors(db: &(impl Dependents + ?Sized)) -> Vec<Report> {
     let mut reports = Vec::new();
     for module in db.all_modules() {
         for node in hir::walk::ChildIter::new(module.0, db) {
@@ -31,7 +31,10 @@ pub fn errors(db: &(impl Orders + ?Sized)) -> Vec<Report> {
     reports
 }
 
-fn block_serialization_error(db: &(impl Orders + ?Sized), error: &[SubValue]) -> Option<Report> {
+fn block_serialization_error(
+    db: &(impl Dependents + ?Sized),
+    error: &[SubValue],
+) -> Option<Report> {
     if error.is_empty() {
         return None;
     }
@@ -59,7 +62,7 @@ fn block_serialization_error(db: &(impl Orders + ?Sized), error: &[SubValue]) ->
     Some(report)
 }
 
-fn hir_span(db: &(impl Orders + ?Sized), node: &hir::HirNode) -> Option<Span> {
+fn hir_span(db: &(impl Dependents + ?Sized), node: &hir::HirNode) -> Option<Span> {
     if node.is_kind(hir::HirNodeKind::Expr | hir::HirNodeKind::Choice) {
         return None;
     }
