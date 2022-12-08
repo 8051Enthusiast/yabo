@@ -3,6 +3,7 @@ mod represent;
 
 use std::sync::Arc;
 
+use enumflags2::{bitflags, BitFlags};
 use yaboc_ast::expr::{ExprIter, ExpressionHead, OpWithData};
 use yaboc_base::{
     dbpanic,
@@ -14,7 +15,7 @@ use yaboc_hir::{self as hir, HirIdWrapper, ParserAtom, ParserPredecessor};
 use yaboc_hir_types::TyHirs;
 use yaboc_resolve::expr::ResolvedAtom;
 
-use petgraph::{graph::NodeIndex, Graph};
+use petgraph::{graph::NodeIndex, visit::EdgeRef, Graph};
 
 use fxhash::{FxHashMap, FxHashSet};
 
@@ -294,6 +295,25 @@ impl DependencyGraph {
         Ok(())
     }
 
+    pub fn find_descendants(&self, sub_values: &[SubValue]) -> FxHashSet<SubValue> {
+        let mut visited = FxHashSet::default();
+        let mut stack = Vec::new();
+        for &sub_value in sub_values {
+            stack.push(sub_value);
+        }
+        while let Some(sub_value) = stack.pop() {
+            if !visited.insert(sub_value) {
+                continue;
+            }
+            for edge in self.graph.edges(self.val_map[&sub_value]) {
+                if *edge.weight() {
+                    stack.push(self.graph[edge.target()]);
+                }
+            }
+        }
+        visited
+    }
+
     pub fn new(db: &dyn Dependents, block: hir::BlockId) -> SResult<Self> {
         let mut ret = Self {
             val_map: FxHashMap::default(),
@@ -305,14 +325,24 @@ impl DependencyGraph {
     }
 }
 
+#[bitflags]
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+pub enum NeededBy {
+    Len = 1 << 0,
+    Val = 1 << 1,
+    Backtrack = 1 << 2,
+}
+
+pub type RequirementSet = BitFlags<NeededBy>;
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub struct BlockSlot(u32);
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct SubValueInfo {
     pub val: SubValue,
-    pub rdepends_back: bool,
-    pub rdepends_val: bool,
+    pub requirements: RequirementSet,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -338,27 +368,11 @@ pub fn block_serialization(
         Ok(g) => g,
         Err(e) => return Err(e.into()),
     };
-    let mut reachable_block_val = FxHashSet::default();
-    let mut reachable_block_back = FxHashSet::default();
-    let data_dependencies = graph
-        .graph
-        .filter_map(|_, x| Some(x), |_, x| x.then_some(()));
 
-    let mut dfs_val = petgraph::visit::Dfs::new(
-        &data_dependencies,
-        graph.val_map[&SubValue::new_val(block.id())],
-    );
-    while let Some(node) = dfs_val.next(&graph.graph) {
-        reachable_block_val.insert(graph.graph.node_weight(node).unwrap());
-    }
-    let mut dfs_back = petgraph::visit::Dfs::new(
-        &data_dependencies,
-        graph.val_map[&SubValue::new_back(block.id())],
-    );
-    while let Some(node) = dfs_back.next(&graph.graph) {
-        reachable_block_back.insert(graph.graph.node_weight(node).unwrap());
-    }
-    let condensed_graph = petgraph::algo::condensation(graph.graph.clone(), false);
+    let reachable_block_val = graph.find_descendants(&[SubValue::new_val(block.id())]);
+    let reachable_block_back = graph.find_descendants(&[SubValue::new_back(block.id())]);
+
+    let condensed_graph = petgraph::algo::condensation(graph.graph, false);
     let mut errors = Vec::new();
     for node in condensed_graph.node_indices() {
         if condensed_graph.contains_edge(node, node) {
@@ -376,10 +390,18 @@ pub fn block_serialization(
         .into_iter()
     {
         let nodes = condensed_graph.node_weight(node).unwrap();
-        eval_order.extend(nodes.iter().copied().map(|val| SubValueInfo {
-            val,
-            rdepends_back: reachable_block_back.contains(&val),
-            rdepends_val: reachable_block_val.contains(&val),
+        eval_order.extend(nodes.iter().copied().map(|val| {
+            let mut requirements = RequirementSet::empty();
+            if reachable_block_val.contains(&val) {
+                requirements |= NeededBy::Val;
+            }
+            if reachable_block_back.contains(&val) {
+                requirements |= NeededBy::Len;
+            }
+            // TODO(8051): we don't know what nodes are needed right now, so we just assume everything
+            // is needed.
+            requirements |= NeededBy::Backtrack;
+            SubValueInfo { val, requirements }
         }));
     }
     eval_order.reverse();
