@@ -19,7 +19,7 @@ use inkwell::{
         CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetData, TargetMachine,
         TargetTriple,
     },
-    types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, PointerType, StructType},
+    types::{ArrayType, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, PointerType, StructType},
     values::{
         ArrayValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum, CallableValue,
         FunctionValue, GlobalValue, IntValue, PointerValue, StructValue, UnnamedAddress,
@@ -211,18 +211,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.llvm.i8_type().ptr_type(AddressSpace::Generic)
     }
 
-    fn sa_type(&mut self, sa: SizeAlign) -> StructType<'llvm> {
-        let align = sa.align();
-        // note: this might or might not actually work and i have no idea how to do this properly
-        // (there was something about i64 having an alignment of 4 on some 32-bit platform,
-        // but there the maximum alignment would be 4 byte anyway so this is fine in that case?)
-        let alignment_forcer = self.llvm.custom_width_int_type((align * 8) as u32);
-        let array = self
-            .llvm
-            .i8_type()
-            .array_type(sa.size.saturating_sub(align) as u32);
-        self.llvm
-            .struct_type(&[alignment_forcer.into(), array.into()], false)
+    fn sa_type(&mut self, sa: SizeAlign) -> ArrayType<'llvm> {
+        self.llvm.i8_type().array_type(sa.size as u32)
+    }
+
+    fn set_last_instr_align(&mut self, sa: SizeAlign) -> Option<()> {
+        let instr = self.builder.get_insert_block()?.get_last_instruction()?;
+        instr.set_alignment(sa.align() as u32).ok()
     }
 
     fn build_layout_alloca(&mut self, layout: ILayout<'comp>, name: &str) -> PointerValue<'llvm> {
@@ -231,6 +226,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .expect("Could not get size/alignment of layout");
         let ty = self.sa_type(sa);
         let ptr = self.builder.build_alloca(ty, "alloca");
+        self.set_last_instr_align(sa).unwrap();
         let u8_ptr_ty = self.llvm.i8_type().ptr_type(AddressSpace::Generic);
         self.builder
             .build_bitcast(ptr, u8_ptr_ty, name)

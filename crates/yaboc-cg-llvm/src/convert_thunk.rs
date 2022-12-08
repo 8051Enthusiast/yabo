@@ -262,6 +262,7 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
         let sa = self.alloc_sa;
         let ty = self.cg.sa_type(sa);
         let malloc_ptr = self.cg.builder.build_malloc(ty, "benloc").unwrap();
+        self.cg.set_last_instr_align(sa);
         self.cg.build_cast::<*mut u8, _>(malloc_ptr)
     }
 
