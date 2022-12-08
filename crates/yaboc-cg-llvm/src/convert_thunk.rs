@@ -201,11 +201,9 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
         let ret_vtable_ptr = self.cg.build_cast::<*mut *const u8, _>(self.return_ptr);
         self.cg.builder.build_store(ret_vtable_ptr, vtable_pointer);
         let ptr_width = self.cg.any_ptr().size_of();
-        let after_ptr = unsafe {
-            self.cg
-                .builder
-                .build_in_bounds_gep(self.return_ptr, &[ptr_width], "vtable_ptr_skip")
-        };
+        let after_ptr = self
+            .cg
+            .build_byte_gep(self.return_ptr, ptr_width, "vtable_ptr_skip");
         copy_phi.add_incoming(&[(&after_ptr, write_vtable_ptr)]);
         self.cg.builder.build_unconditional_branch(copy_bb);
     }
