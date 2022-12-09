@@ -1,3 +1,4 @@
+use fxhash::FxHashSet;
 use yaboc_base::{
     dbformat,
     error::{SResult, SilencedError},
@@ -87,7 +88,8 @@ pub fn parser_returns_ssc(
             })
         })
         .collect::<Vec<_>>();
-    defs.into_iter()
+    let mut ret: Vec<_> = defs
+        .into_iter()
         .map(|def| -> Result<ParserDefType, SpannedTypeError> {
             def.and_then(|def| {
                 let spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(def.to.0));
@@ -95,10 +97,83 @@ pub fn parser_returns_ssc(
                 let deref = ctx
                     .inftype_to_concrete_type(ctx.inftypes[&def.id.0])
                     .map_err(spanned)?;
+                let deref = check_for_typevar(db, deref).map_err(spanned)?;
                 Ok(ParserDefType { id: def.id, deref })
             })
         })
-        .collect()
+        .collect();
+    find_cyclic_return_types(db, &mut ret);
+    ret
+}
+
+fn check_for_typevar(db: &dyn TyHirs, ty: TypeId) -> Result<TypeId, TypeError> {
+    match db.lookup_intern_type(ty) {
+        Type::ForAll(inner, _) => {
+            check_for_typevar(db, inner)?;
+            Ok(ty)
+        }
+        Type::TypeVarRef(pd, idx) => {
+            let hir::HirNode::ParserDef(pd) = db.hir_node(pd)? else {
+                panic!("typevarref points to non-parserdef")
+            };
+            let var_name = TypeVarCollection::at_id(db, pd.id)?.defs[idx as usize];
+            Err(TypeError::TypeVarReturn(var_name))
+        }
+        _ => Ok(ty),
+    }
+}
+
+fn find_cyclic_return_types(db: &dyn TyHirs, tys: &mut [Result<ParserDefType, SpannedTypeError>]) {
+    let mut targets: FxHashMap<DefId, Option<DefId>> = FxHashMap::default();
+    for mty in tys.iter() {
+        let Ok(pdty) = *mty else {continue};
+        let target = match match db.lookup_intern_type(pdty.deref) {
+            Type::ForAll(inner, _) => db.lookup_intern_type(inner),
+            otherwise => otherwise,
+        } {
+            Type::Nominal(nom) => Some(nom.def),
+            _ => None,
+        };
+        targets.insert(pdty.id.0, target);
+    }
+    let mut stack = Vec::<DefId>::new();
+    let mut on_stack = FxHashSet::default();
+    let next =
+        |targets: &mut FxHashMap<_, _>| targets.iter().next().map(|(id, target)| (*id, *target));
+    let mut next_target = next(&mut targets);
+    while let Some((id, target)) = next_target {
+        stack.push(id);
+        if on_stack.insert(id) {
+            targets.remove(&id);
+            match target {
+                Some(target) => {
+                    next_target = Some((target, targets.get(&target).copied().flatten()));
+                }
+                None => {
+                    stack.clear();
+                    on_stack.clear();
+                    next_target = next(&mut targets);
+                }
+            }
+            continue;
+        }
+        let first_occurence = stack.iter().position(|x| *x == id).unwrap();
+        let mut error = TypeError::CyclicReturnThunks(Arc::new(stack[first_occurence..].to_vec()));
+        for i in stack[..first_occurence].iter() {
+            on_stack.remove(i);
+        }
+        for ty in tys.iter_mut() {
+            let Ok(pdty) = ty else {continue};
+            if on_stack.contains(&pdty.id.0) {
+                *ty = Err(SpannedTypeError::new(
+                    error,
+                    IndirectSpan::default_span(pdty.id.0),
+                ));
+            }
+            error = TypeError::Silenced(SilencedError::new());
+        }
+        next_target = next(&mut targets);
+    }
 }
 
 pub struct ReturnResolver<'a> {
@@ -170,7 +245,7 @@ impl<'a> TypeResolver<'a> for ReturnResolver<'a> {
     }
 }
 
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDefType {
     pub id: hir::ParserDefId,
     pub deref: TypeId,

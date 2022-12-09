@@ -1,0 +1,13 @@
+====[ source code ]====
+def *x = y
+#~^ error[510] cyclic return that can never terminate
+def *y = x
+
+def for['t] *> z = ~
+#~^ error[509] cannot have a type variable 't as return type
+
+export def *test = {
+#~^ error[510] cyclic return that can never terminate
+  let t = x
+  return: test
+}

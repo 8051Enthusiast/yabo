@@ -88,6 +88,20 @@ fn make_report(db: &(impl TyHirs + ?Sized), error: SpannedTypeError) -> Option<R
             508,
             dbformat!(db, "cannot unify {} and {}", &first, &second),
         ),
+        TypeError::TypeVarReturn(var) => (
+            509,
+            dbformat!(db, "cannot have a type variable {} as return type", &var),
+        ),
+        TypeError::CyclicReturnThunks(cyclic_ids) => (510, {
+            let mut ret = String::from("cyclic return that can never terminate: ");
+            for (i, id) in cyclic_ids.iter().enumerate() {
+                if i != 0 {
+                    ret.push_str(" -> ");
+                }
+                ret.push_str(&dbformat!(db, "{}", id));
+            }
+            ret
+        }),
     };
     let mut rbuild = Report::new(DiagnosticKind::Error, spans[0].file, &message).with_code(code);
     for (i, span) in spans.iter().enumerate() {
