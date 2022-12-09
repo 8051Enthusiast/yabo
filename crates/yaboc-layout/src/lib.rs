@@ -946,8 +946,8 @@ mod tests {
     fn layouts() {
         let ctx = Context::<LayoutTestDatabase>::mock(
             r"
-def for['a] *> first = ~
-def for['b] *> second = ~
+def for[int] *> first = ~
+def for[int] *> second = ~
 def for[int] *> main = {
     a: ~
     b: ~
@@ -977,7 +977,7 @@ def for[int] *> main = {
         for lay in flat_layouts(&main_block) {
             assert_eq!(
                 lay.symbol(&mut outlayer, LayoutPart::LenImpl(0), &ctx.db),
-                "block_1b15571abd710f7a$852cd4a3365d94c9$len_0"
+                "block_1b15571abd710f7a$6673bf98ed201799$len_0"
             );
         }
         let field = |name| FieldName::Ident(ctx.id(name));

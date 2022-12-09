@@ -14,3 +14,4 @@ yaboc-hir = { path = "../yaboc-hir" }
 yaboc-resolve = { path = "../yaboc-resolve" }
 yaboc-types = { path = "../yaboc-types" }
 bumpalo = "3.11.1"
+petgraph = "0.6.2"
