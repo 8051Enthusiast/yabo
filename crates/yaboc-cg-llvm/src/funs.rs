@@ -351,8 +351,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             [&(inner_layout, second_layout)];
         let second_arg = self.build_layout_alloca(inner_layout, "second_arg");
         let second_len_ret = self.build_layout_alloca(inner_layout, "second_len_ret");
-        let first_ptr = self.build_duple_gep(layout.inner(), DupleField::First, fun);
-        let second_ptr = self.build_duple_gep(layout.inner(), DupleField::Second, fun);
+        let first_ptr = self.build_duple_gep(layout.inner(), DupleField::First, fun, first_layout);
+        let second_ptr =
+            self.build_duple_gep(layout.inner(), DupleField::Second, fun, second_layout);
         let [first_len_ptr, first_val_ptr] = [CallKind::Len, CallKind::Val].map(|call_kind| {
             self.build_parser_fun_get(first_layout.maybe_mono(), first_ptr, first_slot, call_kind)
         });
@@ -409,8 +410,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let second_slot = self.collected_layouts.parser_slots.layout_vtable_offsets
             [&(inner_layout, second_layout)];
         let second_arg = self.build_layout_alloca(inner_layout, "second_arg");
-        let first_ptr = self.build_duple_gep(layout.inner(), DupleField::First, fun);
-        let second_ptr = self.build_duple_gep(layout.inner(), DupleField::Second, fun);
+        let first_ptr = self.build_duple_gep(layout.inner(), DupleField::First, fun, first_layout);
+        let second_ptr =
+            self.build_duple_gep(layout.inner(), DupleField::Second, fun, second_layout);
         let first_val_ptr = self.build_parser_fun_get(
             first_layout.maybe_mono(),
             first_ptr,
@@ -523,7 +525,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 .build_return(Some(&self.const_i64(ReturnStatus::Backtrack as i64)));
             self.builder.position_at_end(next_bb);
         }
-        let field_ptr = self.build_field_gep(layout.inner(), field, block);
+        let field_ptr = self.build_field_gep(layout.inner(), field, block, inner_layout);
         self.terminate_tail_typecast(inner_layout, field_ptr, target_head, return_ptr);
     }
 

@@ -174,6 +174,10 @@ impl<'a> ILayout<'a> {
         flat_layouts(self).any(|x| matches!(x.mono_layout().0, MonoLayout::Nominal(_, _, _)))
     }
 
+    pub fn is_multi(self) -> bool {
+        matches!(self.layout.1, Layout::Multi(_))
+    }
+
     fn map(
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,

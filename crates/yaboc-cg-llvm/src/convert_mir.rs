@@ -80,8 +80,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         self.blocks[bbref.as_index()]
     }
 
-    fn place_ptr(&mut self, place: mir::PlaceRef) -> PointerValue<'llvm> {
-        let place = self.mir_fun.f.place(place).place;
+    fn place_ptr(&mut self, placeref: mir::PlaceRef) -> PointerValue<'llvm> {
+        let place = self.mir_fun.f.place(placeref).place;
         match place {
             mir::Place::Arg => self.arg,
             mir::Place::Return => self.ret,
@@ -91,12 +91,16 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             mir::Place::Field(outer, a) | mir::Place::Captured(outer, a) => {
                 let outer_layout = self.mir_fun.place(outer);
                 let outer_ptr = self.place_ptr(outer);
-                self.cg.build_field_gep(outer_layout, a, outer_ptr)
+                let inner_layout = self.mir_fun.place(placeref);
+                self.cg
+                    .build_field_gep(outer_layout, a, outer_ptr, inner_layout)
             }
             mir::Place::DupleField(outer, field) => {
                 let outer_layout = self.mir_fun.place(outer);
                 let outer_ptr = self.place_ptr(outer);
-                self.cg.build_duple_gep(outer_layout, field, outer_ptr)
+                let inner_layout = self.mir_fun.place(placeref);
+                self.cg
+                    .build_duple_gep(outer_layout, field, outer_ptr, inner_layout)
             }
         }
     }

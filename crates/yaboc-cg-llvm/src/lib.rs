@@ -197,18 +197,22 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         fun.into()
     }
 
-    fn const_size_t(&self, val: u64) -> IntValue<'llvm> {
+    fn const_size_t(&self, val: i64) -> IntValue<'llvm> {
         self.llvm
             .ptr_sized_int_type(&self.target_data, None)
-            .const_int(val, false)
+            .const_int(val as u64, true)
     }
 
     fn const_i64(&self, val: i64) -> IntValue<'llvm> {
-        self.llvm.i64_type().const_int(val as u64, false)
+        self.llvm.i64_type().const_int(val as u64, true)
     }
 
     fn any_ptr(&self) -> PointerType<'llvm> {
         self.llvm.i8_type().ptr_type(AddressSpace::Generic)
+    }
+
+    fn word_size(&self) -> u64 {
+        <*const u8>::tsize().size
     }
 
     fn sa_type(&mut self, sa: SizeAlign) -> ArrayType<'llvm> {
@@ -228,9 +232,21 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let ptr = self.builder.build_alloca(ty, "alloca");
         self.set_last_instr_align(sa).unwrap();
         let u8_ptr_ty = self.llvm.i8_type().ptr_type(AddressSpace::Generic);
-        self.builder
-            .build_bitcast(ptr, u8_ptr_ty, name)
-            .into_pointer_value()
+        match layout.layout.1 {
+            Layout::None => self.any_ptr().get_undef(),
+            Layout::Mono(_, _) => self
+                .builder
+                .build_bitcast(ptr, u8_ptr_ty, name)
+                .into_pointer_value(),
+            Layout::Multi(_) => {
+                let cast_ptr = self
+                    .builder
+                    .build_bitcast(ptr, u8_ptr_ty, name)
+                    .into_pointer_value();
+                let ptr_width = self.any_ptr().size_of();
+                self.build_byte_gep(cast_ptr, ptr_width, name)
+            }
+        }
     }
 
     fn build_call_with_int_ret(
@@ -296,7 +312,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let field_info_array = <*const u8>::codegen_ty(self)
             .into_pointer_type()
             .const_array(&field_info);
-        let len = self.const_size_t(field_info.len() as u64);
+        let len = self.const_size_t(field_info.len() as i64);
         let info_val = self
             .llvm
             .const_struct(&[len.into(), field_info_array.into()], false);
@@ -380,8 +396,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: ILayout<'comp>,
         field: DefId,
         ptr: PointerValue<'llvm>,
+        field_layout: ILayout<'comp>,
     ) -> PointerValue<'llvm> {
-        let offset = self.layouts.dcx.manifestation(layout).field_offsets[&field];
+        let mut offset = self.layouts.dcx.manifestation(layout).field_offsets[&field];
+        if field_layout.is_multi() {
+            offset += self.word_size();
+        }
         let offset_llvm_int = self.llvm.i64_type().const_int(offset, false);
         self.build_byte_gep(ptr, offset_llvm_int, "gepfield")
     }
@@ -391,12 +411,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: ILayout<'comp>,
         field: DupleField,
         ptr: PointerValue<'llvm>,
+        inner_layout: ILayout<'comp>,
     ) -> PointerValue<'llvm> {
         if field == DupleField::First {
             return ptr;
         }
         let sa = layout.size_align(self.layouts).unwrap();
-        let offset = match layout.layout.1 {
+        let mut offset = match layout.layout.1 {
             Layout::Mono(MonoLayout::ComposedParser(_, _, second), _) => {
                 let second_sa = second.size_align(self.layouts).unwrap();
                 sa.size - second_sa.size
@@ -407,6 +428,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 &layout
             ),
         };
+        if inner_layout.is_multi() {
+            offset += self.word_size();
+        }
         let llvm_int = self.llvm.i64_type().const_int(offset, false);
         self.build_byte_gep(ptr, llvm_int, "gepduple")
     }
@@ -414,16 +438,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn build_mono_ptr(
         &mut self,
         place_ptr: PointerValue<'llvm>,
-        layout: ILayout<'comp>,
+        _layout: ILayout<'comp>,
     ) -> PointerValue<'llvm> {
-        match layout.layout.1 {
-            Layout::None => self.any_ptr().get_undef(),
-            Layout::Mono(_, _) => place_ptr,
-            Layout::Multi(_) => {
-                let ptr_width = self.any_ptr().size_of();
-                self.build_byte_gep(place_ptr, ptr_width, "ml_ptr_skip")
-            }
-        }
+        place_ptr
+        //        match layout.layout.1 {
+        //            Layout::None => self.any_ptr().get_undef(),
+        //            Layout::Mono(_, _) => place_ptr,
+        //            Layout::Multi(_) => {
+        //                let ptr_width = self.any_ptr().size_of();
+        //                self.build_byte_gep(place_ptr, ptr_width, "ml_ptr_skip")
+        //            }
+        //        }
     }
 
     fn create_pd_export(&mut self, pd: ParserDefId, layout: IMonoLayout<'comp>, slot: PSize) {

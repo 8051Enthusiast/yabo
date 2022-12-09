@@ -169,13 +169,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let parserdef_args = pd.lookup(&self.compiler_database.db).unwrap().args.unwrap();
         let arg_index = parserdef_args.len() - argnum as usize - 1;
         let (arg_layout, ty) = args[arg_index];
-        let head = self.compiler_database.db.head_discriminant(ty)
-            | matches!(&arg_layout.layout.1, Layout::Multi(_)) as i64;
+        let is_multi = matches!(&arg_layout.layout.1, Layout::Multi(_));
+        let head = self.compiler_database.db.head_discriminant(ty) | is_multi as i64;
         // needed so that the manifestation exists
         let _ = layout.inner().size_align(self.layouts).unwrap();
         let manifestation = self.layouts.dcx.manifestation(layout.inner());
         let arg_defid = parserdef_args[arg_index];
-        let field_offset = manifestation.field_offsets[&arg_defid.0];
+        let mut field_offset = manifestation.field_offsets[&arg_defid.0];
+        if is_multi {
+            field_offset += self.word_size();
+        }
         (head, field_offset)
     }
 
@@ -186,7 +189,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> StructValue<'llvm> {
         let (head, offset) = self.arg_disc_and_offset(layout, argnum);
         let head = self.const_i64(head);
-        let offset = self.const_size_t(offset);
+        let offset = self.const_size_t(offset as i64);
         self.llvm.const_struct(&[head.into(), offset.into()], false)
     }
 

@@ -155,13 +155,16 @@ class DynValue(Structure):
         ptr_int_val = addressof(self.vtable.contents) & ~1
         return VTableHeader.from_address(ptr_int_val)
 
-    def data_ptr(self):
-        if self.vtable_has_tag():
-            return self.data
+    def data_field_ptr(self):
         offset = DynValue.data.offset
         array_ptr = pointer(
             (c_char * DynValue.data.size).from_buffer(self, offset))
         return ctypes.cast(array_ptr, _voidptr)
+
+    def data_ptr(self):
+        if self.vtable_has_tag():
+            return self.data
+        return self.data_field_ptr()
 
 
 def _check_status(status: int):
@@ -186,7 +189,9 @@ class Parser:
         buffer_ptr = pointer((c_ubyte * len(buf)).from_buffer(buf))
         ret = DynValue()
         nullptr = ctypes.c_void_p()
-        status = parse(nullptr, byref(buffer_ptr), 3, byref(ret))
+        # the vtable pointer is stored at negative index 1, so we pass
+        # a pointer to the data field
+        status = parse(nullptr, byref(buffer_ptr), 3, ret.data_field_ptr())
         _check_status(status)
         return _new_value(ret, buf, self._lib)
 
@@ -213,7 +218,7 @@ class YaboValue:
     def _typecast(self, typ: int):
         typecast = self._val.get_vtable().typecast_impl
         ret = DynValue()
-        status = typecast(self._val.data_ptr(), typ, byref(ret))
+        status = typecast(self._val.data_ptr(), typ, ret.data_field_ptr())
         _check_status(status)
         return YaboValue(ret, self._buf, self._lib)
 
@@ -235,7 +240,7 @@ class NominalValue(YaboValue):
             pointer(self._val.get_vtable()), POINTER(NominalVTable))
         deref = casted_vtable.contents.deref_impl
         ret = DynValue()
-        status = deref(self._val.data_ptr(), 3, byref(ret))
+        status = deref(self._val.data_ptr(), 3, ret.data_field_ptr())
         _check_status(status)
         return _new_value(ret, self._buf, self._lib)
 
@@ -265,7 +270,7 @@ class BlockValue(YaboValue):
         except KeyError:
             raise AttributeError(f'{name} is not a valid field')
         ret = DynValue()
-        status = access(self._val.data_ptr(), 3, byref(ret))
+        status = access(self._val.data_ptr(), 3, ret.data_field_ptr())
         if status == BACKTRACK:
             return None
         _check_status(status)

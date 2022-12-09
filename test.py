@@ -414,6 +414,7 @@ def run_tests(target_dir: str) -> int:
         results = pool.map(run_test, files)
         return sum(results)
 
+
 run_clippy()
 
 if not run_compiler_unit_tests():

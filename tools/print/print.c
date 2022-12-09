@@ -109,7 +109,7 @@ int print_block(DynValue val, int indent, FILE *out)
 	while (field_desc != field_end)
 	{
 		DynValue sub_value;
-		int64_t return_val = (*access_impl)(dyn_data(&val), 0x3, &sub_value);
+		int64_t return_val = (*access_impl)(dyn_data(&val), 0x3, &sub_value.in_data);
 		if (return_val == 3) {
 			access_impl++;
 			field_desc++;
