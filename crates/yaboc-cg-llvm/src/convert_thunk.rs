@@ -175,7 +175,7 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
                     self.copy_sa.align() as u32,
                     self.from_ptr,
                     self.alloc_sa.align() as u32,
-                    self.cg.const_size_t(self.copy_sa.size),
+                    self.cg.const_size_t(self.copy_sa.size as i64),
                 )
                 .unwrap();
         }
@@ -198,13 +198,13 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
             .build_conditional_branch(has_vtable, write_vtable_ptr, otherwise);
         self.cg.builder.position_at_end(write_vtable_ptr);
         let vtable_pointer = self.build_vtable_any_ptr();
-        let ret_vtable_ptr = self.cg.build_cast::<*mut *const u8, _>(self.return_ptr);
-        self.cg.builder.build_store(ret_vtable_ptr, vtable_pointer);
-        let ptr_width = self.cg.any_ptr().size_of();
-        let after_ptr = self
+        let vtable_offset = self.cg.any_ptr().size_of().const_neg();
+        let before_ptr = self
             .cg
-            .build_byte_gep(self.return_ptr, ptr_width, "vtable_ptr_skip");
-        copy_phi.add_incoming(&[(&after_ptr, write_vtable_ptr)]);
+            .build_byte_gep(self.return_ptr, vtable_offset, "vtable_ptr_skip");
+        let ret_vtable_ptr = self.cg.build_cast::<*mut *const u8, _>(before_ptr);
+        self.cg.builder.build_store(ret_vtable_ptr, vtable_pointer);
+        copy_phi.add_incoming(&[(&self.return_ptr, write_vtable_ptr)]);
         self.cg.builder.build_unconditional_branch(copy_bb);
     }
 
@@ -225,17 +225,17 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
         let tagged_vtable_ptr = self.build_malloc_tag_ptr(vtable_pointer);
         let malloc_pointer = self.build_malloc();
         let target_as_ptr_ptr = self.cg.build_cast::<*mut *mut u8, _>(self.return_ptr);
-        self.cg
-            .builder
-            .build_store(target_as_ptr_ptr, tagged_vtable_ptr);
-        let second = unsafe {
+        let before_ptr = unsafe {
             self.cg.builder.build_in_bounds_gep(
                 target_as_ptr_ptr,
-                &[self.cg.const_size_t(1)],
-                "second",
+                &[self.cg.const_size_t(-1)],
+                "before",
             )
         };
-        self.cg.builder.build_store(second, malloc_pointer);
+        self.cg.builder.build_store(before_ptr, tagged_vtable_ptr);
+        self.cg
+            .builder
+            .build_store(target_as_ptr_ptr, malloc_pointer);
         copy_phi.add_incoming(&[(&malloc_pointer, allocator_bb)]);
         self.cg.builder.build_unconditional_branch(copy_bb);
     }

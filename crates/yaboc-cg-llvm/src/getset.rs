@@ -3,27 +3,33 @@ use super::*;
 impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn vtable_get<T: TargetSized>(
         &mut self,
-        vtable_ptr_ptr: PointerValue<'llvm>,
+        value_ptr: PointerValue<'llvm>,
         field_path: &[u64],
     ) -> BasicValueEnum<'llvm> {
         let ty = <&&T>::codegen_ty(self).into_pointer_type();
         let actual_ptr_ptr = self
             .builder
-            .build_bitcast(vtable_ptr_ptr, ty, "")
+            .build_bitcast(value_ptr, ty, "casted_ptr_ptr")
             .into_pointer_value();
-        let actual_ptr = self
+        let before_ptr = unsafe {
+            self.builder.build_in_bounds_gep(
+                actual_ptr_ptr,
+                &[self.const_i64(-1)],
+                "vtable_ptr_ptr",
+            )
+        };
+        let vtable_ptr = self
             .builder
-            .build_load(actual_ptr_ptr, "")
+            .build_load(before_ptr, "vtable_ptr")
             .into_pointer_value();
         let mut path = Vec::with_capacity(field_path.len() + 1);
-        let zero = self.llvm.i32_type().const_int(0, false);
-        path.push(zero);
+        path.push(self.const_i64(0));
         path.extend(
             field_path
                 .iter()
                 .map(|x| self.llvm.i32_type().const_int(*x, false)),
         );
-        let target = unsafe { self.builder.build_in_bounds_gep(actual_ptr, &path, "") };
+        let target = unsafe { self.builder.build_in_bounds_gep(vtable_ptr, &path, "") };
         self.builder.build_load(target, "")
     }
 
@@ -223,13 +229,20 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         argnum: PSize,
     ) -> (IntValue<'llvm>, IntValue<'llvm>) {
         let arginfo_ptr_ptr = self.build_cast::<*const *const vtable::ArgDescriptor, _>(fun);
-        let arginfo_ptr = self
+        let vtable_ptr_ptr = unsafe {
+            self.builder.build_in_bounds_gep(
+                arginfo_ptr_ptr,
+                &[self.const_i64(-1)],
+                "vtable_ptr_ptr",
+            )
+        };
+        let vtable_ptr = self
             .builder
-            .build_load(arginfo_ptr_ptr, "")
+            .build_load(vtable_ptr_ptr, "vtable_ptr")
             .into_pointer_value();
         let head_ptr = unsafe {
             self.builder.build_in_bounds_gep(
-                arginfo_ptr,
+                vtable_ptr,
                 &[
                     self.const_i64(-1 - argnum as i64),
                     self.llvm
@@ -241,7 +254,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         };
         let offset_ptr = unsafe {
             self.builder.build_in_bounds_gep(
-                arginfo_ptr,
+                vtable_ptr,
                 &[
                     self.const_i64(-1 - argnum as i64),
                     self.llvm
@@ -267,7 +280,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let (head, offset) = match fun_layout.maybe_mono() {
             Some(mono) => {
                 let (head, offset) = self.arg_disc_and_offset(mono, argnum);
-                (self.const_i64(head), self.const_size_t(offset))
+                (self.const_i64(head), self.const_size_t(offset as i64))
             }
             None => self.build_vtable_arg_set_info_get(fun, argnum),
         };
