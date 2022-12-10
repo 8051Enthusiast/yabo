@@ -29,6 +29,30 @@ pub fn deref_type(db: &dyn TyHirs, ty: TypeId) -> SResult<Option<TypeId>> {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DerefLevel(usize);
+
+const RESERVED_DEREF_METADATA_BITS: u8 = 8;
+
+impl DerefLevel {
+    pub fn into_shifted_runtime_value(self) -> usize {
+        self.0 << RESERVED_DEREF_METADATA_BITS
+    }
+    pub fn is_deref(self) -> bool {
+        self.0 > 0
+    }
+}
+
+pub fn deref_level(db: &dyn TyHirs, ty: TypeId) -> SResult<DerefLevel> {
+    let mut level = 0;
+    let mut ty = ty;
+    while let Some(t) = db.deref_type(ty)? {
+        ty = t;
+        level += 1;
+    }
+    Ok(DerefLevel(level))
+}
+
 pub fn least_deref_type(db: &dyn TyHirs, mut ty: TypeId) -> SResult<TypeId> {
     Ok(loop {
         match db.deref_type(ty)? {

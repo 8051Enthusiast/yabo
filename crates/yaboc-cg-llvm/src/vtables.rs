@@ -8,6 +8,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .db
             .head_discriminant(layout.mono_layout().1);
         let head_disc_val = self.const_i64(head_discriminant);
+        let deref_level = self.deref_level(layout.mono_layout().1);
         let typecast = self
             .typecast_fun_val(layout)
             .as_global_value()
@@ -17,6 +18,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.llvm.const_struct(
             &[
                 head_disc_val.into(),
+                deref_level.into(),
                 typecast.into(),
                 size.into(),
                 align.into(),

@@ -156,7 +156,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.ppip_fun_val(layout, LayoutPart::ValImpl(slot, true))
     }
 
-    pub(super) fn arg_disc_and_offset(
+    pub(super) fn arg_level_and_offset(
         &mut self,
         layout: IMonoLayout<'comp>,
         argnum: PSize,
@@ -170,7 +170,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let arg_index = parserdef_args.len() - argnum as usize - 1;
         let (arg_layout, ty) = args[arg_index];
         let is_multi = matches!(&arg_layout.layout.1, Layout::Multi(_));
-        let head = self.compiler_database.db.head_discriminant(ty) | is_multi as i64;
+        let head = self
+            .compiler_database
+            .db
+            .deref_level(ty)
+            .unwrap()
+            .into_shifted_runtime_value() as i64
+            | is_multi as i64;
         // needed so that the manifestation exists
         let _ = layout.inner().size_align(self.layouts).unwrap();
         let manifestation = self.layouts.dcx.manifestation(layout.inner());
@@ -187,7 +193,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         argnum: PSize,
     ) -> StructValue<'llvm> {
-        let (head, offset) = self.arg_disc_and_offset(layout, argnum);
+        let (head, offset) = self.arg_level_and_offset(layout, argnum);
         let head = self.const_i64(head);
         let offset = self.const_size_t(offset as i64);
         self.llvm.const_struct(&[head.into(), offset.into()], false)

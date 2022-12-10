@@ -346,7 +346,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let first_slot =
             self.collected_layouts.parser_slots.layout_vtable_offsets[&(from, first_layout)];
         let inner_layout = first_layout.apply_arg(self.layouts, from).unwrap();
-        let inner_head = self.const_i64(self.compiler_database.db.head_discriminant(inner_ty));
+        let inner_level = self.deref_level(inner_ty);
         let second_slot = self.collected_layouts.parser_slots.layout_vtable_offsets
             [&(inner_layout, second_layout)];
         let second_arg = self.build_layout_alloca(inner_layout, "second_arg");
@@ -366,7 +366,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             &[
                 first_mono.into(),
                 arg.into(),
-                inner_head.into(),
+                inner_level.into(),
                 second_arg.into(),
             ],
         );
@@ -406,7 +406,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let first_slot =
             self.collected_layouts.parser_slots.layout_vtable_offsets[&(from, first_layout)];
         let inner_layout = first_layout.apply_arg(self.layouts, from).unwrap();
-        let inner_head = self.const_i64(self.compiler_database.db.head_discriminant(inner_ty));
+        let inner_level = self.deref_level(inner_ty);
         let second_slot = self.collected_layouts.parser_slots.layout_vtable_offsets
             [&(inner_layout, second_layout)];
         let second_arg = self.build_layout_alloca(inner_layout, "second_arg");
@@ -425,7 +425,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             &[
                 first_mono.into(),
                 arg.into(),
-                inner_head.into(),
+                inner_level.into(),
                 second_arg.into(),
             ],
         );

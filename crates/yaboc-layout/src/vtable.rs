@@ -3,6 +3,7 @@ use crate::target_struct;
 target_struct! {
     pub struct VTableHeader {
         pub head: i64,
+        pub deref_level: usize,
         pub typecast_impl: fn(from: *const u8, target_head: i64, ret: *mut u8) -> i64,
         pub size: usize,
         pub align: usize,
@@ -86,21 +87,21 @@ mod tests {
         assert_eq!(
             VTableHeader::tsize(),
             SizeAlign {
-                size: 32,
+                size: 40,
                 align_mask: 0b111
             }
         );
         assert_eq!(
             BlockVTable::tsize(),
             SizeAlign {
-                size: 40,
+                size: 48,
                 align_mask: 0b111,
             }
         );
         assert_eq!(
             ParserVTable::tsize(),
             SizeAlign {
-                size: 32,
+                size: 40,
                 align_mask: 0b111,
             }
         );
@@ -114,7 +115,7 @@ mod tests {
         assert_eq!(
             ArrayVTable::tsize(),
             SizeAlign {
-                size: 56,
+                size: 64,
                 align_mask: 0b111,
             }
         );

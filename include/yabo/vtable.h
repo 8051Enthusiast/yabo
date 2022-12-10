@@ -1,5 +1,5 @@
 #pragma once
-#include<stdint.h>
+#include <stdint.h>
 //#include<sys/types.h>
 
 enum YaboHead {
@@ -10,6 +10,7 @@ enum YaboHead {
 	YABO_PARSER = 0x500,
 	YABO_FUN_ARGS = 0x600,
 	YABO_BLOCK = 0x700,
+	YABO_ANY = UINT64_MAX & ~0xff,
 };
 
 enum ReturnStatus {
@@ -21,6 +22,7 @@ enum ReturnStatus {
 
 struct VTableHeader {
 	int64_t head;
+	size_t deref_level;
 	int64_t (*typecast_impl)(void *, int64_t, void *);
 	size_t size;
 	size_t align;

@@ -9,7 +9,7 @@ import tempfile
 import subprocess
 import json
 from typing import Optional, Tuple
-import multiprocessing
+from concurrent import futures
 import yabo
 
 TARGET_RELEASE = 'debug'
@@ -410,8 +410,8 @@ def run_test(path: str) -> int:
 
 def run_tests(target_dir: str) -> int:
     files = map(lambda x: os.path.join(target_dir, x), os.listdir(target_dir))
-    with multiprocessing.Pool() as pool:
-        results = pool.map(run_test, files)
+    with futures.ProcessPoolExecutor() as executor:
+        results = executor.map(run_test, files)
         return sum(results)
 
 

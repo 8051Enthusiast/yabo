@@ -11,6 +11,8 @@ YABO_PARSER = 0x500
 YABO_FUN_ARGS = 0x600
 YABO_BLOCK = 0x700
 YABO_UNIT = 0x800
+YABO_ANY = ((1 << 64) - 1) & ~0xff
+YABO_MALLOC = 0x3
 
 OK = 0
 ERROR = 1
@@ -27,12 +29,14 @@ class BacktrackError(Exception):
 class VTableHeader(Structure):
     __slots__ = [
         'head',
+        'deref_level',
         'typecast_impl',
         'size',
         'align',
     ]
     _fields_ = [
         ('head', c_int64),
+        ('deref_level', c_size_t),
         ('typecast_impl', CFUNCTYPE(c_int64, _voidptr, c_int64, _voidptr)),
         ('size', c_size_t),
         ('align', c_size_t),
@@ -191,7 +195,8 @@ class Parser:
         nullptr = ctypes.c_void_p()
         # the vtable pointer is stored at negative index 1, so we pass
         # a pointer to the data field
-        status = parse(nullptr, byref(buffer_ptr), 3, ret.data_field_ptr())
+        status = parse(nullptr, byref(buffer_ptr), YABO_ANY |
+                       YABO_MALLOC, ret.data_field_ptr())
         _check_status(status)
         return _new_value(ret, buf, self._lib)
 
@@ -240,7 +245,8 @@ class NominalValue(YaboValue):
             pointer(self._val.get_vtable()), POINTER(NominalVTable))
         deref = casted_vtable.contents.deref_impl
         ret = DynValue()
-        status = deref(self._val.data_ptr(), 3, ret.data_field_ptr())
+        status = deref(self._val.data_ptr(), YABO_ANY | YABO_MALLOC,
+                       ret.data_field_ptr())
         _check_status(status)
         return _new_value(ret, self._buf, self._lib)
 
@@ -270,7 +276,8 @@ class BlockValue(YaboValue):
         except KeyError:
             raise AttributeError(f'{name} is not a valid field')
         ret = DynValue()
-        status = access(self._val.data_ptr(), 3, ret.data_field_ptr())
+        status = access(self._val.data_ptr(), YABO_ANY |
+                        YABO_MALLOC, ret.data_field_ptr())
         if status == BACKTRACK:
             return None
         _check_status(status)
@@ -294,8 +301,10 @@ class FunArgValue(YaboValue):
 class ParserValue(YaboValue):
     pass
 
+
 class UnitValue(YaboValue):
     pass
+
 
 def _new_value(val: DynValue, buf: bytearray, lib: YaboLib):
     head = val.get_vtable().head

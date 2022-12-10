@@ -1,3 +1,5 @@
+use yaboc_types::TypeId;
+
 use super::*;
 
 impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
@@ -179,7 +181,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
     }
 
-    pub(super) fn build_head_disc_get(
+    pub(super) fn deref_level(&mut self, ty: TypeId) -> IntValue<'llvm> {
+        let level = self.compiler_database.db.deref_level(ty).unwrap();
+        self.const_i64(level.into_shifted_runtime_value() as i64)
+    }
+
+    pub(super) fn build_deref_level_get(
         &mut self,
         layout: Option<IMonoLayout<'comp>>,
         ptr: PointerValue<'llvm>,
@@ -187,11 +194,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         match layout {
             Some(mono) => {
                 let ty = mono.mono_layout().1;
-                let head = self.compiler_database.db.head_discriminant(ty);
-                self.const_i64(head)
+                self.deref_level(ty)
             }
             None => self
-                .vtable_get::<vtable::VTableHeader>(ptr, &[VTableHeaderFields::head as u64])
+                .vtable_get::<vtable::VTableHeader>(ptr, &[VTableHeaderFields::deref_level as u64])
                 .into_int_value(),
         }
     }
@@ -279,7 +285,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> IntValue<'llvm> {
         let (head, offset) = match fun_layout.maybe_mono() {
             Some(mono) => {
-                let (head, offset) = self.arg_disc_and_offset(mono, argnum);
+                let (head, offset) = self.arg_level_and_offset(mono, argnum);
                 (self.const_i64(head), self.const_size_t(offset as i64))
             }
             None => self.build_vtable_arg_set_info_get(fun, argnum),

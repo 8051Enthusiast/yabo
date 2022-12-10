@@ -34,7 +34,10 @@ use yaboc_hir::{self, Hirs};
 
 use full::{parser_expr_at, parser_full_types, parser_type_at, ParserFullTypes};
 use public::{ambient_type, public_expr_type, public_type};
-use returns::{deref_type, least_deref_type, parser_returns, parser_returns_ssc, ParserDefType};
+pub use returns::DerefLevel;
+use returns::{
+    deref_level, deref_type, least_deref_type, parser_returns, parser_returns_ssc, ParserDefType,
+};
 use signature::{get_signature, parser_args, parser_args_error};
 
 #[salsa::query_group(HirTypesDatabase)]
@@ -47,6 +50,7 @@ pub trait TyHirs: Hirs + yaboc_types::TypeInterner + resolve::Resolves {
         id: resolve::parserdef_ssc::FunctionSscId,
     ) -> Vec<Result<ParserDefType, SpannedTypeError>>;
     fn deref_type(&self, ty: TypeId) -> SResult<Option<TypeId>>;
+    fn deref_level(&self, ty: TypeId) -> SResult<DerefLevel>;
     fn least_deref_type(&self, ty: TypeId) -> SResult<TypeId>;
     fn public_type(&self, loc: DefId) -> SResult<TypeId>;
     fn parser_type_at(&self, loc: DefId) -> SResult<TypeId>;
@@ -72,7 +76,7 @@ pub enum HeadDiscriminant {
     Unit = 0x800,
 }
 
-pub const DISCRIMINANT_MASK: i64 = !0x3;
+pub const DISCRIMINANT_MASK: i64 = !0xff;
 
 pub fn head_discriminant(db: &dyn TyHirs, ty: TypeId) -> i64 {
     match db.lookup_intern_type(ty) {
@@ -97,7 +101,7 @@ pub fn head_discriminant(db: &dyn TyHirs, ty: TypeId) -> i64 {
             // highest bit is set for nominal types (so that it is negative)
             // and the rest is derived from the first 8 bytes of the hash
             //
-            // the lowest two bits are for flags so they get zeroed out
+            // the lowest eight bits are for flags so they get zeroed out
             i64::from_le_bytes(def_hash) & DISCRIMINANT_MASK | i64::MIN
         }
         Type::TypeVarRef(_, _) | Type::Any | Type::Bot | Type::Unknown => 0,

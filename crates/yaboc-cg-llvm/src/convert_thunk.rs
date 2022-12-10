@@ -4,7 +4,7 @@ use inkwell::{
     IntPredicate,
 };
 
-use yaboc_hir_types::DISCRIMINANT_MASK;
+use yaboc_hir_types::TyHirs;
 use yaboc_layout::{
     prop::{PSize, SizeAlign, TargetSized},
     IMonoLayout,
@@ -55,7 +55,7 @@ impl<'comp> ThunkKind<'comp> {
 pub struct ThunkContext<'llvm, 'comp, 'r> {
     cg: &'r mut CodeGenCtx<'llvm, 'comp>,
     thunk: FunctionValue<'llvm>,
-    target_head: IntValue<'llvm>,
+    target_level: IntValue<'llvm>,
     from_ptr: PointerValue<'llvm>,
     target_layout: IMonoLayout<'comp>,
     return_ptr: PointerValue<'llvm>,
@@ -69,7 +69,7 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
         let copy_sa = kind.copy_size(cg);
         let alloc_sa = kind.alloc_size(cg);
         let from_ptr = thunk.get_nth_param(0).unwrap().into_pointer_value();
-        let target_head = thunk.get_nth_param(1).unwrap().into_int_value();
+        let target_level = thunk.get_nth_param(1).unwrap().into_int_value();
         let return_ptr = thunk.get_nth_param(2).unwrap().into_pointer_value();
         let entry_block = cg.llvm.append_basic_block(thunk, "entry");
         let target_layout = kind.target_layout();
@@ -77,7 +77,7 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
         ThunkContext {
             cg,
             thunk,
-            target_head,
+            target_level,
             from_ptr,
             target_layout,
             return_ptr,
@@ -87,31 +87,18 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
     }
 
     fn maybe_deref(&mut self) {
-        if self.target_layout.deref(self.cg.layouts).unwrap().is_some() {
-            let mask = self.cg.const_i64(DISCRIMINANT_MASK);
-            let discriminant = self
+        let ty = self.target_layout.mono_layout().1;
+        let deref_level = self.cg.compiler_database.db.deref_level(ty).unwrap();
+        if deref_level.is_deref() {
+            let self_level = self
                 .cg
-                .build_head_disc_get(Some(self.target_layout), self.from_ptr);
-            let masked_target = self
-                .cg
-                .builder
-                .build_and(self.target_head, mask, "masked_target");
-            let heads_equal = self.cg.builder.build_int_compare(
-                IntPredicate::EQ,
-                discriminant,
-                masked_target,
-                "heads_equal",
+                .build_deref_level_get(Some(self.target_layout), self.from_ptr);
+            let no_deref = self.cg.builder.build_int_compare(
+                IntPredicate::ULE,
+                self_level,
+                self.target_level,
+                "no_deref",
             );
-            let heads_zero = self.cg.builder.build_int_compare(
-                IntPredicate::EQ,
-                self.cg.const_i64(0),
-                masked_target,
-                "heads_zero",
-            );
-            let no_deref = self
-                .cg
-                .builder
-                .build_or(heads_equal, heads_zero, "no_deref");
             let tail = self.typecast_tail();
             let next_bb = self.cg.llvm.append_basic_block(self.thunk, "head_match");
             self.cg
@@ -132,7 +119,7 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
             deref_fun,
             &[
                 self.from_ptr.into(),
-                self.target_head.into(),
+                self.target_level.into(),
                 self.return_ptr.into(),
             ],
         );
@@ -188,7 +175,7 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
         copy_phi: PhiValue<'llvm>,
         otherwise: BasicBlock<'llvm>,
     ) {
-        let has_vtable = self.cg.build_check_i64_bit_set(self.target_head, 0);
+        let has_vtable = self.cg.build_check_i64_bit_set(self.target_level, 0);
         let write_vtable_ptr = self
             .cg
             .llvm
@@ -214,7 +201,7 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
         copy_phi: PhiValue<'llvm>,
         otherwise: BasicBlock<'llvm>,
     ) {
-        let is_malloc = self.cg.build_check_i64_bit_set(self.target_head, 1);
+        let is_malloc = self.cg.build_check_i64_bit_set(self.target_level, 1);
         let allocator_bb = self.cg.llvm.append_basic_block(self.thunk, "allocator");
         self.cg
             .builder
