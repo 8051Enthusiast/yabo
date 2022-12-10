@@ -31,7 +31,7 @@ static inline void *dyn_data(DynValue *val) {
 
 static inline DynValue dyn_parse_bytes(char *bytes, struct ParserArgImpl parser) {
 	DynValue ret;
-	int64_t status = parser.val_impl(NULL, &bytes, 0x3, &ret.in_data);
+	int64_t status = parser.val_impl(NULL, &bytes, YABO_ANY | 3, &ret.in_data);
 	if (status != 0) {
 		ret.vtable = 0;
 		ret.in_data[0] = (char)status;
@@ -42,7 +42,7 @@ static inline DynValue dyn_parse_bytes(char *bytes, struct ParserArgImpl parser)
 static inline DynValue dyn_deref(DynValue val) {
 	DynValue ret;
 	struct NominalVTable *vtable = (struct NominalVTable *)dyn_vtable(val);
-	int64_t status = vtable->deref_impl(dyn_data(&val), 0x3, &ret.in_data);
+	int64_t status = vtable->deref_impl(dyn_data(&val), YABO_ANY | 3, &ret.in_data);
 	if (status != 0) {
 		ret.vtable = 0;
 		ret.in_data[0] = (char)status;
@@ -65,7 +65,7 @@ static inline DynValue dyn_access_field(DynValue block, char *name) {
 		return (DynValue){0};
 	}
 	DynValue ret;
-	int64_t status = access_impl(dyn_data(&block), 0x3, &ret.in_data);
+	int64_t status = access_impl(dyn_data(&block), YABO_ANY | 3, &ret.in_data);
 	if (status != 0) {
 		ret.vtable = 0;
 		ret.in_data[0] = (char)status;

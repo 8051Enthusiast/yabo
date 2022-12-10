@@ -105,14 +105,15 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         }
     }
 
-    fn head_disc(&mut self, place: PlaceRef) -> IntValue<'llvm> {
+    fn deref_level(&mut self, place: PlaceRef) -> IntValue<'llvm> {
         let place_ty = self.mir_fun.place_ty(place);
         let place_layout = self.mir_fun.place(place);
-        let mut disc = self.cg.compiler_database.db.head_discriminant(place_ty);
-        if let Layout::Multi(_) = place_layout.layout.1 {
-            disc |= 1;
+        let deref_level = self.cg.compiler_database.db.deref_level(place_ty).unwrap();
+        let mut level = deref_level.into_shifted_runtime_value();
+        if place_layout.is_multi() {
+            level |= 1;
         }
-        self.cg.llvm.i64_type().const_int(disc as u64, false)
+        self.cg.const_i64(level as i64)
     }
 
     fn fallible_call(
@@ -141,7 +142,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
 
     fn copy(&mut self, to: PlaceRef, from: PlaceRef, error: BBRef) {
         let from_layout = self.mir_fun.place(from);
-        let to_disc = self.head_disc(to);
+        let to_level = self.deref_level(to);
         if let Layout::None = from_layout.layout.1 {
             self.cg.builder.build_unreachable();
             return;
@@ -152,7 +153,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let to_ptr = self.place_ptr(to);
         self.fallible_call(
             fun,
-            &[from_ptr.into(), to_disc.into(), to_ptr.into()],
+            &[from_ptr.into(), to_level.into(), to_ptr.into()],
             [self.undefined, self.undefined, self.bb(error)],
         )
     }
@@ -347,11 +348,11 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let fun = self
             .cg
             .build_field_access_fun_get(block, layout.maybe_mono(), place_ptr, field);
-        let target_head = self.head_disc(ret);
+        let target_level = self.deref_level(ret);
         let ret = self.place_ptr(ret);
         self.fallible_call(
             fun,
-            &[shifted_place_ptr.into(), target_head.into(), ret.into()],
+            &[shifted_place_ptr.into(), target_level.into(), ret.into()],
             [self.bb(backtrack), self.undefined, self.bb(error)],
         )
     }
@@ -395,13 +396,13 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 retreat,
             ),
             CallKind::Val => {
-                let head_disc = self.head_disc(ret);
+                let deref_level = self.deref_level(ret);
                 self.fallible_call(
                     call_ptr,
                     &[
                         mono_fun_ptr.into(),
                         arg_ptr.into(),
-                        head_disc.into(),
+                        deref_level.into(),
                         ret_ptr.into(),
                     ],
                     retreat,
@@ -518,10 +519,10 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             .build_fun_create_get(fun_layout.maybe_mono(), fun_ptr, slot);
         let fun_mono_ptr = self.cg.build_mono_ptr(fun_ptr, fun_layout);
         let ret_ptr = self.place_ptr(ret);
-        let ret_head = self.head_disc(ret);
+        let ret_level = self.deref_level(ret);
         self.fallible_call(
             create_fun,
-            &[fun_mono_ptr.into(), ret_head.into(), ret_ptr.into()],
+            &[fun_mono_ptr.into(), ret_level.into(), ret_ptr.into()],
             [self.undefined; 3],
         );
         for (i, arg) in args.iter().enumerate() {
