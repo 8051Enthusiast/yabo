@@ -1,5 +1,5 @@
-pub mod convert_mir;
-pub mod convert_thunk;
+mod convert_mir;
+mod convert_thunk;
 mod defs;
 mod funs;
 mod getset;
