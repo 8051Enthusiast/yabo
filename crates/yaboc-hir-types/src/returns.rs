@@ -41,6 +41,12 @@ impl DerefLevel {
     pub fn is_deref(self) -> bool {
         self.0 > 0
     }
+    pub fn zero() -> Self {
+        DerefLevel(0)
+    }
+    pub fn max() -> Self {
+        DerefLevel(usize::MAX >> RESERVED_DEREF_METADATA_BITS)
+    }
 }
 
 pub fn deref_level(db: &dyn TyHirs, ty: TypeId) -> SResult<DerefLevel> {

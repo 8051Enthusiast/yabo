@@ -710,6 +710,18 @@ impl NominalId {
             NominalKind::Block => NominalId::Block(hir::BlockId(head.def)),
         }
     }
+    pub fn unwrap_block(self) -> hir::BlockId {
+        match self {
+            NominalId::Block(b) => b,
+            _ => panic!("Expected block id"),
+        }
+    }
+    pub fn unwrap_def(self) -> hir::ParserDefId {
+        match self {
+            NominalId::Def(b) => b,
+            _ => panic!("Expected def id"),
+        }
+    }
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
