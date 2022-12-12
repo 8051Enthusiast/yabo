@@ -61,7 +61,7 @@ impl<'a, DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeId<'a> {
                 write!(f, "<Var {}>", var_id.0)
             }
             InferenceType::InferField(field_name, inner_type) => {
-                write!(f, "<InferField {:?}: ", field_name)?;
+                write!(f, "<InferField {field_name:?}: ")?;
                 dbwrite!(f, db, "{}", inner_type)
             }
         }
@@ -172,7 +172,7 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for TypeHead {
                 ArrayKind::Each => write!(f, "each array"),
             },
             TypeHead::ParserArg => write!(f, "a parser"),
-            TypeHead::FunctionArgs(arg) => write!(f, "a function with {} arguments", arg),
+            TypeHead::FunctionArgs(arg) => write!(f, "a function with {arg} arguments"),
             TypeHead::Unknown => write!(f, "unknon"),
         }
     }

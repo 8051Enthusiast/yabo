@@ -169,7 +169,7 @@ impl<'collection> FileResolver<'collection> {
 
     fn file_path(&self, dir: &Path, name: &str) -> Option<PathBuf> {
         let mut path = dir.to_path_buf();
-        let name_with_suffix = format!("{}.yb", name);
+        let name_with_suffix = format!("{name}.yb");
         path.push(name_with_suffix);
         if path.exists() {
             return Some(path);
@@ -385,7 +385,7 @@ impl<DB: Files + ?Sized> DatabasedDisplay<DB> for FileId {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         let fd = db.input_file(*self);
         if let Some(path) = &fd.path {
-            write!(f, "{}", path)
+            write!(f, "{path}")
         } else {
             write!(f, "file[_]")
         }

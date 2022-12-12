@@ -47,7 +47,7 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for PlaceRef {
                     DupleField::First => "0",
                     DupleField::Second => "1",
                 };
-                write!(f, ".{}", s)
+                write!(f, ".{s}")
             }
             Place::From(inner) => {
                 inner.db_fmt(f, &(*fun, *db))?;
@@ -71,7 +71,7 @@ impl Display for IntBinOp {
             IntBinOp::Modulo => "mod",
             IntBinOp::Mul => "mul",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -81,7 +81,7 @@ impl Display for IntUnOp {
             IntUnOp::Not => "not",
             IntUnOp::Neg => "neg",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -95,7 +95,7 @@ impl Display for Comp {
             Comp::Uneq => "neq",
             Comp::Equals => "eq",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -103,8 +103,8 @@ impl Display for Val {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Val::Char(c) => write!(f, "'{}'", char::try_from(*c).unwrap()),
-            Val::Int(i) => write!(f, "{}", i),
-            Val::Bool(b) => write!(f, "{}", b),
+            Val::Int(i) => write!(f, "{i}"),
+            Val::Bool(b) => write!(f, "{b}"),
         }
     }
 }
@@ -125,7 +125,7 @@ impl Display for CallKind {
             CallKind::Len => "len",
             CallKind::Val => "val",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -201,13 +201,13 @@ impl Display for ControlFlow {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{{ next: {}", self.next)?;
         if let Some(error) = self.error {
-            write!(f, ", error: {}", error)?;
+            write!(f, ", error: {error}")?;
         }
         if let Some(eof) = self.eof {
-            write!(f, ", eof: {}", eof)?;
+            write!(f, ", eof: {eof}")?;
         }
         if let Some(backtrack) = self.backtrack {
-            write!(f, ", backtrack: {}", backtrack)?;
+            write!(f, ", backtrack: {backtrack}")?;
         }
         write!(f, " }}")
     }
@@ -221,7 +221,7 @@ impl Display for ReturnStatus {
             ReturnStatus::Eof => "eof",
             ReturnStatus::Backtrack => "backtrack",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -259,7 +259,7 @@ pub fn print_all_mir<DB: Mirs, W: Write>(db: &DB, w: &mut W) -> std::io::Result<
     let convert_error_ignore = |e| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            format!("could not get mir: {}", e),
+            format!("could not get mir: {e}"),
         )
     };
     for pd in db.all_parserdefs() {

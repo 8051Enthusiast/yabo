@@ -46,7 +46,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         cg.builder.position_at_end(entry);
         let mut stack = Vec::new();
         for (idx, layout) in mir_fun.stack_layouts.iter().enumerate() {
-            stack.push(cg.build_layout_alloca(*layout, &format!("stack_{}", idx)));
+            stack.push(cg.build_layout_alloca(*layout, &format!("stack_{idx}")));
         }
         let mut blocks = Vec::new();
         for (bbref, _) in mir_fun.f.iter_bb() {

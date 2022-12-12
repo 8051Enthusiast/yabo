@@ -54,7 +54,7 @@ fn make_report(db: &(impl Resolves + ?Sized), err: &ResolveError) -> Option<Repo
             let report = Report::new(
                 DiagnosticKind::Error,
                 example_file,
-                &format!("cyclic import between following files:\n{}", list),
+                &format!("cyclic import between following files:\n{list}"),
             )
             .with_code(302);
             Some(report)

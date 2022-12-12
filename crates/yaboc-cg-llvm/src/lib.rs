@@ -262,7 +262,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn module_string(&mut self, s: &str) -> PointerValue<'llvm> {
-        let sym_name = format!("s${}", s);
+        let sym_name = format!("s${s}");
         if let Some(sym) = self.module.get_global(&sym_name) {
             return sym.as_pointer_value();
         }

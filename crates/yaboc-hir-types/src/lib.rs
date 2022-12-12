@@ -656,7 +656,7 @@ impl TypeVarCollection {
     }
     pub fn fill_anon_vars(&mut self, db: &(impl TyHirs + ?Sized), target_count: u32) {
         for i in 1..=(target_count - self.defs.len() as u32) {
-            let nth_name = format!("'{}", i);
+            let nth_name = format!("'{i}");
             let tvar = db.intern_type_var(TypeVarName::new(nth_name));
             self.defs.push(tvar);
         }

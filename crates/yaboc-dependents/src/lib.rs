@@ -149,10 +149,7 @@ fn val_refs(
         | hir::HirNode::ParserDef(_)
         | hir::HirNode::Import(_)
         | hir::HirNode::Context(_) => {
-            panic!(
-                "attempting to get value references of invalid node {:?}",
-                node
-            )
+            panic!("attempting to get value references of invalid node {node:?}")
         }
     }
 }
