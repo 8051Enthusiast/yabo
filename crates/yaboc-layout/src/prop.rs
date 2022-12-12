@@ -187,6 +187,7 @@ fn_impl!(A);
 fn_impl!(A, B);
 fn_impl!(A, B, C);
 fn_impl!(A, B, C, D);
+fn_impl!(A, B, C, D, E);
 
 impl TargetSized for Zst {
     fn tsize() -> SizeAlign {

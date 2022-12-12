@@ -187,7 +187,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let to_ptr = self.place_ptr(to);
         self.controlflow_call(
             fun,
-            &[from_ptr.into(), to_level.into(), to_ptr.into()],
+            &[to_ptr.into(), from_ptr.into(), to_level.into()],
             ctrl,
         )
     }
@@ -375,7 +375,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let ret = self.place_ptr(ret);
         self.controlflow_call(
             fun,
-            &[shifted_place_ptr.into(), target_level.into(), ret.into()],
+            &[ret.into(), shifted_place_ptr.into(), target_level.into()],
             ctrl,
         )
     }
@@ -545,7 +545,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let ret_level = self.deref_level(ret);
         self.fallible_call(
             create_fun,
-            &[fun_mono_ptr.into(), ret_level.into(), ret_ptr.into()],
+            &[ret_ptr.into(), fun_mono_ptr.into(), ret_level.into()],
             [self.undefined; 3],
         );
         for (i, arg) in args.iter().enumerate() {

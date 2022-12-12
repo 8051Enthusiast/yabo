@@ -68,9 +68,9 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
         let thunk = kind.function(cg);
         let copy_sa = kind.copy_size(cg);
         let alloc_sa = kind.alloc_size(cg);
-        let from_ptr = thunk.get_nth_param(0).unwrap().into_pointer_value();
-        let target_level = thunk.get_nth_param(1).unwrap().into_int_value();
-        let return_ptr = thunk.get_nth_param(2).unwrap().into_pointer_value();
+        let return_ptr = thunk.get_nth_param(0).unwrap().into_pointer_value();
+        let from_ptr = thunk.get_nth_param(1).unwrap().into_pointer_value();
+        let target_level = thunk.get_nth_param(2).unwrap().into_int_value();
         let entry_block = cg.llvm.append_basic_block(thunk, "entry");
         let target_layout = kind.target_layout();
         cg.builder.position_at_end(entry_block);
@@ -118,9 +118,9 @@ impl<'llvm, 'comp, 'r> ThunkContext<'llvm, 'comp, 'r> {
         let ret = self.cg.build_call_with_int_ret(
             deref_fun,
             &[
+                self.return_ptr.into(),
                 self.from_ptr.into(),
                 self.target_level.into(),
-                self.return_ptr.into(),
             ],
         );
         self.cg.builder.build_return(Some(&ret));

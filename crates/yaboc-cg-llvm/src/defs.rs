@@ -30,7 +30,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         )
     }
 
-    fn pip_fun_val(
+    fn ppi_fun_val(
         &mut self,
         layout: IMonoLayout<'comp>,
         part: LayoutPart,
@@ -40,8 +40,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             part,
             &[
                 self.any_ptr().into(),
-                self.llvm.i64_type().into(),
                 self.any_ptr().into(),
+                self.llvm.i64_type().into(),
             ],
         )
     }
@@ -98,11 +98,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
     ) -> FunctionValue<'llvm> {
-        self.pip_fun_val(layout, LayoutPart::CurrentElement)
+        self.ppi_fun_val(layout, LayoutPart::CurrentElement)
     }
 
     pub(super) fn skip_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
-        self.pip_fun_val(layout, LayoutPart::Skip)
+        self.ppi_fun_val(layout, LayoutPart::Skip)
     }
 
     pub(super) fn access_field_fun_val(
@@ -110,13 +110,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         name: Identifier,
     ) -> FunctionValue<'llvm> {
-        let f = self.pip_fun_val(layout, LayoutPart::Field(name));
+        let f = self.ppi_fun_val(layout, LayoutPart::Field(name));
         self.set_always_inline(f);
         f
     }
 
     pub(super) fn typecast_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
-        let f = self.pip_fun_val(layout, LayoutPart::Typecast);
+        let f = self.ppi_fun_val(layout, LayoutPart::Typecast);
         self.set_always_inline(f);
         f
     }
@@ -130,7 +130,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     pub(super) fn deref_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
-        self.pip_fun_val(layout, LayoutPart::Deref(true))
+        self.ppi_fun_val(layout, LayoutPart::Deref(true))
     }
 
     pub(super) fn deref_impl_fun_val(
@@ -232,7 +232,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         slot: PSize,
     ) -> FunctionValue<'llvm> {
-        let f = self.pip_fun_val(layout, LayoutPart::CreateArgs(slot));
+        let f = self.ppi_fun_val(layout, LayoutPart::CreateArgs(slot));
         self.set_always_inline(f);
         f
     }

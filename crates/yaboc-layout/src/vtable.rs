@@ -1,10 +1,12 @@
 use crate::target_struct;
 
+pub type TypecastFun = fn(ret: *mut u8, from: *const u8, target_head: i64) -> i64;
+
 target_struct! {
     pub struct VTableHeader {
         pub head: i64,
         pub deref_level: usize,
-        pub typecast_impl: fn(from: *const u8, target_head: i64, ret: *mut u8) -> i64,
+        pub typecast_impl: TypecastFun,
         pub size: usize,
         pub align: usize,
     }
@@ -17,18 +19,22 @@ target_struct! {
     }
 }
 
+pub type BlockFieldFun = fn(ret: *mut u8, from: *const u8, target_head: i64) -> i64;
+
 target_struct! {
     pub struct BlockVTable {
         pub head: VTableHeader,
         pub fields: &'static BlockFields,
-        pub access_impl: [fn(from: *const u8, target_head: i64, ret: *mut u8) -> i64; 0],
+        pub access_impl: [BlockFieldFun; 0],
     }
 }
+
+pub type DerefFun = fn(ret: *mut u8, from: *const u8, target_head: i64) -> i64;
 
 target_struct! {
     pub struct NominalVTable {
         pub head: VTableHeader,
-        pub deref_impl: fn(from: *const u8, target_head: i64, ret: *mut u8) -> i64,
+        pub deref_impl: DerefFun,
         pub start_impl: fn(nom: *const u8, ret: *mut u8) -> i64,
         pub end_impl: fn(nom: *const u8, ret: *mut u8) -> i64,
     }
@@ -59,20 +65,26 @@ target_struct! {
     }
 }
 
+pub type CreateArgFun = fn(ret: *mut u8, from: *const u8, target_head: i64) -> i64;
+
 target_struct! {
     pub struct FunctionVTable {
         pub set_arg_info: [ArgDescriptor; 0],
         pub head: VTableHeader,
-        pub apply_table: [fn(from: *const u8, target_head: i64, ret: *mut u8) -> i64; 0],
+        pub apply_table: [CreateArgFun; 0],
     }
 }
+
+pub type SingleForwardFun = fn(ret: *mut u8, from: *const u8) -> i64;
+pub type CurrentElementFun = fn(ret: *mut u8, from: *const u8, target_head: i64, ) -> i64;
+pub type SkipFun = fn(ret: *mut u8, from: *const u8, offset: u64) -> i64;
 
 target_struct! {
     pub struct ArrayVTable {
         pub head: VTableHeader,
-        pub single_forward_impl: fn(from: *const u8, ret: *mut u8) -> i64,
-        pub current_element_impl: fn(from: *const u8, target_head: i64, ret: *mut u8) -> i64,
-        pub skip_impl: Option<fn(from: *const u8, offset: u64, ret: *mut u8) -> i64>,
+        pub single_forward_impl: SingleForwardFun,
+        pub current_element_impl: CurrentElementFun,
+        pub skip_impl: Option<SkipFun>,
     }
 }
 
