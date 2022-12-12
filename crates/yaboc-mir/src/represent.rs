@@ -2,9 +2,11 @@ use std::{fmt::Display, io::Write};
 
 use yaboc_base::{databased_display::DatabasedDisplay, dbwrite};
 
+use crate::ControlFlow;
+
 use super::{
-    BBRef, BlockExit, CallKind, Comp, DupleField, ExceptionRetreat, Function, IntBinOp, IntUnOp,
-    MirInstr, Mirs, PdArgKind, Place, PlaceOrigin, PlaceRef, ReturnStatus, StackRef, Val,
+    BBRef, CallKind, Comp, DupleField, ExceptionRetreat, Function, IntBinOp, IntUnOp, MirInstr,
+    Mirs, PdArgKind, Place, PlaceOrigin, PlaceRef, ReturnStatus, StackRef, Val,
 };
 
 impl Display for StackRef {
@@ -142,7 +144,7 @@ impl<DB: Mirs> DatabasedDisplay<(&Function, &DB)> for MirInstr {
             MirInstr::StoreVal(target, val) => {
                 dbwrite!(f, db, "{} = load {}", target, val)
             }
-            MirInstr::ParseCall(target, kind, fun, arg, retreat) => {
+            MirInstr::ParseCall(target, kind, arg, fun, retreat) => {
                 dbwrite!(
                     f,
                     db,
@@ -154,29 +156,22 @@ impl<DB: Mirs> DatabasedDisplay<(&Function, &DB)> for MirInstr {
                     retreat
                 )
             }
-            MirInstr::Field(target, inner, field, error, backtrack) => {
+            MirInstr::Field(target, inner, field, cont) => {
                 dbwrite!(f, db, "{} = access_field {}.", target, inner)?;
-                dbwrite!(
-                    f,
-                    db.1,
-                    "{} {{error: {}, backtrack: {}}}",
-                    field,
-                    error,
-                    backtrack
-                )
+                dbwrite!(f, db.1, "{}, {}", field, cont)
             }
-            MirInstr::AssertVal(target, sub, inner) => {
+            MirInstr::AssertVal(target, sub, cont) => {
                 dbwrite!(f, db, "assert_val {}.", target)?;
-                dbwrite!(f, db.1, "{} {{backtrack: {}}}", sub, inner)
+                dbwrite!(f, db.1, "{}, {}", sub, cont)
             }
             MirInstr::SetDiscriminant(block, field, val) => {
                 dbwrite!(f, db, "set_discriminant {}.", block)?;
                 dbwrite!(f, db.1, "{}, {}", field, val)
             }
-            MirInstr::Copy(target, origin, error) => {
-                dbwrite!(f, db, "{} = copy {}, {{error: {}}}", target, origin, error)
+            MirInstr::Copy(target, origin, cont) => {
+                dbwrite!(f, db, "{} = copy {}, {}", target, origin, cont)
             }
-            MirInstr::ApplyArgs(target, origin, args, arg_start, error) => {
+            MirInstr::ApplyArgs(target, origin, args, arg_start, cont) => {
                 dbwrite!(f, db, "{} = apply_args {}, (", target, origin)?;
                 for (i, arg) in args.iter().enumerate() {
                     if i != 0 {
@@ -184,7 +179,13 @@ impl<DB: Mirs> DatabasedDisplay<(&Function, &DB)> for MirInstr {
                     }
                     dbwrite!(f, db, "{}", arg)?;
                 }
-                dbwrite!(f, db, "), {}, {{ error: {} }}", arg_start, error)
+                dbwrite!(f, db, "), {}, {}", arg_start, cont)
+            }
+            MirInstr::Branch(next) => {
+                dbwrite!(f, db, "branch {{ next: {} }}", next)
+            }
+            MirInstr::Return(status) => {
+                dbwrite!(f, db, "return {}", status)
             }
         }
     }
@@ -196,13 +197,19 @@ impl Display for BBRef {
     }
 }
 
-impl Display for BlockExit {
+impl Display for ControlFlow {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BlockExit::BlockInProgress => write!(f, "block_in_progress"),
-            BlockExit::Jump(bb) => write!(f, "jump {}", bb),
-            BlockExit::Return(r) => write!(f, "return {}", r),
+        write!(f, "{{ next: {}", self.next)?;
+        if let Some(error) = self.error {
+            write!(f, ", error: {}", error)?;
         }
+        if let Some(eof) = self.eof {
+            write!(f, ", eof: {}", eof)?;
+        }
+        if let Some(backtrack) = self.backtrack {
+            write!(f, ", backtrack: {}", backtrack)?;
+        }
+        write!(f, " }}")
     }
 }
 
@@ -243,7 +250,6 @@ impl<DB: Mirs> DatabasedDisplay<DB> for Function {
             for ins in bb.ins.iter() {
                 dbwrite!(f, &(self, db), "\t{}\n", ins)?;
             }
-            write!(f, "\t{}\n\n", bb.exit)?;
         }
         Ok(())
     }

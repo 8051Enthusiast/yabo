@@ -7,6 +7,7 @@ use inkwell::{
     AddressSpace, IntPredicate,
 };
 
+use mir::ControlFlow;
 use yaboc_ast::expr::Atom;
 use yaboc_ast::ConstraintAtom;
 use yaboc_base::interner::FieldName;
@@ -14,8 +15,7 @@ use yaboc_hir::BlockId;
 use yaboc_hir_types::{NominalId, TyHirs};
 use yaboc_layout::{mir_subst::FunctionSubstitute, ILayout, Layout, MonoLayout};
 use yaboc_mir::{
-    self as mir, BBRef, CallKind, Comp, ExceptionRetreat, IntBinOp, IntUnOp, MirInstr, PlaceRef,
-    ReturnStatus, Val,
+    self as mir, BBRef, CallKind, Comp, IntBinOp, IntUnOp, MirInstr, PlaceRef, ReturnStatus, Val,
 };
 use yaboc_types::{Type, TypeInterner};
 
@@ -140,7 +140,41 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         self.cg.builder.position_at_end(next_block);
     }
 
-    fn copy(&mut self, to: PlaceRef, from: PlaceRef, error: BBRef) {
+    fn controlflow_case(&mut self, ret: IntValue<'llvm>, ctrl: ControlFlow) {
+        let mut cases = [self.undefined; 4];
+        cases[0] = self.bb(ctrl.next);
+        if let Some(error) = ctrl.error {
+            cases[1] = self.bb(error);
+        }
+        if let Some(eof) = ctrl.eof {
+            cases[2] = self.bb(eof);
+        }
+        if let Some(backtrack) = ctrl.backtrack {
+            cases[3] = self.bb(backtrack);
+        }
+        self.cg.builder.build_switch(
+            ret,
+            self.undefined,
+            &[
+                (self.cg.const_i64(ReturnStatus::Ok as i64), cases[0]),
+                (self.cg.const_i64(ReturnStatus::Error as i64), cases[1]),
+                (self.cg.const_i64(ReturnStatus::Eof as i64), cases[2]),
+                (self.cg.const_i64(ReturnStatus::Backtrack as i64), cases[3]),
+            ],
+        );
+    }
+
+    fn controlflow_call(
+        &mut self,
+        fun: CallableValue<'llvm>,
+        args: &[BasicMetadataValueEnum<'llvm>],
+        control: ControlFlow,
+    ) {
+        let ret = self.cg.build_call_with_int_ret(fun, args);
+        self.controlflow_case(ret, control)
+    }
+
+    fn copy(&mut self, to: PlaceRef, from: PlaceRef, ctrl: ControlFlow) {
         let from_layout = self.mir_fun.place(from);
         let to_level = self.deref_level(to);
         if let Layout::None = from_layout.layout.1 {
@@ -151,10 +185,10 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let from_ptr = self.place_ptr(from);
         let fun = self.cg.build_typecast_fun_get(maybe_mono, from_ptr);
         let to_ptr = self.place_ptr(to);
-        self.fallible_call(
+        self.controlflow_call(
             fun,
             &[from_ptr.into(), to_level.into(), to_ptr.into()],
-            [self.undefined, self.undefined, self.bb(error)],
+            ctrl,
         )
     }
 
@@ -201,7 +235,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         self.cg.builder.build_store(byte_ptr, modified_byte);
     }
 
-    fn assert_value(&mut self, place: PlaceRef, val: ConstraintAtom, fallback: BBRef) {
+    fn assert_value(&mut self, place: PlaceRef, val: ConstraintAtom, ctrl: ControlFlow) {
         let cond = match val {
             ConstraintAtom::Atom(Atom::Field(field)) => {
                 let (byte_ptr, shifted_bit) = match self.discriminant_info(place, field) {
@@ -308,40 +342,29 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                     .build_and(cmp_start, cmp_end, "cmp_assert_range")
             }
         };
-        let next_block = self.cg.llvm.append_basic_block(self.llvm_fun, "");
-        let fallback_block = self.bb(fallback);
+        let next_block = self.bb(ctrl.next);
+        let fallback_block = ctrl
+            .backtrack
+            .map(|bb| self.bb(bb))
+            .unwrap_or(self.undefined);
         self.cg
             .builder
             .build_conditional_branch(cond, next_block, fallback_block);
-        self.cg.builder.position_at_end(next_block);
     }
 
-    fn field(
-        &mut self,
-        ret: PlaceRef,
-        place: PlaceRef,
-        field: FieldName,
-        error: BBRef,
-        backtrack: BBRef,
-    ) {
+    fn field(&mut self, ret: PlaceRef, place: PlaceRef, field: FieldName, ctrl: ControlFlow) {
         let place_ptr = self.place_ptr(place);
         let layout = self.mir_fun.place(place);
         let shifted_place_ptr = self.cg.build_mono_ptr(place_ptr, layout);
         let field = match field {
             FieldName::Return => {
-                return self.copy(place, ret, error);
+                return self.copy(place, ret, ctrl);
             }
             FieldName::Ident(ident) => ident,
         };
         let ty = self.mir_fun.place_ty(place);
         let block = match self.cg.compiler_database.db.lookup_intern_type(ty) {
-            Type::Nominal(nom) => {
-                let id = NominalId::from_nominal_head(&nom);
-                match id {
-                    NominalId::Def(_) => panic!("field called on non-block"),
-                    NominalId::Block(f) => f,
-                }
-            }
+            Type::Nominal(nom) => NominalId::from_nominal_head(&nom).unwrap_block(),
             _ => panic!("field called on non-block"),
         };
         let place_ptr = self.place_ptr(place);
@@ -350,10 +373,10 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             .build_field_access_fun_get(block, layout.maybe_mono(), place_ptr, field);
         let target_level = self.deref_level(ret);
         let ret = self.place_ptr(ret);
-        self.fallible_call(
+        self.controlflow_call(
             fun,
             &[shifted_place_ptr.into(), target_level.into(), ret.into()],
-            [self.bb(backtrack), self.undefined, self.bb(error)],
+            ctrl,
         )
     }
 
@@ -363,7 +386,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         call_kind: CallKind,
         fun: PlaceRef,
         arg: PlaceRef,
-        retreat: ExceptionRetreat,
+        ctrl: ControlFlow,
     ) {
         let fun_layout = self.mir_fun.place(fun);
         let fun_ptr = self.place_ptr(fun);
@@ -386,18 +409,17 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let call_ptr =
             self.cg
                 .build_parser_fun_get(fun_layout.maybe_mono(), fun_ptr, slot, call_kind);
-        let retreat = [retreat.backtrack, retreat.eof, retreat.error].map(|x| self.bb(x));
         let ret_ptr = self.place_ptr(ret);
         let arg_ptr = self.place_ptr(arg);
         match call_kind {
-            CallKind::Len => self.fallible_call(
+            CallKind::Len => self.controlflow_call(
                 call_ptr,
                 &[mono_fun_ptr.into(), arg_ptr.into(), ret_ptr.into()],
-                retreat,
+                ctrl,
             ),
             CallKind::Val => {
                 let deref_level = self.deref_level(ret);
-                self.fallible_call(
+                self.controlflow_call(
                     call_ptr,
                     &[
                         mono_fun_ptr.into(),
@@ -405,7 +427,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                         deref_level.into(),
                         ret_ptr.into(),
                     ],
-                    retreat,
+                    ctrl,
                 )
             }
         };
@@ -463,7 +485,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         self.cg.builder.build_store(ret_ptr, comp_res);
     }
 
-    fn set_arg(&mut self, fun: PlaceRef, arg: PlaceRef, argnum: u64, error: BBRef) {
+    fn set_arg(&mut self, fun: PlaceRef, arg: PlaceRef, argnum: u64, error: BasicBlock<'llvm>) {
         let fun_layout = self.mir_fun.place(fun);
         let arg_layout = self.mir_fun.place(arg);
         let fun_ptr = self.place_ptr(fun);
@@ -483,7 +505,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             .append_basic_block(self.llvm_fun, "set_arg_next");
         self.cg
             .builder
-            .build_conditional_branch(ret_is_err, self.bb(error), next_bb);
+            .build_conditional_branch(ret_is_err, error, next_bb);
         self.cg.builder.position_at_end(next_bb);
     }
 
@@ -493,8 +515,9 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         fun: PlaceRef,
         args: &[PlaceRef],
         first_index: u64,
-        error: BBRef,
+        ctrl: ControlFlow,
     ) {
+        let error = ctrl.error.map(|x| self.bb(x)).unwrap_or(self.undefined);
         let arg_layout = args
             .iter()
             .map(|x| self.mir_fun.place(*x))
@@ -528,6 +551,9 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         for (i, arg) in args.iter().enumerate() {
             self.set_arg(ret, *arg, first_index - i as u64, error);
         }
+        self.cg
+            .builder
+            .build_unconditional_branch(self.bb(ctrl.next));
     }
 
     fn int_un(&mut self, ret: PlaceRef, op: IntUnOp, right: PlaceRef) {
@@ -566,19 +592,25 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::IntUn(ret, op, right) => self.int_un(ret, op, right),
             MirInstr::Comp(ret, op, left, right) => self.comp(ret, op, left, right),
             MirInstr::StoreVal(ret, val) => self.store_val(ret, val),
-            MirInstr::ParseCall(ret, call_kind, fun, arg, retreat) => {
-                self.parse_call(ret, call_kind, fun, arg, retreat)
+            MirInstr::ParseCall(ret, call_kind, arg, fun, ctrl) => {
+                self.parse_call(ret, call_kind, fun, arg, ctrl)
             }
-            MirInstr::Field(ret, place, field, error, backtrack) => {
-                self.field(ret, place, field, error, backtrack)
-            }
-            MirInstr::AssertVal(place, val, fallback) => self.assert_value(place, val, fallback),
+            MirInstr::Field(ret, place, field, ctrl) => self.field(ret, place, field, ctrl),
+            MirInstr::AssertVal(place, val, ctrl) => self.assert_value(place, val, ctrl),
             MirInstr::SetDiscriminant(block, field, val) => {
                 self.set_discriminant(block, field, val)
             }
-            MirInstr::Copy(to, from, error) => self.copy(to, from, error),
-            MirInstr::ApplyArgs(ret, fun, args, first_index, error) => {
-                self.apply_args(ret, fun, &args, first_index, error)
+            MirInstr::Copy(to, from, ctrl) => self.copy(to, from, ctrl),
+            MirInstr::ApplyArgs(ret, fun, args, first_index, ctrl) => {
+                self.apply_args(ret, fun, &args, first_index, ctrl)
+            }
+            MirInstr::Branch(target) => {
+                let target_block = self.bb(target);
+                self.cg.builder.build_unconditional_branch(target_block);
+            }
+            MirInstr::Return(status) => {
+                let llvm_int = self.cg.llvm.i64_type().const_int(status as u64, false);
+                self.cg.builder.build_return(Some(&llvm_int));
             }
         }
     }
@@ -586,17 +618,6 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     fn build_bb(&mut self, bb: &mir::BasicBlock) {
         for ins in bb.ins() {
             self.mir_ins(ins)
-        }
-        match bb.exit() {
-            mir::BlockExit::BlockInProgress => panic!("build_bb called on incomplete block"),
-            mir::BlockExit::Jump(target) => {
-                let target_block = self.bb(target);
-                self.cg.builder.build_unconditional_branch(target_block);
-            }
-            mir::BlockExit::Return(status) => {
-                let llvm_int = self.cg.llvm.i64_type().const_int(status as u64, false);
-                self.cg.builder.build_return(Some(&llvm_int));
-            }
         }
     }
 

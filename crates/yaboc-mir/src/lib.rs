@@ -40,14 +40,6 @@ pub enum ReturnStatus {
     Backtrack,
 }
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum BlockExit {
-    #[default]
-    BlockInProgress,
-    Jump(BBRef),
-    Return(ReturnStatus),
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum IntBinOp {
     And,
@@ -163,18 +155,90 @@ pub enum Val {
     Bool(bool),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct ControlFlow {
+    pub next: BBRef,
+    pub backtrack: Option<BBRef>,
+    pub error: Option<BBRef>,
+    pub eof: Option<BBRef>,
+}
+
+impl ControlFlow {
+    pub fn new(next: BBRef) -> Self {
+        Self {
+            next,
+            backtrack: None,
+            error: None,
+            eof: None,
+        }
+    }
+    pub fn new_with_error(next: BBRef, error: BBRef) -> Self {
+        Self {
+            next,
+            backtrack: None,
+            error: Some(error),
+            eof: None,
+        }
+    }
+    pub fn new_with_exc(next: BBRef, exc: ExceptionRetreat) -> Self {
+        Self {
+            next,
+            backtrack: Some(exc.backtrack),
+            error: Some(exc.error),
+            eof: Some(exc.eof),
+        }
+    }
+    pub fn successors(&self) -> impl Iterator<Item = BBRef> {
+        [self.backtrack, self.error, self.eof]
+            .into_iter()
+            .flatten()
+            .chain(std::iter::once(self.next))
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum MirInstr {
     IntBin(PlaceRef, IntBinOp, PlaceRef, PlaceRef),
     IntUn(PlaceRef, IntUnOp, PlaceRef),
     Comp(PlaceRef, Comp, PlaceRef, PlaceRef),
     StoreVal(PlaceRef, Val),
-    ParseCall(PlaceRef, CallKind, PlaceRef, PlaceRef, ExceptionRetreat),
-    Field(PlaceRef, PlaceRef, FieldName, BBRef, BBRef),
-    AssertVal(PlaceRef, ConstraintAtom, BBRef),
     SetDiscriminant(PlaceRef, FieldName, bool),
-    ApplyArgs(PlaceRef, PlaceRef, Vec<PlaceRef>, u64, BBRef),
-    Copy(PlaceRef, PlaceRef, BBRef),
+    ApplyArgs(PlaceRef, PlaceRef, Vec<PlaceRef>, u64, ControlFlow),
+    Copy(PlaceRef, PlaceRef, ControlFlow),
+    ParseCall(PlaceRef, CallKind, PlaceRef, PlaceRef, ControlFlow),
+    Field(PlaceRef, PlaceRef, FieldName, ControlFlow),
+    AssertVal(PlaceRef, ConstraintAtom, ControlFlow),
+    Branch(BBRef),
+    Return(ReturnStatus),
+}
+
+impl MirInstr {
+    pub fn is_terminator(&self) -> bool {
+        matches!(
+            self,
+            MirInstr::Branch(_)
+                | MirInstr::Return(_)
+                | MirInstr::AssertVal(..)
+                | MirInstr::Field(..)
+                | MirInstr::ParseCall(..)
+                | MirInstr::ApplyArgs(..)
+                | MirInstr::Copy(..)
+        )
+    }
+    pub fn control_flow(&self) -> Option<ControlFlow> {
+        match self {
+            MirInstr::Branch(next) => Some(ControlFlow {
+                next: *next,
+                backtrack: None,
+                error: None,
+                eof: None,
+            }),
+            MirInstr::AssertVal(_, _, control_flow)
+            | MirInstr::Field(_, _, _, control_flow)
+            | MirInstr::ParseCall(_, _, _, _, control_flow) => Some(*control_flow),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -220,18 +284,22 @@ pub enum DupleField {
 #[derive(Default, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct BasicBlock {
     ins: Vec<MirInstr>,
-    exit: BlockExit,
 }
 
 impl BasicBlock {
     pub fn append_ins(&mut self, ins: MirInstr) {
+        if let Some(last_ins) = self.ins.last() {
+            if last_ins.is_terminator() {
+                panic!("Cannot append instruction to a block with a terminator");
+            }
+        }
         self.ins.push(ins)
     }
     pub fn ins(&self) -> impl Iterator<Item = MirInstr> + '_ {
         self.ins.iter().cloned()
     }
-    pub fn exit(&self) -> BlockExit {
-        self.exit
+    pub fn terminator(&self) -> MirInstr {
+        self.ins.last().unwrap().clone()
     }
 }
 
@@ -265,6 +333,7 @@ pub struct Function {
     bb: Vec<BasicBlock>,
     place: Vec<PlaceInfo>,
     stack: Vec<PlaceOrigin>,
+    success_returns: Vec<BBRef>,
 }
 
 const fn const_ref(r: u32) -> PlaceRef {
@@ -314,7 +383,7 @@ impl Function {
     pub fn is_valid(&self) -> bool {
         self.bb
             .iter()
-            .all(|x| matches!(x.exit, BlockExit::BlockInProgress))
+            .all(|x| x.ins().last().map(|x| x.is_terminator()).unwrap_or(false))
     }
 
     pub fn iter_stack(&self) -> impl Iterator<Item = (StackRef, PlaceOrigin)> + '_ {
@@ -338,6 +407,21 @@ impl Function {
     pub fn iter_bb(&self) -> impl Iterator<Item = (BBRef, &BasicBlock)> + '_ {
         (0..self.bb.len()).map(|x| (BBRef(NonZeroU32::new((x + 1) as u32).unwrap()), &self.bb[x]))
     }
+
+    pub fn preds(&self) -> Vec<Vec<BBRef>> {
+        let mut preds = vec![vec![]; self.bb.len()];
+        for (bb, bb_data) in self.iter_bb() {
+            let Some(controlflow) = bb_data.terminator().control_flow() else {continue};
+            for succ in controlflow.successors() {
+                preds[succ.as_index()].push(bb);
+            }
+        }
+        preds
+    }
+
+    pub fn success_returns(&self) -> &[BBRef] {
+        &self.success_returns
+    }
 }
 
 pub struct FunctionWriter {
@@ -352,6 +436,7 @@ impl FunctionWriter {
             bb: vec![Default::default()],
             place: Default::default(),
             stack: Default::default(),
+            success_returns: Default::default(),
         };
         let mut builder = FunctionWriter {
             fun,
@@ -376,13 +461,13 @@ impl FunctionWriter {
     pub fn make_top_level_retreat(&mut self) -> ExceptionRetreat {
         let backtrack = self.new_bb();
         self.set_bb(backtrack);
-        self.set_return(ReturnStatus::Backtrack);
+        self.ret(ReturnStatus::Backtrack);
         let error = self.new_bb();
         self.set_bb(error);
-        self.set_return(ReturnStatus::Error);
+        self.ret(ReturnStatus::Error);
         let eof = self.new_bb();
         self.set_bb(eof);
-        self.set_return(ReturnStatus::Eof);
+        self.ret(ReturnStatus::Eof);
         ExceptionRetreat {
             backtrack,
             eof,
@@ -419,12 +504,111 @@ impl FunctionWriter {
         self.current_bb = bb;
     }
 
-    pub fn set_jump(&mut self, bb: BBRef) {
-        self.fun.bb_mut(self.current_bb).exit = BlockExit::Jump(bb)
+    pub fn branch(&mut self, bb: BBRef) {
+        self.fun
+            .bb_mut(self.current_bb)
+            .append_ins(MirInstr::Branch(bb));
     }
 
-    pub fn set_return(&mut self, status: ReturnStatus) {
-        self.fun.bb_mut(self.current_bb).exit = BlockExit::Return(status)
+    pub fn ret(&mut self, status: ReturnStatus) {
+        self.fun
+            .bb_mut(self.current_bb)
+            .append_ins(MirInstr::Return(status));
+        if status == ReturnStatus::Ok {
+            self.fun.success_returns.push(self.current_bb);
+        }
+    }
+
+    pub fn copy(&mut self, origin: PlaceRef, target: PlaceRef, error: BBRef) {
+        let new_block = self.new_bb();
+        self.fun.bb_mut(self.current_bb).append_ins(MirInstr::Copy(
+            target,
+            origin,
+            ControlFlow::new_with_error(new_block, error),
+        ));
+        self.set_bb(new_block);
+    }
+
+    pub fn field(
+        &mut self,
+        origin: PlaceRef,
+        field: FieldName,
+        target: PlaceRef,
+        error: BBRef,
+        backtrack: BBRef,
+    ) {
+        let new_block = self.new_bb();
+        self.fun.bb_mut(self.current_bb).append_ins(MirInstr::Field(
+            target,
+            origin,
+            field,
+            ControlFlow {
+                next: new_block,
+                backtrack: Some(backtrack),
+                error: Some(error),
+                eof: None,
+            },
+        ));
+        self.set_bb(new_block);
+    }
+
+    pub fn parse_call(
+        &mut self,
+        call_kind: CallKind,
+        arg: PlaceRef,
+        fun: PlaceRef,
+        target: PlaceRef,
+        exc: ExceptionRetreat,
+    ) {
+        let new_block = self.new_bb();
+        self.fun
+            .bb_mut(self.current_bb)
+            .append_ins(MirInstr::ParseCall(
+                target,
+                call_kind,
+                arg,
+                fun,
+                ControlFlow::new_with_exc(new_block, exc),
+            ));
+        self.set_bb(new_block);
+    }
+
+    pub fn apply_args(
+        &mut self,
+        fun: PlaceRef,
+        args: Vec<PlaceRef>,
+        target: PlaceRef,
+        first_arg_index: u64,
+        error: BBRef,
+    ) {
+        let new_block = self.new_bb();
+        self.fun
+            .bb_mut(self.current_bb)
+            .append_ins(MirInstr::ApplyArgs(
+                target,
+                fun,
+                args,
+                first_arg_index,
+                ControlFlow::new_with_error(new_block, error),
+            ));
+        self.set_bb(new_block);
+    }
+
+    pub fn assert_val(&mut self, val: PlaceRef, constrinat: ConstraintAtom, backtrack: BBRef) {
+        let new_block = self.new_bb();
+        self.fun
+            .bb_mut(self.current_bb)
+            .append_ins(MirInstr::AssertVal(
+                val,
+                constrinat,
+                ControlFlow {
+                    next: new_block,
+                    backtrack: Some(backtrack),
+                    error: None,
+                    eof: None,
+                },
+            ));
+        self.set_bb(new_block);
     }
 }
 
@@ -449,7 +633,7 @@ fn mir_pd_val_parser(db: &dyn Mirs, pd: ParserDefId) -> SResult<Function> {
     let mut writer = FunctionWriter::new(fun_ty, from_y, ret_ty);
     let error = writer.new_bb();
     writer.set_bb(error);
-    writer.set_return(ReturnStatus::Error);
+    writer.ret(ReturnStatus::Error);
     writer.set_bb(writer.fun.entry());
     let ret_place = writer.fun.ret();
     let ret_place_from = writer.add_place(PlaceInfo {
@@ -457,7 +641,7 @@ fn mir_pd_val_parser(db: &dyn Mirs, pd: ParserDefId) -> SResult<Function> {
         ty: from_y,
     });
     let arg_place = writer.fun.arg();
-    writer.append_ins(MirInstr::Copy(ret_place_from, arg_place, error));
+    writer.copy(arg_place, ret_place_from, error);
     if let Some(args) = sig.args {
         let pd = pd.lookup(db)?;
         let cap = writer.fun.cap();
@@ -470,10 +654,10 @@ fn mir_pd_val_parser(db: &dyn Mirs, pd: ParserDefId) -> SResult<Function> {
                 place: Place::Captured(ret_place, arg_id.0),
                 ty: *arg_ty,
             });
-            writer.append_ins(MirInstr::Copy(ret_arg_place, arg_place, error));
+            writer.copy(arg_place, ret_arg_place, error);
         }
     }
-    writer.set_return(ReturnStatus::Ok);
+    writer.ret(ReturnStatus::Ok);
     Ok(writer.fun)
 }
 

@@ -217,8 +217,7 @@ impl<'a> ConvertCtx<'a> {
     }
 
     fn copy(&mut self, origin: PlaceRef, target: PlaceRef) {
-        self.f
-            .append_ins(MirInstr::Copy(target, origin, self.retreat.error));
+        self.f.copy(origin, target, self.retreat.error);
     }
 
     fn copy_if_different_levels(
@@ -413,13 +412,13 @@ impl<'a> ConvertCtx<'a> {
                             recurse,
                         )?;
                         let place_ref = self.unwrap_or_stack(place, ty, origin);
-                        self.f.append_ins(MirInstr::Field(
-                            place_ref,
+                        self.f.field(
                             block_ref,
                             *field,
+                            place_ref,
                             self.retreat.error,
                             self.retreat.backtrack,
-                        ));
+                        );
                         place_ref
                     }
                 }
@@ -479,13 +478,8 @@ impl<'a> ConvertCtx<'a> {
                             .copy_if_different_levels(left_ldt, left_ty, None, lorigin, lrecurse)?;
                         let right = rrecurse(self, None)?;
                         let place_ref = self.unwrap_or_stack(place, ty, origin);
-                        self.f.append_ins(MirInstr::ParseCall(
-                            place_ref,
-                            CallKind::Val,
-                            left,
-                            right,
-                            self.retreat,
-                        ));
+                        self.f
+                            .parse_call(CallKind::Val, left, right, place_ref, self.retreat);
                         place_ref
                     }
                     ValBinOp::Else => {
@@ -501,7 +495,7 @@ impl<'a> ConvertCtx<'a> {
                             lorigin,
                             lrecurse,
                         )?;
-                        self.f.set_jump(continue_bb);
+                        self.f.branch(continue_bb);
                         self.f.set_bb(right_bb);
                         self.retreat.backtrack = old_backtrack;
                         self.copy_if_different_levels(
@@ -511,7 +505,7 @@ impl<'a> ConvertCtx<'a> {
                             rorigin,
                             rrecurse,
                         )?;
-                        self.f.set_jump(continue_bb);
+                        self.f.branch(continue_bb);
                         self.f.set_bb(continue_bb);
                         place_ref
                     }
@@ -575,13 +569,13 @@ impl<'a> ConvertCtx<'a> {
                 // \_______________/\______/
                 //    applied args  unapplied
                 let first_arg_index = fun_arg_num as u64 - 1;
-                self.f.append_ins(MirInstr::ApplyArgs(
-                    place_ref,
+                self.f.apply_args(
                     fun_place,
                     inner_results,
+                    place_ref,
                     first_arg_index,
                     self.retreat.error,
-                ));
+                );
                 place_ref
             }
         })
@@ -595,12 +589,9 @@ impl<'a> ConvertCtx<'a> {
     ) -> SResult<()> {
         match &expr.0 {
             ExpressionHead::Niladic(n) => {
-                self.f.append_ins(MirInstr::AssertVal(
-                    val,
-                    n.inner.clone(),
-                    self.retreat.backtrack,
-                ));
-                self.f.set_jump(cont);
+                self.f
+                    .assert_val(val, n.inner.clone(), self.retreat.backtrack);
+                self.f.branch(cont);
                 Ok(())
             }
             ExpressionHead::Monadic(Monadic { op, inner }) => match op.inner {
@@ -668,7 +659,7 @@ impl<'a> ConvertCtx<'a> {
             .expect("could not find last parse end of context");
             self.copy(from_place, to_place);
         }
-        self.f.set_jump(cont);
+        self.f.branch(cont);
     }
 
     fn end_choice(&mut self, subcontexts: &[ContextId], id: ChoiceId) {
@@ -679,7 +670,7 @@ impl<'a> ConvertCtx<'a> {
             Some(x) => self.context_bb[x].0,
             None => return,
         };
-        self.f.set_jump(first_context_bb);
+        self.f.branch(first_context_bb);
         let cont = self.f.new_bb();
         self.f.set_bb(cont);
         for context in subcontexts.iter() {
@@ -706,13 +697,8 @@ impl<'a> ConvertCtx<'a> {
             CallKind::Val => self.val_place_at_def(call_loc),
         }
         .unwrap();
-        self.f.append_ins(MirInstr::ParseCall(
-            target,
-            call_kind,
-            parser_fun,
-            addr,
-            self.retreat,
-        ));
+        self.f
+            .parse_call(call_kind, addr, parser_fun, target, self.retreat)
     }
 
     fn parse_statement_val(&mut self, parse: &hir::ParseStatement) {
@@ -926,7 +912,7 @@ impl<'a> ConvertCtx<'a> {
             };
             context_bb.insert(*context, (new_bb, new_bb));
         }
-        let current_context: Option<ContextId> = None;
+        let current_context: Option<ContextId> = Some(block.root_context);
         let returns_self: bool = call_kind == CallKind::Val && !block.returns;
         f.set_bb(f.fun.entry());
         Ok(ConvertCtx {
@@ -1032,7 +1018,7 @@ impl<'a> ConvertCtx<'a> {
     }
 
     pub fn finish_fun(mut self) -> Function {
-        self.f.set_return(ReturnStatus::Ok);
+        self.f.ret(ReturnStatus::Ok);
         self.f.fun
     }
 }
