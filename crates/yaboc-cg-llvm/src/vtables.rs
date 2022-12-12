@@ -1,3 +1,5 @@
+use yaboc_layout::vtable::{BlockFieldFun, CreateArgFun};
+
 use super::*;
 
 impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
@@ -123,7 +125,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let vtable = self.create_resized_vtable::<vtable::BlockVTable>(layout, funs.len() as u32);
         let vtable_header = self.vtable_header(layout);
         let block_info = self.block_info(id);
-        let access_array = <fn(*const u8, i64, *mut u8) -> i64>::codegen_ty(self)
+        let access_array = BlockFieldFun::codegen_ty(self)
             .into_pointer_type()
             .const_array(&funs);
         let vtable_val = self.llvm.const_struct(
@@ -206,13 +208,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                         .as_global_value()
                         .as_pointer_value()
                 } else {
-                    <fn(*const u8, i64, *mut u8) -> i64>::codegen_ty(self)
+                    CreateArgFun::codegen_ty(self)
                         .into_pointer_type()
                         .const_null()
                 }
             })
             .collect();
-        let vtable_array = <fn(*const u8, i64, *mut u8) -> i64>::codegen_ty(self)
+        let vtable_array = CreateArgFun::codegen_ty(self)
             .into_pointer_type()
             .const_array(&vtable_impls);
         let vtable_val = self.llvm.const_struct(

@@ -48,6 +48,35 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         );
     }
 
+    fn wrap_tail_typecast_new(
+        &mut self,
+        fun: FunctionValue<'llvm>,
+        thunk: FunctionValue<'llvm>,
+        return_layout: ILayout<'comp>,
+    ) {
+        let entry = self.llvm.append_basic_block(thunk, "entry");
+        self.builder.position_at_end(entry);
+        let return_buffer = self.build_layout_alloca(return_layout, "return_buffer");
+        let mut args = thunk.get_param_iter().map(|x| x.into()).collect::<Vec<_>>();
+        let return_pointer = args[0];
+        let target_head = args.remove(2);
+        args[0] = return_buffer.into();
+        let status = self
+            .builder
+            .build_call(fun, &args, "")
+            .try_as_basic_value()
+            .left()
+            .unwrap()
+            .into_int_value();
+        self.non_zero_early_return(thunk, status);
+        self.terminate_tail_typecast(
+            return_layout,
+            return_buffer,
+            target_head.into_int_value(),
+            return_pointer.into_pointer_value(),
+        );
+    }
+
     fn terminate_tail_typecast(
         &mut self,
         layout: ILayout<'comp>,
@@ -59,7 +88,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let mono_pointer = self.build_mono_ptr(buffer, layout);
         let ret = self.build_call_with_int_ret(
             typecast_fun,
-            &[mono_pointer.into(), target_head.into(), pointer.into()],
+            &[pointer.into(), mono_pointer.into(), target_head.into()],
         );
         self.builder.build_return(Some(&ret));
     }
@@ -150,14 +179,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let thunk = self.deref_fun_val(layout);
         let deref_impl = self.deref_impl_fun_val(layout);
         let mir_fun = Rc::new(self.mir_pd_thunk_fun(layout, CallKind::Val));
-        let [fun, ret] = get_fun_args(deref_impl).map(|x| x.into_pointer_value());
+        let [ret, fun] = get_fun_args(deref_impl).map(|x| x.into_pointer_value());
         let arg = self.any_ptr().get_undef();
         let deref = layout
             .deref(self.layouts)
             .unwrap()
             .expect("trying to deref non-deref layout");
         MirTranslator::new(self, mir_fun, deref_impl, fun, arg, ret).build();
-        self.wrap_tail_typecast(deref_impl, thunk, deref);
+        self.wrap_tail_typecast_new(deref_impl, thunk, deref);
         thunk
     }
 
@@ -194,7 +223,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let fun = self.single_forward_fun_val(layout);
         self.set_always_inline(fun);
 
-        let [from, to] = get_fun_args(fun).map(|x| x.into_pointer_value());
+        let [to, from] = get_fun_args(fun).map(|x| x.into_pointer_value());
         let entry = self.llvm.append_basic_block(fun, "entry");
         self.builder.position_at_end(entry);
         let from_ptr = self.build_cast::<*const *const u8, _>(from);
@@ -214,7 +243,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.set_always_inline(fun);
         let entry = self.llvm.append_basic_block(fun, "entry");
         self.builder.position_at_end(entry);
-        let [from, len, to] = get_fun_args(fun);
+        let [to, from, len] = get_fun_args(fun);
         let from = from.into_pointer_value();
         let len = len.into_int_value();
         let to = to.into_pointer_value();
@@ -243,7 +272,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         )
         .unwrap();
         let int_buf = self.build_layout_alloca(int_layout, "int_buf");
-        let [from, target_head, return_ptr] = get_fun_args(fun);
+        let [return_ptr, from, target_head] = get_fun_args(fun);
         let from = self.build_cast::<*const *const u8, _>(from);
         let target_head = target_head.into_int_value();
         let return_ptr = return_ptr.into_pointer_value();
@@ -278,7 +307,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.builder.position_at_end(entry);
         let single_forward_fun = self.build_single_forward_fun_get(from.maybe_mono(), arg);
         let from_mono = self.build_mono_ptr(arg, from);
-        let ret = self.build_call_with_int_ret(single_forward_fun, &[from_mono.into(), ret.into()]);
+        let ret = self.build_call_with_int_ret(single_forward_fun, &[ret.into(), from_mono.into()]);
         self.builder.build_return(Some(&ret));
     }
 
@@ -290,11 +319,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let target_head = target_head.into_int_value();
         let entry = self.llvm.append_basic_block(llvm_fun, "entry");
         self.builder.position_at_end(entry);
-        let current_elmeent_fun = self.build_current_element_fun_get(from.maybe_mono(), arg);
+        let current_element_fun = self.build_current_element_fun_get(from.maybe_mono(), arg);
         let from_mono = self.build_mono_ptr(arg, from);
         let ret = self.build_call_with_int_ret(
-            current_elmeent_fun,
-            &[from_mono.into(), target_head.into(), ret.into()],
+            current_element_fun,
+            &[ret.into(), from_mono.into(), target_head.into()],
         );
         self.builder.build_return(Some(&ret));
     }
@@ -499,7 +528,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let fun = self.access_field_fun_val(layout, name);
         let entry = self.llvm.append_basic_block(fun, "entry");
         self.builder.position_at_end(entry);
-        let [block, target_head, return_ptr] = get_fun_args(fun);
+        let [return_ptr, block, target_head] = get_fun_args(fun);
         let block = block.into_pointer_value();
         let target_head = target_head.into_int_value();
         let return_ptr = return_ptr.into_pointer_value();

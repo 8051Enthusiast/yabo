@@ -297,7 +297,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let arg_mono_ptr = self.build_mono_ptr(arg, arg_layout);
         self.build_call_with_int_ret(
             typecast_fun,
-            &[arg_mono_ptr.into(), head.into(), fun_arg_ptr.into()],
+            &[fun_arg_ptr.into(), arg_mono_ptr.into(), head.into()],
         )
     }
 }

@@ -37,7 +37,7 @@ class VTableHeader(Structure):
     _fields_ = [
         ('head', c_int64),
         ('deref_level', c_size_t),
-        ('typecast_impl', CFUNCTYPE(c_int64, _voidptr, c_int64, _voidptr)),
+        ('typecast_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64)),
         ('size', c_size_t),
         ('align', c_size_t),
     ]
@@ -73,7 +73,7 @@ class BlockVTable(Structure):
     _fields_ = [
         ('head', VTableHeader),
         ('fields', POINTER(BlockFields)),
-        ('access_impl', CFUNCTYPE(c_int64, _voidptr, c_int64, _voidptr) * 0),
+        ('access_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64) * 0),
     ]
 
     def __len__(self) -> int:
@@ -97,7 +97,7 @@ class NominalVTable(Structure):
     ]
     _fields_ = [
         ('head', VTableHeader),
-        ('deref_impl', CFUNCTYPE(c_int64, _voidptr, c_int64, _voidptr)),
+        ('deref_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64)),
         ('start_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr)),
         ('end_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr)),
     ]
@@ -223,7 +223,7 @@ class YaboValue:
     def _typecast(self, typ: int):
         typecast = self._val.get_vtable().typecast_impl
         ret = DynValue()
-        status = typecast(self._val.data_ptr(), typ, ret.data_field_ptr())
+        status = typecast(ret.data_field_ptr(), self._val.data_ptr(), typ)
         _check_status(status)
         return YaboValue(ret, self._buf, self._lib)
 
@@ -245,8 +245,7 @@ class NominalValue(YaboValue):
             pointer(self._val.get_vtable()), POINTER(NominalVTable))
         deref = casted_vtable.contents.deref_impl
         ret = DynValue()
-        status = deref(self._val.data_ptr(), YABO_ANY | YABO_MALLOC,
-                       ret.data_field_ptr())
+        status = deref(ret.data_field_ptr(), self._val.data_ptr(), YABO_ANY | YABO_MALLOC)
         _check_status(status)
         return _new_value(ret, self._buf, self._lib)
 
@@ -276,8 +275,8 @@ class BlockValue(YaboValue):
         except KeyError:
             raise AttributeError(f'{name} is not a valid field')
         ret = DynValue()
-        status = access(self._val.data_ptr(), YABO_ANY |
-                        YABO_MALLOC, ret.data_field_ptr())
+        status = access(ret.data_field_ptr(), self._val.data_ptr(),
+                        YABO_ANY | YABO_MALLOC)
         if status == BACKTRACK:
             return None
         _check_status(status)
