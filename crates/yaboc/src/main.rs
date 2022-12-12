@@ -39,7 +39,7 @@ fn main() {
             match a.as_slice() {
                 [a, b] => (*a, *b),
                 [a] => {
-                    exit_with_message(&format!("Missing '=' in module specifier {}", a));
+                    exit_with_message(&format!("Missing '=' in module specifier {a}"));
                 }
                 _ => unreachable!(),
             }
@@ -76,6 +76,6 @@ fn main() {
 }
 
 fn exit_with_message(msg: &str) -> ! {
-    eprintln!("{}", msg);
+    eprintln!("{msg}");
     std::process::exit(1);
 }

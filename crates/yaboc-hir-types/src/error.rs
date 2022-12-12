@@ -68,10 +68,7 @@ fn make_report(db: &(impl TyHirs + ?Sized), error: SpannedTypeError) -> Option<R
         }
         TypeError::ParserDefArgCountMismatch(first, second) => (
             504,
-            format!(
-                "cannot unify functions with different argument counts: {} and {}",
-                first, second
-            ),
+            format!("cannot unify functions with different argument counts: {first} and {second}"),
         ),
         TypeError::ParseDefFromMismatch => (
             505,

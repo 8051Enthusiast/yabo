@@ -169,7 +169,7 @@ impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for PathComponent {
         match self {
             PathComponent::Named(FieldName::Ident(n)) => n.db_fmt(f, db),
             PathComponent::Named(FieldName::Return) => write!(f, "return"),
-            PathComponent::Unnamed(x) => write!(f, "{}", x),
+            PathComponent::Unnamed(x) => write!(f, "{x}"),
             PathComponent::File(fid) => dbwrite!(f, db, "{}", fid),
         }
     }

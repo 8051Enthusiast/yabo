@@ -62,7 +62,7 @@ pub trait DatabasedDisplay<DB: ?Sized> {
 
 impl<DB: ?Sized, T: Display> DatabasedDisplay<DB> for T {
     fn db_fmt(&self, f: &mut fmt::Formatter<'_>, _: &DB) -> fmt::Result {
-        write!(f, "{}", self)
+        write!(f, "{self}")
     }
 }
 pub struct DatabasedDisplayWrap<'a, DB: ?Sized, T: ?Sized + DatabasedDisplay<DB>> {

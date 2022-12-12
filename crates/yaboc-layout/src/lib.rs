@@ -388,7 +388,7 @@ impl<'a> ILayout<'a> {
             Ok(
                 casted_layout.map(ctx, |layout, _| match layout.mono_layout().0 {
                     MonoLayout::Block(_, fields) => fields[&field],
-                    _ => panic!("Field access on non-block {:?}", layout),
+                    _ => panic!("Field access on non-block {layout:?}"),
                 }),
             )
         })

@@ -171,7 +171,7 @@ fn get_op<'a>(
             Some("right") if cursor.node().is_named() => right = Some(cursor),
             Some("op") => op = Some(cursor),
             Some("left" | "right") => (),
-            Some(other) => panic!("Unknown field {}", other),
+            Some(other) => panic!("Unknown field {other}"),
             None => (),
         }
         Ok(())
@@ -668,7 +668,7 @@ fn wiggle_kind(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<WiggleKi
         "~" => Ok(WiggleKind::Wiggly),
         "if" => Ok(WiggleKind::If),
         "try" => Ok(WiggleKind::Try),
-        _ => panic!("unknown wiggle kind: {}", str),
+        _ => panic!("unknown wiggle kind: {str}"),
     }
 }
 
@@ -754,7 +754,7 @@ fn bool_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<bool> {
     match &*str {
         "true" => Ok(true),
         "false" => Ok(false),
-        _ => panic!("unknown bool literal: {}", str),
+        _ => panic!("unknown bool literal: {str}"),
     }
 }
 
@@ -773,7 +773,7 @@ fn array_direction(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Span
         inner: match str.inner.as_str() {
             "for" => ArrayKind::For,
             "each" => ArrayKind::Each,
-            otherwise => panic!("Unknown loop {}", otherwise),
+            otherwise => panic!("Unknown loop {otherwise}"),
         },
         span: str.span,
     })
@@ -786,6 +786,6 @@ fn primitive_type(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<TypeP
         "int" => TypePrimitive::Int,
         "bit" => TypePrimitive::Bit,
         "char" => TypePrimitive::Char,
-        otherwise => panic!("Unknown type primitive: {}", otherwise),
+        otherwise => panic!("Unknown type primitive: {otherwise}"),
     })
 }

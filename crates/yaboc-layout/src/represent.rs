@@ -278,8 +278,8 @@ impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
             LayoutPart::SingleForward => write!(f, "single_forward"),
             LayoutPart::CurrentElement => write!(f, "current_element"),
             LayoutPart::Skip => write!(f, "skip"),
-            LayoutPart::CreateArgs(p) => write!(f, "create_args_{}", p),
-            LayoutPart::SetArg(idx) => write!(f, "set_arg_{}", idx),
+            LayoutPart::CreateArgs(p) => write!(f, "create_args_{p}"),
+            LayoutPart::SetArg(idx) => write!(f, "set_arg_{idx}"),
         }
     }
 }
@@ -295,7 +295,7 @@ const TRUNCATION_LENGTH: usize = 8;
 pub fn truncated_hex(array: &[u8]) -> String {
     let mut ret = String::new();
     for i in &array[0..TRUNCATION_LENGTH] {
-        write!(ret, "{:02x}", i).unwrap();
+        write!(ret, "{i:02x}").unwrap();
     }
     ret
 }

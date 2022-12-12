@@ -37,7 +37,7 @@ impl std::fmt::Display for Qualifier {
             Qualifier::Export => "export",
             Qualifier::Regular => "regular",
         };
-        write!(f, "{}", r)
+        write!(f, "{r}")
     }
 }
 
@@ -276,7 +276,7 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                     HirNode::Expr(ValExpression { id, children, .. }) => children
                         .iter()
                         .enumerate()
-                        .map(|(i, p)| (id.0, *p, format!("children[{}]", i), dot::Style::Bold))
+                        .map(|(i, p)| (id.0, *p, format!("children[{i}]"), dot::Style::Bold))
                         .collect(),
                     HirNode::TExpr(_) => vec![],
                     HirNode::Parse(ParseStatement {
@@ -334,7 +334,7 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                             .iter()
                             .enumerate()
                             .map(|(i, x)| {
-                                (id.0, x.0, format!("subcontexts[{}]", i), dot::Style::Bold)
+                                (id.0, x.0, format!("subcontexts[{i}]"), dot::Style::Bold)
                             })
                             .collect();
                         v.push((
@@ -419,9 +419,11 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                             (id.0, to.0, "to".to_string(), dot::Style::Bold),
                         ];
                         if let Some(args) = args {
-                            v.extend(args.iter().enumerate().map(|(i, p)| {
-                                (id.0, p.0, format!("args[{}]", i), dot::Style::Bold)
-                            }));
+                            v.extend(
+                                args.iter().enumerate().map(|(i, p)| {
+                                    (id.0, p.0, format!("args[{i}]"), dot::Style::Bold)
+                                }),
+                            );
                         }
                         if let Some(ret_ty) = ret_ty {
                             v.push((id.0, ret_ty.0, "ret_ty".to_string(), dot::Style::Bold));
@@ -436,7 +438,7 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                     }) => {
                         let mut v = choices
                             .iter()
-                            .map(|(i, nid)| (id.0, *nid, format!("{}", i), dot::Style::Dotted))
+                            .map(|(i, nid)| (id.0, *nid, format!("{i}"), dot::Style::Dotted))
                             .collect::<Vec<_>>();
                         v.push((
                             id.0,

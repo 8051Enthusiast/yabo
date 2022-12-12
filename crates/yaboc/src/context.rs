@@ -62,7 +62,7 @@ impl Driver {
         for e in diagnostics {
             if output_json {
                 let json = serde_json::to_string(&e.into_json(&self.db)).unwrap();
-                eprintln!("{}", json);
+                eprintln!("{json}");
             } else {
                 e.into_ariadne()
                     .eprint(AriadneCache::new(&self.db))
