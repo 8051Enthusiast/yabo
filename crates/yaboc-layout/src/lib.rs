@@ -80,7 +80,11 @@ pub enum MonoLayout<Inner> {
     Pointer,
     Single,
     Nil,
-    Nominal(hir::ParserDefId, Option<Inner>, BTreeMap<DefId, Inner>),
+    Nominal(
+        hir::ParserDefId,
+        Option<(Inner, TypeId)>,
+        Vec<(Inner, TypeId)>,
+    ),
     NominalParser(hir::ParserDefId, Vec<(Inner, TypeId)>),
     Block(hir::BlockId, BTreeMap<FieldName, Inner>),
     BlockParser(hir::BlockId, BTreeMap<DefId, Inner>),
@@ -279,8 +283,7 @@ impl<'a> ILayout<'a> {
             }
         } {
             MonoLayout::BlockParser(_, captures) => captures,
-            MonoLayout::Nominal(_, _, captures) => captures,
-            MonoLayout::NominalParser(pd, args) => {
+            MonoLayout::Nominal(pd, _, args) | MonoLayout::NominalParser(pd, args) => {
                 return Ok(ctx.db.parserdef_arg_index(*pd, id)?.map(|i| args[i].0))
             }
             _ => panic!("Attempting to get captured variable outside block"),
@@ -398,6 +401,7 @@ impl<'a> ILayout<'a> {
         self.map(ctx, |layout, _| match layout.mono_layout().0 {
             MonoLayout::Nominal(_, from, _) => {
                 from.expect("Attempting to get 'from' field from non-from field containing nominal")
+                    .0
             }
             _ => panic!("Attempting to get 'from' field from non-nominal"),
         })
@@ -540,24 +544,22 @@ impl<'a> ILayout<'a> {
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
         id: hir::ParserDefId,
-        from: Option<ILayout<'a>>,
-        args: &BTreeMap<DefId, ILayout<'a>>,
+        from: Option<(ILayout<'a>, TypeId)>,
+        args: &[(ILayout<'a>, TypeId)],
     ) -> SResult<Arc<StructManifestation>> {
         if let Some(man) = ctx.dcx.manifestations.get(&self) {
             return Ok(man.clone());
         }
         let mut manifest = UnfinishedManifestation::new();
         let parserdef = id.lookup(ctx.db)?;
-        if let Some(from) = from {
+        if let Some((from, _)) = from {
             let sa = from.size_align(ctx)?;
             manifest.add_field(parserdef.from.0, sa);
         }
-        for id in parserdef.args.unwrap_or_default().iter().map(|x| x.0) {
-            let sa = match args.get(&id).copied() {
-                Some(layout) => layout.size_align(ctx)?,
-                None => break,
-            };
-            manifest.add_field(id, sa);
+        let arg_ids = id.lookup(ctx.db)?.args.unwrap_or_default();
+        for ((arg, _), id) in args.iter().zip(arg_ids.iter()) {
+            let sa = arg.size_align(ctx)?;
+            manifest.add_field(id.0, sa);
         }
         let manifest = Arc::new(manifest.finalize(Default::default()));
         ctx.dcx.manifestations.insert(self, manifest.clone());
@@ -586,21 +588,16 @@ pub fn canon_layout<'a, 'b>(
                 NominalId::Def(d) => d,
                 NominalId::Block(_) => return Err(LayoutError),
             };
-            let from = n.parse_arg.map(|arg| canon_layout(ctx, arg)).transpose()?;
+            let from = n
+                .parse_arg
+                .map(|arg| -> Result<_, LayoutError> { Ok((canon_layout(ctx, arg)?, arg)) })
+                .transpose()?;
             let args: Vec<_> = n
                 .fun_args
                 .iter()
-                .map(|arg| canon_layout(ctx, *arg))
-                .collect::<Result<_, _>>()?;
-            let ids = def_id
-                .lookup(ctx.db)?
-                .args
-                .into_iter()
-                .flatten()
-                .map(|x| x.0)
-                .zip(args)
-                .collect();
-            Ok(make_layout(ctx, MonoLayout::Nominal(def_id, from, ids)))
+                .map(|arg| Ok((canon_layout(ctx, *arg)?, *arg)))
+                .collect::<Result<_, LayoutError>>()?;
+            Ok(make_layout(ctx, MonoLayout::Nominal(def_id, from, args)))
         }
         Type::ParserArg { .. } | Type::FunctionArg(_, _) => Err(LayoutError),
         Type::TypeVarRef(_, _) | Type::Any | Type::Bot | Type::Unknown | Type::ForAll(_, _) => {
@@ -872,13 +869,19 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
         ctx: &mut AbsIntCtx<'a, Self>,
         arg: yaboc_absint::Arg,
     ) -> Result<Self, Self::Err> {
-        Ok(self.map(ctx, |l, _| match l.mono_layout().0 {
-            MonoLayout::Nominal(_, from, args) => match arg {
-                Arg::Named(def) => args[&def],
-                Arg::From => from.expect("unexpectedly did not have from arg"),
+        self.try_map(ctx, |l, _| match l.mono_layout().0 {
+            MonoLayout::Nominal(pd, from, args) => match arg {
+                Arg::Named(def) => {
+                    let idx = ctx
+                        .db
+                        .parserdef_arg_index(*pd, def)?
+                        .expect("arg not found");
+                    Ok(args[idx].0)
+                }
+                Arg::From => Ok(from.expect("unexpectedly did not have from arg").0),
             },
             _ => panic!("get_arg called on non-nominal layout"),
-        }))
+        })
     }
 
     fn make_thunk(
@@ -887,12 +890,16 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
         ty: TypeId,
         fields: &FxHashMap<Arg, Self>,
     ) -> Result<Self, Self::Err> {
-        let from = fields.get(&Arg::From).copied();
-        let mut args = BTreeMap::new();
-        for (arg, layout) in fields.iter() {
-            if let Arg::Named(name) = arg {
-                args.insert(*name, *layout);
-            }
+        let parserdef = id.lookup(ctx.db)?;
+        let Type::Nominal(nom_head) = ctx.db.lookup_intern_type(ty) else {
+            panic!("make_thunk called on non-nominal type");
+        };
+        let from = fields.get(&Arg::From).copied().zip(nom_head.parse_arg);
+        let mut args = Vec::new();
+        for (idx, arg) in parserdef.args.into_iter().flatten().enumerate() {
+            let arg_ty = nom_head.fun_args[idx];
+            let layout = fields[&Arg::Named(arg.0)];
+            args.push((layout, arg_ty));
         }
         let new_layout = Layout::Mono(MonoLayout::Nominal(id, from, args), ty);
         Ok(ctx.dcx.intern(new_layout))
@@ -970,7 +977,7 @@ def for[int] *> main = {
         for lay in flat_layouts(&canon_2004) {
             assert_eq!(
                 lay.symbol(&mut outlayer, LayoutPart::LenImpl(0), &ctx.db),
-                "main$23c87009f1f2e2ea$len_0"
+                "main$2cd949028b83d5a5$len_0"
             );
         }
         let main_block = outlayer.pd_result()[&canon_2004].as_ref().unwrap().returned;
@@ -999,7 +1006,7 @@ def for[int] *> main = {
         );
         assert_eq!(
             dbformat!(&ctx.db, "{}", &main_block.access_field(&mut outlayer, field("c")).unwrap().access_field(&mut outlayer, field("c")).unwrap()),
-            "nominal-parser[for[int] *> for[int] &> file[_].second]() | nominal-parser[for[int] *> for[int] &> file[_].first]()"
+            "nominal-parser[for[int] *> for[int] &> file[_].first]() | nominal-parser[for[int] *> for[int] &> file[_].second]()"
         );
         assert_eq!(
             dbformat!(

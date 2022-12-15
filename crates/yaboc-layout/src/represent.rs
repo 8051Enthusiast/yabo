@@ -25,7 +25,7 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
                 MonoLayout::Nil => write!(f, "nil"),
                 MonoLayout::Nominal(_, from, args) => {
                     dbwrite!(f, db, "nominal[{}](", ty)?;
-                    if let Some(inner_layout) = from {
+                    if let Some((inner_layout, _)) = from {
                         dbwrite!(f, db, "from: {}", inner_layout)?;
                     }
                     for (i, (_, arg)) in args.iter().enumerate() {
@@ -177,16 +177,19 @@ impl<'a> LayoutHasher<'a> {
             MonoLayout::Nominal(def, from, args) => {
                 state.update([3]);
                 def.0.update_hash(state, db);
-                match from {
-                    Some(layout) => {
-                        state.update([0]);
-                        state.update(self.hash(*layout, db));
-                    }
-                    None => {
-                        state.update([1]);
-                    }
+                if let Some((from, ty)) = from {
+                    state.update([1]);
+                    let from_hash = self.hash(*from, db);
+                    state.update(from_hash);
+                    state.update(db.type_hash(*ty));
+                } else {
+                    state.update([0]);
                 }
-                self.hash_captures(state, args, db);
+                args.len().update_hash(state, db);
+                for (layout, ty) in args.iter() {
+                    state.update(self.hash(*layout, db));
+                    state.update(db.type_hash(*ty));
+                }
             }
             MonoLayout::NominalParser(def, args) => {
                 state.update([4]);
