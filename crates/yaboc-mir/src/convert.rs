@@ -9,7 +9,7 @@ use yaboc_base::{
     error::SResult,
     interner::{DefId, FieldName, PathComponent},
 };
-use yaboc_dependents::{BlockSerialization, SubValue, SubValueKind};
+use yaboc_dependents::{BlockSerialization, NeededBy, RequirementSet, SubValue, SubValueKind};
 use yaboc_hir::{
     self as hir, variable_set::VarStatus, BlockId, ChoiceId, ContextId, ExprId, HirIdWrapper,
     HirNode, ParserDefId, ParserPredecessor,
@@ -20,7 +20,7 @@ use yaboc_types::{PrimitiveType, Type, TypeId};
 
 use super::{
     BBRef, CallKind, Comp, DupleField, ExceptionRetreat, Function, FunctionWriter, IntBinOp,
-    IntUnOp, MirInstr, Mirs, PdArgKind, Place, PlaceInfo, PlaceOrigin, PlaceRef, ReturnStatus, Val,
+    IntUnOp, MirInstr, Mirs, Place, PlaceInfo, PlaceOrigin, PlaceRef, ReturnStatus, Val,
 };
 
 pub struct ConvertCtx<'a> {
@@ -806,27 +806,31 @@ impl<'a> ConvertCtx<'a> {
     fn block_places(
         db: &dyn Mirs,
         block: &hir::Block,
-        call_kind: CallKind,
+        requirements: RequirementSet,
         order: &BlockSerialization,
         f: &mut FunctionWriter,
     ) -> SResult<FxHashMap<SubValue, PlaceRef>> {
         let ambient_type = f.fun.place(f.fun.arg()).ty;
         let mut places: FxHashMap<SubValue, PlaceRef> = Default::default();
         let root_context = block.root_context.lookup(db)?;
-        let returned_vals: FxHashSet<DefId> = match call_kind {
-            CallKind::Val if block.returns => {
+        let returned_vals = if requirements.contains(NeededBy::Val) {
+            if block.returns {
                 [block.root_context.0.child_field(db, FieldName::Return)]
                     .into_iter()
                     .collect()
+            } else {
+                root_context.vars.set.values().map(|x| *x.inner()).collect()
             }
-            CallKind::Val => root_context.vars.set.values().map(|x| *x.inner()).collect(),
-            CallKind::Len => FxHashSet::default(),
+        } else {
+            FxHashSet::default()
         };
         for value in order.eval_order.iter() {
             let val = value.val;
-            if val.id == block.id.0 && val.kind == SubValueKind::Back && call_kind == CallKind::Len
+            if val.id == block.id.0
+                && val.kind == SubValueKind::Back
+                && requirements.contains(NeededBy::Len)
             {
-                places.insert(val, f.fun.ret());
+                places.insert(val, f.fun.retlen());
             } else if matches!(val.kind, SubValueKind::Back | SubValueKind::Front) {
                 let place = Place::Stack(f.new_stack_ref(PlaceOrigin::Ambient(block.id, val.id)));
                 let place_ref = f.add_place(PlaceInfo {
@@ -871,7 +875,7 @@ impl<'a> ConvertCtx<'a> {
     pub fn new_block_builder(
         db: &'a dyn Mirs,
         id: BlockId,
-        call_kind: CallKind,
+        requirements: RequirementSet,
         order: &BlockSerialization,
     ) -> SResult<Self> {
         let block = id.lookup(db)?;
@@ -886,21 +890,14 @@ impl<'a> ConvertCtx<'a> {
             })
             .expect("could not find block within enclosing expression")
             .0;
-        let (arg_ty, ret_ty) = match db.lookup_intern_type(block_ty) {
-            Type::ParserArg { result, arg } => (
-                arg,
-                match call_kind {
-                    CallKind::Val => result,
-                    CallKind::Len => arg,
-                },
-            ),
-            _ => dbpanic!(db, "should have been a parser type, was {}", &block_ty),
+        let Type::ParserArg { result, arg } = db.lookup_intern_type(block_ty) else {
+            dbpanic!(db, "should have been a parser type, was {}", &block_ty)
         };
-        let mut f: FunctionWriter = FunctionWriter::new(block_ty, arg_ty, ret_ty);
+        let mut f: FunctionWriter = FunctionWriter::new(block_ty, arg, result);
         let top_level_retreat = f.make_top_level_retreat();
         let retreat = top_level_retreat;
         let int: TypeId = db.intern_type(Type::Primitive(PrimitiveType::Int));
-        let places = Self::block_places(db, &block, call_kind, order, &mut f)?;
+        let places = Self::block_places(db, &block, requirements, order, &mut f)?;
         let context_data: FxHashMap<ContextId, ContextData> =
             ContextData::build_context_tree(db, block.root_context)?;
         let mut context_bb: FxHashMap<ContextId, (BBRef, BBRef)> = FxHashMap::default();
@@ -913,7 +910,7 @@ impl<'a> ConvertCtx<'a> {
             context_bb.insert(*context, (new_bb, new_bb));
         }
         let current_context: Option<ContextId> = Some(block.root_context);
-        let returns_self: bool = call_kind == CallKind::Val && !block.returns;
+        let returns_self: bool = requirements.contains(NeededBy::Val) && !block.returns;
         f.set_bb(f.fun.entry());
         Ok(ConvertCtx {
             db,
@@ -932,9 +929,7 @@ impl<'a> ConvertCtx<'a> {
     fn pd_places(
         db: &dyn Mirs,
         id: ParserDefId,
-        call_kind: CallKind,
-        arg_kind: PdArgKind,
-        from: TypeId,
+        requirements: RequirementSet,
         f: &mut FunctionWriter,
     ) -> SResult<FxHashMap<SubValue, PlaceRef>> {
         let mut places: FxHashMap<SubValue, PlaceRef> = FxHashMap::default();
@@ -948,58 +943,36 @@ impl<'a> ConvertCtx<'a> {
             ty: expr_ty,
         });
         places.insert(SubValue::new_val(pd.to.0), expr_place_ref);
-        let arg_place_ref = match arg_kind {
-            PdArgKind::Parse => f.fun.arg(),
-            PdArgKind::Thunk => {
-                let place = Place::From(f.fun.cap());
-                f.add_place(PlaceInfo { place, ty: from })
-            }
-        };
-        places.insert(SubValue::new_front(id.0), arg_place_ref);
-        let ret_kind = match call_kind {
-            CallKind::Len => SubValueKind::Back,
-            CallKind::Val => SubValueKind::Val,
-        };
-        places.insert(
-            SubValue {
-                kind: ret_kind,
-                id: id.0,
-            },
-            f.fun.ret(),
-        );
+        places.insert(SubValue::new_front(id.0), f.fun.arg());
+        if requirements.contains(NeededBy::Val) {
+            places.insert(SubValue::new_val(id.0), f.fun.ret());
+        }
+        if requirements.contains(NeededBy::Len) {
+            places.insert(SubValue::new_back(id.0), f.fun.retlen());
+        }
         Ok(places)
     }
 
     pub fn new_parserdef_builder(
         db: &'a dyn Mirs,
         id: ParserDefId,
-        call_kind: CallKind,
-        arg_kind: PdArgKind,
+        requirements: RequirementSet,
     ) -> SResult<Self> {
         let sig = db.parser_args(id)?;
         let from = sig.from.unwrap_or_else(|| db.intern_type(Type::Any));
-        let ret_ty = match call_kind {
-            CallKind::Len => from,
-            CallKind::Val => db.parser_returns(id)?.deref,
-        };
-        let fun_ty = match arg_kind {
-            PdArgKind::Parse => db.intern_type(Type::ParserArg {
-                result: sig.thunk,
-                arg: from,
-            }),
-            PdArgKind::Thunk => sig.thunk,
-        };
-        let arg_ty = match arg_kind {
-            PdArgKind::Parse => from,
-            PdArgKind::Thunk => db.intern_type(Type::Any),
-        };
+        let ret_ty = db.parser_returns(id)?.deref;
+        let fun_ty = db.intern_type(Type::ParserArg {
+            result: sig.thunk,
+            arg: from,
+        });
+        let arg_ty = from;
         let mut f = FunctionWriter::new(fun_ty, arg_ty, ret_ty);
         let top_level_retreat = f.make_top_level_retreat();
         let retreat = top_level_retreat;
         let int: TypeId = db.intern_type(Type::Primitive(PrimitiveType::Int));
         let context_data = FxHashMap::default();
         let context_bb = FxHashMap::default();
-        let places = Self::pd_places(db, id, call_kind, arg_kind, from, &mut f)?;
+        let places = Self::pd_places(db, id, requirements, &mut f)?;
         let current_context = None;
         let returns_self = false;
         f.set_bb(f.fun.entry());

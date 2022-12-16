@@ -141,11 +141,32 @@ impl<'a> IMonoLayout<'a> {
             None
         })
     }
+
     pub fn arg_num<DB: Layouts + ?Sized>(&self, db: &DB) -> SResult<Option<(usize, usize)>> {
         match self.mono_layout().0 {
             MonoLayout::NominalParser(pd, args) => Ok(db.argnum(*pd)?.map(|n| (n, args.len()))),
             _ => Ok(None),
         }
+    }
+
+    pub fn unapply_nominal(
+        &self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+    ) -> (ILayout<'a>, ILayout<'a>) {
+        let mono = self.mono_layout().0;
+        let MonoLayout::Nominal(pd, Some(from), to) = mono else {
+            panic!("Expected nominal layout with from type");
+        };
+        let parser_ty = ctx.db.intern_type(Type::ParserArg {
+            result: self.mono_layout().1,
+            arg: from.1,
+        });
+        let to_layout = ctx.dcx.intern(Layout::Mono(
+            MonoLayout::NominalParser(*pd, to.clone()),
+            parser_ty,
+        ));
+        let from_layout = from.0;
+        (from_layout, to_layout)
     }
 }
 

@@ -1,3 +1,8 @@
+use yaboc_dependents::NeededBy;
+use yaboc_hir_types::DerefLevel;
+
+use crate::convert_thunk::{BlockThunk, CreateArgsThunk, TypecastThunk, ValThunk};
+
 use super::*;
 
 impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
@@ -17,64 +22,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.builder.build_return(Some(&status));
 
         self.builder.position_at_end(success_bb);
-    }
-
-    fn wrap_tail_typecast(
-        &mut self,
-        fun: FunctionValue<'llvm>,
-        thunk: FunctionValue<'llvm>,
-        return_layout: ILayout<'comp>,
-    ) {
-        let entry = self.llvm.append_basic_block(thunk, "entry");
-        self.builder.position_at_end(entry);
-        let return_buffer = self.build_layout_alloca(return_layout, "return_buffer");
-        let mut args = thunk.get_param_iter().map(|x| x.into()).collect::<Vec<_>>();
-        let return_pointer = args.pop().unwrap();
-        let target_head = args.pop().unwrap();
-        args.push(return_buffer.into());
-        let status = self
-            .builder
-            .build_call(fun, &args, "")
-            .try_as_basic_value()
-            .left()
-            .unwrap()
-            .into_int_value();
-        self.non_zero_early_return(thunk, status);
-        self.terminate_tail_typecast(
-            return_layout,
-            return_buffer,
-            target_head.into_int_value(),
-            return_pointer.into_pointer_value(),
-        );
-    }
-
-    fn wrap_tail_typecast_new(
-        &mut self,
-        fun: FunctionValue<'llvm>,
-        thunk: FunctionValue<'llvm>,
-        return_layout: ILayout<'comp>,
-    ) {
-        let entry = self.llvm.append_basic_block(thunk, "entry");
-        self.builder.position_at_end(entry);
-        let return_buffer = self.build_layout_alloca(return_layout, "return_buffer");
-        let mut args = thunk.get_param_iter().map(|x| x.into()).collect::<Vec<_>>();
-        let return_pointer = args[0];
-        let target_head = args.remove(2);
-        args[0] = return_buffer.into();
-        let status = self
-            .builder
-            .build_call(fun, &args, "")
-            .try_as_basic_value()
-            .left()
-            .unwrap()
-            .into_int_value();
-        self.non_zero_early_return(thunk, status);
-        self.terminate_tail_typecast(
-            return_layout,
-            return_buffer,
-            target_head.into_int_value(),
-            return_pointer.into_pointer_value(),
-        );
     }
 
     fn terminate_tail_typecast(
@@ -104,49 +51,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         } else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
-        let mir = self
-            .compiler_database
-            .db
-            .mir_pd(*pd, call_kind, PdArgKind::Parse)
-            .unwrap();
-        FunctionSubstitute::new_from_pd(
-            mir,
-            from,
-            layout.inner(),
-            *pd,
-            self.layouts,
-            PdArgKind::Parse,
-            call_kind,
-        )
-        .unwrap()
-    }
-
-    fn mir_pd_thunk_fun(
-        &mut self,
-        layout: IMonoLayout<'comp>,
-        call_kind: CallKind,
-    ) -> FunctionSubstitute<'comp> {
-        let pd = if let MonoLayout::Nominal(id, _, _) = layout.mono_layout().0 {
-            id
-        } else {
-            panic!("mir_pd_len_fun has to be called with a nominal parser layout");
+        let needed_by = match call_kind {
+            CallKind::Len => NeededBy::Len.into(),
+            CallKind::Val => NeededBy::Val.into(),
         };
-        let mir = self
-            .compiler_database
-            .db
-            .mir_pd(*pd, call_kind, PdArgKind::Thunk)
-            .unwrap();
-        let from = ILayout::bottom(&mut self.layouts.dcx);
-        FunctionSubstitute::new_from_pd(
-            mir,
-            from,
-            layout.inner(),
-            *pd,
-            self.layouts,
-            PdArgKind::Thunk,
-            call_kind,
-        )
-        .unwrap()
+        let mir = self.compiler_database.db.mir_pd(*pd, needed_by).unwrap();
+        FunctionSubstitute::new_from_pd(mir, from, layout.inner(), *pd, self.layouts).unwrap()
     }
 
     fn mir_block_fun(
@@ -160,49 +70,115 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         } else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
-        let mir = self.compiler_database.db.mir_block(*bd, call_kind).unwrap();
-        FunctionSubstitute::new_from_block(mir, from, layout, self.layouts, call_kind).unwrap()
+        let needed_by = match call_kind {
+            CallKind::Len => NeededBy::Len.into(),
+            CallKind::Val => NeededBy::Val.into(),
+        };
+        let mir = self.compiler_database.db.mir_block(*bd, needed_by).unwrap();
+        FunctionSubstitute::new_from_block(mir, from, layout, self.layouts).unwrap()
     }
 
     fn create_typecast(&mut self, layout: IMonoLayout<'comp>) {
-        ThunkContext::new(self, ThunkKind::Typecast(layout)).build();
+        if let MonoLayout::Nominal(..) = layout.mono_layout().0 {
+            let (from, fun) = layout.unapply_nominal(self.layouts);
+            let slot = self.collected_layouts.parser_slots.layout_vtable_offsets[&(from, fun)];
+            let mono = flat_layouts(&fun).next().unwrap();
+            let sym = self.sym(mono, LayoutPart::ValImpl(slot, false));
+            if self.module.get_function(&sym).is_none() {
+                self.create_pd_val_impl(from, mono, slot);
+            }
+        }
+        ThunkContext::new(self, TypecastThunk { layout }).build();
+    }
+
+    fn create_pd_val(
+        &mut self,
+        from: ILayout<'comp>,
+        layout: IMonoLayout<'comp>,
+        slot: PSize,
+        pd: ParserDefId,
+    ) {
+        let sym = self.sym(layout, LayoutPart::ValImpl(slot, false));
+        if self.module.get_function(&sym).is_none() {
+            self.create_pd_val_impl(from, layout, slot);
+        }
+        let result = self
+            .compiler_database
+            .db
+            .parser_result(layout.mono_layout().1)
+            .expect("pd parsers type is not parser");
+        let mut map = FxHashMap::default();
+        map.insert(Arg::From, from);
+        if let MonoLayout::NominalParser(pd, args) = layout.mono_layout().0 {
+            let parserdef_args = pd
+                .lookup(&self.compiler_database.db)
+                .unwrap()
+                .args
+                .unwrap_or_default();
+            for (idx, (arg, _)) in args.iter().enumerate() {
+                map.insert(Arg::Named(parserdef_args[idx].0), *arg);
+            }
+        }
+        let return_layout =
+            flat_layouts(&ILayout::make_thunk(self.layouts, pd, result, &map).unwrap())
+                .next()
+                .unwrap();
+        ThunkContext::new(
+            self,
+            ValThunk {
+                from,
+                fun: layout,
+                thunk: return_layout,
+                slot,
+            },
+        )
+        .build();
+    }
+
+    fn create_pd_val_impl(
+        &mut self,
+        from: ILayout<'comp>,
+        layout: IMonoLayout<'comp>,
+        slot: PSize,
+    ) {
+        let llvm_fun = self.parser_val_impl_fun_val(layout, slot);
+        let mir_fun = Rc::new(self.mir_pd_fun(from, layout, CallKind::Val));
+        let (ret, fun, head, arg, _) = parser_args(llvm_fun);
+        MirTranslator::new(self, mir_fun, llvm_fun, fun, arg)
+            .with_ret_ptr(ret, head)
+            .build();
     }
 
     fn create_pd_len(&mut self, from: ILayout<'comp>, layout: IMonoLayout<'comp>, slot: PSize) {
         let llvm_fun = self.parser_len_fun_val(layout, slot);
         let mir_fun = Rc::new(self.mir_pd_fun(from, layout, CallKind::Len));
-        let [fun, arg, ret] = get_fun_args(llvm_fun).map(|x| x.into_pointer_value());
-        MirTranslator::new(self, mir_fun, llvm_fun, fun, arg, ret).build();
-    }
-
-    fn create_pd_deref(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
-        let thunk = self.deref_fun_val(layout);
-        let deref_impl = self.deref_impl_fun_val(layout);
-        let mir_fun = Rc::new(self.mir_pd_thunk_fun(layout, CallKind::Val));
-        let [ret, fun] = get_fun_args(deref_impl).map(|x| x.into_pointer_value());
-        let arg = self.any_ptr().get_undef();
-        let deref = layout
-            .deref(self.layouts)
-            .unwrap()
-            .expect("trying to deref non-deref layout");
-        MirTranslator::new(self, mir_fun, deref_impl, fun, arg, ret).build();
-        self.wrap_tail_typecast_new(deref_impl, thunk, deref);
-        thunk
+        let (_, fun, _, arg, retlen) = parser_args(llvm_fun);
+        MirTranslator::new(self, mir_fun, llvm_fun, fun, arg)
+            .with_retlen_ptr(retlen)
+            .build();
     }
 
     fn create_pd_end(&mut self, layout: IMonoLayout<'comp>) {
         let llvm_fun = self.end_fun_val(layout);
-        let mir_fun = Rc::new(self.mir_pd_thunk_fun(layout, CallKind::Len));
-        let [arg, ret] = get_fun_args(llvm_fun).map(|x| x.into_pointer_value());
-        let fun = self.any_ptr().get_undef();
-        MirTranslator::new(self, mir_fun, llvm_fun, fun, arg, ret).build();
+        self.add_entry_block(llvm_fun);
+        let [ret, arg] = get_fun_args(llvm_fun).map(|x| x.into_pointer_value());
+        let (from_layout, fun_layout) = layout.unapply_nominal(self.layouts);
+        let (from, fun, _) = self.build_nominal_components(layout, arg);
+        let ret = self.build_parser_call(
+            self.any_ptr().get_undef(),
+            (fun_layout, fun),
+            self.const_i64(DerefLevel::max().into_shifted_runtime_value() as i64),
+            (from_layout, from),
+            ret,
+            CallKind::Len,
+        );
+        self.builder.build_return(Some(&ret));
     }
 
     fn create_pd_start(&mut self, layout: IMonoLayout<'comp>) {
         let fun = self.start_fun_val(layout);
-        let [from, to] = get_fun_args(fun).map(|x| x.into_pointer_value());
-        let entry = self.llvm.append_basic_block(fun, "entry");
-        self.builder.position_at_end(entry);
+        self.add_entry_block(fun);
+        let [to, from] = get_fun_args(fun).map(|x| x.into_pointer_value());
         let sa = layout
             .inner()
             .size_align(self.layouts)
@@ -295,16 +271,58 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_block_len(&mut self, from: ILayout<'comp>, layout: IMonoLayout<'comp>, slot: PSize) {
         let llvm_fun = self.parser_len_fun_val(layout, slot);
         let mir_fun = Rc::new(self.mir_block_fun(from, layout, CallKind::Len));
-        let [fun, arg, ret] = get_fun_args(llvm_fun).map(|x| x.into_pointer_value());
-        MirTranslator::new(self, mir_fun, llvm_fun, fun, arg, ret).build();
+        let (_, fun, _, arg, retlen) = parser_args(llvm_fun);
+        MirTranslator::new(self, mir_fun, llvm_fun, fun, arg)
+            .with_retlen_ptr(retlen)
+            .build();
+    }
+
+    fn create_block_val(
+        &mut self,
+        block: BlockId,
+        from: ILayout<'comp>,
+        layout: IMonoLayout<'comp>,
+        slot: PSize,
+    ) {
+        let block = block.lookup(&self.compiler_database.db).unwrap();
+        let llvm_fun = self.parser_val_fun_val(layout, slot);
+        let mir_fun = Rc::new(self.mir_block_fun(from, layout, CallKind::Val));
+        let impl_fun = if block.returns {
+            llvm_fun
+        } else {
+            self.parser_val_impl_fun_val(layout, slot)
+        };
+
+        let (ret, fun, head, arg, _) = parser_args(impl_fun);
+        MirTranslator::new(self, mir_fun, impl_fun, fun, arg)
+            .with_ret_ptr(ret, head)
+            .build();
+
+        if block.returns {
+            return;
+        }
+
+        let return_layout = self.layouts.block_result()[&(from, layout.inner())]
+            .as_ref()
+            .unwrap()
+            .returned;
+        let mono_layout = flat_layouts(&return_layout).next().unwrap();
+
+        let block_data = BlockThunk {
+            from,
+            fun: layout,
+            result: mono_layout,
+            slot,
+        };
+
+        ThunkContext::new(self, block_data).build();
     }
 
     fn create_single_len(&mut self, from: ILayout<'comp>, layout: IMonoLayout<'comp>, slot: PSize) {
         let llvm_fun = self.parser_len_fun_val(layout, slot);
         self.set_always_inline(llvm_fun);
-        let [_, arg, ret] = get_fun_args(llvm_fun).map(|x| x.into_pointer_value());
-        let entry = self.llvm.append_basic_block(llvm_fun, "entry");
-        self.builder.position_at_end(entry);
+        let (_, _, _, arg, ret) = parser_args(llvm_fun);
+        self.add_entry_block(llvm_fun);
         let single_forward_fun = self.build_single_forward_fun_get(from.maybe_mono(), arg);
         let from_mono = self.build_mono_ptr(arg, from);
         let ret = self.build_call_with_int_ret(single_forward_fun, &[ret.into(), from_mono.into()]);
@@ -314,16 +332,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_single_val(&mut self, from: ILayout<'comp>, layout: IMonoLayout<'comp>, slot: PSize) {
         let llvm_fun = self.parser_val_fun_val(layout, slot);
         self.set_always_inline(llvm_fun);
-        let [_, arg, target_head, ret] = get_fun_args(llvm_fun);
-        let [arg, ret] = [arg, ret].map(|x| x.into_pointer_value());
-        let target_head = target_head.into_int_value();
-        let entry = self.llvm.append_basic_block(llvm_fun, "entry");
-        self.builder.position_at_end(entry);
+        let (ret, _, target_head, arg, _) = parser_args(llvm_fun);
+        self.add_entry_block(llvm_fun);
         let current_element_fun = self.build_current_element_fun_get(from.maybe_mono(), arg);
-        let from_mono = self.build_mono_ptr(arg, from);
         let ret = self.build_call_with_int_ret(
             current_element_fun,
-            &[ret.into(), from_mono.into(), target_head.into()],
+            &[ret.into(), arg.into(), target_head.into()],
         );
         self.builder.build_return(Some(&ret));
     }
@@ -331,22 +345,22 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_nil_len(&mut self, from: ILayout<'comp>, layout: IMonoLayout<'comp>, slot: PSize) {
         let llvm_fun = self.parser_len_fun_val(layout, slot);
         self.set_always_inline(llvm_fun);
-        let [_, arg, ret] = get_fun_args(llvm_fun).map(|x| x.into_pointer_value());
-        let entry = self.llvm.append_basic_block(llvm_fun, "entry");
-        self.builder.position_at_end(entry);
+        let (_, _, _, arg, retlen) = parser_args(llvm_fun);
+        self.add_entry_block(llvm_fun);
         let arg_size = self.build_size_get(from.maybe_mono(), arg);
-        self.builder.build_memcpy(ret, 1, arg, 1, arg_size).unwrap();
+        let arg_start = self.get_object_start(from.maybe_mono(), arg);
+        let ret_start = self.get_object_start(from.maybe_mono(), retlen);
+        self.builder
+            .build_memcpy(ret_start, 1, arg_start, 1, arg_size)
+            .unwrap();
         self.builder.build_return(Some(&self.const_i64(0)));
     }
 
     fn create_nil_val(&mut self, _: ILayout<'comp>, layout: IMonoLayout<'comp>, slot: PSize) {
         let llvm_fun = self.parser_val_fun_val(layout, slot);
         self.set_always_inline(llvm_fun);
-        let [_, _, target_head, ret] = get_fun_args(llvm_fun);
-        let ret = ret.into_pointer_value();
-        let target_head = target_head.into_int_value();
-        let entry = self.llvm.append_basic_block(llvm_fun, "entry");
-        self.builder.position_at_end(entry);
+        let (ret, _, target_head, _, _) = parser_args(llvm_fun);
+        self.add_entry_block(llvm_fun);
         let unit_type = self
             .compiler_database
             .db
@@ -363,53 +377,41 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         slot: PSize,
     ) {
         let llvm_fun = self.parser_len_fun_val(layout, slot);
-        let [fun, arg, ret] = get_fun_args(llvm_fun).map(|x| x.into_pointer_value());
-        let entry = self.llvm.append_basic_block(llvm_fun, "entry");
-        self.builder.position_at_end(entry);
+        let (_, fun, _, arg, retlen) = parser_args(llvm_fun);
+        self.add_entry_block(llvm_fun);
         let (first_layout, inner_ty, second_layout) =
             if let MonoLayout::ComposedParser(first, inner_ty, second) = layout.mono_layout().0 {
                 (*first, *inner_ty, *second)
             } else {
                 panic!("called build_compose_len on non-composed")
             };
-        let first_slot =
-            self.collected_layouts.parser_slots.layout_vtable_offsets[&(from, first_layout)];
         let inner_layout = first_layout.apply_arg(self.layouts, from).unwrap();
         let inner_level = self.deref_level(inner_ty);
-        let second_slot = self.collected_layouts.parser_slots.layout_vtable_offsets
-            [&(inner_layout, second_layout)];
         let second_arg = self.build_layout_alloca(inner_layout, "second_arg");
         let second_len_ret = self.build_layout_alloca(inner_layout, "second_len_ret");
         let first_ptr = self.build_duple_gep(layout.inner(), DupleField::First, fun, first_layout);
         let second_ptr =
             self.build_duple_gep(layout.inner(), DupleField::Second, fun, second_layout);
-        let [first_len_ptr, first_val_ptr] = [CallKind::Len, CallKind::Val].map(|call_kind| {
-            self.build_parser_fun_get(first_layout.maybe_mono(), first_ptr, first_slot, call_kind)
+
+        [CallKind::Len, CallKind::Val].map(|call_kind| {
+            let ret = self.build_parser_call(
+                second_arg,
+                (first_layout, first_ptr),
+                inner_level,
+                (from, arg),
+                retlen,
+                call_kind,
+            );
+            self.non_zero_early_return(llvm_fun, ret)
         });
-        let first_mono = self.build_mono_ptr(first_ptr, first_layout);
-        let ret = self
-            .build_call_with_int_ret(first_len_ptr, &[first_mono.into(), arg.into(), ret.into()]);
-        self.non_zero_early_return(llvm_fun, ret);
-        let ret = self.build_call_with_int_ret(
-            first_val_ptr,
-            &[
-                first_mono.into(),
-                arg.into(),
-                inner_level.into(),
-                second_arg.into(),
-            ],
-        );
-        self.non_zero_early_return(llvm_fun, ret);
-        let second_len_ptr = self.build_parser_fun_get(
-            second_layout.maybe_mono(),
-            second_ptr,
-            second_slot,
+
+        let ret = self.build_parser_call(
+            second_len_ret,
+            (second_layout, second_ptr),
+            self.const_i64(DerefLevel::max().into_shifted_runtime_value() as i64),
+            (inner_layout, second_arg),
+            second_len_ret,
             CallKind::Len,
-        );
-        let second_mono = self.build_mono_ptr(second_ptr, second_layout);
-        let ret = self.build_call_with_int_ret(
-            second_len_ptr,
-            &[second_mono.into(), second_arg.into(), second_len_ret.into()],
         );
         self.builder.build_return(Some(&ret));
     }
@@ -421,107 +423,40 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         slot: PSize,
     ) {
         let llvm_fun = self.parser_val_fun_val(layout, slot);
-        let entry = self.llvm.append_basic_block(llvm_fun, "entry");
-        self.builder.position_at_end(entry);
-        let [fun, arg, target_head, return_ptr] = get_fun_args(llvm_fun);
-        let [fun, arg, return_ptr] = [fun, arg, return_ptr].map(|x| x.into_pointer_value());
-        let target_head = target_head.into_int_value();
+        self.add_entry_block(llvm_fun);
+        let (ret, fun, target_head, arg, retlen) = parser_args(llvm_fun);
         let (first_layout, inner_ty, second_layout) =
             if let MonoLayout::ComposedParser(first, inner_ty, second) = layout.mono_layout().0 {
                 (*first, *inner_ty, *second)
             } else {
                 panic!("called build_compose_len on non-composed")
             };
-        let first_slot =
-            self.collected_layouts.parser_slots.layout_vtable_offsets[&(from, first_layout)];
         let inner_layout = first_layout.apply_arg(self.layouts, from).unwrap();
         let inner_level = self.deref_level(inner_ty);
-        let second_slot = self.collected_layouts.parser_slots.layout_vtable_offsets
-            [&(inner_layout, second_layout)];
         let second_arg = self.build_layout_alloca(inner_layout, "second_arg");
         let first_ptr = self.build_duple_gep(layout.inner(), DupleField::First, fun, first_layout);
         let second_ptr =
             self.build_duple_gep(layout.inner(), DupleField::Second, fun, second_layout);
-        let first_val_ptr = self.build_parser_fun_get(
-            first_layout.maybe_mono(),
-            first_ptr,
-            first_slot,
+
+        let retstatus = self.build_parser_call(
+            second_arg,
+            (first_layout, first_ptr),
+            inner_level,
+            (from, arg),
+            retlen,
             CallKind::Val,
         );
-        let first_mono = self.build_mono_ptr(first_ptr, first_layout);
-        let ret = self.build_call_with_int_ret(
-            first_val_ptr,
-            &[
-                first_mono.into(),
-                arg.into(),
-                inner_level.into(),
-                second_arg.into(),
-            ],
-        );
-        self.non_zero_early_return(llvm_fun, ret);
-        let second_len_ptr = self.build_parser_fun_get(
-            second_layout.maybe_mono(),
-            second_ptr,
-            second_slot,
+        self.non_zero_early_return(llvm_fun, retstatus);
+
+        let retstatus = self.build_parser_call(
+            ret,
+            (second_layout, second_ptr),
+            target_head,
+            (inner_layout, second_arg),
+            self.any_ptr().get_undef(),
             CallKind::Val,
         );
-        let second_mono = self.build_mono_ptr(second_ptr, second_layout);
-        let ret = self.build_call_with_int_ret(
-            second_len_ptr,
-            &[
-                second_mono.into(),
-                second_arg.into(),
-                target_head.into(),
-                return_ptr.into(),
-            ],
-        );
-        self.builder.build_return(Some(&ret));
-    }
-
-    fn create_pd_val(
-        &mut self,
-        from: ILayout<'comp>,
-        layout: IMonoLayout<'comp>,
-        slot: PSize,
-        pd: ParserDefId,
-    ) {
-        let llvm_fun = self.parser_val_impl_fun_val(layout, slot);
-        let mir_fun = Rc::new(self.mir_pd_fun(from, layout, CallKind::Val));
-        let [fun, arg, ret] = get_fun_args(llvm_fun).map(|x| x.into_pointer_value());
-        MirTranslator::new(self, mir_fun, llvm_fun, fun, arg, ret).build();
-        let thunk = self.parser_val_fun_val(layout, slot);
-        let result = self
-            .compiler_database
-            .db
-            .parser_result(layout.mono_layout().1)
-            .expect("pd parsers type is not parser");
-        let mut map = FxHashMap::default();
-        map.insert(Arg::From, from);
-        if let MonoLayout::NominalParser(pd, args) = layout.mono_layout().0 {
-            let parserdef_args = pd
-                .lookup(&self.compiler_database.db)
-                .unwrap()
-                .args
-                .unwrap_or_default();
-            for (idx, (arg, _)) in args.iter().enumerate() {
-                map.insert(Arg::Named(parserdef_args[idx].0), *arg);
-            }
-        }
-        let return_layout = ILayout::make_thunk(self.layouts, pd, result, &map).unwrap();
-        self.wrap_tail_typecast(llvm_fun, thunk, return_layout);
-    }
-
-    fn create_block_val(&mut self, from: ILayout<'comp>, layout: IMonoLayout<'comp>, slot: PSize) {
-        let llvm_fun = self.parser_val_impl_fun_val(layout, slot);
-        let mir_fun = Rc::new(self.mir_block_fun(from, layout, CallKind::Val));
-        let [fun, arg, ret] = get_fun_args(llvm_fun).map(|x| x.into_pointer_value());
-        MirTranslator::new(self, mir_fun, llvm_fun, fun, arg, ret).build();
-        let thunk = self.parser_val_fun_val(layout, slot);
-        let return_layout = self.layouts.block_result()[&(from, layout.inner())]
-            .as_ref()
-            .unwrap()
-            .returned;
-        self.wrap_tail_typecast(llvm_fun, thunk, return_layout);
+        self.builder.build_return(Some(&retstatus));
     }
 
     fn create_field_access(&mut self, layout: IMonoLayout<'comp>, field: DefId, name: Identifier) {
@@ -596,7 +531,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         };
         ThunkContext::new(
             self,
-            ThunkKind::CreateArgs {
+            CreateArgsThunk {
                 from: layout,
                 to: return_layout,
                 slot,
@@ -645,9 +580,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     self.create_pd_len(from, layout, *slot);
                     self.create_pd_val(from, layout, *slot, *pd);
                 }
-                MonoLayout::BlockParser(_, _) => {
+                MonoLayout::BlockParser(block, _) => {
                     self.create_block_len(from, layout, *slot);
-                    self.create_block_val(from, layout, *slot);
+                    self.create_block_val(*block, from, layout, *slot);
                 }
                 MonoLayout::ComposedParser(_, _, _) => {
                     self.create_compose_len(from, layout, *slot);
@@ -707,7 +642,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_nominal_funs(&mut self, layout: IMonoLayout<'comp>) {
-        self.create_pd_deref(layout);
         self.create_pd_end(layout);
         self.create_pd_start(layout);
     }

@@ -10,6 +10,7 @@ use std::{ffi::OsStr, fmt::Debug, path::Path, rc::Rc};
 use fxhash::FxHashMap;
 use inkwell::{
     attributes::{Attribute, AttributeLoc},
+    basic_block::BasicBlock,
     builder::Builder,
     context::Context,
     module::{Linkage, Module},
@@ -42,18 +43,15 @@ use yaboc_layout::{
     prop::{CodegenTypeContext, PSize, SizeAlign, TargetSized},
     represent::{truncated_hex, LayoutPart},
     vtable::{
-        self, ArrayVTableFields, BlockVTableFields, FunctionVTableFields, NominalVTableFields,
-        ParserArgImplFields, ParserVTableFields, VTableHeaderFields,
+        self, ArrayVTableFields, BlockVTableFields, FunctionVTableFields, ParserArgImplFields,
+        ParserVTableFields, VTableHeaderFields,
     },
     AbsLayoutCtx, ILayout, IMonoLayout, Layout, LayoutError, MonoLayout,
 };
-use yaboc_mir::{CallKind, DupleField, Mirs, PdArgKind, ReturnStatus};
+use yaboc_mir::{CallKind, DupleField, Mirs, ReturnStatus};
 use yaboc_types::{PrimitiveType, Type, TypeInterner};
 
-use self::{
-    convert_mir::MirTranslator,
-    convert_thunk::{ThunkContext, ThunkKind},
-};
+use self::{convert_mir::MirTranslator, convert_thunk::ThunkContext};
 
 pub struct CodeGenCtx<'llvm, 'comp> {
     llvm: &'llvm Context,
@@ -165,6 +163,20 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         panic!("could not find symbol {sym}");
     }
 
+    fn add_entry_block(&mut self, fun: FunctionValue<'llvm>) -> BasicBlock<'llvm> {
+        let entry = self.llvm.append_basic_block(fun, "entry");
+        self.builder.position_at_end(entry);
+        entry
+    }
+
+    fn current_function(&self) -> FunctionValue<'llvm> {
+        self.builder
+            .get_insert_block()
+            .unwrap()
+            .get_parent()
+            .unwrap()
+    }
+
     fn build_get_vtable_tag(&mut self, layout: IMonoLayout<'comp>) -> PointerValue<'llvm> {
         let vtable = self.sym_ptr(layout, LayoutPart::VTable);
         let vtable_ty = vtable.get_type().get_element_type().into_struct_type();
@@ -190,10 +202,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         part: LayoutPart,
     ) -> CallableValue<'llvm> {
         let sym = self.sym(layout, part);
-        let fun = self
+        let Some(fun) = self
             .module
             .get_function(&sym)
-            .expect("could not find function");
+        else {
+            panic!("could not find symbol {sym}");
+        };
         fun.into()
     }
 
@@ -259,6 +273,29 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .left()
             .expect("function shuold not return void")
             .into_int_value()
+    }
+
+    fn build_parser_call(
+        &mut self,
+        ret: PointerValue<'llvm>,
+        fun: (ILayout<'comp>, PointerValue<'llvm>),
+        head: IntValue<'llvm>,
+        from: (ILayout<'comp>, PointerValue<'llvm>),
+        retlen: PointerValue<'llvm>,
+        call_kind: CallKind,
+    ) -> IntValue<'llvm> {
+        let slot = self.collected_layouts.parser_slots.layout_vtable_offsets[&(from.0, fun.0)];
+        let f = self.build_parser_fun_get(fun.0.maybe_mono(), fun.1, slot, call_kind, false);
+        self.build_call_with_int_ret(
+            f,
+            &[
+                ret.into(),
+                fun.1.into(),
+                head.into(),
+                from.1.into(),
+                retlen.into(),
+            ],
+        )
     }
 
     fn module_string(&mut self, s: &str) -> PointerValue<'llvm> {
@@ -435,6 +472,38 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.build_byte_gep(ptr, llvm_int, "gepduple")
     }
 
+    fn build_nominal_components(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+        ptr: PointerValue<'llvm>,
+    ) -> (PointerValue<'llvm>, PointerValue<'llvm>, u64) {
+        let MonoLayout::Nominal(pd, from_layout, args) = layout.mono_layout().0 else {
+            panic!("build_nominal_components has to be called with a nominal parser layout");
+        };
+
+        let parserdef = pd.lookup(&self.compiler_database.db).unwrap();
+        let layout_sa = layout.inner().size_align(self.layouts).unwrap();
+        let from_ptr = if let Some((from_layout, _)) = from_layout {
+            self.build_field_gep(layout.inner(), parserdef.from.0, ptr, *from_layout)
+        } else {
+            self.any_ptr().get_undef()
+        };
+        let parser_layouts = layout.unapply_nominal(self.layouts);
+        let slot = self.collected_layouts.parser_slots.layout_vtable_offsets[&parser_layouts];
+
+        let arg_ptr = if !args.is_empty() {
+            let mut from_sa = from_layout
+                .map(|l| l.0.size_align(self.layouts).unwrap())
+                .unwrap_or_default();
+            from_sa.align_mask |= layout_sa.align_mask;
+
+            self.build_byte_gep(ptr, self.const_i64(from_sa.stride() as i64), "arg_ptr")
+        } else {
+            self.any_ptr().get_undef()
+        };
+        (from_ptr, arg_ptr, slot)
+    }
+
     fn build_mono_ptr(
         &mut self,
         place_ptr: PointerValue<'llvm>,
@@ -504,8 +573,27 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 }
 
-fn get_fun_args<const N: usize>(fun: FunctionValue<'_>) -> [BasicValueEnum<'_>; N] {
+fn get_fun_args<const N: usize>(fun: FunctionValue) -> [BasicValueEnum; N] {
     std::array::from_fn(|i| fun.get_nth_param(i as u32).unwrap())
+}
+
+fn parser_args(
+    fun: FunctionValue,
+) -> (
+    PointerValue,
+    PointerValue,
+    IntValue,
+    PointerValue,
+    PointerValue,
+) {
+    let [ret, fun, head, from, retlen] = get_fun_args(fun);
+    (
+        ret.into_pointer_value(),
+        fun.into_pointer_value(),
+        head.into_int_value(),
+        from.into_pointer_value(),
+        retlen.into_pointer_value(),
+    )
 }
 
 impl<'llvm, 'comp> CodegenTypeContext for CodeGenCtx<'llvm, 'comp> {

@@ -31,7 +31,7 @@ static inline void *dyn_data(DynValue *val) {
 
 static inline DynValue dyn_parse_bytes(char *bytes, struct ParserArgImpl parser) {
 	DynValue ret;
-	int64_t status = parser.val_impl(NULL, &bytes, YABO_ANY | 3, &ret.in_data);
+	int64_t status = parser.val_impl(&ret.in_data, NULL, YABO_ANY | 3, &bytes, NULL);
 	if (status != 0) {
 		ret.vtable = 0;
 		ret.in_data[0] = (char)status;
@@ -42,7 +42,11 @@ static inline DynValue dyn_parse_bytes(char *bytes, struct ParserArgImpl parser)
 static inline DynValue dyn_deref(DynValue val) {
 	DynValue ret;
 	struct NominalVTable *vtable = (struct NominalVTable *)dyn_vtable(val);
-	int64_t status = vtable->deref_impl(dyn_data(&val), YABO_ANY | 3, &ret.in_data);
+	uint64_t level = vtable->head.deref_level;
+	if (level > 0) {
+		level -= 256;
+	}
+	int64_t status = vtable->head.typecast_impl(&ret.in_data, dyn_data(&val), level | 3);
 	if (status != 0) {
 		ret.vtable = 0;
 		ret.in_data[0] = (char)status;
@@ -53,7 +57,7 @@ static inline DynValue dyn_deref(DynValue val) {
 static inline DynValue dyn_access_field(DynValue block, char *name) {
 	struct BlockVTable *vtable = (struct BlockVTable *)dyn_vtable(block);
 	char **start = vtable->fields->fields;
-	int64_t (*access_impl)(void *, int64_t, void *) = NULL;
+	int64_t (*access_impl)(void *, void *, uint64_t) = NULL;
 	for(size_t i = 0; i < vtable->fields->number_fields; i++) {
 		char *current_name = start[i];
 		if (!strcmp(current_name, name)) {
@@ -65,7 +69,7 @@ static inline DynValue dyn_access_field(DynValue block, char *name) {
 		return (DynValue){0};
 	}
 	DynValue ret;
-	int64_t status = access_impl(dyn_data(&block), YABO_ANY | 3, &ret.in_data);
+	int64_t status = access_impl(&ret.in_data, dyn_data(&block), YABO_ANY | 3);
 	if (status != 0) {
 		ret.vtable = 0;
 		ret.in_data[0] = (char)status;

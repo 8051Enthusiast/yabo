@@ -46,23 +46,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         )
     }
 
-    fn ppp_fun_val(
-        &mut self,
-        layout: IMonoLayout<'comp>,
-        part: LayoutPart,
-    ) -> FunctionValue<'llvm> {
-        self.fun_val(
-            layout,
-            part,
-            &[
-                self.any_ptr().into(),
-                self.any_ptr().into(),
-                self.any_ptr().into(),
-            ],
-        )
-    }
-
-    fn ppip_fun_val(
+    fn ppipp_fun_val(
         &mut self,
         layout: IMonoLayout<'comp>,
         part: LayoutPart,
@@ -74,6 +58,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 self.any_ptr().into(),
                 self.any_ptr().into(),
                 self.llvm.i64_type().into(),
+                self.any_ptr().into(),
                 self.any_ptr().into(),
             ],
         )
@@ -126,18 +111,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         slot: PSize,
     ) -> FunctionValue<'llvm> {
-        self.ppp_fun_val(layout, LayoutPart::LenImpl(slot))
-    }
-
-    pub(super) fn deref_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
-        self.ppi_fun_val(layout, LayoutPart::Deref(true))
-    }
-
-    pub(super) fn deref_impl_fun_val(
-        &mut self,
-        layout: IMonoLayout<'comp>,
-    ) -> FunctionValue<'llvm> {
-        self.pp_fun_val(layout, LayoutPart::Deref(false))
+        self.ppipp_fun_val(layout, LayoutPart::LenImpl(slot))
     }
 
     pub(super) fn parser_val_impl_fun_val(
@@ -145,7 +119,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         slot: PSize,
     ) -> FunctionValue<'llvm> {
-        self.ppp_fun_val(layout, LayoutPart::ValImpl(slot, false))
+        self.ppipp_fun_val(layout, LayoutPart::ValImpl(slot, false))
     }
 
     pub(super) fn parser_val_fun_val(
@@ -153,7 +127,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         slot: PSize,
     ) -> FunctionValue<'llvm> {
-        self.ppip_fun_val(layout, LayoutPart::ValImpl(slot, true))
+        self.ppipp_fun_val(layout, LayoutPart::ValImpl(slot, true))
     }
 
     pub(super) fn arg_level_and_offset(

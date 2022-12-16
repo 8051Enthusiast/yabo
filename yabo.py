@@ -91,13 +91,11 @@ class BlockVTable(Structure):
 class NominalVTable(Structure):
     __slots__ = [
         'head',
-        'deref_impl',
         'start_impl',
         'end_impl',
     ]
     _fields_ = [
         ('head', VTableHeader),
-        ('deref_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64)),
         ('start_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr)),
         ('end_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr)),
     ]
@@ -110,8 +108,9 @@ class ParserArgImpl(Structure):
     ]
     _fields_ = [
         ('val_impl', CFUNCTYPE(c_int64, _voidptr,
-         _voidptr, c_int64, _voidptr)),
-        ('len_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, _voidptr)),
+         _voidptr, c_int64, _voidptr, _voidptr)),
+        ('len_impl', CFUNCTYPE(c_int64, _voidptr,
+         _voidptr, c_int64, _voidptr, _voidptr)),
     ]
 
 
@@ -136,9 +135,8 @@ class ArrayVTable(Structure):
     _fields_ = [
         ('head', VTableHeader),
         ('single_forward_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr)),
-        ('current_element_impl', CFUNCTYPE(
-            c_int64, _voidptr, c_int64, _voidptr)),
-        ('skip_impl', CFUNCTYPE(c_int64, _voidptr, c_uint64, _voidptr)),
+        ('current_element_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64)),
+        ('skip_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_uint64)),
     ]
 
 
@@ -195,8 +193,8 @@ class Parser:
         nullptr = ctypes.c_void_p()
         # the vtable pointer is stored at negative index 1, so we pass
         # a pointer to the data field
-        status = parse(nullptr, byref(buffer_ptr), YABO_ANY |
-                       YABO_MALLOC, ret.data_field_ptr())
+        status = parse(ret.data_field_ptr(), nullptr, YABO_ANY |
+                       YABO_MALLOC, byref(buffer_ptr), nullptr)
         _check_status(status)
         return _new_value(ret, buf, self._lib)
 
@@ -225,7 +223,7 @@ class YaboValue:
         ret = DynValue()
         status = typecast(ret.data_field_ptr(), self._val.data_ptr(), typ)
         _check_status(status)
-        return YaboValue(ret, self._buf, self._lib)
+        return _new_value(ret, self._buf, self._lib)
 
     # yes i'm defining the evil function
     def __del__(self):
@@ -241,13 +239,10 @@ class YaboValue:
 
 class NominalValue(YaboValue):
     def deref(self):
-        casted_vtable = ctypes.cast(
-            pointer(self._val.get_vtable()), POINTER(NominalVTable))
-        deref = casted_vtable.contents.deref_impl
+        level = self._val.get_vtable().deref_level
+        level = max(level - 0x100, 0)
         ret = DynValue()
-        status = deref(ret.data_field_ptr(), self._val.data_ptr(), YABO_ANY | YABO_MALLOC)
-        _check_status(status)
-        return _new_value(ret, self._buf, self._lib)
+        return self._typecast(level | YABO_MALLOC)
 
 
 class BlockValue(YaboValue):

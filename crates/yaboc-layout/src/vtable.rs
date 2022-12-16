@@ -29,23 +29,24 @@ target_struct! {
     }
 }
 
-pub type DerefFun = fn(ret: *mut u8, from: *const u8, target_head: i64) -> i64;
+pub type StartFun = fn(ret: *mut u8, nom: *const u8) -> i64;
+pub type EndFun = fn(ret: *mut u8, nom: *const u8) -> i64;
 
 target_struct! {
     pub struct NominalVTable {
         pub head: VTableHeader,
-        pub deref_impl: DerefFun,
-        pub start_impl: fn(nom: *const u8, ret: *mut u8) -> i64,
-        pub end_impl: fn(nom: *const u8, ret: *mut u8) -> i64,
+        pub start_impl: StartFun,
+        pub end_impl: EndFun,
     }
 }
 
+pub type ParserFun =
+    fn(ret: *mut u8, fun: *const u8, target_head: i64, from: *const u8, to: *mut u8) -> i64;
+
 target_struct! {
     pub struct ParserArgImpl {
-        pub val_impl: Option<
-            fn(fun: *const u8, from: *const u8, target_head: i64, ret: *mut u8) -> i64
-        >,
-        pub len_impl: Option<fn(fun: *const u8, from: *const u8, ret: *mut u8) -> i64>,
+        pub val_impl: Option<ParserFun>,
+        pub len_impl: Option<ParserFun>,
     }
 }
 
@@ -76,7 +77,7 @@ target_struct! {
 }
 
 pub type SingleForwardFun = fn(ret: *mut u8, from: *const u8) -> i64;
-pub type CurrentElementFun = fn(ret: *mut u8, from: *const u8, target_head: i64, ) -> i64;
+pub type CurrentElementFun = fn(ret: *mut u8, from: *const u8, target_head: i64) -> i64;
 pub type SkipFun = fn(ret: *mut u8, from: *const u8, offset: u64) -> i64;
 
 target_struct! {

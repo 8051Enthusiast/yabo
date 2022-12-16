@@ -12,9 +12,9 @@ use yaboc_base::{
     interner::{DefId, FieldName},
     source::SpanIndex,
 };
-use yaboc_dependents::{Dependents, SubValue};
+use yaboc_dependents::{Dependents, NeededBy, RequirementSet, SubValue};
 use yaboc_hir::{BlockId, ExprId, HirIdWrapper, ParserDefId};
-use yaboc_types::{Type, TypeId};
+use yaboc_types::TypeId;
 
 use self::convert::ConvertCtx;
 
@@ -22,13 +22,8 @@ pub use represent::print_all_mir;
 
 #[salsa::query_group(MirDatabase)]
 pub trait Mirs: Dependents {
-    fn mir_block(&self, block: BlockId, call_kind: CallKind) -> SResult<Function>;
-    fn mir_pd(
-        &self,
-        pd: ParserDefId,
-        call_kind: CallKind,
-        arg_kind: PdArgKind,
-    ) -> SResult<Function>;
+    fn mir_block(&self, block: BlockId, requirements: RequirementSet) -> SResult<Function>;
+    fn mir_pd(&self, pd: ParserDefId, requirements: RequirementSet) -> SResult<Function>;
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -308,6 +303,7 @@ pub enum Place {
     Captures,
     Arg,
     Return,
+    ReturnLen,
     Stack(StackRef),
     Field(PlaceRef, DefId),
     Captured(PlaceRef, DefId),
@@ -346,6 +342,7 @@ const fn const_ref(r: u32) -> PlaceRef {
 const CAP_REF: PlaceRef = const_ref(1);
 const ARG_REF: PlaceRef = const_ref(2);
 const RET_REF: PlaceRef = const_ref(3);
+const RETLEN_REF: PlaceRef = const_ref(4);
 
 impl Function {
     pub fn bb(&self, bb: BBRef) -> &BasicBlock {
@@ -374,6 +371,10 @@ impl Function {
 
     pub fn ret(&self) -> PlaceRef {
         RET_REF
+    }
+
+    pub fn retlen(&self) -> PlaceRef {
+        RETLEN_REF
     }
 
     pub fn entry(&self) -> BBRef {
@@ -454,6 +455,10 @@ impl FunctionWriter {
         builder.add_place(PlaceInfo {
             place: Place::Return,
             ty: ret_ty,
+        });
+        builder.add_place(PlaceInfo {
+            place: Place::ReturnLen,
+            ty: arg_ty,
         });
         builder
     }
@@ -612,9 +617,9 @@ impl FunctionWriter {
     }
 }
 
-fn mir_block(db: &dyn Mirs, block: BlockId, call_kind: CallKind) -> SResult<Function> {
+fn mir_block(db: &dyn Mirs, block: BlockId, requirements: RequirementSet) -> SResult<Function> {
     let order = db.block_serialization(block).silence()?;
-    let mut ctx = ConvertCtx::new_block_builder(db, block, call_kind, &order)?;
+    let mut ctx = ConvertCtx::new_block_builder(db, block, requirements, &order)?;
     for value in order.eval_order.iter() {
         ctx.add_sub_value(value.val)?;
     }
@@ -622,61 +627,16 @@ fn mir_block(db: &dyn Mirs, block: BlockId, call_kind: CallKind) -> SResult<Func
     Ok(ctx.finish_fun())
 }
 
-fn mir_pd_val_parser(db: &dyn Mirs, pd: ParserDefId) -> SResult<Function> {
-    let sig = db.parser_args(pd)?;
-    let from_y = sig.from.unwrap_or_else(|| db.intern_type(Type::Any));
-    let fun_ty = db.intern_type(Type::ParserArg {
-        result: sig.thunk,
-        arg: from_y,
-    });
-    let ret_ty = sig.thunk;
-    let mut writer = FunctionWriter::new(fun_ty, from_y, ret_ty);
-    let error = writer.new_bb();
-    writer.set_bb(error);
-    writer.ret(ReturnStatus::Error);
-    writer.set_bb(writer.fun.entry());
-    let ret_place = writer.fun.ret();
-    let ret_place_from = writer.add_place(PlaceInfo {
-        place: Place::From(ret_place),
-        ty: from_y,
-    });
-    let arg_place = writer.fun.arg();
-    writer.copy(arg_place, ret_place_from, error);
-    if let Some(args) = sig.args {
-        let pd = pd.lookup(db)?;
-        let cap = writer.fun.cap();
-        for (arg_ty, arg_id) in args.iter().zip(pd.args.unwrap().iter()) {
-            let arg_place = writer.add_place(PlaceInfo {
-                place: Place::Captured(cap, arg_id.0),
-                ty: *arg_ty,
-            });
-            let ret_arg_place = writer.add_place(PlaceInfo {
-                place: Place::Captured(ret_place, arg_id.0),
-                ty: *arg_ty,
-            });
-            writer.copy(arg_place, ret_arg_place, error);
-        }
-    }
-    writer.ret(ReturnStatus::Ok);
-    Ok(writer.fun)
-}
-
-fn mir_pd(
-    db: &dyn Mirs,
-    pd: ParserDefId,
-    call_kind: CallKind,
-    arg_kind: PdArgKind,
-) -> SResult<Function> {
-    if call_kind == CallKind::Val && arg_kind == PdArgKind::Parse {
-        return mir_pd_val_parser(db, pd);
-    }
+fn mir_pd(db: &dyn Mirs, pd: ParserDefId, requirements: RequirementSet) -> SResult<Function> {
     let parserdef = pd.lookup(db)?;
-    let mut ctx = ConvertCtx::new_parserdef_builder(db, pd, call_kind, arg_kind)?;
+    let mut ctx = ConvertCtx::new_parserdef_builder(db, pd, requirements)?;
     ctx.add_sub_value(SubValue::new_front(pd.0))?;
     ctx.add_sub_value(SubValue::new_val(parserdef.to.0))?;
-    match call_kind {
-        CallKind::Val => ctx.add_sub_value(SubValue::new_val(pd.0))?,
-        CallKind::Len => ctx.add_sub_value(SubValue::new_back(pd.0))?,
+    if requirements.contains(NeededBy::Len) {
+        ctx.add_sub_value(SubValue::new_back(pd.0))?;
+    }
+    if requirements.contains(NeededBy::Val) {
+        ctx.add_sub_value(SubValue::new_val(pd.0))?;
     }
     Ok(ctx.finish_fun())
 }
@@ -734,16 +694,12 @@ def for[int] *> main = {
         );
         let main = ctx.parser("main");
         let blocks = ctx.db.all_parserdef_blocks(main);
-        for call_kind in [CallKind::Val, CallKind::Len] {
+        for need in [NeededBy::Val, NeededBy::Len] {
             for block in blocks.iter() {
-                ctx.db.mir_block(*block, call_kind).unwrap();
+                ctx.db.mir_block(*block, need.into()).unwrap();
             }
         }
-        ctx.db
-            .mir_pd(main, CallKind::Val, PdArgKind::Thunk)
-            .unwrap();
-        ctx.db
-            .mir_pd(main, CallKind::Len, PdArgKind::Parse)
-            .unwrap();
+        ctx.db.mir_pd(main, NeededBy::Val.into()).unwrap();
+        ctx.db.mir_pd(main, NeededBy::Len.into()).unwrap();
     }
 }
