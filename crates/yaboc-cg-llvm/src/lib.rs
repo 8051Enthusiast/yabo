@@ -504,22 +504,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         (from_ptr, arg_ptr, slot)
     }
 
-    fn build_mono_ptr(
-        &mut self,
-        place_ptr: PointerValue<'llvm>,
-        _layout: ILayout<'comp>,
-    ) -> PointerValue<'llvm> {
-        place_ptr
-        //        match layout.layout.1 {
-        //            Layout::None => self.any_ptr().get_undef(),
-        //            Layout::Mono(_, _) => place_ptr,
-        //            Layout::Multi(_) => {
-        //                let ptr_width = self.any_ptr().size_of();
-        //                self.build_byte_gep(place_ptr, ptr_width, "ml_ptr_skip")
-        //            }
-        //        }
-    }
-
     fn create_pd_export(&mut self, pd: ParserDefId, layout: IMonoLayout<'comp>, slot: PSize) {
         let name = match self.compiler_database.db.def_name(pd.0).unwrap() {
             FieldName::Return => unreachable!(),
