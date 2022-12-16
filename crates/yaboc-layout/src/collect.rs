@@ -167,11 +167,13 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         }
         Ok(())
     }
-    fn collect_pd(&mut self, pd: &PdEvaluated<ILayout<'a>>) {
+    fn collect_pd(&mut self, pd: &PdEvaluated<ILayout<'a>>, nom: IMonoLayout<'a>) {
         if let Some(val) = &pd.expr_vals {
             self.collect_expr(val);
             let root = val.0.root_data().val;
             self.register_parse(pd.from, root);
+            let (arg, parser) = nom.unapply_nominal(self.ctx);
+            self.parses.add_call(arg, parser);
         }
         self.register_layouts(pd.returned)
     }
@@ -180,7 +182,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             match mono {
                 UnprocessedCall::Nominal(mono) => {
                     if let Some(pd) = &self.ctx.pd_result()[&mono.0].clone() {
-                        self.collect_pd(pd)
+                        self.collect_pd(pd, mono)
                     }
                 }
                 UnprocessedCall::Block(arg, parser) => {

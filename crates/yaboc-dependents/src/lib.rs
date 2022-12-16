@@ -331,6 +331,16 @@ pub enum NeededBy {
     Backtrack = 1 << 2,
 }
 
+impl std::fmt::Display for NeededBy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NeededBy::Len => write!(f, "len"),
+            NeededBy::Val => write!(f, "val"),
+            NeededBy::Backtrack => write!(f, "backtrack"),
+        }
+    }
+}
+
 pub type RequirementSet = BitFlags<NeededBy>;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]

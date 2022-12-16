@@ -29,7 +29,9 @@ pub struct MirTranslator<'llvm, 'comp, 'r> {
     stack: Vec<PointerValue<'llvm>>,
     fun: PointerValue<'llvm>,
     arg: PointerValue<'llvm>,
-    ret: PointerValue<'llvm>,
+    ret: Option<PointerValue<'llvm>>,
+    rethead: Option<IntValue<'llvm>>,
+    retlen: Option<PointerValue<'llvm>>,
     undefined: BasicBlock<'llvm>,
 }
 
@@ -40,7 +42,6 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         llvm_fun: FunctionValue<'llvm>,
         fun: PointerValue<'llvm>,
         arg: PointerValue<'llvm>,
-        ret: PointerValue<'llvm>,
     ) -> Self {
         let entry = cg.llvm.append_basic_block(llvm_fun, "entry");
         cg.builder.position_at_end(entry);
@@ -71,9 +72,22 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             stack,
             fun,
             arg,
-            ret,
+            ret: None,
+            rethead: None,
+            retlen: None,
             undefined,
         }
+    }
+
+    pub fn with_ret_ptr(mut self, ret: PointerValue<'llvm>, rethead: IntValue<'llvm>) -> Self {
+        self.ret = Some(ret);
+        self.rethead = Some(rethead);
+        self
+    }
+
+    pub fn with_retlen_ptr(mut self, retlen: PointerValue<'llvm>) -> Self {
+        self.retlen = Some(retlen);
+        self
     }
 
     fn bb(&self, bbref: BBRef) -> BasicBlock<'llvm> {
@@ -84,8 +98,13 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let place = self.mir_fun.f.place(placeref).place;
         match place {
             mir::Place::Arg => self.arg,
-            mir::Place::Return => self.ret,
             mir::Place::Captures => self.fun,
+            mir::Place::Return => self
+                .ret
+                .expect("referenced return of non-returning function"),
+            mir::Place::ReturnLen => self
+                .retlen
+                .expect("referenced returnlen of non-returning function"),
             mir::Place::From(outer) => self.place_ptr(outer),
             mir::Place::Stack(stack_ref) => self.stack[stack_ref.as_index()],
             mir::Place::Field(outer, a) | mir::Place::Captured(outer, a) => {
@@ -106,8 +125,11 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     }
 
     fn deref_level(&mut self, place: PlaceRef) -> IntValue<'llvm> {
-        let place_ty = self.mir_fun.place_ty(place);
         let place_layout = self.mir_fun.place(place);
+        if self.mir_fun.f.place(place).place == mir::Place::Return {
+            return self.rethead.unwrap();
+        }
+        let place_ty = self.mir_fun.place_ty(place);
         let deref_level = self.cg.compiler_database.db.deref_level(place_ty).unwrap();
         let mut level = deref_level.into_shifted_runtime_value();
         if place_layout.is_multi() {
@@ -408,28 +430,34 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         };
         let call_ptr =
             self.cg
-                .build_parser_fun_get(fun_layout.maybe_mono(), fun_ptr, slot, call_kind);
+                .build_parser_fun_get(fun_layout.maybe_mono(), fun_ptr, slot, call_kind, false);
         let ret_ptr = self.place_ptr(ret);
         let arg_ptr = self.place_ptr(arg);
+        let undef_ptr = self.cg.any_ptr().get_undef();
+        let deref_level = self.deref_level(ret);
         match call_kind {
             CallKind::Len => self.controlflow_call(
                 call_ptr,
-                &[mono_fun_ptr.into(), arg_ptr.into(), ret_ptr.into()],
+                &[
+                    undef_ptr.into(),
+                    mono_fun_ptr.into(),
+                    deref_level.into(),
+                    arg_ptr.into(),
+                    ret_ptr.into(),
+                ],
                 ctrl,
             ),
-            CallKind::Val => {
-                let deref_level = self.deref_level(ret);
-                self.controlflow_call(
-                    call_ptr,
-                    &[
-                        mono_fun_ptr.into(),
-                        arg_ptr.into(),
-                        deref_level.into(),
-                        ret_ptr.into(),
-                    ],
-                    ctrl,
-                )
-            }
+            CallKind::Val => self.controlflow_call(
+                call_ptr,
+                &[
+                    ret_ptr.into(),
+                    mono_fun_ptr.into(),
+                    deref_level.into(),
+                    arg_ptr.into(),
+                    undef_ptr.into(),
+                ],
+                ctrl,
+            ),
         };
     }
 

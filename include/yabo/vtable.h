@@ -23,7 +23,7 @@ enum ReturnStatus {
 struct VTableHeader {
 	int64_t head;
 	size_t deref_level;
-	int64_t (*typecast_impl)(void *, int64_t, void *);
+	int64_t (*typecast_impl)(void *, void *, uint64_t);
 	size_t size;
 	size_t align;
 };
@@ -36,19 +36,18 @@ struct BlockFields {
 struct BlockVTable {
 	struct VTableHeader head;
 	struct BlockFields *fields;
-	int64_t (*access_impl[])(void *, int64_t, void *);
+	int64_t (*access_impl[])(void *, void *, uint64_t);
 };
 
 struct NominalVTable {
 	struct VTableHeader head;
-	int64_t (*deref_impl)(void *, int64_t, void *);
 	int64_t (*start_impl)(void *, void *);
 	int64_t (*end_impl)(void *, void *);
 };
 
 struct ParserArgImpl {
-	int64_t (*val_impl)(void *, void *, int64_t, void *);
-	int64_t (*len_impl)(void *, void *, void *);
+	int64_t (*val_impl)(void *, void *, uint64_t, void *, void *);
+	int64_t (*len_impl)(void *, void *, uint64_t, void *, void *);
 };
 
 struct ParserVTable {
@@ -59,6 +58,6 @@ struct ParserVTable {
 struct ArrayVTable {
 	struct VTableHeader head;
 	int64_t (*single_forward_impl)(void *, void *);
-	int64_t (*current_element_impl)(void *, int64_t, void *);
-	int64_t (*skip_impl)(void *, uint64_t, void *);
+	int64_t (*current_element_impl)(void *, void *, uint64_t);
+	int64_t (*skip_impl)(void *, void *, uint64_t);
 };

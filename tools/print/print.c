@@ -105,11 +105,11 @@ int print_block(DynValue val, int indent, FILE *out)
 	int status;
 	if (fputs("{\n", out) == EOF)
 		return EOF;
-	int64_t (**access_impl)(void *, int64_t, void *) = vtable->access_impl;
+	int64_t (**access_impl)(void *, void *, uint64_t) = vtable->access_impl;
 	while (field_desc != field_end)
 	{
 		DynValue sub_value;
-		int64_t return_val = (*access_impl)(dyn_data(&val), 0x3, &sub_value.in_data);
+		int64_t return_val = (*access_impl)(&sub_value.in_data, dyn_data(&val), 0x3);
 		if (return_val == 3) {
 			access_impl++;
 			field_desc++;

@@ -6,7 +6,7 @@ use yaboc_absint::{AbsIntCtx, AbstractDomain, AbstractExprInfo};
 use yaboc_ast::expr::ExprIter;
 use yaboc_base::{error::SilencedError, interner::DefId, source::SpanIndex};
 use yaboc_hir::{walk::ChildIter, ExprId, HirIdWrapper, HirNode, HirNodeKind, ParserDefId};
-use yaboc_mir::{CallKind, Function, PdArgKind, Place, PlaceOrigin, PlaceRef, StackRef};
+use yaboc_mir::{Function, Place, PlaceOrigin, PlaceRef, StackRef};
 use yaboc_types::{PrimitiveType, Type, TypeId};
 
 use super::{ILayout, IMonoLayout, Layout, LayoutError, MonoLayout};
@@ -23,7 +23,6 @@ impl<'a> FunctionSubstitute<'a> {
         from: ILayout<'a>,
         block: IMonoLayout<'a>,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
-        call_kind: CallKind,
     ) -> Result<Self, LayoutError> {
         let (def, captures) = if let MonoLayout::BlockParser(def, captures) = block.mono_layout().0
         {
@@ -42,10 +41,7 @@ impl<'a> FunctionSubstitute<'a> {
                 expr_map.insert((*id, span), val);
             }
         }
-        let ret = match call_kind {
-            CallKind::Val => evaluated.returned,
-            CallKind::Len => from,
-        };
+        let ret = evaluated.returned;
         let mut vals = evaluated.vals.clone();
         vals.extend(captures.iter());
         let root_context = def.lookup(ctx.db)?.root_context.0;
@@ -77,36 +73,18 @@ impl<'a> FunctionSubstitute<'a> {
         })
     }
 
-    pub fn new_from_pd_typecast(
-        f: Function,
-        from: ILayout<'a>,
-        pd: ParserDefId,
-        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
-    ) -> Result<Self, LayoutError> {
-        let fun = ctx.dcx.intern(Layout::None);
-        Self::new_from_pd(f, from, fun, pd, ctx, PdArgKind::Thunk, CallKind::Val)
-    }
-
     pub fn new_from_pd(
         f: Function,
         from: ILayout<'a>,
         fun: ILayout<'a>,
         pd: ParserDefId,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
-        arg_kind: PdArgKind,
-        call_kind: CallKind,
     ) -> Result<Self, LayoutError> {
-        let lookup_layout = match arg_kind {
-            PdArgKind::Thunk => fun,
-            PdArgKind::Parse => fun.apply_arg(ctx, from)?,
-        };
+        let lookup_layout = fun.apply_arg(ctx, from)?;
         let evaluated = ctx.pd_result()[&lookup_layout]
             .as_ref()
             .ok_or_else(SilencedError::new)?;
         let subst = evaluated.typesubst.clone();
-        if arg_kind == PdArgKind::Parse && call_kind == CallKind::Val {
-            return Self::new_from_pd_val_parser(f, from, fun, subst, ctx);
-        }
         let expr_id = pd.lookup(ctx.db)?.to;
         let mut expr_map = FxHashMap::default();
         if let Some(expr) = evaluated.expr_vals.as_ref() {
@@ -116,41 +94,12 @@ impl<'a> FunctionSubstitute<'a> {
             }
         }
         let vals = FxHashMap::default();
-        let ret = match call_kind {
-            CallKind::Val => evaluated.returned,
-            CallKind::Len => from,
-        };
         let sub_info = SubInfo {
             fun,
             arg: from,
-            ret,
+            ret: evaluated.returned,
             expr: expr_map,
             vals,
-            subst,
-        };
-        let mut stack_layouts = sub_info.stack_layouts(&f);
-        let place_layouts = sub_info.place_layouts(&f, &mut stack_layouts, ctx)?;
-        Ok(FunctionSubstitute {
-            f,
-            stack_layouts,
-            place_layouts,
-        })
-    }
-
-    fn new_from_pd_val_parser(
-        f: Function,
-        from: ILayout<'a>,
-        fun: ILayout<'a>,
-        subst: Arc<Vec<TypeId>>,
-        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
-    ) -> Result<Self, LayoutError> {
-        let ret = fun.apply_arg(ctx, from)?;
-        let sub_info = SubInfo {
-            fun,
-            arg: from,
-            ret,
-            expr: Default::default(),
-            vals: Default::default(),
             subst,
         };
         let mut stack_layouts = sub_info.stack_layouts(&f);
@@ -205,7 +154,7 @@ impl<'a> SubInfo<ILayout<'a>> {
         for (_, place_info) in f.iter_places() {
             let layout = match place_info.place {
                 Place::Captures => self.fun,
-                Place::Arg => self.arg,
+                Place::Arg | Place::ReturnLen => self.arg,
                 Place::Return => self.ret,
                 Place::Stack(idx) => stack_layouts[idx.as_index()],
                 Place::Field(place, field) => {

@@ -1,12 +1,13 @@
 use std::{fmt::Display, io::Write};
 
 use yaboc_base::{databased_display::DatabasedDisplay, dbwrite};
+use yaboc_dependents::NeededBy;
 
 use crate::ControlFlow;
 
 use super::{
     BBRef, CallKind, Comp, DupleField, ExceptionRetreat, Function, IntBinOp, IntUnOp, MirInstr,
-    Mirs, PdArgKind, Place, PlaceOrigin, PlaceRef, ReturnStatus, StackRef, Val,
+    Mirs, Place, PlaceOrigin, PlaceRef, ReturnStatus, StackRef, Val,
 };
 
 impl Display for StackRef {
@@ -26,6 +27,7 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for PlaceRef {
             Place::Captures => write!(f, "%cap"),
             Place::Arg => write!(f, "%arg"),
             Place::Return => write!(f, "%ret"),
+            Place::ReturnLen => write!(f, "%retlen"),
             Place::Stack(s) => s.db_fmt(f, db),
             Place::Field(inner, field) => {
                 inner.db_fmt(f, &(*fun, *db))?;
@@ -273,7 +275,7 @@ pub fn print_all_mir<DB: Mirs, W: Write>(db: &DB, w: &mut W) -> std::io::Result<
             w,
             db,
             "{}",
-            &db.mir_pd(pd, CallKind::Len, PdArgKind::Parse)
+            &db.mir_pd(pd, NeededBy::Len.into())
                 .map_err(convert_error_ignore)?
         )?;
         dbwrite!(
@@ -286,17 +288,18 @@ pub fn print_all_mir<DB: Mirs, W: Write>(db: &DB, w: &mut W) -> std::io::Result<
             w,
             db,
             "{}",
-            &db.mir_pd(pd, CallKind::Val, PdArgKind::Thunk)
+            &db.mir_pd(pd, NeededBy::Val.into())
                 .map_err(convert_error_ignore)?
         )?;
         for block in db.all_parserdef_blocks(pd).iter() {
-            for call in [CallKind::Len, CallKind::Val] {
+            for call in [NeededBy::Len, NeededBy::Val] {
                 dbwrite!(w, db, "---\nmir block {} {}:\n", &call, &block.0)?;
                 dbwrite!(
                     w,
                     db,
                     "{}",
-                    &db.mir_block(*block, call).map_err(convert_error_ignore)?
+                    &db.mir_block(*block, call.into())
+                        .map_err(convert_error_ignore)?
                 )?;
             }
         }

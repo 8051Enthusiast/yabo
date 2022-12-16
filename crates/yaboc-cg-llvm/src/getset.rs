@@ -35,18 +35,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.builder.build_load(target, "")
     }
 
-    pub(super) fn build_deref_fun_get(
+    pub(super) fn get_object_start(
         &mut self,
         layout: Option<IMonoLayout<'comp>>,
         ptr: PointerValue<'llvm>,
-    ) -> CallableValue<'llvm> {
+    ) -> PointerValue<'llvm> {
         match layout {
-            Some(mono) => self.sym_callable(mono, LayoutPart::Deref(true)),
-            None => self
-                .vtable_get::<vtable::NominalVTable>(ptr, &[NominalVTableFields::deref_impl as u64])
-                .into_pointer_value()
-                .try_into()
-                .unwrap(),
+            Some(_) => ptr,
+            None => self.build_byte_gep(ptr, self.const_i64(-(self.word_size() as i64)), "start"),
         }
     }
 
@@ -101,12 +97,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ptr: PointerValue<'llvm>,
         slot: u64,
         call_kind: CallKind,
+        use_impl: bool,
     ) -> CallableValue<'llvm> {
         match layout {
             Some(mono) => {
                 let part = match call_kind {
                     CallKind::Len => LayoutPart::LenImpl(slot),
-                    CallKind::Val => LayoutPart::ValImpl(slot, true),
+                    CallKind::Val => LayoutPart::ValImpl(slot, !use_impl),
                 };
                 self.sym_callable(mono, part)
             }
