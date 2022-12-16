@@ -32,10 +32,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         pointer: PointerValue<'llvm>,
     ) {
         let typecast_fun = self.build_typecast_fun_get(layout.maybe_mono(), buffer);
-        let mono_pointer = self.build_mono_ptr(buffer, layout);
         let ret = self.build_call_with_int_ret(
             typecast_fun,
-            &[pointer.into(), mono_pointer.into(), target_head.into()],
+            &[pointer.into(), buffer.into(), target_head.into()],
         );
         self.builder.build_return(Some(&ret));
     }
@@ -324,8 +323,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let (_, _, _, arg, ret) = parser_args(llvm_fun);
         self.add_entry_block(llvm_fun);
         let single_forward_fun = self.build_single_forward_fun_get(from.maybe_mono(), arg);
-        let from_mono = self.build_mono_ptr(arg, from);
-        let ret = self.build_call_with_int_ret(single_forward_fun, &[ret.into(), from_mono.into()]);
+        let ret = self.build_call_with_int_ret(single_forward_fun, &[ret.into(), arg.into()]);
         self.builder.build_return(Some(&ret));
     }
 

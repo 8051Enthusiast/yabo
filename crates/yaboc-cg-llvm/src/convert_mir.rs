@@ -375,9 +375,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     }
 
     fn field(&mut self, ret: PlaceRef, place: PlaceRef, field: FieldName, ctrl: ControlFlow) {
-        let place_ptr = self.place_ptr(place);
         let layout = self.mir_fun.place(place);
-        let shifted_place_ptr = self.cg.build_mono_ptr(place_ptr, layout);
         let field = match field {
             FieldName::Return => {
                 return self.copy(place, ret, ctrl);
@@ -397,7 +395,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let ret = self.place_ptr(ret);
         self.controlflow_call(
             fun,
-            &[ret.into(), shifted_place_ptr.into(), target_level.into()],
+            &[ret.into(), place_ptr.into(), target_level.into()],
             ctrl,
         )
     }
@@ -412,7 +410,6 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     ) {
         let fun_layout = self.mir_fun.place(fun);
         let fun_ptr = self.place_ptr(fun);
-        let mono_fun_ptr = self.cg.build_mono_ptr(fun_ptr, fun_layout);
         let arg_layout = self.mir_fun.place(arg);
         let slot = match self
             .cg
@@ -440,7 +437,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 call_ptr,
                 &[
                     undef_ptr.into(),
-                    mono_fun_ptr.into(),
+                    fun_ptr.into(),
                     deref_level.into(),
                     arg_ptr.into(),
                     ret_ptr.into(),
@@ -451,7 +448,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 call_ptr,
                 &[
                     ret_ptr.into(),
-                    mono_fun_ptr.into(),
+                    fun_ptr.into(),
                     deref_level.into(),
                     arg_ptr.into(),
                     undef_ptr.into(),
@@ -568,12 +565,11 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let create_fun = self
             .cg
             .build_fun_create_get(fun_layout.maybe_mono(), fun_ptr, slot);
-        let fun_mono_ptr = self.cg.build_mono_ptr(fun_ptr, fun_layout);
         let ret_ptr = self.place_ptr(ret);
         let ret_level = self.deref_level(ret);
         self.fallible_call(
             create_fun,
-            &[ret_ptr.into(), fun_mono_ptr.into(), ret_level.into()],
+            &[ret_ptr.into(), fun_ptr.into(), ret_level.into()],
             [self.undefined; 3],
         );
         for (i, arg) in args.iter().enumerate() {
