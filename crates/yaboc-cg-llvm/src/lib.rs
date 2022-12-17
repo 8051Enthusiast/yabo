@@ -33,6 +33,7 @@ use yaboc_base::config::Configs;
 use yaboc_base::dbpanic;
 use yaboc_base::interner::{DefId, FieldName, Identifier, Interner};
 use yaboc_database::YabocDatabase;
+use yaboc_dependents::RequirementSet;
 use yaboc_hir::{BlockId, HirIdWrapper, Hirs, ParserDefId};
 use yaboc_hir_types::TyHirs;
 use yaboc_layout::{
@@ -48,7 +49,7 @@ use yaboc_layout::{
     },
     AbsLayoutCtx, ILayout, IMonoLayout, Layout, LayoutError, MonoLayout,
 };
-use yaboc_mir::{CallKind, DupleField, Mirs, ReturnStatus};
+use yaboc_mir::{DupleField, Mirs, ReturnStatus};
 use yaboc_types::{PrimitiveType, Type, TypeInterner};
 
 use self::{convert_mir::MirTranslator, convert_thunk::ThunkContext};
@@ -282,7 +283,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         head: IntValue<'llvm>,
         from: (ILayout<'comp>, PointerValue<'llvm>),
         retlen: PointerValue<'llvm>,
-        call_kind: CallKind,
+        call_kind: RequirementSet,
     ) -> IntValue<'llvm> {
         let slot = self.collected_layouts.parser_slots.layout_vtable_offsets[&(from.0, fun.0)];
         let f = self.build_parser_fun_get(fun.0.maybe_mono(), fun.1, slot, call_kind, false);

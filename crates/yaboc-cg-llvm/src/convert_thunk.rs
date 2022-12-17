@@ -4,13 +4,13 @@ use inkwell::{
     IntPredicate,
 };
 
+use yaboc_dependents::NeededBy;
 use yaboc_hir_types::TyHirs;
 use yaboc_layout::{
     flat_layouts,
     prop::{PSize, SizeAlign, TargetSized},
     ILayout, IMonoLayout,
 };
-use yaboc_mir::CallKind;
 
 use crate::{get_fun_args, parser_args};
 
@@ -94,7 +94,7 @@ impl<'comp> ThunkInfo<'comp> for TypecastThunk<'comp> {
             Some(mono_fun),
             cg.any_ptr().get_undef(),
             slot,
-            CallKind::Val,
+            NeededBy::Val.into(),
             true,
         );
         let ret = cg.build_call_with_int_ret(
@@ -223,8 +223,13 @@ impl<'comp> ThunkInfo<'comp> for ValThunk<'comp> {
 
         let (return_ptr, fun_ptr, target_level, arg_ptr, retlen_ptr) = parser_args(fun);
 
-        let cont_fun =
-            cg.build_parser_fun_get(Some(self.fun), fun_ptr, self.slot, CallKind::Val, true);
+        let cont_fun = cg.build_parser_fun_get(
+            Some(self.fun),
+            fun_ptr,
+            self.slot,
+            NeededBy::Val | NeededBy::Backtrack,
+            true,
+        );
         let ret = cg.build_call_with_int_ret(
             cont_fun,
             &[
@@ -288,8 +293,13 @@ impl<'comp> ThunkInfo<'comp> for BlockThunk<'comp> {
         cg.builder.position_at_end(current_bb);
         let (_, fun_ptr, target_level, arg_ptr, retlen_ptr) = parser_args(fun);
 
-        let cont_fun =
-            cg.build_parser_fun_get(Some(self.fun), fun_ptr, self.slot, CallKind::Val, true);
+        let cont_fun = cg.build_parser_fun_get(
+            Some(self.fun),
+            fun_ptr,
+            self.slot,
+            NeededBy::Val | NeededBy::Backtrack,
+            true,
+        );
         let ret = cg.build_call_with_int_ret(
             cont_fun,
             &[

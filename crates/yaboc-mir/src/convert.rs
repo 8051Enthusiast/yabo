@@ -1,3 +1,4 @@
+use enumflags2::make_bitflags;
 use fxhash::{FxHashMap, FxHashSet};
 
 use yaboc_ast::expr::{
@@ -19,8 +20,8 @@ use yaboc_resolve::expr::ResolvedAtom;
 use yaboc_types::{PrimitiveType, Type, TypeId};
 
 use super::{
-    BBRef, CallKind, Comp, DupleField, ExceptionRetreat, Function, FunctionWriter, IntBinOp,
-    IntUnOp, MirInstr, Mirs, Place, PlaceInfo, PlaceOrigin, PlaceRef, ReturnStatus, Val,
+    BBRef, Comp, DupleField, ExceptionRetreat, Function, FunctionWriter, IntBinOp, IntUnOp,
+    MirInstr, Mirs, Place, PlaceInfo, PlaceOrigin, PlaceRef, ReturnStatus, Val,
 };
 
 pub struct ConvertCtx<'a> {
@@ -478,8 +479,14 @@ impl<'a> ConvertCtx<'a> {
                             .copy_if_different_levels(left_ldt, left_ty, None, lorigin, lrecurse)?;
                         let right = rrecurse(self, None)?;
                         let place_ref = self.unwrap_or_stack(place, ty, origin);
-                        self.f
-                            .parse_call(CallKind::Val, left, right, place_ref, self.retreat);
+                        self.f.parse_call(
+                            make_bitflags!(NeededBy::{Val | Backtrack}),
+                            left,
+                            right,
+                            Some(place_ref),
+                            None,
+                            self.retreat,
+                        );
                         place_ref
                     }
                     ValBinOp::Else => {
@@ -689,32 +696,41 @@ impl<'a> ConvertCtx<'a> {
         self.copy(expr_val, target);
     }
 
-    fn call_expr(&mut self, call_loc: DefId, expr: ExprId, call_kind: CallKind) {
+    fn call_expr(&mut self, call_loc: DefId, expr: ExprId, call_kind: RequirementSet) {
         let parser_fun = self.val_place_at_def(expr.0).unwrap();
         let addr = self.front_place_at_def(call_loc).unwrap();
-        let target = match call_kind {
-            CallKind::Len => self.back_place_at_def(call_loc),
-            CallKind::Val => self.val_place_at_def(call_loc),
-        }
-        .unwrap();
+        let ret = call_kind
+            .contains(NeededBy::Val)
+            .then(|| self.val_place_at_def(call_loc).unwrap());
+        let retlen = call_kind
+            .contains(NeededBy::Len)
+            .then(|| self.back_place_at_def(call_loc).unwrap());
         self.f
-            .parse_call(call_kind, addr, parser_fun, target, self.retreat)
+            .parse_call(call_kind, addr, parser_fun, ret, retlen, self.retreat)
     }
 
     fn parse_statement_val(&mut self, parse: &hir::ParseStatement) {
-        self.call_expr(parse.id.0, parse.expr, CallKind::Val)
+        self.call_expr(
+            parse.id.0,
+            parse.expr,
+            make_bitflags!(NeededBy::{Val | Backtrack}),
+        )
     }
 
     fn parse_statement_back(&mut self, parse: &hir::ParseStatement) {
-        self.call_expr(parse.id.0, parse.expr, CallKind::Len)
+        self.call_expr(
+            parse.id.0,
+            parse.expr,
+            make_bitflags!(NeededBy::{Backtrack | Len}),
+        )
     }
 
     fn parserdef_val(&mut self, pd: &hir::ParserDef) {
-        self.call_expr(pd.id.0, pd.to, CallKind::Val)
+        self.call_expr(pd.id.0, pd.to, make_bitflags!(NeededBy::{Val|Backtrack}))
     }
 
     fn parserdef_len(&mut self, pd: &hir::ParserDef) {
-        self.call_expr(pd.id.0, pd.to, CallKind::Len)
+        self.call_expr(pd.id.0, pd.to, make_bitflags!(NeededBy::{Len|Backtrack}))
     }
 
     fn copy_predecessor(&mut self, pred: ParserPredecessor, id: DefId) {

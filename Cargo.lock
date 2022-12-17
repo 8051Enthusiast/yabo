@@ -1096,6 +1096,7 @@ dependencies = [
 name = "yaboc-mir"
 version = "0.1.0"
 dependencies = [
+ "enumflags2",
  "fxhash",
  "salsa",
  "yaboc-ast",

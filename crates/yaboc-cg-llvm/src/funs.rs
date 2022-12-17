@@ -43,18 +43,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        call_kind: CallKind,
+        call_kind: RequirementSet,
     ) -> FunctionSubstitute<'comp> {
         let pd = if let MonoLayout::NominalParser(id, _) = layout.mono_layout().0 {
             id
         } else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
-        let needed_by = match call_kind {
-            CallKind::Len => NeededBy::Len.into(),
-            CallKind::Val => NeededBy::Val.into(),
-        };
-        let mir = self.compiler_database.db.mir_pd(*pd, needed_by).unwrap();
+        let mir = self.compiler_database.db.mir_pd(*pd, call_kind).unwrap();
         FunctionSubstitute::new_from_pd(mir, from, layout.inner(), *pd, self.layouts).unwrap()
     }
 
@@ -62,18 +58,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        call_kind: CallKind,
+        call_kind: RequirementSet,
     ) -> FunctionSubstitute<'comp> {
         let bd = if let MonoLayout::BlockParser(id, _) = layout.mono_layout().0 {
             id
         } else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
-        let needed_by = match call_kind {
-            CallKind::Len => NeededBy::Len.into(),
-            CallKind::Val => NeededBy::Val.into(),
-        };
-        let mir = self.compiler_database.db.mir_block(*bd, needed_by).unwrap();
+        let mir = self.compiler_database.db.mir_block(*bd, call_kind).unwrap();
         FunctionSubstitute::new_from_block(mir, from, layout, self.layouts).unwrap()
     }
 
@@ -141,7 +133,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         slot: PSize,
     ) {
         let llvm_fun = self.parser_val_impl_fun_val(layout, slot);
-        let mir_fun = Rc::new(self.mir_pd_fun(from, layout, CallKind::Val));
+        let mir_fun = Rc::new(self.mir_pd_fun(from, layout, NeededBy::Val | NeededBy::Backtrack));
         let (ret, fun, head, arg, _) = parser_args(llvm_fun);
         MirTranslator::new(self, mir_fun, llvm_fun, fun, arg)
             .with_ret_ptr(ret, head)
@@ -150,7 +142,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn create_pd_len(&mut self, from: ILayout<'comp>, layout: IMonoLayout<'comp>, slot: PSize) {
         let llvm_fun = self.parser_len_fun_val(layout, slot);
-        let mir_fun = Rc::new(self.mir_pd_fun(from, layout, CallKind::Len));
+        let mir_fun = Rc::new(self.mir_pd_fun(from, layout, NeededBy::Len | NeededBy::Backtrack));
         let (_, fun, _, arg, retlen) = parser_args(llvm_fun);
         MirTranslator::new(self, mir_fun, llvm_fun, fun, arg)
             .with_retlen_ptr(retlen)
@@ -169,7 +161,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.const_i64(DerefLevel::max().into_shifted_runtime_value() as i64),
             (from_layout, from),
             ret,
-            CallKind::Len,
+            NeededBy::Len.into(),
         );
         self.builder.build_return(Some(&ret));
     }
@@ -269,7 +261,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn create_block_len(&mut self, from: ILayout<'comp>, layout: IMonoLayout<'comp>, slot: PSize) {
         let llvm_fun = self.parser_len_fun_val(layout, slot);
-        let mir_fun = Rc::new(self.mir_block_fun(from, layout, CallKind::Len));
+        let mir_fun =
+            Rc::new(self.mir_block_fun(from, layout, NeededBy::Len | NeededBy::Backtrack));
         let (_, fun, _, arg, retlen) = parser_args(llvm_fun);
         MirTranslator::new(self, mir_fun, llvm_fun, fun, arg)
             .with_retlen_ptr(retlen)
@@ -285,7 +278,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) {
         let block = block.lookup(&self.compiler_database.db).unwrap();
         let llvm_fun = self.parser_val_fun_val(layout, slot);
-        let mir_fun = Rc::new(self.mir_block_fun(from, layout, CallKind::Val));
+        let mir_fun =
+            Rc::new(self.mir_block_fun(from, layout, NeededBy::Val | NeededBy::Backtrack));
         let impl_fun = if block.returns {
             llvm_fun
         } else {
@@ -391,14 +385,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let second_ptr =
             self.build_duple_gep(layout.inner(), DupleField::Second, fun, second_layout);
 
-        [CallKind::Len, CallKind::Val].map(|call_kind| {
+        [NeededBy::Len, NeededBy::Val].map(|call_kind| {
             let ret = self.build_parser_call(
                 second_arg,
                 (first_layout, first_ptr),
                 inner_level,
                 (from, arg),
                 retlen,
-                call_kind,
+                call_kind | NeededBy::Backtrack,
             );
             self.non_zero_early_return(llvm_fun, ret)
         });
@@ -409,7 +403,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.const_i64(DerefLevel::max().into_shifted_runtime_value() as i64),
             (inner_layout, second_arg),
             second_len_ret,
-            CallKind::Len,
+            NeededBy::Len | NeededBy::Backtrack,
         );
         self.builder.build_return(Some(&ret));
     }
@@ -442,7 +436,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             inner_level,
             (from, arg),
             retlen,
-            CallKind::Val,
+            NeededBy::Val | NeededBy::Backtrack,
         );
         self.non_zero_early_return(llvm_fun, retstatus);
 
@@ -452,7 +446,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             target_head,
             (inner_layout, second_arg),
             self.any_ptr().get_undef(),
-            CallKind::Val,
+            NeededBy::Val | NeededBy::Backtrack,
         );
         self.builder.build_return(Some(&retstatus));
     }

@@ -132,18 +132,6 @@ impl TryFrom<&ValBinOp> for Comp {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum CallKind {
-    Len,
-    Val,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum PdArgKind {
-    Thunk,
-    Parse,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Val {
     Char(u32),
     Int(i64),
@@ -200,7 +188,14 @@ pub enum MirInstr {
     SetDiscriminant(PlaceRef, FieldName, bool),
     ApplyArgs(PlaceRef, PlaceRef, Vec<PlaceRef>, u64, ControlFlow),
     Copy(PlaceRef, PlaceRef, ControlFlow),
-    ParseCall(PlaceRef, CallKind, PlaceRef, PlaceRef, ControlFlow),
+    ParseCall(
+        Option<PlaceRef>,
+        Option<PlaceRef>,
+        RequirementSet,
+        PlaceRef,
+        PlaceRef,
+        ControlFlow,
+    ),
     Field(PlaceRef, PlaceRef, FieldName, ControlFlow),
     AssertVal(PlaceRef, ConstraintAtom, ControlFlow),
     Branch(BBRef),
@@ -230,7 +225,7 @@ impl MirInstr {
             }),
             MirInstr::AssertVal(_, _, control_flow)
             | MirInstr::Field(_, _, _, control_flow)
-            | MirInstr::ParseCall(_, _, _, _, control_flow) => Some(*control_flow),
+            | MirInstr::ParseCall(_, _, _, _, _, control_flow) => Some(*control_flow),
             _ => None,
         }
     }
@@ -559,17 +554,19 @@ impl FunctionWriter {
 
     pub fn parse_call(
         &mut self,
-        call_kind: CallKind,
+        call_kind: RequirementSet,
         arg: PlaceRef,
         fun: PlaceRef,
-        target: PlaceRef,
+        ret: Option<PlaceRef>,
+        retlen: Option<PlaceRef>,
         exc: ExceptionRetreat,
     ) {
         let new_block = self.new_bb();
         self.fun
             .bb_mut(self.current_bb)
             .append_ins(MirInstr::ParseCall(
-                target,
+                ret,
+                retlen,
                 call_kind,
                 arg,
                 fun,

@@ -6,8 +6,8 @@ use yaboc_dependents::NeededBy;
 use crate::ControlFlow;
 
 use super::{
-    BBRef, CallKind, Comp, DupleField, ExceptionRetreat, Function, IntBinOp, IntUnOp, MirInstr,
-    Mirs, Place, PlaceOrigin, PlaceRef, ReturnStatus, StackRef, Val,
+    BBRef, Comp, DupleField, ExceptionRetreat, Function, IntBinOp, IntUnOp, MirInstr, Mirs, Place,
+    PlaceOrigin, PlaceRef, ReturnStatus, StackRef, Val,
 };
 
 impl Display for StackRef {
@@ -121,16 +121,6 @@ impl Display for ExceptionRetreat {
     }
 }
 
-impl Display for CallKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            CallKind::Len => "len",
-            CallKind::Val => "val",
-        };
-        write!(f, "{s}")
-    }
-}
-
 impl<DB: Mirs> DatabasedDisplay<(&Function, &DB)> for MirInstr {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &(&Function, &DB)) -> std::fmt::Result {
         match self {
@@ -146,17 +136,18 @@ impl<DB: Mirs> DatabasedDisplay<(&Function, &DB)> for MirInstr {
             MirInstr::StoreVal(target, val) => {
                 dbwrite!(f, db, "{} = load {}", target, val)
             }
-            MirInstr::ParseCall(target, kind, arg, fun, retreat) => {
-                dbwrite!(
-                    f,
-                    db,
-                    "{} = call {}.{}({}), {}",
-                    target,
-                    fun,
-                    kind,
-                    arg,
-                    retreat
-                )
+            MirInstr::ParseCall(ret, retlen, kind, arg, fun, retreat) => {
+                if let Some(ret) = ret {
+                    dbwrite!(f, db, "{}, ", ret)?;
+                } else {
+                    write!(f, "_, ")?;
+                }
+                if let Some(retlen) = retlen {
+                    dbwrite!(f, db, "{} = ", retlen)?;
+                } else {
+                    write!(f, "_ = ")?;
+                }
+                dbwrite!(f, db, "parse {}({}), {}, {}", fun, arg, kind, retreat)
             }
             MirInstr::Field(target, inner, field, cont) => {
                 dbwrite!(f, db, "{} = access_field {}.", target, inner)?;
