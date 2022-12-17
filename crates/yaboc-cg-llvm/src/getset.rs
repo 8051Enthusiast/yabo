@@ -103,9 +103,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         match layout {
             Some(mono) => {
                 let part = if call_kind.contains(NeededBy::Len) {
-                    LayoutPart::LenImpl(slot)
+                    LayoutPart::Parse(slot, NeededBy::Len | NeededBy::Backtrack, false)
                 } else {
-                    LayoutPart::ValImpl(slot, !use_impl)
+                    LayoutPart::Parse(slot, NeededBy::Val | NeededBy::Backtrack, !use_impl)
                 };
                 self.sym_callable(mono, part)
             }

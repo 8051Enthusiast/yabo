@@ -1,3 +1,5 @@
+use yaboc_dependents::NeededBy;
+
 use super::*;
 
 impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
@@ -111,7 +113,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         slot: PSize,
     ) -> FunctionValue<'llvm> {
-        self.ppipp_fun_val(layout, LayoutPart::LenImpl(slot))
+        self.ppipp_fun_val(
+            layout,
+            LayoutPart::Parse(slot, NeededBy::Len | NeededBy::Backtrack, false),
+        )
     }
 
     pub(super) fn parser_val_impl_fun_val(
@@ -119,7 +124,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         slot: PSize,
     ) -> FunctionValue<'llvm> {
-        self.ppipp_fun_val(layout, LayoutPart::ValImpl(slot, false))
+        self.ppipp_fun_val(
+            layout,
+            LayoutPart::Parse(slot, NeededBy::Val | NeededBy::Backtrack, false),
+        )
     }
 
     pub(super) fn parser_val_fun_val(
@@ -127,7 +135,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         slot: PSize,
     ) -> FunctionValue<'llvm> {
-        self.ppipp_fun_val(layout, LayoutPart::ValImpl(slot, true))
+        self.ppipp_fun_val(
+            layout,
+            LayoutPart::Parse(slot, NeededBy::Val | NeededBy::Backtrack, true),
+        )
     }
 
     pub(super) fn arg_level_and_offset(
