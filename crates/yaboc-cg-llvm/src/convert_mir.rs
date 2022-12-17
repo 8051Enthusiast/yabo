@@ -11,11 +11,12 @@ use mir::ControlFlow;
 use yaboc_ast::expr::Atom;
 use yaboc_ast::ConstraintAtom;
 use yaboc_base::interner::FieldName;
+use yaboc_dependents::RequirementSet;
 use yaboc_hir::BlockId;
-use yaboc_hir_types::{NominalId, TyHirs};
+use yaboc_hir_types::{DerefLevel, NominalId, TyHirs};
 use yaboc_layout::{mir_subst::FunctionSubstitute, ILayout, Layout, MonoLayout};
 use yaboc_mir::{
-    self as mir, BBRef, CallKind, Comp, IntBinOp, IntUnOp, MirInstr, PlaceRef, ReturnStatus, Val,
+    self as mir, BBRef, Comp, IntBinOp, IntUnOp, MirInstr, PlaceRef, ReturnStatus, Val,
 };
 use yaboc_types::{Type, TypeInterner};
 
@@ -402,8 +403,9 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
 
     fn parse_call(
         &mut self,
-        ret: PlaceRef,
-        call_kind: CallKind,
+        ret: Option<PlaceRef>,
+        retlen: Option<PlaceRef>,
+        call_kind: RequirementSet,
         fun: PlaceRef,
         arg: PlaceRef,
         ctrl: ControlFlow,
@@ -428,34 +430,25 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let call_ptr =
             self.cg
                 .build_parser_fun_get(fun_layout.maybe_mono(), fun_ptr, slot, call_kind, false);
-        let ret_ptr = self.place_ptr(ret);
-        let arg_ptr = self.place_ptr(arg);
         let undef_ptr = self.cg.any_ptr().get_undef();
-        let deref_level = self.deref_level(ret);
-        match call_kind {
-            CallKind::Len => self.controlflow_call(
-                call_ptr,
-                &[
-                    undef_ptr.into(),
-                    fun_ptr.into(),
-                    deref_level.into(),
-                    arg_ptr.into(),
-                    ret_ptr.into(),
-                ],
-                ctrl,
-            ),
-            CallKind::Val => self.controlflow_call(
-                call_ptr,
-                &[
-                    ret_ptr.into(),
-                    fun_ptr.into(),
-                    deref_level.into(),
-                    arg_ptr.into(),
-                    undef_ptr.into(),
-                ],
-                ctrl,
-            ),
-        };
+        let ret_ptr = ret.map(|r| self.place_ptr(r)).unwrap_or(undef_ptr);
+        let retlen_ptr = retlen.map(|r| self.place_ptr(r)).unwrap_or(undef_ptr);
+        let arg_ptr = self.place_ptr(arg);
+        let deref_level = ret.map(|r| self.deref_level(r)).unwrap_or(
+            self.cg
+                .const_i64(DerefLevel::max().into_shifted_runtime_value() as i64),
+        );
+        self.controlflow_call(
+            call_ptr,
+            &[
+                ret_ptr.into(),
+                fun_ptr.into(),
+                deref_level.into(),
+                arg_ptr.into(),
+                retlen_ptr.into(),
+            ],
+            ctrl,
+        )
     }
 
     fn store_val(&mut self, ret: PlaceRef, val: Val) {
@@ -616,8 +609,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::IntUn(ret, op, right) => self.int_un(ret, op, right),
             MirInstr::Comp(ret, op, left, right) => self.comp(ret, op, left, right),
             MirInstr::StoreVal(ret, val) => self.store_val(ret, val),
-            MirInstr::ParseCall(ret, call_kind, arg, fun, ctrl) => {
-                self.parse_call(ret, call_kind, fun, arg, ctrl)
+            MirInstr::ParseCall(ret, retlen, call_kind, arg, fun, ctrl) => {
+                self.parse_call(ret, retlen, call_kind, fun, arg, ctrl)
             }
             MirInstr::Field(ret, place, field, ctrl) => self.field(ret, place, field, ctrl),
             MirInstr::AssertVal(place, val, ctrl) => self.assert_value(place, val, ctrl),
