@@ -940,7 +940,7 @@ mod tests {
     use yaboc_base::{
         config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase, Context,
     };
-    use yaboc_dependents::DependentsDatabase;
+    use yaboc_dependents::{DependentsDatabase, NeededBy};
     use yaboc_hir::{HirDatabase, Parser};
     use yaboc_hir_types::{HirTypesDatabase, TyHirs};
     use yaboc_mir::MirDatabase;
@@ -997,15 +997,23 @@ def for[int] *> main = {
         let canon_2004 = canon_layout(&mut outlayer, main_ty).unwrap();
         for lay in flat_layouts(&canon_2004) {
             assert_eq!(
-                lay.symbol(&mut outlayer, LayoutPart::LenImpl(0), &ctx.db),
-                "main$2cd949028b83d5a5$len_0"
+                lay.symbol(
+                    &mut outlayer,
+                    LayoutPart::Parse(0, NeededBy::Len | NeededBy::Backtrack, false),
+                    &ctx.db
+                ),
+                "main$2cd949028b83d5a5$parse_0_lb"
             );
         }
         let main_block = outlayer.pd_result()[&canon_2004].as_ref().unwrap().returned;
         for lay in flat_layouts(&main_block) {
             assert_eq!(
-                lay.symbol(&mut outlayer, LayoutPart::LenImpl(0), &ctx.db),
-                "block_1b15571abd710f7a$6673bf98ed201799$len_0"
+                lay.symbol(
+                    &mut outlayer,
+                    LayoutPart::Parse(0, NeededBy::Val | NeededBy::Backtrack, true),
+                    &ctx.db
+                ),
+                "block_1b15571abd710f7a$6673bf98ed201799$parse_0_vb_impl"
             );
         }
         let field = |name| FieldName::Ident(ctx.id(name));

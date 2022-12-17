@@ -1,6 +1,7 @@
 use fxhash::FxHashMap;
 use sha2::Digest;
 use std::{collections::BTreeMap, fmt::Write};
+use yaboc_dependents::{NeededBy, RequirementSet};
 
 use yaboc_base::{
     databased_display::DatabasedDisplay,
@@ -250,8 +251,7 @@ impl<'a> LayoutHasher<'a> {
 
 #[derive(Clone, Copy)]
 pub enum LayoutPart {
-    LenImpl(PSize),
-    ValImpl(PSize, bool),
+    Parse(PSize, RequirementSet, bool),
     Field(Identifier),
     VTable,
     Start,
@@ -267,9 +267,22 @@ pub enum LayoutPart {
 impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
-            LayoutPart::LenImpl(p) => write!(f, "len_{}", *p),
-            LayoutPart::ValImpl(p, true) => write!(f, "val_{}", *p),
-            LayoutPart::ValImpl(p, false) => write!(f, "val_impl_{}", *p),
+            LayoutPart::Parse(p, reqs, deref) => {
+                write!(f, "parse_{p}_")?;
+                if reqs.contains(NeededBy::Val) {
+                    write!(f, "v")?;
+                }
+                if reqs.contains(NeededBy::Len) {
+                    write!(f, "l")?;
+                }
+                if reqs.contains(NeededBy::Backtrack) {
+                    write!(f, "b")?;
+                }
+                if *deref {
+                    write!(f, "_impl")?;
+                }
+                Ok(())
+            }
             LayoutPart::Field(n) => dbwrite!(f, db, "field_{}", n),
             LayoutPart::VTable => write!(f, "vtable"),
             LayoutPart::Start => write!(f, "start"),

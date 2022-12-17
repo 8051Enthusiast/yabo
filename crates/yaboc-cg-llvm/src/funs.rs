@@ -74,7 +74,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             let (from, fun) = layout.unapply_nominal(self.layouts);
             let slot = self.collected_layouts.parser_slots.layout_vtable_offsets[&(from, fun)];
             let mono = flat_layouts(&fun).next().unwrap();
-            let sym = self.sym(mono, LayoutPart::ValImpl(slot, false));
+            let sym = self.sym(
+                mono,
+                LayoutPart::Parse(slot, NeededBy::Val | NeededBy::Backtrack, false),
+            );
             if self.module.get_function(&sym).is_none() {
                 self.create_pd_val_impl(from, mono, slot);
             }
@@ -89,7 +92,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         slot: PSize,
         pd: ParserDefId,
     ) {
-        let sym = self.sym(layout, LayoutPart::ValImpl(slot, false));
+        let sym = self.sym(
+            layout,
+            LayoutPart::Parse(slot, NeededBy::Val | NeededBy::Backtrack, false),
+        );
         if self.module.get_function(&sym).is_none() {
             self.create_pd_val_impl(from, layout, slot);
         }
