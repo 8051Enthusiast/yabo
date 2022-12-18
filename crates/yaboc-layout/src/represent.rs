@@ -267,7 +267,7 @@ pub enum LayoutPart {
 impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
-            LayoutPart::Parse(p, reqs, deref) => {
+            LayoutPart::Parse(p, reqs, public) => {
                 write!(f, "parse_{p}_")?;
                 if reqs.contains(NeededBy::Val) {
                     write!(f, "v")?;
@@ -278,7 +278,7 @@ impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
                 if reqs.contains(NeededBy::Backtrack) {
                     write!(f, "b")?;
                 }
-                if *deref {
+                if !*public {
                     write!(f, "_impl")?;
                 }
                 Ok(())

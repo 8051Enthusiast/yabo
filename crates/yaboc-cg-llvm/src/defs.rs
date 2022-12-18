@@ -1,5 +1,3 @@
-use yaboc_dependents::NeededBy;
-
 use super::*;
 
 impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
@@ -108,37 +106,22 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         f
     }
 
-    pub(super) fn parser_len_fun_val(
+    pub(super) fn parser_fun_val(
         &mut self,
         layout: IMonoLayout<'comp>,
         slot: PSize,
+        req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        self.ppipp_fun_val(
-            layout,
-            LayoutPart::Parse(slot, NeededBy::Len | NeededBy::Backtrack, false),
-        )
+        self.ppipp_fun_val(layout, LayoutPart::Parse(slot, req, true))
     }
 
-    pub(super) fn parser_val_impl_fun_val(
+    pub(super) fn parser_impl_fun_val(
         &mut self,
         layout: IMonoLayout<'comp>,
         slot: PSize,
+        req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        self.ppipp_fun_val(
-            layout,
-            LayoutPart::Parse(slot, NeededBy::Val | NeededBy::Backtrack, false),
-        )
-    }
-
-    pub(super) fn parser_val_fun_val(
-        &mut self,
-        layout: IMonoLayout<'comp>,
-        slot: PSize,
-    ) -> FunctionValue<'llvm> {
-        self.ppipp_fun_val(
-            layout,
-            LayoutPart::Parse(slot, NeededBy::Val | NeededBy::Backtrack, true),
-        )
+        self.ppipp_fun_val(layout, LayoutPart::Parse(slot, req, false))
     }
 
     pub(super) fn arg_level_and_offset(
@@ -188,28 +171,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         slot: PSize,
+        req: RequirementSet,
         is_non_null: bool,
-    ) -> StructValue<'llvm> {
-        let (len, val) = if is_non_null {
-            let len_fn_ptr = self
-                .parser_len_fun_val(layout, slot)
+    ) -> PointerValue<'llvm> {
+        if is_non_null {
+            self.parser_fun_val(layout, slot, req)
                 .as_global_value()
-                .as_pointer_value();
-            let val_fn_ptr = self
-                .parser_val_fun_val(layout, slot)
-                .as_global_value()
-                .as_pointer_value();
-            (len_fn_ptr, val_fn_ptr)
+                .as_pointer_value()
         } else {
-            let len_fn_null_ptr = <fn(*const u8, *const u8, *mut u8) -> i64>::codegen_ty(self)
-                .into_pointer_type()
-                .const_null();
-            let val_fn_null_ptr = <fn(*const u8, *const u8, i64, *mut u8) -> i64>::codegen_ty(self)
-                .into_pointer_type()
-                .const_null();
-            (len_fn_null_ptr, val_fn_null_ptr)
-        };
-        self.llvm.const_struct(&[val.into(), len.into()], false)
+            ParserFun::codegen_ty(self).into_pointer_type().const_null()
+        }
     }
 
     pub(super) fn function_create_args_fun_val(

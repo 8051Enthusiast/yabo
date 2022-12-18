@@ -40,16 +40,6 @@ target_struct! {
     }
 }
 
-pub type ParserFun =
-    fn(ret: *mut u8, fun: *const u8, target_head: i64, from: *const u8, to: *mut u8) -> i64;
-
-target_struct! {
-    pub struct ParserArgImpl {
-        pub val_impl: Option<ParserFun>,
-        pub len_impl: Option<ParserFun>,
-    }
-}
-
 target_struct! {
     pub struct ArgDescriptor {
         pub head: i64,
@@ -57,12 +47,14 @@ target_struct! {
     }
 }
 
+pub type ParserFun =
+    fn(ret: *mut u8, fun: *const u8, target_head: i64, from: *const u8, to: *mut u8) -> i64;
+
 target_struct! {
     pub struct ParserVTable {
         pub set_arg_info: [ArgDescriptor; 0],
         pub head: VTableHeader,
-        //pub default_arg_impl: ParserArgImpl,
-        pub apply_table: [ParserArgImpl; 0],
+        pub apply_table: [Option<ParserFun>; 0],
     }
 }
 
@@ -115,13 +107,6 @@ mod tests {
             ParserVTable::tsize(),
             SizeAlign {
                 size: 40,
-                align_mask: 0b111,
-            }
-        );
-        assert_eq!(
-            ParserArgImpl::tsize(),
-            SizeAlign {
-                size: 16,
                 align_mask: 0b111,
             }
         );

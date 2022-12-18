@@ -1,7 +1,7 @@
 use std::{fmt::Display, io::Write};
 
 use yaboc_base::{databased_display::DatabasedDisplay, dbwrite};
-use yaboc_dependents::NeededBy;
+use yaboc_dependents::RequirementSet;
 
 use crate::ControlFlow;
 
@@ -259,40 +259,25 @@ pub fn print_all_mir<DB: Mirs, W: Write>(db: &DB, w: &mut W) -> std::io::Result<
         dbwrite!(
             w,
             db,
-            "---\nmir parserdef len {}:\n",
+            "---\nmir parserdef {}:\n",
             &db.def_name(pd.0).unwrap()
         )?;
         dbwrite!(
             w,
             db,
             "{}",
-            &db.mir_pd(pd, NeededBy::Len.into())
-                .map_err(convert_error_ignore)?
-        )?;
-        dbwrite!(
-            w,
-            db,
-            "---\nmir parserdef val {}:\n",
-            &db.def_name(pd.0).unwrap()
-        )?;
-        dbwrite!(
-            w,
-            db,
-            "{}",
-            &db.mir_pd(pd, NeededBy::Val.into())
+            &db.mir_pd(pd, RequirementSet::all())
                 .map_err(convert_error_ignore)?
         )?;
         for block in db.all_parserdef_blocks(pd).iter() {
-            for call in [NeededBy::Len, NeededBy::Val] {
-                dbwrite!(w, db, "---\nmir block {} {}:\n", &call, &block.0)?;
-                dbwrite!(
-                    w,
-                    db,
-                    "{}",
-                    &db.mir_block(*block, call.into())
-                        .map_err(convert_error_ignore)?
-                )?;
-            }
+            dbwrite!(w, db, "---\nmir block {}:\n", &block.0)?;
+            dbwrite!(
+                w,
+                db,
+                "{}",
+                &db.mir_block(*block, RequirementSet::all())
+                    .map_err(convert_error_ignore)?
+            )?;
         }
     }
     Ok(())

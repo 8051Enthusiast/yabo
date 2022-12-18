@@ -382,7 +382,13 @@ class TestFile:
             lib = yabo.YaboLib(compiled)
             for (test_name, pair) in self.cases.items():
                 buf = bytearray(pair.input)
-                obj = lib.parser('test').parse(buf)
+                try:
+                    obj = lib.parser('test').parse(buf)
+                except Exception as e:
+                    output += f'{RED} Test {test_name} failed:{CLEAR}\n'
+                    output += f'{RED} {e}{CLEAR}\n'
+                    failed_tests += 1
+                    continue
                 parsed_json = json.loads(pair.output)
                 dict_obj = dictionarified_obj(obj)
                 (diffed, is_different) = diff(parsed_json, dict_obj)

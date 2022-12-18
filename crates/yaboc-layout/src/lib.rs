@@ -1002,7 +1002,7 @@ def for[int] *> main = {
                     LayoutPart::Parse(0, NeededBy::Len | NeededBy::Backtrack, false),
                     &ctx.db
                 ),
-                "main$2cd949028b83d5a5$parse_0_lb"
+                "main$2cd949028b83d5a5$parse_0_lb_impl"
             );
         }
         let main_block = outlayer.pd_result()[&canon_2004].as_ref().unwrap().returned;
@@ -1013,7 +1013,7 @@ def for[int] *> main = {
                     LayoutPart::Parse(0, NeededBy::Val | NeededBy::Backtrack, true),
                     &ctx.db
                 ),
-                "block_1b15571abd710f7a$6673bf98ed201799$parse_0_vb_impl"
+                "block_1b15571abd710f7a$6673bf98ed201799$parse_0_vb"
             );
         }
         let field = |name| FieldName::Ident(ctx.id(name));
