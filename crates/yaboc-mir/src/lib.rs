@@ -1,10 +1,12 @@
 mod convert;
 mod represent;
+mod strictness;
 
 use std::num::NonZeroU32;
 
 use fxhash::FxHashMap;
 
+pub use strictness::Strictness;
 use yaboc_ast::expr::{ValBinOp, ValUnOp};
 use yaboc_ast::ConstraintAtom;
 use yaboc_base::{
@@ -22,8 +24,30 @@ pub use represent::print_all_mir;
 
 #[salsa::query_group(MirDatabase)]
 pub trait Mirs: Dependents {
-    fn mir_block(&self, block: BlockId, requirements: RequirementSet) -> SResult<Function>;
-    fn mir_pd(&self, pd: ParserDefId, requirements: RequirementSet) -> SResult<Function>;
+    fn mir(&self, kind: FunKind, requirements: RequirementSet) -> SResult<Function>;
+    fn strictness(&self, kind: FunKind, requirements: RequirementSet) -> SResult<Vec<Strictness>>;
+}
+
+fn mir(db: &dyn Mirs, kind: FunKind, requirements: RequirementSet) -> SResult<Function> {
+    match kind {
+        FunKind::Block(block) => mir_block(db, block, requirements),
+        FunKind::ParserDef(pd) => mir_pd(db, pd, requirements),
+    }
+}
+
+fn strictness(
+    db: &dyn Mirs,
+    kind: FunKind,
+    requirements: RequirementSet,
+) -> SResult<Vec<Strictness>> {
+    let fun = db.mir(kind, requirements)?;
+    strictness::StrictnessCtx::new(&fun, db)?.run()
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum FunKind {
+    Block(BlockId),
+    ParserDef(ParserDefId),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -225,7 +249,9 @@ impl MirInstr {
             }),
             MirInstr::AssertVal(_, _, control_flow)
             | MirInstr::Field(_, _, _, control_flow)
-            | MirInstr::ParseCall(_, _, _, _, _, control_flow) => Some(*control_flow),
+            | MirInstr::ParseCall(_, _, _, _, _, control_flow)
+            | MirInstr::ApplyArgs(_, _, _, _, control_flow)
+            | MirInstr::Copy(_, _, control_flow) => Some(*control_flow),
             _ => None,
         }
     }
@@ -687,10 +713,14 @@ def for[int] *> main = {
         let blocks = ctx.db.all_parserdef_blocks(main);
         for need in [NeededBy::Val, NeededBy::Len] {
             for block in blocks.iter() {
-                ctx.db.mir_block(*block, need.into()).unwrap();
+                ctx.db.mir(FunKind::Block(*block), need.into()).unwrap();
             }
         }
-        ctx.db.mir_pd(main, NeededBy::Val.into()).unwrap();
-        ctx.db.mir_pd(main, NeededBy::Len.into()).unwrap();
+        ctx.db
+            .mir(FunKind::ParserDef(main), NeededBy::Val.into())
+            .unwrap();
+        ctx.db
+            .mir(FunKind::ParserDef(main), NeededBy::Len.into())
+            .unwrap();
     }
 }

@@ -419,6 +419,12 @@ def run_tests(target_dir: str) -> int:
     with futures.ProcessPoolExecutor() as executor:
         results = executor.map(run_test, files)
         return sum(results)
+    #total_failed = 0
+    #for file in files:
+    #    total_failed += run_test(file)
+    #return total_failed
+        
+
 
 
 run_clippy()

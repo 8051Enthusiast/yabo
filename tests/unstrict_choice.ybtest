@@ -1,0 +1,23 @@
+====[ source code ]=====
+def *wrapped = ~
+
+export def *test = {
+  f: wrapped
+  | let a = f if 0
+  | let b = 3
+}
+====[ binary 1 ]====
+00
+====[ output 1 ]====
+{
+    "f": 0,
+    "a": 0
+}
+
+====[ binary 2 ]====
+01
+====[ output 2 ]====
+{
+    "f": 1,
+    "b": 3
+}

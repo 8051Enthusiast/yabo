@@ -1,6 +1,7 @@
 use yaboc_dependents::NeededBy;
 use yaboc_hir_types::DerefLevel;
 use yaboc_layout::collect::{pd_len_req, pd_val_req};
+use yaboc_mir::FunKind;
 
 use crate::convert_thunk::{BlockThunk, CreateArgsThunk, TypecastThunk, ValThunk};
 
@@ -51,8 +52,18 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         } else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
-        let mir = self.compiler_database.db.mir_pd(*pd, call_kind).unwrap();
-        FunctionSubstitute::new_from_pd(mir, from, layout.inner(), *pd, self.layouts).unwrap()
+        let mir = self
+            .compiler_database
+            .db
+            .mir(FunKind::ParserDef(*pd), call_kind)
+            .unwrap();
+        let strictness = self
+            .compiler_database
+            .db
+            .strictness(FunKind::ParserDef(*pd), call_kind)
+            .unwrap();
+        FunctionSubstitute::new_from_pd(mir, &strictness, from, layout.inner(), *pd, self.layouts)
+            .unwrap()
     }
 
     fn mir_block_fun(
@@ -66,8 +77,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         } else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
-        let mir = self.compiler_database.db.mir_block(*bd, call_kind).unwrap();
-        FunctionSubstitute::new_from_block(mir, from, layout, self.layouts).unwrap()
+        let mir = self
+            .compiler_database
+            .db
+            .mir(FunKind::Block(*bd), call_kind)
+            .unwrap();
+        let strictness = self
+            .compiler_database
+            .db
+            .strictness(FunKind::Block(*bd), call_kind)
+            .unwrap();
+        FunctionSubstitute::new_from_block(mir, &strictness, from, layout, self.layouts).unwrap()
     }
 
     fn create_typecast(&mut self, layout: IMonoLayout<'comp>) {

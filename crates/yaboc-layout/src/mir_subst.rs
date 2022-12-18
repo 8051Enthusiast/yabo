@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use fxhash::FxHashMap;
 
-use yaboc_absint::{AbsIntCtx, AbstractDomain, AbstractExprInfo};
+use yaboc_absint::{AbsIntCtx, AbstractExprInfo};
 use yaboc_ast::expr::ExprIter;
 use yaboc_base::{error::SilencedError, interner::DefId, source::SpanIndex};
 use yaboc_hir::{walk::ChildIter, ExprId, HirIdWrapper, HirNode, HirNodeKind, ParserDefId};
-use yaboc_mir::{Function, Place, PlaceOrigin, PlaceRef, StackRef};
+use yaboc_mir::{Function, Place, PlaceOrigin, PlaceRef, StackRef, Strictness};
 use yaboc_types::{PrimitiveType, Type, TypeId};
 
 use super::{ILayout, IMonoLayout, Layout, LayoutError, MonoLayout};
@@ -14,12 +14,13 @@ use super::{ILayout, IMonoLayout, Layout, LayoutError, MonoLayout};
 pub struct FunctionSubstitute<'a> {
     pub f: Function,
     pub stack_layouts: Vec<ILayout<'a>>,
-    pub place_layouts: Vec<(ILayout<'a>, TypeId)>,
+    pub place_layouts: Vec<(ILayout<'a>, TypeId, Strictness)>,
 }
 
 impl<'a> FunctionSubstitute<'a> {
     pub fn new_from_block(
         f: Function,
+        strictness: &[Strictness],
         from: ILayout<'a>,
         block: IMonoLayout<'a>,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
@@ -65,7 +66,7 @@ impl<'a> FunctionSubstitute<'a> {
             subst,
         };
         let mut stack_layouts = sub_info.stack_layouts(&f);
-        let place_layouts = sub_info.place_layouts(&f, &mut stack_layouts, ctx)?;
+        let place_layouts = sub_info.place_layouts(&f, &mut stack_layouts, strictness, ctx)?;
         Ok(FunctionSubstitute {
             f,
             stack_layouts,
@@ -75,6 +76,7 @@ impl<'a> FunctionSubstitute<'a> {
 
     pub fn new_from_pd(
         f: Function,
+        strictness: &[Strictness],
         from: ILayout<'a>,
         fun: ILayout<'a>,
         pd: ParserDefId,
@@ -103,7 +105,7 @@ impl<'a> FunctionSubstitute<'a> {
             subst,
         };
         let mut stack_layouts = sub_info.stack_layouts(&f);
-        let place_layouts = sub_info.place_layouts(&f, &mut stack_layouts, ctx)?;
+        let place_layouts = sub_info.place_layouts(&f, &mut stack_layouts, strictness, ctx)?;
         Ok(FunctionSubstitute {
             f,
             stack_layouts,
@@ -115,8 +117,12 @@ impl<'a> FunctionSubstitute<'a> {
         self.place_layouts[place.as_index()].0
     }
 
-    pub fn place_ty(&self, place: PlaceRef) -> TypeId {
+    pub fn place_type(&self, place: PlaceRef) -> TypeId {
         self.place_layouts[place.as_index()].1
+    }
+
+    pub fn place_strictness(&self, place: PlaceRef) -> Strictness {
+        self.place_layouts[place.as_index()].2
     }
 
     pub fn stack(&self, stack: StackRef) -> ILayout<'a> {
@@ -148,10 +154,11 @@ impl<'a> SubInfo<ILayout<'a>> {
         &self,
         f: &Function,
         stack_layouts: &mut [ILayout<'a>],
+        strictness: &[Strictness],
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
-    ) -> Result<Vec<(ILayout<'a>, TypeId)>, LayoutError> {
-        let mut place_layouts: Vec<(ILayout<'a>, TypeId)> = Vec::new();
-        for (_, place_info) in f.iter_places() {
+    ) -> Result<Vec<(ILayout<'a>, TypeId, Strictness)>, LayoutError> {
+        let mut place_layouts: Vec<(ILayout<'a>, TypeId, Strictness)> = Vec::new();
+        for (p, place_info) in f.iter_places() {
             let layout = match place_info.place {
                 Place::Captures => self.fun,
                 Place::Arg | Place::ReturnLen => self.arg,
@@ -176,14 +183,25 @@ impl<'a> SubInfo<ILayout<'a>> {
                 Place::From(place) => place_layouts[place.as_index()].0.access_from(ctx),
             };
             let ty = ctx.db.substitute_typevar(place_info.ty, self.subst.clone());
-            let cast_layout = layout.typecast(ctx, ty)?.0;
+
+            let strict = if let Type::TypeVarRef(..) = ctx.db.lookup_intern_type(place_info.ty) {
+                Strictness::Static(ctx.db.deref_level(ty)?)
+            } else {
+                strictness[p.as_index()]
+            };
+
+            let cast_layout = if let Strictness::Static(level) = strict {
+                layout.deref_to_level(ctx, level)?.0
+            } else {
+                layout
+            };
             // we need to make sure that the stack layouts are casted to the right type, but
             // we didn't have that information when we created the stack layouts, so we cast
             // it if we encounter a stack place here
             if let Place::Stack(idx) = place_info.place {
                 stack_layouts[idx.as_index()] = cast_layout;
             }
-            place_layouts.push((cast_layout, ty));
+            place_layouts.push((cast_layout, ty, strict));
         }
         Ok(place_layouts)
     }
