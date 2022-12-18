@@ -169,7 +169,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                 TypeUnOp::Wiggle(_) => self.resolve_type_expr(inner, id)?,
                 TypeUnOp::ByteParser => {
                     let int = self.infctx.int();
-                    let from = self.infctx.array(ArrayKind::Each, int);
+                    let from = self.infctx.array(ArrayKind::For, int);
                     let inner = match &inner.0 {
                         ExpressionHead::Niladic(OpWithData {
                             inner: hir::TypeAtom::ParserDef(pd),

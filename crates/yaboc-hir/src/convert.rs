@@ -163,11 +163,11 @@ fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDef
         type_expression(f, ctx, from);
     } else {
         let span = ast.name.span;
-        // desugars to each[int]
+        // desugars to for[int]
         let expr = Expression::new_niladic(OpWithData {
             inner: ast::TypeAtom::Array(Box::new(ast::TypeArray {
                 direction: Spanned {
-                    inner: ArrayKind::Each,
+                    inner: ArrayKind::For,
                     span,
                 },
                 expr: Expression::new_niladic(OpWithData {
