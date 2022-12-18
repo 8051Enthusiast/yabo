@@ -5,10 +5,10 @@ use petgraph::unionfind::UnionFind;
 
 use yaboc_absint::{AbstractDomain, AbstractExpression, Arg, BlockEvaluated};
 use yaboc_ast::expr::{Dyadic, ExprIter, ExpressionHead, OpWithData, ValBinOp, ValVarOp, Variadic};
-use yaboc_base::error::{SResult, Silencable};
+use yaboc_base::error::Silencable;
 use yaboc_dependents::{NeededBy, RequirementSet};
 use yaboc_hir::{HirIdWrapper, HirNode, ParserDefId};
-use yaboc_types::{PrimitiveType, Type};
+use yaboc_types::{PrimitiveType, Type, TypeId};
 
 use super::{
     canon_layout, flat_layouts, prop::PSize, AbsLayoutCtx, ILayout, IMonoLayout, Layout,
@@ -136,16 +136,30 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         }
         self.parses.add_call((left, req), right)
     }
-    fn register_funcall(&mut self, fun: ILayout<'a>, args: Vec<ILayout<'a>>) {
+    fn register_funcall(
+        &mut self,
+        fun: ILayout<'a>,
+        args: Vec<ILayout<'a>>,
+        fun_ty: TypeId,
+    ) -> Result<(), LayoutError> {
         let any_ty = self.ctx.db.intern_type(Type::Any);
+        let Type::FunctionArg(_, arg_tys) = self.ctx.db.lookup_intern_type(fun_ty) else {
+            panic!("register_funcall called with non-function type");
+        };
+        let casted_args = args
+            .iter()
+            .zip(arg_tys.iter())
+            .map(|(l, ty)| Ok(l.typecast(self.ctx, *ty)?.0))
+            .collect::<Result<_, LayoutError>>()?;
         // hack: this is just a placeholder for the argument bundle
         let arg_tuple = self
             .ctx
             .dcx
-            .intern(Layout::Mono(MonoLayout::Tuple(args), any_ty));
-        self.funcalls.add_call(arg_tuple, fun)
+            .intern(Layout::Mono(MonoLayout::Tuple(casted_args), any_ty));
+        self.funcalls.add_call(arg_tuple, fun);
+        Ok(())
     }
-    fn collect_expr(&mut self, expr: &AbstractExpression<ILayout<'a>>) {
+    fn collect_expr(&mut self, expr: &AbstractExpression<ILayout<'a>>) -> Result<(), LayoutError> {
         for part in ExprIter::new(expr) {
             let dom = part.0.root_data().val;
             self.register_layouts(dom);
@@ -172,18 +186,20 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 }) => self.register_funcall(
                     args[0].0.root_data().val,
                     args[1..].iter().map(|x| x.0.root_data().val).collect(),
-                ),
+                    args[0].0.root_data().ty,
+                )?,
                 _ => (),
             }
         }
+        Ok(())
     }
     fn collect_block(
         &mut self,
         block: &BlockEvaluated<ILayout<'a>>,
         req: RequirementSet,
-    ) -> SResult<()> {
+    ) -> Result<(), LayoutError> {
         for expr in block.expr_vals.values() {
-            self.collect_expr(expr);
+            self.collect_expr(expr)?;
         }
         let requirements = self
             .ctx
@@ -206,7 +222,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         arg: ILayout<'a>,
         parser: IMonoLayout<'a>,
         req: RequirementSet,
-    ) {
+    ) -> Result<(), LayoutError> {
         let (MonoLayout::NominalParser(id, thunk_args), ty) = parser.mono_layout() else {
                         panic!("unexpected non-nominal-parser layout");
                     };
@@ -221,7 +237,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         self.register_layouts(thunk);
         if let Some(pd_eval) = self.ctx.pd_result()[&thunk].clone() {
             if let Some(val) = &pd_eval.expr_vals {
-                self.collect_expr(val);
+                self.collect_expr(val)?;
                 let root = val.0.root_data().val;
                 self.register_parse(pd_eval.from, root, req);
                 // the branch taken after the thunk is copied as-is and no value is needed
@@ -229,8 +245,9 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             }
             self.register_layouts(pd_eval.returned)
         }
+        Ok(())
     }
-    fn proc_list(&mut self) -> SResult<()> {
+    fn proc_list(&mut self) -> Result<(), LayoutError> {
         while let Some(mono) = self.unprocessed.pop() {
             match mono {
                 UnprocessedCall::Block(arg, parser, req) => {
@@ -239,7 +256,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     }
                 }
                 UnprocessedCall::NominalParser(arg, parser, req) => {
-                    self.collect_nominal_parse(arg, parser, req)
+                    self.collect_nominal_parse(arg, parser, req)?
                 }
             }
         }

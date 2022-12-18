@@ -7,13 +7,14 @@ use inkwell::{
     AddressSpace, IntPredicate,
 };
 
-use mir::ControlFlow;
+use mir::{ControlFlow, Strictness};
+use yaboc_absint::AbstractDomain;
 use yaboc_ast::expr::Atom;
 use yaboc_ast::ConstraintAtom;
 use yaboc_base::interner::FieldName;
 use yaboc_dependents::RequirementSet;
 use yaboc_hir::BlockId;
-use yaboc_hir_types::{DerefLevel, NominalId, TyHirs};
+use yaboc_hir_types::{DerefLevel, NominalId};
 use yaboc_layout::{mir_subst::FunctionSubstitute, ILayout, Layout, MonoLayout};
 use yaboc_mir::{
     self as mir, BBRef, Comp, IntBinOp, IntUnOp, MirInstr, PlaceRef, ReturnStatus, Val,
@@ -95,8 +96,17 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         self.blocks[bbref.as_index()]
     }
 
+    fn is_ret_place(&self, placeref: mir::PlaceRef) -> bool {
+        self.mir_fun.place_strictness(placeref) == Strictness::Return
+    }
+
     fn place_ptr(&mut self, placeref: mir::PlaceRef) -> PointerValue<'llvm> {
         let place = self.mir_fun.f.place(placeref).place;
+        if self.is_ret_place(placeref) {
+            return self
+                .ret
+                .expect("referenced return of non-returning function");
+        }
         match place {
             mir::Place::Arg => self.arg,
             mir::Place::Captures => self.fun,
@@ -130,8 +140,13 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         if self.mir_fun.f.place(place).place == mir::Place::Return {
             return self.rethead.unwrap();
         }
-        let place_ty = self.mir_fun.place_ty(place);
-        let deref_level = self.cg.compiler_database.db.deref_level(place_ty).unwrap();
+        let place_strictness = self.mir_fun.place_strictness(place);
+        let deref_level = match place_strictness {
+            Strictness::Return => {
+                return self.rethead.unwrap();
+            }
+            Strictness::Static(level) => level,
+        };
         let mut level = deref_level.into_shifted_runtime_value();
         if place_layout.is_multi() {
             level |= 1;
@@ -198,6 +213,11 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     }
 
     fn copy(&mut self, to: PlaceRef, from: PlaceRef, ctrl: ControlFlow) {
+        if self.is_ret_place(to) && self.is_ret_place(from) {
+            let block = self.bb(ctrl.next);
+            self.cg.builder.build_unconditional_branch(block);
+            return;
+        }
         let from_layout = self.mir_fun.place(from);
         let to_level = self.deref_level(to);
         if let Layout::None = from_layout.layout.1 {
@@ -383,7 +403,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             }
             FieldName::Ident(ident) => ident,
         };
-        let ty = self.mir_fun.place_ty(place);
+        let ty = self.mir_fun.f.place(place).ty;
         let block = match self.cg.compiler_database.db.lookup_intern_type(ty) {
             Type::Nominal(nom) => NominalId::from_nominal_head(&nom).unwrap_block(),
             _ => panic!("field called on non-block"),
@@ -536,10 +556,24 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         ctrl: ControlFlow,
     ) {
         let error = ctrl.error.map(|x| self.bb(x)).unwrap_or(self.undefined);
+        let Type::FunctionArg(_, arg_tys) = self
+            .cg
+            .compiler_database
+            .db
+            .lookup_intern_type(self.mir_fun.f.place(fun).ty) else {
+            panic!("apply_args on non-function");
+        };
         let arg_layout = args
             .iter()
-            .map(|x| self.mir_fun.place(*x))
-            .collect::<Vec<_>>();
+            .zip(arg_tys.iter())
+            .map(|(x, ty)| {
+                self.mir_fun
+                    .place(*x)
+                    .typecast(self.cg.layouts, *ty)
+                    .map(|x| x.0)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
         let any_ty = self.cg.compiler_database.db.intern_type(Type::Any);
         let arg_layout_tuple = self
             .cg

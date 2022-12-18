@@ -3,7 +3,7 @@ use std::{fmt::Display, io::Write};
 use yaboc_base::{databased_display::DatabasedDisplay, dbwrite};
 use yaboc_dependents::RequirementSet;
 
-use crate::ControlFlow;
+use crate::{strictness::Strictness, ControlFlow, FunKind};
 
 use super::{
     BBRef, Comp, DupleField, ExceptionRetreat, Function, IntBinOp, IntUnOp, MirInstr, Mirs, Place,
@@ -248,6 +248,15 @@ impl<DB: Mirs> DatabasedDisplay<DB> for Function {
     }
 }
 
+impl Display for Strictness {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Strictness::Return => write!(f, "return"),
+            Strictness::Static(c) => write!(f, "static {c}"),
+        }
+    }
+}
+
 pub fn print_all_mir<DB: Mirs, W: Write>(db: &DB, w: &mut W) -> std::io::Result<()> {
     let convert_error_ignore = |e| {
         std::io::Error::new(
@@ -262,22 +271,31 @@ pub fn print_all_mir<DB: Mirs, W: Write>(db: &DB, w: &mut W) -> std::io::Result<
             "---\nmir parserdef {}:\n",
             &db.def_name(pd.0).unwrap()
         )?;
-        dbwrite!(
-            w,
-            db,
-            "{}",
-            &db.mir_pd(pd, RequirementSet::all())
-                .map_err(convert_error_ignore)?
-        )?;
+        let fun = db
+            .mir(FunKind::ParserDef(pd), RequirementSet::all())
+            .map_err(convert_error_ignore)?;
+        dbwrite!(w, db, "{}", &fun)?;
+        writeln!(w, "--strictness:")?;
+        let strictness = db
+            .strictness(FunKind::ParserDef(pd), RequirementSet::all())
+            .map_err(convert_error_ignore)?;
+        for ((place, _), strictness) in fun.iter_places().zip(strictness.iter()) {
+            dbwrite!(w, &(&fun, db), "{}: {}\n", &place, &strictness)?;
+        }
+
         for block in db.all_parserdef_blocks(pd).iter() {
+            let fun = db
+                .mir(FunKind::Block(*block), RequirementSet::all())
+                .map_err(convert_error_ignore)?;
             dbwrite!(w, db, "---\nmir block {}:\n", &block.0)?;
-            dbwrite!(
-                w,
-                db,
-                "{}",
-                &db.mir_block(*block, RequirementSet::all())
-                    .map_err(convert_error_ignore)?
-            )?;
+            dbwrite!(w, db, "{}", &fun)?;
+            writeln!(w, "--strictness:")?;
+            let strictness = db
+                .strictness(FunKind::Block(*block), RequirementSet::all())
+                .map_err(convert_error_ignore)?;
+            for ((place, _), strictness) in fun.iter_places().zip(strictness.iter()) {
+                dbwrite!(w, &(&fun, db), "{}: {}\n", &place, &strictness)?;
+            }
         }
     }
     Ok(())

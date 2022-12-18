@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use fxhash::FxHashSet;
 use yaboc_base::{
     dbformat,
@@ -49,9 +51,16 @@ impl DerefLevel {
     }
 }
 
+impl Display for DerefLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 pub fn deref_level(db: &dyn TyHirs, ty: TypeId) -> SResult<DerefLevel> {
     let mut level = 0;
     let mut ty = ty;
+    
     while let Some(t) = db.deref_type(ty)? {
         ty = t;
         level += 1;

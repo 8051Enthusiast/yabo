@@ -16,8 +16,8 @@ use yaboc_base::error::{IsSilenced, SResult, SilencedError};
 use yaboc_base::interner::{DefId, FieldName};
 use yaboc_base::low_effort_interner::{Interner, Uniq};
 use yaboc_hir::{self as hir, HirIdWrapper};
-use yaboc_hir_types::NominalId;
-use yaboc_mir::DupleField;
+use yaboc_hir_types::{DerefLevel, NominalId};
+use yaboc_mir::{DupleField, Mirs};
 use yaboc_resolve::expr::{ResolvedAtom, ResolvedKind};
 use yaboc_types::{PrimitiveType, Type, TypeId};
 
@@ -33,7 +33,7 @@ pub struct StructManifestation {
 }
 
 #[salsa::query_group(LayoutDatabase)]
-pub trait Layouts: AbsInt {}
+pub trait Layouts: AbsInt + Mirs {}
 
 struct UnfinishedManifestation(StructManifestation);
 
@@ -266,24 +266,23 @@ impl<'a> ILayout<'a> {
         })
     }
 
-    fn typecast_impl(
+    pub fn deref_to_level(
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
-        target: Option<hir::ParserDefId>,
+        level: DerefLevel,
     ) -> Result<(ILayout<'a>, bool), LayoutError> {
         let mut changed = false;
         let res = self.try_map(ctx, |layout, ctx| {
-            Ok(match layout.mono_layout().0 {
-                MonoLayout::Nominal(pd, _, _) if Some(*pd) == target => layout.0,
-                MonoLayout::Nominal(_, _, _) => {
-                    changed = true;
-                    let res_ty = layout.mono_layout().1;
-                    ctx.eval_pd(layout.inner(), res_ty)
-                        .ok_or_else(SilencedError::new)?
-                        .typecast_impl(ctx, target)?
-                        .0
-                }
-                _ => layout.0,
+            let mono_level = ctx.db.deref_level(layout.mono_layout().1)?;
+            Ok(if mono_level <= level {
+                layout.0
+            } else {
+                changed = true;
+                let res_ty = layout.mono_layout().1;
+                ctx.eval_pd(layout.inner(), res_ty)
+                    .ok_or_else(SilencedError::new)?
+                    .deref_to_level(ctx, level)?
+                    .0
             })
         });
         res.map(|x| (x, changed))
@@ -875,14 +874,8 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
         ctx: &mut AbsIntCtx<'a, Self>,
         ty: TypeId,
     ) -> Result<(Self, bool), Self::Err> {
-        let non_derefed_pd_id = match ctx.db.lookup_intern_type(ty) {
-            Type::Nominal(nom) => match NominalId::from_nominal_head(&nom) {
-                NominalId::Def(id) => Some(id),
-                NominalId::Block(_) => None,
-            },
-            _ => None,
-        };
-        self.typecast_impl(ctx, non_derefed_pd_id)
+        let deref_level = ctx.db.deref_level(ty)?;
+        self.deref_to_level(ctx, deref_level)
     }
 
     fn get_arg(
