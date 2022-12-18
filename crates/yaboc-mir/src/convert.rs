@@ -1,3 +1,5 @@
+use std::{collections::BTreeMap, sync::Arc};
+
 use enumflags2::make_bitflags;
 use fxhash::{FxHashMap, FxHashSet};
 
@@ -10,7 +12,9 @@ use yaboc_base::{
     error::SResult,
     interner::{DefId, FieldName, PathComponent},
 };
-use yaboc_dependents::{BlockSerialization, NeededBy, RequirementSet, SubValue, SubValueKind};
+use yaboc_dependents::{
+    BlockSerialization, NeededBy, RequirementMatrix, RequirementSet, SubValue, SubValueKind,
+};
 use yaboc_hir::{
     self as hir, variable_set::VarStatus, BlockId, ChoiceId, ContextId, ExprId, HirIdWrapper,
     HirNode, ParserDefId, ParserPredecessor,
@@ -34,6 +38,9 @@ pub struct ConvertCtx<'a> {
     context_bb: FxHashMap<ContextId, (BBRef, BBRef)>,
     current_context: Option<ContextId>,
     context_data: FxHashMap<ContextId, ContextData>,
+    processed_parse_sites: FxHashSet<DefId>,
+    req: RequirementSet,
+    req_transformer: Arc<BTreeMap<DefId, RequirementMatrix>>,
     returns_self: bool,
 }
 
@@ -709,28 +716,28 @@ impl<'a> ConvertCtx<'a> {
             .parse_call(call_kind, addr, parser_fun, ret, retlen, self.retreat)
     }
 
-    fn parse_statement_val(&mut self, parse: &hir::ParseStatement) {
-        self.call_expr(
-            parse.id.0,
-            parse.expr,
-            make_bitflags!(NeededBy::{Val | Backtrack}),
-        )
+    fn req_at_id(&self, id: DefId) -> RequirementSet {
+        self.req_transformer[&id] * self.req
     }
 
-    fn parse_statement_back(&mut self, parse: &hir::ParseStatement) {
-        self.call_expr(
-            parse.id.0,
-            parse.expr,
-            make_bitflags!(NeededBy::{Backtrack | Len}),
-        )
+    fn parse_statement_val_or_back(&mut self, parse: &hir::ParseStatement) {
+        if !self.processed_parse_sites.insert(parse.id.0) {
+            return;
+        }
+        let req = self.req_at_id(parse.id.0);
+        if !req.is_empty() {
+            self.call_expr(parse.id.0, parse.expr, req)
+        }
     }
 
-    fn parserdef_val(&mut self, pd: &hir::ParserDef) {
-        self.call_expr(pd.id.0, pd.to, make_bitflags!(NeededBy::{Val|Backtrack}))
-    }
-
-    fn parserdef_len(&mut self, pd: &hir::ParserDef) {
-        self.call_expr(pd.id.0, pd.to, make_bitflags!(NeededBy::{Len|Backtrack}))
+    pub fn parserdef(&mut self, pd: &hir::ParserDef) {
+        if !self.processed_parse_sites.insert(pd.id.0) {
+            return;
+        }
+        let req = self.req_at_id(pd.id.0);
+        if !req.is_empty() {
+            self.call_expr(pd.id.0, pd.to, req)
+        }
     }
 
     fn copy_predecessor(&mut self, pred: ParserPredecessor, id: DefId) {
@@ -769,9 +776,8 @@ impl<'a> ConvertCtx<'a> {
             hir::HirNode::Parse(p) => {
                 self.change_context(p.parent_context);
                 match sub_value.kind {
-                    SubValueKind::Val => self.parse_statement_val(&p),
                     SubValueKind::Front => self.parse_statement_front(&p),
-                    SubValueKind::Back => self.parse_statement_back(&p),
+                    SubValueKind::Back | SubValueKind::Val => self.parse_statement_val_or_back(&p),
                 }
             }
             hir::HirNode::Choice(c) => {
@@ -787,14 +793,6 @@ impl<'a> ConvertCtx<'a> {
                     }
                     // pushed by individual contexts
                     SubValueKind::Back => return Ok(()),
-                }
-            }
-            hir::HirNode::ParserDef(pd) => {
-                match sub_value.kind {
-                    SubValueKind::Val => self.parserdef_val(&pd),
-                    // already at right place
-                    SubValueKind::Front => return Ok(()),
-                    SubValueKind::Back => self.parserdef_len(&pd),
                 }
             }
             // choice indirections are pushed by individual contexts and not pulled
@@ -814,6 +812,7 @@ impl<'a> ConvertCtx<'a> {
             | hir::HirNode::TExpr(_)
             | hir::HirNode::ArgDef(_)
             | hir::HirNode::Import(_)
+            | hir::HirNode::ParserDef(_)
             | hir::HirNode::Array(_) => panic!("invalid subvalue encountered"),
         };
         Ok(())
@@ -927,6 +926,8 @@ impl<'a> ConvertCtx<'a> {
         }
         let current_context: Option<ContextId> = Some(block.root_context);
         let returns_self: bool = requirements.contains(NeededBy::Val) && !block.returns;
+        let processed_parse_sites = FxHashSet::default();
+        let req_transformer = order.parse_requirements.clone();
         f.set_bb(f.fun.entry());
         Ok(ConvertCtx {
             db,
@@ -939,6 +940,9 @@ impl<'a> ConvertCtx<'a> {
             current_context,
             context_data,
             returns_self,
+            processed_parse_sites,
+            req: requirements,
+            req_transformer,
         })
     }
 
@@ -991,6 +995,10 @@ impl<'a> ConvertCtx<'a> {
         let places = Self::pd_places(db, id, requirements, &mut f)?;
         let current_context = None;
         let returns_self = false;
+        let processed_parse_sites = FxHashSet::default();
+        let mut req_transformer = BTreeMap::default();
+        req_transformer.insert(id.0, RequirementMatrix::id());
+        let req_transformer = Arc::new(req_transformer);
         f.set_bb(f.fun.entry());
         Ok(ConvertCtx {
             db,
@@ -1003,6 +1011,9 @@ impl<'a> ConvertCtx<'a> {
             current_context,
             context_data,
             returns_self,
+            processed_parse_sites,
+            req: requirements,
+            req_transformer,
         })
     }
 

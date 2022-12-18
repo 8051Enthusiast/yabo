@@ -2,6 +2,7 @@ mod represent;
 
 use std::sync::Arc;
 
+use hir::BlockId;
 use yaboc_ast::expr::{self, ExpressionHead, KindWithData};
 use yaboc_base::{
     dbpanic,
@@ -74,6 +75,7 @@ pub struct PdEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlockEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
+    pub id: BlockId,
     pub expr_vals: FxHashMap<hir::ExprId, AbstractExpression<Dom>>,
     pub from: Dom,
     pub vals: FxHashMap<DefId, Dom>,
@@ -431,6 +433,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         std::mem::swap(&mut self.block_vars, &mut old_block_vars);
 
         let evaluated = res.clone().map(|returned| BlockEvaluated {
+            id: block_id,
             expr_vals: old_block_expr,
             from: from.clone(),
             vals: old_block_vars,

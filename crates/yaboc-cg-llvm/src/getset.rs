@@ -1,4 +1,3 @@
-use yaboc_dependents::NeededBy;
 use yaboc_types::TypeId;
 
 use super::*;
@@ -102,27 +101,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> CallableValue<'llvm> {
         match layout {
             Some(mono) => {
-                let part = if call_kind.contains(NeededBy::Len) {
-                    LayoutPart::Parse(slot, NeededBy::Len | NeededBy::Backtrack, false)
-                } else {
-                    LayoutPart::Parse(slot, NeededBy::Val | NeededBy::Backtrack, !use_impl)
-                };
+                let part = LayoutPart::Parse(slot, call_kind, !use_impl);
                 self.sym_callable(mono, part)
             }
-            None => {
-                let part = if call_kind.contains(NeededBy::Len) {
-                    ParserArgImplFields::len_impl as u64
-                } else {
-                    ParserArgImplFields::val_impl as u64
-                };
-                self.vtable_get::<vtable::ParserVTable>(
+            None => self
+                .vtable_get::<vtable::ParserVTable>(
                     ptr,
-                    &[ParserVTableFields::apply_table as u64, slot, part],
+                    &[ParserVTableFields::apply_table as u64, slot],
                 )
                 .into_pointer_value()
                 .try_into()
-                .unwrap()
-            }
+                .unwrap(),
         }
     }
 

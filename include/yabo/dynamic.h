@@ -29,9 +29,10 @@ static inline void *dyn_data(DynValue *val) {
 	}
 }
 
-static inline DynValue dyn_parse_bytes(char *bytes, struct ParserArgImpl parser) {
+static inline DynValue dyn_parse_bytes(char *bytes, ParseFun parser) {
 	DynValue ret;
-	int64_t status = parser.val_impl(&ret.in_data, NULL, YABO_ANY | 3, &bytes, NULL);
+	DynValue retlen;
+	int64_t status = parser(&ret.in_data, NULL, YABO_ANY | 3, &bytes, &retlen.in_data);
 	if (status != 0) {
 		ret.vtable = 0;
 		ret.in_data[0] = (char)status;

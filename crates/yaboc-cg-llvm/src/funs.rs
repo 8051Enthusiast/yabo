@@ -1,5 +1,6 @@
 use yaboc_dependents::NeededBy;
 use yaboc_hir_types::DerefLevel;
+use yaboc_layout::collect::{pd_len_req, pd_val_req};
 
 use crate::convert_thunk::{BlockThunk, CreateArgsThunk, TypecastThunk, ValThunk};
 
@@ -72,33 +73,40 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_typecast(&mut self, layout: IMonoLayout<'comp>) {
         if let MonoLayout::Nominal(..) = layout.mono_layout().0 {
             let (from, fun) = layout.unapply_nominal(self.layouts);
-            let slot = self.collected_layouts.parser_slots.layout_vtable_offsets[&(from, fun)];
+            let slot = self.collected_layouts.parser_slots.layout_vtable_offsets
+                [&((from, pd_val_req()), fun)];
             let mono = flat_layouts(&fun).next().unwrap();
-            let sym = self.sym(
-                mono,
-                LayoutPart::Parse(slot, NeededBy::Val | NeededBy::Backtrack, false),
-            );
-            if self.module.get_function(&sym).is_none() {
-                self.create_pd_val_impl(from, mono, slot);
-            }
+            self.create_pd_parse_impl(from, mono, slot, pd_val_req());
         }
         ThunkContext::new(self, TypecastThunk { layout }).build();
     }
 
-    fn create_pd_val(
+    fn create_pd_parse(
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
         slot: PSize,
         pd: ParserDefId,
+        req: RequirementSet,
     ) {
-        let sym = self.sym(
-            layout,
-            LayoutPart::Parse(slot, NeededBy::Val | NeededBy::Backtrack, false),
-        );
-        if self.module.get_function(&sym).is_none() {
-            self.create_pd_val_impl(from, layout, slot);
+        let impl_fun = self.create_pd_parse_impl(from, layout, slot, req);
+
+        if !req.contains(NeededBy::Val) {
+            // just call impl_fun and return
+            let llvm_fun = self.parser_fun_val(layout, slot, req);
+            self.add_entry_block(llvm_fun);
+            let args = llvm_fun
+                .get_param_iter()
+                .map(|x| x.into())
+                .collect::<Vec<_>>();
+            let ret = self.build_call_with_int_ret(impl_fun.into(), &args);
+            self.builder.build_return(Some(&ret));
         }
+
+        if !(req & !NeededBy::Val).is_empty() {
+            self.create_pd_parse_impl(from, layout, slot, req & !NeededBy::Val);
+        }
+
         let result = self
             .compiler_database
             .db
@@ -127,32 +135,34 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 fun: layout,
                 thunk: return_layout,
                 slot,
+                req,
             },
         )
         .build();
     }
 
-    fn create_pd_val_impl(
+    fn create_pd_parse_impl(
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
         slot: PSize,
-    ) {
-        let llvm_fun = self.parser_val_impl_fun_val(layout, slot);
-        let mir_fun = Rc::new(self.mir_pd_fun(from, layout, NeededBy::Val | NeededBy::Backtrack));
-        let (ret, fun, head, arg, _) = parser_args(llvm_fun);
-        MirTranslator::new(self, mir_fun, llvm_fun, fun, arg)
-            .with_ret_ptr(ret, head)
-            .build();
-    }
-
-    fn create_pd_len(&mut self, from: ILayout<'comp>, layout: IMonoLayout<'comp>, slot: PSize) {
-        let llvm_fun = self.parser_len_fun_val(layout, slot);
-        let mir_fun = Rc::new(self.mir_pd_fun(from, layout, NeededBy::Len | NeededBy::Backtrack));
-        let (_, fun, _, arg, retlen) = parser_args(llvm_fun);
-        MirTranslator::new(self, mir_fun, llvm_fun, fun, arg)
-            .with_retlen_ptr(retlen)
-            .build();
+        req: RequirementSet,
+    ) -> FunctionValue<'llvm> {
+        let sym = self.sym(layout, LayoutPart::Parse(slot, req, false));
+        let llvm_fun = match self.module.get_function(&sym) {
+            Some(f) => return f,
+            None => self.parser_impl_fun_val(layout, slot, req),
+        };
+        let mir_fun = Rc::new(self.mir_pd_fun(from, layout, req));
+        let (ret, fun, head, arg, retlen) = parser_args(llvm_fun);
+        let mut translator = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg);
+        if req.contains(NeededBy::Len) {
+            translator = translator.with_retlen_ptr(retlen);
+        }
+        if req.contains(NeededBy::Val) {
+            translator = translator.with_ret_ptr(ret, head);
+        }
+        translator.build()
     }
 
     fn create_pd_end(&mut self, layout: IMonoLayout<'comp>) {
@@ -160,14 +170,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.add_entry_block(llvm_fun);
         let [ret, arg] = get_fun_args(llvm_fun).map(|x| x.into_pointer_value());
         let (from_layout, fun_layout) = layout.unapply_nominal(self.layouts);
-        let (from, fun, _) = self.build_nominal_components(layout, arg);
+        let (from, fun, _) = self.build_nominal_components(layout, arg, pd_len_req());
         let ret = self.build_parser_call(
             self.any_ptr().get_undef(),
             (fun_layout, fun),
             self.const_i64(DerefLevel::max().into_shifted_runtime_value() as i64),
             (from_layout, from),
             ret,
-            NeededBy::Len.into(),
+            pd_len_req(),
         );
         self.builder.build_return(Some(&ret));
     }
@@ -265,37 +275,32 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.terminate_tail_typecast(int_layout, int_buf, target_head, return_ptr);
     }
 
-    fn create_block_len(&mut self, from: ILayout<'comp>, layout: IMonoLayout<'comp>, slot: PSize) {
-        let llvm_fun = self.parser_len_fun_val(layout, slot);
-        let mir_fun =
-            Rc::new(self.mir_block_fun(from, layout, NeededBy::Len | NeededBy::Backtrack));
-        let (_, fun, _, arg, retlen) = parser_args(llvm_fun);
-        MirTranslator::new(self, mir_fun, llvm_fun, fun, arg)
-            .with_retlen_ptr(retlen)
-            .build();
-    }
-
-    fn create_block_val(
+    fn create_block_parse(
         &mut self,
         block: BlockId,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
         slot: PSize,
+        req: RequirementSet,
     ) {
         let block = block.lookup(&self.compiler_database.db).unwrap();
-        let llvm_fun = self.parser_val_fun_val(layout, slot);
-        let mir_fun =
-            Rc::new(self.mir_block_fun(from, layout, NeededBy::Val | NeededBy::Backtrack));
+        let llvm_fun = self.parser_fun_val(layout, slot, req);
+        let mir_fun = Rc::new(self.mir_block_fun(from, layout, req));
         let impl_fun = if block.returns {
             llvm_fun
         } else {
-            self.parser_val_impl_fun_val(layout, slot)
+            self.parser_impl_fun_val(layout, slot, req)
         };
 
-        let (ret, fun, head, arg, _) = parser_args(impl_fun);
-        MirTranslator::new(self, mir_fun, impl_fun, fun, arg)
-            .with_ret_ptr(ret, head)
-            .build();
+        let (ret, fun, head, arg, retlen) = parser_args(impl_fun);
+        let mut translator = MirTranslator::new(self, mir_fun, impl_fun, fun, arg);
+        if req.contains(NeededBy::Val) {
+            translator = translator.with_ret_ptr(ret, head)
+        }
+        if req.contains(NeededBy::Len) {
+            translator = translator.with_retlen_ptr(retlen)
+        }
+        translator.build();
 
         if block.returns {
             return;
@@ -312,115 +317,81 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             fun: layout,
             result: mono_layout,
             slot,
+            req,
         };
 
         ThunkContext::new(self, block_data).build();
     }
 
-    fn create_single_len(&mut self, from: ILayout<'comp>, layout: IMonoLayout<'comp>, slot: PSize) {
-        let llvm_fun = self.parser_len_fun_val(layout, slot);
-        self.set_always_inline(llvm_fun);
-        let (_, _, _, arg, ret) = parser_args(llvm_fun);
-        self.add_entry_block(llvm_fun);
-        let single_forward_fun = self.build_single_forward_fun_get(from.maybe_mono(), arg);
-        let ret = self.build_call_with_int_ret(single_forward_fun, &[ret.into(), arg.into()]);
-        self.builder.build_return(Some(&ret));
-    }
-
-    fn create_single_val(&mut self, from: ILayout<'comp>, layout: IMonoLayout<'comp>, slot: PSize) {
-        let llvm_fun = self.parser_val_fun_val(layout, slot);
-        self.set_always_inline(llvm_fun);
-        let (ret, _, target_head, arg, _) = parser_args(llvm_fun);
-        self.add_entry_block(llvm_fun);
-        let current_element_fun = self.build_current_element_fun_get(from.maybe_mono(), arg);
-        let ret = self.build_call_with_int_ret(
-            current_element_fun,
-            &[ret.into(), arg.into(), target_head.into()],
-        );
-        self.builder.build_return(Some(&ret));
-    }
-
-    fn create_nil_len(&mut self, from: ILayout<'comp>, layout: IMonoLayout<'comp>, slot: PSize) {
-        let llvm_fun = self.parser_len_fun_val(layout, slot);
-        self.set_always_inline(llvm_fun);
-        let (_, _, _, arg, retlen) = parser_args(llvm_fun);
-        self.add_entry_block(llvm_fun);
-        let arg_size = self.build_size_get(from.maybe_mono(), arg);
-        let arg_start = self.get_object_start(from.maybe_mono(), arg);
-        let ret_start = self.get_object_start(from.maybe_mono(), retlen);
-        self.builder
-            .build_memcpy(ret_start, 1, arg_start, 1, arg_size)
-            .unwrap();
-        self.builder.build_return(Some(&self.const_i64(0)));
-    }
-
-    fn create_nil_val(&mut self, _: ILayout<'comp>, layout: IMonoLayout<'comp>, slot: PSize) {
-        let llvm_fun = self.parser_val_fun_val(layout, slot);
-        self.set_always_inline(llvm_fun);
-        let (ret, _, target_head, _, _) = parser_args(llvm_fun);
-        self.add_entry_block(llvm_fun);
-        let unit_type = self
-            .compiler_database
-            .db
-            .intern_type(Type::Primitive(PrimitiveType::Unit));
-        let unit_layout = canon_layout(self.layouts, unit_type).unwrap();
-        let null_ptr = self.any_ptr().const_null();
-        self.terminate_tail_typecast(unit_layout, null_ptr, target_head, ret);
-    }
-
-    fn create_compose_len(
+    fn create_single_parse(
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
         slot: PSize,
+        req: RequirementSet,
     ) {
-        let llvm_fun = self.parser_len_fun_val(layout, slot);
-        let (_, fun, _, arg, retlen) = parser_args(llvm_fun);
+        let llvm_fun = self.parser_fun_val(layout, slot, req);
+        self.set_always_inline(llvm_fun);
+        let (ret, _, target_head, arg, retlen) = parser_args(llvm_fun);
         self.add_entry_block(llvm_fun);
-        let (first_layout, inner_ty, second_layout) =
-            if let MonoLayout::ComposedParser(first, inner_ty, second) = layout.mono_layout().0 {
-                (*first, *inner_ty, *second)
-            } else {
-                panic!("called build_compose_len on non-composed")
-            };
-        let inner_layout = first_layout.apply_arg(self.layouts, from).unwrap();
-        let inner_level = self.deref_level(inner_ty);
-        let second_arg = self.build_layout_alloca(inner_layout, "second_arg");
-        let second_len_ret = self.build_layout_alloca(inner_layout, "second_len_ret");
-        let first_ptr = self.build_duple_gep(layout.inner(), DupleField::First, fun, first_layout);
-        let second_ptr =
-            self.build_duple_gep(layout.inner(), DupleField::Second, fun, second_layout);
-
-        [NeededBy::Len, NeededBy::Val].map(|call_kind| {
-            let ret = self.build_parser_call(
-                second_arg,
-                (first_layout, first_ptr),
-                inner_level,
-                (from, arg),
-                retlen,
-                call_kind | NeededBy::Backtrack,
-            );
+        if req.contains(NeededBy::Len) {
+            let single_forward_fun = self.build_single_forward_fun_get(from.maybe_mono(), arg);
+            let ret =
+                self.build_call_with_int_ret(single_forward_fun, &[retlen.into(), arg.into()]);
             self.non_zero_early_return(llvm_fun, ret)
-        });
-
-        let ret = self.build_parser_call(
-            second_len_ret,
-            (second_layout, second_ptr),
-            self.const_i64(DerefLevel::max().into_shifted_runtime_value() as i64),
-            (inner_layout, second_arg),
-            second_len_ret,
-            NeededBy::Len | NeededBy::Backtrack,
-        );
-        self.builder.build_return(Some(&ret));
+        }
+        if req.contains(NeededBy::Val) {
+            let current_element_fun = self.build_current_element_fun_get(from.maybe_mono(), arg);
+            let ret = self.build_call_with_int_ret(
+                current_element_fun,
+                &[ret.into(), arg.into(), target_head.into()],
+            );
+            self.builder.build_return(Some(&ret));
+        } else {
+            self.builder.build_return(Some(&self.const_i64(0)));
+        }
     }
 
-    fn create_compose_val(
+    fn create_nil_parse(
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
         slot: PSize,
+        req: RequirementSet,
     ) {
-        let llvm_fun = self.parser_val_fun_val(layout, slot);
+        let llvm_fun = self.parser_fun_val(layout, slot, req);
+        self.add_entry_block(llvm_fun);
+        self.set_always_inline(llvm_fun);
+        let (ret, _, target_head, arg, retlen) = parser_args(llvm_fun);
+        if req.contains(NeededBy::Len) {
+            let arg_size = self.build_size_get(from.maybe_mono(), arg);
+            let arg_start = self.get_object_start(from.maybe_mono(), arg);
+            let ret_start = self.get_object_start(from.maybe_mono(), retlen);
+            self.builder
+                .build_memcpy(ret_start, 1, arg_start, 1, arg_size)
+                .unwrap();
+        }
+        if req.contains(NeededBy::Val) {
+            let unit_type = self
+                .compiler_database
+                .db
+                .intern_type(Type::Primitive(PrimitiveType::Unit));
+            let unit_layout = canon_layout(self.layouts, unit_type).unwrap();
+            let null_ptr = self.any_ptr().const_null();
+            self.terminate_tail_typecast(unit_layout, null_ptr, target_head, ret);
+        } else {
+            self.builder.build_return(Some(&self.const_i64(0)));
+        }
+    }
+
+    fn create_compose_parse(
+        &mut self,
+        from: ILayout<'comp>,
+        layout: IMonoLayout<'comp>,
+        slot: PSize,
+        req: RequirementSet,
+    ) {
+        let llvm_fun = self.parser_fun_val(layout, slot, req);
         self.add_entry_block(llvm_fun);
         let (ret, fun, target_head, arg, retlen) = parser_args(llvm_fun);
         let (first_layout, inner_ty, second_layout) =
@@ -442,7 +413,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             inner_level,
             (from, arg),
             retlen,
-            NeededBy::Val | NeededBy::Backtrack,
+            req,
         );
         self.non_zero_early_return(llvm_fun, retstatus);
 
@@ -452,7 +423,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             target_head,
             (inner_layout, second_arg),
             self.any_ptr().get_undef(),
-            NeededBy::Val | NeededBy::Backtrack,
+            req & !NeededBy::Len,
         );
         self.builder.build_return(Some(&retstatus));
     }
@@ -557,7 +528,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn create_parser_funs(&mut self, layout: IMonoLayout<'comp>) {
         let collected_layouts = self.collected_layouts.clone();
-        for (slot, &from) in collected_layouts
+        for (slot, &(from, req)) in collected_layouts
             .parser_slots
             .occupied_entries
             .get(&layout)
@@ -567,24 +538,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         {
             match layout.mono_layout().0 {
                 MonoLayout::Single => {
-                    self.create_single_len(from, layout, *slot);
-                    self.create_single_val(from, layout, *slot);
+                    self.create_single_parse(from, layout, *slot, req);
                 }
                 MonoLayout::Nil => {
-                    self.create_nil_len(from, layout, *slot);
-                    self.create_nil_val(from, layout, *slot);
+                    self.create_nil_parse(from, layout, *slot, req);
                 }
                 MonoLayout::NominalParser(pd, _) => {
-                    self.create_pd_len(from, layout, *slot);
-                    self.create_pd_val(from, layout, *slot, *pd);
+                    self.create_pd_parse(from, layout, *slot, *pd, req);
                 }
                 MonoLayout::BlockParser(block, _) => {
-                    self.create_block_len(from, layout, *slot);
-                    self.create_block_val(*block, from, layout, *slot);
+                    self.create_block_parse(*block, from, layout, *slot, req);
                 }
                 MonoLayout::ComposedParser(_, _, _) => {
-                    self.create_compose_len(from, layout, *slot);
-                    self.create_compose_val(from, layout, *slot);
+                    self.create_compose_parse(from, layout, *slot, req);
                 }
                 _ => panic!("non-parser in parser layout collection"),
             }

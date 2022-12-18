@@ -45,14 +45,11 @@ struct NominalVTable {
 	int64_t (*end_impl)(void *, void *);
 };
 
-struct ParserArgImpl {
-	int64_t (*val_impl)(void *, void *, uint64_t, void *, void *);
-	int64_t (*len_impl)(void *, void *, uint64_t, void *, void *);
-};
+typedef int64_t (*ParseFun)(void *, void *, uint64_t, void *, void *);
 
 struct ParserVTable {
 	struct VTableHeader head;
-	struct ParserArgImpl apply_table[];
+	int64_t (*apply_table[])(void *, void *, uint64_t, void *, void *);
 };
 
 struct ArrayVTable {

@@ -110,7 +110,8 @@ int print_block(DynValue val, int indent, FILE *out)
 	{
 		DynValue sub_value;
 		int64_t return_val = (*access_impl)(&sub_value.in_data, dyn_data(&val), 0x3);
-		if (return_val == 3) {
+		if (return_val == 3)
+		{
 			access_impl++;
 			field_desc++;
 			continue;
@@ -234,7 +235,7 @@ int main(int argc, char **argv)
 		perror("could not open library");
 		exit(1);
 	}
-	struct ParserArgImpl *parser = (struct ParserArgImpl *)dlsym(lib, argv[2]);
+	ParseFun *parser = (ParseFun *)dlsym(lib, argv[2]);
 	if (!parser)
 	{
 		perror("could not find parser");

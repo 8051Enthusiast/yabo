@@ -38,13 +38,13 @@ use yaboc_hir::{BlockId, HirIdWrapper, Hirs, ParserDefId};
 use yaboc_hir_types::TyHirs;
 use yaboc_layout::{
     canon_layout,
-    collect::{LayoutCollection, LayoutCollector},
+    collect::{root_req, LayoutCollection, LayoutCollector},
     flat_layouts,
     mir_subst::FunctionSubstitute,
     prop::{CodegenTypeContext, PSize, SizeAlign, TargetSized},
     represent::{truncated_hex, LayoutPart},
     vtable::{
-        self, ArrayVTableFields, BlockVTableFields, FunctionVTableFields, ParserArgImplFields,
+        self, ArrayVTableFields, BlockVTableFields, FunctionVTableFields, ParserFun,
         ParserVTableFields, VTableHeaderFields,
     },
     AbsLayoutCtx, ILayout, IMonoLayout, Layout, LayoutError, MonoLayout,
@@ -285,7 +285,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         retlen: PointerValue<'llvm>,
         call_kind: RequirementSet,
     ) -> IntValue<'llvm> {
-        let slot = self.collected_layouts.parser_slots.layout_vtable_offsets[&(from.0, fun.0)];
+        let slot = self.collected_layouts.parser_slots.layout_vtable_offsets
+            [&((from.0, call_kind), fun.0)];
         let f = self.build_parser_fun_get(fun.0.maybe_mono(), fun.1, slot, call_kind, false);
         self.build_call_with_int_ret(
             f,
@@ -477,6 +478,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         ptr: PointerValue<'llvm>,
+        req: RequirementSet,
     ) -> (PointerValue<'llvm>, PointerValue<'llvm>, u64) {
         let MonoLayout::Nominal(pd, from_layout, args) = layout.mono_layout().0 else {
             panic!("build_nominal_components has to be called with a nominal parser layout");
@@ -489,8 +491,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         } else {
             self.any_ptr().get_undef()
         };
-        let parser_layouts = layout.unapply_nominal(self.layouts);
-        let slot = self.collected_layouts.parser_slots.layout_vtable_offsets[&parser_layouts];
+        let (from, parser) = layout.unapply_nominal(self.layouts);
+        let slot =
+            self.collected_layouts.parser_slots.layout_vtable_offsets[&((from, req), parser)];
 
         let arg_ptr = if !args.is_empty() {
             let mut from_sa = from_layout
@@ -510,8 +513,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             FieldName::Return => unreachable!(),
             FieldName::Ident(d) => self.compiler_database.db.lookup_intern_identifier(d).name,
         };
-        let val = self.parser_impl_struct_val(layout, slot, true);
-        let global_ty = vtable::ParserArgImpl::struct_type(self);
+        let val = self.parser_impl_struct_val(layout, slot, root_req(), true);
+        let global_ty = ParserFun::codegen_ty(self);
         let global = self.module.add_global(global_ty, None, &name);
         global.set_initializer(&val);
         global.set_linkage(Linkage::External);

@@ -1,7 +1,7 @@
 pub mod error;
 mod represent;
 
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use enumflags2::{bitflags, BitFlags};
 use yaboc_ast::expr::{ExprIter, ExpressionHead, OpWithData};
@@ -343,6 +343,71 @@ impl std::fmt::Display for NeededBy {
 
 pub type RequirementSet = BitFlags<NeededBy>;
 
+// stored in column-major order
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct RequirementMatrix([RequirementSet; 3]);
+
+impl RequirementMatrix {
+    pub fn new(len: RequirementSet, val: RequirementSet, backtrack: RequirementSet) -> Self {
+        Self([len, val, backtrack])
+    }
+
+    pub fn id() -> Self {
+        Self::new(
+            NeededBy::Len.into(),
+            NeededBy::Val.into(),
+            NeededBy::Backtrack.into(),
+        )
+    }
+
+    pub fn zero() -> Self {
+        Self::default()
+    }
+
+    /// calculates the boolean matrix operation self * needed_by
+    pub fn needs_when(self, needed_by: RequirementSet) -> RequirementSet {
+        let mut ret = RequirementSet::empty();
+        for (i, val) in Self::id().iter_cols().enumerate() {
+            if needed_by.contains(val) {
+                ret |= self.0[i];
+            }
+        }
+        ret
+    }
+
+    pub fn from_outer_product(left: RequirementSet, right: RequirementSet) -> Self {
+        let mut ret = Self::default();
+        for (i, val) in Self::id().iter_cols().enumerate() {
+            if right.contains(val) {
+                ret.0[i] |= left;
+            }
+        }
+        ret
+    }
+
+    pub fn iter_cols(self) -> impl Iterator<Item = RequirementSet> {
+        self.0.into_iter()
+    }
+}
+
+impl std::ops::Mul<RequirementSet> for RequirementMatrix {
+    type Output = RequirementSet;
+    fn mul(self, rhs: RequirementSet) -> Self::Output {
+        self.needs_when(rhs)
+    }
+}
+
+impl std::ops::BitOr for RequirementMatrix {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self([
+            self.0[0] | rhs.0[0],
+            self.0[1] | rhs.0[1],
+            self.0[2] | rhs.0[2],
+        ])
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub struct BlockSlot(u32);
 
@@ -355,6 +420,7 @@ pub struct SubValueInfo {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct BlockSerialization {
     pub eval_order: Arc<Vec<SubValueInfo>>,
+    pub parse_requirements: Arc<BTreeMap<DefId, RequirementMatrix>>,
 }
 
 error_type!(BlockSerializationError(Arc<Vec<Vec<SubValue>>>) in self);
@@ -371,10 +437,7 @@ pub fn block_serialization(
     db: &dyn Dependents,
     block: hir::BlockId,
 ) -> Result<BlockSerialization, BlockSerializationError> {
-    let graph = match DependencyGraph::new(db, block) {
-        Ok(g) => g,
-        Err(e) => return Err(e.into()),
-    };
+    let graph = DependencyGraph::new(db, block)?;
 
     let reachable_block_val = graph.find_descendants(&[SubValue::new_val(block.id())]);
     let reachable_block_back = graph.find_descendants(&[SubValue::new_back(block.id())]);
@@ -392,6 +455,7 @@ pub fn block_serialization(
         });
     }
     let mut eval_order = Vec::new();
+    let mut parse_requirements: BTreeMap<_, RequirementMatrix> = BTreeMap::new();
     for node in petgraph::algo::toposort(&condensed_graph, None)
         .unwrap()
         .into_iter()
@@ -408,12 +472,28 @@ pub fn block_serialization(
             // TODO(8051): we don't know what nodes are needed right now, so we just assume everything
             // is needed.
             requirements |= NeededBy::Backtrack;
+            let required_by = match val.kind {
+                SubValueKind::Val => NeededBy::Val.into(),
+                SubValueKind::Front => RequirementSet::empty(),
+                SubValueKind::Back => NeededBy::Len.into(),
+            };
+            let matrix = RequirementMatrix::from_outer_product(required_by, requirements);
+            parse_requirements
+                .entry(val.id)
+                .and_modify(|e| *e = *e | matrix)
+                .or_insert(
+                    RequirementMatrix::from_outer_product(
+                        NeededBy::Backtrack.into(),
+                        RequirementSet::all(),
+                    ) | matrix,
+                );
             SubValueInfo { val, requirements }
         }));
     }
     eval_order.reverse();
     Ok(BlockSerialization {
         eval_order: Arc::new(eval_order),
+        parse_requirements: Arc::new(parse_requirements),
     })
 }
 
@@ -422,7 +502,10 @@ mod tests {
     use hir::{HirDatabase, Parser};
     use yaboc_ast::{import::Import, AstDatabase};
     use yaboc_base::{
-        config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase, Context,
+        config::ConfigDatabase,
+        interner::{FieldName, InternerDatabase, PathComponent},
+        source::FileDatabase,
+        Context,
     };
     use yaboc_hir_types::{HirTypesDatabase, NominalId};
     use yaboc_resolve::ResolveDatabase;
@@ -505,6 +588,7 @@ def for[int] *> main = {
     a: ~
     b: ~
     c: {
+        let x = a
         | c: first
         | c: second
     }
@@ -522,6 +606,45 @@ def for[int] *> main = {
             },
             _ => panic!(),
         };
-        let _ = ctx.db.block_serialization(block).unwrap();
+        let s = ctx.db.block_serialization(block).unwrap();
+        let field = |f| {
+            let c = ctx.id(f);
+            let inner_id = block
+                .lookup(&ctx.db)
+                .unwrap()
+                .root_context
+                .child(&ctx.db, PathComponent::Named(FieldName::Ident(c)));
+            inner_id
+        };
+        let a = s.parse_requirements[&field("a")];
+        let b = s.parse_requirements[&field("b")];
+        let c = s.parse_requirements[&field("c")];
+        assert_eq!(
+            format!("{}", a),
+            "111\n\
+             111\n\
+             111"
+        );
+        assert_eq!(
+            format!("{}", c),
+            "101\n\
+             011\n\
+             111"
+        );
+        assert_eq!(
+            format!("{}", b),
+            "111\n\
+             011\n\
+             111"
+        );
+        assert_eq!(
+            format!("{}", b * NeededBy::Backtrack.into()),
+            "Len | Val | Backtrack"
+        );
+        assert_eq!(format!("{}", b * NeededBy::Len.into()), "Len | Backtrack");
+        assert_eq!(
+            format!("{}", c * (NeededBy::Len | NeededBy::Val)),
+            "Len | Val | Backtrack"
+        );
     }
 }

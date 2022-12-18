@@ -12,7 +12,7 @@ use yaboc_base::{
     interner::{DefId, FieldName},
     source::SpanIndex,
 };
-use yaboc_dependents::{Dependents, NeededBy, RequirementSet, SubValue};
+use yaboc_dependents::{Dependents, RequirementSet, SubValue};
 use yaboc_hir::{BlockId, ExprId, HirIdWrapper, ParserDefId};
 use yaboc_types::TypeId;
 
@@ -627,14 +627,8 @@ fn mir_block(db: &dyn Mirs, block: BlockId, requirements: RequirementSet) -> SRe
 fn mir_pd(db: &dyn Mirs, pd: ParserDefId, requirements: RequirementSet) -> SResult<Function> {
     let parserdef = pd.lookup(db)?;
     let mut ctx = ConvertCtx::new_parserdef_builder(db, pd, requirements)?;
-    ctx.add_sub_value(SubValue::new_front(pd.0))?;
     ctx.add_sub_value(SubValue::new_val(parserdef.to.0))?;
-    if requirements.contains(NeededBy::Len) {
-        ctx.add_sub_value(SubValue::new_back(pd.0))?;
-    }
-    if requirements.contains(NeededBy::Val) {
-        ctx.add_sub_value(SubValue::new_val(pd.0))?;
-    }
+    ctx.parserdef(&parserdef);
     Ok(ctx.finish_fun())
 }
 
@@ -645,7 +639,7 @@ mod tests {
     use yaboc_base::{
         config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase, Context,
     };
-    use yaboc_dependents::DependentsDatabase;
+    use yaboc_dependents::{DependentsDatabase, NeededBy};
     use yaboc_hir::{HirDatabase, Hirs, Parser};
     use yaboc_hir_types::HirTypesDatabase;
     use yaboc_resolve::ResolveDatabase;

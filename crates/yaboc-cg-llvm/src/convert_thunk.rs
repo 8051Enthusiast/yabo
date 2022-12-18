@@ -4,9 +4,10 @@ use inkwell::{
     IntPredicate,
 };
 
-use yaboc_dependents::NeededBy;
+use yaboc_dependents::{NeededBy, RequirementSet};
 use yaboc_hir_types::TyHirs;
 use yaboc_layout::{
+    collect::pd_val_req,
     flat_layouts,
     prop::{PSize, SizeAlign, TargetSized},
     ILayout, IMonoLayout,
@@ -86,7 +87,8 @@ impl<'comp> ThunkInfo<'comp> for TypecastThunk<'comp> {
         let [return_ptr, thunk_ptr, target_level] = get_fun_args(fun);
         let thunk_ptr = thunk_ptr.into_pointer_value();
 
-        let (from_ptr, arg_ptr, slot) = cg.build_nominal_components(self.layout, thunk_ptr);
+        let (from_ptr, arg_ptr, slot) =
+            cg.build_nominal_components(self.layout, thunk_ptr, pd_val_req());
         let (_, fun_layout) = self.layout.unapply_nominal(cg.layouts);
         let mono_fun = flat_layouts(&fun_layout).next().unwrap();
 
@@ -165,6 +167,7 @@ pub struct ValThunk<'comp> {
     pub fun: IMonoLayout<'comp>,
     pub thunk: IMonoLayout<'comp>,
     pub slot: PSize,
+    pub req: RequirementSet,
 }
 
 impl<'comp> ThunkInfo<'comp> for ValThunk<'comp> {
@@ -176,7 +179,7 @@ impl<'comp> ThunkInfo<'comp> for ValThunk<'comp> {
     }
 
     fn function<'llvm>(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
-        let f = cg.parser_val_fun_val(self.fun, self.slot);
+        let f = cg.parser_fun_val(self.fun, self.slot, self.req);
         cg.add_entry_block(f);
         f
     }
@@ -213,7 +216,12 @@ impl<'comp> ThunkInfo<'comp> for ValThunk<'comp> {
         after_copy: bool,
         _return_ptr: PointerValue<'llvm>,
     ) -> Option<BasicBlock<'llvm>> {
-        if after_copy {
+        let call_req = if after_copy {
+            self.req & !NeededBy::Val
+        } else {
+            self.req
+        };
+        if call_req.is_empty() {
             return None;
         }
         let previous_bb = cg.builder.get_insert_block();
@@ -223,13 +231,7 @@ impl<'comp> ThunkInfo<'comp> for ValThunk<'comp> {
 
         let (return_ptr, fun_ptr, target_level, arg_ptr, retlen_ptr) = parser_args(fun);
 
-        let cont_fun = cg.build_parser_fun_get(
-            Some(self.fun),
-            fun_ptr,
-            self.slot,
-            NeededBy::Val | NeededBy::Backtrack,
-            true,
-        );
+        let cont_fun = cg.build_parser_fun_get(Some(self.fun), fun_ptr, self.slot, call_req, true);
         let ret = cg.build_call_with_int_ret(
             cont_fun,
             &[
@@ -256,6 +258,7 @@ pub struct BlockThunk<'comp> {
     pub from: ILayout<'comp>,
     pub fun: IMonoLayout<'comp>,
     pub result: IMonoLayout<'comp>,
+    pub req: RequirementSet,
     pub slot: PSize,
 }
 
@@ -265,7 +268,7 @@ impl<'comp> ThunkInfo<'comp> for BlockThunk<'comp> {
     }
 
     fn function<'llvm>(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
-        let f = cg.parser_val_fun_val(self.fun, self.slot);
+        let f = cg.parser_fun_val(self.fun, self.slot, self.req);
         cg.add_entry_block(f);
         f
     }
@@ -293,13 +296,7 @@ impl<'comp> ThunkInfo<'comp> for BlockThunk<'comp> {
         cg.builder.position_at_end(current_bb);
         let (_, fun_ptr, target_level, arg_ptr, retlen_ptr) = parser_args(fun);
 
-        let cont_fun = cg.build_parser_fun_get(
-            Some(self.fun),
-            fun_ptr,
-            self.slot,
-            NeededBy::Val | NeededBy::Backtrack,
-            true,
-        );
+        let cont_fun = cg.build_parser_fun_get(Some(self.fun), fun_ptr, self.slot, self.req, true);
         let ret = cg.build_call_with_int_ret(
             cont_fun,
             &[

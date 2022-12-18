@@ -100,19 +100,8 @@ class NominalVTable(Structure):
         ('end_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr)),
     ]
 
-
-class ParserArgImpl(Structure):
-    __slots__ = [
-        'val_impl',
-        'len_impl',
-    ]
-    _fields_ = [
-        ('val_impl', CFUNCTYPE(c_int64, _voidptr,
-         _voidptr, c_int64, _voidptr, _voidptr)),
-        ('len_impl', CFUNCTYPE(c_int64, _voidptr,
-         _voidptr, c_int64, _voidptr, _voidptr)),
-    ]
-
+PARSER_TY = CFUNCTYPE(c_int64, _voidptr,
+         _voidptr, c_int64, _voidptr, _voidptr)
 
 class ParserVTable(Structure):
     __slots__ = [
@@ -121,7 +110,7 @@ class ParserVTable(Structure):
     ]
     _fields_ = [
         ('head', VTableHeader),
-        ('apply_table', POINTER(ParserArgImpl)),
+        ('apply_table', POINTER(PARSER_TY)),
     ]
 
 
@@ -180,21 +169,22 @@ def _check_status(status: int):
 
 
 class Parser:
-    impl: ParserArgImpl
+    impl: PARSER_TY
 
-    def __init__(self, impl: ParserArgImpl, lib):
+    def __init__(self, impl: PARSER_TY, lib):
         self.impl = impl
         self._lib = lib
 
     def parse(self, buf: bytearray):
-        parse = self.impl.val_impl
+        parse = self.impl
         buffer_ptr = pointer((c_ubyte * len(buf)).from_buffer(buf))
         ret = DynValue()
+        retlen = DynValue()
         nullptr = ctypes.c_void_p()
         # the vtable pointer is stored at negative index 1, so we pass
         # a pointer to the data field
         status = parse(ret.data_field_ptr(), nullptr, YABO_ANY |
-                       YABO_MALLOC, byref(buffer_ptr), nullptr)
+                       YABO_MALLOC, byref(buffer_ptr), retlen.data_field_ptr())
         _check_status(status)
         return _new_value(ret, buf, self._lib)
 
@@ -204,7 +194,7 @@ class YaboLib(ctypes.CDLL):
         super().__init__(name)
 
     def parser(self, name: str) -> Parser:
-        impl = ParserArgImpl.in_dll(self, name)
+        impl = PARSER_TY.in_dll(self, name)
         return Parser(impl, self)
 
 

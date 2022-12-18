@@ -418,7 +418,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             .collected_layouts
             .parser_slots
             .layout_vtable_offsets
-            .get(&(arg_layout, fun_layout))
+            .get(&((arg_layout, call_kind), fun_layout))
         {
             Some(slot) => *slot,
             None => {

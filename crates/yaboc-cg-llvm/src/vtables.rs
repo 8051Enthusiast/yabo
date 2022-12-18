@@ -171,10 +171,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let vtable_impls: Vec<_> = (0..=max)
             .map(|slot| {
                 let is_non_null = slots.contains_key(&slot);
-                self.parser_impl_struct_val(layout, slot, is_non_null)
+                let req = slots
+                    .get(&slot)
+                    .copied()
+                    .map(|(_, req)| req)
+                    .unwrap_or_default();
+                self.parser_impl_struct_val(layout, slot, req, is_non_null)
             })
             .collect();
-        let vtable_array = vtable::ParserArgImpl::struct_type(self).const_array(&vtable_impls);
+        let vtable_array = ParserFun::codegen_ty(self)
+            .into_pointer_type()
+            .const_array(&vtable_impls);
         let vtable_val = self.llvm.const_struct(
             &[
                 arg_impl_array.into(),
