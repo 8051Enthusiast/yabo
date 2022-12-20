@@ -421,6 +421,7 @@ def run_tests(target_dir: str) -> int:
         return sum(results)
     #total_failed = 0
     #for file in files:
+    #    print(file)
     #    total_failed += run_test(file)
     #return total_failed
         
