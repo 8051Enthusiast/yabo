@@ -226,13 +226,27 @@ impl<'a> ConvertCtx<'a> {
     }
 
     fn make_place_ref(&mut self, place: Place, ty: TypeId) -> PlaceRef {
-        let place_info = PlaceInfo { place, ty };
+        let place_info = PlaceInfo {
+            place,
+            ty,
+            remove_bt: false,
+        };
         self.f.add_place(place_info)
     }
 
     fn new_stack_place(&mut self, ty: TypeId, origin: PlaceOrigin) -> PlaceRef {
         let new_place = Place::Stack(self.f.new_stack_ref(origin));
         self.make_place_ref(new_place, ty)
+    }
+
+    fn new_remove_bt_stack_place(&mut self, ty: TypeId, origin: PlaceOrigin) -> PlaceRef {
+        let new_place = Place::Stack(self.f.new_stack_ref(origin));
+        let place_info = PlaceInfo {
+            place: new_place,
+            ty,
+            remove_bt: true,
+        };
+        self.f.add_place(place_info)
     }
 
     fn unwrap_or_stack(
@@ -271,10 +285,19 @@ impl<'a> ConvertCtx<'a> {
         ty: TypeId,
         place: Option<PlaceRef>,
         origin: PlaceOrigin,
+        remove_bt: bool,
     ) -> Option<PlaceRef> {
         let place_ref = self.val_place_at_def(var)?;
-        if self.f.fun.place(place_ref).ty == ty && place.is_none() {
+        if self.f.fun.place(place_ref).ty == ty && place.is_none() && !remove_bt {
             return Some(place_ref);
+        }
+        if let Some(place) = place {
+            if remove_bt {
+                let between_place = self.new_remove_bt_stack_place(ty, origin);
+                self.copy(place_ref, between_place);
+                self.copy(between_place, place);
+                return Some(place);
+            }
         }
         let new_place = self.unwrap_or_stack(place, ty, origin);
         self.copy(place_ref, new_place);
@@ -287,14 +310,24 @@ impl<'a> ConvertCtx<'a> {
         ty: TypeId,
         place: Option<PlaceRef>,
         origin: PlaceOrigin,
+        remove_bt: bool,
     ) -> SResult<PlaceRef> {
         let cap_ty = self.db.parser_type_at(captured)?;
         let place_ref = self.f.add_place(PlaceInfo {
             place: Place::Captured(self.f.fun.cap(), captured),
             ty: cap_ty,
+            remove_bt: false,
         });
-        if self.db.deref_level(ty) == self.db.deref_level(cap_ty) && place.is_none() {
+        if self.db.deref_level(ty) == self.db.deref_level(cap_ty) && place.is_none() && !remove_bt {
             return Ok(place_ref);
+        }
+        if let Some(place) = place {
+            if remove_bt {
+                let between_place = self.new_remove_bt_stack_place(ty, origin);
+                self.copy(place_ref, between_place);
+                self.copy(between_place, place);
+                return Ok(place);
+            }
         }
         let new_place = self.unwrap_or_stack(place, ty, origin);
         self.copy(place_ref, new_place);
@@ -355,6 +388,7 @@ impl<'a> ConvertCtx<'a> {
                 ctx.f.add_place(PlaceInfo {
                     place: Place::Captured(block, *captured),
                     ty: cap_ty,
+                    remove_bt: false,
                 })
             };
 
@@ -380,10 +414,12 @@ impl<'a> ConvertCtx<'a> {
         let origin = PlaceOrigin::Expr(expr_id, span);
         Ok(match &expr.0 {
             ExpressionHead::Niladic(n) => match &n.inner {
-                ResolvedAtom::Val(val) => self
-                    .load_var(*val, ty, place, origin)
+                ResolvedAtom::Val(val, backtracks) => self
+                    .load_var(*val, ty, place, origin, !*backtracks)
                     .expect("Invalid refernce to variable"),
-                ResolvedAtom::Captured(cap) => self.load_captured(*cap, ty, place, origin)?,
+                ResolvedAtom::Captured(cap, backtracks) => {
+                    self.load_captured(*cap, ty, place, origin, !*backtracks)?
+                }
                 ResolvedAtom::Number(n) => self.load_int(*n, ty, place, origin),
                 ResolvedAtom::Char(c) => self.load_char(*c, ty, place, origin),
                 ResolvedAtom::Bool(b) => self.load_bool(*b, ty, place, origin),
@@ -550,10 +586,12 @@ impl<'a> ConvertCtx<'a> {
                         let left_place = self.f.add_place(PlaceInfo {
                             place: Place::DupleField(place_ref, DupleField::First),
                             ty: left_ldt,
+                            remove_bt: false,
                         });
                         let right_place = self.f.add_place(PlaceInfo {
                             place: Place::DupleField(place_ref, DupleField::Second),
                             ty: right_ldt,
+                            remove_bt: false,
                         });
                         self.copy_if_different_levels(
                             left_ldt,
@@ -889,6 +927,7 @@ impl<'a> ConvertCtx<'a> {
                 let place_ref = f.add_place(PlaceInfo {
                     place,
                     ty: ambient_type,
+                    remove_bt: false,
                 });
                 places.insert(val, place_ref);
             } else if matches!(val.kind, SubValueKind::Val) {
@@ -918,7 +957,11 @@ impl<'a> ConvertCtx<'a> {
                         dbpanic!(db, "subvalue {} should not occur here", &val)
                     }
                 };
-                let place_ref = f.add_place(PlaceInfo { place, ty });
+                let place_ref = f.add_place(PlaceInfo {
+                    place,
+                    ty,
+                    remove_bt: false,
+                });
                 places.insert(val, place_ref);
             }
         }
@@ -994,6 +1037,7 @@ impl<'a> ConvertCtx<'a> {
         let expr_place_ref = f.add_place(PlaceInfo {
             place: expr_place,
             ty: expr_ty,
+            remove_bt: false,
         });
         places.insert(SubValue::new_val(pd.to.0), expr_place_ref);
         places.insert(SubValue::new_front(id.0), f.fun.arg());

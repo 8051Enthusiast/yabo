@@ -95,7 +95,7 @@ pub fn captures(db: &dyn Resolves, id: hir::BlockId) -> Arc<BTreeSet<DefId>> {
             };
             ret.extend(ExprIter::new(&resolved_expr).filter_map(|subexpr| {
                 if let ExpressionHead::Niladic(OpWithData {
-                    inner: expr::ResolvedAtom::Captured(capture),
+                    inner: expr::ResolvedAtom::Captured(capture, _),
                     ..
                 }) = subexpr.0
                 {
