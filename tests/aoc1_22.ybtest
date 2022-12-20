@@ -3,21 +3,21 @@
 import std
 
 def *sublistsum = std.summap({
-  return: std.basenum(10)
-  std.newline
+  return: std.basenum?(10)
+  std.newline?
 })
 
 def *listmax(min: int): int = {
-  std.newline
+  std.newline?
   sum: sublistsum
   m: std.max(min, sum)
-  | return: listmax(m)
-  | let return = m
+  | return: listmax?(m)
+  | let return = min
 }
 
 export def *test = {
-    first: sublistsum
-    return: listmax(first)
+  first: sublistsum
+  return: listmax(first)
 }
 ====[ binary 1 ]====
 31 30 30 30 0a

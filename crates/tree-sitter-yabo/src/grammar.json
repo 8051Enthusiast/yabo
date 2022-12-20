@@ -1935,7 +1935,7 @@
       "members": [
         {
           "type": "SYMBOL",
-          "name": "_field_name"
+          "name": "bt_name"
         },
         {
           "type": "SYMBOL",
@@ -1992,6 +1992,39 @@
     "type_var": {
       "type": "PATTERN",
       "value": "\\'[A-Za-z_][A-Za-z_0-9]*"
+    },
+    "bt_name": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "_field_name"
+          }
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "FIELD",
+              "name": "backtrack",
+              "content": {
+                "type": "SYMBOL",
+                "name": "question_mark"
+              }
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        }
+      ]
+    },
+    "question_mark": {
+      "type": "STRING",
+      "value": "?"
     },
     "_field_name": {
       "type": "CHOICE",

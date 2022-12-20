@@ -851,7 +851,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                     make_layout(MonoLayout::Primitive(PrimitiveType::Int))
                 }
                 ValUnOp::Wiggle(_, _) => m.inner.0,
-                ValUnOp::Dot(a) => m.inner.0.access_field(ctx, a)?,
+                ValUnOp::Dot(a, _) => m.inner.0.access_field(ctx, a)?,
             },
             ExpressionHead::Dyadic(d) => match d.op.inner {
                 ValBinOp::ParserApply => d.inner[1].0.apply_arg(ctx, d.inner[0].0)?,
@@ -1004,7 +1004,7 @@ def for[int] *> main = {
     b: ~
     c: {
       | let c: for[int] *> first = first
-      | let c: for[int] *> second = second
+      | let c: for[int] *> second = second?
     }
     d: c.c
 }
@@ -1036,7 +1036,7 @@ def for[int] *> main = {
                     LayoutPart::Parse(0, NeededBy::Val | NeededBy::Backtrack, true),
                     &ctx.db
                 ),
-                "block_1b15571abd710f7a$17a27f01d2ed0dae$parse_0_vb"
+                "block_1b15571abd710f7a$16713963642194ce$parse_0_vb"
             );
         }
         let field = |name| FieldName::Ident(ctx.id(name));
@@ -1058,7 +1058,7 @@ def for[int] *> main = {
         );
         assert_eq!(
             dbformat!(&ctx.db, "{}", &main_block.access_field(&mut outlayer, field("c")).unwrap().access_field(&mut outlayer, field("c")).unwrap()),
-            "nominal-parser?[for[int] *> for[int] &> file[_].first]() | nominal-parser?[for[int] *> for[int] &> file[_].second]()"
+            "nominal-parser[for[int] *> for[int] &> file[_].first]() | nominal-parser?[for[int] *> for[int] &> file[_].second]()"
         );
         assert_eq!(
             dbformat!(

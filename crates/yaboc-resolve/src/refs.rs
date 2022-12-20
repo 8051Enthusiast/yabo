@@ -88,7 +88,7 @@ pub fn expr_idents(expr: &hir::ValExpression) -> Vec<FieldName> {
     for node in yaboc_ast::expr::ExprIter::new(&expr.expr) {
         let ident = match &node.0 {
             ExpressionHead::Niladic(a) => match a.inner {
-                hir::ParserAtom::Atom(Atom::Field(ident)) => ident,
+                hir::ParserAtom::Atom(Atom::Field((ident, _))) => ident,
                 _ => continue,
             },
             _ => continue,

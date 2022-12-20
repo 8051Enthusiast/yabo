@@ -322,7 +322,7 @@ module.exports = grammar({
       ),
     )),
     _atom: $ => choice(
-      $._field_name,
+      $.bt_name,
       $._literal,
     ),
     _literal: $ => choice(
@@ -339,6 +339,13 @@ module.exports = grammar({
     single: $ => '~',
     nil: $ => '+',
     type_var: $ => /\'[A-Za-z_][A-Za-z_0-9]*/,
+    bt_name: $ => seq(
+      field('name', $._field_name),
+      optional(
+        field('backtrack', $.question_mark),
+      )
+    ),
+    question_mark: $ => '?',
     _field_name: $ => choice(
       $.identifier,
       $.retvrn,

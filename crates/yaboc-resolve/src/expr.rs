@@ -43,25 +43,25 @@ pub fn resolve_expr_error(
 ) -> Result<Arc<ResolvedExpr>, ResolveError> {
     let expr = expr_id.lookup(db)?.expr;
     let parent_block = db.hir_parent_block(expr_id.0)?;
-    let new_resolved_atom = |loc, name, span| {
-        let (id, kind) = match refs::resolve_var_ref(db, loc, name)? {
-            refs::Resolved::Value(id, kind) => (id, kind),
+    let new_resolved_atom = |loc, name, bt, span| {
+        let (id, kind, bt) = match refs::resolve_var_ref(db, loc, name)? {
+            refs::Resolved::Value(id, kind) => (id, kind, bt),
             refs::Resolved::Module(m) => return Ok(Err(m)),
             refs::Resolved::Unresolved => {
                 return Err(ResolveError::Unresolved(expr_id, span, name))
             }
         };
         Ok(Ok(match kind {
-            refs::VarType::ParserDef => ResolvedAtom::ParserDef(hir::ParserDefId(id), true),
+            refs::VarType::ParserDef => ResolvedAtom::ParserDef(hir::ParserDefId(id), bt),
             refs::VarType::Value => {
                 let is_captured = parent_block
                     .map(|x| !x.0.is_ancestor_of(db, id))
                     .unwrap_or(false);
                 let is_arg = db.hir_node(id)?.is_kind(hir::HirNodeKind::ArgDef.into());
                 if is_captured || is_arg {
-                    ResolvedAtom::Captured(id, true)
+                    ResolvedAtom::Captured(id, bt)
                 } else {
-                    ResolvedAtom::Val(id, true)
+                    ResolvedAtom::Val(id, bt)
                 }
             }
         }))
@@ -80,8 +80,8 @@ pub fn resolve_expr_error(
                     hir::ParserAtom::Single => ResolvedAtom::Single,
                     hir::ParserAtom::Nil => ResolvedAtom::Nil,
                     hir::ParserAtom::Block(b) => ResolvedAtom::Block(*b),
-                    hir::ParserAtom::Atom(Atom::Field(f)) => {
-                        match new_resolved_atom(expr_id.0, *f, nil.data)? {
+                    hir::ParserAtom::Atom(Atom::Field((f, bt))) => {
+                        match new_resolved_atom(expr_id.0, *f, *bt, nil.data)? {
                             Ok(k) => k,
                             Err(m) => return Ok(Err(m)),
                         }
@@ -93,9 +93,9 @@ pub fn resolve_expr_error(
                 })));
             }
             ExpressionHead::Monadic(m) => {
-                if let ValUnOp::Dot(name) = &m.op.inner {
+                if let ValUnOp::Dot(name, bt) = &m.op.inner {
                     if let Err(module) = m.inner {
-                        match new_resolved_atom(module.0, *name, m.op.data)? {
+                        match new_resolved_atom(module.0, *name, *bt, m.op.data)? {
                             Ok(new) => {
                                 return Ok(Ok(Expression::new_niladic(OpWithData {
                                     data: m.op.data,

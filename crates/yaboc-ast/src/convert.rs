@@ -349,7 +349,7 @@ macro_rules! astify {
                     stringify!($new),
                 ),
             });
- //           eprintln!("Leave {}", stringify!($new));
+//            eprintln!("Leave {}", stringify!($new));
             ret
         }
     };
@@ -520,8 +520,15 @@ astify! {
 }
 
 astify! {
+    struct bt_name = BtName {
+        name: field_name[!],
+        backtrack: question_mark[?],
+    };
+}
+
+astify! {
     enum atom = Atom {
-        Field(identifier),
+        Field(bt_name),
         Number(number_literal),
         Char(char_literal),
         Bool(bool_literal),
@@ -637,7 +644,7 @@ impl From<TypeConstraint> for MonadicExpr<AstTypeSpanned> {
 struct ValDot {
     left: ValExpression,
     op: Spanned<String>,
-    right: FieldSpan,
+    right: (FieldName, bool),
     #[allow(dead_code)]
     span: Span,
 }
@@ -646,7 +653,7 @@ astify! {
     struct val_dot = ValDot {
         left: expression(val_expression)[!],
         op: spanned(node_to_string)[!],
-        right: fieldspan[!],
+        right: into(bt_name)[!],
     };
 }
 
@@ -655,7 +662,7 @@ impl From<ValDot> for MonadicExpr<AstValSpanned> {
         Monadic {
             op: OpWithData {
                 data: val.op.span,
-                inner: ValUnOp::Dot(val.right.inner),
+                inner: ValUnOp::Dot(val.right.0, val.right.1),
             },
             inner: Box::new(val.left),
         }
@@ -689,6 +696,10 @@ fn nil(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ParserAtom> {
     Ok(ParserAtom::Nil)
 }
 
+fn question_mark(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<()> {
+    Ok(())
+}
+
 fn identifier(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Identifier> {
     let str = spanned(node_to_string)(db, fd, c)?;
     let id = IdentifierName { name: str.inner };
@@ -702,14 +713,18 @@ fn type_var(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<TypeVar> {
 }
 
 fn fieldspan(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<FieldSpan> {
-    spanned(|db, fd, c| match c.node().kind() {
+    spanned(field_name)(db, fd, c)
+}
+
+fn field_name(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<FieldName> {
+    match c.node().kind() {
         "identifier" => {
             let id = identifier(db, fd, c)?;
             Ok(FieldName::Ident(id))
         }
         "retvrn" => Ok(FieldName::Return),
-        _ => panic!("unknown field name"),
-    })(db, fd, c)
+        otherwise => panic!("unknown field name {otherwise}"),
+    }
 }
 
 fn idspan(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<IdSpan> {

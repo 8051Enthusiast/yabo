@@ -35,7 +35,7 @@ def *bit_index(n: int) = {
 }
 
 export def *test = {
-  line: std.list(priority)
+  line: std.list(priority?)
   line_len: std.len(line)
   second_half: std.skip(line, line_len / 2)
   first_set: bitset(line, line_len / 2, 0)

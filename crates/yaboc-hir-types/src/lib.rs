@@ -338,7 +338,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                                 int
                             }
                             ValUnOp::Wiggle(_, _) => inner,
-                            ValUnOp::Dot(name) => self.infctx.access_field(inner, *name)?,
+                            ValUnOp::Dot(name, _) => self.infctx.access_field(inner, *name)?,
                         },
                         op.data,
                     ),

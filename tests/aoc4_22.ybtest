@@ -2,20 +2,20 @@
 import std
 
 def for[int] *> range = {
-  start: std.basenum(10), ~, end: std.basenum(10)
+  start: std.basenum?(10), ~, end: std.basenum(10)
 }
 
 def for[int] *> is_subrange = {
-  a: range, ~, b: range, std.newline
-  | | std.assert(a.start <= b.start)
-      std.assert(a.end >= b.end)
-    | std.assert(a.start >= b.start)
-      std.assert(a.end <= b.end)
+  a: range?, ~, b: range, std.newline
+  | | std.assert?(a.start <= b.start)
+      std.assert?(a.end >= b.end)
+    | std.assert?(a.start >= b.start)
+      std.assert?(a.end <= b.end)
     let return = 1
   | let return = 0
 }
 
-export def *test = std.summap(is_subrange)
+export def *test = std.summap(is_subrange?)
 ====[ binary 1 ]====
 322d342c362d380a
 322d332c342d350a
