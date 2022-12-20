@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{hash_map::Entry, BTreeMap},
+    sync::Arc,
+};
 
 use enumflags2::make_bitflags;
 use fxhash::{FxHashMap, FxHashSet};
@@ -186,6 +189,18 @@ impl<'a> ConvertCtx<'a> {
             .copied()
     }
 
+    // gets the bbs for the context and initializes if necessary
+    fn context_bb(&mut self, context: ContextId) -> (BBRef, BBRef) {
+        match self.context_bb.entry(context) {
+            Entry::Occupied(o) => *o.get(),
+            Entry::Vacant(v) => {
+                let bb = self.f.new_bb();
+                v.insert((bb, bb));
+                (bb, bb)
+            }
+        }
+    }
+
     pub fn change_context(&mut self, context: ContextId) {
         if Some(context) == self.current_context {
             return;
@@ -197,12 +212,17 @@ impl<'a> ConvertCtx<'a> {
                 .1 = self.f.current_bb;
         }
         self.current_context = Some(context);
-        self.f.set_bb(self.context_bb[&context].1);
+        let current_end = self.context_bb(context).1;
+        self.f.set_bb(current_end);
+        // if you end up with a crash here, that means a subvalue was used after
+        // the context was terminated, which indicates a problem in dependents
         let context_backtrack = self.context_data[&context].backtracks_to;
 
-        self.retreat.backtrack = context_backtrack
-            .map(|x| self.context_bb[&x].0)
-            .unwrap_or(self.top_level_retreat.backtrack);
+        self.retreat.backtrack = if let Some(bt) = context_backtrack {
+            self.context_bb(bt).0
+        } else {
+            self.top_level_retreat.backtrack
+        }
     }
 
     fn make_place_ref(&mut self, place: Place, ty: TypeId) -> PlaceRef {
@@ -641,6 +661,13 @@ impl<'a> ConvertCtx<'a> {
     }
 
     fn terminate_context(&mut self, context: ContextId, superchoice: ChoiceId, cont: BBRef) {
+        if !self.context_bb.contains_key(&context) {
+            // context was never referenced and contains nothing
+            self.context_data
+                .remove(&context)
+                .expect("context not initialized or removed multiple times");
+            return;
+        }
         self.change_context(context);
         let context_data = self
             .context_data
@@ -655,13 +682,12 @@ impl<'a> ConvertCtx<'a> {
             self.copy(from_place, to_place);
         }
         if self.returns_self {
-            for field in context_data.affected_discriminants {
-                let has_field = context_data.field_ids.get(&field).is_some();
-                self.f.append_ins(MirInstr::SetDiscriminant(
-                    self.f.fun.ret(),
-                    field,
-                    has_field,
-                ));
+            if let Some(ret) = self.f.fun.ret() {
+                for field in context_data.affected_discriminants {
+                    let has_field = context_data.field_ids.get(&field).is_some();
+                    self.f
+                        .append_ins(MirInstr::SetDiscriminant(ret, field, has_field));
+                }
             }
         }
         if let Some(to_place) = self.back_place_at_def(superchoice.0) {
@@ -720,7 +746,7 @@ impl<'a> ConvertCtx<'a> {
         self.req_transformer[&id] * self.req
     }
 
-    fn parse_statement_val_or_back(&mut self, parse: &hir::ParseStatement) {
+    fn parse_statement(&mut self, parse: &hir::ParseStatement) {
         if !self.processed_parse_sites.insert(parse.id.0) {
             return;
         }
@@ -762,10 +788,16 @@ impl<'a> ConvertCtx<'a> {
     pub fn add_sub_value(&mut self, sub_value: SubValue) -> SResult<()> {
         match self.db.hir_node(sub_value.id)? {
             hir::HirNode::Let(l) => {
+                if sub_value.kind != SubValueKind::Val {
+                    return Ok(());
+                }
                 self.change_context(l.context);
                 self.let_statement(&l)
             }
             hir::HirNode::Expr(e) => {
+                if sub_value.kind != SubValueKind::Val {
+                    return Ok(());
+                }
                 if let Some(ctx) = e.parent_context {
                     self.change_context(ctx)
                 }
@@ -777,7 +809,9 @@ impl<'a> ConvertCtx<'a> {
                 self.change_context(p.parent_context);
                 match sub_value.kind {
                     SubValueKind::Front => self.parse_statement_front(&p),
-                    SubValueKind::Back | SubValueKind::Val => self.parse_statement_val_or_back(&p),
+                    SubValueKind::Back | SubValueKind::Val | SubValueKind::Bt => {
+                        self.parse_statement(&p)
+                    }
                 }
             }
             hir::HirNode::Choice(c) => {
@@ -793,6 +827,7 @@ impl<'a> ConvertCtx<'a> {
                     }
                     // pushed by individual contexts
                     SubValueKind::Back => return Ok(()),
+                    SubValueKind::Bt => return Ok(()),
                 }
             }
             // choice indirections are pushed by individual contexts and not pulled
@@ -840,12 +875,15 @@ impl<'a> ConvertCtx<'a> {
             FxHashSet::default()
         };
         for value in order.eval_order.iter() {
+            if (value.requirements & requirements).is_empty() {
+                continue;
+            }
             let val = value.val;
             if val.id == block.id.0
                 && val.kind == SubValueKind::Back
                 && requirements.contains(NeededBy::Len)
             {
-                places.insert(val, f.fun.retlen());
+                places.insert(val, f.fun.retlen().unwrap());
             } else if matches!(val.kind, SubValueKind::Back | SubValueKind::Front) {
                 let place = Place::Stack(f.new_stack_ref(PlaceOrigin::Ambient(block.id, val.id)));
                 let place_ref = f.add_place(PlaceInfo {
@@ -853,12 +891,12 @@ impl<'a> ConvertCtx<'a> {
                     ty: ambient_type,
                 });
                 places.insert(val, place_ref);
-            } else {
+            } else if matches!(val.kind, SubValueKind::Val) {
                 let place = if returned_vals.contains(&val.id) {
                     if block.returns {
-                        f.fun.place(f.fun.ret()).place
+                        f.fun.place(f.fun.ret().unwrap()).place
                     } else {
-                        Place::Field(f.fun.ret(), val.id)
+                        Place::Field(f.fun.ret().unwrap(), val.id)
                     }
                 } else {
                     Place::Stack(f.new_stack_ref(PlaceOrigin::Node(val.id)))
@@ -908,7 +946,7 @@ impl<'a> ConvertCtx<'a> {
         let Type::ParserArg { result, arg } = db.lookup_intern_type(block_ty) else {
             dbpanic!(db, "should have been a parser type, was {}", &block_ty)
         };
-        let mut f: FunctionWriter = FunctionWriter::new(block_ty, arg, result);
+        let mut f: FunctionWriter = FunctionWriter::new(block_ty, arg, result, requirements);
         let top_level_retreat = f.make_top_level_retreat();
         let retreat = top_level_retreat;
         let int: TypeId = db.intern_type(Type::Primitive(PrimitiveType::Int));
@@ -916,14 +954,7 @@ impl<'a> ConvertCtx<'a> {
         let context_data: FxHashMap<ContextId, ContextData> =
             ContextData::build_context_tree(db, block.root_context)?;
         let mut context_bb: FxHashMap<ContextId, (BBRef, BBRef)> = FxHashMap::default();
-        for context in context_data.keys() {
-            let new_bb = if *context == block.root_context {
-                f.fun.entry()
-            } else {
-                f.new_bb()
-            };
-            context_bb.insert(*context, (new_bb, new_bb));
-        }
+        context_bb.insert(block.root_context, (f.fun.entry(), f.fun.entry()));
         let current_context: Option<ContextId> = Some(block.root_context);
         let returns_self: bool = requirements.contains(NeededBy::Val) && !block.returns;
         let processed_parse_sites = FxHashSet::default();
@@ -949,7 +980,6 @@ impl<'a> ConvertCtx<'a> {
     fn pd_places(
         db: &dyn Mirs,
         id: ParserDefId,
-        requirements: RequirementSet,
         f: &mut FunctionWriter,
     ) -> SResult<FxHashMap<SubValue, PlaceRef>> {
         let mut places: FxHashMap<SubValue, PlaceRef> = FxHashMap::default();
@@ -964,11 +994,11 @@ impl<'a> ConvertCtx<'a> {
         });
         places.insert(SubValue::new_val(pd.to.0), expr_place_ref);
         places.insert(SubValue::new_front(id.0), f.fun.arg());
-        if requirements.contains(NeededBy::Val) {
-            places.insert(SubValue::new_val(id.0), f.fun.ret());
+        if let Some(ret) = f.fun.ret() {
+            places.insert(SubValue::new_val(id.0), ret);
         }
-        if requirements.contains(NeededBy::Len) {
-            places.insert(SubValue::new_back(id.0), f.fun.retlen());
+        if let Some(retlen) = f.fun.retlen() {
+            places.insert(SubValue::new_back(id.0), retlen);
         }
         Ok(places)
     }
@@ -986,13 +1016,13 @@ impl<'a> ConvertCtx<'a> {
             arg: from,
         });
         let arg_ty = from;
-        let mut f = FunctionWriter::new(fun_ty, arg_ty, ret_ty);
+        let mut f = FunctionWriter::new(fun_ty, arg_ty, ret_ty, requirements);
         let top_level_retreat = f.make_top_level_retreat();
         let retreat = top_level_retreat;
         let int: TypeId = db.intern_type(Type::Primitive(PrimitiveType::Int));
         let context_data = FxHashMap::default();
         let context_bb = FxHashMap::default();
-        let places = Self::pd_places(db, id, requirements, &mut f)?;
+        let places = Self::pd_places(db, id, &mut f)?;
         let current_context = None;
         let returns_self = false;
         let processed_parse_sites = FxHashSet::default();

@@ -14,7 +14,7 @@ use yaboc_base::{
     interner::{DefId, FieldName},
     source::SpanIndex,
 };
-use yaboc_dependents::{Dependents, RequirementSet, SubValue};
+use yaboc_dependents::{Dependents, NeededBy, RequirementSet, SubValue};
 use yaboc_hir::{BlockId, ExprId, HirIdWrapper, ParserDefId};
 use yaboc_types::TypeId;
 
@@ -351,6 +351,8 @@ pub struct Function {
     place: Vec<PlaceInfo>,
     stack: Vec<PlaceOrigin>,
     success_returns: Vec<BBRef>,
+    ret: Option<PlaceRef>,
+    retlen: Option<PlaceRef>,
 }
 
 const fn const_ref(r: u32) -> PlaceRef {
@@ -362,8 +364,6 @@ const fn const_ref(r: u32) -> PlaceRef {
 
 const CAP_REF: PlaceRef = const_ref(1);
 const ARG_REF: PlaceRef = const_ref(2);
-const RET_REF: PlaceRef = const_ref(3);
-const RETLEN_REF: PlaceRef = const_ref(4);
 
 impl Function {
     pub fn bb(&self, bb: BBRef) -> &BasicBlock {
@@ -390,12 +390,12 @@ impl Function {
         ARG_REF
     }
 
-    pub fn ret(&self) -> PlaceRef {
-        RET_REF
+    pub fn ret(&self) -> Option<PlaceRef> {
+        self.ret
     }
 
-    pub fn retlen(&self) -> PlaceRef {
-        RETLEN_REF
+    pub fn retlen(&self) -> Option<PlaceRef> {
+        self.retlen
     }
 
     pub fn entry(&self) -> BBRef {
@@ -453,12 +453,14 @@ pub struct FunctionWriter {
 }
 
 impl FunctionWriter {
-    pub fn new(fun_ty: TypeId, arg_ty: TypeId, ret_ty: TypeId) -> Self {
+    pub fn new(fun_ty: TypeId, arg_ty: TypeId, ret_ty: TypeId, req: RequirementSet) -> Self {
         let fun = Function {
             bb: vec![Default::default()],
             place: Default::default(),
             stack: Default::default(),
             success_returns: Default::default(),
+            ret: None,
+            retlen: None,
         };
         let mut builder = FunctionWriter {
             fun,
@@ -473,14 +475,20 @@ impl FunctionWriter {
             place: Place::Arg,
             ty: arg_ty,
         });
-        builder.add_place(PlaceInfo {
-            place: Place::Return,
-            ty: ret_ty,
-        });
-        builder.add_place(PlaceInfo {
-            place: Place::ReturnLen,
-            ty: arg_ty,
-        });
+        if req.contains(NeededBy::Val) {
+            let ret = builder.add_place(PlaceInfo {
+                place: Place::Return,
+                ty: ret_ty,
+            });
+            builder.fun.ret = Some(ret);
+        }
+        if req.contains(NeededBy::Len) {
+            let retlen = builder.add_place(PlaceInfo {
+                place: Place::ReturnLen,
+                ty: arg_ty,
+            });
+            builder.fun.retlen = Some(retlen);
+        }
         builder
     }
 
@@ -644,6 +652,9 @@ fn mir_block(db: &dyn Mirs, block: BlockId, requirements: RequirementSet) -> SRe
     let order = db.block_serialization(block).silence()?;
     let mut ctx = ConvertCtx::new_block_builder(db, block, requirements, &order)?;
     for value in order.eval_order.iter() {
+        if (value.requirements & requirements).is_empty() {
+            continue;
+        }
         ctx.add_sub_value(value.val)?;
     }
     ctx.change_context(block.lookup(db)?.root_context);

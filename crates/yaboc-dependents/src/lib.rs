@@ -32,6 +32,7 @@ pub enum SubValueKind {
     Val,
     Front,
     Back,
+    Bt,
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -60,6 +61,12 @@ impl SubValue {
     pub fn new_back(id: DefId) -> Self {
         Self {
             kind: SubValueKind::Back,
+            id,
+        }
+    }
+    pub fn new_bt(id: DefId) -> Self {
+        Self {
+            kind: SubValueKind::Bt,
             id,
         }
     }
@@ -119,8 +126,12 @@ fn val_refs(
             .collect()),
         hir::HirNode::Choice(choice) => {
             let mut ret = FxHashSet::default();
-            for ctx in choice.subcontexts.iter() {
+            for (i, ctx) in choice.subcontexts.iter().enumerate() {
+                let is_last = i == choice.subcontexts.len() - 1;
                 let context = ctx.lookup(db)?;
+                add_ctx_bt(&context, db, |v| {
+                    ret.insert((v, !is_last));
+                })?;
                 ret.extend(
                     context
                         .children
@@ -212,16 +223,75 @@ fn inner_parser_refs(db: &dyn Dependents, node: &hir::HirNode) -> SResult<FxHash
     }
 }
 
+fn add_ctx_bt(
+    root_ctx: &hir::StructCtx,
+    db: &dyn Dependents,
+    mut add: impl FnMut(SubValue),
+) -> Result<(), SilencedError> {
+    for child in root_ctx.children.iter() {
+        let id = match db.hir_node(*child)? {
+            hir::HirNode::Let(id) => id.id.id(),
+            hir::HirNode::Parse(id) => id.id.id(),
+            hir::HirNode::Choice(id) => id.id.id(),
+            _ => continue,
+        };
+        add(SubValue::new_bt(id));
+    }
+    Ok(())
+}
+
+fn bt_refs(db: &dyn Dependents, node: &hir::HirNode) -> SResult<FxHashSet<SubValue>> {
+    let mut ret = FxHashSet::default();
+    match node {
+        hir::HirNode::Let(l) => {
+            ret.insert(SubValue::new_bt(l.expr.id()));
+        }
+        hir::HirNode::Expr(e) => {
+            ret.insert(SubValue::new_val(e.id.id()));
+        }
+        hir::HirNode::Parse(p) => {
+            ret.insert(SubValue::new_bt(p.expr.id()));
+            ret.insert(SubValue::new_front(p.id.id()));
+            ret.insert(SubValue::new_val(p.expr.id()));
+        }
+        hir::HirNode::Block(b) => {
+            let root_ctx = b.root_context.lookup(db)?;
+            add_ctx_bt(&root_ctx, db, |v| {
+                ret.insert(v);
+            })?;
+        }
+        hir::HirNode::Choice(c) => {
+            let last_ctx = c.subcontexts.last().unwrap().lookup(db)?;
+            ret.insert(SubValue::new_val(c.id.id()));
+            add_ctx_bt(&last_ctx, db, |v| {
+                ret.insert(v);
+            })?;
+        }
+        hir::HirNode::Import(_)
+        | hir::HirNode::ArgDef(_)
+        | hir::HirNode::Module(_)
+        | hir::HirNode::Context(_)
+        | hir::HirNode::ParserDef(_)
+        | hir::HirNode::ChoiceIndirection(_)
+        | hir::HirNode::TExpr(_)
+        | hir::HirNode::Array(_) => {}
+    }
+    Ok(ret)
+}
+
 fn node_subvalue_kinds(node: &hir::HirNode) -> &'static [SubValueKind] {
     match node {
-        hir::HirNode::Choice(c) if c.endpoints.is_none() => &[SubValueKind::Val][..],
-        hir::HirNode::Parse(_) | hir::HirNode::Block(_) | hir::HirNode::Choice(_) => {
-            &[SubValueKind::Front, SubValueKind::Back, SubValueKind::Val][..]
+        hir::HirNode::Choice(c) if c.endpoints.is_none() => {
+            &[SubValueKind::Val, SubValueKind::Bt][..]
         }
-        hir::HirNode::Let(_)
-        | hir::HirNode::Expr(_)
-        | hir::HirNode::ChoiceIndirection(_)
-        | hir::HirNode::ArgDef(_) => &[SubValueKind::Val][..],
+        hir::HirNode::Parse(_) | hir::HirNode::Block(_) | hir::HirNode::Choice(_) => &[
+            SubValueKind::Front,
+            SubValueKind::Back,
+            SubValueKind::Val,
+            SubValueKind::Bt,
+        ][..],
+        hir::HirNode::Let(_) | hir::HirNode::Expr(_) => &[SubValueKind::Val, SubValueKind::Bt][..],
+        hir::HirNode::ChoiceIndirection(_) | hir::HirNode::ArgDef(_) => &[SubValueKind::Val][..],
         _ => &[],
     }
 }
@@ -285,6 +355,13 @@ impl DependencyGraph {
                         inner_parser_refs(db, &hir_node)?
                             .into_iter()
                             .map(|x| (x, true)),
+                    );
+                }
+                SubValueKind::Bt => {
+                    self.add_edges(
+                        db,
+                        sub_value,
+                        bt_refs(db, &hir_node)?.into_iter().map(|x| (x, true)),
                     );
                 }
             };
@@ -441,6 +518,7 @@ pub fn block_serialization(
 
     let reachable_block_val = graph.find_descendants(&[SubValue::new_val(block.id())]);
     let reachable_block_back = graph.find_descendants(&[SubValue::new_back(block.id())]);
+    let reachable_block_bt = graph.find_descendants(&[SubValue::new_bt(block.id())]);
 
     let condensed_graph = petgraph::algo::condensation(graph.graph, false);
     let mut errors = Vec::new();
@@ -469,10 +547,12 @@ pub fn block_serialization(
             if reachable_block_back.contains(&val) {
                 requirements |= NeededBy::Len;
             }
-            // TODO(8051): we don't know what nodes are needed right now, so we just assume everything
-            // is needed.
-            requirements |= NeededBy::Backtrack;
+            if reachable_block_bt.contains(&val) {
+                requirements |= NeededBy::Backtrack;
+            }
+
             let required_by = match val.kind {
+                SubValueKind::Bt => NeededBy::Backtrack.into(),
                 SubValueKind::Val => NeededBy::Val.into(),
                 SubValueKind::Front => RequirementSet::empty(),
                 SubValueKind::Back => NeededBy::Len.into(),
@@ -481,12 +561,7 @@ pub fn block_serialization(
             parse_requirements
                 .entry(val.id)
                 .and_modify(|e| *e = *e | matrix)
-                .or_insert(
-                    RequirementMatrix::from_outer_product(
-                        NeededBy::Backtrack.into(),
-                        RequirementSet::all(),
-                    ) | matrix,
-                );
+                .or_insert(matrix);
             SubValueInfo { val, requirements }
         }));
     }
@@ -623,28 +698,28 @@ def for[int] *> main = {
             format!("{}", a),
             "111\n\
              111\n\
-             111"
+             001"
         );
         assert_eq!(
             format!("{}", c),
-            "101\n\
-             011\n\
-             111"
+            "100\n\
+             010\n\
+             001"
         );
         assert_eq!(
             format!("{}", b),
             "111\n\
-             011\n\
-             111"
+             010\n\
+             001"
         );
         assert_eq!(
             format!("{}", b * NeededBy::Backtrack.into()),
-            "Len | Val | Backtrack"
+            "Len | Backtrack"
         );
-        assert_eq!(format!("{}", b * NeededBy::Len.into()), "Len | Backtrack");
+        assert_eq!(format!("{}", b * NeededBy::Len.into()), "Len");
         assert_eq!(
             format!("{}", c * (NeededBy::Len | NeededBy::Val)),
-            "Len | Val | Backtrack"
+            "Len | Val"
         );
     }
 }
