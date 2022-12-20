@@ -466,7 +466,7 @@ impl<'a> ConvertCtx<'a> {
                         self.retreat.backtrack = old_backtrack;
                         place_ref
                     }
-                    ValUnOp::Dot(field) => {
+                    ValUnOp::Dot(field, bt) => {
                         let inner_ldt = self.db.least_deref_type(inner_ty)?;
                         let block_ref = self.copy_if_different_levels(
                             inner_ldt,
@@ -476,13 +476,13 @@ impl<'a> ConvertCtx<'a> {
                             recurse,
                         )?;
                         let place_ref = self.unwrap_or_stack(place, ty, origin);
-                        self.f.field(
-                            block_ref,
-                            *field,
-                            place_ref,
-                            self.retreat.error,
-                            self.retreat.backtrack,
-                        );
+                        let backtrack = if *bt {
+                            self.retreat.backtrack
+                        } else {
+                            self.retreat.error
+                        };
+                        self.f
+                            .field(block_ref, *field, place_ref, self.retreat.error, backtrack);
                         place_ref
                     }
                 }

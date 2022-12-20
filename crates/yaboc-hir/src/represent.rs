@@ -158,7 +158,13 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for W<&Expression<HirValSpanned>> {
                 expr::ValUnOp::Wiggle(right, kind) => {
                     dbwrite!(f, db, "{} {} {}", inner, kind, &W(&**right))
                 }
-                expr::ValUnOp::Dot(a) => dbwrite!(f, db, "{}.{}", inner, a),
+                expr::ValUnOp::Dot(a, b) => {
+                    dbwrite!(f, db, "{}.{}", inner, a)?;
+                    if *b {
+                        write!(f, "?")?;
+                    }
+                    Ok(())
+                }
             },
             ExpressionHead::Dyadic(Dyadic { op, inner }) => {
                 dbwrite!(f, db, "{} {} {}", &inner[0], &op.inner, &inner[1])

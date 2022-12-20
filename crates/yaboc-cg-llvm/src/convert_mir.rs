@@ -284,7 +284,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
 
     fn assert_value(&mut self, place: PlaceRef, val: ConstraintAtom, ctrl: ControlFlow) {
         let cond = match val {
-            ConstraintAtom::Atom(Atom::Field(field)) => {
+            ConstraintAtom::Atom(Atom::Field((field, _))) => {
                 let (byte_ptr, shifted_bit) = match self.discriminant_info(place, field) {
                     Some(x) => x,
                     None => return,

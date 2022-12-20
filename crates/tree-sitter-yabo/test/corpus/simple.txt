@@ -19,10 +19,12 @@ def for[u8] *> complex = {
       content: (parser_sequence
         (parse_statement
 	       name: (identifier)
-	       parser: (identifier))
+	       parser: (bt_name
+          name: (identifier)))
         (parse_statement
 	       name: (identifier)
-	       parser: (identifier))))))
+	       parser: (bt_name
+          name: (identifier)))))))
 
 =============
 Choice Parser
@@ -48,15 +50,18 @@ def for[u8] *> choice = {
           content: (parser_sequence
             (parse_statement
               parser: (unary_expression
-                right: (identifier)))
+                right: (bt_name
+                  name: (identifier))))
             (parse_statement
               name: (retvrn)
-              parser: (identifier))))
+              parser: (bt_name
+                name: (identifier)))))
         (parser_choice
           content: (parser_sequence
             (parse_statement
                 name: (retvrn)
-                parser: (identifier))))))))
+                parser: (bt_name
+                  name: (identifier)))))))))
 
 
 =============
@@ -80,7 +85,8 @@ def for[u8] *> seven = {
       content: (parser_sequence
         (parse_statement
   	      name: (identifier)
-        	parser: (identifier))
+        	parser: (bt_name
+            name: (identifier)))
         (let_statement
         	name: (retvrn)
         	ty: (parserdef_ref
@@ -137,7 +143,7 @@ def for[u8] *> nested = {
                 (retvrn)
                 (parserdef_ref
                   (identifier))
-                (identifier)))))))))
+                (bt_name (identifier))))))))))
 
 =============
 Three Choices
@@ -167,7 +173,7 @@ def for[u8] *> three = {
                 (number_literal)))
             (parse_statement
               (retvrn)
-              (identifier))))
+              (bt_name (identifier)))))
         (parser_choice
           (parser_sequence
             (parse_statement
@@ -175,12 +181,12 @@ def for[u8] *> three = {
                 (number_literal)))
             (parse_statement
               (retvrn)
-              (identifier))))
+              (bt_name (identifier)))))
         (parser_choice
           (parser_sequence
             (parse_statement
               (retvrn)
-              (identifier))))))))
+              (bt_name (identifier)))))))))
 
 
 =======
@@ -190,7 +196,7 @@ Comment
 # comment
 def for[u8] *> test = {
    # comment
-  x: u8
+  x: u8?
  # comment
 }
 
@@ -206,7 +212,9 @@ def for[u8] *> test = {
       (parser_sequence
         (parse_statement
           (identifier)
-          (identifier))))))
+          (bt_name
+            (identifier)
+            (question_mark)))))))
 
 
 ====
@@ -232,6 +240,7 @@ def for[int] *> nonsense(x: int, y: int) = 1 + nonsense(3, 4)
     to: (binary_expression
       left: (number_literal)
       right: (fun_application
-        applicant: (identifier)
+        applicant: (bt_name
+          name: (identifier)) 
         args: (number_literal)
         args: (number_literal)))))

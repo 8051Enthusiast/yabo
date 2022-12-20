@@ -2,6 +2,7 @@ use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
 use yaboc_base::interner::FieldName;
+use yaboc_base::source::Span;
 
 pub trait ExpressionKind: Clone + Hash + Eq + Debug {
     type NiladicOp: Clone + Hash + Eq + Debug;
@@ -539,9 +540,22 @@ impl<'a, K: ExpressionKind> Iterator for ExprIter<'a, K> {
     }
 }
 
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub struct BtName {
+    pub name: FieldName,
+    pub backtrack: Option<()>,
+    pub span: Span,
+}
+
+impl From<BtName> for (FieldName, bool) {
+    fn from(val: BtName) -> Self {
+        (val.name, val.backtrack.is_some())
+    }
+}
+
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum Atom {
-    Field(FieldName),
+    Field((FieldName, bool)),
     Number(i64),
     Char(u32),
     Bool(bool),
@@ -633,7 +647,7 @@ pub enum ValUnOp<C> {
     Not,
     Neg,
     Wiggle(C, WiggleKind),
-    Dot(FieldName),
+    Dot(FieldName, bool),
 }
 
 impl<C> ValUnOp<C> {
@@ -651,7 +665,7 @@ impl<C> ValUnOp<C> {
             Not => Not,
             Neg => Neg,
             Wiggle(expr, kind) => Wiggle(f(expr), kind.clone()),
-            Dot(atom) => Dot(*atom),
+            Dot(atom, b) => Dot(*atom, *b),
         }
     }
 }

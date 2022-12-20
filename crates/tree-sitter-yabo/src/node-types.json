@@ -94,11 +94,11 @@
             "named": true
           },
           {
-            "type": "char_literal",
+            "type": "bt_name",
             "named": true
           },
           {
-            "type": "identifier",
+            "type": "char_literal",
             "named": true
           },
           {
@@ -107,10 +107,6 @@
           },
           {
             "type": "range",
-            "named": true
-          },
-          {
-            "type": "retvrn",
             "named": true
           },
           {
@@ -146,11 +142,11 @@
             "named": true
           },
           {
-            "type": "char_literal",
+            "type": "bt_name",
             "named": true
           },
           {
-            "type": "identifier",
+            "type": "char_literal",
             "named": true
           },
           {
@@ -159,10 +155,6 @@
           },
           {
             "type": "range",
-            "named": true
-          },
-          {
-            "type": "retvrn",
             "named": true
           },
           {
@@ -198,6 +190,10 @@
             "named": true
           },
           {
+            "type": "bt_name",
+            "named": true
+          },
+          {
             "type": "char_literal",
             "named": true
           },
@@ -207,10 +203,6 @@
           },
           {
             "type": "fun_application",
-            "named": true
-          },
-          {
-            "type": "identifier",
             "named": true
           },
           {
@@ -227,10 +219,6 @@
           },
           {
             "type": "parser_block",
-            "named": true
-          },
-          {
-            "type": "retvrn",
             "named": true
           },
           {
@@ -350,6 +338,10 @@
             "named": true
           },
           {
+            "type": "bt_name",
+            "named": true
+          },
+          {
             "type": "char_literal",
             "named": true
           },
@@ -359,10 +351,6 @@
           },
           {
             "type": "fun_application",
-            "named": true
-          },
-          {
-            "type": "identifier",
             "named": true
           },
           {
@@ -379,10 +367,6 @@
           },
           {
             "type": "parser_block",
-            "named": true
-          },
-          {
-            "type": "retvrn",
             "named": true
           },
           {
@@ -515,6 +499,36 @@
     "fields": {}
   },
   {
+    "type": "bt_name",
+    "named": true,
+    "fields": {
+      "backtrack": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "question_mark",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "retvrn",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "char_literal",
     "named": true,
     "fields": {}
@@ -544,6 +558,10 @@
             "named": true
           },
           {
+            "type": "bt_name",
+            "named": true
+          },
+          {
             "type": "char_literal",
             "named": true
           },
@@ -553,10 +571,6 @@
           },
           {
             "type": "fun_application",
-            "named": true
-          },
-          {
-            "type": "identifier",
             "named": true
           },
           {
@@ -573,10 +587,6 @@
           },
           {
             "type": "parser_block",
-            "named": true
-          },
-          {
-            "type": "retvrn",
             "named": true
           },
           {
@@ -624,11 +634,11 @@
             "named": true
           },
           {
-            "type": "char_literal",
+            "type": "bt_name",
             "named": true
           },
           {
-            "type": "identifier",
+            "type": "char_literal",
             "named": true
           },
           {
@@ -637,10 +647,6 @@
           },
           {
             "type": "range",
-            "named": true
-          },
-          {
-            "type": "retvrn",
             "named": true
           },
           {
@@ -676,6 +682,10 @@
             "named": true
           },
           {
+            "type": "bt_name",
+            "named": true
+          },
+          {
             "type": "char_literal",
             "named": true
           },
@@ -685,10 +695,6 @@
           },
           {
             "type": "fun_application",
-            "named": true
-          },
-          {
-            "type": "identifier",
             "named": true
           },
           {
@@ -705,10 +711,6 @@
           },
           {
             "type": "parser_block",
-            "named": true
-          },
-          {
-            "type": "retvrn",
             "named": true
           },
           {
@@ -746,6 +748,10 @@
             "named": true
           },
           {
+            "type": "bt_name",
+            "named": true
+          },
+          {
             "type": "char_literal",
             "named": true
           },
@@ -755,10 +761,6 @@
           },
           {
             "type": "fun_application",
-            "named": true
-          },
-          {
-            "type": "identifier",
             "named": true
           },
           {
@@ -775,10 +777,6 @@
           },
           {
             "type": "parser_block",
-            "named": true
-          },
-          {
-            "type": "retvrn",
             "named": true
           },
           {
@@ -838,6 +836,10 @@
             "named": true
           },
           {
+            "type": "bt_name",
+            "named": true
+          },
+          {
             "type": "char_literal",
             "named": true
           },
@@ -847,10 +849,6 @@
           },
           {
             "type": "fun_application",
-            "named": true
-          },
-          {
-            "type": "identifier",
             "named": true
           },
           {
@@ -867,10 +865,6 @@
           },
           {
             "type": "parser_block",
-            "named": true
-          },
-          {
-            "type": "retvrn",
             "named": true
           },
           {
@@ -993,6 +987,10 @@
             "named": true
           },
           {
+            "type": "bt_name",
+            "named": true
+          },
+          {
             "type": "char_literal",
             "named": true
           },
@@ -1002,10 +1000,6 @@
           },
           {
             "type": "fun_application",
-            "named": true
-          },
-          {
-            "type": "identifier",
             "named": true
           },
           {
@@ -1022,10 +1016,6 @@
           },
           {
             "type": "parser_block",
-            "named": true
-          },
-          {
-            "type": "retvrn",
             "named": true
           },
           {
@@ -1083,6 +1073,10 @@
             "named": true
           },
           {
+            "type": "bt_name",
+            "named": true
+          },
+          {
             "type": "char_literal",
             "named": true
           },
@@ -1092,10 +1086,6 @@
           },
           {
             "type": "fun_application",
-            "named": true
-          },
-          {
-            "type": "identifier",
             "named": true
           },
           {
@@ -1112,10 +1102,6 @@
           },
           {
             "type": "parser_block",
-            "named": true
-          },
-          {
-            "type": "retvrn",
             "named": true
           },
           {
@@ -1313,6 +1299,10 @@
             "named": true
           },
           {
+            "type": "bt_name",
+            "named": true
+          },
+          {
             "type": "char_literal",
             "named": true
           },
@@ -1322,10 +1312,6 @@
           },
           {
             "type": "fun_application",
-            "named": true
-          },
-          {
-            "type": "identifier",
             "named": true
           },
           {
@@ -1342,10 +1328,6 @@
           },
           {
             "type": "parser_block",
-            "named": true
-          },
-          {
-            "type": "retvrn",
             "named": true
           },
           {
@@ -1689,11 +1671,11 @@
             "named": true
           },
           {
-            "type": "char_literal",
+            "type": "bt_name",
             "named": true
           },
           {
-            "type": "identifier",
+            "type": "char_literal",
             "named": true
           },
           {
@@ -1702,10 +1684,6 @@
           },
           {
             "type": "range",
-            "named": true
-          },
-          {
-            "type": "retvrn",
             "named": true
           },
           {
@@ -1820,10 +1798,14 @@
     "fields": {},
     "children": {
       "multiple": false,
-      "required": false,
+      "required": true,
       "types": [
         {
           "type": "bool_literal",
+          "named": true
+        },
+        {
+          "type": "bt_name",
           "named": true
         },
         {
@@ -1831,15 +1813,7 @@
           "named": true
         },
         {
-          "type": "identifier",
-          "named": true
-        },
-        {
           "type": "number_literal",
-          "named": true
-        },
-        {
-          "type": "retvrn",
           "named": true
         }
       ]
@@ -1888,6 +1862,10 @@
             "named": true
           },
           {
+            "type": "bt_name",
+            "named": true
+          },
+          {
             "type": "char_literal",
             "named": true
           },
@@ -1897,10 +1875,6 @@
           },
           {
             "type": "fun_application",
-            "named": true
-          },
-          {
-            "type": "identifier",
             "named": true
           },
           {
@@ -1917,10 +1891,6 @@
           },
           {
             "type": "parser_block",
-            "named": true
-          },
-          {
-            "type": "retvrn",
             "named": true
           },
           {
@@ -2026,6 +1996,10 @@
             "named": true
           },
           {
+            "type": "bt_name",
+            "named": true
+          },
+          {
             "type": "char_literal",
             "named": true
           },
@@ -2035,10 +2009,6 @@
           },
           {
             "type": "fun_application",
-            "named": true
-          },
-          {
-            "type": "identifier",
             "named": true
           },
           {
@@ -2055,10 +2025,6 @@
           },
           {
             "type": "parser_block",
-            "named": true
-          },
-          {
-            "type": "retvrn",
             "named": true
           },
           {
@@ -2094,19 +2060,15 @@
             "named": true
           },
           {
+            "type": "bt_name",
+            "named": true
+          },
+          {
             "type": "char_literal",
             "named": true
           },
           {
-            "type": "identifier",
-            "named": true
-          },
-          {
             "type": "number_literal",
-            "named": true
-          },
-          {
-            "type": "retvrn",
             "named": true
           }
         ]
@@ -2292,6 +2254,10 @@
   {
     "type": "or",
     "named": false
+  },
+  {
+    "type": "question_mark",
+    "named": true
   },
   {
     "type": "retvrn",
