@@ -87,8 +87,8 @@ pub enum MonoLayout<Inner> {
     ),
     NominalParser(hir::ParserDefId, Vec<(Inner, TypeId)>, bool),
     Block(hir::BlockId, BTreeMap<FieldName, Inner>),
-    BlockParser(hir::BlockId, BTreeMap<DefId, Inner>),
-    ComposedParser(Inner, TypeId, Inner),
+    BlockParser(hir::BlockId, BTreeMap<DefId, Inner>, bool),
+    ComposedParser(Inner, TypeId, Inner, bool),
     Tuple(Vec<Inner>),
 }
 
@@ -146,6 +146,24 @@ impl<'a> IMonoLayout<'a> {
         match self.mono_layout().0 {
             MonoLayout::NominalParser(pd, args, _) => Ok(db.argnum(*pd)?.map(|n| (n, args.len()))),
             _ => Ok(None),
+        }
+    }
+
+    pub fn remove_backtracking(self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> IMonoLayout<'a> {
+        match self.mono_layout().0 {
+            MonoLayout::NominalParser(pd, f, _) => IMonoLayout(ctx.dcx.intern(Layout::Mono(
+                MonoLayout::NominalParser(*pd, f.clone(), false),
+                self.mono_layout().1,
+            ))),
+            MonoLayout::BlockParser(bd, cap, _) => IMonoLayout(ctx.dcx.intern(Layout::Mono(
+                MonoLayout::BlockParser(*bd, cap.clone(), false),
+                self.mono_layout().1,
+            ))),
+            MonoLayout::ComposedParser(l, t, r, _) => IMonoLayout(ctx.dcx.intern(Layout::Mono(
+                MonoLayout::ComposedParser(*l, *t, *r, false),
+                self.mono_layout().1,
+            ))),
+            _ => self,
         }
     }
 
@@ -302,7 +320,7 @@ impl<'a> ILayout<'a> {
                 panic!("Attempting to get captured variable inside empty layout")
             }
         } {
-            MonoLayout::BlockParser(_, captures) => captures,
+            MonoLayout::BlockParser(_, captures, _) => captures,
             MonoLayout::Nominal(pd, _, args) | MonoLayout::NominalParser(pd, args, _) => {
                 return Ok(ctx.db.parserdef_arg_index(*pd, id)?.map(|i| args[i].0))
             }
@@ -339,10 +357,10 @@ impl<'a> ILayout<'a> {
                 MonoLayout::NominalParser(pd, args, _) => {
                     ctx.apply_thunk_arg(*pd, result_type, from, args)
                 }
-                MonoLayout::BlockParser(block_id, _) => ctx
+                MonoLayout::BlockParser(block_id, _, _) => ctx
                     .eval_block(*block_id, self, from, result_type, arg_type)
                     .ok_or_else(|| SilencedError::new().into()),
-                MonoLayout::ComposedParser(first, inner_ty, second) => {
+                MonoLayout::ComposedParser(first, inner_ty, second, _) => {
                     let first_result = first.apply_arg(ctx, from)?;
                     let casted_result = first_result.typecast(ctx, *inner_ty)?.0;
                     second.apply_arg(ctx, casted_result)
@@ -433,7 +451,7 @@ impl<'a> ILayout<'a> {
         duple_field: DupleField,
     ) -> ILayout<'a> {
         self.map(ctx, |layout, _| match layout.mono_layout().0 {
-            MonoLayout::ComposedParser(first, _, second) => match duple_field {
+            MonoLayout::ComposedParser(first, _, second, _) => match duple_field {
                 DupleField::First => *first,
                 DupleField::Second => *second,
             },
@@ -453,10 +471,10 @@ impl<'a> ILayout<'a> {
             Layout::Mono(MonoLayout::Block(id, fields), _) => {
                 self.block_manifestation(ctx, *id, fields)?.size
             }
-            Layout::Mono(MonoLayout::BlockParser(_, captures), _) => {
+            Layout::Mono(MonoLayout::BlockParser(_, captures, _), _) => {
                 self.block_parser_manifestation(ctx, captures)?.size
             }
-            Layout::Mono(MonoLayout::ComposedParser(fst, _, snd), _) => {
+            Layout::Mono(MonoLayout::ComposedParser(fst, _, snd, _), _) => {
                 fst.size_align(ctx)?.cat(snd.size_align(ctx)?)
             }
             Layout::Mono(MonoLayout::Nominal(id, from, args), _) => {
@@ -802,7 +820,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                         captures.insert(*capture, capture_value);
                     }
                     let res = ctx.dcx.intern(Layout::Mono(
-                        MonoLayout::BlockParser(block_id, captures),
+                        MonoLayout::BlockParser(block_id, captures, true),
                         ret_type,
                     ));
                     res
@@ -838,6 +856,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                         d.inner[0].0,
                         middle_ty,
                         d.inner[1].0,
+                        true,
                     ))
                 }
                 ValBinOp::Else => d.inner[0].0.join(ctx, d.inner[1].0)?.0,

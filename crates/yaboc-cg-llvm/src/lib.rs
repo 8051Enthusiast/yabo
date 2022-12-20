@@ -457,7 +457,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         let sa = layout.size_align(self.layouts).unwrap();
         let mut offset = match layout.layout.1 {
-            Layout::Mono(MonoLayout::ComposedParser(_, _, second), _) => {
+            Layout::Mono(MonoLayout::ComposedParser(_, _, second, _), _) => {
                 let second_sa = second.size_align(self.layouts).unwrap();
                 sa.size - second_sa.size
             }

@@ -25,12 +25,12 @@ impl<'a> FunctionSubstitute<'a> {
         block: IMonoLayout<'a>,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
-        let (def, captures) = if let MonoLayout::BlockParser(def, captures) = block.mono_layout().0
-        {
-            (def, captures)
-        } else {
-            panic!("non-block-parser as argument")
-        };
+        let (def, captures) =
+            if let MonoLayout::BlockParser(def, captures, _) = block.mono_layout().0 {
+                (def, captures)
+            } else {
+                panic!("non-block-parser as argument")
+            };
         let evaluated = ctx.block_result()[&(from, block.0)]
             .as_ref()
             .ok_or_else(SilencedError::new)?;

@@ -97,19 +97,28 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 MonoLayout::Block(_, _) => {
                     self.blocks.insert(mono);
                 }
-                MonoLayout::NominalParser(pd, args, _) => {
+                MonoLayout::NominalParser(pd, args, bt) => {
                     let argnum = self.ctx.db.argnum(*pd).unwrap().unwrap_or(0);
                     if args.len() == argnum {
                         self.parsers.insert(mono);
+                        if *bt {
+                            let nbt_layout = mono.remove_backtracking(self.ctx);
+                            self.parsers.insert(nbt_layout);
+                        }
                     } else {
                         self.functions.insert(mono);
+                        if *bt {
+                            let nbt_layout = mono.remove_backtracking(self.ctx);
+                            self.functions.insert(nbt_layout);
+                        }
                     }
                 }
-                MonoLayout::BlockParser(_, _)
-                | MonoLayout::ComposedParser(_, _, _)
+                MonoLayout::BlockParser(_, _, _)
+                | MonoLayout::ComposedParser(_, _, _, _)
                 | MonoLayout::Single
                 | MonoLayout::Nil => {
                     self.parsers.insert(mono);
+                    self.parsers.insert(mono.remove_backtracking(self.ctx));
                 }
                 MonoLayout::Primitive(_) => {}
                 MonoLayout::Tuple(_) => panic!("tuples not supported yet"),
@@ -122,7 +131,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         }
         for mono in flat_layouts(&right) {
             match mono.mono_layout().0 {
-                MonoLayout::BlockParser(_, _) => {
+                MonoLayout::BlockParser(_, _, _) => {
                     if self.processed_calls.insert((left, mono, req)) {
                         self.unprocessed
                             .push(UnprocessedCall::Block(left, mono, req));
@@ -230,7 +239,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             panic!("unexpected non-nominal-parser layout");
         };
         if !*bt {
-            req = req & !NeededBy::Backtrack
+            req &= !NeededBy::Backtrack
         }
         let mut args = FxHashMap::default();
         let thunk_ty = self.ctx.db.parser_result(ty).unwrap();
@@ -256,7 +265,13 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     fn proc_list(&mut self) -> Result<(), LayoutError> {
         while let Some(mono) = self.unprocessed.pop() {
             match mono {
-                UnprocessedCall::Block(arg, parser, req) => {
+                UnprocessedCall::Block(arg, parser, mut req) => {
+                    let MonoLayout::BlockParser(_, _, bt) = parser.mono_layout().0 else {
+                        panic!("unexpected non-block-parser layout");
+                    };
+                    if !*bt {
+                        req &= !NeededBy::Backtrack
+                    }
                     if let Some(block) = &self.ctx.block_result()[&(arg, parser.0)].clone() {
                         self.collect_block(block, req)?
                     }

@@ -35,6 +35,9 @@ pub fn deref_type(db: &dyn TyHirs, ty: TypeId) -> SResult<Option<TypeId>> {
 pub struct DerefLevel(usize);
 
 const RESERVED_DEREF_METADATA_BITS: u8 = 8;
+pub const VTABLE_BIT: u8 = 0;
+pub const MALLOC_BIT: u8 = 1;
+pub const NOBACKTRACK_BIT: u8 = 2;
 
 impl DerefLevel {
     pub fn into_shifted_runtime_value(self) -> usize {
@@ -60,7 +63,7 @@ impl Display for DerefLevel {
 pub fn deref_level(db: &dyn TyHirs, ty: TypeId) -> SResult<DerefLevel> {
     let mut level = 0;
     let mut ty = ty;
-    
+
     while let Some(t) = db.deref_type(ty)? {
         ty = t;
         level += 1;

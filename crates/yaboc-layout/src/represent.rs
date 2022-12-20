@@ -61,8 +61,12 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
                     }
                     write!(f, "}}")
                 }
-                MonoLayout::BlockParser(bd, captures) => {
-                    dbwrite!(f, db, "block-parser[{}, {}]{{", &bd.0, ty)?;
+                MonoLayout::BlockParser(bd, captures, bt) => {
+                    write!(f, "block-parser")?;
+                    if *bt {
+                        write!(f, "?")?;
+                    }
+                    dbwrite!(f, db, "[{}, {}]{{", &bd.0, ty)?;
                     for (i, (capture, layout)) in captures.iter().enumerate() {
                         if i > 0 {
                             write!(f, ", ")?;
@@ -71,8 +75,12 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
                     }
                     write!(f, "}}")
                 }
-                MonoLayout::ComposedParser(left, _, right) => {
-                    dbwrite!(f, db, "composed[{}]({} |> {})", ty, left, right)
+                MonoLayout::ComposedParser(left, _, right, bt) => {
+                    write!(f, "composed-parser")?;
+                    if *bt {
+                        write!(f, "?")?;
+                    }
+                    dbwrite!(f, db, "[{}]({} |> {})", ty, left, right)
                 }
                 MonoLayout::Tuple(elements) => {
                     dbwrite!(f, db, "tuple[{}](", ty)?;
@@ -229,16 +237,18 @@ impl<'a> LayoutHasher<'a> {
                     state.update(hash);
                 }
             }
-            MonoLayout::BlockParser(def, map) => {
+            MonoLayout::BlockParser(def, map, bt) => {
                 state.update([6]);
                 def.0.update_hash(state, db);
                 self.hash_captures(state, map, db);
+                state.update([*bt as u8]);
             }
-            MonoLayout::ComposedParser(left, inner_ty, right) => {
+            MonoLayout::ComposedParser(left, inner_ty, right, bt) => {
                 state.update([7]);
                 state.update(self.hash(*left, db));
                 state.update(db.type_hash(*inner_ty));
                 state.update(self.hash(*right, db));
+                state.update([*bt as u8]);
             }
             MonoLayout::Nil => {
                 state.update([8]);
@@ -321,13 +331,17 @@ pub fn truncated_hex(array: &[u8]) -> String {
 impl<'a> LayoutSymbol<'a> {
     pub fn symbol<DB: Layouts + ?Sized>(&self, hasher: &mut LayoutHasher<'a>, db: &DB) -> String {
         let name_prefix = match self.layout.mono_layout().0 {
-            MonoLayout::BlockParser(def, _) => {
-                format!("parse_block_{}", &truncated_hex(&db.def_hash(def.0)))
+            MonoLayout::BlockParser(def, _, backtracks) => {
+                if *backtracks {
+                    format!("parse_block_{}_b", &truncated_hex(&db.def_hash(def.0)))
+                } else {
+                    format!("parse_block_{}", &truncated_hex(&db.def_hash(def.0)))
+                }
             }
             MonoLayout::Block(def, _) => {
                 format!("block_{}", &truncated_hex(&db.def_hash(def.0)))
             }
-            MonoLayout::ComposedParser(_, _, _) => String::from("composed"),
+            MonoLayout::ComposedParser(_, _, _, _) => String::from("composed"),
             MonoLayout::Nominal(id, _, _) => {
                 dbformat!(db, "{}", &db.def_name(id.0).unwrap())
             }

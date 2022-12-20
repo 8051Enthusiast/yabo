@@ -14,7 +14,7 @@ use yaboc_ast::ConstraintAtom;
 use yaboc_base::interner::FieldName;
 use yaboc_dependents::RequirementSet;
 use yaboc_hir::BlockId;
-use yaboc_hir_types::{DerefLevel, NominalId};
+use yaboc_hir_types::{DerefLevel, NominalId, VTABLE_BIT};
 use yaboc_layout::{mir_subst::FunctionSubstitute, ILayout, Layout, MonoLayout};
 use yaboc_mir::{
     self as mir, BBRef, Comp, IntBinOp, IntUnOp, MirInstr, PlaceRef, ReturnStatus, Val,
@@ -149,7 +149,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         };
         let mut level = deref_level.into_shifted_runtime_value();
         if place_layout.is_multi() {
-            level |= 1;
+            level |= 1 << VTABLE_BIT;
         }
         self.cg.const_i64(level as i64)
     }
