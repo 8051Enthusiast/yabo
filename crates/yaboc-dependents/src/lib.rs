@@ -1,3 +1,4 @@
+mod backtrack;
 pub mod error;
 mod represent;
 
@@ -17,10 +18,12 @@ use yaboc_resolve::expr::ResolvedAtom;
 
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Graph};
 
+use backtrack::can_backtrack;
 use fxhash::{FxHashMap, FxHashSet};
 
 #[salsa::query_group(DependentsDatabase)]
 pub trait Dependents: TyHirs {
+    fn can_backtrack(&self, def: DefId) -> SResult<bool>;
     fn block_serialization(
         &self,
         id: hir::BlockId,
@@ -229,13 +232,9 @@ fn add_ctx_bt(
     mut add: impl FnMut(SubValue),
 ) -> Result<(), SilencedError> {
     for child in root_ctx.children.iter() {
-        let id = match db.hir_node(*child)? {
-            hir::HirNode::Let(id) => id.id.id(),
-            hir::HirNode::Parse(id) => id.id.id(),
-            hir::HirNode::Choice(id) => id.id.id(),
-            _ => continue,
-        };
-        add(SubValue::new_bt(id));
+        if db.can_backtrack(*child)? {
+            add(SubValue::new_bt(*child));
+        }
     }
     Ok(())
 }
@@ -608,7 +607,7 @@ mod tests {
     fn simple_cycle() {
         let ctx = Context::<DependentsTestDatabase>::mock(
             r#"
-def for[u8] *> cycle = {
+def *cycle = {
     let x: int = y
     let y: int = x + 1
 }
@@ -620,7 +619,7 @@ def for[u8] *> cycle = {
     fn parser_cycle() {
         let ctx = Context::<DependentsTestDatabase>::mock(
             r#"
-def for[u8] *> cycle = {
+def *cycle = {
     | let x: int = y
     | x: ~
     y: ~
@@ -633,7 +632,7 @@ def for[u8] *> cycle = {
     fn choice_indirection() {
         let ctx = Context::<DependentsTestDatabase>::mock(
             r#"
-def for[int] *> main = {
+def *main = {
     | y: ~
     | let y: int = 0
 }
@@ -657,14 +656,14 @@ def for[int] *> main = {
     fn inner_choice() {
         let ctx = Context::<DependentsTestDatabase>::mock(
             r"
-def for['a] *> first = ~
-def for['b] *> second = ~
+def for['a] *> first = +
+def for['b] *> second = +
 def for[int] *> main = {
     a: ~
-    b: ~
+    b: second?
     c: {
         let x = a
-        | c: first
+        | c: first?
         | c: second
     }
 }
@@ -697,26 +696,23 @@ def for[int] *> main = {
         assert_eq!(
             format!("{}", a),
             "111\n\
-             111\n\
-             001"
+             110\n\
+             000"
         );
         assert_eq!(
             format!("{}", c),
             "100\n\
              010\n\
-             001"
+             000"
         );
         assert_eq!(
             format!("{}", b),
-            "111\n\
+            "110\n\
              010\n\
              001"
         );
-        assert_eq!(
-            format!("{}", b * NeededBy::Backtrack.into()),
-            "Len | Backtrack"
-        );
-        assert_eq!(format!("{}", b * NeededBy::Len.into()), "Len");
+        assert_eq!(format!("{}", b * NeededBy::Backtrack.into()), "Backtrack");
+        assert_eq!(format!("{}", b * NeededBy::Val.into()), "Len | Val");
         assert_eq!(
             format!("{}", c * (NeededBy::Len | NeededBy::Val)),
             "Len | Val"
