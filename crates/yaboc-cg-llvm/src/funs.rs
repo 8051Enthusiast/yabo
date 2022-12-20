@@ -45,22 +45,23 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        call_kind: RequirementSet,
+        mut req: RequirementSet,
     ) -> FunctionSubstitute<'comp> {
-        let pd = if let MonoLayout::NominalParser(id, _) = layout.mono_layout().0 {
-            id
-        } else {
+        let MonoLayout::NominalParser(pd, _, bt) = layout.mono_layout().0 else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
+        if !*bt {
+            req &= !NeededBy::Backtrack;
+        }
         let mir = self
             .compiler_database
             .db
-            .mir(FunKind::ParserDef(*pd), call_kind)
+            .mir(FunKind::ParserDef(*pd), req)
             .unwrap();
         let strictness = self
             .compiler_database
             .db
-            .strictness(FunKind::ParserDef(*pd), call_kind)
+            .strictness(FunKind::ParserDef(*pd), req)
             .unwrap();
         FunctionSubstitute::new_from_pd(mir, &strictness, from, layout.inner(), *pd, self.layouts)
             .unwrap()
@@ -106,10 +107,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
         slot: PSize,
-        pd: ParserDefId,
         req: RequirementSet,
     ) {
         let impl_fun = self.create_pd_parse_impl(from, layout, slot, req);
+
+        let MonoLayout::NominalParser(pd, args, _) = layout.mono_layout().0 else {
+            panic!("create_pd_parse has to be called with a nominal parser layout");
+        };
 
         if !req.contains(NeededBy::Val) {
             // just call impl_fun and return
@@ -134,18 +138,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .expect("pd parsers type is not parser");
         let mut map = FxHashMap::default();
         map.insert(Arg::From, from);
-        if let MonoLayout::NominalParser(pd, args) = layout.mono_layout().0 {
-            let parserdef_args = pd
-                .lookup(&self.compiler_database.db)
-                .unwrap()
-                .args
-                .unwrap_or_default();
-            for (idx, (arg, _)) in args.iter().enumerate() {
-                map.insert(Arg::Named(parserdef_args[idx].0), *arg);
-            }
+        let parserdef_args = pd
+            .lookup(&self.compiler_database.db)
+            .unwrap()
+            .args
+            .unwrap_or_default();
+        for (idx, (arg, _)) in args.iter().enumerate() {
+            map.insert(Arg::Named(parserdef_args[idx].0), *arg);
         }
         let return_layout =
-            flat_layouts(&ILayout::make_thunk(self.layouts, pd, result, &map).unwrap())
+            flat_layouts(&ILayout::make_thunk(self.layouts, *pd, result, &map).unwrap())
                 .next()
                 .unwrap();
         ThunkContext::new(
@@ -563,8 +565,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 MonoLayout::Nil => {
                     self.create_nil_parse(from, layout, *slot, req);
                 }
-                MonoLayout::NominalParser(pd, _) => {
-                    self.create_pd_parse(from, layout, *slot, *pd, req);
+                MonoLayout::NominalParser(_, _, _) => {
+                    self.create_pd_parse(from, layout, *slot, req);
                 }
                 MonoLayout::BlockParser(block, _) => {
                     self.create_block_parse(*block, from, layout, *slot, req);

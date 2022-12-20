@@ -16,7 +16,7 @@ use super::{ResolveError, Resolves};
 pub enum ResolvedAtom {
     Val(DefId),
     Captured(DefId),
-    ParserDef(hir::ParserDefId),
+    ParserDef(hir::ParserDefId, bool),
     Number(i64),
     Char(u32),
     Bool(bool),
@@ -52,7 +52,7 @@ pub fn resolve_expr_error(
             }
         };
         Ok(Ok(match kind {
-            refs::VarType::ParserDef => ResolvedAtom::ParserDef(hir::ParserDefId(id)),
+            refs::VarType::ParserDef => ResolvedAtom::ParserDef(hir::ParserDefId(id), true),
             refs::VarType::Value => {
                 let is_captured = parent_block
                     .map(|x| !x.0.is_ancestor_of(db, id))

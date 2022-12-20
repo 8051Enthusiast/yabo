@@ -524,7 +524,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub fn create_pd_exports(&mut self) {
         let collected_layouts = self.collected_layouts.clone();
         for (layout, slot) in collected_layouts.root.iter() {
-            if let MonoLayout::NominalParser(pd, _) = layout.mono_layout().0 {
+            if let MonoLayout::NominalParser(pd, _, _) = layout.mono_layout().0 {
                 self.create_pd_export(*pd, *layout, *slot);
             }
         }

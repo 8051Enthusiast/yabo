@@ -37,8 +37,12 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
                     }
                     write!(f, ")")
                 }
-                MonoLayout::NominalParser(_, args) => {
-                    dbwrite!(f, db, "nominal-parser[{}](", ty)?;
+                MonoLayout::NominalParser(_, args, backtracks) => {
+                    write!(f, "nominal-parser")?;
+                    if *backtracks {
+                        write!(f, "?")?;
+                    }
+                    dbwrite!(f, db, "[{}](", ty)?;
                     for (i, (layout, ty)) in args.iter().enumerate() {
                         if i > 0 {
                             write!(f, ", ")?;
@@ -192,7 +196,7 @@ impl<'a> LayoutHasher<'a> {
                     state.update(db.type_hash(*ty));
                 }
             }
-            MonoLayout::NominalParser(def, args) => {
+            MonoLayout::NominalParser(def, args, bt) => {
                 state.update([4]);
                 def.0.update_hash(state, db);
                 args.len().update_hash(state, db);
@@ -200,6 +204,7 @@ impl<'a> LayoutHasher<'a> {
                     state.update(self.hash(*layout, db));
                     state.update(db.type_hash(*ty));
                 }
+                state.update([*bt as u8]);
             }
             MonoLayout::Block(def, map) => {
                 state.update([5]);
@@ -326,8 +331,12 @@ impl<'a> LayoutSymbol<'a> {
             MonoLayout::Nominal(id, _, _) => {
                 dbformat!(db, "{}", &db.def_name(id.0).unwrap())
             }
-            MonoLayout::NominalParser(id, _) => {
-                dbformat!(db, "parse_{}", &db.def_name(id.0).unwrap())
+            MonoLayout::NominalParser(id, _, backtracks) => {
+                if *backtracks {
+                    dbformat!(db, "parse_{}_b", &db.def_name(id.0).unwrap())
+                } else {
+                    dbformat!(db, "parse_{}", &db.def_name(id.0).unwrap())
+                }
             }
             MonoLayout::Primitive(_)
             | MonoLayout::Pointer

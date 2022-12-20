@@ -369,7 +369,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                                     self.infctx.block_call(b.0, &ty_vars)?
                                 }
                             }
-                            ResolvedAtom::ParserDef(pd) => self.infctx.parserdef(pd.0)?,
+                            ResolvedAtom::ParserDef(pd, _) => self.infctx.parserdef(pd.0)?,
                             ResolvedAtom::Val(v) | ResolvedAtom::Captured(v) => {
                                 self.infctx.lookup(*v)?
                             }
