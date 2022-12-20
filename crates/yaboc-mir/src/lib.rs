@@ -343,6 +343,7 @@ pub enum PlaceOrigin {
 pub struct PlaceInfo {
     pub place: Place,
     pub ty: TypeId,
+    pub remove_bt: bool,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -470,15 +471,18 @@ impl FunctionWriter {
         builder.add_place(PlaceInfo {
             place: Place::Captures,
             ty: fun_ty,
+            remove_bt: false,
         });
         builder.add_place(PlaceInfo {
             place: Place::Arg,
             ty: arg_ty,
+            remove_bt: false,
         });
         if req.contains(NeededBy::Val) {
             let ret = builder.add_place(PlaceInfo {
                 place: Place::Return,
                 ty: ret_ty,
+                remove_bt: false,
             });
             builder.fun.ret = Some(ret);
         }
@@ -486,6 +490,7 @@ impl FunctionWriter {
             let retlen = builder.add_place(PlaceInfo {
                 place: Place::ReturnLen,
                 ty: arg_ty,
+                remove_bt: false,
             });
             builder.fun.retlen = Some(retlen);
         }

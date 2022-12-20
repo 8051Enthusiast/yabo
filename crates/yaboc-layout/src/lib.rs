@@ -459,6 +459,17 @@ impl<'a> ILayout<'a> {
         })
     }
 
+    fn with_backtrack_status(
+        self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+        backtracks: bool,
+    ) -> ILayout<'a> {
+        if backtracks {
+            return self;
+        }
+        self.map(ctx, |layout, ctx| layout.remove_backtracking(ctx).inner())
+    }
+
     pub fn size_align_without_vtable(
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
@@ -799,7 +810,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ResolvedAtom::Char(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Char)),
                 ResolvedAtom::Number(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Int)),
                 ResolvedAtom::Bool(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Bit)),
-                ResolvedAtom::Val(id) => ctx.var_by_id(id)?,
+                ResolvedAtom::Val(id, bt) => ctx.var_by_id(id)?.with_backtrack_status(ctx, bt),
                 ResolvedAtom::Single => make_layout(MonoLayout::Single),
                 ResolvedAtom::Nil => make_layout(MonoLayout::Nil),
                 ResolvedAtom::ParserDef(pd, bt) => {
@@ -825,14 +836,14 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                     ));
                     res
                 }
-                ResolvedAtom::Captured(capture) => {
+                ResolvedAtom::Captured(capture, bt) => {
                     let capture_value = ctx
                         .active_block()
                         .and_then(|s| s.get_captured(ctx, capture).transpose())
                         .unwrap_or_else(|| {
                             Ok(ctx.active_pd().get_arg(ctx, Arg::Named(capture)).unwrap())
                         })?;
-                    capture_value
+                    capture_value.with_backtrack_status(ctx, bt)
                 }
             },
             ExpressionHead::Monadic(m) => match m.op.inner {

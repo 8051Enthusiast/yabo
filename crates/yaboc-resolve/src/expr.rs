@@ -14,8 +14,8 @@ use super::{ResolveError, Resolves};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ResolvedAtom {
-    Val(DefId),
-    Captured(DefId),
+    Val(DefId, bool),
+    Captured(DefId, bool),
     ParserDef(hir::ParserDefId, bool),
     Number(i64),
     Char(u32),
@@ -59,9 +59,9 @@ pub fn resolve_expr_error(
                     .unwrap_or(false);
                 let is_arg = db.hir_node(id)?.is_kind(hir::HirNodeKind::ArgDef.into());
                 if is_captured || is_arg {
-                    ResolvedAtom::Captured(id)
+                    ResolvedAtom::Captured(id, true)
                 } else {
-                    ResolvedAtom::Val(id)
+                    ResolvedAtom::Val(id, true)
                 }
             }
         }))

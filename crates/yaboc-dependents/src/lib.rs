@@ -103,7 +103,7 @@ fn val_refs(
             let rexpr = db.resolve_expr(expr.id)?;
             ret.extend(ExprIter::new(&rexpr).filter_map(|x| match x.0 {
                 ExpressionHead::Niladic(OpWithData {
-                    inner: ResolvedAtom::Val(v),
+                    inner: ResolvedAtom::Val(v, _),
                     ..
                 }) => Some((SubValue::new_val(v), true)),
                 _ => None,
