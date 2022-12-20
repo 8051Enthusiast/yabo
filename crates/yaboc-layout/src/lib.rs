@@ -85,7 +85,7 @@ pub enum MonoLayout<Inner> {
         Option<(Inner, TypeId)>,
         Vec<(Inner, TypeId)>,
     ),
-    NominalParser(hir::ParserDefId, Vec<(Inner, TypeId)>),
+    NominalParser(hir::ParserDefId, Vec<(Inner, TypeId)>, bool),
     Block(hir::BlockId, BTreeMap<FieldName, Inner>),
     BlockParser(hir::BlockId, BTreeMap<DefId, Inner>),
     ComposedParser(Inner, TypeId, Inner),
@@ -144,7 +144,7 @@ impl<'a> IMonoLayout<'a> {
 
     pub fn arg_num<DB: Layouts + ?Sized>(&self, db: &DB) -> SResult<Option<(usize, usize)>> {
         match self.mono_layout().0 {
-            MonoLayout::NominalParser(pd, args) => Ok(db.argnum(*pd)?.map(|n| (n, args.len()))),
+            MonoLayout::NominalParser(pd, args, _) => Ok(db.argnum(*pd)?.map(|n| (n, args.len()))),
             _ => Ok(None),
         }
     }
@@ -162,7 +162,7 @@ impl<'a> IMonoLayout<'a> {
             arg: from.1,
         });
         let to_layout = ctx.dcx.intern(Layout::Mono(
-            MonoLayout::NominalParser(*pd, to.clone()),
+            MonoLayout::NominalParser(*pd, to.clone(), false),
             parser_ty,
         ));
         let from_layout = from.0;
@@ -303,7 +303,7 @@ impl<'a> ILayout<'a> {
             }
         } {
             MonoLayout::BlockParser(_, captures) => captures,
-            MonoLayout::Nominal(pd, _, args) | MonoLayout::NominalParser(pd, args) => {
+            MonoLayout::Nominal(pd, _, args) | MonoLayout::NominalParser(pd, args, _) => {
                 return Ok(ctx.db.parserdef_arg_index(*pd, id)?.map(|i| args[i].0))
             }
             _ => panic!("Attempting to get captured variable outside block"),
@@ -336,7 +336,7 @@ impl<'a> ILayout<'a> {
             };
             let from = from.typecast(ctx, arg_type)?.0;
             match layout.mono_layout().0 {
-                MonoLayout::NominalParser(pd, args) => {
+                MonoLayout::NominalParser(pd, args, _) => {
                     ctx.apply_thunk_arg(*pd, result_type, from, args)
                 }
                 MonoLayout::BlockParser(block_id, _) => ctx
@@ -376,13 +376,13 @@ impl<'a> ILayout<'a> {
                 .map(|(ty, (arg, _))| arg.typecast(ctx, *ty).map(|x| (x.0, *ty)))
                 .collect::<Result<Vec<_>, _>>()?;
             match layout.mono_layout().0 {
-                MonoLayout::NominalParser(pd, present_args) => {
+                MonoLayout::NominalParser(pd, present_args, backtracks) => {
                     let present_args = present_args
                         .iter()
                         .chain(typecast_args.iter())
                         .copied()
                         .collect();
-                    let layout = MonoLayout::NominalParser(*pd, present_args);
+                    let layout = MonoLayout::NominalParser(*pd, present_args, *backtracks);
                     let ty = if arg_types.len() == typecast_args.len() {
                         result_type
                     } else {
@@ -462,7 +462,7 @@ impl<'a> ILayout<'a> {
             Layout::Mono(MonoLayout::Nominal(id, from, args), _) => {
                 self.nominal_manifestation(ctx, *id, *from, args)?.size
             }
-            Layout::Mono(MonoLayout::NominalParser(id, args), _) => {
+            Layout::Mono(MonoLayout::NominalParser(id, args, _), _) => {
                 self.nominal_parser_manifestation(ctx, *id, args)?.size
             }
             Layout::Mono(MonoLayout::Pointer, _) => <&Zst>::tsize(),
@@ -784,8 +784,8 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ResolvedAtom::Val(id) => ctx.var_by_id(id)?,
                 ResolvedAtom::Single => make_layout(MonoLayout::Single),
                 ResolvedAtom::Nil => make_layout(MonoLayout::Nil),
-                ResolvedAtom::ParserDef(pd) => {
-                    make_layout(MonoLayout::NominalParser(pd, Vec::new()))
+                ResolvedAtom::ParserDef(pd, bt) => {
+                    make_layout(MonoLayout::NominalParser(pd, Vec::new(), bt))
                 }
                 ResolvedAtom::Block(block_id) => {
                     let mut captures = BTreeMap::new();
@@ -1006,7 +1006,7 @@ def for[int] *> main = {
                     LayoutPart::Parse(0, NeededBy::Val | NeededBy::Backtrack, true),
                     &ctx.db
                 ),
-                "block_1b15571abd710f7a$6673bf98ed201799$parse_0_vb"
+                "block_1b15571abd710f7a$17a27f01d2ed0dae$parse_0_vb"
             );
         }
         let field = |name| FieldName::Ident(ctx.id(name));
@@ -1028,7 +1028,7 @@ def for[int] *> main = {
         );
         assert_eq!(
             dbformat!(&ctx.db, "{}", &main_block.access_field(&mut outlayer, field("c")).unwrap().access_field(&mut outlayer, field("c")).unwrap()),
-            "nominal-parser[for[int] *> for[int] &> file[_].first]() | nominal-parser[for[int] *> for[int] &> file[_].second]()"
+            "nominal-parser?[for[int] *> for[int] &> file[_].first]() | nominal-parser?[for[int] *> for[int] &> file[_].second]()"
         );
         assert_eq!(
             dbformat!(

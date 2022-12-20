@@ -87,6 +87,9 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 MonoLayout::Nominal(_, _, _) => {
                     if self.nominals.insert(mono) {
                         let (arg, parser) = mono.unapply_nominal(self.ctx);
+                        // the original parser may have been backtracking, so we need to register
+                        // the corresponding non-backtracking parser as well
+                        self.register_layouts(parser);
                         self.register_parse(arg, parser, pd_val_req());
                         self.register_parse(arg, parser, pd_len_req());
                     }
@@ -94,7 +97,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 MonoLayout::Block(_, _) => {
                     self.blocks.insert(mono);
                 }
-                MonoLayout::NominalParser(pd, args) => {
+                MonoLayout::NominalParser(pd, args, _) => {
                     let argnum = self.ctx.db.argnum(*pd).unwrap().unwrap_or(0);
                     if args.len() == argnum {
                         self.parsers.insert(mono);
@@ -125,7 +128,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                             .push(UnprocessedCall::Block(left, mono, req));
                     }
                 }
-                MonoLayout::NominalParser(_, _) => {
+                MonoLayout::NominalParser(_, _, _) => {
                     if self.processed_calls.insert((left, mono, req)) {
                         self.unprocessed
                             .push(UnprocessedCall::NominalParser(left, mono, req));
@@ -221,11 +224,14 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         &mut self,
         arg: ILayout<'a>,
         parser: IMonoLayout<'a>,
-        req: RequirementSet,
+        mut req: RequirementSet,
     ) -> Result<(), LayoutError> {
-        let (MonoLayout::NominalParser(id, thunk_args), ty) = parser.mono_layout() else {
-                        panic!("unexpected non-nominal-parser layout");
-                    };
+        let (MonoLayout::NominalParser(id, thunk_args, bt), ty) = parser.mono_layout() else {
+            panic!("unexpected non-nominal-parser layout");
+        };
+        if !*bt {
+            req = req & !NeededBy::Backtrack
+        }
         let mut args = FxHashMap::default();
         let thunk_ty = self.ctx.db.parser_result(ty).unwrap();
         args.insert(Arg::From, arg);
@@ -275,7 +281,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     arg: from,
                 });
                 let parser_layout = self.ctx.dcx.intern(Layout::Mono(
-                    MonoLayout::NominalParser(*pd, Default::default()),
+                    MonoLayout::NominalParser(*pd, Default::default(), true),
                     parser_ty,
                 ));
                 self.register_layouts(parser_layout);

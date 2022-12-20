@@ -387,7 +387,7 @@ impl<'a> ConvertCtx<'a> {
                 ResolvedAtom::Number(n) => self.load_int(*n, ty, place, origin),
                 ResolvedAtom::Char(c) => self.load_char(*c, ty, place, origin),
                 ResolvedAtom::Bool(b) => self.load_bool(*b, ty, place, origin),
-                ResolvedAtom::ParserDef(_) | ResolvedAtom::Single | ResolvedAtom::Nil => {
+                ResolvedAtom::ParserDef(_, _) | ResolvedAtom::Single | ResolvedAtom::Nil => {
                     self.unwrap_or_stack(place, ty, origin)
                 }
                 ResolvedAtom::Block(block) => {
@@ -947,7 +947,10 @@ impl<'a> ConvertCtx<'a> {
             dbpanic!(db, "should have been a parser type, was {}", &block_ty)
         };
         let mut f: FunctionWriter = FunctionWriter::new(block_ty, arg, result, requirements);
-        let top_level_retreat = f.make_top_level_retreat();
+        let mut top_level_retreat = f.make_top_level_retreat();
+        if !requirements.contains(NeededBy::Backtrack) {
+            top_level_retreat.backtrack = top_level_retreat.error;
+        }
         let retreat = top_level_retreat;
         let int: TypeId = db.intern_type(Type::Primitive(PrimitiveType::Int));
         let places = Self::block_places(db, &block, requirements, order, &mut f)?;
@@ -1017,7 +1020,10 @@ impl<'a> ConvertCtx<'a> {
         });
         let arg_ty = from;
         let mut f = FunctionWriter::new(fun_ty, arg_ty, ret_ty, requirements);
-        let top_level_retreat = f.make_top_level_retreat();
+        let mut top_level_retreat = f.make_top_level_retreat();
+        if !requirements.contains(NeededBy::Backtrack) {
+            top_level_retreat.backtrack = top_level_retreat.error;
+        }
         let retreat = top_level_retreat;
         let int: TypeId = db.intern_type(Type::Primitive(PrimitiveType::Int));
         let context_data = FxHashMap::default();

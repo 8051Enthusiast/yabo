@@ -129,7 +129,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         argnum: PSize,
     ) -> (i64, PSize) {
-        let (pd, args) = if let MonoLayout::NominalParser(pd, args) = layout.mono_layout().0 {
+        let (pd, args) = if let MonoLayout::NominalParser(pd, args, _) = layout.mono_layout().0 {
             (*pd, args)
         } else {
             panic!("trying to get parser set arg struct for non-nominal-parser layout");
