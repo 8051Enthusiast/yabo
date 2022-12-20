@@ -71,22 +71,24 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        call_kind: RequirementSet,
+        mut req: RequirementSet,
     ) -> FunctionSubstitute<'comp> {
-        let bd = if let MonoLayout::BlockParser(id, _) = layout.mono_layout().0 {
-            id
-        } else {
+        let MonoLayout::BlockParser(bd, _, bt) = layout.mono_layout().0
+        else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
+        if !bt {
+            req &= !NeededBy::Backtrack;
+        }
         let mir = self
             .compiler_database
             .db
-            .mir(FunKind::Block(*bd), call_kind)
+            .mir(FunKind::Block(*bd), req)
             .unwrap();
         let strictness = self
             .compiler_database
             .db
-            .strictness(FunKind::Block(*bd), call_kind)
+            .strictness(FunKind::Block(*bd), req)
             .unwrap();
         FunctionSubstitute::new_from_block(mir, &strictness, from, layout, self.layouts).unwrap()
     }
@@ -411,27 +413,27 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
         slot: PSize,
-        req: RequirementSet,
+        mut req: RequirementSet,
     ) {
         let llvm_fun = self.parser_fun_val(layout, slot, req);
         self.add_entry_block(llvm_fun);
         let (ret, fun, target_head, arg, retlen) = parser_args(llvm_fun);
-        let (first_layout, inner_ty, second_layout) =
-            if let MonoLayout::ComposedParser(first, inner_ty, second) = layout.mono_layout().0 {
-                (*first, *inner_ty, *second)
-            } else {
+        let MonoLayout::ComposedParser(first_layout, inner_ty, second_layout, bt) = layout.mono_layout().0 else {
                 panic!("called build_compose_len on non-composed")
-            };
+        };
         let inner_layout = first_layout.apply_arg(self.layouts, from).unwrap();
-        let inner_level = self.deref_level(inner_ty);
+        let inner_level = self.deref_level(*inner_ty);
         let second_arg = self.build_layout_alloca(inner_layout, "second_arg");
-        let first_ptr = self.build_duple_gep(layout.inner(), DupleField::First, fun, first_layout);
+        let first_ptr = self.build_duple_gep(layout.inner(), DupleField::First, fun, *first_layout);
         let second_ptr =
-            self.build_duple_gep(layout.inner(), DupleField::Second, fun, second_layout);
+            self.build_duple_gep(layout.inner(), DupleField::Second, fun, *second_layout);
 
+        if !*bt {
+            req &= !NeededBy::Backtrack;
+        }
         let retstatus = self.build_parser_call(
             second_arg,
-            (first_layout, first_ptr),
+            (*first_layout, first_ptr),
             inner_level,
             (from, arg),
             retlen,
@@ -441,7 +443,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
         let retstatus = self.build_parser_call(
             ret,
-            (second_layout, second_ptr),
+            (*second_layout, second_ptr),
             target_head,
             (inner_layout, second_arg),
             self.any_ptr().get_undef(),
@@ -568,10 +570,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 MonoLayout::NominalParser(_, _, _) => {
                     self.create_pd_parse(from, layout, *slot, req);
                 }
-                MonoLayout::BlockParser(block, _) => {
+                MonoLayout::BlockParser(block, _, _) => {
                     self.create_block_parse(*block, from, layout, *slot, req);
                 }
-                MonoLayout::ComposedParser(_, _, _) => {
+                MonoLayout::ComposedParser(_, _, _, _) => {
                     self.create_compose_parse(from, layout, *slot, req);
                 }
                 _ => panic!("non-parser in parser layout collection"),

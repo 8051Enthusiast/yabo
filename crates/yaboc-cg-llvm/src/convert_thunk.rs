@@ -5,12 +5,12 @@ use inkwell::{
 };
 
 use yaboc_dependents::{NeededBy, RequirementSet};
-use yaboc_hir_types::TyHirs;
+use yaboc_hir_types::{TyHirs, MALLOC_BIT, NOBACKTRACK_BIT, VTABLE_BIT};
 use yaboc_layout::{
     collect::pd_val_req,
     flat_layouts,
     prop::{PSize, SizeAlign, TargetSized},
-    ILayout, IMonoLayout,
+    ILayout, IMonoLayout, MonoLayout,
 };
 
 use crate::{get_fun_args, parser_args};
@@ -442,7 +442,9 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp>> ThunkContext<'llvm, 'comp, 'r, In
         copy_phi: PhiValue<'llvm>,
         otherwise: BasicBlock<'llvm>,
     ) {
-        let has_vtable = self.cg.build_check_i64_bit_set(self.target_level, 0);
+        let has_vtable = self
+            .cg
+            .build_check_i64_bit_set(self.target_level, VTABLE_BIT);
         let write_vtable_ptr = self
             .cg
             .llvm
@@ -469,7 +471,9 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp>> ThunkContext<'llvm, 'comp, 'r, In
         otherwise: BasicBlock<'llvm>,
         alloc_sa: SizeAlign,
     ) {
-        let is_malloc = self.cg.build_check_i64_bit_set(self.target_level, 1);
+        let is_malloc = self
+            .cg
+            .build_check_i64_bit_set(self.target_level, MALLOC_BIT);
         let allocator_bb = self.cg.llvm.append_basic_block(self.thunk, "allocator");
         self.cg
             .builder
@@ -519,7 +523,20 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp>> ThunkContext<'llvm, 'comp, 'r, In
     }
 
     fn build_vtable_any_ptr(&mut self) -> PointerValue<'llvm> {
-        self.cg.build_get_vtable_tag(self.target_layout)
+        let bt_ptr = self.cg.build_get_vtable_tag(self.target_layout);
+        if let MonoLayout::NominalParser(..) = self.target_layout.mono_layout().0 {
+        } else {
+            return bt_ptr;
+        }
+        let nbt_target_layout = self.target_layout.remove_backtracking(self.cg.layouts);
+        let nbt_ptr = self.cg.build_get_vtable_tag(nbt_target_layout);
+        let needs_nbt = self
+            .cg
+            .build_check_i64_bit_set(self.target_level, NOBACKTRACK_BIT);
+        self.cg
+            .builder
+            .build_select(needs_nbt, nbt_ptr, bt_ptr, "vtable_ptr")
+            .into_pointer_value()
     }
 
     pub fn build(mut self) -> FunctionValue<'llvm> {

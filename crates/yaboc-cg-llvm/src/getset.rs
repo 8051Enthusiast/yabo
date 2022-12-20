@@ -210,7 +210,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub(super) fn build_check_i64_bit_set(
         &mut self,
         val: IntValue<'llvm>,
-        bit: u64,
+        bit: u8,
     ) -> IntValue<'llvm> {
         let set_bit = self.const_i64(1 << bit);
         let and = self.builder.build_and(set_bit, val, "");

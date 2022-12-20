@@ -38,6 +38,7 @@ pub use returns::DerefLevel;
 use returns::{
     deref_level, deref_type, least_deref_type, parser_returns, parser_returns_ssc, ParserDefType,
 };
+pub use returns::{MALLOC_BIT, NOBACKTRACK_BIT, VTABLE_BIT};
 use signature::{get_signature, parser_args, parser_args_error};
 
 #[salsa::query_group(HirTypesDatabase)]
