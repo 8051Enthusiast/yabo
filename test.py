@@ -27,7 +27,7 @@ BINARY_NAME = 'yaboc'
 heading = re.compile(r'^={3,}\[\s*(.*?)\s*\]\={3,}$', re.MULTILINE)
 
 # this regex matches a input/output title
-case_title = re.compile(r'^(binary|output)\s+(.+)$')
+case_title = re.compile(r'^(binary|text|output)\s+(.+)$')
 
 # a comment that contains the error message
 # for example, '#~^ error[301] not found here'
@@ -342,14 +342,17 @@ class TestFile:
             if kind == 'binary':
                 if test_name in binary_cases:
                     raise Exception('Duplicate binary name: ' + test_name)
-                binary_cases[test_name] = subtext
+                binary_cases[test_name] = bytes.fromhex(subtext)
+            elif kind == 'text':
+                if test_name in binary_cases:
+                    raise Exception('Duplicate binary name: ' + test_name)
+                binary_cases[test_name] = subtext.strip().encode('utf-8')
             elif kind == 'output':
                 if test_name in output_cases:
                     raise Exception('Duplicate output name: ' + test_name)
                 output_cases[test_name] = subtext
 
-        for (test_name, hexdump) in binary_cases.items():
-            binary = bytes.fromhex(hexdump)
+        for (test_name, binary) in binary_cases.items():
             try:
                 output = output_cases.pop(test_name)
             except KeyError as e:
@@ -425,8 +428,6 @@ def run_tests(target_dir: str) -> int:
     #    total_failed += run_test(file)
     #return total_failed
         
-
-
 
 run_clippy()
 
