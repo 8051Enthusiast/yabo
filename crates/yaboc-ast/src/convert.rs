@@ -530,7 +530,7 @@ astify! {
     enum atom = Atom {
         Field(bt_name),
         Number(number_literal),
-        Char(char_literal),
+        Number(char_literal),
         Bool(bool_literal),
     };
 }
@@ -750,7 +750,7 @@ fn number_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<i64> 
     i64::from_str_radix(num, radix).map_err(|_| vec![GenericParseError { loc: span }])
 }
 
-fn char_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<u32> {
+fn char_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<i64> {
     let Spanned { inner, span } = spanned(node_to_string)(db, fd, c)?;
     let without_quotes = inner
         .strip_prefix('\'')
@@ -761,7 +761,7 @@ fn char_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<u32> {
         .next()
         .filter(|_| it.next().is_none())
         .ok_or_else(|| vec![GenericParseError { loc: span }])?;
-    Ok(first as u32)
+    Ok(first as i64)
 }
 
 fn bool_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<bool> {
