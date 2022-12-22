@@ -1,0 +1,56 @@
+====[ source code ]====
+import std
+
+def *op = {
+  left: std.u32l
+  ~, op: ~, ~
+  right: std.u32l
+}
+
+def *line = {
+  name: std.u32l
+  ~, ~
+  | num: std.basenum?(10)
+  | res: op
+  std.newline?
+}
+
+def *calculate_line(start: std.list[*line], x: std.list[*line], name: int): int = {
+  | let current = x.this?
+    std.assert?(current.name == name)
+    | let return = current.num?
+    | let res = current.res?
+      left: calculate_line(start, start, res.left)
+      right: calculate_line(start, start, res.right)
+      | std.assert?(res.op == '*'), let return = left * right
+      | std.assert?(res.op == '+'), let return = left + right
+      | std.assert?(res.op == '-'), let return = left - right
+      | std.assert?(res.op == '/'), let return = left / right
+  | return: calculate_line(start, x.next?, name)
+}
+
+export
+def *test = {
+  oplist: std.list(line?)
+  return: calculate_line(oplist, oplist, 0x746f6f72)
+}
+
+====[ text 1 ]====
+root: pppw + sjmn
+dbpl: 5
+cczh: sllz + lgvd
+zczc: 2
+ptdq: humn - dvpt
+dvpt: 3
+lfqf: 4
+humn: 5
+ljgn: 2
+sjmn: drzm * dbpl
+sllz: 4
+pppw: cczh / lfqf
+lgvd: ljgn * ptdq
+drzm: hmdt - zczc
+hmdt: 32
+//////////////////
+====[ output 1 ]====
+152
