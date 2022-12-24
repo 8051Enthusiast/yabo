@@ -6,6 +6,7 @@ use std::{
 use enumflags2::make_bitflags;
 use fxhash::{FxHashMap, FxHashSet};
 
+use hir::HirNodeKind;
 use yaboc_ast::expr::{
     self, ConstraintBinOp, ConstraintUnOp, Dyadic, ExprIter, ExpressionHead, Ignorable, Monadic,
     ValBinOp, ValUnOp, Variadic, WiggleKind,
@@ -25,6 +26,8 @@ use yaboc_hir::{
 use yaboc_hir_types::TypedExpression;
 use yaboc_resolve::expr::ResolvedAtom;
 use yaboc_types::{PrimitiveType, Type, TypeId};
+
+use crate::InsRef;
 
 use super::{
     BBRef, Comp, DupleField, ExceptionRetreat, Function, FunctionWriter, IntBinOp, IntUnOp,
@@ -199,6 +202,12 @@ impl<'a> ConvertCtx<'a> {
                 (bb, bb)
             }
         }
+    }
+
+    fn next_ins(&self) -> InsRef {
+        let current_bb = self.f.current_bb;
+        let offset = self.f.fun.bb(current_bb).ins.len();
+        InsRef(current_bb, offset as u32)
     }
 
     pub fn change_context(&mut self, context: ContextId) {
@@ -773,9 +782,18 @@ impl<'a> ConvertCtx<'a> {
         let ret = call_kind
             .contains(NeededBy::Val)
             .then(|| self.val_place_at_def(call_loc).unwrap());
-        let retlen = call_kind
-            .contains(NeededBy::Len)
-            .then(|| self.back_place_at_def(call_loc).unwrap());
+        let ty = self.f.fun.place(self.f.fun.arg()).ty;
+        let retlen = if call_kind.contains(NeededBy::Len) {
+            let place = self.f.add_place(PlaceInfo {
+                place: Place::ModifiedBy(self.next_ins()),
+                ty,
+                remove_bt: false,
+            });
+            self.places.insert(SubValue::new_back(call_loc), place);
+            Some(place)
+        } else {
+            None
+        };
         self.f
             .parse_call(call_kind, addr, parser_fun, ret, retlen, self.retreat)
     }
@@ -799,9 +817,21 @@ impl<'a> ConvertCtx<'a> {
             return;
         }
         let req = self.req_at_id(pd.id.0);
-        if !req.is_empty() {
-            self.call_expr(pd.id.0, pd.to, req)
+        if req.is_empty() {
+            return;
         }
+        let call_loc = pd.id.0;
+        let expr = pd.to;
+        let parser_fun = self.val_place_at_def(expr.0).unwrap();
+        let addr = self.front_place_at_def(call_loc).unwrap();
+        let ret = req
+            .contains(NeededBy::Val)
+            .then(|| self.val_place_at_def(call_loc).unwrap());
+        let retlen = req
+            .contains(NeededBy::Len)
+            .then(|| self.back_place_at_def(call_loc).unwrap());
+        self.f
+            .parse_call(req, addr, parser_fun, ret, retlen, self.retreat)
     }
 
     fn copy_predecessor(&mut self, pred: ParserPredecessor, id: DefId) {
@@ -917,12 +947,16 @@ impl<'a> ConvertCtx<'a> {
                 continue;
             }
             let val = value.val;
+            let hirval = db.hir_node(val.id)?;
             if val.id == block.id.0
                 && val.kind == SubValueKind::Back
                 && requirements.contains(NeededBy::Len)
             {
                 places.insert(val, f.fun.retlen().unwrap());
             } else if matches!(val.kind, SubValueKind::Back | SubValueKind::Front) {
+                if val.kind == SubValueKind::Back && hirval.is_kind(HirNodeKind::Parse.into()) {
+                    continue;
+                }
                 let place = Place::Stack(f.new_stack_ref(PlaceOrigin::Ambient(block.id, val.id)));
                 let place_ref = f.add_place(PlaceInfo {
                     place,
@@ -940,7 +974,7 @@ impl<'a> ConvertCtx<'a> {
                 } else {
                     Place::Stack(f.new_stack_ref(PlaceOrigin::Node(val.id)))
                 };
-                let ty: TypeId = match db.hir_node(val.id)? {
+                let ty: TypeId = match &hirval {
                     HirNode::Let(_)
                     | HirNode::Parse(_)
                     | HirNode::ChoiceIndirection(_)

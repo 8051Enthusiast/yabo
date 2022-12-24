@@ -358,18 +358,18 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.set_always_inline(llvm_fun);
         let (ret, _, target_head, arg, retlen) = parser_args(llvm_fun);
         self.add_entry_block(llvm_fun);
-        if req.contains(NeededBy::Len) {
-            let single_forward_fun = self.build_single_forward_fun_get(from.maybe_mono(), arg);
-            let ret =
-                self.build_call_with_int_ret(single_forward_fun, &[retlen.into(), arg.into()]);
-            self.non_zero_early_return(llvm_fun, ret)
-        }
         if req.contains(NeededBy::Val) {
             let current_element_fun = self.build_current_element_fun_get(from.maybe_mono(), arg);
             let ret = self.build_call_with_int_ret(
                 current_element_fun,
                 &[ret.into(), arg.into(), target_head.into()],
             );
+            self.non_zero_early_return(llvm_fun, ret)
+        }
+        if req.contains(NeededBy::Len) {
+            let single_forward_fun = self.build_single_forward_fun_get(from.maybe_mono(), arg);
+            let ret =
+                self.build_call_with_int_ret(single_forward_fun, &[retlen.into(), arg.into()]);
             self.builder.build_return(Some(&ret));
         } else {
             self.builder.build_return(Some(&self.const_i64(0)));
