@@ -181,6 +181,12 @@ impl<'a> SubInfo<ILayout<'a>> {
                     .0
                     .access_duple(ctx, duple_field),
                 Place::From(place) => place_layouts[place.as_index()].0.access_from(ctx),
+                Place::ModifiedBy(ins_ref) => match f.ins_at(ins_ref) {
+                    yaboc_mir::MirInstr::ParseCall(_, _, _, front, _, _) => {
+                        place_layouts[front.as_index()].0
+                    }
+                    _ => unreachable!(),
+                },
             };
             let ty = ctx.db.substitute_typevar(place_info.ty, self.subst.clone());
 

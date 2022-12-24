@@ -132,6 +132,12 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 self.cg
                     .build_duple_gep(outer_layout, field, outer_ptr, inner_layout)
             }
+            mir::Place::ModifiedBy(ins_ref) => {
+                let MirInstr::ParseCall(_, _, _, front, _, _) = self.mir_fun.f.ins_at(ins_ref) else {
+                    unreachable!()
+                };
+                self.place_ptr(front)
+            }
         }
     }
 

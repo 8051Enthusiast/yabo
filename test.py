@@ -418,15 +418,18 @@ def run_test(path: str) -> int:
 
 
 def run_tests(target_dir: str) -> int:
-    files = map(lambda x: os.path.join(target_dir, x), os.listdir(target_dir))
-    with futures.ProcessPoolExecutor() as executor:
-        results = executor.map(run_test, files)
-        return sum(results)
-    #total_failed = 0
-    #for file in files:
-    #    print(file)
-    #    total_failed += run_test(file)
-    #return total_failed
+    files = [os.path.join(target_dir, x) for x in os.listdir(target_dir)]
+    try:
+        with futures.ProcessPoolExecutor() as executor:
+            results = executor.map(run_test, files)
+            return sum(results)
+    except futures.process.BrokenProcessPool:
+        print('Encountered segfault, running tests sequentially')
+        total_failed = 0
+        for file in files:
+            print(f'Running {file}')
+            total_failed += run_test(file)
+        return total_failed
         
 
 run_clippy()

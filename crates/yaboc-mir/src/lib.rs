@@ -203,6 +203,9 @@ impl ControlFlow {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct InsRef(pub BBRef, pub u32);
+
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum MirInstr {
     IntBin(PlaceRef, IntBinOp, PlaceRef, PlaceRef),
@@ -330,6 +333,7 @@ pub enum Place {
     Captured(PlaceRef, DefId),
     DupleField(PlaceRef, DupleField),
     From(PlaceRef),
+    ModifiedBy(InsRef),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -401,6 +405,10 @@ impl Function {
 
     pub fn entry(&self) -> BBRef {
         BBRef(NonZeroU32::new(1).unwrap())
+    }
+
+    pub fn ins_at(&self, ins_ref: InsRef) -> MirInstr {
+        self.bb(ins_ref.0).ins[ins_ref.1 as usize].clone()
     }
 
     pub fn is_valid(&self) -> bool {

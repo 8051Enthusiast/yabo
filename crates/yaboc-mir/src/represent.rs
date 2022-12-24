@@ -3,7 +3,7 @@ use std::{fmt::Display, io::Write};
 use yaboc_base::{databased_display::DatabasedDisplay, dbwrite};
 use yaboc_dependents::RequirementSet;
 
-use crate::{strictness::Strictness, ControlFlow, FunKind};
+use crate::{strictness::Strictness, ControlFlow, FunKind, InsRef};
 
 use super::{
     BBRef, Comp, DupleField, ExceptionRetreat, Function, IntBinOp, IntUnOp, MirInstr, Mirs, Place,
@@ -54,6 +54,9 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for PlaceRef {
             Place::From(inner) => {
                 inner.db_fmt(f, &(*fun, *db))?;
                 write!(f, ".from")
+            }
+            Place::ModifiedBy(ins_ref) => {
+                write!(f, "mod[{}]", ins_ref)
             }
         }
     }
@@ -187,6 +190,13 @@ impl<DB: Mirs> DatabasedDisplay<(&Function, &DB)> for MirInstr {
 impl Display for BBRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "bb_{}", self.0)
+    }
+}
+
+impl Display for InsRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let InsRef(bb, offset) = self;
+        write!(f, "bb_{}[{}]", bb.0, offset)
     }
 }
 
