@@ -295,7 +295,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                     .builder
                     .build_bitcast(
                         num_ptr,
-                        self.cg.llvm.i64_type().ptr_type(AddressSpace::Generic),
+                        self.cg.llvm.i64_type().ptr_type(AddressSpace::default()),
                         "cast_assert_num",
                     )
                     .into_pointer_value();
@@ -319,7 +319,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                     .builder
                     .build_bitcast(
                         num_ptr,
-                        self.cg.llvm.i32_type().ptr_type(AddressSpace::Generic),
+                        self.cg.llvm.i32_type().ptr_type(AddressSpace::default()),
                         "cast_assert_char",
                     )
                     .into_pointer_value();
@@ -359,7 +359,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                     .builder
                     .build_bitcast(
                         num_ptr,
-                        self.cg.llvm.i64_type().ptr_type(AddressSpace::Generic),
+                        self.cg.llvm.i64_type().ptr_type(AddressSpace::default()),
                         "cast_assert_range",
                     )
                     .into_pointer_value();
@@ -480,7 +480,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             .builder
             .build_bitcast(
                 ret_ptr,
-                llvm_val.get_type().ptr_type(AddressSpace::Generic),
+                llvm_val.get_type().ptr_type(AddressSpace::default()),
                 "cast_store_val",
             )
             .into_pointer_value();
@@ -495,7 +495,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let ptr = self.place_ptr(place);
         self.cg
             .builder
-            .build_bitcast(ptr, ty.ptr_type(AddressSpace::Generic), "int")
+            .build_bitcast(ptr, ty.ptr_type(AddressSpace::default()), "int")
             .into_pointer_value()
     }
 
