@@ -225,6 +225,23 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)));
     }
 
+    fn get_slice_ptrs(&mut self, arg: PointerValue<'llvm>) -> [PointerValue<'llvm>; 2] {
+        let arg_ptr = self.build_cast::<*mut *const u8, _>(arg);
+        let ptr = self
+            .builder
+            .build_load(arg_ptr, "load_ptr")
+            .into_pointer_value();
+        let end_ptr_ptr = unsafe {
+            self.builder
+                .build_in_bounds_gep(arg_ptr, &[self.const_i64(1)], "end_ptr_ptr")
+        };
+        let end_ptr = self
+            .builder
+            .build_load(end_ptr_ptr, "load_end_ptr")
+            .into_pointer_value();
+        [ptr, end_ptr]
+    }
+
     fn create_array_single_forward(&mut self, layout: IMonoLayout<'comp>) {
         let fun = self.single_forward_fun_val(layout);
         self.set_always_inline(fun);
@@ -348,8 +365,24 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) {
         let llvm_fun = self.parser_fun_val(layout, slot, req);
         self.set_always_inline(llvm_fun);
-        let (ret, _, target_head, arg) = parser_args(llvm_fun);
         self.add_entry_block(llvm_fun);
+        let (ret, _, target_head, arg) = parser_args(llvm_fun);
+        let [ptr, end_ptr] = self.get_slice_ptrs(arg);
+        let fail_block = self.llvm.append_basic_block(llvm_fun, "fail");
+        let ok_block = self.llvm.append_basic_block(llvm_fun, "ok");
+        let ptr_diff = self.builder.build_ptr_diff(end_ptr, ptr, "ptr_diff");
+        let is_zero = self.builder.build_int_compare(
+            IntPredicate::EQ,
+            ptr_diff,
+            self.const_i64(0),
+            "is_zero",
+        );
+        self.builder
+            .build_conditional_branch(is_zero, fail_block, ok_block);
+        self.builder.position_at_end(fail_block);
+        self.builder
+            .build_return(Some(&self.const_i64(ReturnStatus::Eof as i64)));
+        self.builder.position_at_end(ok_block);
         if req.contains(NeededBy::Val) {
             let current_element_fun = self.build_current_element_fun_get(from.maybe_mono(), arg);
             let ret = self.build_call_with_int_ret(
