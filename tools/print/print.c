@@ -188,38 +188,38 @@ int print_recursive(DynValue val, int indent, FILE *out)
 	return status;
 }
 
-void *map_file(char *filename)
+struct Slice map_file(char *filename)
 {
 	FILE *f = fopen(filename, "r");
 	if (!f)
 	{
 		perror("could not open file");
-		return NULL;
+		return (struct Slice){0};
 	}
 	if (fseek(f, 0, SEEK_END))
 	{
 		perror("could not get file size");
-		return NULL;
+		return (struct Slice){0};
 	}
 	long length = ftell(f);
 	if (length < 0)
 	{
 		perror("could not get file size");
-		return NULL;
+		return (struct Slice){0};
 	}
 	int fd = fileno(f);
 	if (fd < 0)
 	{
 		perror("could not mmap file");
-		return NULL;
+		return (struct Slice){0};
 	}
-	void *ret = mmap(NULL, (size_t)length, PROT_READ, MAP_SHARED, fd, 0);
-	if (ret == MAP_FAILED)
+	void *file = mmap(NULL, (size_t)length, PROT_READ, MAP_SHARED, fd, 0);
+	if (file == MAP_FAILED)
 	{
 		perror("could not mmap file");
-		return NULL;
+		return (struct Slice){0};
 	}
-	return ret;
+	return (struct Slice){file, (char *)file + length};
 }
 
 int main(int argc, char **argv)
@@ -241,8 +241,8 @@ int main(int argc, char **argv)
 		perror("could not find parser");
 		exit(1);
 	}
-	char *file = (char *)map_file(argv[3]);
-	if (!file)
+	struct Slice file = map_file(argv[3]);
+	if (!file.start)
 	{
 		exit(1);
 	}

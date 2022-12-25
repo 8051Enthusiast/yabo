@@ -137,7 +137,7 @@ class DynValue(Structure):
     ]
     _fields_ = [
         ('vtable', POINTER(VTableHeader)),
-        ('data', POINTER(c_ubyte)),
+        ('data', POINTER(c_ubyte) * 2),
     ]
 
     def vtable_has_tag(self) -> bool:
@@ -155,7 +155,7 @@ class DynValue(Structure):
 
     def data_ptr(self):
         if self.vtable_has_tag():
-            return self.data
+            return self.data[0]
         return self.data_field_ptr()
 
 

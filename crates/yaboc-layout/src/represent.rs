@@ -21,7 +21,7 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
             Layout::None => write!(f, "<null>"),
             Layout::Mono(d, ty) => match d {
                 MonoLayout::Primitive(p) => p.db_fmt(f, db),
-                MonoLayout::Pointer => write!(f, "ptr"),
+                MonoLayout::SlicePtr => write!(f, "sliceptr"),
                 MonoLayout::Single => write!(f, "single"),
                 MonoLayout::Nil => write!(f, "nil"),
                 MonoLayout::Nominal(_, from, args) => {
@@ -181,7 +181,7 @@ impl<'a> LayoutHasher<'a> {
                 state.update([0]);
                 p.update_hash(state, db);
             }
-            MonoLayout::Pointer => {
+            MonoLayout::SlicePtr => {
                 state.update([1]);
             }
             MonoLayout::Single => {
@@ -353,7 +353,7 @@ impl<'a> LayoutSymbol<'a> {
                 }
             }
             MonoLayout::Primitive(_)
-            | MonoLayout::Pointer
+            | MonoLayout::SlicePtr
             | MonoLayout::Single
             | MonoLayout::Nil => {
                 dbformat!(db, "{}", &self.layout.0)

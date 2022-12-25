@@ -81,7 +81,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     fn register_layouts(&mut self, layout: ILayout<'a>) {
         for mono in flat_layouts(&layout) {
             match &mono.mono_layout().0 {
-                MonoLayout::Pointer => {
+                MonoLayout::SlicePtr => {
                     self.arrays.insert(mono);
                 }
                 MonoLayout::Nominal(_, _, _) => {

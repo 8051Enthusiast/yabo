@@ -395,7 +395,7 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp>> ThunkContext<'llvm, 'comp, 'r, In
 
         self.cg.builder.position_at_end(old_bb);
         let alloc_sa = self.kind.alloc_size(self.cg);
-        if alloc_sa.size > <*const u8>::tsize().size {
+        if alloc_sa.size > <*const u8>::tsize().array(2).size {
             self.check_malloc(copy_bb, copy_phi, check_vtable_bb, alloc_sa);
         } else {
             self.cg.builder.build_unconditional_branch(check_vtable_bb);

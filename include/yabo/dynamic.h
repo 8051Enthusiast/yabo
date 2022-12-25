@@ -3,11 +3,17 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <string.h>
+
+struct Slice {
+	void *start;
+	void *end;
+};
+
 typedef struct {
 	struct VTableHeader *vtable;
 	union {
 		void *data;
-		char in_data[sizeof(void *)];
+		char in_data[sizeof(struct Slice)];
 	};
 } DynValue;
 
@@ -29,7 +35,7 @@ static inline void *dyn_data(DynValue *val) {
 	}
 }
 
-static inline DynValue dyn_parse_bytes(char *bytes, ParseFun parser) {
+static inline DynValue dyn_parse_bytes(struct Slice bytes, ParseFun parser) {
 	DynValue ret;
 	DynValue retlen;
 	int64_t status = parser(&ret.in_data, NULL, YABO_ANY | 3, &bytes);
