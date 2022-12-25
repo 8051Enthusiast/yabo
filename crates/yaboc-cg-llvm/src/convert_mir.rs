@@ -33,7 +33,6 @@ pub struct MirTranslator<'llvm, 'comp, 'r> {
     arg: PointerValue<'llvm>,
     ret: Option<PointerValue<'llvm>>,
     rethead: Option<IntValue<'llvm>>,
-    retlen: Option<PointerValue<'llvm>>,
     undefined: BasicBlock<'llvm>,
 }
 
@@ -76,7 +75,6 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             arg,
             ret: None,
             rethead: None,
-            retlen: None,
             undefined,
         }
     }
@@ -84,11 +82,6 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     pub fn with_ret_ptr(mut self, ret: PointerValue<'llvm>, rethead: IntValue<'llvm>) -> Self {
         self.ret = Some(ret);
         self.rethead = Some(rethead);
-        self
-    }
-
-    pub fn with_retlen_ptr(mut self, retlen: PointerValue<'llvm>) -> Self {
-        self.retlen = Some(retlen);
         self
     }
 
@@ -108,14 +101,11 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 .expect("referenced return of non-returning function");
         }
         match place {
-            mir::Place::Arg => self.arg,
+            mir::Place::Arg | mir::Place::ReturnLen => self.arg,
             mir::Place::Captures => self.fun,
             mir::Place::Return => self
                 .ret
                 .expect("referenced return of non-returning function"),
-            mir::Place::ReturnLen => self
-                .retlen
-                .expect("referenced returnlen of non-returning function"),
             mir::Place::From(outer) => self.place_ptr(outer),
             mir::Place::Stack(stack_ref) => self.stack[stack_ref.as_index()],
             mir::Place::Field(outer, a) | mir::Place::Captured(outer, a) => {
@@ -434,7 +424,6 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     fn parse_call(
         &mut self,
         ret: Option<PlaceRef>,
-        retlen: Option<PlaceRef>,
         call_kind: RequirementSet,
         fun: PlaceRef,
         arg: PlaceRef,
@@ -462,7 +451,6 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 .build_parser_fun_get(fun_layout.maybe_mono(), fun_ptr, slot, call_kind, false);
         let undef_ptr = self.cg.any_ptr().get_undef();
         let ret_ptr = ret.map(|r| self.place_ptr(r)).unwrap_or(undef_ptr);
-        let retlen_ptr = retlen.map(|r| self.place_ptr(r)).unwrap_or(undef_ptr);
         let arg_ptr = self.place_ptr(arg);
         let deref_level = ret.map(|r| self.deref_level(r)).unwrap_or(
             self.cg
@@ -475,7 +463,6 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 fun_ptr.into(),
                 deref_level.into(),
                 arg_ptr.into(),
-                retlen_ptr.into(),
             ],
             ctrl,
         )
@@ -653,8 +640,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::IntUn(ret, op, right) => self.int_un(ret, op, right),
             MirInstr::Comp(ret, op, left, right) => self.comp(ret, op, left, right),
             MirInstr::StoreVal(ret, val) => self.store_val(ret, val),
-            MirInstr::ParseCall(ret, retlen, call_kind, arg, fun, ctrl) => {
-                self.parse_call(ret, retlen, call_kind, fun, arg, ctrl)
+            MirInstr::ParseCall(ret, _, call_kind, arg, fun, ctrl) => {
+                self.parse_call(ret, call_kind, fun, arg, ctrl)
             }
             MirInstr::Field(ret, place, field, ctrl) => self.field(ret, place, field, ctrl),
             MirInstr::AssertVal(place, val, ctrl) => self.assert_value(place, val, ctrl),

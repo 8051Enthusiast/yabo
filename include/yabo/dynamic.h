@@ -32,7 +32,7 @@ static inline void *dyn_data(DynValue *val) {
 static inline DynValue dyn_parse_bytes(char *bytes, ParseFun parser) {
 	DynValue ret;
 	DynValue retlen;
-	int64_t status = parser(&ret.in_data, NULL, YABO_ANY | 3, &bytes, &retlen.in_data);
+	int64_t status = parser(&ret.in_data, NULL, YABO_ANY | 3, &bytes);
 	if (status != 0) {
 		ret.vtable = 0;
 		ret.in_data[0] = (char)status;

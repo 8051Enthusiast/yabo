@@ -100,8 +100,9 @@ class NominalVTable(Structure):
         ('end_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr)),
     ]
 
-PARSER_TY = CFUNCTYPE(c_int64, _voidptr,
-         _voidptr, c_int64, _voidptr, _voidptr)
+
+PARSER_TY = CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64, _voidptr)
+
 
 class ParserVTable(Structure):
     __slots__ = [
@@ -123,9 +124,9 @@ class ArrayVTable(Structure):
     ]
     _fields_ = [
         ('head', VTableHeader),
-        ('single_forward_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr)),
+        ('single_forward_impl', CFUNCTYPE(c_int64, _voidptr)),
         ('current_element_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64)),
-        ('skip_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_uint64)),
+        ('skip_impl', CFUNCTYPE(c_int64, _voidptr, c_uint64)),
     ]
 
 
@@ -179,12 +180,11 @@ class Parser:
         parse = self.impl
         buffer_ptr = pointer((c_ubyte * len(buf)).from_buffer(buf))
         ret = DynValue()
-        retlen = DynValue()
         nullptr = ctypes.c_void_p()
         # the vtable pointer is stored at negative index 1, so we pass
         # a pointer to the data field
         status = parse(ret.data_field_ptr(), nullptr, YABO_ANY |
-                       YABO_MALLOC, byref(buffer_ptr), retlen.data_field_ptr())
+                       YABO_MALLOC, byref(buffer_ptr))
         _check_status(status)
         return _new_value(ret, buf, self._lib)
 

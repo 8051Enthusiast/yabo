@@ -191,22 +191,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
     }
 
-    pub(super) fn build_size_get(
-        &mut self,
-        layout: Option<IMonoLayout<'comp>>,
-        ptr: PointerValue<'llvm>,
-    ) -> IntValue<'llvm> {
-        match layout {
-            Some(mono) => {
-                let size = mono.inner().size_align(self.layouts).unwrap().size;
-                self.const_i64(size as i64)
-            }
-            None => self
-                .vtable_get::<vtable::VTableHeader>(ptr, &[VTableHeaderFields::size as u64])
-                .into_int_value(),
-        }
-    }
-
     pub(super) fn build_check_i64_bit_set(
         &mut self,
         val: IntValue<'llvm>,

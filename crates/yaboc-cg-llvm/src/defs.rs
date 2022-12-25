@@ -30,6 +30,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         )
     }
 
+    fn p_fun_val(&mut self, layout: IMonoLayout<'comp>, part: LayoutPart) -> FunctionValue<'llvm> {
+        self.fun_val(layout, part, &[self.any_ptr().into()])
+    }
+
     fn ppi_fun_val(
         &mut self,
         layout: IMonoLayout<'comp>,
@@ -46,7 +50,15 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         )
     }
 
-    fn ppipp_fun_val(
+    fn pi_fun_val(&mut self, layout: IMonoLayout<'comp>, part: LayoutPart) -> FunctionValue<'llvm> {
+        self.fun_val(
+            layout,
+            part,
+            &[self.any_ptr().into(), self.llvm.i64_type().into()],
+        )
+    }
+
+    fn ppip_fun_val(
         &mut self,
         layout: IMonoLayout<'comp>,
         part: LayoutPart,
@@ -59,7 +71,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 self.any_ptr().into(),
                 self.llvm.i64_type().into(),
                 self.any_ptr().into(),
-                self.any_ptr().into(),
             ],
         )
     }
@@ -68,7 +79,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
     ) -> FunctionValue<'llvm> {
-        self.pp_fun_val(layout, LayoutPart::SingleForward)
+        self.p_fun_val(layout, LayoutPart::SingleForward)
     }
 
     pub(super) fn start_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
@@ -87,7 +98,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     pub(super) fn skip_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
-        self.ppi_fun_val(layout, LayoutPart::Skip)
+        self.pi_fun_val(layout, LayoutPart::Skip)
     }
 
     pub(super) fn access_field_fun_val(
@@ -112,7 +123,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         slot: PSize,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        self.ppipp_fun_val(layout, LayoutPart::Parse(slot, req, true))
+        self.ppip_fun_val(layout, LayoutPart::Parse(slot, req, true))
     }
 
     pub(super) fn parser_impl_fun_val(
@@ -121,7 +132,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         slot: PSize,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        self.ppipp_fun_val(layout, LayoutPart::Parse(slot, req, false))
+        self.ppip_fun_val(layout, LayoutPart::Parse(slot, req, false))
     }
 
     pub(super) fn arg_level_and_offset(

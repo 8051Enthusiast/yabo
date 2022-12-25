@@ -178,11 +178,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             None => self.parser_impl_fun_val(layout, slot, req),
         };
         let mir_fun = Rc::new(self.mir_pd_fun(from, layout, req));
-        let (ret, fun, head, arg, retlen) = parser_args(llvm_fun);
+        let (ret, fun, head, arg) = parser_args(llvm_fun);
         let mut translator = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg);
-        if req.contains(NeededBy::Len) {
-            translator = translator.with_retlen_ptr(retlen);
-        }
         if req.contains(NeededBy::Val) {
             translator = translator.with_ret_ptr(ret, head);
         }
@@ -193,14 +190,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let llvm_fun = self.end_fun_val(layout);
         self.add_entry_block(llvm_fun);
         let [ret, arg] = get_fun_args(llvm_fun).map(|x| x.into_pointer_value());
+        let start_copy = self.start_fun_val(layout);
+        self.builder
+            .build_call(start_copy, &[ret.into(), arg.into()], "");
         let (from_layout, fun_layout) = layout.unapply_nominal(self.layouts);
-        let (from, fun, _) = self.build_nominal_components(layout, arg, pd_len_req());
+        let (_, fun, _) = self.build_nominal_components(layout, arg, pd_len_req());
         let ret = self.build_parser_call(
             self.any_ptr().get_undef(),
             (fun_layout, fun),
             self.const_i64(DerefLevel::max().into_shifted_runtime_value() as i64),
-            (from_layout, from),
-            ret,
+            (from_layout, ret),
             pd_len_req(),
         );
         self.builder.build_return(Some(&ret));
@@ -210,8 +209,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let fun = self.start_fun_val(layout);
         self.add_entry_block(fun);
         let [to, from] = get_fun_args(fun).map(|x| x.into_pointer_value());
-        let sa = layout
-            .inner()
+        let (from_layout, _) = layout.unapply_nominal(self.layouts);
+        let sa = from_layout
             .size_align(self.layouts)
             .expect("Could not get size/alignment of layout");
         let size = self
@@ -230,17 +229,15 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let fun = self.single_forward_fun_val(layout);
         self.set_always_inline(fun);
 
-        let [to, from] = get_fun_args(fun).map(|x| x.into_pointer_value());
-        let entry = self.llvm.append_basic_block(fun, "entry");
-        self.builder.position_at_end(entry);
-        let from_ptr = self.build_cast::<*const *const u8, _>(from);
-        let to_ptr = self.build_cast::<*mut *const u8, _>(to);
+        let [arg] = get_fun_args(fun).map(|x| x.into_pointer_value());
+        self.add_entry_block(fun);
+        let arg_ptr = self.build_cast::<*mut *const u8, _>(arg);
         let ptr = self
             .builder
-            .build_load(from_ptr, "load_ptr")
+            .build_load(arg_ptr, "load_ptr")
             .into_pointer_value();
         let inc_ptr = self.build_byte_gep(ptr, self.const_i64(1), "inc_ptr");
-        self.builder.build_store(to_ptr, inc_ptr);
+        self.builder.build_store(arg_ptr, inc_ptr);
         self.builder
             .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)));
     }
@@ -250,18 +247,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.set_always_inline(fun);
         let entry = self.llvm.append_basic_block(fun, "entry");
         self.builder.position_at_end(entry);
-        let [to, from, len] = get_fun_args(fun);
-        let from = from.into_pointer_value();
+        let [arg, len] = get_fun_args(fun);
         let len = len.into_int_value();
-        let to = to.into_pointer_value();
-        let from_ptr = self.build_cast::<*const *const u8, _>(from);
-        let to_ptr = self.build_cast::<*mut *const u8, _>(to);
+        let arg = arg.into_pointer_value();
+        let arg_ptr = self.build_cast::<*mut *const u8, _>(arg);
         let ptr = self
             .builder
-            .build_load(from_ptr, "load_ptr")
+            .build_load(arg_ptr, "load_ptr")
             .into_pointer_value();
         let inc_ptr = self.build_byte_gep(ptr, len, "inc_ptr");
-        self.builder.build_store(to_ptr, inc_ptr);
+        self.builder.build_store(arg_ptr, inc_ptr);
         self.builder
             .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)));
     }
@@ -316,13 +311,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.parser_impl_fun_val(layout, slot, req)
         };
 
-        let (ret, fun, head, arg, retlen) = parser_args(impl_fun);
+        let (ret, fun, head, arg) = parser_args(impl_fun);
         let mut translator = MirTranslator::new(self, mir_fun, impl_fun, fun, arg);
         if req.contains(NeededBy::Val) {
             translator = translator.with_ret_ptr(ret, head)
-        }
-        if req.contains(NeededBy::Len) {
-            translator = translator.with_retlen_ptr(retlen)
         }
         translator.build();
 
@@ -356,7 +348,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) {
         let llvm_fun = self.parser_fun_val(layout, slot, req);
         self.set_always_inline(llvm_fun);
-        let (ret, _, target_head, arg, retlen) = parser_args(llvm_fun);
+        let (ret, _, target_head, arg) = parser_args(llvm_fun);
         self.add_entry_block(llvm_fun);
         if req.contains(NeededBy::Val) {
             let current_element_fun = self.build_current_element_fun_get(from.maybe_mono(), arg);
@@ -368,8 +360,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         if req.contains(NeededBy::Len) {
             let single_forward_fun = self.build_single_forward_fun_get(from.maybe_mono(), arg);
-            let ret =
-                self.build_call_with_int_ret(single_forward_fun, &[retlen.into(), arg.into()]);
+            let ret = self.build_call_with_int_ret(single_forward_fun, &[arg.into()]);
             self.builder.build_return(Some(&ret));
         } else {
             self.builder.build_return(Some(&self.const_i64(0)));
@@ -378,7 +369,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn create_nil_parse(
         &mut self,
-        from: ILayout<'comp>,
+        _from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
         slot: PSize,
         req: RequirementSet,
@@ -386,15 +377,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let llvm_fun = self.parser_fun_val(layout, slot, req);
         self.add_entry_block(llvm_fun);
         self.set_always_inline(llvm_fun);
-        let (ret, _, target_head, arg, retlen) = parser_args(llvm_fun);
-        if req.contains(NeededBy::Len) {
-            let arg_size = self.build_size_get(from.maybe_mono(), arg);
-            let arg_start = self.get_object_start(from.maybe_mono(), arg);
-            let ret_start = self.get_object_start(from.maybe_mono(), retlen);
-            self.builder
-                .build_memcpy(ret_start, 1, arg_start, 1, arg_size)
-                .unwrap();
-        }
+        let (ret, _, target_head, _) = parser_args(llvm_fun);
         if req.contains(NeededBy::Val) {
             let unit_type = self
                 .compiler_database
@@ -417,7 +400,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) {
         let llvm_fun = self.parser_fun_val(layout, slot, req);
         self.add_entry_block(llvm_fun);
-        let (ret, fun, target_head, arg, retlen) = parser_args(llvm_fun);
+        let (ret, fun, target_head, arg) = parser_args(llvm_fun);
         let MonoLayout::ComposedParser(first_layout, inner_ty, second_layout, bt) = layout.mono_layout().0 else {
                 panic!("called build_compose_len on non-composed")
         };
@@ -436,7 +419,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             (*first_layout, first_ptr),
             inner_level,
             (from, arg),
-            retlen,
             req,
         );
         self.non_zero_early_return(llvm_fun, retstatus);
@@ -446,7 +428,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             (*second_layout, second_ptr),
             target_head,
             (inner_layout, second_arg),
-            self.any_ptr().get_undef(),
             req & !NeededBy::Len,
         );
         self.builder.build_return(Some(&retstatus));

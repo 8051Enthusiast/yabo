@@ -56,7 +56,7 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for PlaceRef {
                 write!(f, ".from")
             }
             Place::ModifiedBy(ins_ref) => {
-                write!(f, "mod[{}]", ins_ref)
+                write!(f, "mod[{ins_ref}]")
             }
         }
     }
