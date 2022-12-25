@@ -129,6 +129,21 @@ class ArrayVTable(Structure):
         ('skip_impl', CFUNCTYPE(c_int64, _voidptr, c_uint64)),
     ]
 
+class Slice(Structure):
+    __slots__ = [
+        'start',
+        'end',
+    ]
+    _fields_ = [
+        ('start', POINTER(c_ubyte)),
+        ('end', POINTER(c_ubyte)),
+    ]
+
+    def __init__(self, buf: bytearray):
+        start = (c_ubyte * len(buf)).from_buffer(buf)
+        self.start = ctypes.cast(pointer(start), POINTER(c_ubyte))
+        end = (c_ubyte * 0).from_buffer(buf, len(buf))
+        self.end = ctypes.cast(pointer(end), POINTER(c_ubyte))
 
 class DynValue(Structure):
     __slots__ = [
@@ -178,13 +193,13 @@ class Parser:
 
     def parse(self, buf: bytearray):
         parse = self.impl
-        buffer_ptr = pointer((c_ubyte * len(buf)).from_buffer(buf))
+        slice = Slice(buf)
         ret = DynValue()
         nullptr = ctypes.c_void_p()
         # the vtable pointer is stored at negative index 1, so we pass
         # a pointer to the data field
         status = parse(ret.data_field_ptr(), nullptr, YABO_ANY |
-                       YABO_MALLOC, byref(buffer_ptr))
+                       YABO_MALLOC, byref(slice))
         _check_status(status)
         return _new_value(ret, buf, self._lib)
 
