@@ -106,7 +106,6 @@ impl<'comp> ThunkInfo<'comp> for TypecastThunk<'comp> {
                 arg_ptr.into(),
                 target_level.into(),
                 from_ptr.into(),
-                cg.any_ptr().get_undef().into(),
             ],
         );
         cg.builder.build_return(Some(&ret));
@@ -229,7 +228,7 @@ impl<'comp> ThunkInfo<'comp> for ValThunk<'comp> {
         let current_bb = cg.llvm.append_basic_block(fun, "tail");
         cg.builder.position_at_end(current_bb);
 
-        let (return_ptr, fun_ptr, target_level, arg_ptr, retlen_ptr) = parser_args(fun);
+        let (return_ptr, fun_ptr, target_level, arg_ptr) = parser_args(fun);
 
         let cont_fun = cg.build_parser_fun_get(Some(self.fun), fun_ptr, self.slot, call_req, true);
         let ret = cg.build_call_with_int_ret(
@@ -239,7 +238,6 @@ impl<'comp> ThunkInfo<'comp> for ValThunk<'comp> {
                 fun_ptr.into(),
                 target_level.into(),
                 arg_ptr.into(),
-                retlen_ptr.into(),
             ],
         );
         cg.builder.build_return(Some(&ret));
@@ -294,7 +292,7 @@ impl<'comp> ThunkInfo<'comp> for BlockThunk<'comp> {
         let fun = cg.current_function();
         let current_bb = cg.llvm.append_basic_block(fun, "tail");
         cg.builder.position_at_end(current_bb);
-        let (_, fun_ptr, target_level, arg_ptr, retlen_ptr) = parser_args(fun);
+        let (_, fun_ptr, target_level, arg_ptr) = parser_args(fun);
 
         let cont_fun = cg.build_parser_fun_get(Some(self.fun), fun_ptr, self.slot, self.req, true);
         let ret = cg.build_call_with_int_ret(
@@ -304,7 +302,6 @@ impl<'comp> ThunkInfo<'comp> for BlockThunk<'comp> {
                 fun_ptr.into(),
                 target_level.into(),
                 arg_ptr.into(),
-                retlen_ptr.into(),
             ],
         );
         cg.builder.build_return(Some(&ret));

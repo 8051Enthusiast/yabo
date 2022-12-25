@@ -45,16 +45,16 @@ struct NominalVTable {
 	int64_t (*end_impl)(void *, void *);
 };
 
-typedef int64_t (*ParseFun)(void *, void *, uint64_t, void *, void *);
+typedef int64_t (*ParseFun)(void *, void *, uint64_t, void *);
 
 struct ParserVTable {
 	struct VTableHeader head;
-	int64_t (*apply_table[])(void *, void *, uint64_t, void *, void *);
+	int64_t (*apply_table[])(void *, void *, uint64_t, void *);
 };
 
 struct ArrayVTable {
 	struct VTableHeader head;
-	int64_t (*single_forward_impl)(void *, void *);
+	int64_t (*single_forward_impl)(void *);
 	int64_t (*current_element_impl)(void *, void *, uint64_t);
-	int64_t (*skip_impl)(void *, void *, uint64_t);
+	int64_t (*skip_impl)(void *, uint64_t);
 };

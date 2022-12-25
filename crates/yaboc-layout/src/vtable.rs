@@ -47,8 +47,7 @@ target_struct! {
     }
 }
 
-pub type ParserFun =
-    fn(ret: *mut u8, fun: *const u8, target_head: i64, from: *const u8, to: *mut u8) -> i64;
+pub type ParserFun = fn(ret: *mut u8, fun: *const u8, target_head: i64, from: *const u8) -> i64;
 
 target_struct! {
     pub struct ParserVTable {
@@ -68,9 +67,9 @@ target_struct! {
     }
 }
 
-pub type SingleForwardFun = fn(ret: *mut u8, from: *const u8) -> i64;
+pub type SingleForwardFun = fn(from: *mut u8) -> i64;
 pub type CurrentElementFun = fn(ret: *mut u8, from: *const u8, target_head: i64) -> i64;
-pub type SkipFun = fn(ret: *mut u8, from: *const u8, offset: u64) -> i64;
+pub type SkipFun = fn(ret: *mut u8, offset: u64) -> i64;
 
 target_struct! {
     pub struct ArrayVTable {

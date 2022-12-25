@@ -282,7 +282,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         fun: (ILayout<'comp>, PointerValue<'llvm>),
         head: IntValue<'llvm>,
         from: (ILayout<'comp>, PointerValue<'llvm>),
-        retlen: PointerValue<'llvm>,
         call_kind: RequirementSet,
     ) -> IntValue<'llvm> {
         let slot = self.collected_layouts.parser_slots.layout_vtable_offsets
@@ -295,7 +294,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 fun.1.into(),
                 head.into(),
                 from.1.into(),
-                retlen.into(),
             ],
         )
     }
@@ -565,22 +563,13 @@ fn get_fun_args<const N: usize>(fun: FunctionValue) -> [BasicValueEnum; N] {
     std::array::from_fn(|i| fun.get_nth_param(i as u32).unwrap())
 }
 
-fn parser_args(
-    fun: FunctionValue,
-) -> (
-    PointerValue,
-    PointerValue,
-    IntValue,
-    PointerValue,
-    PointerValue,
-) {
-    let [ret, fun, head, from, retlen] = get_fun_args(fun);
+fn parser_args(fun: FunctionValue) -> (PointerValue, PointerValue, IntValue, PointerValue) {
+    let [ret, fun, head, from] = get_fun_args(fun);
     (
         ret.into_pointer_value(),
         fun.into_pointer_value(),
         head.into_int_value(),
         from.into_pointer_value(),
-        retlen.into_pointer_value(),
     )
 }
 
