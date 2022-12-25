@@ -77,7 +77,7 @@ pub enum Layout<Inner> {
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum MonoLayout<Inner> {
     Primitive(PrimitiveType),
-    Pointer,
+    SlicePtr,
     Single,
     Nil,
     Nominal(
@@ -332,7 +332,7 @@ impl<'a> ILayout<'a> {
 
     fn array_primitive(self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> ILayout<'a> {
         self.map(ctx, |layout, ctx| match layout.mono_layout().0 {
-            MonoLayout::Pointer => {
+            MonoLayout::SlicePtr => {
                 let int = PrimitiveType::Int;
                 let int_ty = ctx.db.intern_type(Type::Primitive(int));
                 ctx.dcx
@@ -494,7 +494,7 @@ impl<'a> ILayout<'a> {
             Layout::Mono(MonoLayout::NominalParser(id, args, _), _) => {
                 self.nominal_parser_manifestation(ctx, *id, args)?.size
             }
-            Layout::Mono(MonoLayout::Pointer, _) => <&Zst>::tsize(),
+            Layout::Mono(MonoLayout::SlicePtr, _) => <&Zst>::tsize().array(2),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Bit), _) => bool::tsize(),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Char), _) => char::tsize(),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int), _) => i64::tsize(),
@@ -628,7 +628,7 @@ pub fn canon_layout<'a, 'b>(
         Type::Loop(_, inner_ty) => {
             let inner_type = ctx.db.lookup_intern_type(inner_ty);
             match inner_type {
-                Type::Primitive(PrimitiveType::Int) => Ok(make_layout(ctx, MonoLayout::Pointer)),
+                Type::Primitive(PrimitiveType::Int) => Ok(make_layout(ctx, MonoLayout::SlicePtr)),
                 _ => Err(LayoutError),
             }
         }
