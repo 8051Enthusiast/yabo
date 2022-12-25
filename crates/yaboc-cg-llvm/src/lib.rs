@@ -223,7 +223,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn any_ptr(&self) -> PointerType<'llvm> {
-        self.llvm.i8_type().ptr_type(AddressSpace::Generic)
+        self.llvm.i8_type().ptr_type(AddressSpace::default())
     }
 
     fn word_size(&self) -> u64 {
@@ -246,7 +246,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let ty = self.sa_type(sa);
         let ptr = self.builder.build_alloca(ty, "alloca");
         self.set_last_instr_align(sa).unwrap();
-        let u8_ptr_ty = self.llvm.i8_type().ptr_type(AddressSpace::Generic);
+        let u8_ptr_ty = self.llvm.i8_type().ptr_type(AddressSpace::default());
         match layout.layout.1 {
             Layout::None => self.any_ptr().get_undef(),
             Layout::Mono(_, _) => self
@@ -309,7 +309,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         global_value.set_initializer(&cstr);
         global_value
             .as_pointer_value()
-            .const_cast(self.llvm.i8_type().ptr_type(AddressSpace::Generic))
+            .const_cast(self.llvm.i8_type().ptr_type(AddressSpace::default()))
     }
 
     fn field_info(&mut self, name: Identifier) -> PointerValue<'llvm> {
@@ -326,7 +326,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let info_sym = format!("block_info${}", &truncated_hex(&hash));
         if let Some(val) = self.module.get_global(&info_sym) {
             return val.as_pointer_value().const_cast(
-                vtable::BlockFields::struct_type(self).ptr_type(AddressSpace::Generic),
+                vtable::BlockFields::struct_type(self).ptr_type(AddressSpace::default()),
             );
         }
 
@@ -358,7 +358,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         global.set_visibility(GlobalVisibility::Hidden);
         global
             .as_pointer_value()
-            .const_cast(vtable::BlockFields::struct_type(self).ptr_type(AddressSpace::Generic))
+            .const_cast(vtable::BlockFields::struct_type(self).ptr_type(AddressSpace::default()))
     }
 
     fn build_discriminant_info(
@@ -589,7 +589,7 @@ impl<'llvm, 'comp> CodegenTypeContext for CodeGenCtx<'llvm, 'comp> {
     }
 
     fn ptr(&mut self, inner: Self::Type) -> Self::Type {
-        inner.ptr_type(AddressSpace::Generic).into()
+        inner.ptr_type(AddressSpace::default()).into()
     }
 
     fn zst(&mut self) -> Self::Type {
@@ -610,7 +610,7 @@ impl<'llvm, 'comp> CodegenTypeContext for CodeGenCtx<'llvm, 'comp> {
     fn fun_ptr(&mut self, args: &[Self::Type], ret: Self::Type) -> Self::Type {
         let args: Vec<_> = args.iter().map(|x| (*x).into()).collect();
         ret.fn_type(&args, false)
-            .ptr_type(AddressSpace::Generic)
+            .ptr_type(AddressSpace::default())
             .into()
     }
 }
