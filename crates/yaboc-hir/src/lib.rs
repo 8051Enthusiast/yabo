@@ -19,7 +19,7 @@ use yaboc_ast::{ArrayKind, AstConstraint, TopLevelStatement};
 use yaboc_base::{
     dbpanic,
     error::{SResult, SilencedError},
-    interner::{DefId, FieldName, HirPath, Identifier, PathComponent, TypeVar},
+    interner::{DefId, FieldName, HirPath, Identifier, PathComponent, Regex, TypeVar},
     source::{FileId, IndexSpanned, IndirectSpan, Span, SpanIndex},
     Context,
 };
@@ -705,6 +705,7 @@ pub enum ParserAtom {
     Atom(Atom),
     Single,
     Nil,
+    Regex(Regex, bool),
     Block(BlockId),
 }
 

@@ -274,6 +274,19 @@ fn def_hash(db: &dyn Interner, defid: DefId) -> [u8; 32] {
     hasher.finalize().try_into().unwrap()
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct Regex(InternId);
+
+impl salsa::InternKey for Regex {
+    fn from_intern_id(v: InternId) -> Self {
+        Regex(v)
+    }
+
+    fn as_intern_id(&self) -> InternId {
+        self.0
+    }
+}
+
 #[salsa::query_group(InternerDatabase)]
 pub trait Interner: crate::source::Files {
     #[salsa::interned]
@@ -282,6 +295,8 @@ pub trait Interner: crate::source::Files {
     fn intern_type_var(&self, identifier: TypeVarName) -> TypeVar;
     #[salsa::interned]
     fn intern_hir_path(&self, path: HirPath) -> DefId;
+    #[salsa::interned]
+    fn intern_regex(&self, regex: String) -> Regex;
 
     fn def_name(&self, defid: DefId) -> Option<FieldName>;
     fn def_hash(&self, defid: DefId) -> [u8; 32];

@@ -110,6 +110,10 @@
             "named": true
           },
           {
+            "type": "regex_literal",
+            "named": true
+          },
+          {
             "type": "unary_constraint_expression",
             "named": true
           }
@@ -155,6 +159,10 @@
           },
           {
             "type": "range",
+            "named": true
+          },
+          {
+            "type": "regex_literal",
             "named": true
           },
           {
@@ -219,6 +227,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "regex_literal",
             "named": true
           },
           {
@@ -367,6 +379,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "regex_literal",
             "named": true
           },
           {
@@ -590,6 +606,10 @@
             "named": true
           },
           {
+            "type": "regex_literal",
+            "named": true
+          },
+          {
             "type": "single",
             "named": true
           },
@@ -647,6 +667,10 @@
           },
           {
             "type": "range",
+            "named": true
+          },
+          {
+            "type": "regex_literal",
             "named": true
           },
           {
@@ -714,6 +738,10 @@
             "named": true
           },
           {
+            "type": "regex_literal",
+            "named": true
+          },
+          {
             "type": "single",
             "named": true
           },
@@ -777,6 +805,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "regex_literal",
             "named": true
           },
           {
@@ -865,6 +897,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "regex_literal",
             "named": true
           },
           {
@@ -1019,6 +1055,10 @@
             "named": true
           },
           {
+            "type": "regex_literal",
+            "named": true
+          },
+          {
             "type": "single",
             "named": true
           },
@@ -1102,6 +1142,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "regex_literal",
             "named": true
           },
           {
@@ -1328,6 +1372,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "regex_literal",
             "named": true
           },
           {
@@ -1687,6 +1735,10 @@
             "named": true
           },
           {
+            "type": "regex_literal",
+            "named": true
+          },
+          {
             "type": "unary_constraint_expression",
             "named": true
           }
@@ -1815,6 +1867,10 @@
         {
           "type": "number_literal",
           "named": true
+        },
+        {
+          "type": "regex_literal",
+          "named": true
         }
       ]
     }
@@ -1891,6 +1947,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "regex_literal",
             "named": true
           },
           {
@@ -2028,6 +2088,10 @@
             "named": true
           },
           {
+            "type": "regex_literal",
+            "named": true
+          },
+          {
             "type": "single",
             "named": true
           },
@@ -2069,6 +2133,10 @@
           },
           {
             "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "regex_literal",
             "named": true
           }
         ]
@@ -2257,6 +2325,10 @@
   },
   {
     "type": "question_mark",
+    "named": true
+  },
+  {
+    "type": "regex_literal",
     "named": true
   },
   {

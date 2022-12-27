@@ -3,7 +3,10 @@ use yaboc_hir_types::DerefLevel;
 use yaboc_layout::collect::{pd_len_req, pd_val_req};
 use yaboc_mir::FunKind;
 
-use crate::convert_thunk::{BlockThunk, CreateArgsThunk, TypecastThunk, ValThunk};
+use crate::{
+    convert_regex::RegexTranslator,
+    convert_thunk::{BlockThunk, CreateArgsThunk, TypecastThunk, ValThunk},
+};
 
 use super::*;
 
@@ -278,6 +281,25 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)));
     }
 
+    fn create_array_span(&mut self, layout: IMonoLayout<'comp>) {
+        let fun = self.span_fun_val(layout);
+        self.set_always_inline(fun);
+        self.add_entry_block(fun);
+        let [ret, start, head, end] = get_fun_args(fun);
+        let [ret, start, end] = [ret, start, end].map(|x| x.into_pointer_value());
+        let buf = self.build_layout_alloca(layout.inner(), "buf");
+        let [start_ptr, _] = self.get_slice_ptrs(start);
+        let [end_ptr, _] = self.get_slice_ptrs(end);
+        let bufsl = self.build_cast::<*mut *const u8, _>(buf);
+        self.builder.build_store(bufsl, start_ptr);
+        let bufsl = unsafe {
+            self.builder
+                .build_in_bounds_gep(bufsl, &[self.const_i64(1)], "ret")
+        };
+        self.builder.build_store(bufsl, end_ptr);
+        self.terminate_tail_typecast(layout.inner(), buf, head.into_int_value(), ret)
+    }
+
     fn create_array_current_element(&mut self, layout: IMonoLayout<'comp>) {
         let fun = self.current_element_fun_val(layout);
         self.set_always_inline(fun);
@@ -422,6 +444,100 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         } else {
             self.builder.build_return(Some(&self.const_i64(0)));
         }
+    }
+
+    fn create_regex_parse(
+        &mut self,
+        from: ILayout<'comp>,
+        layout: IMonoLayout<'comp>,
+        slot: PSize,
+        req: RequirementSet,
+    ) {
+        let MonoLayout::Regex(regex, bt) = layout.mono_layout().0 else {
+                panic!("called build_regex_parse on non-regex")
+        };
+        let regex_str = self.compiler_database.db.lookup_intern_regex(*regex);
+        let regex_impl = self.create_regex_parse_impl(from, layout, &regex_str, slot, req);
+        let llvm_fun = self.parser_fun_val(layout, slot, req);
+        self.add_entry_block(llvm_fun);
+        let (ret, _, target_head, arg) = parser_args(llvm_fun);
+        let arg_copy = if !req.contains(NeededBy::Len) {
+            let a = self.build_layout_alloca(from, "arg_copy");
+            let sa = from.size_align(self.layouts).unwrap();
+            let a_ptr = self.get_object_start(from.maybe_mono(), a);
+            let arg_ptr = self.get_object_start(from.maybe_mono(), arg);
+            let size = self.const_i64(sa.size as i64);
+            let align = sa.align() as u32;
+            self.builder
+                .build_memcpy(a_ptr, align, arg_ptr, align, size)
+                .unwrap();
+            a
+        } else {
+            arg
+        };
+        let ret_copy = if !req.contains(NeededBy::Val) {
+            self.build_layout_alloca(from, "ret_copy")
+        } else {
+            ret
+        };
+        let undef = self.any_ptr().get_undef();
+        let ret = self.builder.build_call(
+            regex_impl,
+            &[
+                ret_copy.into(),
+                undef.into(),
+                target_head.into(),
+                arg_copy.into(),
+            ],
+            "impl_call",
+        );
+        let ret = ret.try_as_basic_value().left().unwrap().into_int_value();
+        let ret = if *bt {
+            let is_bt = self.builder.build_int_compare(
+                IntPredicate::EQ,
+                ret,
+                self.const_i64(ReturnStatus::Backtrack as i64),
+                "is_bt",
+            );
+            self.builder
+                .build_select(
+                    is_bt,
+                    self.const_i64(ReturnStatus::Error as i64),
+                    ret,
+                    "btless",
+                )
+                .into_int_value()
+        } else {
+            ret
+        };
+        self.builder.build_return(Some(&ret));
+    }
+
+    fn create_regex_parse_impl(
+        &mut self,
+        from: ILayout<'comp>,
+        layout: IMonoLayout<'comp>,
+        regex: &str,
+        slot: PSize,
+        req: RequirementSet,
+    ) -> FunctionValue<'llvm> {
+        let sym = self.sym(layout, LayoutPart::Parse(slot, req, false));
+        let llvm_fun = match self.module.get_function(&sym) {
+            Some(f) => return f,
+            None => self.parser_impl_fun_val(layout, slot, req),
+        };
+        let dfa = regex_automata::dense::Builder::new()
+            .anchored(true)
+            .unicode(false)
+            .allow_invalid_utf8(true)
+            .dot_matches_new_line(true)
+            .case_insensitive(false)
+            .minimize(true)
+            .build(regex)
+            .expect("invalid regex");
+        let mut trans = RegexTranslator::new(self, llvm_fun, &dfa, from, true);
+        trans.build();
+        llvm_fun
     }
 
     fn create_compose_parse(
@@ -590,6 +706,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 MonoLayout::ComposedParser(_, _, _, _) => {
                     self.create_compose_parse(from, layout, *slot, req);
                 }
+                MonoLayout::Regex(..) => {
+                    self.create_regex_parse(from, layout, *slot, req);
+                }
                 _ => panic!("non-parser in parser layout collection"),
             }
         }
@@ -641,6 +760,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.create_array_current_element(layout);
         self.create_array_single_forward(layout);
         self.create_array_skip(layout);
+        self.create_array_span(layout);
     }
 
     fn create_nominal_funs(&mut self, layout: IMonoLayout<'comp>) {

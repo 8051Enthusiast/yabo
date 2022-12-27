@@ -432,9 +432,10 @@ impl<'a> ConvertCtx<'a> {
                 ResolvedAtom::Number(n) => self.load_int(*n, ty, place, origin),
                 ResolvedAtom::Char(c) => self.load_char(*c, ty, place, origin),
                 ResolvedAtom::Bool(b) => self.load_bool(*b, ty, place, origin),
-                ResolvedAtom::ParserDef(_, _) | ResolvedAtom::Single | ResolvedAtom::Nil => {
-                    self.unwrap_or_stack(place, ty, origin)
-                }
+                ResolvedAtom::ParserDef(_, _)
+                | ResolvedAtom::Single
+                | ResolvedAtom::Nil
+                | ResolvedAtom::Regex(..) => self.unwrap_or_stack(place, ty, origin),
                 ResolvedAtom::Block(block) => {
                     self.create_block_parser(*block, ty, place, origin)?
                 }

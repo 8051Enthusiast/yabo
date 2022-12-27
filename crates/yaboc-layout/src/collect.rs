@@ -113,10 +113,11 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         }
                     }
                 }
-                MonoLayout::BlockParser(_, _, _)
-                | MonoLayout::ComposedParser(_, _, _, _)
+                MonoLayout::BlockParser(..)
+                | MonoLayout::ComposedParser(..)
                 | MonoLayout::Single
-                | MonoLayout::Nil => {
+                | MonoLayout::Nil
+                | MonoLayout::Regex(..) => {
                     self.parsers.insert(mono);
                     self.parsers.insert(mono.remove_backtracking(self.ctx));
                 }
@@ -129,7 +130,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         if req.is_empty() {
             return;
         }
-        for mono in flat_layouts(&right) {
+        for mono in &right {
             match mono.mono_layout().0 {
                 MonoLayout::BlockParser(_, _, _) => {
                     if self.processed_calls.insert((left, mono, req)) {
@@ -142,6 +143,12 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         self.unprocessed
                             .push(UnprocessedCall::NominalParser(left, mono, req));
                     }
+                }
+                MonoLayout::Regex(..) => {
+                    let single = IMonoLayout::int_single(self.ctx);
+                    self.register_layouts(single.inner());
+                    self.parses
+                        .add_call((left, RequirementSet::all()), single.inner());
                 }
                 _ => {}
             }
@@ -481,7 +488,7 @@ impl<'a> ParserOffsetGroups<'a> {
     pub fn new(parser_set: FxHashSet<ILayout<'a>>) -> Self {
         let mut mono_parsers = FxHashMap::default();
         let mut current_index: u32 = 0;
-        for mono_parser_layout in parser_set.iter().flat_map(flat_layouts) {
+        for mono_parser_layout in parser_set.iter().flatten() {
             if let Entry::Vacant(entry) = mono_parsers.entry(mono_parser_layout) {
                 entry.insert(current_index);
                 current_index = current_index

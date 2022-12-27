@@ -4,6 +4,7 @@ mod defs;
 mod funs;
 mod getset;
 mod vtables;
+mod convert_regex;
 
 use std::{ffi::OsStr, fmt::Debug, path::Path, rc::Rc};
 

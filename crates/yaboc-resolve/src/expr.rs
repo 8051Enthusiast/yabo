@@ -5,7 +5,7 @@ use yaboc_ast::expr::ExpressionKind;
 use yaboc_ast::expr::{
     Atom, Expression, ExpressionHead, KindWithData, OpWithData, ValBinOp, ValUnOp, ValVarOp,
 };
-use yaboc_base::interner::DefId;
+use yaboc_base::interner::{DefId, Regex};
 use yaboc_base::source::SpanIndex;
 use yaboc_hir as hir;
 use yaboc_hir::HirIdWrapper;
@@ -17,6 +17,7 @@ pub enum ResolvedAtom {
     Val(DefId, bool),
     Captured(DefId, bool),
     ParserDef(hir::ParserDefId, bool),
+    Regex(Regex, bool),
     Number(i64),
     Char(u32),
     Bool(bool),
@@ -79,6 +80,7 @@ pub fn resolve_expr_error(
                     hir::ParserAtom::Atom(Atom::Bool(s)) => ResolvedAtom::Bool(*s),
                     hir::ParserAtom::Single => ResolvedAtom::Single,
                     hir::ParserAtom::Nil => ResolvedAtom::Nil,
+                    hir::ParserAtom::Regex(r, bt) => ResolvedAtom::Regex(*r, *bt),
                     hir::ParserAtom::Block(b) => ResolvedAtom::Block(*b),
                     hir::ParserAtom::Atom(Atom::Field((f, bt))) => {
                         match new_resolved_atom(expr_id.0, *f, *bt, nil.data)? {

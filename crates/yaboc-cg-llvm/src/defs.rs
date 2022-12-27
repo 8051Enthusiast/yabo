@@ -82,6 +82,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.p_fun_val(layout, LayoutPart::SingleForward)
     }
 
+    pub(super) fn span_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
+        self.ppip_fun_val(layout, LayoutPart::Span)
+    }
+
     pub(super) fn start_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
         self.pp_fun_val(layout, LayoutPart::Start)
     }

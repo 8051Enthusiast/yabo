@@ -32,9 +32,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_vtable<T: TargetSized>(&mut self, layout: IMonoLayout<'comp>) -> GlobalValue<'llvm> {
         let vtable_type = T::codegen_ty(self);
         let vtable_sym = self.sym(layout, LayoutPart::VTable);
-        let vtable = self
-            .module
-            .add_global(vtable_type, Some(AddressSpace::default()), &vtable_sym);
+        let vtable =
+            self.module
+                .add_global(vtable_type, Some(AddressSpace::default()), &vtable_sym);
         vtable.set_visibility(GlobalVisibility::Hidden);
         vtable
     }
@@ -50,9 +50,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             vtable_type = self.resize_struct_start_array(vtable_type, argnum as u32)
         }
         let vtable_sym = self.sym(layout, LayoutPart::VTable);
-        let vtable = self
-            .module
-            .add_global(vtable_type, Some(AddressSpace::default()), &vtable_sym);
+        let vtable =
+            self.module
+                .add_global(vtable_type, Some(AddressSpace::default()), &vtable_sym);
         vtable.set_visibility(GlobalVisibility::Hidden);
         vtable
     }
@@ -69,12 +69,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let single_foward = self.single_forward_fun_val(layout);
         let current_element = self.current_element_fun_val(layout);
         let skip = self.skip_fun_val(layout);
+        let span = self.span_fun_val(layout);
         let vtable_val = self.llvm.const_struct(
             &[
                 vtable_header.into(),
                 single_foward.as_global_value().as_pointer_value().into(),
                 current_element.as_global_value().as_pointer_value().into(),
                 skip.as_global_value().as_pointer_value().into(),
+                span.as_global_value().as_pointer_value().into(),
             ],
             false,
         );
