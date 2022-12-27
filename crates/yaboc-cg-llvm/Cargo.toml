@@ -21,3 +21,4 @@ yaboc-database = { path = "../yaboc-database" }
 fxhash = "0.2.1"
 bumpalo = "3.11.1"
 inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm13-0"] }
+regex-automata = "0.1.10"

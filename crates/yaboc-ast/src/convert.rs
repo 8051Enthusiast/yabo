@@ -545,6 +545,7 @@ astify! {
         Niladic(with_span_data(parser_block)),
         Niladic(with_span_data(single)),
         Niladic(with_span_data(nil)),
+        Niladic(with_span_data(regex_literal)),
         Niladic(with_span_data(atom..)),
     };
 }
@@ -771,6 +772,41 @@ fn bool_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<bool> {
         "false" => Ok(false),
         _ => panic!("unknown bool literal: {str}"),
     }
+}
+
+fn regex_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<ParserAtom> {
+    let node = spanned(node_to_string)(db, fd, c)?;
+    let (has_questionmark, str) = if let Some(without_questionmark) = node.inner.strip_suffix('?') {
+        (true, without_questionmark)
+    } else {
+        (false, node.inner.as_str())
+    };
+    let without_slashes = str
+        .strip_prefix('/')
+        .and_then(|s| s.strip_suffix('/'))
+        .ok_or_else(|| vec![GenericParseError { loc: node.span }])?;
+    let mut unescaped_slashes = String::with_capacity(without_slashes.len());
+    let mut backslash = false;
+    for c in without_slashes.chars() {
+        if backslash {
+            if c == '/' {
+                unescaped_slashes.push(c);
+            } else {
+                unescaped_slashes.push('\\');
+                unescaped_slashes.push(c);
+            }
+            backslash = false;
+        } else if c == '\\' {
+            backslash = true;
+        } else {
+            unescaped_slashes.push(c);
+        }
+    }
+    if backslash {
+        return Err(vec![GenericParseError { loc: node.span }]);
+    }
+    let regex = db.intern_regex(unescaped_slashes);
+    Ok(ParserAtom::Regex(regex, has_questionmark))
 }
 
 fn node_to_string(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<String> {

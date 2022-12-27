@@ -170,6 +170,21 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
     }
 
+    pub(super) fn build_span_fun_get(
+        &mut self,
+        layout: Option<IMonoLayout<'comp>>,
+        ptr: PointerValue<'llvm>,
+    ) -> CallableValue<'llvm> {
+        match layout {
+            Some(mono) => self.sym_callable(mono, LayoutPart::Span),
+            None => self
+                .vtable_get::<vtable::ArrayVTable>(ptr, &[ArrayVTableFields::span_impl as u64])
+                .into_pointer_value()
+                .try_into()
+                .unwrap(),
+        }
+    }
+
     pub(super) fn deref_level(&mut self, ty: TypeId) -> IntValue<'llvm> {
         let level = self.compiler_database.db.deref_level(ty).unwrap();
         self.const_i64(level.into_shifted_runtime_value() as i64)

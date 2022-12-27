@@ -1,0 +1,26 @@
+====[ source code ]====
+import std
+export def *test = {
+  /[^0-9]*/
+  a: /[0-9]+./?
+  let return = a *> std.basenum(10)
+}
+
+====[ text 1 ]====
+123X
+
+====[ output 1 ]====
+123
+
+====[ text 2 ]====
+
+34 13 43
+
+====[ output 2 ]====
+34
+
+====[ text 3 ]====
+sometimes 123 is not a number
+
+====[ output 3 ]====
+123

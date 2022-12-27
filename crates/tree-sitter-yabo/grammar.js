@@ -329,6 +329,7 @@ module.exports = grammar({
       $.number_literal,
       $.char_literal,
       $.bool_literal,
+      $.regex_literal,
     ),
     primitive_type: $ => choice(
       'int',
@@ -364,5 +365,6 @@ module.exports = grammar({
       'true',
       'false',
     ),
+    regex_literal: $ => /\/([^\/\\\n]|\\.)*\/\??/,
   }
 });

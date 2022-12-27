@@ -659,6 +659,11 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
             arg: for_loop,
         })
     }
+    pub fn regex(&mut self) -> InfTypeId<'intern> {
+        let int = self.int();
+        let int_array = self.array(ArrayKind::For, int);
+        self.parser(int_array, int_array)
+    }
     pub fn type_var(&mut self, id: DefId, index: u32) -> InfTypeId<'intern> {
         let inftype = InferenceType::TypeVarRef(id, index);
         self.intern_infty(inftype)

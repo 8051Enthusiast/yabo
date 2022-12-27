@@ -82,6 +82,14 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
                     }
                     dbwrite!(f, db, "[{}]({} |> {})", ty, left, right)
                 }
+                MonoLayout::Regex(regex, bt) => {
+                    let regex_str = db.lookup_intern_regex(*regex);
+                    write!(f, "{regex_str}")?;
+                    if *bt {
+                        write!(f, "?")?;
+                    }
+                    Ok(())
+                }
                 MonoLayout::Tuple(elements) => {
                     dbwrite!(f, db, "tuple[{}](", ty)?;
                     for (i, layout) in elements.iter().enumerate() {
@@ -260,6 +268,12 @@ impl<'a> LayoutHasher<'a> {
                     state.update(self.hash(*layout, db));
                 }
             }
+            MonoLayout::Regex(regex, bt) => {
+                state.update([10]);
+                let regex_str = db.lookup_intern_regex(*regex);
+                regex_str.update_hash(state, db);
+                state.update([*bt as u8]);
+            }
         }
     }
 }
@@ -275,6 +289,7 @@ pub enum LayoutPart {
     SingleForward,
     CurrentElement,
     Skip,
+    Span,
     CreateArgs(PSize),
     SetArg(PSize),
 }
@@ -306,6 +321,7 @@ impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
             LayoutPart::SingleForward => write!(f, "single_forward"),
             LayoutPart::CurrentElement => write!(f, "current_element"),
             LayoutPart::Skip => write!(f, "skip"),
+            LayoutPart::Span => write!(f, "span"),
             LayoutPart::CreateArgs(p) => write!(f, "create_args_{p}"),
             LayoutPart::SetArg(idx) => write!(f, "set_arg_{idx}"),
         }
@@ -350,6 +366,15 @@ impl<'a> LayoutSymbol<'a> {
                     dbformat!(db, "parse_{}_b", &db.def_name(id.0).unwrap())
                 } else {
                     dbformat!(db, "parse_{}", &db.def_name(id.0).unwrap())
+                }
+            }
+            MonoLayout::Regex(re, backtracks) => {
+                let re_str = db.lookup_intern_regex(*re);
+                let ident_str = re_str.replace(|c: char| !c.is_ascii_alphanumeric(), "_");
+                if *backtracks {
+                    format!("parse_regex_{ident_str}_b")
+                } else {
+                    format!("parse_regex_{ident_str}")
                 }
             }
             MonoLayout::Primitive(_)

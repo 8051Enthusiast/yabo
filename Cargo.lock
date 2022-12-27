@@ -580,6 +580,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "regex-automata"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c230d73fb8d8c1b9c0b3135c5142a8acee3a0558fb8db5cf1cb65f8d7862132"
+dependencies = [
+ "regex-syntax",
+]
+
+[[package]]
 name = "regex-syntax"
 version = "0.6.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -997,6 +1006,7 @@ dependencies = [
  "bumpalo",
  "fxhash",
  "inkwell",
+ "regex-automata",
  "salsa",
  "yaboc-absint",
  "yaboc-ast",

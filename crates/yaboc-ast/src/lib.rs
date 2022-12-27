@@ -11,7 +11,7 @@ use expr::{Unused, *};
 
 use yaboc_base::{
     error::{SResult, Silencable},
-    interner::{FieldName, Identifier, Interner, TypeVar},
+    interner::{FieldName, Identifier, Interner, TypeVar, Regex},
     source::{FieldSpan, FileId, Files, IdSpan, Span, Spanned},
 };
 
@@ -188,6 +188,7 @@ pub enum ParserAtom {
     Atom(Atom),
     Single,
     Nil,
+    Regex(Regex, bool),
     Block(Block),
 }
 

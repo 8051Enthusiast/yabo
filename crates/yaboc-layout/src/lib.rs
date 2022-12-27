@@ -12,8 +12,9 @@ use fxhash::{FxHashMap, FxHashSet};
 
 use yaboc_absint::{AbsInt, AbsIntCtx, AbstractDomain, Arg};
 use yaboc_ast::expr::{self, ExpressionHead, OpWithData, ValBinOp, ValUnOp, ValVarOp, Variadic};
+use yaboc_ast::ArrayKind;
 use yaboc_base::error::{IsSilenced, SResult, SilencedError};
-use yaboc_base::interner::{DefId, FieldName};
+use yaboc_base::interner::{DefId, FieldName, Regex};
 use yaboc_base::low_effort_interner::{Interner, Uniq};
 use yaboc_hir::{self as hir, HirIdWrapper};
 use yaboc_hir_types::{DerefLevel, NominalId};
@@ -80,6 +81,7 @@ pub enum MonoLayout<Inner> {
     SlicePtr,
     Single,
     Nil,
+    Regex(Regex, bool),
     Nominal(
         hir::ParserDefId,
         Option<(Inner, TypeId)>,
@@ -115,9 +117,22 @@ impl<'a> IMonoLayout<'a> {
             _ => unreachable!("Expected mono layout"),
         }
     }
+
     pub fn inner(self) -> ILayout<'a> {
         self.0
     }
+
+    pub fn int_single(ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> IMonoLayout<'a> {
+        let int = ctx.db.intern_type(Type::Primitive(PrimitiveType::Int));
+        let for_int = ctx.db.intern_type(Type::Loop(ArrayKind::For, int));
+        let parser_ty = ctx.db.intern_type(Type::ParserArg {
+            result: int,
+            arg: for_int,
+        });
+        let single = ctx.dcx.intern(Layout::Mono(MonoLayout::Single, parser_ty));
+        single.into_iter().next().unwrap()
+    }
+
     pub fn symbol<DB: Layouts + ?Sized>(
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
@@ -163,6 +178,10 @@ impl<'a> IMonoLayout<'a> {
                 MonoLayout::ComposedParser(*l, *t, *r, false),
                 self.mono_layout().1,
             ))),
+            MonoLayout::Regex(r, _) => IMonoLayout(ctx.dcx.intern(Layout::Mono(
+                MonoLayout::Regex(*r, false),
+                self.mono_layout().1,
+            ))),
             _ => self,
         }
     }
@@ -204,6 +223,25 @@ pub fn flat_layouts<'a, 'l>(
     })
 }
 
+impl<'a, 'l> IntoIterator for &'l ILayout<'a> {
+    type Item = IMonoLayout<'a>;
+    type IntoIter =
+        std::iter::Map<std::slice::Iter<'l, ILayout<'a>>, fn(&'l ILayout<'a>) -> IMonoLayout<'a>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match &self.layout.1 {
+            Layout::Mono(_, _) => std::slice::from_ref(self),
+            Layout::Multi(l) => l.layouts.as_slice(),
+            Layout::None => &[],
+        }
+        .iter()
+        .map(|l| match l.layout.1 {
+            Layout::Mono(_, _) => IMonoLayout(*l),
+            _ => unreachable!(),
+        })
+    }
+}
+
 impl<'a> ILayout<'a> {
     pub fn maybe_mono(self) -> Option<IMonoLayout<'a>> {
         match self.layout.1 {
@@ -214,7 +252,8 @@ impl<'a> ILayout<'a> {
     }
 
     pub fn contains_deref(&self) -> bool {
-        flat_layouts(self).any(|x| matches!(x.mono_layout().0, MonoLayout::Nominal(_, _, _)))
+        self.into_iter()
+            .any(|x| matches!(x.mono_layout().0, MonoLayout::Nominal(_, _, _)))
     }
 
     pub fn is_multi(self) -> bool {
@@ -227,8 +266,7 @@ impl<'a> ILayout<'a> {
         mut f: impl FnMut(IMonoLayout<'a>, &mut AbsIntCtx<'a, ILayout<'a>>) -> ILayout<'a>,
     ) -> ILayout<'a> {
         let mut acc = BTreeSet::new();
-        let layouts = flat_layouts(&self);
-        for layout in layouts {
+        for layout in &self {
             let result_layout = f(layout, ctx);
             match &result_layout.layout.1 {
                 Layout::Mono(_, _) => {
@@ -373,6 +411,7 @@ impl<'a> ILayout<'a> {
                         unit,
                     )))
                 }
+                MonoLayout::Regex(..) => Ok(from),
                 _ => panic!("Attempting to apply argument to non-parser layout"),
             }
         })
@@ -499,7 +538,9 @@ impl<'a> ILayout<'a> {
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Char), _) => char::tsize(),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int), _) => i64::tsize(),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Unit), _) => Zst::tsize(),
-            Layout::Mono(MonoLayout::Single | MonoLayout::Nil, _) => Zst::tsize(),
+            Layout::Mono(MonoLayout::Single | MonoLayout::Nil | MonoLayout::Regex(_, _), _) => {
+                Zst::tsize()
+            }
             Layout::Mono(MonoLayout::Tuple(elements), _) => {
                 let mut size = Zst::tsize();
                 for element in elements {
@@ -813,6 +854,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ResolvedAtom::Val(id, bt) => ctx.var_by_id(id)?.with_backtrack_status(ctx, bt),
                 ResolvedAtom::Single => make_layout(MonoLayout::Single),
                 ResolvedAtom::Nil => make_layout(MonoLayout::Nil),
+                ResolvedAtom::Regex(r, bt) => make_layout(MonoLayout::Regex(r, bt)),
                 ResolvedAtom::ParserDef(pd, bt) => {
                     make_layout(MonoLayout::NominalParser(pd, Vec::new(), bt))
                 }
@@ -1018,7 +1060,7 @@ def for[int] *> main = {
         let main_ty = ctx.db.parser_args(main).unwrap().thunk;
         instantiate(&mut outlayer, &[main_ty]).unwrap();
         let canon_2004 = canon_layout(&mut outlayer, main_ty).unwrap();
-        for lay in flat_layouts(&canon_2004) {
+        for lay in &canon_2004 {
             assert_eq!(
                 lay.symbol(
                     &mut outlayer,
@@ -1029,7 +1071,7 @@ def for[int] *> main = {
             );
         }
         let main_block = outlayer.pd_result()[&canon_2004].as_ref().unwrap().returned;
-        for lay in flat_layouts(&main_block) {
+        for lay in &main_block {
             assert_eq!(
                 lay.symbol(
                     &mut outlayer,

@@ -1957,6 +1957,10 @@
         {
           "type": "SYMBOL",
           "name": "bool_literal"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "regex_literal"
         }
       ]
     },
@@ -2088,6 +2092,10 @@
           "value": "false"
         }
       ]
+    },
+    "regex_literal": {
+      "type": "PATTERN",
+      "value": "\\/([^\\/\\\\\\n]|\\\\.)*\\/\\??"
     }
   },
   "extras": [
