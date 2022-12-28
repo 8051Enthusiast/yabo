@@ -6,7 +6,7 @@ use std::{
 use enumflags2::make_bitflags;
 use fxhash::{FxHashMap, FxHashSet};
 
-use hir::HirNodeKind;
+use hir::{HirConstraintId, HirNodeKind};
 use yaboc_ast::expr::{
     self, ConstraintBinOp, ConstraintUnOp, Dyadic, ExprIter, ExpressionHead, Ignorable, Monadic,
     ValBinOp, ValUnOp, Variadic, WiggleKind,
@@ -471,7 +471,7 @@ impl<'a> ConvertCtx<'a> {
                             WiggleKind::Wiggly => self.retreat.error,
                         };
                         let cont = self.f.new_bb();
-                        self.convert_constraint(constr, ldt_ref, cont)?;
+                        self.convert_constraint(*constr, ldt_ref, cont)?;
                         self.f.set_bb(cont);
                         self.retreat.backtrack = old_backtrack;
                         place_ref
@@ -665,14 +665,13 @@ impl<'a> ConvertCtx<'a> {
 
     fn convert_constraint(
         &mut self,
-        expr: &hir::ConstraintExpression,
+        expr: HirConstraintId,
         val: PlaceRef,
         mut cont: BBRef,
     ) -> SResult<()> {
-        match &expr.0 {
+        match self.db.lookup_intern_hir_constraint(expr) {
             ExpressionHead::Niladic(n) => {
-                self.f
-                    .assert_val(val, n.inner.clone(), self.retreat.backtrack);
+                self.f.assert_val(val, n.inner, self.retreat.backtrack);
                 self.f.branch(cont);
                 Ok(())
             }
@@ -688,19 +687,19 @@ impl<'a> ConvertCtx<'a> {
             ExpressionHead::Dyadic(Dyadic { op, inner }) => match op.inner {
                 ConstraintBinOp::And => {
                     let right_bb = self.f.new_bb();
-                    self.convert_constraint(&inner[0], val, right_bb)?;
+                    self.convert_constraint(inner[0], val, right_bb)?;
                     self.f.set_bb(right_bb);
-                    self.convert_constraint(&inner[1], val, cont)?;
+                    self.convert_constraint(inner[1], val, cont)?;
                     Ok(())
                 }
                 ConstraintBinOp::Or => {
                     let right_bb = self.f.new_bb();
                     let old_backtrack = self.retreat.backtrack;
                     self.retreat.backtrack = right_bb;
-                    self.convert_constraint(&inner[0], val, cont)?;
+                    self.convert_constraint(inner[0], val, cont)?;
                     self.f.set_bb(right_bb);
                     self.retreat.backtrack = old_backtrack;
-                    self.convert_constraint(&inner[1], val, cont)?;
+                    self.convert_constraint(inner[1], val, cont)?;
                     Ok(())
                 }
             },
