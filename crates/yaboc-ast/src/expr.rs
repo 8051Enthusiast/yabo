@@ -121,6 +121,14 @@ impl<K: ExpressionKind, Inner> ExpressionHead<K, Inner> {
             }
         }
     }
+
+    pub fn unfold(self, f: &mut impl FnMut(Inner) -> ExpressionHead<K, Inner>) -> Expression<K> {
+        let inner_mapped = self.map_inner(|inner| {
+            let new_inner = f(inner);
+            Box::new(new_inner.unfold(f))
+        });
+        Expression(inner_mapped)
+    }
 }
 
 impl<K: ExpressionKind, T, E> ExpressionHead<K, Result<T, E>> {
@@ -331,6 +339,16 @@ impl<Op, T> OpWithData<Op, T> {
             inner: self.inner,
         }
     }
+    pub fn map_data_ref<NewT, F: FnOnce(&T) -> NewT>(&self, f: F) -> OpWithData<Op, NewT>
+    where
+        Op: Clone,
+    {
+        OpWithData {
+            data: f(&self.data),
+            inner: self.inner.clone(),
+        }
+    }
+
     pub fn map_inner<NewOp, F: FnOnce(Op) -> NewOp>(self, f: F) -> OpWithData<NewOp, T> {
         OpWithData {
             data: self.data,
@@ -358,6 +376,30 @@ impl<K: ExpressionKind, T: Clone + Hash + Eq + Debug, I> ExpressionHead<KindWith
             }
             ExpressionHead::Variadic(Variadic { op, inner }) => {
                 ExpressionHead::new_variadic(op.map_data(f), inner)
+            }
+        }
+    }
+}
+
+impl<K: ExpressionKind, T: Clone + Hash + Eq + Debug, I> ExpressionHead<&KindWithData<K, T>, I> {
+    pub fn map_data_ref<NewT, F: FnOnce(&T) -> NewT>(
+        self,
+        f: F,
+    ) -> ExpressionHead<KindWithData<K, NewT>, I>
+    where
+        K: ExpressionKind,
+        NewT: Clone + Hash + Eq + Debug,
+    {
+        match self {
+            ExpressionHead::Niladic(op) => ExpressionHead::Niladic(op.map_data_ref(f)),
+            ExpressionHead::Monadic(Monadic { op, inner }) => {
+                ExpressionHead::new_monadic(op.map_data_ref(f), inner)
+            }
+            ExpressionHead::Dyadic(Dyadic { op, inner }) => {
+                ExpressionHead::new_dyadic(op.map_data_ref(f), inner)
+            }
+            ExpressionHead::Variadic(Variadic { op, inner }) => {
+                ExpressionHead::new_variadic(op.map_data_ref(f), inner)
             }
         }
     }

@@ -139,13 +139,13 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for TypeArray {
 #[repr(transparent)]
 pub struct W<T>(pub T);
 
-impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for W<&Expression<HirConstraintSpanned>> {
+impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for HirConstraintId {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
-        match &self.0 .0.as_ref().map_inner(|x| W(&**x)) {
+        match db.lookup_intern_hir_constraint(*self) {
             ExpressionHead::Niladic(a) => a.inner.db_fmt(f, db),
             ExpressionHead::Monadic(Monadic { op, inner }) => match &op.inner {
-                expr::ConstraintUnOp::Not => dbwrite!(f, db, "!{}", inner),
-                expr::ConstraintUnOp::Dot(a) => dbwrite!(f, db, "{}.{}", inner, a),
+                expr::ConstraintUnOp::Not => dbwrite!(f, db, "!{}", &inner),
+                expr::ConstraintUnOp::Dot(a) => dbwrite!(f, db, "{}.{}", &inner, a),
             },
             ExpressionHead::Dyadic(Dyadic { op, inner }) => {
                 dbwrite!(f, db, "{} {} {}", &inner[0], &op.inner, &inner[1])
@@ -163,7 +163,7 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for W<&Expression<HirValSpanned>> {
                 expr::ValUnOp::Not => dbwrite!(f, db, "!{}", inner),
                 expr::ValUnOp::Neg => dbwrite!(f, db, "-{}", inner),
                 expr::ValUnOp::Wiggle(right, kind) => {
-                    dbwrite!(f, db, "{} {} {}", inner, kind, &W(&**right))
+                    dbwrite!(f, db, "{} {} {}", inner, kind, right)
                 }
                 expr::ValUnOp::Dot(a, b) => {
                     dbwrite!(f, db, "{}.{}", inner, a)?;
@@ -195,7 +195,7 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for W<&Expression<HirTypeSpanned>> 
         match &self.0 .0.as_ref().map_inner(|x| W(&**x)) {
             ExpressionHead::Niladic(a) => a.inner.db_fmt(f, db),
             ExpressionHead::Monadic(Monadic { op, inner }) => match &op.inner {
-                expr::TypeUnOp::Wiggle(right) => dbwrite!(f, db, "{} ~ {}", inner, &W(&**right)),
+                expr::TypeUnOp::Wiggle(right) => dbwrite!(f, db, "{} ~ {}", inner, right),
                 expr::TypeUnOp::ByteParser => dbwrite!(f, db, "*{}", inner),
             },
             ExpressionHead::Dyadic(Dyadic { op, inner }) => {

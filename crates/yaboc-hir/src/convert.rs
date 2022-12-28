@@ -70,7 +70,9 @@ fn val_expression(
         },
         &mut |monadic, _| OpWithData {
             data: monadic.data,
-            inner: monadic.inner.map_expr(|x| Arc::new(x.map(&add_span))),
+            inner: monadic.inner.map_expr(|x| {
+                x.fold(&mut |head| ctx.db.intern_hir_constraint(head.map_data_ref(&add_span)))
+            }),
         },
         &mut |dyadic, _, _| dyadic.clone(),
         &mut |variadic, _| variadic.clone(),
@@ -86,6 +88,7 @@ fn val_expression(
 }
 
 fn convert_type_expression(
+    db: &dyn Hirs,
     expr: &ast::TypeExpression,
     add_span: &impl Fn(&Span) -> SpanIndex,
 ) -> Expression<HirTypeSpanned> {
@@ -97,11 +100,11 @@ fn convert_type_expression(
                     let from = pd
                         .from
                         .as_ref()
-                        .map(|x| convert_type_expression(x, add_span));
+                        .map(|x| convert_type_expression(db, x, add_span));
                     let args = pd
                         .args
                         .iter()
-                        .map(|x| convert_type_expression(x, add_span))
+                        .map(|x| convert_type_expression(db, x, add_span))
                         .collect();
                     let name = pd
                         .name
@@ -114,7 +117,7 @@ fn convert_type_expression(
                     TypeAtom::ParserDef(Box::new(ParserDefRef { from, name, args }))
                 }
                 ast::TypeAtom::Array(arr) => {
-                    let new_expr = convert_type_expression(&arr.expr, add_span);
+                    let new_expr = convert_type_expression(db, &arr.expr, add_span);
                     TypeAtom::Array(Box::new(TypeArray {
                         direction: arr.direction.inner,
                         expr: new_expr,
@@ -130,7 +133,9 @@ fn convert_type_expression(
         },
         &mut |monadic, _| OpWithData {
             data: monadic.data,
-            inner: monadic.inner.map_expr(|x| Arc::new(x.map(&add_span))),
+            inner: monadic.inner.map_expr(|x| {
+                x.fold(&mut |head| db.intern_hir_constraint(head.map_data_ref(add_span)))
+            }),
         },
         &mut |dyadic, _, _| dyadic.clone(),
         &mut |variadic, _| variadic.clone(),
@@ -140,7 +145,7 @@ fn convert_type_expression(
 fn type_expression(ast: &ast::TypeExpression, ctx: &HirConversionCtx, id: TExprId) {
     let spans = RefCell::new(Vec::new());
     let add_span = SpanIndex::add_span(&spans);
-    let texpr = convert_type_expression(ast, &add_span);
+    let texpr = convert_type_expression(ctx.db, ast, &add_span);
     let texpr = TypeExpression { id, expr: texpr };
     drop(add_span);
     ctx.insert(id.0, HirNode::TExpr(texpr), spans.into_inner())

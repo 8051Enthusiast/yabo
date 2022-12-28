@@ -14,7 +14,8 @@ use std::{
     sync::Arc,
 };
 
-use yaboc_ast::expr::{self, Atom, Expression, ExpressionKind};
+use salsa::InternId;
+use yaboc_ast::expr::{self, Atom, Expression, ExpressionHead, ExpressionKind};
 use yaboc_ast::{ArrayKind, AstConstraint, TopLevelStatement};
 use yaboc_base::{
     dbpanic,
@@ -58,6 +59,23 @@ pub trait Hirs: yaboc_ast::Asts {
     fn argnum(&self, pd: ParserDefId) -> SResult<Option<usize>>;
     fn parserdef_arg(&self, pd: ParserDefId, name: Identifier) -> SResult<Option<ArgDefId>>;
     fn parserdef_arg_index(&self, pd: ParserDefId, id: DefId) -> SResult<Option<usize>>;
+    #[salsa::interned]
+    fn intern_hir_constraint(
+        &self,
+        c: ExpressionHead<HirConstraintSpanned, HirConstraintId>,
+    ) -> HirConstraintId;
+}
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct HirConstraintId(InternId);
+
+impl salsa::InternKey for HirConstraintId {
+    fn from_intern_id(v: InternId) -> Self {
+        Self(v)
+    }
+
+    fn as_intern_id(&self) -> InternId {
+        self.0
+    }
 }
 
 fn hir_node(db: &dyn Hirs, id: DefId) -> SResult<HirNode> {
@@ -465,7 +483,7 @@ pub struct HirVal;
 impl ExpressionKind for HirVal {
     type VariadicOp = expr::ValVarOp;
     type DyadicOp = expr::ValBinOp;
-    type MonadicOp = expr::ValUnOp<Arc<ConstraintExpression>>;
+    type MonadicOp = expr::ValUnOp<HirConstraintId>;
     type NiladicOp = ParserAtom;
 }
 
@@ -477,7 +495,7 @@ pub struct HirType;
 impl ExpressionKind for HirType {
     type VariadicOp = expr::TypeVarOp;
     type DyadicOp = expr::TypeBinOp;
-    type MonadicOp = expr::TypeUnOp<Arc<ConstraintExpression>>;
+    type MonadicOp = expr::TypeUnOp<HirConstraintId>;
     type NiladicOp = TypeAtom;
 }
 
