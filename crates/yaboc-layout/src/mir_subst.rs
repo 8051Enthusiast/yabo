@@ -34,7 +34,7 @@ impl<'a> FunctionSubstitute<'a> {
         let evaluated = ctx.block_result()[&(from, block.0)]
             .as_ref()
             .ok_or_else(SilencedError::new)?;
-        let subst = evaluated.typesubst.clone();
+        let subst = Some(evaluated.typesubst.clone());
         let mut expr_map = FxHashMap::default();
         for (id, expr) in evaluated.expr_vals.iter() {
             for r in ExprIter::new(expr) {
@@ -86,7 +86,7 @@ impl<'a> FunctionSubstitute<'a> {
         let evaluated = ctx.pd_result()[&lookup_layout]
             .as_ref()
             .ok_or_else(SilencedError::new)?;
-        let subst = evaluated.typesubst.clone();
+        let subst = Some(evaluated.typesubst.clone());
         let expr_id = pd.lookup(ctx.db)?.to;
         let mut expr_map = FxHashMap::default();
         if let Some(expr) = evaluated.expr_vals.as_ref() {
@@ -103,6 +103,36 @@ impl<'a> FunctionSubstitute<'a> {
             expr: expr_map,
             vals,
             subst,
+        };
+        let mut stack_layouts = sub_info.stack_layouts(&f);
+        let place_layouts = sub_info.place_layouts(&f, &mut stack_layouts, strictness, ctx)?;
+        Ok(FunctionSubstitute {
+            f,
+            stack_layouts,
+            place_layouts,
+        })
+    }
+
+    pub fn new_from_if(
+        f: Function,
+        strictness: &[Strictness],
+        from: ILayout<'a>,
+        fun: IMonoLayout<'a>,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+    ) -> Result<Self, LayoutError> {
+        let MonoLayout::IfParser(inner, _, _) = fun.mono_layout().0 else {
+            panic!("non-if-parser as argument")
+        };
+        let result = inner.apply_arg(ctx, from)?;
+        let exprs = FxHashMap::default();
+        let vals = FxHashMap::default();
+        let sub_info = SubInfo {
+            fun: fun.inner(),
+            arg: from,
+            ret: result,
+            expr: exprs,
+            vals,
+            subst: None,
         };
         let mut stack_layouts = sub_info.stack_layouts(&f);
         let place_layouts = sub_info.place_layouts(&f, &mut stack_layouts, strictness, ctx)?;
@@ -130,13 +160,14 @@ impl<'a> FunctionSubstitute<'a> {
     }
 }
 
+#[derive(Debug)]
 struct SubInfo<T> {
     fun: T,
     arg: T,
     ret: T,
     expr: FxHashMap<(ExprId, SpanIndex), T>,
     vals: FxHashMap<DefId, T>,
-    subst: Arc<Vec<TypeId>>,
+    subst: Option<Arc<Vec<TypeId>>>,
 }
 
 impl<'a> SubInfo<ILayout<'a>> {
@@ -146,6 +177,8 @@ impl<'a> SubInfo<ILayout<'a>> {
                 PlaceOrigin::Node(id) => self.vals[&id],
                 PlaceOrigin::Ambient(_, _) => self.arg,
                 PlaceOrigin::Expr(e, idx) => self.expr[&(e, idx)],
+                PlaceOrigin::Ret => self.ret,
+                PlaceOrigin::Arg => self.arg,
             })
             .collect()
     }
@@ -180,7 +213,7 @@ impl<'a> SubInfo<ILayout<'a>> {
                 Place::DupleField(place, duple_field) => place_layouts[place.as_index()]
                     .0
                     .access_duple(ctx, duple_field),
-                Place::From(place) => place_layouts[place.as_index()].0.access_from(ctx),
+                Place::Front(place) => place_layouts[place.as_index()].0.access_front(ctx),
                 Place::ModifiedBy(ins_ref) => match f.ins_at(ins_ref) {
                     yaboc_mir::MirInstr::ParseCall(_, _, _, front, _, _) => {
                         place_layouts[front.as_index()].0
@@ -188,7 +221,15 @@ impl<'a> SubInfo<ILayout<'a>> {
                     _ => unreachable!(),
                 },
             };
-            let ty = ctx.db.substitute_typevar(place_info.ty, self.subst.clone());
+
+            // we don't want any type variables to appear here in general because we want a defined
+            // deref level, but for the case of if-parsers, type variables cannot actually occur in a
+            // position that would be relevant for the deref level, so we can just ignore them
+            let ty = self
+                .subst
+                .as_ref()
+                .map(|subst| ctx.db.substitute_typevar(place_info.ty, subst.clone()))
+                .unwrap_or(place_info.ty);
 
             let strict = if let Type::TypeVarRef(..) = ctx.db.lookup_intern_type(place_info.ty) {
                 Strictness::Static(ctx.db.deref_level(ty)?)

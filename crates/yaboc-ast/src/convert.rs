@@ -673,7 +673,6 @@ impl From<ValDot> for MonadicExpr<AstValSpanned> {
 fn wiggle_kind(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<WiggleKind> {
     let str = node_to_string(db, fd, c)?;
     match &*str {
-        "~" => Ok(WiggleKind::Wiggly),
         "if" => Ok(WiggleKind::If),
         "try" => Ok(WiggleKind::Try),
         _ => panic!("unknown wiggle kind: {str}"),

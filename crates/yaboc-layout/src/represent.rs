@@ -100,6 +100,18 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
                     }
                     write!(f, ")")
                 }
+                MonoLayout::IfParser(inner, referenced, wiggle) => {
+                    dbwrite!(
+                        f,
+                        db,
+                        "if-parser-{}[{}]({}, {})",
+                        wiggle,
+                        ty,
+                        inner,
+                        referenced
+                    )?;
+                    Ok(())
+                }
             },
             Layout::Multi(subs) => {
                 for (i, layout) in subs.layouts.iter().enumerate() {
@@ -274,6 +286,14 @@ impl<'a> LayoutHasher<'a> {
                 regex_str.update_hash(state, db);
                 state.update([*bt as u8]);
             }
+            MonoLayout::IfParser(inner, id, wiggle) => {
+                state.update([11]);
+                state.update(self.hash(*inner, db));
+                // TODO(8051): ideally, we'd hash the content here in a way that
+                // is reproducible, but for now we just hash the id.
+                id.as_u32().update_hash(state, db);
+                (*wiggle as u8).update_hash(state, db);
+            }
         }
     }
 }
@@ -377,6 +397,7 @@ impl<'a> LayoutSymbol<'a> {
                     format!("parse_regex_{ident_str}")
                 }
             }
+            MonoLayout::IfParser(..) => String::from("parser_if"),
             MonoLayout::Primitive(_)
             | MonoLayout::SlicePtr
             | MonoLayout::Single

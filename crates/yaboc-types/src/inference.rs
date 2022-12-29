@@ -31,6 +31,11 @@ pub enum InferenceType<'intern> {
         args: InfSlice<'intern>,
     },
     InferField(FieldName, InfTypeId<'intern>),
+    InferIfResult(
+        Option<InfTypeId<'intern>>,
+        InfTypeId<'intern>,
+        InfTypeId<'intern>,
+    ),
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -54,6 +59,9 @@ pub enum ChildLocation {
     LoopBody,
     ParserResult,
     FieldResult,
+    IfSaved,
+    IfCont,
+    IfBound,
 }
 
 impl ChildLocation {
@@ -74,6 +82,7 @@ pub enum InfTypeHead {
     FunctionArgs(usize),
     Unknown,
     InferField(FieldName),
+    InferIfResult(bool),
     Var(VarId),
 }
 
@@ -90,6 +99,7 @@ impl<'intern> From<InfTypeId<'intern>> for InfTypeHead {
             InferenceType::FunctionArgs { args, .. } => InfTypeHead::FunctionArgs(args.len()),
             InferenceType::Unknown => InfTypeHead::Unknown,
             InferenceType::InferField(name, _) => InfTypeHead::InferField(*name),
+            InferenceType::InferIfResult(a, ..) => InfTypeHead::InferIfResult(a.is_some()),
             InferenceType::Var(var) => InfTypeHead::Var(*var),
         }
     }
@@ -162,6 +172,16 @@ impl<'intern> InfTypeId<'intern> {
             InferenceType::InferField(name, result) => {
                 let result = f(interner, *result, ChildLocation::FieldResult)?;
                 Ok(interner.intern_infty(InferenceType::InferField(*name, result)))
+            }
+            InferenceType::InferIfResult(a, b, c) => {
+                let a = if let Some(a) = a {
+                    Some(f(interner, *a, ChildLocation::IfSaved)?)
+                } else {
+                    None
+                };
+                let b = f(interner, *b, ChildLocation::IfBound)?;
+                let c = f(interner, *c, ChildLocation::IfCont)?;
+                Ok(interner.intern_infty(InferenceType::InferIfResult(a, b, c)))
             }
             _ => Ok(self),
         }
@@ -240,6 +260,18 @@ impl<'intern> InfTypeId<'intern> {
                 }
                 call_f(*result, *other_result, ChildLocation::FieldResult)?;
             }
+            (
+                InferenceType::InferIfResult(a1, b1, c1),
+                InferenceType::InferIfResult(a2, b2, c2),
+            ) => {
+                if let Some((a1, a2)) = a1.zip(*a2) {
+                    call_f(a1, a2, ChildLocation::IfSaved)?;
+                } else if a1.is_some() != a2.is_some() {
+                    return Err(None);
+                }
+                call_f(*b1, *b2, ChildLocation::IfBound)?;
+                call_f(*c1, *c2, ChildLocation::IfCont)?;
+            }
             (InferenceType::Any, InferenceType::Any)
             | (InferenceType::Bot, InferenceType::Bot)
             | (InferenceType::Primitive(_), InferenceType::Primitive(_))
@@ -312,7 +344,9 @@ impl<'intern> TryFrom<&InferenceType<'intern>> for TypeHead {
             InferenceType::ParserArg { .. } => TypeHead::ParserArg,
             InferenceType::FunctionArgs { args, .. } => TypeHead::FunctionArgs(args.len()),
             InferenceType::Unknown => TypeHead::Unknown,
-            InferenceType::Var(_) | InferenceType::InferField(..) => return Err(()),
+            InferenceType::Var(_)
+            | InferenceType::InferField(..)
+            | InferenceType::InferIfResult(..) => return Err(()),
         })
     }
 }
@@ -580,16 +614,10 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                 self.constrain(field_ty, *fieldtype)
             }
 
-            (Nominal(l), _) => {
-                // if they are not the same head, try upcasting/dereferencing/evaluating
-                if let Some(deref) = self.deref(l)? {
-                    self.constrain(deref, upper)
-                } else {
-                    Err(TypeError::HeadMismatch(
-                        TypeHead::Nominal(l.def),
-                        upper.value().try_into().unwrap(),
-                    ))
-                }
+            (Nominal(l), InferIfResult(None, res, cont)) if l.kind == NominalKind::Def => {
+                let if_result_with_lower =
+                    self.intern_infty(InferIfResult(Some(lower), *res, *cont));
+                self.constrain(lower, if_result_with_lower)
             }
 
             (FunctionArgs { result, args }, FunctionArgs { args: args2, .. })
@@ -608,10 +636,30 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                 self.constrain(outer_ty, upper)
             }
 
-            _ => Err(TypeError::HeadMismatch(
-                lower.value().try_into().unwrap(),
-                upper.value().try_into().unwrap(),
-            )),
+            (Nominal(l), _) if l.kind == NominalKind::Def => {
+                // if they are not the same head, try upcasting/dereferencing/evaluating
+                if let Some(deref) = self.deref(l)? {
+                    self.constrain(deref, upper)
+                } else {
+                    Err(TypeError::HeadMismatch(
+                        InfTypeHead::Nominal(l.def),
+                        upper.into(),
+                    ))
+                }
+            }
+
+            (ParserArg { result, .. }, InferIfResult(_, infer_res, cont)) => {
+                self.constrain(lower, *cont)?;
+                self.constrain(*result, *infer_res)
+            }
+
+            (_, InferIfResult(orig, infer_res, cont)) => {
+                let orig = orig.unwrap_or(lower);
+                self.constrain(orig, *cont)?;
+                self.constrain(orig, *infer_res)
+            }
+
+            _ => Err(TypeError::HeadMismatch(lower.into(), upper.into())),
         }
     }
     pub fn equal(
@@ -677,6 +725,16 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     }
     pub fn array(&mut self, kind: ArrayKind, inner: InfTypeId<'intern>) -> InfTypeId<'intern> {
         self.intern_infty(InferenceType::Loop(kind, inner))
+    }
+    pub fn if_checked(
+        &mut self,
+        to_be_checked: InfTypeId<'intern>,
+    ) -> Result<(InfTypeId<'intern>, InfTypeId<'intern>), TypeError> {
+        let result = self.var();
+        let cont = self.var();
+        let if_result = self.intern_infty(InferenceType::InferIfResult(None, result, cont));
+        self.constrain(to_be_checked, if_result)?;
+        Ok((result, cont))
     }
     pub fn array_call(
         &mut self,

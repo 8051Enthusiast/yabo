@@ -78,6 +78,12 @@ impl salsa::InternKey for HirConstraintId {
     }
 }
 
+impl HirConstraintId {
+    pub fn as_u32(self) -> u32 {
+        self.0.as_u32()
+    }
+}
+
 fn hir_node(db: &dyn Hirs, id: DefId) -> SResult<HirNode> {
     let path = db.lookup_intern_hir_path(id);
     let file = path.path()[0].unwrap_file();

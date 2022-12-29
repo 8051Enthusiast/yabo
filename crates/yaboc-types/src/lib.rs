@@ -4,6 +4,7 @@ mod to_type;
 
 use std::{collections::HashSet, hash::Hash, sync::Arc};
 
+use inference::InfTypeHead;
 use salsa::InternId;
 
 use sha2::Digest;
@@ -155,8 +156,8 @@ pub struct Signature {
 
 #[derive(Clone, Hash, Debug, PartialEq, Eq)]
 pub enum TypeError {
-    HeadMismatch(TypeHead, TypeHead),
-    HeadIncompatible(TypeHead, TypeHead),
+    HeadMismatch(InfTypeHead, InfTypeHead),
+    HeadIncompatible(InfTypeHead, InfTypeHead),
     RecursiveType,
     UnknownField(FieldName),
     UnknownParserdefName(Identifier),

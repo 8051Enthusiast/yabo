@@ -7,7 +7,7 @@ use std::num::NonZeroU32;
 use fxhash::FxHashMap;
 
 pub use strictness::Strictness;
-use yaboc_ast::expr::{ValBinOp, ValUnOp};
+use yaboc_ast::expr::{ValBinOp, ValUnOp, WiggleKind};
 use yaboc_ast::ConstraintAtom;
 use yaboc_base::{
     error::{SResult, Silencable},
@@ -15,7 +15,7 @@ use yaboc_base::{
     source::SpanIndex,
 };
 use yaboc_dependents::{Dependents, NeededBy, RequirementSet, SubValue};
-use yaboc_hir::{BlockId, ExprId, HirIdWrapper, ParserDefId};
+use yaboc_hir::{BlockId, ExprId, HirConstraintId, HirIdWrapper, ParserDefId};
 use yaboc_types::TypeId;
 
 use self::convert::ConvertCtx;
@@ -32,6 +32,7 @@ fn mir(db: &dyn Mirs, kind: FunKind, requirements: RequirementSet) -> SResult<Fu
     match kind {
         FunKind::Block(block) => mir_block(db, block, requirements),
         FunKind::ParserDef(pd) => mir_pd(db, pd, requirements),
+        FunKind::If(constraint, ty, wiggle) => mir_if(db, constraint, ty, wiggle, requirements),
     }
 }
 
@@ -48,6 +49,7 @@ fn strictness(
 pub enum FunKind {
     Block(BlockId),
     ParserDef(ParserDefId),
+    If(HirConstraintId, TypeId, WiggleKind),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -332,7 +334,7 @@ pub enum Place {
     Field(PlaceRef, DefId),
     Captured(PlaceRef, DefId),
     DupleField(PlaceRef, DupleField),
-    From(PlaceRef),
+    Front(PlaceRef),
     ModifiedBy(InsRef),
 }
 
@@ -341,6 +343,8 @@ pub enum PlaceOrigin {
     Node(DefId),
     Ambient(BlockId, DefId),
     Expr(ExprId, SpanIndex),
+    Ret,
+    Arg,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -678,7 +682,19 @@ fn mir_pd(db: &dyn Mirs, pd: ParserDefId, requirements: RequirementSet) -> SResu
     let parserdef = pd.lookup(db)?;
     let mut ctx = ConvertCtx::new_parserdef_builder(db, pd, requirements)?;
     ctx.add_sub_value(SubValue::new_val(parserdef.to.0))?;
-    ctx.parserdef(&parserdef);
+    ctx.parserdef(&parserdef)?;
+    Ok(ctx.finish_fun())
+}
+
+fn mir_if(
+    db: &dyn Mirs,
+    constr: HirConstraintId,
+    ty: TypeId,
+    kind: WiggleKind,
+    requirements: RequirementSet,
+) -> SResult<Function> {
+    let mut ctx = ConvertCtx::new_if_builder(db, ty, requirements, kind == WiggleKind::Try)?;
+    ctx.if_parser(constr)?;
     Ok(ctx.finish_fun())
 }
 

@@ -4,19 +4,23 @@ use yaboc_ast::expr::{
 use yaboc_base::{error::SResult, interner::DefId};
 use yaboc_hir::{ExprId, HirNode};
 use yaboc_resolve::expr::ResolvedAtom;
+use yaboc_types::Type;
 
 use crate::Dependents;
 
 fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<(bool, bool)> {
-    Ok(
-        db.parser_expr_at(expr)?.fold(&mut |h| match h {
+    db.parser_expr_at(expr)?.try_fold(&mut |h| {
+        let ty = h.root_data().0;
+        let ty = db.lookup_intern_type(db.least_deref_type(ty)?);
+        let is_parser = matches!(ty, Type::ParserArg { .. });
+        Ok(match h {
             ExpressionHead::Niladic(OpWithData {
                 inner:
                     ResolvedAtom::Val(_, q)
                     | ResolvedAtom::Captured(_, q)
                     | ResolvedAtom::ParserDef(_, q),
                 ..
-            }) => (false, *q),
+            }) => (false, q),
             ExpressionHead::Niladic(OpWithData {
                 inner: ResolvedAtom::Block(b),
                 ..
@@ -29,7 +33,7 @@ fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<(bool, bo
                         ..
                     },
                 inner: (will, _),
-            }) => (will || *q, true),
+            }) => (will || q, true),
             ExpressionHead::Monadic(Monadic {
                 op:
                     OpWithData {
@@ -37,7 +41,15 @@ fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<(bool, bo
                         ..
                     },
                 inner: (will, can),
-            }) => (will || *kind == WiggleKind::If, can),
+            }) if !is_parser => (will || kind == WiggleKind::If, can),
+            ExpressionHead::Monadic(Monadic {
+                op:
+                    OpWithData {
+                        inner: ValUnOp::Wiggle(_, kind),
+                        ..
+                    },
+                inner: (will, can),
+            }) if is_parser => (will, can || kind == WiggleKind::If),
             ExpressionHead::Monadic(Monadic {
                 inner: (will, _), ..
             }) => (will, false),
@@ -72,8 +84,8 @@ fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<(bool, bo
             ExpressionHead::Variadic(Variadic { inner, .. }) => {
                 (inner.iter().any(|(will, _)| *will), inner[0].1)
             }
-        }),
-    )
+        })
+    })
 }
 
 pub fn can_backtrack(db: &dyn Dependents, def: DefId) -> SResult<bool> {

@@ -1,0 +1,3 @@
+====[ source code ]====
+export def *test = ~ if true
+#~^error[507] expected bit, but got int

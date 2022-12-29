@@ -1,8 +1,8 @@
 use sha2::Digest;
 use yaboc_ast::ArrayKind;
-use yaboc_base::{databased_display::DatabasedDisplay, hash::StableHash};
+use yaboc_base::{databased_display::DatabasedDisplay, hash::StableHash, interner::FieldName};
 
-use crate::{NominalTypeHead, Type, TypeHead, TypeId};
+use crate::{inference::InfTypeHead, NominalTypeHead, Type, TypeId};
 
 use super::{inference::InferenceType, InfTypeId, NominalKind, PrimitiveType, TypeInterner};
 
@@ -62,7 +62,15 @@ impl<'a, DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeId<'a> {
             }
             InferenceType::InferField(field_name, inner_type) => {
                 write!(f, "<InferField {field_name:?}: ")?;
-                dbwrite!(f, db, "{}", inner_type)
+                dbwrite!(f, db, "{}>", inner_type)
+            }
+            InferenceType::InferIfResult(non_parser, inner_type, cont) => {
+                write!(f, "<InferIfResult")?;
+                if let Some(non_parser) = non_parser {
+                    dbwrite!(f, db, " {}", non_parser)?;
+                }
+                write!(f, ": ")?;
+                dbwrite!(f, db, "{}, {}>", inner_type, cont)
             }
         }
     }
@@ -155,25 +163,33 @@ impl<DB: ?Sized> DatabasedDisplay<DB> for PrimitiveType {
         }
     }
 }
-impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for TypeHead {
+impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeHead {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
-            TypeHead::Any => write!(f, "any type"),
-            TypeHead::Bot => write!(f, "bottom type"),
-            TypeHead::Primitive(p) => p.db_fmt(f, db),
-            TypeHead::TypeVarRef(_, index) => {
+            InfTypeHead::Any => write!(f, "any type"),
+            InfTypeHead::Bot => write!(f, "bottom type"),
+            InfTypeHead::Primitive(p) => p.db_fmt(f, db),
+            InfTypeHead::TypeVarRef(_, index) => {
                 dbwrite!(f, db, "'{}", &index)
             }
-            TypeHead::Nominal(def) => {
+            InfTypeHead::Nominal(def) => {
                 dbwrite!(f, db, "{}", def)
             }
-            TypeHead::Loop(kind) => match kind {
+            InfTypeHead::Loop(kind) => match kind {
                 ArrayKind::For => write!(f, "for array"),
                 ArrayKind::Each => write!(f, "each array"),
             },
-            TypeHead::ParserArg => write!(f, "a parser"),
-            TypeHead::FunctionArgs(arg) => write!(f, "a function with {arg} arguments"),
-            TypeHead::Unknown => write!(f, "unknon"),
+            InfTypeHead::ParserArg => write!(f, "a parser"),
+            InfTypeHead::FunctionArgs(arg) => write!(f, "a function with {arg} arguments"),
+            InfTypeHead::Unknown => write!(f, "unknon"),
+            InfTypeHead::InferField(name) => match name {
+                FieldName::Return => write!(f, "field return"),
+                FieldName::Ident(name) => {
+                    dbwrite!(f, db, "field {}", name)
+                }
+            },
+            InfTypeHead::InferIfResult(_) => write!(f, "if result"),
+            InfTypeHead::Var(_) => todo!(),
         }
     }
 }
