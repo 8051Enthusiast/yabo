@@ -51,7 +51,7 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for PlaceRef {
                 };
                 write!(f, ".{s}")
             }
-            Place::From(inner) => {
+            Place::Front(inner) => {
                 inner.db_fmt(f, &(*fun, *db))?;
                 write!(f, ".from")
             }
@@ -124,7 +124,7 @@ impl Display for ExceptionRetreat {
     }
 }
 
-impl<DB: Mirs> DatabasedDisplay<(&Function, &DB)> for MirInstr {
+impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &(&Function, &DB)) -> std::fmt::Result {
         match self {
             MirInstr::IntBin(target, op, left, right) => {
@@ -234,15 +234,20 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<DB> for PlaceOrigin {
             PlaceOrigin::Node(n) => dbwrite!(f, db, "node {}", n),
             PlaceOrigin::Ambient(_, n) => dbwrite!(f, db, "ambient {}", n),
             PlaceOrigin::Expr(n, i) => dbwrite!(f, db, "expr {}:{}", &n.0, &i.as_usize()),
+            PlaceOrigin::Ret => write!(f, "ret"),
+            PlaceOrigin::Arg => write!(f, "arg"),
         }
     }
 }
 
-impl<DB: Mirs> DatabasedDisplay<DB> for Function {
+impl<DB: Mirs + ?Sized> DatabasedDisplay<DB> for Function {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         for (place_ref, place) in self.iter_places() {
             if let Place::Stack(st) = self.place(place_ref).place {
                 dbwrite!(f, db, "// origin: {}\n", &self.stack(st))?;
+            }
+            if self.place(place_ref).remove_bt {
+                writeln!(f, "// remove_bt")?;
             }
             write!(f, "define ")?;
             place_ref.db_fmt(f, &(self, db))?;

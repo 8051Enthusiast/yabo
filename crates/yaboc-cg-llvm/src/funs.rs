@@ -96,6 +96,21 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         FunctionSubstitute::new_from_block(mir, &strictness, from, layout, self.layouts).unwrap()
     }
 
+    fn mir_if_fun(
+        &mut self,
+        from: ILayout<'comp>,
+        layout: IMonoLayout<'comp>,
+        req: RequirementSet,
+    ) -> FunctionSubstitute<'comp> {
+        let (MonoLayout::IfParser(_, cid, wiggle), ty) = layout.mono_layout() else {
+            panic!("mir_pd_len_fun has to be called with a nominal parser layout");
+        };
+        let funkind = FunKind::If(*cid, ty, *wiggle);
+        let mir = self.compiler_database.db.mir(funkind, req).unwrap();
+        let strictness = self.compiler_database.db.strictness(funkind, req).unwrap();
+        FunctionSubstitute::new_from_if(mir, &strictness, from, layout, self.layouts).unwrap()
+    }
+
     fn create_typecast(&mut self, layout: IMonoLayout<'comp>) {
         if let MonoLayout::Nominal(..) = layout.mono_layout().0 {
             let (from, fun) = layout.unapply_nominal(self.layouts);
@@ -376,6 +391,23 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         };
 
         ThunkContext::new(self, block_data).build();
+    }
+
+    fn create_if_parse(
+        &mut self,
+        from: ILayout<'comp>,
+        layout: IMonoLayout<'comp>,
+        slot: PSize,
+        req: RequirementSet,
+    ) {
+        let llvm_fun = self.parser_fun_val(layout, slot, req);
+        let mir_fun = Rc::new(self.mir_if_fun(from, layout, req));
+        let (ret, fun, head, arg) = parser_args(llvm_fun);
+        let mut trans = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg);
+        if req.contains(NeededBy::Val) {
+            trans = trans.with_ret_ptr(ret, head)
+        }
+        trans.build();
     }
 
     fn create_single_parse(
@@ -708,6 +740,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 }
                 MonoLayout::Regex(..) => {
                     self.create_regex_parse(from, layout, *slot, req);
+                }
+                MonoLayout::IfParser(..) => {
+                    self.create_if_parse(from, layout, *slot, req);
                 }
                 _ => panic!("non-parser in parser layout collection"),
             }

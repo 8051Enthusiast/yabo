@@ -1,0 +1,37 @@
+====[ source code ]====
+import std
+def *u32b_or_16b(n: int) = {
+  | let _ = n if 0
+    let return = std.u32b
+  | let return = std.u16b
+}
+export def *test = {
+  tag: ~
+  parser: u32b_or_16b(tag)
+  | return: parser if 0..1000
+  | let return = 123
+}
+
+====[ binary 1 ]====
+00 00 00 00 01
+
+====[ output 1 ]====
+1
+
+====[ binary 2 ]====
+00 00 01 00 00
+
+====[ output 2 ]====
+123
+
+====[ binary 3 ]====
+01 00 02 00 00
+
+====[ output 3 ]====
+2
+
+====[ binary 4 ]====
+01 10 00 00 00
+
+====[ output 4 ]====
+123

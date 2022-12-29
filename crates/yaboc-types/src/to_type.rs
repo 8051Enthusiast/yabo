@@ -118,10 +118,7 @@ impl Polarity for PositivePolarity {
         if let Some(r) = res {
             Ok(r)
         } else {
-            return Err(TypeError::HeadIncompatible(
-                lhs.value().try_into().unwrap(),
-                rhs.value().try_into().unwrap(),
-            ));
+            Err(TypeError::HeadIncompatible(lhs.into(), rhs.into()))
         }
     }
 }
@@ -173,10 +170,7 @@ impl Polarity for NegativePolarity {
                 None => break,
             }
         }
-        return Err(TypeError::HeadIncompatible(
-            lhs.value().try_into().unwrap(),
-            rhs.value().try_into().unwrap(),
-        ));
+        Err(TypeError::HeadIncompatible(lhs.into(), rhs.into()))
     }
 }
 pub struct TypeConvertMemo<'a, 'intern, TR: TypeResolver<'intern>> {
@@ -246,8 +240,9 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
         let res = match (lhs.value(), rhs.value()) {
             (Unknown, _) | (_, Unknown) => Unknown,
             (x, _) | (_, x) if x == &P::SAT_TYPE => P::SAT_TYPE,
-            (InferField(..), InferField(..)) => Any,
-            (InferField(..), other) | (other, InferField(..)) => other.clone(),
+            (InferField(..) | InferIfResult(..), InferField(..) | InferIfResult(..)) => Any,
+            (InferField(..) | InferIfResult(..), other)
+            | (other, InferField(..) | InferIfResult(..)) => other.clone(),
             (id, other) | (other, id) if id == &P::ID_TYPE => other.clone(),
             (Primitive(p), Primitive(q)) if p == q => Primitive(*p),
             (Loop(kind1, inner1), Loop(kind2, inner2)) => {
@@ -326,12 +321,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
             }
             (Nominal(NominalInfHead { .. }), _) => P::combine_nom(self, lhs, rhs)?.value().clone(),
             (_, Nominal(NominalInfHead { .. })) => P::combine_nom(self, rhs, lhs)?.value().clone(),
-            _ => {
-                return Err(TypeError::HeadIncompatible(
-                    lhs.value().try_into().unwrap(),
-                    rhs.value().try_into().unwrap(),
-                ))
-            }
+            _ => return Err(TypeError::HeadIncompatible(lhs.into(), rhs.into())),
         };
         let ret = self.ctx.intern_infty(res);
         self.leave_fun::<P>((lhs, rhs), ret)
@@ -437,8 +427,8 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                     .collect::<Result<_, _>>()?;
                 Type::FunctionArg(self.convert_to_type_internal(*result)?, Arc::new(args))
             }
-            InferenceType::InferField(_, _) => {
-                panic!("Internal Compiler Error: InferField in normalized inference type")
+            InferenceType::InferField(_, _) | InferenceType::InferIfResult(..) => {
+                panic!("Internal Compiler Error: Infer type in normalized inference type")
             }
         };
         self.convert

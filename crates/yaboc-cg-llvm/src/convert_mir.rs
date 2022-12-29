@@ -106,7 +106,15 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             mir::Place::Return => self
                 .ret
                 .expect("referenced return of non-returning function"),
-            mir::Place::From(outer) => self.place_ptr(outer),
+            mir::Place::Front(outer) => {
+                let inner = self.place_ptr(outer);
+                if self.mir_fun.place(placeref).is_multi() {
+                    let word_size = self.cg.const_i64(self.cg.word_size() as i64);
+                    self.cg.build_byte_gep(inner, word_size, "front")
+                } else {
+                    inner
+                }
+            }
             mir::Place::Stack(stack_ref) => self.stack[stack_ref.as_index()],
             mir::Place::Field(outer, a) | mir::Place::Captured(outer, a) => {
                 let outer_layout = self.mir_fun.place(outer);

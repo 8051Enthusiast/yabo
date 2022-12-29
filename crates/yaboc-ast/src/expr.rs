@@ -428,6 +428,19 @@ impl<K: ExpressionKind, T: Clone + Hash + Eq + Debug, Inner>
     }
 }
 
+impl<K: ExpressionKind, T: Clone + Hash + Eq + Debug, Inner>
+    ExpressionHead<&KindWithData<K, T>, Inner>
+{
+    pub fn root_data(&self) -> &T {
+        match self {
+            ExpressionHead::Niladic(op) => &op.data,
+            ExpressionHead::Monadic(head) => &head.op.data,
+            ExpressionHead::Dyadic(head) => &head.op.data,
+            ExpressionHead::Variadic(head) => &head.op.data,
+        }
+    }
+}
+
 impl<T: Clone + Hash + Eq + Debug, K: ExpressionKind> Expression<KindWithData<K, T>> {
     pub fn map<ToT: Clone + Hash + Eq + Debug>(
         &self,
@@ -706,17 +719,17 @@ impl<C> ValUnOp<C> {
         match self {
             Not => Not,
             Neg => Neg,
-            Wiggle(expr, kind) => Wiggle(f(expr), kind.clone()),
+            Wiggle(expr, kind) => Wiggle(f(expr), *kind),
             Dot(atom, b) => Dot(*atom, *b),
         }
     }
 }
 
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[repr(u8)]
 pub enum WiggleKind {
     If,
     Try,
-    Wiggly,
 }
 
 impl Display for WiggleKind {
@@ -727,7 +740,6 @@ impl Display for WiggleKind {
             match self {
                 WiggleKind::If => "if",
                 WiggleKind::Try => "try",
-                WiggleKind::Wiggly => "~",
             }
         )
     }

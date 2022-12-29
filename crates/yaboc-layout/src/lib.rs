@@ -10,9 +10,13 @@ use std::sync::Arc;
 
 use fxhash::{FxHashMap, FxHashSet};
 
+use hir::HirConstraintId;
 use yaboc_absint::{AbsInt, AbsIntCtx, AbstractDomain, Arg};
-use yaboc_ast::expr::{self, ExpressionHead, OpWithData, ValBinOp, ValUnOp, ValVarOp, Variadic};
+use yaboc_ast::expr::{
+    self, ExpressionHead, OpWithData, ValBinOp, ValUnOp, ValVarOp, Variadic, WiggleKind,
+};
 use yaboc_ast::ArrayKind;
+use yaboc_base::dbpanic;
 use yaboc_base::error::{IsSilenced, SResult, SilencedError};
 use yaboc_base::interner::{DefId, FieldName, Regex};
 use yaboc_base::low_effort_interner::{Interner, Uniq};
@@ -82,6 +86,7 @@ pub enum MonoLayout<Inner> {
     Single,
     Nil,
     Regex(Regex, bool),
+    IfParser(Inner, HirConstraintId, WiggleKind),
     Nominal(
         hir::ParserDefId,
         Option<(Inner, TypeId)>,
@@ -180,6 +185,10 @@ impl<'a> IMonoLayout<'a> {
             ))),
             MonoLayout::Regex(r, _) => IMonoLayout(ctx.dcx.intern(Layout::Mono(
                 MonoLayout::Regex(*r, false),
+                self.mono_layout().1,
+            ))),
+            MonoLayout::IfParser(inner, c, _) => IMonoLayout(ctx.dcx.intern(Layout::Mono(
+                MonoLayout::IfParser(*inner, *c, WiggleKind::Try),
                 self.mono_layout().1,
             ))),
             _ => self,
@@ -385,36 +394,40 @@ impl<'a> ILayout<'a> {
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
         from: ILayout<'a>,
     ) -> Result<ILayout<'a>, LayoutError> {
-        self.try_map(ctx, |layout, ctx| {
-            let (result_type, arg_type) = match ctx.db.lookup_intern_type(layout.mono_layout().1) {
-                Type::ParserArg { result, arg } => (result, arg),
-                _ => panic!("Attempting to apply argument to non-parser type"),
-            };
-            let from = from.typecast(ctx, arg_type)?.0;
-            match layout.mono_layout().0 {
-                MonoLayout::NominalParser(pd, args, _) => {
-                    ctx.apply_thunk_arg(*pd, result_type, from, args)
+        self.deref_to_level(ctx, DerefLevel::zero())?
+            .0
+            .try_map(ctx, |layout, ctx| {
+                let (result_type, arg_type) =
+                    match ctx.db.lookup_intern_type(layout.mono_layout().1) {
+                        Type::ParserArg { result, arg } => (result, arg),
+                        _ => panic!("Attempting to apply argument to non-parser type"),
+                    };
+                let from = from.typecast(ctx, arg_type)?.0;
+                match layout.mono_layout().0 {
+                    MonoLayout::NominalParser(pd, args, _) => {
+                        ctx.apply_thunk_arg(*pd, result_type, from, args)
+                    }
+                    MonoLayout::BlockParser(block_id, _, _) => ctx
+                        .eval_block(*block_id, self, from, result_type, arg_type)
+                        .ok_or_else(|| SilencedError::new().into()),
+                    MonoLayout::ComposedParser(first, inner_ty, second, _) => {
+                        let first_result = first.apply_arg(ctx, from)?;
+                        let casted_result = first_result.typecast(ctx, *inner_ty)?.0;
+                        second.apply_arg(ctx, casted_result)
+                    }
+                    MonoLayout::Single => Ok(from.array_primitive(ctx)),
+                    MonoLayout::Nil => {
+                        let unit = ctx.db.intern_type(Type::Primitive(PrimitiveType::Unit));
+                        Ok(ctx.dcx.intern(Layout::Mono(
+                            MonoLayout::Primitive(PrimitiveType::Unit),
+                            unit,
+                        )))
+                    }
+                    MonoLayout::Regex(..) => Ok(from),
+                    MonoLayout::IfParser(inner, ..) => inner.apply_arg(ctx, from),
+                    _ => panic!("Attempting to apply argument to non-parser layout"),
                 }
-                MonoLayout::BlockParser(block_id, _, _) => ctx
-                    .eval_block(*block_id, self, from, result_type, arg_type)
-                    .ok_or_else(|| SilencedError::new().into()),
-                MonoLayout::ComposedParser(first, inner_ty, second, _) => {
-                    let first_result = first.apply_arg(ctx, from)?;
-                    let casted_result = first_result.typecast(ctx, *inner_ty)?.0;
-                    second.apply_arg(ctx, casted_result)
-                }
-                MonoLayout::Single => Ok(from.array_primitive(ctx)),
-                MonoLayout::Nil => {
-                    let unit = ctx.db.intern_type(Type::Primitive(PrimitiveType::Unit));
-                    Ok(ctx.dcx.intern(Layout::Mono(
-                        MonoLayout::Primitive(PrimitiveType::Unit),
-                        unit,
-                    )))
-                }
-                MonoLayout::Regex(..) => Ok(from),
-                _ => panic!("Attempting to apply argument to non-parser layout"),
-            }
-        })
+            })
     }
 
     pub fn apply_fun(
@@ -474,13 +487,20 @@ impl<'a> ILayout<'a> {
         })
     }
 
-    fn access_from(self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> ILayout<'a> {
+    fn access_front(self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> ILayout<'a> {
         self.map(ctx, |layout, _| match layout.mono_layout().0 {
             MonoLayout::Nominal(_, from, _) => {
-                from.expect("Attempting to get 'from' field from non-from field containing nominal")
-                    .0
+                from.expect(
+                    "Attempting to get 'front' field from non-from field containing nominal",
+                )
+                .0
             }
-            _ => panic!("Attempting to get 'from' field from non-nominal"),
+            MonoLayout::IfParser(inner, _, _) => *inner,
+            _ => dbpanic!(
+                ctx.db,
+                "Attempting to get 'front' field from non-nominal or if-parser {}",
+                &self
+            ),
         })
     }
 
@@ -527,6 +547,7 @@ impl<'a> ILayout<'a> {
             Layout::Mono(MonoLayout::ComposedParser(fst, _, snd, _), _) => {
                 fst.size_align(ctx)?.cat(snd.size_align(ctx)?)
             }
+            Layout::Mono(MonoLayout::IfParser(inner, _, _), _) => inner.size_align(ctx)?,
             Layout::Mono(MonoLayout::Nominal(id, from, args), _) => {
                 self.nominal_manifestation(ctx, *id, *from, args)?.size
             }
@@ -892,7 +913,19 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ValUnOp::Not | ValUnOp::Neg => {
                     make_layout(MonoLayout::Primitive(PrimitiveType::Int))
                 }
-                ValUnOp::Wiggle(_, _) => m.inner.0,
+                ValUnOp::Wiggle(cid, kind) => {
+                    let ldt_parser_ty = ctx.db.least_deref_type(m.inner.1)?;
+                    let parser_type = ctx.db.lookup_intern_type(ldt_parser_ty);
+                    if matches!(parser_type, Type::ParserArg { .. }) {
+                        let casted_inner = m.inner.0.typecast(ctx, ldt_parser_ty)?.0;
+                        ctx.dcx.intern(Layout::Mono(
+                            MonoLayout::IfParser(casted_inner, cid, kind),
+                            ret_type,
+                        ))
+                    } else {
+                        m.inner.0
+                    }
+                }
                 ValUnOp::Dot(a, _) => m.inner.0.access_field(ctx, a)?,
             },
             ExpressionHead::Dyadic(d) => match d.op.inner {
