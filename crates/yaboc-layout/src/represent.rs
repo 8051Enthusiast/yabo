@@ -75,13 +75,6 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
                     }
                     write!(f, "}}")
                 }
-                MonoLayout::ComposedParser(left, _, right, bt) => {
-                    write!(f, "composed-parser")?;
-                    if *bt {
-                        write!(f, "?")?;
-                    }
-                    dbwrite!(f, db, "[{}]({} |> {})", ty, left, right)
-                }
                 MonoLayout::Regex(regex, bt) => {
                     let regex_str = db.lookup_intern_regex(*regex);
                     write!(f, "{regex_str}")?;
@@ -263,13 +256,6 @@ impl<'a> LayoutHasher<'a> {
                 self.hash_captures(state, map, db);
                 state.update([*bt as u8]);
             }
-            MonoLayout::ComposedParser(left, inner_ty, right, bt) => {
-                state.update([7]);
-                state.update(self.hash(*left, db));
-                state.update(db.type_hash(*inner_ty));
-                state.update(self.hash(*right, db));
-                state.update([*bt as u8]);
-            }
             MonoLayout::Nil => {
                 state.update([8]);
             }
@@ -377,7 +363,6 @@ impl<'a> LayoutSymbol<'a> {
             MonoLayout::Block(def, _) => {
                 format!("block_{}", &truncated_hex(&db.def_hash(def.0)))
             }
-            MonoLayout::ComposedParser(_, _, _, _) => String::from("composed"),
             MonoLayout::Nominal(id, _, _) => {
                 dbformat!(db, "{}", &db.def_name(id.0).unwrap())
             }

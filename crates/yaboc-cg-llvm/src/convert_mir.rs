@@ -123,13 +123,6 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 self.cg
                     .build_field_gep(outer_layout, a, outer_ptr, inner_layout)
             }
-            mir::Place::DupleField(outer, field) => {
-                let outer_layout = self.mir_fun.place(outer);
-                let outer_ptr = self.place_ptr(outer);
-                let inner_layout = self.mir_fun.place(placeref);
-                self.cg
-                    .build_duple_gep(outer_layout, field, outer_ptr, inner_layout)
-            }
             mir::Place::ModifiedBy(ins_ref) => {
                 let MirInstr::ParseCall(_, _, _, front, _, _) = self.mir_fun.f.ins_at(ins_ref) else {
                     unreachable!()

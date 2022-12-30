@@ -578,48 +578,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         llvm_fun
     }
 
-    fn create_compose_parse(
-        &mut self,
-        from: ILayout<'comp>,
-        layout: IMonoLayout<'comp>,
-        slot: PSize,
-        mut req: RequirementSet,
-    ) {
-        let llvm_fun = self.parser_fun_val(layout, slot, req);
-        self.add_entry_block(llvm_fun);
-        let (ret, fun, target_head, arg) = parser_args(llvm_fun);
-        let MonoLayout::ComposedParser(first_layout, inner_ty, second_layout, bt) = layout.mono_layout().0 else {
-                panic!("called build_compose_len on non-composed")
-        };
-        let inner_layout = first_layout.apply_arg(self.layouts, from).unwrap();
-        let inner_level = self.deref_level(*inner_ty);
-        let second_arg = self.build_layout_alloca(inner_layout, "second_arg");
-        let first_ptr = self.build_duple_gep(layout.inner(), DupleField::First, fun, *first_layout);
-        let second_ptr =
-            self.build_duple_gep(layout.inner(), DupleField::Second, fun, *second_layout);
-
-        if !*bt {
-            req &= !NeededBy::Backtrack;
-        }
-        let retstatus = self.build_parser_call(
-            second_arg,
-            (*first_layout, first_ptr),
-            inner_level,
-            (from, arg),
-            req,
-        );
-        self.non_zero_early_return(llvm_fun, retstatus);
-
-        let retstatus = self.build_parser_call(
-            ret,
-            (*second_layout, second_ptr),
-            target_head,
-            (inner_layout, second_arg),
-            req & !NeededBy::Len,
-        );
-        self.builder.build_return(Some(&retstatus));
-    }
-
     fn create_field_access(&mut self, layout: IMonoLayout<'comp>, field: DefId, name: Identifier) {
         let fun = self.access_field_fun_val(layout, name);
         let entry = self.llvm.append_basic_block(fun, "entry");
@@ -740,9 +698,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 }
                 MonoLayout::BlockParser(block, _, _) => {
                     self.create_block_parse(*block, from, layout, *slot, req);
-                }
-                MonoLayout::ComposedParser(_, _, _, _) => {
-                    self.create_compose_parse(from, layout, *slot, req);
                 }
                 MonoLayout::Regex(..) => {
                     self.create_regex_parse(from, layout, *slot, req);

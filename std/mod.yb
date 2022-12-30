@@ -169,6 +169,6 @@ def for[int] *> byteval(x: int) = {
   assert?(x == y)
 }
 
-fun 'a *> compose(a: 'a *> 'b, b: 'b *> 'c) = {
+fun for['a] *> compose(a: for['a] *> for['b], b: for['b] *> 'c) = {
   x: a, let return = x *> b
 }

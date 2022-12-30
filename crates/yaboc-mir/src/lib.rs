@@ -295,12 +295,6 @@ impl StackRef {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum DupleField {
-    First,
-    Second,
-}
-
 #[derive(Default, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct BasicBlock {
     ins: Vec<MirInstr>,
@@ -332,7 +326,6 @@ pub enum Place {
     Stack(StackRef),
     Field(PlaceRef, DefId),
     Captured(PlaceRef, DefId),
-    DupleField(PlaceRef, DupleField),
     Front(PlaceRef),
     ModifiedBy(InsRef),
 }

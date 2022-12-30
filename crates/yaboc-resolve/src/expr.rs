@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use crate::refs;
 use hir::HirConstraintId;
-use yaboc_ast::expr::ExpressionKind;
 use yaboc_ast::expr::{
     Atom, Expression, ExpressionHead, KindWithData, OpWithData, ValBinOp, ValUnOp, ValVarOp,
 };
+use yaboc_ast::expr::{Dyadic, ExpressionKind};
 use yaboc_base::interner::{DefId, Regex};
 use yaboc_base::source::SpanIndex;
 use yaboc_hir as hir;
@@ -125,6 +125,26 @@ pub fn resolve_expr_error(
                 },
                 m.inner,
             ))),
+            ExpressionHead::Dyadic(Dyadic {
+                op:
+                    OpWithData {
+                        inner: ValBinOp::Compose,
+                        data,
+                    },
+                inner: [left, right],
+            }) => {
+                let pd = Expression::new_niladic(OpWithData {
+                    data,
+                    inner: ResolvedAtom::ParserDef(db.std_item(hir::StdItem::Compose)?, true),
+                });
+                Ok(Ok(Expression::new_variadic(
+                    OpWithData {
+                        data,
+                        inner: ValVarOp::Call,
+                    },
+                    vec![pd, left, right],
+                )))
+            }
             ExpressionHead::Dyadic(d) => Ok(Ok(Expression::new_dyadic(
                 OpWithData {
                     data: d.op.data,

@@ -1,10 +1,10 @@
 mod convert_mir;
+mod convert_regex;
 mod convert_thunk;
 mod defs;
 mod funs;
 mod getset;
 mod vtables;
-mod convert_regex;
 
 use std::{ffi::OsStr, fmt::Debug, path::Path, rc::Rc};
 
@@ -50,7 +50,7 @@ use yaboc_layout::{
     },
     AbsLayoutCtx, ILayout, IMonoLayout, Layout, LayoutError, MonoLayout,
 };
-use yaboc_mir::{DupleField, Mirs, ReturnStatus};
+use yaboc_mir::{Mirs, ReturnStatus};
 use yaboc_types::{PrimitiveType, Type, TypeInterner};
 
 use self::{convert_mir::MirTranslator, convert_thunk::ThunkContext};
@@ -288,15 +288,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let slot = self.collected_layouts.parser_slots.layout_vtable_offsets
             [&((from.0, call_kind), fun.0)];
         let f = self.build_parser_fun_get(fun.0.maybe_mono(), fun.1, slot, call_kind, false);
-        self.build_call_with_int_ret(
-            f,
-            &[
-                ret.into(),
-                fun.1.into(),
-                head.into(),
-                from.1.into(),
-            ],
-        )
+        self.build_call_with_int_ret(f, &[ret.into(), fun.1.into(), head.into(), from.1.into()])
     }
 
     fn module_string(&mut self, s: &str) -> PointerValue<'llvm> {
@@ -442,35 +434,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         let offset_llvm_int = self.llvm.i64_type().const_int(offset, false);
         self.build_byte_gep(ptr, offset_llvm_int, "gepfield")
-    }
-
-    fn build_duple_gep(
-        &mut self,
-        layout: ILayout<'comp>,
-        field: DupleField,
-        ptr: PointerValue<'llvm>,
-        inner_layout: ILayout<'comp>,
-    ) -> PointerValue<'llvm> {
-        if field == DupleField::First {
-            return ptr;
-        }
-        let sa = layout.size_align(self.layouts).unwrap();
-        let mut offset = match layout.layout.1 {
-            Layout::Mono(MonoLayout::ComposedParser(_, _, second, _), _) => {
-                let second_sa = second.size_align(self.layouts).unwrap();
-                sa.size - second_sa.size
-            }
-            _ => dbpanic!(
-                &self.compiler_database.db,
-                "duple field on non-composed or non-mono-layout place {}",
-                &layout
-            ),
-        };
-        if inner_layout.is_multi() {
-            offset += self.word_size();
-        }
-        let llvm_int = self.llvm.i64_type().const_int(offset, false);
-        self.build_byte_gep(ptr, llvm_int, "gepduple")
     }
 
     fn build_nominal_components(

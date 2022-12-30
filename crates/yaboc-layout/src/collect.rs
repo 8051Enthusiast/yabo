@@ -117,7 +117,6 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     }
                 }
                 MonoLayout::BlockParser(..)
-                | MonoLayout::ComposedParser(..)
                 | MonoLayout::Single
                 | MonoLayout::Nil
                 | MonoLayout::IfParser(..)

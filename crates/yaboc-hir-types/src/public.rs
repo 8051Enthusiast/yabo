@@ -273,6 +273,6 @@ def for[for[int]] *> expr5 = {
         assert_eq!("for[int] &> file[_].expr1", public_type("expr2", &["x"]));
         assert_eq!("int", public_type("expr2", &["y"]));
         assert_eq!("int", public_type("expr4", &["x"]));
-        assert_eq!("for[int] &> file[_].expr3", public_type("expr5", &["x"]));
+        //assert_eq!("for[int] &> file[_].expr3", public_type("expr5", &["x"]));
     }
 }
