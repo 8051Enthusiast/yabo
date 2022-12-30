@@ -105,9 +105,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         module.set_triple(&triple);
         let pmb = PassManagerBuilder::create();
         pmb.set_optimization_level(OptimizationLevel::Default);
-        // pmb.set_inliner_with_threshold(250);
+        pmb.set_inliner_with_threshold(250);
         let pass_manager = PassManager::create(());
-        // pass_manager.add_always_inliner_pass();
+        pass_manager.add_always_inliner_pass();
         pmb.populate_module_pass_manager(&pass_manager);
         Ok(CodeGenCtx {
             llvm: llvm_context,

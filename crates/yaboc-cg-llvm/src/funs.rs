@@ -134,8 +134,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let MonoLayout::NominalParser(pd, args, _) = layout.mono_layout().0 else {
             panic!("create_pd_parse has to be called with a nominal parser layout");
         };
+        let Type::ParserArg { arg: arg_ty, .. } = self.compiler_database.db.lookup_intern_type(layout.mono_layout().1) else {
+            panic!("create_pd_parse has to be called with a nominal parser layout");
+        };
 
-        if !req.contains(NeededBy::Val) {
+        let thunky = pd.lookup(&self.compiler_database.db).unwrap().thunky;
+
+        if !req.contains(NeededBy::Val) || !thunky {
             // just call impl_fun and return
             let llvm_fun = self.parser_fun_val(layout, slot, req);
             self.add_entry_block(llvm_fun);
@@ -145,6 +150,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 .collect::<Vec<_>>();
             let ret = self.build_call_with_int_ret(impl_fun.into(), &args);
             self.builder.build_return(Some(&ret));
+            return;
         }
 
         if !(req & !NeededBy::Val).is_empty() {
@@ -157,19 +163,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .parser_result(layout.mono_layout().1)
             .expect("pd parsers type is not parser");
         let mut map = FxHashMap::default();
-        map.insert(Arg::From, from);
+        map.insert(Arg::From, (from, arg_ty));
         let parserdef_args = pd
             .lookup(&self.compiler_database.db)
             .unwrap()
             .args
             .unwrap_or_default();
-        for (idx, (arg, _)) in args.iter().enumerate() {
+        for (idx, arg) in args.iter().enumerate() {
             map.insert(Arg::Named(parserdef_args[idx].0), *arg);
         }
-        let return_layout =
-            flat_layouts(&ILayout::make_thunk(self.layouts, *pd, result, &map).unwrap())
-                .next()
-                .unwrap();
+        let return_layout = ILayout::make_thunk(self.layouts, *pd, result, &map)
+            .unwrap()
+            .maybe_mono()
+            .unwrap();
         ThunkContext::new(
             self,
             ValThunk {

@@ -16,6 +16,7 @@ use yaboc_hir::{represent::HirGraph, Hirs};
 use yaboc_hir_types::TyHirs;
 use yaboc_layout::{instantiate, InternedLayout, LayoutContext};
 use yaboc_mir::print_all_mir;
+use yaboc_types::{Type, TypeInterner};
 const ERROR_FNS: &[fn(&YabocDatabase) -> Vec<Report>] = &[
     yaboc_ast::error::errors,
     yaboc_hir::error::errors,
@@ -96,7 +97,10 @@ impl Driver {
         let exported_pds = self.db.all_exported_parserdefs();
         let exported_tys: Vec<_> = exported_pds
             .iter()
-            .map(|x| self.db.parser_args(*x).unwrap().thunk)
+            .map(|x| {
+                self.db
+                    .intern_type(Type::Nominal(self.db.parser_args(*x).unwrap().thunk))
+            })
             .collect();
         let mut layouts = yaboc_layout::AbsLayoutCtx::new(&self.db, layout_ctx);
         instantiate(&mut layouts, &exported_tys).unwrap();

@@ -2,9 +2,10 @@ use yaboc_ast::expr::ExpressionHead;
 use yaboc_base::{
     dbformat,
     error::{SResult, Silencable, SilencedError},
+    interner::DefId,
 };
 
-use super::{signature::get_parserdef, *};
+use super::*;
 
 pub fn public_expr_type(db: &dyn TyHirs, loc: hir::ExprId) -> SResult<(TypedExpression, TypeId)> {
     public_expr_type_impl(db, loc).silence()
@@ -181,8 +182,8 @@ impl<'a, 'intern> TypeResolver<'intern> for PublicResolver<'a, 'intern> {
         Ok(Some(EitherType::Regular(self.db.parser_returns(id)?.deref)))
     }
 
-    fn signature(&self, ty: &NominalInfHead<'intern>) -> Result<Signature, TypeError> {
-        get_signature(self.db, ty)
+    fn signature(&self, id: DefId) -> Result<Signature, TypeError> {
+        get_signature(self.db, id)
     }
 
     fn lookup(&self, val: DefId) -> Result<EitherType<'intern>, TypeError> {
@@ -199,10 +200,6 @@ impl<'a, 'intern> TypeResolver<'intern> for PublicResolver<'a, 'intern> {
 
     fn name(&self) -> String {
         self.name.clone()
-    }
-
-    fn parserdef(&self, pd: DefId) -> Result<EitherType<'intern>, TypeError> {
-        get_parserdef(self.db(), pd).map(|x| x.into())
     }
 }
 

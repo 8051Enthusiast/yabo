@@ -82,6 +82,9 @@ impl<'a> FunctionSubstitute<'a> {
         pd: ParserDefId,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
+        let MonoLayout::NominalParser(..) = fun.maybe_mono().unwrap().mono_layout().0 else {
+            panic!("non-nominal-parser as argument")
+        };
         let lookup_layout = fun.apply_arg(ctx, from)?;
         let evaluated = ctx.pd_result()[&lookup_layout]
             .as_ref()

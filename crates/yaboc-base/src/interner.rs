@@ -200,6 +200,13 @@ impl DefId {
         let self_path = db.lookup_intern_hir_path(self);
         other_path.0.starts_with(&self_path.0)
     }
+    pub fn unwrap_name<DB: Interner + ?Sized>(self, db: &DB) -> Identifier {
+        db.lookup_intern_hir_path(self)
+            .path()
+            .last()
+            .unwrap()
+            .unwrap_ident()
+    }
 }
 
 impl salsa::InternKey for DefId {

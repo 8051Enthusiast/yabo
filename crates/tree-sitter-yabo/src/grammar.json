@@ -58,8 +58,21 @@
           ]
         },
         {
-          "type": "STRING",
-          "value": "def"
+          "type": "FIELD",
+          "name": "thunky",
+          "content": {
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "STRING",
+                "value": "def"
+              },
+              {
+                "type": "STRING",
+                "value": "fun"
+              }
+            ]
+          }
         },
         {
           "type": "PREC",

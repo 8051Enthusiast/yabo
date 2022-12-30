@@ -3,12 +3,12 @@ use std::rc::Rc;
 use yaboc_base::{
     dbformat, dbpanic,
     error::{SResult, Silencable, SilencedError},
-    interner::PathComponent,
+    interner::{DefId, PathComponent},
 };
 use yaboc_hir::walk::ChildIter;
 use yaboc_types::inference::{InfTypeId, NominalInfHead, TypeResolver};
 
-use super::{signature::get_parserdef, *};
+use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ParserFullTypes {
@@ -168,8 +168,8 @@ impl<'a, 'intern> TypeResolver<'intern> for FullResolver<'a, 'intern> {
         Ok(Some(EitherType::Regular(self.db.parser_returns(id)?.deref)))
     }
 
-    fn signature(&self, ty: &NominalInfHead<'intern>) -> Result<Signature, TypeError> {
-        get_signature(self.db, ty)
+    fn signature(&self, id: DefId) -> Result<Signature, TypeError> {
+        get_signature(self.db, id)
     }
 
     fn lookup(&self, val: DefId) -> Result<EitherType<'intern>, TypeError> {
@@ -178,10 +178,6 @@ impl<'a, 'intern> TypeResolver<'intern> for FullResolver<'a, 'intern> {
 
     fn name(&self) -> String {
         self.name.clone()
-    }
-
-    fn parserdef(&self, pd: DefId) -> Result<EitherType<'intern>, TypeError> {
-        get_parserdef(self.db(), pd).map(|x| x.into())
     }
 }
 

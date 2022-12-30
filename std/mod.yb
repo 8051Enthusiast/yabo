@@ -17,7 +17,7 @@ def for[int] *> digit(base: int) = {
   let return = value
 }
 
-def for[int] *> number_acc(base: int, n: int): int = {
+fun for[int] *> number_acc(base: int, n: int): int = {
   x: digit?(base)
   let s = n * base + x
   | return: number_acc?(base, s)
@@ -34,7 +34,7 @@ def *max(a: int, b: int) = {
   | let return = b
 }
 
-def for['t] *> summap_acc(f: for['t] *> int, acc: int): int = {
+fun for['t] *> summap_acc(f: for['t] *> int, acc: int): int = {
   | x: f?
     return: summap_acc(f?, x + acc)
   | let return = acc
@@ -52,14 +52,14 @@ def *list(element: *'r) = {
 }
 
 # Returns the length of a given list.
-def *len(xs: list) = {
+fun *len(xs: list) = {
   | inner_len: len(xs.next?)
     let return = inner_len + 1
   | let return = 0
 }
 
 # Skips the first n elements of a list xs.
-def *skip(xs: list, n: int): list = {
+fun *skip(xs: list, n: int): list = {
   | let _ = n if 0
     let return = xs
   | return: skip(xs.next?, n - 1)
@@ -157,11 +157,9 @@ def for[int] *> i64b = {
 
 # Parses a newline
 def for[int] *> newline = {
-  x: ~
-  | let return = x if 0x0a
-  | let return = x if 0x0d
-    | y: ~
-      let _ = y if 0x0a
+  | return: ~ if 0x0a
+  | return: ~ if 0x0d
+    | _: ~ if 0xa
     | +
 }
 
@@ -169,4 +167,8 @@ def for[int] *> newline = {
 def for[int] *> byteval(x: int) = {
   y: ~
   assert?(x == y)
+}
+
+fun 'a *> compose(a: 'a *> 'b, b: 'b *> 'c) = {
+  x: a, let return = x *> b
 }

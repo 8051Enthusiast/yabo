@@ -3,11 +3,11 @@ use std::fmt::Display;
 use fxhash::FxHashSet;
 use yaboc_base::{
     dbformat,
-    error::{SResult, SilencedError},
+    error::{SResult, SilencedError}, interner::DefId,
 };
 use yaboc_resolve::parserdef_ssc::FunctionSscId;
 
-use super::{signature::get_parserdef, *};
+use super::*;
 
 pub fn deref_type(db: &dyn TyHirs, ty: TypeId) -> SResult<Option<TypeId>> {
     match db.lookup_intern_type(ty) {
@@ -52,6 +52,9 @@ impl DerefLevel {
     pub fn max() -> Self {
         DerefLevel(usize::MAX >> RESERVED_DEREF_METADATA_BITS)
     }
+    pub fn inc(self) -> Self {
+        DerefLevel(self.0 + 1)
+    }
 }
 
 impl Display for DerefLevel {
@@ -61,14 +64,25 @@ impl Display for DerefLevel {
 }
 
 pub fn deref_level(db: &dyn TyHirs, ty: TypeId) -> SResult<DerefLevel> {
-    let mut level = 0;
-    let mut ty = ty;
-
-    while let Some(t) = db.deref_type(ty)? {
-        ty = t;
-        level += 1;
+    match db.lookup_intern_type(ty) {
+        Type::ForAll(inner, _) => {
+            db.deref_level(inner)
+        }
+        Type::Nominal(nom) => {
+            let id = match NominalId::from_nominal_head(&nom) {
+                NominalId::Def(id) => id,
+                NominalId::Block(_) => return Ok(DerefLevel::zero()),
+            };
+            let deref_ty = db.parser_returns(id)?.deref;
+            let subst_deref_ty = db.substitute_typevar(deref_ty, nom.ty_args);
+            let mut deref_level = db.deref_level(subst_deref_ty)?;
+            if nom.kind == NominalKind::Def {
+                deref_level = deref_level.inc();
+            }
+            Ok(deref_level)
+        }
+        _ => Ok(DerefLevel::zero()),
     }
-    Ok(DerefLevel(level))
 }
 
 pub fn least_deref_type(db: &dyn TyHirs, mut ty: TypeId) -> SResult<TypeId> {
@@ -136,10 +150,12 @@ pub fn parser_returns_ssc(
             def.and_then(|def| {
                 let spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(def.to.0));
                 // here we are finished with inference so we can convert to actual types
-                let deref = ctx
+                let mut deref = ctx
                     .inftype_to_concrete_type(ctx.inftypes[&def.id.0])
                     .map_err(spanned)?;
-                let deref = check_for_typevar(db, deref).map_err(spanned)?;
+                if def.thunky {
+                    deref = check_for_typevar(db, deref).map_err(spanned)?;
+                }
                 Ok(ParserDefType { id: def.id, deref })
             })
         })
@@ -260,8 +276,8 @@ impl<'a> TypeResolver<'a> for ReturnResolver<'a> {
         }
     }
 
-    fn signature(&self, ty: &NominalInfHead<'a>) -> Result<Signature, TypeError> {
-        get_signature(self.db, ty)
+    fn signature(&self, id: DefId) -> Result<Signature, TypeError> {
+        get_signature(self.db, id)
     }
 
     fn lookup(&self, val: DefId) -> Result<EitherType<'a>, TypeError> {
@@ -280,10 +296,6 @@ impl<'a> TypeResolver<'a> for ReturnResolver<'a> {
         }
         ret.push(')');
         ret
-    }
-
-    fn parserdef(&self, pd: DefId) -> Result<EitherType<'a>, TypeError> {
-        get_parserdef(self.db(), pd).map(|x| x.into())
     }
 }
 

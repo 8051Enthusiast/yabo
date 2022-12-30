@@ -95,7 +95,9 @@ impl Polarity for PositivePolarity {
         };
         let mut other_ty = other;
         loop {
-            other_upset.insert(TypeHead::try_from(other_ty).unwrap(), other_ty.clone());
+            if !other_ty.is_fun() {
+                other_upset.insert(TypeHead::try_from(other_ty).unwrap(), other_ty.clone());
+            }
             match next(other_ty)? {
                 Some(n) => other_ty = n,
                 None => break,

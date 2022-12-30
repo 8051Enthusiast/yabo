@@ -43,7 +43,7 @@ pub trait AbstractDomain<'a>: Sized + Clone + std::hash::Hash + Eq + std::fmt::D
         ctx: &mut AbsIntCtx<'a, Self>,
         id: hir::ParserDefId,
         ty: TypeId,
-        args: &FxHashMap<Arg, Self>,
+        args: &FxHashMap<Arg, (Self, TypeId)>,
     ) -> Result<Self, Self::Err>;
     fn eval_expr(
         ctx: &mut AbsIntCtx<'a, Self>,
@@ -449,15 +449,15 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         &mut self,
         pd_id: hir::ParserDefId,
         result_type: TypeId,
-        from: Dom,
+        from: (Dom, TypeId),
         thunk_args: &[(Dom, TypeId)],
     ) -> Result<Dom, Dom::Err> {
         let mut args = FxHashMap::default();
         args.insert(Arg::From, from);
         let pd = pd_id.lookup(self.db)?;
-        for (idx, (arg, _)) in thunk_args.iter().enumerate() {
+        for (idx, (arg, ty)) in thunk_args.iter().enumerate() {
             let def = pd.args.as_ref().unwrap()[idx].0;
-            args.insert(Arg::Named(def), arg.clone());
+            args.insert(Arg::Named(def), (arg.clone(), *ty));
         }
         let pd = Dom::make_thunk(self, pd_id, result_type, &args)?;
         if !self.existing_pd.contains(&(result_type, pd.clone())) {

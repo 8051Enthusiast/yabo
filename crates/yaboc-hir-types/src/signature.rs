@@ -1,5 +1,4 @@
-use yaboc_base::error::SilencedError;
-use yaboc_hir::ParserDefId;
+use yaboc_base::{error::SilencedError, interner::DefId};
 
 use super::*;
 
@@ -51,18 +50,24 @@ pub fn parser_args_error(
     } else {
         None
     };
-    let thunk = db.intern_type(Type::Nominal(NominalTypeHead {
-        kind: NominalKind::Def,
+    let kind = if pd.thunky {
+        NominalKind::Def
+    } else {
+        NominalKind::Fun
+    };
+    let thunk = NominalTypeHead {
+        kind,
         def: id.0,
         parse_arg: Some(from_ty),
         fun_args: args.clone().unwrap_or_default(),
         ty_args: Arc::new(ty_args),
-    }));
+    };
     Ok(Signature {
         ty_args: Arc::new(tcx.loc.vars.defs),
         from: Some(from_ty),
         args,
         thunk,
+        thunky: pd.thunky,
     })
 }
 
@@ -87,8 +92,8 @@ impl<'a> TypeResolver<'a> for ArgResolver<'a> {
         Ok(Some(EitherType::Regular(self.0.intern_type(Type::Unknown))))
     }
 
-    fn signature(&self, ty: &NominalInfHead<'a>) -> Result<Signature, TypeError> {
-        get_signature(self.0, ty)
+    fn signature(&self, id: DefId) -> Result<Signature, TypeError> {
+        get_signature(self.0, id)
     }
 
     fn lookup(&self, _val: DefId) -> Result<EitherType<'a>, TypeError> {
@@ -104,42 +109,13 @@ impl<'a> TypeResolver<'a> for ArgResolver<'a> {
     fn name(&self) -> String {
         String::from("signature")
     }
-
-    fn parserdef(&self, pd: DefId) -> Result<EitherType<'a>, TypeError> {
-        get_parserdef(self.db(), pd).map(|x| x.into())
-    }
 }
 
-pub fn get_signature(db: &dyn TyHirs, ty: &NominalInfHead) -> Result<Signature, TypeError> {
-    let id = match NominalId::from_nominal_inf_head(ty) {
-        NominalId::Def(d) => d,
-        NominalId::Block(_) => panic!("attempted to extract signature directly from block"),
+pub fn get_signature(db: &dyn TyHirs, id: DefId) -> Result<Signature, TypeError> {
+    let hir::HirNode::ParserDef(pd) = db.hir_node(id)? else {
+        panic!("attempted to extract signature from non-parser-def")
     };
-    Ok(db.parser_args(id)?)
-}
-
-pub fn get_parserdef(db: &dyn TyHirs, pd: DefId) -> Result<TypeId, TypeError> {
-    let pd = unsafe { ParserDefId::new_unchecked(pd) };
-    let args = db.parser_args(pd)?;
-    let mut ret = args.thunk;
-    if let Some(from) = args.from {
-        ret = db.intern_type(Type::ParserArg {
-            result: ret,
-            arg: from,
-        })
-    }
-    if let Some(args) = args.args {
-        ret = db.intern_type(Type::FunctionArg(ret, args))
-    }
-    ret = attach_forall(db, ret, &args.ty_args);
-    Ok(ret)
-}
-
-pub fn attach_forall(db: &dyn TyHirs, ty: TypeId, ty_args: &Arc<Vec<TypeVar>>) -> TypeId {
-    if !db.type_contains_typevar(ty) {
-        return ty;
-    }
-    db.intern_type(Type::ForAll(ty, ty_args.clone()))
+    Ok(db.parser_args(pd.id)?)
 }
 
 #[cfg(test)]

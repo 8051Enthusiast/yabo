@@ -46,7 +46,7 @@ module.exports = grammar({
     _comment: $ => token(seq('#', /[^\n]*/)),
     parser_definition: $ => seq(
       optional(field('qualifier', 'export')),
-      'def',
+      field('thunky', choice('def', 'fun')),
       prec(PREC.PARSERDEF, seq(
         choice(
           seq(
