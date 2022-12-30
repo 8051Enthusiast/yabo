@@ -109,10 +109,7 @@ impl<K: ExpressionKind, Inner> ExpressionHead<K, Inner> {
     }
 
     pub fn unfold(self, f: &mut impl FnMut(Inner) -> ExpressionHead<K, Inner>) -> Expression<K> {
-        let inner_mapped = self.map_inner(|inner| {
-            let new_inner = f(inner);
-            Box::new(new_inner.unfold(f))
-        });
+        let inner_mapped = self.map_inner(|inner| Box::new(f(inner).unfold(f)));
         Expression(inner_mapped)
     }
 }
