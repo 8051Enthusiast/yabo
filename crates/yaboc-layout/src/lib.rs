@@ -338,8 +338,13 @@ impl<'a> ILayout<'a> {
     ) -> Result<(ILayout<'a>, bool), LayoutError> {
         let mut changed = false;
         let res = self.try_map(ctx, |layout, ctx| {
+            let is_fun = if let MonoLayout::Nominal(pd, _, _) = layout.mono_layout().0 {
+                !pd.lookup(ctx.db)?.thunky
+            } else {
+                false
+            };
             let mono_level = ctx.db.deref_level(layout.mono_layout().1)?;
-            Ok(if mono_level <= level {
+            Ok(if mono_level <= level && !is_fun {
                 layout.0
             } else {
                 changed = true;
@@ -405,7 +410,8 @@ impl<'a> ILayout<'a> {
                 let from = from.typecast(ctx, arg_type)?.0;
                 match layout.mono_layout().0 {
                     MonoLayout::NominalParser(pd, args, _) => {
-                        ctx.apply_thunk_arg(*pd, result_type, from, args)
+                        let ret = ctx.apply_thunk_arg(*pd, result_type, (from, arg_type), args)?;
+                        Ok(ret)
                     }
                     MonoLayout::BlockParser(block_id, _, _) => ctx
                         .eval_block(*block_id, self, from, result_type, arg_type)
@@ -1007,18 +1013,14 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
         ctx: &mut AbsIntCtx<'a, Self>,
         id: hir::ParserDefId,
         ty: TypeId,
-        fields: &FxHashMap<Arg, Self>,
+        fields: &FxHashMap<Arg, (Self, TypeId)>,
     ) -> Result<Self, Self::Err> {
         let parserdef = id.lookup(ctx.db)?;
-        let Type::Nominal(nom_head) = ctx.db.lookup_intern_type(ty) else {
-            panic!("make_thunk called on non-nominal type");
-        };
-        let from = fields.get(&Arg::From).copied().zip(nom_head.parse_arg);
+        let from = fields.get(&Arg::From).copied();
         let mut args = Vec::new();
-        for (idx, arg) in parserdef.args.into_iter().flatten().enumerate() {
-            let arg_ty = nom_head.fun_args[idx];
+        for arg in parserdef.args.into_iter().flatten() {
             let layout = fields[&Arg::Named(arg.0)];
-            args.push((layout, arg_ty));
+            args.push(layout);
         }
         let new_layout = Layout::Mono(MonoLayout::Nominal(id, from, args), ty);
         Ok(ctx.dcx.intern(new_layout))
@@ -1043,7 +1045,7 @@ mod tests {
     use yaboc_hir_types::{HirTypesDatabase, TyHirs};
     use yaboc_mir::MirDatabase;
     use yaboc_resolve::ResolveDatabase;
-    use yaboc_types::TypeInternerDatabase;
+    use yaboc_types::{TypeInterner, TypeInternerDatabase};
 
     #[salsa::database(
         InternerDatabase,
@@ -1090,7 +1092,9 @@ def for[int] *> main = {
         let layout_ctx = LayoutContext::new(intern);
         let mut outlayer = AbsIntCtx::<ILayout>::new(&ctx.db, layout_ctx);
         let main = ctx.parser("main");
-        let main_ty = ctx.db.parser_args(main).unwrap().thunk;
+        let main_ty = ctx
+            .db
+            .intern_type(Type::Nominal(ctx.db.parser_args(main).unwrap().thunk));
         instantiate(&mut outlayer, &[main_ty]).unwrap();
         let canon_2004 = canon_layout(&mut outlayer, main_ty).unwrap();
         for lay in &canon_2004 {

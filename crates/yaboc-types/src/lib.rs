@@ -142,6 +142,7 @@ pub enum PrimitiveType {
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum NominalKind {
+    Fun,
     Def,
     Block,
 }
@@ -151,7 +152,8 @@ pub struct Signature {
     pub ty_args: Arc<Vec<TypeVar>>,
     pub from: Option<TypeId>,
     pub args: Option<Arc<Vec<TypeId>>>,
-    pub thunk: TypeId,
+    pub thunk: NominalTypeHead,
+    pub thunky: bool,
 }
 
 #[derive(Clone, Hash, Debug, PartialEq, Eq)]
@@ -166,6 +168,7 @@ pub enum TypeError {
     UnknownTypeVar(TypeVar),
     TypeVarReturn(TypeVar),
     CyclicReturnThunks(Arc<Vec<DefId>>),
+    NonThunkReference(Identifier),
     Silenced(SilencedError),
 }
 

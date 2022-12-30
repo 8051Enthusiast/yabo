@@ -1186,9 +1186,10 @@ impl<'a> ConvertCtx<'a> {
     ) -> SResult<Self> {
         let sig = db.parser_args(id)?;
         let from = sig.from.unwrap_or_else(|| db.intern_type(Type::Any));
+        let thunk = db.intern_type(Type::Nominal(sig.thunk));
         let ret_ty = db.parser_returns(id)?.deref;
         let fun_ty = db.intern_type(Type::ParserArg {
-            result: sig.thunk,
+            result: thunk,
             arg: from,
         });
         let arg_ty = from;

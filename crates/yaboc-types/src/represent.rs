@@ -93,6 +93,7 @@ impl<DB: TypeInterner + ?Sized> StableHash<DB> for NominalKind {
         match self {
             NominalKind::Def => 0u8,
             NominalKind::Block => 1,
+            NominalKind::Fun => 2,
         }
         .update_hash(state, db)
     }

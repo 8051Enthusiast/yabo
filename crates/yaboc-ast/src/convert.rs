@@ -435,6 +435,7 @@ astify! {
 astify! {
     struct parser_definition = ParserDefinition {
         qualifier: quali[?],
+        thunky: thunky_sign[!],
         name: idspan[!],
         argdefs: arg_def_list[?],
         from: expression(type_expression)[?],
@@ -826,6 +827,15 @@ fn array_direction(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Span
             otherwise => panic!("Unknown loop {otherwise}"),
         },
         span: str.span,
+    })
+}
+
+fn thunky_sign(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<bool> {
+    let str = node_to_string(db, fd, c)?;
+    Ok(match str.as_ref() {
+        "def" => true,
+        "fun" => false,
+        otherwise => panic!("Unknown thunk {otherwise}"),
     })
 }
 

@@ -218,9 +218,11 @@ fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDef
         }
         args
     });
+    let thunky = ast.thunky;
     let pdef = ParserDef {
         qualifier,
         id,
+        thunky,
         from,
         args,
         to,

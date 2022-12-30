@@ -264,18 +264,24 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         let (MonoLayout::NominalParser(id, thunk_args, bt), ty) = parser.mono_layout() else {
             panic!("unexpected non-nominal-parser layout");
         };
+        let Type::ParserArg { arg: arg_ty, .. } = self.ctx.db.lookup_intern_type(ty) else {
+            panic!("unexpected non-parserarg type");
+        };
         if !*bt {
             req &= !NeededBy::Backtrack
         }
+        let thunky = id.lookup(self.ctx.db).unwrap().thunky;
         let mut args = FxHashMap::default();
         let thunk_ty = self.ctx.db.parser_result(ty).unwrap();
-        args.insert(Arg::From, arg);
+        args.insert(Arg::From, (arg, arg_ty));
         let arg_ids = id.lookup(self.ctx.db).unwrap().args.unwrap_or_default();
         for (id, arg) in arg_ids.iter().zip(thunk_args.iter()) {
-            args.insert(Arg::Named(id.0), arg.0);
+            args.insert(Arg::Named(id.0), *arg);
         }
         let thunk = ILayout::make_thunk(self.ctx, *id, thunk_ty, &args).unwrap();
-        self.register_layouts(thunk);
+        if thunky {
+            self.register_layouts(thunk);
+        }
         if let Some(pd_eval) = self.ctx.pd_result()[&thunk].clone() {
             if let Some(val) = &pd_eval.expr_vals {
                 self.collect_expr(val)?;
@@ -322,7 +328,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     pub fn collect(&mut self, pds: &[ParserDefId]) -> Result<(), LayoutError> {
         for pd in pds {
             let sig = self.ctx.db.parser_args(*pd)?;
-            let thunk_ty = sig.thunk;
+            let thunk_ty = self.ctx.db.intern_type(Type::Nominal(sig.thunk));
             let thunk_layout = canon_layout(self.ctx, thunk_ty)?;
             if let Some(from) = sig.from {
                 let from_layout = canon_layout(self.ctx, from)?;

@@ -99,6 +99,10 @@ fn make_report(db: &(impl TyHirs + ?Sized), error: SpannedTypeError) -> Option<R
             }
             ret
         }),
+        TypeError::NonThunkReference(name) => (
+            511,
+            dbformat!(db, "typename reference to non-thunk function {}", &name),
+        ),
     };
     let mut rbuild = Report::new(DiagnosticKind::Error, spans[0].file, &message).with_code(code);
     for (i, span) in spans.iter().enumerate() {

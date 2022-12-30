@@ -268,6 +268,7 @@ pub struct Import {
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDefinition {
     pub qualifier: Option<Qualifier>,
+    pub thunky: bool,
     pub name: IdSpan,
     pub from: Option<TypeExpression>,
     pub argdefs: Option<ArgDefList>,

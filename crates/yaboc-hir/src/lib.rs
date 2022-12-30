@@ -569,6 +569,7 @@ impl ArgDef {
 pub struct ParserDef {
     pub id: ParserDefId,
     pub qualifier: Qualifier,
+    pub thunky: bool,
     pub from: TExprId,
     pub args: Option<Vec<ArgDefId>>,
     pub to: ExprId,

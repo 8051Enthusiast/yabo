@@ -94,7 +94,7 @@ pub fn head_discriminant(db: &dyn TyHirs, ty: TypeId) -> i64 {
             ..
         }) => HeadDiscriminant::Block as i64,
         Type::Nominal(NominalTypeHead {
-            kind: NominalKind::Def,
+            kind: NominalKind::Def | NominalKind::Fun,
             def,
             ..
         }) => {
@@ -224,6 +224,23 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         span: IndirectSpan,
         id: hir::TExprId,
     ) -> Result<InfTypeId<'intern>, SpannedTypeError> {
+        let def = self
+            .db
+            .parserdef_ref(self.loc.loc, pd.name.iter().map(|x| x.atom).collect())?
+            .ok_or_else(|| {
+                SpannedTypeError::new(
+                    TypeError::UnknownParserdefName(pd.name.last().unwrap().atom),
+                    span,
+                )
+            })?;
+        let parserdef = def.lookup(self.db)?;
+        if !parserdef.thunky {
+            return Err(SpannedTypeError::new(
+                TypeError::NonThunkReference(pd.name.last().unwrap().atom),
+                span,
+            ));
+        }
+        let definition = self.db.parser_args(def)?;
         let mut parse_arg = pd
             .from
             .as_ref()
@@ -235,16 +252,6 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
             .iter()
             .map(|x| self.resolve_type_expr(x, id))
             .collect::<Result<Vec<_>, _>>()?;
-        let def = self
-            .db
-            .parserdef_ref(self.loc.loc, pd.name.iter().map(|x| x.atom).collect())?
-            .ok_or_else(|| {
-                SpannedTypeError::new(
-                    TypeError::UnknownParserdefName(pd.name.last().unwrap().atom),
-                    span,
-                )
-            })?;
-        let definition = self.db.parser_args(def)?;
         match (parse_arg, definition.from) {
             (None, Some(_)) => parse_arg = Some(self.infctx.var()),
             (Some(_), None) => {
@@ -742,13 +749,13 @@ pub enum NominalId {
 impl NominalId {
     pub fn from_nominal_inf_head(head: &NominalInfHead) -> Self {
         match head.kind {
-            NominalKind::Def => NominalId::Def(hir::ParserDefId(head.def)),
+            NominalKind::Def | NominalKind::Fun => NominalId::Def(hir::ParserDefId(head.def)),
             NominalKind::Block => NominalId::Block(hir::BlockId(head.def)),
         }
     }
     pub fn from_nominal_head(head: &NominalTypeHead) -> Self {
         match head.kind {
-            NominalKind::Def => NominalId::Def(hir::ParserDefId(head.def)),
+            NominalKind::Def | NominalKind::Fun => NominalId::Def(hir::ParserDefId(head.def)),
             NominalKind::Block => NominalId::Block(hir::BlockId(head.def)),
         }
     }

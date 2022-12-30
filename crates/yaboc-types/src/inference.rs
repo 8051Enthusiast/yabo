@@ -38,6 +38,18 @@ pub enum InferenceType<'intern> {
     ),
 }
 
+impl<'intern> InferenceType<'intern> {
+    pub(crate) fn is_fun(&self) -> bool {
+        matches!(
+            self,
+            InferenceType::Nominal(NominalInfHead {
+                kind: NominalKind::Fun,
+                ..
+            })
+        )
+    }
+}
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct NominalInfHead<'intern> {
     pub kind: NominalKind,
@@ -392,9 +404,8 @@ pub trait TypeResolver<'intern> {
     ) -> Result<EitherType<'intern>, TypeError>;
     fn deref(&self, ty: &NominalInfHead<'intern>)
         -> Result<Option<EitherType<'intern>>, TypeError>;
-    fn signature(&self, ty: &NominalInfHead<'intern>) -> Result<Signature, TypeError>;
+    fn signature(&self, pd: DefId) -> Result<Signature, TypeError>;
     fn lookup(&self, val: DefId) -> Result<EitherType<'intern>, TypeError>;
-    fn parserdef(&self, pd: DefId) -> Result<EitherType<'intern>, TypeError>;
     fn name(&self) -> String;
 }
 
@@ -414,6 +425,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     pub fn intern_infty(&mut self, infty: InferenceType<'intern>) -> InfTypeId<'intern> {
         InfTypeId(self.interner.intern(infty))
     }
+
     pub fn field_type(
         &mut self,
         ty: &NominalInfHead<'intern>,
@@ -474,8 +486,8 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
             Ok(None)
         }
     }
-    pub fn signature(&self, ty: &NominalInfHead<'intern>) -> Result<Signature, TypeError> {
-        self.tr.signature(ty)
+    pub fn signature(&self, pd: DefId) -> Result<Signature, TypeError> {
+        self.tr.signature(pd)
     }
     pub fn lookup(&mut self, val: DefId) -> Result<InfTypeId<'intern>, TypeError> {
         let ret = match self.tr.lookup(val) {
@@ -499,22 +511,31 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         Ok(ret)
     }
     pub fn parserdef(&mut self, pd: DefId) -> Result<InfTypeId<'intern>, TypeError> {
-        let ret = match self.tr.parserdef(pd)? {
-            EitherType::Regular(result_type) => {
-                let ret = self.convert_type_into_inftype(result_type);
-                if self.trace {
-                    dbeprintln!(
-                        self.tr.db(),
-                        "[{}] parserdef {}: {}",
-                        &self.tr.name(),
-                        &pd,
-                        &ret
-                    );
-                }
-                ret
-            }
-            EitherType::Inference(infty) => infty,
-        };
+        let sig = self.tr.signature(pd)?;
+        let ret = self.tr.db().intern_type(Type::Nominal(sig.thunk));
+        let vars = sig.ty_args.iter().map(|_| self.var()).collect::<Vec<_>>();
+        let mut ret = self.convert_type_into_inftype_with_args(ret, &vars);
+        if let Some(parser_arg) = sig.from {
+            let parser_arg = self.convert_type_into_inftype_with_args(parser_arg, &vars);
+            ret = self.parser(ret, parser_arg);
+        }
+        if let Some(fun_args) = sig.args {
+            let fun_args = fun_args
+                .iter()
+                .map(|arg| self.convert_type_into_inftype_with_args(*arg, &vars))
+                .collect::<Vec<_>>();
+            let fun_args_slice = self.intern_infty_slice(&fun_args);
+            ret = self.function(ret, fun_args_slice);
+        }
+        if self.trace {
+            dbeprintln!(
+                self.tr.db(),
+                "[{}] parserdef {}: {}",
+                &self.tr.name(),
+                &pd,
+                &ret
+            );
+        }
         Ok(ret)
     }
     pub fn constrain(
@@ -614,7 +635,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                 self.constrain(field_ty, *fieldtype)
             }
 
-            (Nominal(l), InferIfResult(None, res, cont)) if l.kind == NominalKind::Def => {
+            (Nominal(l), InferIfResult(None, res, cont)) if l.kind != NominalKind::Block => {
                 let if_result_with_lower =
                     self.intern_infty(InferIfResult(Some(lower), *res, *cont));
                 self.constrain(lower, if_result_with_lower)
@@ -636,7 +657,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                 self.constrain(outer_ty, upper)
             }
 
-            (Nominal(l), _) if l.kind == NominalKind::Def => {
+            (Nominal(l), _) if l.kind != NominalKind::Block => {
                 // if they are not the same head, try upcasting/dereferencing/evaluating
                 if let Some(deref) = self.deref(l)? {
                     self.constrain(deref, upper)
@@ -722,6 +743,13 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         arg: InfTypeId<'intern>,
     ) -> InfTypeId<'intern> {
         self.intern_infty(InferenceType::ParserArg { result, arg })
+    }
+    pub fn function(
+        &mut self,
+        result: InfTypeId<'intern>,
+        args: InfSlice<'intern>,
+    ) -> InfTypeId<'intern> {
+        self.intern_infty(InferenceType::FunctionArgs { result, args })
     }
     pub fn array(&mut self, kind: ArrayKind, inner: InfTypeId<'intern>) -> InfTypeId<'intern> {
         self.intern_infty(InferenceType::Loop(kind, inner))

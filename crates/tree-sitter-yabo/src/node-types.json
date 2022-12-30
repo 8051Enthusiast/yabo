@@ -1322,6 +1322,20 @@
           }
         ]
       },
+      "thunky": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "def",
+            "named": false
+          },
+          {
+            "type": "fun",
+            "named": false
+          }
+        ]
+      },
       "to": {
         "multiple": true,
         "required": true,
@@ -2289,6 +2303,10 @@
   },
   {
     "type": "for",
+    "named": false
+  },
+  {
+    "type": "fun",
     "named": false
   },
   {
