@@ -4,7 +4,7 @@ use fxhash::FxHashMap;
 
 use yaboc_absint::{AbsIntCtx, AbstractExprInfo};
 use yaboc_ast::expr::ExprIter;
-use yaboc_base::{error::SilencedError, interner::DefId, source::SpanIndex};
+use yaboc_base::{error::SilencedError, interner::DefId};
 use yaboc_hir::{walk::ChildIter, ExprId, HirIdWrapper, HirNode, HirNodeKind, ParserDefId};
 use yaboc_mir::{Function, Place, PlaceOrigin, PlaceRef, StackRef, Strictness};
 use yaboc_types::{PrimitiveType, Type, TypeId};
@@ -38,8 +38,8 @@ impl<'a> FunctionSubstitute<'a> {
         let mut expr_map = FxHashMap::default();
         for (id, expr) in evaluated.expr_vals.iter() {
             for r in ExprIter::new(expr) {
-                let AbstractExprInfo { val, span, .. } = *r.0.root_data();
-                expr_map.insert((*id, span), val);
+                let AbstractExprInfo { val, idx, .. } = *r.0.root_data();
+                expr_map.insert((*id, idx), val);
             }
         }
         let ret = evaluated.returned;
@@ -94,8 +94,8 @@ impl<'a> FunctionSubstitute<'a> {
         let mut expr_map = FxHashMap::default();
         if let Some(expr) = evaluated.expr_vals.as_ref() {
             for r in ExprIter::new(expr) {
-                let AbstractExprInfo { val, span, .. } = *r.0.root_data();
-                expr_map.insert((expr_id, span), val);
+                let AbstractExprInfo { val, idx, .. } = *r.0.root_data();
+                expr_map.insert((expr_id, idx), val);
             }
         }
         let vals = FxHashMap::default();
@@ -168,7 +168,7 @@ struct SubInfo<T> {
     fun: T,
     arg: T,
     ret: T,
-    expr: FxHashMap<(ExprId, SpanIndex), T>,
+    expr: FxHashMap<(ExprId, usize), T>,
     vals: FxHashMap<DefId, T>,
     subst: Option<Arc<Vec<TypeId>>>,
 }

@@ -59,6 +59,7 @@ pub trait AbstractDomain<'a>: Sized + Clone + std::hash::Hash + Eq + std::fmt::D
 pub struct AbstractExprInfo<Dom> {
     pub val: Dom,
     pub span: SpanIndex,
+    pub idx: usize,
     pub ty: TypeId,
 }
 
@@ -169,7 +170,10 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         &mut self,
         expr: expr::Expression<expr::KindWithData<ResolvedKind, (TypeId, SpanIndex)>>,
     ) -> Result<AbstractExpression<Dom>, Dom::Err> {
+        let mut idx = 0;
         expr.try_scan(&mut |expr| -> Result<AbstractExprInfo<Dom>, _> {
+            let ret_idx = idx;
+            idx += 1;
             let owned_expr = expr.make_owned();
             let span = owned_expr.root_data().1;
             let ty = self.subst_type(owned_expr.root_data().0);
@@ -180,6 +184,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             Ok(AbstractExprInfo {
                 val: casted_ret,
                 span,
+                idx: ret_idx,
                 ty,
             })
         })
