@@ -12,7 +12,6 @@ use yaboc_ast::ConstraintAtom;
 use yaboc_base::{
     error::{SResult, Silencable},
     interner::{DefId, FieldName},
-    source::SpanIndex,
 };
 use yaboc_dependents::{Dependents, NeededBy, RequirementSet, SubValue};
 use yaboc_hir::{BlockId, ExprId, HirConstraintId, HirIdWrapper, ParserDefId};
@@ -342,7 +341,7 @@ pub enum Place {
 pub enum PlaceOrigin {
     Node(DefId),
     Ambient(BlockId, DefId),
-    Expr(ExprId, SpanIndex),
+    Expr(ExprId, usize),
     Ret,
     Arg,
 }
