@@ -20,7 +20,9 @@ use yaboc_ast::{ArrayKind, AstConstraint, TopLevelStatement};
 use yaboc_base::{
     dbpanic,
     error::{SResult, SilencedError},
-    interner::{DefId, FieldName, HirPath, Identifier, PathComponent, Regex, TypeVar},
+    interner::{
+        DefId, FieldName, HirPath, Identifier, IdentifierName, PathComponent, Regex, TypeVar,
+    },
     source::{FileId, IndexSpanned, IndirectSpan, Span, SpanIndex},
     Context,
 };
@@ -59,12 +61,19 @@ pub trait Hirs: yaboc_ast::Asts {
     fn argnum(&self, pd: ParserDefId) -> SResult<Option<usize>>;
     fn parserdef_arg(&self, pd: ParserDefId, name: Identifier) -> SResult<Option<ArgDefId>>;
     fn parserdef_arg_index(&self, pd: ParserDefId, id: DefId) -> SResult<Option<usize>>;
+    fn std_item(&self, item: StdItem) -> SResult<ParserDefId>;
     #[salsa::interned]
     fn intern_hir_constraint(
         &self,
         c: ExpressionHead<HirConstraintSpanned, HirConstraintId>,
     ) -> HirConstraintId;
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum StdItem {
+    Compose,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct HirConstraintId(InternId);
 
@@ -306,6 +315,18 @@ fn parserdef_arg_index(db: &dyn Hirs, pd: ParserDefId, id: DefId) -> SResult<Opt
         .iter()
         .position(|x| x.0 == id);
     Ok(index)
+}
+fn std_item(db: &dyn Hirs, item: StdItem) -> SResult<ParserDefId> {
+    let name = match item {
+        StdItem::Compose => "compose",
+    };
+    let compose = db.intern_identifier(IdentifierName { name: name.into() });
+    let compose_path = HirPath::new_fid(db.std()?, FieldName::Ident(compose));
+    let compose_item = db.intern_hir_path(compose_path);
+    let HirNode::ParserDef(compose_pd) = db.hir_node(compose_item)? else {
+        panic!("compose is not a parser def");
+    };
+    Ok(compose_pd.id)
 }
 
 macro_rules! hir_id_wrapper {

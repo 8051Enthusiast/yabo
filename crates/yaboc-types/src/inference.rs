@@ -812,17 +812,6 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         self.constrain(other_parser, parser)?;
         Ok(arg)
     }
-    pub fn parser_compose(
-        &mut self,
-        first: InfTypeId<'intern>,
-        second: InfTypeId<'intern>,
-    ) -> Result<InfTypeId<'intern>, TypeError> {
-        let arg = self.var();
-        let between = self.parser_apply(first, arg)?;
-        let result = self.parser_apply(second, between)?;
-        let new_parser = self.intern_infty(InferenceType::ParserArg { arg, result });
-        Ok(new_parser)
-    }
     pub fn parser_apply(
         &mut self,
         parser: InfTypeId<'intern>,

@@ -75,8 +75,8 @@ fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<(bool, bo
                         inner: ValBinOp::Compose,
                         ..
                     },
-                inner: [(will_left, can_left), (will_right, can_right)],
-            }) => (will_left || will_right, can_left || can_right),
+                ..
+            }) => unreachable!(),
             ExpressionHead::Dyadic(Dyadic {
                 inner: [(will_left, _), (will_right, _)],
                 ..

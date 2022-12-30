@@ -22,7 +22,7 @@ use yaboc_base::interner::{DefId, FieldName, Regex};
 use yaboc_base::low_effort_interner::{Interner, Uniq};
 use yaboc_hir::{self as hir, HirIdWrapper};
 use yaboc_hir_types::{DerefLevel, NominalId};
-use yaboc_mir::{DupleField, Mirs};
+use yaboc_mir::Mirs;
 use yaboc_resolve::expr::{ResolvedAtom, ResolvedKind};
 use yaboc_types::{PrimitiveType, Type, TypeId};
 
@@ -95,7 +95,6 @@ pub enum MonoLayout<Inner> {
     NominalParser(hir::ParserDefId, Vec<(Inner, TypeId)>, bool),
     Block(hir::BlockId, BTreeMap<FieldName, Inner>),
     BlockParser(hir::BlockId, BTreeMap<DefId, Inner>, bool),
-    ComposedParser(Inner, TypeId, Inner, bool),
     Tuple(Vec<Inner>),
 }
 
@@ -177,10 +176,6 @@ impl<'a> IMonoLayout<'a> {
             ))),
             MonoLayout::BlockParser(bd, cap, _) => IMonoLayout(ctx.dcx.intern(Layout::Mono(
                 MonoLayout::BlockParser(*bd, cap.clone(), false),
-                self.mono_layout().1,
-            ))),
-            MonoLayout::ComposedParser(l, t, r, _) => IMonoLayout(ctx.dcx.intern(Layout::Mono(
-                MonoLayout::ComposedParser(*l, *t, *r, false),
                 self.mono_layout().1,
             ))),
             MonoLayout::Regex(r, _) => IMonoLayout(ctx.dcx.intern(Layout::Mono(
@@ -416,11 +411,6 @@ impl<'a> ILayout<'a> {
                     MonoLayout::BlockParser(block_id, _, _) => ctx
                         .eval_block(*block_id, self, from, result_type, arg_type)
                         .ok_or_else(|| SilencedError::new().into()),
-                    MonoLayout::ComposedParser(first, inner_ty, second, _) => {
-                        let first_result = first.apply_arg(ctx, from)?;
-                        let casted_result = first_result.typecast(ctx, *inner_ty)?.0;
-                        second.apply_arg(ctx, casted_result)
-                    }
                     MonoLayout::Single => Ok(from.array_primitive(ctx)),
                     MonoLayout::Nil => {
                         let unit = ctx.db.intern_type(Type::Primitive(PrimitiveType::Unit));
@@ -510,20 +500,6 @@ impl<'a> ILayout<'a> {
         })
     }
 
-    fn access_duple(
-        self,
-        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
-        duple_field: DupleField,
-    ) -> ILayout<'a> {
-        self.map(ctx, |layout, _| match layout.mono_layout().0 {
-            MonoLayout::ComposedParser(first, _, second, _) => match duple_field {
-                DupleField::First => *first,
-                DupleField::Second => *second,
-            },
-            _ => panic!("Attempting to get 'from' field from non-nominal"),
-        })
-    }
-
     fn with_backtrack_status(
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
@@ -549,9 +525,6 @@ impl<'a> ILayout<'a> {
             }
             Layout::Mono(MonoLayout::BlockParser(_, captures, _), _) => {
                 self.block_parser_manifestation(ctx, captures)?.size
-            }
-            Layout::Mono(MonoLayout::ComposedParser(fst, _, snd, _), _) => {
-                fst.size_align(ctx)?.cat(snd.size_align(ctx)?)
             }
             Layout::Mono(MonoLayout::IfParser(inner, _, _), _) => inner.size_align(ctx)?,
             Layout::Mono(MonoLayout::Nominal(id, from, args), _) => {
@@ -936,21 +909,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
             },
             ExpressionHead::Dyadic(d) => match d.op.inner {
                 ValBinOp::ParserApply => d.inner[1].0.apply_arg(ctx, d.inner[0].0)?,
-                ValBinOp::Compose => {
-                    let middle_ty = match ctx
-                        .db
-                        .lookup_intern_type(ctx.db.least_deref_type(d.inner[1].1)?)
-                    {
-                        Type::ParserArg { arg, .. } => arg,
-                        _ => panic!("cannot compose non-parser types"),
-                    };
-                    make_layout(MonoLayout::ComposedParser(
-                        d.inner[0].0,
-                        middle_ty,
-                        d.inner[1].0,
-                        true,
-                    ))
-                }
+                ValBinOp::Compose => unreachable!(),
                 ValBinOp::Else => d.inner[0].0.join(ctx, d.inner[1].0)?.0,
                 ValBinOp::LesserEq
                 | ValBinOp::Lesser

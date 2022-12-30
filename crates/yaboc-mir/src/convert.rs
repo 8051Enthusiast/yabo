@@ -30,8 +30,8 @@ use yaboc_types::{PrimitiveType, Type, TypeId};
 use crate::InsRef;
 
 use super::{
-    BBRef, Comp, DupleField, ExceptionRetreat, Function, FunctionWriter, IntBinOp, IntUnOp,
-    MirInstr, Mirs, Place, PlaceInfo, PlaceOrigin, PlaceRef, ReturnStatus, Val,
+    BBRef, Comp, ExceptionRetreat, Function, FunctionWriter, IntBinOp, IntUnOp, MirInstr, Mirs,
+    Place, PlaceInfo, PlaceOrigin, PlaceRef, ReturnStatus, Val,
 };
 
 pub type TypedIndexedExpr = Expression<KindWithData<ResolvedKind, (TypeId, SpanIndex, usize)>>;
@@ -607,36 +607,7 @@ impl<'a> ConvertCtx<'a> {
                         self.f.set_bb(continue_bb);
                         place_ref
                     }
-                    ValBinOp::Compose => {
-                        let place_ref = self.unwrap_or_stack(place, ty, origin);
-                        let left_ldt = self.db.least_deref_type(left_ty)?;
-                        let right_ldt = self.db.least_deref_type(right_ty)?;
-                        let left_place = self.f.add_place(PlaceInfo {
-                            place: Place::DupleField(place_ref, DupleField::First),
-                            ty: left_ldt,
-                            remove_bt: false,
-                        });
-                        let right_place = self.f.add_place(PlaceInfo {
-                            place: Place::DupleField(place_ref, DupleField::Second),
-                            ty: right_ldt,
-                            remove_bt: false,
-                        });
-                        self.copy_if_different_levels(
-                            left_ldt,
-                            left_ty,
-                            Some(left_place),
-                            lorigin,
-                            lrecurse,
-                        )?;
-                        self.copy_if_different_levels(
-                            right_ldt,
-                            right_ty,
-                            Some(right_place),
-                            rorigin,
-                            rrecurse,
-                        )?;
-                        place_ref
-                    }
+                    ValBinOp::Compose => unreachable!(),
                 }
             }
             ExpressionHead::Variadic(Variadic { inner, .. }) => {

@@ -365,7 +365,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                                 bit
                             }
                             Else => self.infctx.one_of(&[left, right])?,
-                            Compose => self.infctx.parser_compose(left, right)?,
+                            Compose => unreachable!(),
                             ParserApply => self.infctx.parser_apply(right, left)?,
                         },
                         op.data,

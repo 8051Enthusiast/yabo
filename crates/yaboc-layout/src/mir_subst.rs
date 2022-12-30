@@ -213,9 +213,6 @@ impl<'a> SubInfo<ILayout<'a>> {
                     .0
                     .get_captured(ctx, field)?
                     .unwrap(),
-                Place::DupleField(place, duple_field) => place_layouts[place.as_index()]
-                    .0
-                    .access_duple(ctx, duple_field),
                 Place::Front(place) => place_layouts[place.as_index()].0.access_front(ctx),
                 Place::ModifiedBy(ins_ref) => match f.ins_at(ins_ref) {
                     yaboc_mir::MirInstr::ParseCall(_, _, _, front, _, _) => {

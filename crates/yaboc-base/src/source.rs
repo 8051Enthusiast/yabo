@@ -15,9 +15,29 @@ use fxhash::FxHashMap;
 use crate::databased_display::DatabasedDisplay;
 use crate::dbformat;
 use crate::error::diagnostic::{DiagnosticKind, Label};
-use crate::error::Report;
+use crate::error::{Report, SResult, SilencedError};
 use crate::hash::StableHash;
 use crate::interner::{DefId, FieldName, Identifier, IdentifierName, Interner};
+
+#[salsa::query_group(FileDatabase)]
+pub trait Files: salsa::Database {
+    #[salsa::input]
+    fn all_files(&self) -> Arc<Vec<FileId>>;
+
+    #[salsa::input]
+    fn input_file(&self, id: FileId) -> Arc<FileData>;
+
+    #[salsa::input]
+    fn std(&self) -> SResult<FileId>;
+
+    fn file_content(&self, id: FileId) -> Arc<String>;
+
+    fn path(&self, id: FileId) -> Option<String>;
+
+    fn file_lines(&self, id: FileId) -> Arc<BTreeMap<usize, usize>>;
+
+    fn file_offset_pos(&self, id: FileId, offset: (usize, usize)) -> (LineColumn, LineColumn);
+}
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Span {
@@ -245,28 +265,35 @@ impl<'collection> FileResolver<'collection> {
     pub fn add_std(
         &mut self,
         db: &mut (impl Interner + Files + ?Sized),
-    ) -> Result<bool, FileLoadError> {
+    ) -> Result<(), FileLoadError> {
         let std_ident = db.intern_identifier(IdentifierName::new("std".into()));
-        if self.absolute_mods.contains_key(&std_ident) {
-            return Ok(true);
+        if let Some(std) = self.absolute_mods.get(&std_ident) {
+            db.set_std(Ok(*std));
+            return Ok(());
         }
         let std_env_path = std::env::var_os("YABO_STD_PATH");
+        let err = FileLoadError::NoStdLib {
+            source: (FileId::default(), Span::default()),
+        };
         let std_dir = if let Some(std_env_path) = std_env_path {
             PathBuf::from(std_env_path)
         } else {
             let Some(mut yabo_dir) = data_dir() else {
-                return Ok(false);
+                db.set_std(Err(SilencedError::new()));
+                return Err(err);
             };
             yabo_dir.push("yabo");
             yabo_dir
         };
         let Some(std_dir) = self.file_path(&std_dir, "std") else {
-            return Ok(false);
+            db.set_std(Err(SilencedError::new()));
+            return Err(err);
         };
         // note that we can not really give a good span here, as the std is not really loaded by any one file
         let file = self.add_file(db, std_dir, FileId::default(), Span::default(), std_ident)?;
         self.absolute_mods.insert(std_ident, file);
-        Ok(true)
+        db.set_std(Ok(file));
+        Ok(())
     }
 
     pub fn add_absolute_mod_path(
@@ -312,23 +339,6 @@ where
     fn display<'b>(&self, id: &'b FileId) -> Option<Box<dyn std::fmt::Display + 'b>> {
         Some(Box::new(id.to_db_string(self.db)))
     }
-}
-
-#[salsa::query_group(FileDatabase)]
-pub trait Files: salsa::Database {
-    #[salsa::input]
-    fn all_files(&self) -> Arc<Vec<FileId>>;
-
-    #[salsa::input]
-    fn input_file(&self, id: FileId) -> Arc<FileData>;
-
-    fn file_content(&self, id: FileId) -> Arc<String>;
-
-    fn path(&self, id: FileId) -> Option<String>;
-
-    fn file_lines(&self, id: FileId) -> Arc<BTreeMap<usize, usize>>;
-
-    fn file_offset_pos(&self, id: FileId, offset: (usize, usize)) -> (LineColumn, LineColumn);
 }
 
 fn file_content(db: &dyn Files, id: FileId) -> Arc<String> {
@@ -458,6 +468,9 @@ pub enum FileLoadError {
         source: (FileId, Span),
         name: Identifier,
     },
+    NoStdLib {
+        source: (FileId, Span),
+    },
     Silenced,
 }
 
@@ -485,6 +498,14 @@ impl FileLoadError {
                 )
                 .with_code(151)
                 .with_label(Label::new(source.1).with_message("imported here")),
+            ),
+            FileLoadError::NoStdLib { source } => Some(
+                Report::new(
+                    DiagnosticKind::Error,
+                    source.0,
+                    &dbformat!(db, "No standard library found"),
+                )
+                .with_code(152),
             ),
             FileLoadError::Silenced => None,
         }

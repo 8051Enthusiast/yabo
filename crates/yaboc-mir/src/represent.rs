@@ -6,7 +6,7 @@ use yaboc_dependents::RequirementSet;
 use crate::{strictness::Strictness, ControlFlow, FunKind, InsRef};
 
 use super::{
-    BBRef, Comp, DupleField, ExceptionRetreat, Function, IntBinOp, IntUnOp, MirInstr, Mirs, Place,
+    BBRef, Comp, ExceptionRetreat, Function, IntBinOp, IntUnOp, MirInstr, Mirs, Place,
     PlaceOrigin, PlaceRef, ReturnStatus, StackRef, Val,
 };
 
@@ -42,14 +42,6 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for PlaceRef {
             Place::Captured(inner, field) => {
                 inner.db_fmt(f, &(*fun, *db))?;
                 dbwrite!(f, *db, ".cap[{}]", &field)
-            }
-            Place::DupleField(inner, field) => {
-                inner.db_fmt(f, &(*fun, *db))?;
-                let s = match field {
-                    DupleField::First => "0",
-                    DupleField::Second => "1",
-                };
-                write!(f, ".{s}")
             }
             Place::Front(inner) => {
                 inner.db_fmt(f, &(*fun, *db))?;
