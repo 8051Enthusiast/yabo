@@ -483,7 +483,7 @@ impl<T: Clone + Hash + Eq + Debug, K: ExpressionKind> Expression<KindWithData<K,
         Expression(inner)
     }
 
-    pub fn try_map<ToT: Clone + Hash + Eq + Debug, E: Clone + Hash + Eq + Debug>(
+    pub fn try_map<ToT: Clone + Hash + Eq + Debug, E>(
         &self,
         f: &mut impl FnMut(&T) -> Result<ToT, E>,
     ) -> Result<Expression<KindWithData<K, ToT>>, E> {
