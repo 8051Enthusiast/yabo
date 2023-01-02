@@ -396,6 +396,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                             ResolvedAtom::Bool(_) => self.infctx.bit(),
                             ResolvedAtom::Single => self.infctx.single(),
                             ResolvedAtom::Nil => self.infctx.nil(),
+                            ResolvedAtom::Array => self.infctx.array_parser(),
                             ResolvedAtom::Regex(..) => self.infctx.regex(),
                             ResolvedAtom::Block(b) => {
                                 let block = b.lookup(self.db)?;

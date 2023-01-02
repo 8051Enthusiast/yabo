@@ -751,6 +751,7 @@ pub enum ParserAtom {
     Atom(Atom),
     Single,
     Nil,
+    Array,
     Regex(Regex, bool),
     Block(BlockId),
 }

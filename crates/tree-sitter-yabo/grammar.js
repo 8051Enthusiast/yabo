@@ -190,6 +190,7 @@ module.exports = grammar({
       $.parser_block,
       $.single,
       $.nil,
+      $.array,
       seq('(', $._expression, ')'),
       $._atom,
     ),
@@ -339,6 +340,7 @@ module.exports = grammar({
     ),
     single: $ => '~',
     nil: $ => '+',
+    array: $ => '[~]',
     type_var: $ => /\'[A-Za-z_][A-Za-z_0-9]*/,
     bt_name: $ => seq(
       field('name', $._field_name),

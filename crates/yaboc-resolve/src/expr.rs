@@ -24,6 +24,7 @@ pub enum ResolvedAtom {
     Bool(bool),
     Single,
     Nil,
+    Array,
     Block(hir::BlockId),
 }
 
@@ -81,6 +82,7 @@ pub fn resolve_expr_error(
                     hir::ParserAtom::Atom(Atom::Bool(s)) => ResolvedAtom::Bool(*s),
                     hir::ParserAtom::Single => ResolvedAtom::Single,
                     hir::ParserAtom::Nil => ResolvedAtom::Nil,
+                    hir::ParserAtom::Array => ResolvedAtom::Array,
                     hir::ParserAtom::Regex(r, bt) => ResolvedAtom::Regex(*r, *bt),
                     hir::ParserAtom::Block(b) => ResolvedAtom::Block(*b),
                     hir::ParserAtom::Atom(Atom::Field((f, bt))) => {

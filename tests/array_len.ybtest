@@ -1,0 +1,31 @@
+====[ source code ]====
+import std
+def *array(n: int) = [~](n)
+
+def *lengthed(parser: *'r) = {
+    len: ~
+    # just to make sure composition works
+    return: [~](len) |> array(len) |> [~](len) |> [~](len) |> parser
+}
+
+export
+def *test = [~](24) |> {
+    a8: lengthed(std.u8l)
+    a16: lengthed(std.u16l)
+    a32: lengthed(std.u32l)
+    a64: lengthed(std.i64l)
+}
+
+====[ binary 1 ]====
+01 10
+03 55 aa 00
+06 01 02 03 04 05 06
+0a 01 02 03 04 05 06 07 08 09 0a
+
+====[ output 1 ]====
+{
+    "a8": 16,
+    "a16": 43605,
+    "a32": 67305985,
+    "a64": 578437695752307201
+}

@@ -436,6 +436,7 @@ impl<'a> ConvertCtx<'a> {
                 ResolvedAtom::ParserDef(_, _)
                 | ResolvedAtom::Single
                 | ResolvedAtom::Nil
+                | ResolvedAtom::Array
                 | ResolvedAtom::Regex(..) => self.unwrap_or_stack(place, ty, origin),
                 ResolvedAtom::Block(block) => {
                     self.create_block_parser(*block, ty, place, origin)?

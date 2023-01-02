@@ -813,6 +813,10 @@
           "name": "nil"
         },
         {
+          "type": "SYMBOL",
+          "name": "array"
+        },
+        {
           "type": "SEQ",
           "members": [
             {
@@ -2005,6 +2009,10 @@
     "nil": {
       "type": "STRING",
       "value": "+"
+    },
+    "array": {
+      "type": "STRING",
+      "value": "[~]"
     },
     "type_var": {
       "type": "PATTERN",

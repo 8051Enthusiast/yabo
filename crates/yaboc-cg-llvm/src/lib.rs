@@ -470,6 +470,22 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         (from_ptr, arg_ptr, slot)
     }
 
+    fn build_copy_invariant(
+        &mut self,
+        dest: PointerValue<'llvm>,
+        src: PointerValue<'llvm>,
+        layout: ILayout<'comp>,
+    ) {
+        let sa = layout.size_align(self.layouts).unwrap();
+        let src_ptr = self.get_object_start(layout.maybe_mono(), src);
+        let dest_ptr = self.get_object_start(layout.maybe_mono(), dest);
+        let size = self.const_i64(sa.size as i64);
+        let align = sa.align() as u32;
+        self.builder
+            .build_memcpy(dest_ptr, align, src_ptr, align, size)
+            .unwrap();
+    }
+
     fn create_pd_export(&mut self, pd: ParserDefId, layout: IMonoLayout<'comp>, slot: PSize) {
         let name = match self.compiler_database.db.def_name(pd.0).unwrap() {
             FieldName::Return => unreachable!(),
@@ -577,4 +593,10 @@ impl<'llvm, 'comp> CodegenTypeContext for CodeGenCtx<'llvm, 'comp> {
             .ptr_type(AddressSpace::default())
             .into()
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Value<'llvm, 'comp> {
+    pub ptr: PointerValue<'llvm>,
+    pub layout: ILayout<'comp>,
 }

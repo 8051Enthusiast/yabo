@@ -733,6 +733,13 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         let int_array = self.array(ArrayKind::For, int);
         self.parser(int_array, int_array)
     }
+    pub fn array_parser(&mut self) -> InfTypeId<'intern> {
+        let int = self.int();
+        let int_array = self.array(ArrayKind::For, int);
+        let inner = self.parser(int_array, int_array);
+        let int_args = self.intern_infty_slice(&[int]);
+        self.function(inner, int_args)
+    }
     pub fn type_var(&mut self, id: DefId, index: u32) -> InfTypeId<'intern> {
         let inftype = InferenceType::TypeVarRef(id, index);
         self.intern_infty(inftype)

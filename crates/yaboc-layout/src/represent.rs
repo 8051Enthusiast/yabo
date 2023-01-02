@@ -105,6 +105,13 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
                     )?;
                     Ok(())
                 }
+                MonoLayout::ArrayParser(inner) => {
+                    if let Some(inner) = inner {
+                        dbwrite!(f, db, "array-parser[{}]({})", ty, inner)
+                    } else {
+                        dbwrite!(f, db, "array-parser[{}]", ty)
+                    }
+                }
             },
             Layout::Multi(subs) => {
                 for (i, layout) in subs.layouts.iter().enumerate() {
@@ -280,6 +287,15 @@ impl<'a> LayoutHasher<'a> {
                 id.as_u32().update_hash(state, db);
                 (*wiggle as u8).update_hash(state, db);
             }
+            MonoLayout::ArrayParser(inner) => {
+                state.update([12]);
+                if let Some(inner) = inner {
+                    state.update([1]);
+                    state.update(self.hash(*inner, db));
+                } else {
+                    state.update([0]);
+                }
+            }
         }
     }
 }
@@ -383,6 +399,8 @@ impl<'a> LayoutSymbol<'a> {
                 }
             }
             MonoLayout::IfParser(..) => String::from("parser_if"),
+            MonoLayout::ArrayParser(Some(_)) => String::from("parse_array"),
+            MonoLayout::ArrayParser(None) => String::from("fun_parse_array"),
             MonoLayout::Primitive(_)
             | MonoLayout::SlicePtr
             | MonoLayout::Single
