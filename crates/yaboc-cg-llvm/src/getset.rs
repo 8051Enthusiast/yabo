@@ -35,6 +35,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.builder.build_load(target, "")
     }
 
+    fn vtable_callable<T: TargetSized>(
+        &mut self,
+        value_ptr: PointerValue<'llvm>,
+        field_path: &[u64],
+    ) -> CallableValue<'llvm> {
+        self.vtable_get::<T>(value_ptr, field_path)
+            .into_pointer_value()
+            .try_into()
+            .unwrap()
+    }
+
     pub(super) fn get_object_start(
         &mut self,
         layout: Option<IMonoLayout<'comp>>,
@@ -53,14 +64,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> CallableValue<'llvm> {
         match layout {
             Some(mono) => self.sym_callable(mono, LayoutPart::Typecast),
-            None => self
-                .vtable_get::<vtable::VTableHeader>(
-                    ptr,
-                    &[VTableHeaderFields::typecast_impl as u64],
-                )
-                .into_pointer_value()
-                .try_into()
-                .unwrap(),
+            None => self.vtable_callable::<vtable::VTableHeader>(
+                ptr,
+                &[VTableHeaderFields::typecast_impl as u64],
+            ),
         }
     }
 
@@ -80,13 +87,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     .sorted_field_index(block, FieldName::Ident(field), false)
                     .expect("failed to lookup field index")
                     .expect("could not find field");
-                self.vtable_get::<vtable::BlockVTable>(
+                self.vtable_callable::<vtable::BlockVTable>(
                     ptr,
                     &[BlockVTableFields::access_impl as u64, index as u64],
                 )
-                .into_pointer_value()
-                .try_into()
-                .unwrap()
             }
         }
     }
@@ -100,18 +104,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         use_impl: bool,
     ) -> CallableValue<'llvm> {
         match layout {
-            Some(mono) => {
-                let part = LayoutPart::Parse(slot, call_kind, !use_impl);
-                self.sym_callable(mono, part)
-            }
-            None => self
-                .vtable_get::<vtable::ParserVTable>(
-                    ptr,
-                    &[ParserVTableFields::apply_table as u64, slot],
-                )
-                .into_pointer_value()
-                .try_into()
-                .unwrap(),
+            Some(mono) => self.sym_callable(mono, LayoutPart::Parse(slot, call_kind, !use_impl)),
+            None => self.vtable_callable::<vtable::ParserVTable>(
+                ptr,
+                &[ParserVTableFields::apply_table as u64, slot],
+            ),
         }
     }
 
@@ -123,14 +120,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> CallableValue<'llvm> {
         match layout {
             Some(mono) => self.sym_callable(mono, LayoutPart::CreateArgs(slot)),
-            None => self
-                .vtable_get::<vtable::FunctionVTable>(
-                    ptr,
-                    &[FunctionVTableFields::apply_table as u64, slot],
-                )
-                .into_pointer_value()
-                .try_into()
-                .unwrap(),
+            None => self.vtable_callable::<vtable::FunctionVTable>(
+                ptr,
+                &[FunctionVTableFields::apply_table as u64, slot],
+            ),
         }
     }
 
@@ -141,14 +134,24 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> CallableValue<'llvm> {
         match layout {
             Some(mono) => self.sym_callable(mono, LayoutPart::CurrentElement),
-            None => self
-                .vtable_get::<vtable::ArrayVTable>(
-                    ptr,
-                    &[ArrayVTableFields::current_element_impl as u64],
-                )
-                .into_pointer_value()
-                .try_into()
-                .unwrap(),
+            None => self.vtable_callable::<vtable::ArrayVTable>(
+                ptr,
+                &[ArrayVTableFields::current_element_impl as u64],
+            ),
+        }
+    }
+
+    pub(super) fn build_skip_fun_get(
+        &mut self,
+        layout: Option<IMonoLayout<'comp>>,
+        ptr: PointerValue<'llvm>,
+    ) -> CallableValue<'llvm> {
+        match layout {
+            Some(mono) => self.sym_callable(mono, LayoutPart::Skip),
+            None => self.vtable_callable::<vtable::ArrayVTable>(
+                ptr,
+                &[ArrayVTableFields::skip_impl as u64],
+            ),
         }
     }
 
@@ -159,14 +162,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> CallableValue<'llvm> {
         match layout {
             Some(mono) => self.sym_callable(mono, LayoutPart::SingleForward),
-            None => self
-                .vtable_get::<vtable::ArrayVTable>(
-                    ptr,
-                    &[ArrayVTableFields::single_forward_impl as u64],
-                )
-                .into_pointer_value()
-                .try_into()
-                .unwrap(),
+            None => self.vtable_callable::<vtable::ArrayVTable>(
+                ptr,
+                &[ArrayVTableFields::single_forward_impl as u64],
+            ),
         }
     }
 
@@ -177,11 +176,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> CallableValue<'llvm> {
         match layout {
             Some(mono) => self.sym_callable(mono, LayoutPart::Span),
-            None => self
-                .vtable_get::<vtable::ArrayVTable>(ptr, &[ArrayVTableFields::span_impl as u64])
-                .into_pointer_value()
-                .try_into()
-                .unwrap(),
+            None => self.vtable_callable::<vtable::ArrayVTable>(
+                ptr,
+                &[ArrayVTableFields::span_impl as u64],
+            ),
         }
     }
 

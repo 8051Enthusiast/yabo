@@ -117,12 +117,17 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     }
                 }
                 MonoLayout::BlockParser(..)
+                | MonoLayout::ArrayParser(Some(_))
                 | MonoLayout::Single
                 | MonoLayout::Nil
                 | MonoLayout::IfParser(..)
                 | MonoLayout::Regex(..) => {
                     self.parsers.insert(mono);
                     self.parsers.insert(mono.remove_backtracking(self.ctx));
+                }
+                MonoLayout::ArrayParser(None) => {
+                    self.functions.insert(mono);
+                    self.functions.insert(mono.remove_backtracking(self.ctx));
                 }
                 MonoLayout::Primitive(_) => {}
                 MonoLayout::Tuple(_) => panic!("tuples not supported yet"),

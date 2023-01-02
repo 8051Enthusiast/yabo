@@ -144,10 +144,18 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         argnum: PSize,
     ) -> (i64, PSize) {
+        if let MonoLayout::ArrayParser(_) = layout.mono_layout().0 {
+            assert!(argnum == 0);
+            return (0, 0);
+        }
         let (pd, args) = if let MonoLayout::NominalParser(pd, args, _) = layout.mono_layout().0 {
             (*pd, args)
         } else {
-            panic!("trying to get parser set arg struct for non-nominal-parser layout");
+            dbpanic!(
+                &self.compiler_database.db,
+                "trying to get parser set arg struct for non-nominal-parser layout {}",
+                &layout.inner()
+            );
         };
         let parserdef_args = pd.lookup(&self.compiler_database.db).unwrap().args.unwrap();
         let arg_index = parserdef_args.len() - argnum as usize - 1;

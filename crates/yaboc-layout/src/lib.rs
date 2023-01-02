@@ -87,6 +87,7 @@ pub enum MonoLayout<Inner> {
     Nil,
     Regex(Regex, bool),
     IfParser(Inner, HirConstraintId, WiggleKind),
+    ArrayParser(Option<Inner>),
     Nominal(
         hir::ParserDefId,
         Option<(Inner, TypeId)>,
@@ -164,6 +165,8 @@ impl<'a> IMonoLayout<'a> {
     pub fn arg_num<DB: Layouts + ?Sized>(&self, db: &DB) -> SResult<Option<(usize, usize)>> {
         match self.mono_layout().0 {
             MonoLayout::NominalParser(pd, args, _) => Ok(db.argnum(*pd)?.map(|n| (n, args.len()))),
+            MonoLayout::ArrayParser(Some(_)) => Ok(Some((1, 1))),
+            MonoLayout::ArrayParser(None) => Ok(Some((1, 0))),
             _ => Ok(None),
         }
     }
@@ -421,6 +424,9 @@ impl<'a> ILayout<'a> {
                     }
                     MonoLayout::Regex(..) => Ok(from),
                     MonoLayout::IfParser(inner, ..) => inner.apply_arg(ctx, from),
+                    MonoLayout::ArrayParser(Some(_)) => Ok(ctx
+                        .dcx
+                        .intern(Layout::Mono(MonoLayout::SlicePtr, result_type))),
                     _ => panic!("Attempting to apply argument to non-parser layout"),
                 }
             })
@@ -457,6 +463,15 @@ impl<'a> ILayout<'a> {
                             Arc::new(arg_types[typecast_args.len()..].to_vec()),
                         ))
                     };
+                    let res = ctx.dcx.intern(Layout::Mono(layout, ty));
+                    Ok(res)
+                }
+                // array parser just has a single int argument
+                MonoLayout::ArrayParser(None) => {
+                    assert_eq!(typecast_args.len(), 1);
+                    let (arg, _) = typecast_args[0];
+                    let layout = MonoLayout::ArrayParser(Some(arg));
+                    let ty = result_type;
                     let res = ctx.dcx.intern(Layout::Mono(layout, ty));
                     Ok(res)
                 }
@@ -526,7 +541,8 @@ impl<'a> ILayout<'a> {
             Layout::Mono(MonoLayout::BlockParser(_, captures, _), _) => {
                 self.block_parser_manifestation(ctx, captures)?.size
             }
-            Layout::Mono(MonoLayout::IfParser(inner, _, _), _) => inner.size_align(ctx)?,
+            Layout::Mono(MonoLayout::IfParser(inner, _, _), _)
+            | Layout::Mono(MonoLayout::ArrayParser(Some(inner)), _) => inner.size_align(ctx)?,
             Layout::Mono(MonoLayout::Nominal(id, from, args), _) => {
                 self.nominal_manifestation(ctx, *id, *from, args)?.size
             }
@@ -538,9 +554,13 @@ impl<'a> ILayout<'a> {
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Char), _) => char::tsize(),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int), _) => i64::tsize(),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Unit), _) => Zst::tsize(),
-            Layout::Mono(MonoLayout::Single | MonoLayout::Nil | MonoLayout::Regex(_, _), _) => {
-                Zst::tsize()
-            }
+            Layout::Mono(
+                MonoLayout::Single
+                | MonoLayout::Nil
+                | MonoLayout::Regex(_, _)
+                | MonoLayout::ArrayParser(None),
+                _,
+            ) => Zst::tsize(),
             Layout::Mono(MonoLayout::Tuple(elements), _) => {
                 let mut size = Zst::tsize();
                 for element in elements {
@@ -854,6 +874,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ResolvedAtom::Val(id, bt) => ctx.var_by_id(id)?.with_backtrack_status(ctx, bt),
                 ResolvedAtom::Single => make_layout(MonoLayout::Single),
                 ResolvedAtom::Nil => make_layout(MonoLayout::Nil),
+                ResolvedAtom::Array => make_layout(MonoLayout::ArrayParser(None)),
                 ResolvedAtom::Regex(r, bt) => make_layout(MonoLayout::Regex(r, bt)),
                 ResolvedAtom::ParserDef(pd, bt) => {
                     make_layout(MonoLayout::NominalParser(pd, Vec::new(), bt))

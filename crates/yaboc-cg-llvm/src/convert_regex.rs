@@ -91,15 +91,7 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
     }
 
     fn copy_position(&mut self, dest: PointerValue<'llvm>, src: PointerValue<'llvm>) {
-        let sa = self.from.size_align(self.cg.layouts).unwrap();
-        let src_ptr = self.cg.get_object_start(self.from.maybe_mono(), src);
-        let dest_ptr = self.cg.get_object_start(self.from.maybe_mono(), dest);
-        let size = self.cg.const_i64(sa.size as i64);
-        let align = sa.align() as u32;
-        self.cg
-            .builder
-            .build_memcpy(dest_ptr, align, src_ptr, align, size)
-            .unwrap();
+        self.cg.build_copy_invariant(dest, src, self.from)
     }
 
     fn state_bb(&mut self, state: usize) -> BasicBlock<'llvm> {

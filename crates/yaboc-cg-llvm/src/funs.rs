@@ -292,11 +292,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let len = len.into_int_value();
         let arg = arg.into_pointer_value();
         let arg_ptr = self.build_cast::<*mut *const u8, _>(arg);
-        let ptr = self
-            .builder
-            .build_load(arg_ptr, "load_ptr")
-            .into_pointer_value();
-        let inc_ptr = self.build_byte_gep(ptr, len, "inc_ptr");
+        let [arg_start, _] = self.get_slice_ptrs(arg);
+        let inc_ptr = self.build_byte_gep(arg_start, len, "inc_ptr");
         self.builder.build_store(arg_ptr, inc_ptr);
         self.builder
             .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)));
@@ -578,6 +575,71 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         llvm_fun
     }
 
+    fn create_array_parse(
+        &mut self,
+        from: ILayout<'comp>,
+        layout: IMonoLayout<'comp>,
+        slot: PSize,
+        req: RequirementSet,
+    ) {
+        let llvm_fun = self.parser_fun_val(layout, slot, req);
+        self.add_entry_block(llvm_fun);
+        let (ret_ptr, len_ptr, target_head, mut arg) = parser_args(llvm_fun);
+        let arg_copy = self.build_layout_alloca(from, "arg_copy");
+        // make sure we don't modify the original arg
+        if !req.contains(NeededBy::Len) {
+            let arg_second_copy = self.build_layout_alloca(from, "arg_second_copy");
+            self.build_copy_invariant(arg_second_copy, arg, from);
+            arg = arg_second_copy;
+        }
+        self.build_copy_invariant(arg_copy, arg, from);
+
+        let len_ptr = self.build_cast::<*const i64, _>(len_ptr);
+        let len = self.builder.build_load(len_ptr, "len").into_int_value();
+        let [start, end] = self.get_slice_ptrs(arg);
+        let slice_len = self.builder.build_ptr_diff(end, start, "slice_len");
+        let is_out_of_bounds =
+            self.builder
+                .build_int_compare(IntPredicate::ULT, slice_len, len, "is_out_of_bounds");
+        let succ_block = self.llvm.append_basic_block(llvm_fun, "succ");
+        let fail_block = self.llvm.append_basic_block(llvm_fun, "fail");
+        self.builder
+            .build_conditional_branch(is_out_of_bounds, fail_block, succ_block);
+        self.builder.position_at_end(fail_block);
+        self.builder
+            .build_return(Some(&self.const_i64(ReturnStatus::Eof as i64)));
+        self.builder.position_at_end(succ_block);
+        let skip_fun = self.build_skip_fun_get(from.maybe_mono(), arg);
+        let ret = self
+            .builder
+            .build_call(skip_fun, &[arg.into(), len.into()], "skip");
+        self.non_zero_early_return(
+            llvm_fun,
+            ret.try_as_basic_value().left().unwrap().into_int_value(),
+        );
+        let ret = if req.contains(NeededBy::Val) {
+            let span_fun = self.build_span_fun_get(from.maybe_mono(), arg);
+            self.builder
+                .build_call(
+                    span_fun,
+                    &[
+                        ret_ptr.into(),
+                        arg_copy.into(),
+                        target_head.into(),
+                        arg.into(),
+                    ],
+                    "span",
+                )
+                .try_as_basic_value()
+                .left()
+                .unwrap()
+                .into_int_value()
+        } else {
+            self.const_i64(0)
+        };
+        self.builder.build_return(Some(&ret));
+    }
+
     fn create_field_access(&mut self, layout: IMonoLayout<'comp>, field: DefId, name: Identifier) {
         let fun = self.access_field_fun_val(layout, name);
         let entry = self.llvm.append_basic_block(fun, "entry");
@@ -704,6 +766,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 }
                 MonoLayout::IfParser(..) => {
                     self.create_if_parse(from, layout, *slot, req);
+                }
+                MonoLayout::ArrayParser(..) => {
+                    self.create_array_parse(from, layout, *slot, req);
                 }
                 _ => panic!("non-parser in parser layout collection"),
             }

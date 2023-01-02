@@ -546,6 +546,7 @@ astify! {
         Niladic(with_span_data(parser_block)),
         Niladic(with_span_data(single)),
         Niladic(with_span_data(nil)),
+        Niladic(with_span_data(array)),
         Niladic(with_span_data(regex_literal)),
         Niladic(with_span_data(atom..)),
     };
@@ -695,6 +696,10 @@ fn single(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ParserAtom> {
 
 fn nil(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ParserAtom> {
     Ok(ParserAtom::Nil)
+}
+
+fn array(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ParserAtom> {
+    Ok(ParserAtom::Array)
 }
 
 fn question_mark(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<()> {
