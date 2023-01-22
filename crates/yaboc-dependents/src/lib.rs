@@ -484,9 +484,6 @@ impl std::ops::BitOr for RequirementMatrix {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-pub struct BlockSlot(u32);
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct SubValueInfo {
     pub val: SubValue,
