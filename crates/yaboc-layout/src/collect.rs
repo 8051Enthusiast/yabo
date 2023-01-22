@@ -90,6 +90,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 MonoLayout::Nominal(_, _, _) => {
                     if self.nominals.insert(mono) {
                         let (arg, parser) = mono.unapply_nominal(self.ctx);
+                        let parser = parser.inner();
                         // the original parser may have been backtracking, so we need to register
                         // the corresponding non-backtracking parser as well
                         self.register_layouts(parser);

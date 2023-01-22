@@ -123,6 +123,7 @@ impl<'a> IMonoLayout<'a> {
         }
     }
 
+    #[inline(always)]
     pub fn inner(self) -> ILayout<'a> {
         self.0
     }
@@ -196,7 +197,7 @@ impl<'a> IMonoLayout<'a> {
     pub fn unapply_nominal(
         &self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
-    ) -> (ILayout<'a>, ILayout<'a>) {
+    ) -> (ILayout<'a>, IMonoLayout<'a>) {
         let mono = self.mono_layout().0;
         let MonoLayout::Nominal(pd, Some(from), to) = mono else {
             panic!("Expected nominal layout with from type");
@@ -209,8 +210,9 @@ impl<'a> IMonoLayout<'a> {
             MonoLayout::NominalParser(*pd, to.clone(), false),
             parser_ty,
         ));
+        let to_mono = IMonoLayout(to_layout);
         let from_layout = from.0;
-        (from_layout, to_layout)
+        (from_layout, to_mono)
     }
 }
 

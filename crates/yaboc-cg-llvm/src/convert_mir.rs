@@ -3,7 +3,7 @@ use std::rc::Rc;
 use inkwell::{
     basic_block::BasicBlock,
     types::IntType,
-    values::{BasicMetadataValueEnum, CallableValue, FunctionValue, IntValue, PointerValue},
+    values::{FunctionValue, IntValue, PointerValue},
     AddressSpace, IntPredicate,
 };
 
@@ -14,12 +14,14 @@ use yaboc_ast::ConstraintAtom;
 use yaboc_base::interner::FieldName;
 use yaboc_dependents::RequirementSet;
 use yaboc_hir::BlockId;
-use yaboc_hir_types::{DerefLevel, NominalId, NOBACKTRACK_BIT, VTABLE_BIT};
+use yaboc_hir_types::{NominalId, NOBACKTRACK_BIT, VTABLE_BIT};
 use yaboc_layout::{mir_subst::FunctionSubstitute, ILayout, Layout, MonoLayout};
 use yaboc_mir::{
     self as mir, BBRef, Comp, IntBinOp, IntUnOp, MirInstr, PlaceRef, ReturnStatus, Val,
 };
 use yaboc_types::{Type, TypeInterner};
+
+use crate::val::{CgMonoValue, CgReturnValue, CgValue};
 
 use super::CodeGenCtx;
 
@@ -29,10 +31,9 @@ pub struct MirTranslator<'llvm, 'comp, 'r> {
     llvm_fun: FunctionValue<'llvm>,
     blocks: Vec<BasicBlock<'llvm>>,
     stack: Vec<PointerValue<'llvm>>,
-    fun: PointerValue<'llvm>,
-    arg: PointerValue<'llvm>,
-    ret: Option<PointerValue<'llvm>>,
-    rethead: Option<IntValue<'llvm>>,
+    fun: CgMonoValue<'comp, 'llvm>,
+    arg: CgValue<'comp, 'llvm>,
+    ret: Option<CgReturnValue<'llvm>>,
     undefined: BasicBlock<'llvm>,
 }
 
@@ -41,8 +42,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         cg: &'r mut CodeGenCtx<'llvm, 'comp>,
         mir_fun: Rc<FunctionSubstitute<'comp>>,
         llvm_fun: FunctionValue<'llvm>,
-        fun: PointerValue<'llvm>,
-        arg: PointerValue<'llvm>,
+        fun: CgMonoValue<'comp, 'llvm>,
+        arg: CgValue<'comp, 'llvm>,
     ) -> Self {
         let entry = cg.llvm.append_basic_block(llvm_fun, "entry");
         cg.builder.position_at_end(entry);
@@ -74,14 +75,12 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             fun,
             arg,
             ret: None,
-            rethead: None,
             undefined,
         }
     }
 
-    pub fn with_ret_ptr(mut self, ret: PointerValue<'llvm>, rethead: IntValue<'llvm>) -> Self {
+    pub fn with_ret_val(mut self, ret: CgReturnValue<'llvm>) -> Self {
         self.ret = Some(ret);
-        self.rethead = Some(rethead);
         self
     }
 
@@ -98,14 +97,17 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         if self.is_ret_place(placeref) {
             return self
                 .ret
-                .expect("referenced return of non-returning function");
+                .expect("referenced return of non-returning function")
+                .ptr;
         }
         match place {
-            mir::Place::Arg | mir::Place::ReturnLen => self.arg,
-            mir::Place::Captures => self.fun,
-            mir::Place::Return => self
-                .ret
-                .expect("referenced return of non-returning function"),
+            mir::Place::Arg | mir::Place::ReturnLen => self.arg.ptr,
+            mir::Place::Captures => self.fun.ptr,
+            mir::Place::Return => {
+                self.ret
+                    .expect("referenced return of non-returning function")
+                    .ptr
+            }
             mir::Place::Front(outer) => {
                 let inner = self.place_ptr(outer);
                 if self.mir_fun.place(placeref).is_multi() {
@@ -117,11 +119,9 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             }
             mir::Place::Stack(stack_ref) => self.stack[stack_ref.as_index()],
             mir::Place::Field(outer, a) | mir::Place::Captured(outer, a) => {
-                let outer_layout = self.mir_fun.place(outer);
-                let outer_ptr = self.place_ptr(outer);
+                let outer = self.place_val(outer);
                 let inner_layout = self.mir_fun.place(placeref);
-                self.cg
-                    .build_field_gep(outer_layout, a, outer_ptr, inner_layout)
+                self.cg.build_field_gep(a, outer, inner_layout).ptr
             }
             mir::Place::ModifiedBy(ins_ref) => {
                 let MirInstr::ParseCall(_, _, _, front, _, _) = self.mir_fun.f.ins_at(ins_ref) else {
@@ -132,16 +132,22 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         }
     }
 
+    fn place_val(&mut self, placeref: PlaceRef) -> CgValue<'comp, 'llvm> {
+        let ptr = self.place_ptr(placeref);
+        let layout = self.mir_fun.place(placeref);
+        CgValue::new(layout, ptr)
+    }
+
     fn deref_level(&mut self, place: PlaceRef) -> IntValue<'llvm> {
         let remove_bt = self.mir_fun.f.place(place).remove_bt;
         let place_layout = self.mir_fun.place(place);
         if self.mir_fun.f.place(place).place == mir::Place::Return {
-            return self.rethead.unwrap();
+            return self.ret.unwrap().head;
         }
         let place_strictness = self.mir_fun.place_strictness(place);
         let deref_level = match place_strictness {
             Strictness::Return => {
-                return self.rethead.unwrap();
+                return self.ret.unwrap().head;
             }
             Strictness::Static(level) => level,
         };
@@ -155,28 +161,10 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         self.cg.const_i64(level as i64)
     }
 
-    fn fallible_call(
-        &mut self,
-        fun: CallableValue<'llvm>,
-        args: &[BasicMetadataValueEnum<'llvm>],
-        retreat: [BasicBlock<'llvm>; 3],
-    ) {
-        let ret = self.cg.build_call_with_int_ret(fun, args);
-        let next_block = self.cg.llvm.append_basic_block(self.llvm_fun, "");
-        self.cg.builder.build_switch(
-            ret,
-            self.undefined,
-            &[
-                (self.cg.const_i64(ReturnStatus::Ok as i64), next_block),
-                (
-                    self.cg.const_i64(ReturnStatus::Backtrack as i64),
-                    retreat[0],
-                ),
-                (self.cg.const_i64(ReturnStatus::Eof as i64), retreat[1]),
-                (self.cg.const_i64(ReturnStatus::Error as i64), retreat[2]),
-            ],
-        );
-        self.cg.builder.position_at_end(next_block);
+    fn return_val(&mut self, place: PlaceRef) -> CgReturnValue<'llvm> {
+        let ptr = self.place_ptr(place);
+        let head = self.deref_level(place);
+        CgReturnValue::new(head, ptr)
     }
 
     fn controlflow_case(&mut self, ret: IntValue<'llvm>, ctrl: ControlFlow) {
@@ -203,37 +191,20 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         );
     }
 
-    fn controlflow_call(
-        &mut self,
-        fun: CallableValue<'llvm>,
-        args: &[BasicMetadataValueEnum<'llvm>],
-        control: ControlFlow,
-    ) {
-        let ret = self.cg.build_call_with_int_ret(fun, args);
-        self.controlflow_case(ret, control)
-    }
-
     fn copy(&mut self, to: PlaceRef, from: PlaceRef, ctrl: ControlFlow) {
         if self.is_ret_place(to) && self.is_ret_place(from) {
             let block = self.bb(ctrl.next);
             self.cg.builder.build_unconditional_branch(block);
             return;
         }
-        let from_layout = self.mir_fun.place(from);
-        let to_level = self.deref_level(to);
-        if let Layout::None = from_layout.layout.1 {
+        let to = self.return_val(to);
+        let from = self.place_val(from);
+        if let Layout::None = from.layout.layout.1 {
             self.cg.builder.build_unreachable();
             return;
         }
-        let maybe_mono = from_layout.maybe_mono();
-        let from_ptr = self.place_ptr(from);
-        let fun = self.cg.build_typecast_fun_get(maybe_mono, from_ptr);
-        let to_ptr = self.place_ptr(to);
-        self.controlflow_call(
-            fun,
-            &[to_ptr.into(), from_ptr.into(), to_level.into()],
-            ctrl,
-        )
+        let ret = self.cg.call_typecast_fun(to, from);
+        self.controlflow_case(ret, ctrl)
     }
 
     fn unwrap_block_id(&mut self, layout: ILayout<'comp>) -> BlockId {
@@ -253,11 +224,9 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         block: PlaceRef,
         field: FieldName,
     ) -> Option<(PointerValue<'llvm>, IntValue<'llvm>)> {
-        let layout = self.mir_fun.place(block);
-        let block_id = self.unwrap_block_id(layout);
-        let block_ptr = self.place_ptr(block);
-        self.cg
-            .build_discriminant_info(block_id, block_ptr, layout, field)
+        let block = self.place_val(block);
+        let block_id = self.unwrap_block_id(block.layout);
+        self.cg.build_discriminant_info(block_id, block, field)
     }
 
     fn set_discriminant(&mut self, block: PlaceRef, field: FieldName, val: bool) {
@@ -397,7 +366,6 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     }
 
     fn field(&mut self, ret: PlaceRef, place: PlaceRef, field: FieldName, ctrl: ControlFlow) {
-        let layout = self.mir_fun.place(place);
         let field = match field {
             FieldName::Return => {
                 return self.copy(place, ret, ctrl);
@@ -409,17 +377,12 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             Type::Nominal(nom) => NominalId::from_nominal_head(&nom).unwrap_block(),
             _ => panic!("field called on non-block"),
         };
-        let place_ptr = self.place_ptr(place);
-        let fun = self
+        let place_val = self.place_val(place);
+        let ret_val = self.return_val(ret);
+        let ret = self
             .cg
-            .build_field_access_fun_get(block, layout.maybe_mono(), place_ptr, field);
-        let target_level = self.deref_level(ret);
-        let ret = self.place_ptr(ret);
-        self.controlflow_call(
-            fun,
-            &[ret.into(), place_ptr.into(), target_level.into()],
-            ctrl,
-        )
+            .call_field_access_fun(ret_val, place_val, block, field);
+        self.controlflow_case(ret, ctrl)
     }
 
     fn parse_call(
@@ -430,15 +393,14 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         arg: PlaceRef,
         ctrl: ControlFlow,
     ) {
-        let fun_layout = self.mir_fun.place(fun);
-        let fun_ptr = self.place_ptr(fun);
-        let arg_layout = self.mir_fun.place(arg);
+        let fun_val = self.place_val(fun);
+        let arg_val = self.place_val(arg);
         let slot = match self
             .cg
             .collected_layouts
             .parser_slots
             .layout_vtable_offsets
-            .get(&((arg_layout, call_kind), fun_layout))
+            .get(&((arg_val.layout, call_kind), fun_val.layout))
         {
             Some(slot) => *slot,
             None => {
@@ -447,26 +409,13 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 panic!("call slot not available")
             }
         };
-        let call_ptr =
-            self.cg
-                .build_parser_fun_get(fun_layout.maybe_mono(), fun_ptr, slot, call_kind, false);
-        let undef_ptr = self.cg.any_ptr().get_undef();
-        let ret_ptr = ret.map(|r| self.place_ptr(r)).unwrap_or(undef_ptr);
-        let arg_ptr = self.place_ptr(arg);
-        let deref_level = ret.map(|r| self.deref_level(r)).unwrap_or(
-            self.cg
-                .const_i64(DerefLevel::max().into_shifted_runtime_value() as i64),
-        );
-        self.controlflow_call(
-            call_ptr,
-            &[
-                ret_ptr.into(),
-                fun_ptr.into(),
-                deref_level.into(),
-                arg_ptr.into(),
-            ],
-            ctrl,
-        )
+        let ret_val = ret
+            .map(|r| self.return_val(r))
+            .unwrap_or_else(|| self.cg.undef_ret());
+        let ret = self
+            .cg
+            .call_parser_fun(ret_val, fun_val, arg_val, slot, call_kind, false);
+        self.controlflow_case(ret, ctrl)
     }
 
     fn store_val(&mut self, ret: PlaceRef, val: Val) {
@@ -522,13 +471,9 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     }
 
     fn set_arg(&mut self, fun: PlaceRef, arg: PlaceRef, argnum: u64, error: BasicBlock<'llvm>) {
-        let fun_layout = self.mir_fun.place(fun);
-        let arg_layout = self.mir_fun.place(arg);
-        let fun_ptr = self.place_ptr(fun);
-        let arg_ptr = self.place_ptr(arg);
-        let ret = self
-            .cg
-            .build_arg_set(fun_layout, fun_ptr, arg_layout, arg_ptr, argnum);
+        let fun_val = self.place_val(fun);
+        let arg_val = self.place_val(arg);
+        let ret = self.cg.build_arg_set(fun_val, arg_val, argnum);
         let ret_is_err = self.cg.builder.build_int_compare(
             IntPredicate::EQ,
             ret,
@@ -578,25 +523,16 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             .layouts
             .dcx
             .intern(Layout::Mono(MonoLayout::Tuple(arg_layout), any_ty));
-        let fun_layout = self.mir_fun.place(fun);
-        let fun_ptr = self.place_ptr(fun);
+        let fun = self.place_val(fun);
         let slot = *self
             .cg
             .collected_layouts
             .funcall_slots
             .layout_vtable_offsets
-            .get(&(arg_layout_tuple, fun_layout))
+            .get(&(arg_layout_tuple, fun.layout))
             .expect("apply_args slot not available");
-        let create_fun = self
-            .cg
-            .build_fun_create_get(fun_layout.maybe_mono(), fun_ptr, slot);
-        let ret_ptr = self.place_ptr(ret);
-        let ret_level = self.deref_level(ret);
-        self.fallible_call(
-            create_fun,
-            &[ret_ptr.into(), fun_ptr.into(), ret_level.into()],
-            [self.undefined; 3],
-        );
+        let ret_val = self.return_val(ret);
+        self.cg.call_fun_create(ret_val, fun, slot);
         for (i, arg) in args.iter().enumerate() {
             self.set_arg(ret, *arg, first_index - i as u64, error);
         }
