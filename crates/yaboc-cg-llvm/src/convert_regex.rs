@@ -10,7 +10,11 @@ use yaboc_layout::{ILayout, IMonoLayout, MonoLayout};
 use yaboc_mir::ReturnStatus;
 use yaboc_types::{PrimitiveType, Type, TypeInterner};
 
-use crate::{parser_args, CodeGenCtx};
+use crate::{
+    parser_args,
+    val::{CgReturnValue, CgValue},
+    CodeGenCtx,
+};
 
 pub struct RegexTranslator<'llvm, 'comp, 'r, D: DFA<ID = usize>> {
     cg: &'r mut CodeGenCtx<'llvm, 'comp>,
@@ -18,16 +22,14 @@ pub struct RegexTranslator<'llvm, 'comp, 'r, D: DFA<ID = usize>> {
     dfa: &'r D,
     bt: BasicBlock<'llvm>,
     succ: BasicBlock<'llvm>,
-    arg: PointerValue<'llvm>,
-    ret: PointerValue<'llvm>,
-    head: IntValue<'llvm>,
-    tmp_ret: PointerValue<'llvm>,
-    next_byte: PointerValue<'llvm>,
-    greedy_info: Option<(PointerValue<'llvm>, PointerValue<'llvm>)>,
+    ret: CgReturnValue<'llvm>,
+    tmp_ret: CgValue<'comp, 'llvm>,
+    next_byte: CgValue<'comp, 'llvm>,
+    greedy_info: Option<(PointerValue<'llvm>, CgValue<'comp, 'llvm>)>,
     stateblock: FxHashMap<usize, BasicBlock<'llvm>>,
     new_states: Vec<usize>,
     parser_fun: FunctionValue<'llvm>,
-    from: ILayout<'comp>,
+    from: CgValue<'comp, 'llvm>,
 }
 
 impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> {
@@ -55,13 +57,13 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
 
         let entry = cg.llvm.append_basic_block(llvm_fun, "entry");
         cg.builder.position_at_end(entry);
-        let next_byte = cg.build_layout_alloca(int_layout, "next_byte");
-        let tmp_ret = cg.build_layout_alloca(from, "tmp_ret");
+        let next_byte = cg.build_alloca_value(int_layout, "next_byte");
+        let tmp_ret = cg.build_alloca_value(from, "tmp_ret");
         let greedy_info = if greedy {
             let no_match = cg.builder.build_alloca(cg.llvm.bool_type(), "has_matched");
             cg.builder
                 .build_store(no_match, cg.llvm.bool_type().const_int(1, false));
-            let last_match = cg.build_layout_alloca(from, "last_match");
+            let last_match = cg.build_alloca_value(from, "last_match");
             Some((no_match, last_match))
         } else {
             None
@@ -71,15 +73,15 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
         let stateblock = FxHashMap::default();
         let new_states = Vec::new();
         let (ret, _, head, arg) = parser_args(llvm_fun);
+        let from = CgValue::new(from, arg);
+        let ret = CgReturnValue::new(head, ret);
         Self {
             cg,
             llvm_fun,
             dfa,
             bt,
             succ,
-            arg,
             ret,
-            head,
             tmp_ret,
             next_byte,
             greedy_info,
@@ -90,8 +92,8 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
         }
     }
 
-    fn copy_position(&mut self, dest: PointerValue<'llvm>, src: PointerValue<'llvm>) {
-        self.cg.build_copy_invariant(dest, src, self.from)
+    fn copy_position(&mut self, dest: CgValue<'comp, 'llvm>, src: CgValue<'comp, 'llvm>) {
+        self.cg.build_copy_invariant(dest, src)
     }
 
     fn state_bb(&mut self, state: usize) -> BasicBlock<'llvm> {
@@ -118,10 +120,10 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
         let ret = self.cg.builder.build_call(
             self.parser_fun,
             &[
-                self.next_byte.into(),
+                self.next_byte.ptr.into(),
                 undef.into(),
                 self.cg.const_i64(head as i64).into(),
-                self.arg.into(),
+                self.from.ptr.into(),
             ],
             "next_ret",
         );
@@ -140,7 +142,7 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
         self.cg.builder.position_at_end(ret_bb);
         self.cg.builder.build_return(Some(&ret));
         self.cg.builder.position_at_end(cont_bb);
-        let next_byte = self.cg.build_cast::<*mut i64, _>(self.next_byte);
+        let next_byte = self.cg.build_cast::<*mut i64, _>(self.next_byte.ptr);
         self.cg
             .builder
             .build_load(next_byte, "next_byte")
@@ -159,7 +161,7 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
                 self.cg
                     .builder
                     .build_store(has_no_match, self.cg.llvm.bool_type().const_zero());
-                self.copy_position(last_match, self.arg);
+                self.copy_position(last_match, self.from);
             } else {
                 self.cg.builder.build_unconditional_branch(self.succ);
                 return;
@@ -179,20 +181,9 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
     fn add_succ_block(&mut self) {
         self.cg.builder.position_at_end(self.succ);
         if let Some((_, last_match)) = self.greedy_info {
-            self.copy_position(self.arg, last_match);
+            self.copy_position(self.from, last_match);
         }
-        let spanner = self.cg.build_span_fun_get(self.from.maybe_mono(), self.arg);
-        let ret = self.cg.builder.build_call(
-            spanner,
-            &[
-                self.ret.into(),
-                self.tmp_ret.into(),
-                self.head.into(),
-                self.arg.into(),
-            ],
-            "span",
-        );
-        let ret = ret.try_as_basic_value().left().unwrap().into_int_value();
+        let ret = self.cg.call_span_fun(self.ret, self.tmp_ret, self.from);
         self.cg.builder.build_return(Some(&ret));
     }
 
@@ -216,7 +207,7 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
     }
 
     pub fn build(&mut self) {
-        self.copy_position(self.tmp_ret, self.arg);
+        self.copy_position(self.tmp_ret, self.from);
         let start_state_block = self.state_bb(self.dfa.start_state());
         self.cg
             .builder

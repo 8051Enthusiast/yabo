@@ -4,6 +4,7 @@ mod convert_thunk;
 mod defs;
 mod funs;
 mod getset;
+mod val;
 mod vtables;
 
 use std::{ffi::OsStr, fmt::Debug, path::Path, rc::Rc};
@@ -29,6 +30,7 @@ use inkwell::{
     AddressSpace, GlobalVisibility, IntPredicate, OptimizationLevel,
 };
 
+use val::{CgMonoValue, CgReturnValue, CgValue};
 use yaboc_absint::{AbstractDomain, Arg};
 use yaboc_base::config::Configs;
 use yaboc_base::dbpanic;
@@ -36,7 +38,7 @@ use yaboc_base::interner::{DefId, FieldName, Identifier, Interner};
 use yaboc_database::YabocDatabase;
 use yaboc_dependents::RequirementSet;
 use yaboc_hir::{BlockId, HirIdWrapper, Hirs, ParserDefId};
-use yaboc_hir_types::TyHirs;
+use yaboc_hir_types::{DerefLevel, TyHirs};
 use yaboc_layout::{
     canon_layout,
     collect::{root_req, LayoutCollection, LayoutCollector},
@@ -240,6 +242,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         instr.set_alignment(sa.align() as u32).ok()
     }
 
+    fn undef_ret(&self) -> CgReturnValue<'llvm> {
+        let undef_ptr = self.any_ptr().get_undef();
+        let head = self.const_i64(DerefLevel::max().into_shifted_runtime_value() as i64);
+        CgReturnValue::new(head, undef_ptr)
+    }
+
     fn build_layout_alloca(&mut self, layout: ILayout<'comp>, name: &str) -> PointerValue<'llvm> {
         let sa = layout
             .size_align(self.layouts)
@@ -265,6 +273,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
     }
 
+    fn build_alloca_value(&mut self, layout: ILayout<'comp>, name: &str) -> CgValue<'comp, 'llvm> {
+        let ptr = self.build_layout_alloca(layout, name);
+        CgValue::new(layout, ptr)
+    }
+
     fn build_call_with_int_ret(
         &mut self,
         call_fun: CallableValue<'llvm>,
@@ -279,16 +292,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn build_parser_call(
         &mut self,
-        ret: PointerValue<'llvm>,
-        fun: (ILayout<'comp>, PointerValue<'llvm>),
-        head: IntValue<'llvm>,
-        from: (ILayout<'comp>, PointerValue<'llvm>),
+        ret: CgReturnValue<'llvm>,
+        fun: CgValue<'comp, 'llvm>,
+        from: CgValue<'comp, 'llvm>,
         call_kind: RequirementSet,
     ) -> IntValue<'llvm> {
         let slot = self.collected_layouts.parser_slots.layout_vtable_offsets
-            [&((from.0, call_kind), fun.0)];
-        let f = self.build_parser_fun_get(fun.0.maybe_mono(), fun.1, slot, call_kind, false);
-        self.build_call_with_int_ret(f, &[ret.into(), fun.1.into(), head.into(), from.1.into()])
+            [&((from.layout, call_kind), fun.layout)];
+        self.call_parser_fun(ret, fun, from, slot, call_kind, false)
     }
 
     fn module_string(&mut self, s: &str) -> PointerValue<'llvm> {
@@ -357,11 +368,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn build_discriminant_info(
         &mut self,
         block_id: BlockId,
-        block_ptr: PointerValue<'llvm>,
-        layout: ILayout<'comp>,
+        block: CgValue<'comp, 'llvm>,
         field: FieldName,
     ) -> Option<(PointerValue<'llvm>, IntValue<'llvm>)> {
-        let manifestation = self.layouts.dcx.manifestation(layout);
+        let manifestation = self.layouts.dcx.manifestation(block.layout);
         let disc_offset = manifestation.discriminant_offset;
         let root_ctx = block_id
             .lookup(&self.compiler_database.db)
@@ -375,7 +385,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .const_int(disc_offset + inner_offset / 8, false);
         let bit_offset = inner_offset % 8;
         let shifted_bit = self.llvm.i8_type().const_int(1 << bit_offset, false);
-        let byte_ptr = self.build_byte_gep(block_ptr, byte_offset, "gepdisc");
+        let byte_ptr = self.build_byte_gep(block.ptr, byte_offset, "gepdisc");
         Some((byte_ptr, shifted_bit))
     }
 
@@ -423,62 +433,53 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn build_field_gep(
         &mut self,
-        layout: ILayout<'comp>,
         field: DefId,
-        ptr: PointerValue<'llvm>,
+        val: CgValue<'comp, 'llvm>,
         field_layout: ILayout<'comp>,
-    ) -> PointerValue<'llvm> {
-        let mut offset = self.layouts.dcx.manifestation(layout).field_offsets[&field];
+    ) -> CgValue<'comp, 'llvm> {
+        let mut offset = self.layouts.dcx.manifestation(val.layout).field_offsets[&field];
         if field_layout.is_multi() {
             offset += self.word_size();
         }
         let offset_llvm_int = self.llvm.i64_type().const_int(offset, false);
-        self.build_byte_gep(ptr, offset_llvm_int, "gepfield")
+
+        let field_ptr = self.build_byte_gep(val.ptr, offset_llvm_int, "gepfield");
+        CgValue::new(field_layout, field_ptr)
     }
 
     fn build_nominal_components(
         &mut self,
-        layout: IMonoLayout<'comp>,
-        ptr: PointerValue<'llvm>,
+        val: CgMonoValue<'comp, 'llvm>,
         req: RequirementSet,
-    ) -> (PointerValue<'llvm>, PointerValue<'llvm>, u64) {
-        let MonoLayout::Nominal(pd, from_layout, args) = layout.mono_layout().0 else {
+    ) -> (CgValue<'comp, 'llvm>, CgMonoValue<'comp, 'llvm>, u64) {
+        let MonoLayout::Nominal(pd, _, args) = val.layout.mono_layout().0 else {
             panic!("build_nominal_components has to be called with a nominal parser layout");
         };
 
         let parserdef = pd.lookup(&self.compiler_database.db).unwrap();
-        let layout_sa = layout.inner().size_align(self.layouts).unwrap();
-        let from_ptr = if let Some((from_layout, _)) = from_layout {
-            self.build_field_gep(layout.inner(), parserdef.from.0, ptr, *from_layout)
-        } else {
-            self.any_ptr().get_undef()
-        };
-        let (from, parser) = layout.unapply_nominal(self.layouts);
-        let slot =
-            self.collected_layouts.parser_slots.layout_vtable_offsets[&((from, req), parser)];
+        let layout_sa = val.layout.inner().size_align(self.layouts).unwrap();
+        let (from_layout, parser) = val.layout.unapply_nominal(self.layouts);
+        let from_val = self.build_field_gep(parserdef.from.0, val.into(), from_layout);
+        let slot = self.collected_layouts.parser_slots.layout_vtable_offsets
+            [&((from_layout, req), parser.inner())];
 
         let arg_ptr = if !args.is_empty() {
-            let mut from_sa = from_layout
-                .map(|l| l.0.size_align(self.layouts).unwrap())
-                .unwrap_or_default();
+            let mut from_sa = from_layout.size_align(self.layouts).unwrap();
             from_sa.align_mask |= layout_sa.align_mask;
 
-            self.build_byte_gep(ptr, self.const_i64(from_sa.stride() as i64), "arg_ptr")
+            self.build_byte_gep(val.ptr, self.const_i64(from_sa.stride() as i64), "arg_ptr")
         } else {
             self.any_ptr().get_undef()
         };
-        (from_ptr, arg_ptr, slot)
+        let arg = CgMonoValue::new(parser, arg_ptr);
+        (from_val, arg, slot)
     }
 
-    fn build_copy_invariant(
-        &mut self,
-        dest: PointerValue<'llvm>,
-        src: PointerValue<'llvm>,
-        layout: ILayout<'comp>,
-    ) {
-        let sa = layout.size_align(self.layouts).unwrap();
-        let src_ptr = self.get_object_start(layout.maybe_mono(), src);
-        let dest_ptr = self.get_object_start(layout.maybe_mono(), dest);
+    fn build_copy_invariant(&mut self, dest: CgValue<'comp, 'llvm>, src: CgValue<'comp, 'llvm>) {
+        assert_eq!(dest.layout, src.layout);
+        let sa = src.layout.size_align(self.layouts).unwrap();
+        let src_ptr = self.get_object_start(src);
+        let dest_ptr = self.get_object_start(dest);
         let size = self.const_i64(sa.size as i64);
         let align = sa.align() as u32;
         self.builder
@@ -551,6 +552,22 @@ fn parser_args(fun: FunctionValue) -> (PointerValue, PointerValue, IntValue, Poi
         head.into_int_value(),
         from.into_pointer_value(),
     )
+}
+
+fn parser_values<'comp, 'llvm>(
+    fun: FunctionValue<'llvm>,
+    fun_layout: IMonoLayout<'comp>,
+    arg_layout: ILayout<'comp>,
+) -> (
+    CgReturnValue<'llvm>,
+    CgMonoValue<'comp, 'llvm>,
+    CgValue<'comp, 'llvm>,
+) {
+    let (ret, fun, head, from) = parser_args(fun);
+    let ret = CgReturnValue::new(head, ret);
+    let fun = CgMonoValue::new(fun_layout, fun);
+    let arg = CgValue::new(arg_layout, from);
+    (ret, fun, arg)
 }
 
 impl<'llvm, 'comp> CodegenTypeContext for CodeGenCtx<'llvm, 'comp> {

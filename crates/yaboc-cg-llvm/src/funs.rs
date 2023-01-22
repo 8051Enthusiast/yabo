@@ -1,5 +1,4 @@
 use yaboc_dependents::NeededBy;
-use yaboc_hir_types::DerefLevel;
 use yaboc_layout::collect::{pd_len_req, pd_val_req};
 use yaboc_mir::FunKind;
 
@@ -29,18 +28,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.builder.position_at_end(success_bb);
     }
 
-    fn terminate_tail_typecast(
-        &mut self,
-        layout: ILayout<'comp>,
-        buffer: PointerValue<'llvm>,
-        target_head: IntValue<'llvm>,
-        pointer: PointerValue<'llvm>,
-    ) {
-        let typecast_fun = self.build_typecast_fun_get(layout.maybe_mono(), buffer);
-        let ret = self.build_call_with_int_ret(
-            typecast_fun,
-            &[pointer.into(), buffer.into(), target_head.into()],
-        );
+    fn terminate_tail_typecast(&mut self, arg: CgValue<'comp, 'llvm>, ret: CgReturnValue<'llvm>) {
+        let ret = self.call_typecast_fun(ret, arg);
         self.builder.build_return(Some(&ret));
     }
 
@@ -115,9 +104,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         if let MonoLayout::Nominal(..) = layout.mono_layout().0 {
             let (from, fun) = layout.unapply_nominal(self.layouts);
             let slot = self.collected_layouts.parser_slots.layout_vtable_offsets
-                [&((from, pd_val_req()), fun)];
-            let mono = flat_layouts(&fun).next().unwrap();
-            self.create_pd_parse_impl(from, mono, slot, pd_val_req());
+                [&((from, pd_val_req()), fun.inner())];
+            self.create_pd_parse_impl(from, fun, slot, pd_val_req());
         }
         ThunkContext::new(self, TypecastThunk { layout }).build();
     }
@@ -202,10 +190,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             None => self.parser_impl_fun_val(layout, slot, req),
         };
         let mir_fun = Rc::new(self.mir_pd_fun(from, layout, req));
-        let (ret, fun, head, arg) = parser_args(llvm_fun);
+        let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
         let mut translator = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg);
         if req.contains(NeededBy::Val) {
-            translator = translator.with_ret_ptr(ret, head);
+            translator = translator.with_ret_val(ret);
         }
         translator.build()
     }
@@ -214,18 +202,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let llvm_fun = self.end_fun_val(layout);
         self.add_entry_block(llvm_fun);
         let [ret, arg] = get_fun_args(llvm_fun).map(|x| x.into_pointer_value());
+        let arg = CgMonoValue::new(layout, arg);
         let start_copy = self.start_fun_val(layout);
         self.builder
-            .build_call(start_copy, &[ret.into(), arg.into()], "");
-        let (from_layout, fun_layout) = layout.unapply_nominal(self.layouts);
-        let (_, fun, _) = self.build_nominal_components(layout, arg, pd_len_req());
-        let ret = self.build_parser_call(
-            self.any_ptr().get_undef(),
-            (fun_layout, fun),
-            self.const_i64(DerefLevel::max().into_shifted_runtime_value() as i64),
-            (from_layout, ret),
-            pd_len_req(),
-        );
+            .build_call(start_copy, &[ret.into(), arg.ptr.into()], "");
+        let (from, fun, _) = self.build_nominal_components(arg, pd_len_req());
+        let no_ret = self.undef_ret();
+        let from_ret = from.with_ptr(ret);
+        let ret = self.build_parser_call(no_ret, fun.into(), from_ret, pd_len_req());
         self.builder.build_return(Some(&ret));
     }
 
@@ -305,17 +289,18 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.add_entry_block(fun);
         let [ret, start, head, end] = get_fun_args(fun);
         let [ret, start, end] = [ret, start, end].map(|x| x.into_pointer_value());
-        let buf = self.build_layout_alloca(layout.inner(), "buf");
+        let ret = CgReturnValue::new(head.into_int_value(), ret);
+        let buf = self.build_alloca_value(layout.inner(), "buf");
         let [start_ptr, _] = self.get_slice_ptrs(start);
         let [end_ptr, _] = self.get_slice_ptrs(end);
-        let bufsl = self.build_cast::<*mut *const u8, _>(buf);
+        let bufsl = self.build_cast::<*mut *const u8, _>(buf.ptr);
         self.builder.build_store(bufsl, start_ptr);
         let bufsl = unsafe {
             self.builder
                 .build_in_bounds_gep(bufsl, &[self.const_i64(1)], "ret")
         };
         self.builder.build_store(bufsl, end_ptr);
-        self.terminate_tail_typecast(layout.inner(), buf, head.into_int_value(), ret)
+        self.terminate_tail_typecast(buf, ret)
     }
 
     fn create_array_current_element(&mut self, layout: IMonoLayout<'comp>) {
@@ -330,11 +315,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 .intern_type(Type::Primitive(PrimitiveType::Int)),
         )
         .unwrap();
-        let int_buf = self.build_layout_alloca(int_layout, "int_buf");
+        let int_buf = self.build_alloca_value(int_layout, "int_buf");
         let [return_ptr, from, target_head] = get_fun_args(fun);
         let from = self.build_cast::<*const *const u8, _>(from);
-        let target_head = target_head.into_int_value();
-        let return_ptr = return_ptr.into_pointer_value();
+        let ret = CgReturnValue::new(
+            target_head.into_int_value(),
+            return_ptr.into_pointer_value(),
+        );
         let int_ptr = self
             .builder
             .build_load(from, "load_ptr")
@@ -346,9 +333,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let int = self
             .builder
             .build_int_z_extend(byte, self.llvm.i64_type(), "int");
-        let bitcasted_buf = self.build_cast::<*mut i64, _>(int_buf);
+        let bitcasted_buf = self.build_cast::<*mut i64, _>(int_buf.ptr);
         self.builder.build_store(bitcasted_buf, int);
-        self.terminate_tail_typecast(int_layout, int_buf, target_head, return_ptr);
+        self.terminate_tail_typecast(int_buf, ret);
     }
 
     fn create_block_parse(
@@ -368,10 +355,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.parser_impl_fun_val(layout, slot, req)
         };
 
-        let (ret, fun, head, arg) = parser_args(impl_fun);
+        let (ret, fun, arg) = parser_values(impl_fun, layout, from);
         let mut translator = MirTranslator::new(self, mir_fun, impl_fun, fun, arg);
         if req.contains(NeededBy::Val) {
-            translator = translator.with_ret_ptr(ret, head)
+            translator = translator.with_ret_val(ret)
         }
         translator.build();
 
@@ -405,10 +392,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) {
         let llvm_fun = self.parser_fun_val(layout, slot, req);
         let mir_fun = Rc::new(self.mir_if_fun(from, layout, req));
-        let (ret, fun, head, arg) = parser_args(llvm_fun);
+        let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
         let mut trans = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg);
         if req.contains(NeededBy::Val) {
-            trans = trans.with_ret_ptr(ret, head)
+            trans = trans.with_ret_val(ret)
         }
         trans.build();
     }
@@ -423,8 +410,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let llvm_fun = self.parser_fun_val(layout, slot, req);
         self.set_always_inline(llvm_fun);
         self.add_entry_block(llvm_fun);
-        let (ret, _, target_head, arg) = parser_args(llvm_fun);
-        let [ptr, end_ptr] = self.get_slice_ptrs(arg);
+        let (ret, _, arg) = parser_values(llvm_fun, layout, from);
+        let [ptr, end_ptr] = self.get_slice_ptrs(arg.ptr);
         let fail_block = self.llvm.append_basic_block(llvm_fun, "fail");
         let ok_block = self.llvm.append_basic_block(llvm_fun, "ok");
         let ptr_diff = self.builder.build_ptr_diff(end_ptr, ptr, "ptr_diff");
@@ -441,16 +428,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .build_return(Some(&self.const_i64(ReturnStatus::Eof as i64)));
         self.builder.position_at_end(ok_block);
         if req.contains(NeededBy::Val) {
-            let current_element_fun = self.build_current_element_fun_get(from.maybe_mono(), arg);
-            let ret = self.build_call_with_int_ret(
-                current_element_fun,
-                &[ret.into(), arg.into(), target_head.into()],
-            );
+            let ret = self.call_current_element_fun(ret, arg);
             self.non_zero_early_return(llvm_fun, ret)
         }
         if req.contains(NeededBy::Len) {
-            let single_forward_fun = self.build_single_forward_fun_get(from.maybe_mono(), arg);
-            let ret = self.build_call_with_int_ret(single_forward_fun, &[arg.into()]);
+            let ret = self.call_single_forward_fun(arg);
             self.builder.build_return(Some(&ret));
         } else {
             self.builder.build_return(Some(&self.const_i64(0)));
@@ -459,7 +441,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn create_nil_parse(
         &mut self,
-        _from: ILayout<'comp>,
+        from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
         slot: PSize,
         req: RequirementSet,
@@ -467,15 +449,15 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let llvm_fun = self.parser_fun_val(layout, slot, req);
         self.add_entry_block(llvm_fun);
         self.set_always_inline(llvm_fun);
-        let (ret, _, target_head, _) = parser_args(llvm_fun);
+        let (ret, _, _) = parser_values(llvm_fun, layout, from);
         if req.contains(NeededBy::Val) {
             let unit_type = self
                 .compiler_database
                 .db
                 .intern_type(Type::Primitive(PrimitiveType::Unit));
             let unit_layout = canon_layout(self.layouts, unit_type).unwrap();
-            let null_ptr = self.any_ptr().const_null();
-            self.terminate_tail_typecast(unit_layout, null_ptr, target_head, ret);
+            let undef = CgValue::new(unit_layout, self.any_ptr().get_undef());
+            self.terminate_tail_typecast(undef, ret);
         } else {
             self.builder.build_return(Some(&self.const_i64(0)));
         }
@@ -495,38 +477,29 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let regex_impl = self.create_regex_parse_impl(from, layout, &regex_str, slot, req);
         let llvm_fun = self.parser_fun_val(layout, slot, req);
         self.add_entry_block(llvm_fun);
-        let (ret, _, target_head, arg) = parser_args(llvm_fun);
+        let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
+        let ret_copy = if !req.contains(NeededBy::Val) {
+            let buf_ptr = self.build_layout_alloca(from, "ret_copy");
+            self.undef_ret().with_ptr(buf_ptr)
+        } else {
+            ret
+        };
         let arg_copy = if !req.contains(NeededBy::Len) {
-            let a = self.build_layout_alloca(from, "arg_copy");
-            let sa = from.size_align(self.layouts).unwrap();
-            let a_ptr = self.get_object_start(from.maybe_mono(), a);
-            let arg_ptr = self.get_object_start(from.maybe_mono(), arg);
-            let size = self.const_i64(sa.size as i64);
-            let align = sa.align() as u32;
-            self.builder
-                .build_memcpy(a_ptr, align, arg_ptr, align, size)
-                .unwrap();
+            let a = self.build_alloca_value(from, "arg_copy");
+            self.build_copy_invariant(a, arg);
             a
         } else {
             arg
         };
-        let ret_copy = if !req.contains(NeededBy::Val) {
-            self.build_layout_alloca(from, "ret_copy")
-        } else {
-            ret
-        };
-        let undef = self.any_ptr().get_undef();
-        let ret = self.builder.build_call(
-            regex_impl,
+        let ret = self.build_call_with_int_ret(
+            regex_impl.into(),
             &[
-                ret_copy.into(),
-                undef.into(),
-                target_head.into(),
-                arg_copy.into(),
+                ret_copy.ptr.into(),
+                fun.ptr.into(),
+                ret_copy.head.into(),
+                arg_copy.ptr.into(),
             ],
-            "impl_call",
         );
-        let ret = ret.try_as_basic_value().left().unwrap().into_int_value();
         let ret = if *bt {
             let is_bt = self.builder.build_int_compare(
                 IntPredicate::EQ,
@@ -584,19 +557,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) {
         let llvm_fun = self.parser_fun_val(layout, slot, req);
         self.add_entry_block(llvm_fun);
-        let (ret_ptr, len_ptr, target_head, mut arg) = parser_args(llvm_fun);
-        let arg_copy = self.build_layout_alloca(from, "arg_copy");
+        let (ret_val, len_ptr, mut arg) = parser_values(llvm_fun, layout, from);
+        let arg_copy = self.build_alloca_value(from, "arg_copy");
         // make sure we don't modify the original arg
         if !req.contains(NeededBy::Len) {
-            let arg_second_copy = self.build_layout_alloca(from, "arg_second_copy");
-            self.build_copy_invariant(arg_second_copy, arg, from);
+            let arg_second_copy = self.build_alloca_value(from, "arg_second_copy");
+            self.build_copy_invariant(arg_second_copy, arg);
             arg = arg_second_copy;
         }
-        self.build_copy_invariant(arg_copy, arg, from);
+        self.build_copy_invariant(arg_copy, arg);
 
-        let len_ptr = self.build_cast::<*const i64, _>(len_ptr);
+        let len_ptr = self.build_cast::<*const i64, _>(len_ptr.ptr);
         let len = self.builder.build_load(len_ptr, "len").into_int_value();
-        let [start, end] = self.get_slice_ptrs(arg);
+        let [start, end] = self.get_slice_ptrs(arg.ptr);
         let slice_len = self.builder.build_ptr_diff(end, start, "slice_len");
         let is_out_of_bounds =
             self.builder
@@ -609,31 +582,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.builder
             .build_return(Some(&self.const_i64(ReturnStatus::Eof as i64)));
         self.builder.position_at_end(succ_block);
-        let skip_fun = self.build_skip_fun_get(from.maybe_mono(), arg);
-        let ret = self
-            .builder
-            .build_call(skip_fun, &[arg.into(), len.into()], "skip");
-        self.non_zero_early_return(
-            llvm_fun,
-            ret.try_as_basic_value().left().unwrap().into_int_value(),
-        );
+        let ret = self.call_skip_fun(arg, len);
+        self.non_zero_early_return(llvm_fun, ret);
         let ret = if req.contains(NeededBy::Val) {
-            let span_fun = self.build_span_fun_get(from.maybe_mono(), arg);
-            self.builder
-                .build_call(
-                    span_fun,
-                    &[
-                        ret_ptr.into(),
-                        arg_copy.into(),
-                        target_head.into(),
-                        arg.into(),
-                    ],
-                    "span",
-                )
-                .try_as_basic_value()
-                .left()
-                .unwrap()
-                .into_int_value()
+            self.call_span_fun(ret_val, arg_copy, arg)
         } else {
             self.const_i64(0)
         };
@@ -645,9 +597,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let entry = self.llvm.append_basic_block(fun, "entry");
         self.builder.position_at_end(entry);
         let [return_ptr, block, target_head] = get_fun_args(fun);
-        let block = block.into_pointer_value();
-        let target_head = target_head.into_int_value();
-        let return_ptr = return_ptr.into_pointer_value();
+        let block = CgMonoValue::new(layout, block.into_pointer_value());
+        let return_val = CgReturnValue::new(
+            target_head.into_int_value(),
+            return_ptr.into_pointer_value(),
+        );
         let (id, inner_layout) = if let MonoLayout::Block(id, fields) = &layout.mono_layout().0 {
             (id, fields[&FieldName::Ident(name)])
         } else {
@@ -658,7 +612,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             );
         };
         if let Some((ptr, mask)) =
-            self.build_discriminant_info(*id, block, layout.inner(), FieldName::Ident(name))
+            self.build_discriminant_info(*id, block.into(), FieldName::Ident(name))
         {
             let next_bb = self.llvm.append_basic_block(fun, "next");
             let early_exit_bb = self.llvm.append_basic_block(fun, "early_exit");
@@ -670,8 +624,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 .build_return(Some(&self.const_i64(ReturnStatus::Backtrack as i64)));
             self.builder.position_at_end(next_bb);
         }
-        let field_ptr = self.build_field_gep(layout.inner(), field, block, inner_layout);
-        self.terminate_tail_typecast(inner_layout, field_ptr, target_head, return_ptr);
+        let field = self.build_field_gep(field, block.into(), inner_layout);
+        self.terminate_tail_typecast(field, return_val);
     }
 
     fn create_create_fun_args(
