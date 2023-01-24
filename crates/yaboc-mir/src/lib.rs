@@ -204,6 +204,24 @@ impl ControlFlow {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+pub struct CallMeta {
+    pub req: RequirementSet,
+    pub tail: bool,
+}
+
+impl CallMeta {
+    pub fn new(req: RequirementSet, tail: bool) -> Self {
+        Self { req, tail }
+    }
+    pub fn with_req(self, f: impl FnOnce(RequirementSet) -> RequirementSet) -> Self {
+        Self {
+            req: f(self.req),
+            tail: self.tail,
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct InsRef(pub BBRef, pub u32);
 
@@ -219,7 +237,7 @@ pub enum MirInstr {
     ParseCall(
         Option<PlaceRef>,
         Option<PlaceRef>,
-        RequirementSet,
+        CallMeta,
         PlaceRef,
         PlaceRef,
         ControlFlow,
@@ -597,7 +615,7 @@ impl FunctionWriter {
 
     pub fn parse_call(
         &mut self,
-        call_kind: RequirementSet,
+        call_info: CallMeta,
         arg: PlaceRef,
         fun: PlaceRef,
         ret: Option<PlaceRef>,
@@ -610,7 +628,7 @@ impl FunctionWriter {
             .append_ins(MirInstr::ParseCall(
                 ret,
                 retlen,
-                call_kind,
+                call_info,
                 arg,
                 fun,
                 ControlFlow::new_with_exc(new_block, exc),

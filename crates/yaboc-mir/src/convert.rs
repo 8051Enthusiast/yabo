@@ -3,7 +3,6 @@ use std::{
     sync::Arc,
 };
 
-use enumflags2::make_bitflags;
 use fxhash::{FxHashMap, FxHashSet};
 
 use hir::{HirConstraintId, HirNodeKind};
@@ -27,7 +26,7 @@ use yaboc_hir::{
 use yaboc_resolve::expr::{ResolvedAtom, ResolvedKind};
 use yaboc_types::{PrimitiveType, Type, TypeId};
 
-use crate::InsRef;
+use crate::{CallMeta, InsRef};
 
 use super::{
     BBRef, Comp, ExceptionRetreat, Function, FunctionWriter, IntBinOp, IntUnOp, MirInstr, Mirs,
@@ -572,7 +571,10 @@ impl<'a> ConvertCtx<'a> {
                         let right = rrecurse(self, None)?;
                         let place_ref = self.unwrap_or_stack(place, ty, origin);
                         self.f.parse_call(
-                            make_bitflags!(NeededBy::{Val | Backtrack}),
+                            CallMeta {
+                                req: NeededBy::Val | NeededBy::Backtrack,
+                                tail: false,
+                            },
                             left,
                             right,
                             Some(place_ref),
@@ -766,12 +768,7 @@ impl<'a> ConvertCtx<'a> {
         self.copy(expr_val, target);
     }
 
-    fn call_expr(
-        &mut self,
-        call_loc: DefId,
-        expr: ExprId,
-        call_kind: RequirementSet,
-    ) -> SResult<()> {
+    fn call_expr(&mut self, call_loc: DefId, expr: ExprId, call_info: CallMeta) -> SResult<()> {
         let parser_fun = self.val_place_at_def(expr.0).unwrap();
         let parser_ty = self.f.fun.place(parser_fun).ty;
         let ldt_parser = self.db.least_deref_type(parser_ty)?;
@@ -783,11 +780,12 @@ impl<'a> ConvertCtx<'a> {
             |_, _| Ok(parser_fun),
         )?;
         let addr = self.front_place_at_def(call_loc).unwrap();
-        let ret = call_kind
+        let ret = call_info
+            .req
             .contains(NeededBy::Val)
             .then(|| self.val_place_at_def(call_loc).unwrap());
         let ty = self.f.fun.place(self.f.fun.arg()).ty;
-        let retlen = if call_kind.contains(NeededBy::Len) {
+        let retlen = if call_info.req.contains(NeededBy::Len) {
             let place = self.f.add_place(PlaceInfo {
                 place: Place::ModifiedBy(self.next_ins()),
                 ty,
@@ -799,21 +797,24 @@ impl<'a> ConvertCtx<'a> {
             None
         };
         self.f
-            .parse_call(call_kind, addr, ldt_parser_fun, ret, retlen, self.retreat);
+            .parse_call(call_info, addr, ldt_parser_fun, ret, retlen, self.retreat);
         Ok(())
     }
 
-    fn req_at_id(&self, id: DefId) -> RequirementSet {
-        self.req_transformer[&id] * self.req
+    fn call_info_at_id(&self, id: DefId) -> CallMeta {
+        CallMeta {
+            req: self.req_transformer[&id] * self.req,
+            tail: false,
+        }
     }
 
     fn parse_statement(&mut self, parse: &hir::ParseStatement) -> SResult<()> {
         if !self.processed_parse_sites.insert(parse.id.0) {
             return Ok(());
         }
-        let req = self.req_at_id(parse.id.0);
-        if !req.is_empty() {
-            self.call_expr(parse.id.0, parse.expr, req)?
+        let info = self.call_info_at_id(parse.id.0);
+        if !info.req.is_empty() {
+            self.call_expr(parse.id.0, parse.expr, info)?
         }
         Ok(())
     }
@@ -822,8 +823,8 @@ impl<'a> ConvertCtx<'a> {
         if !self.processed_parse_sites.insert(pd.id.0) {
             return Ok(());
         }
-        let req = self.req_at_id(pd.id.0);
-        if req.is_empty() {
+        let info = self.call_info_at_id(pd.id.0);
+        if info.req.is_empty() {
             return Ok(());
         }
         let call_loc = pd.id.0;
@@ -839,14 +840,16 @@ impl<'a> ConvertCtx<'a> {
             |_, _| Ok(parser_fun),
         )?;
         let addr = self.front_place_at_def(call_loc).unwrap();
-        let ret = req
+        let ret = info
+            .req
             .contains(NeededBy::Val)
             .then(|| self.val_place_at_def(call_loc).unwrap());
-        let retlen = req
+        let retlen = info
+            .req
             .contains(NeededBy::Len)
             .then(|| self.back_place_at_def(call_loc).unwrap());
         self.f
-            .parse_call(req, addr, ldt_parser_fun, ret, retlen, self.retreat);
+            .parse_call(info, addr, ldt_parser_fun, ret, retlen, self.retreat);
         Ok(())
     }
 
@@ -874,7 +877,10 @@ impl<'a> ConvertCtx<'a> {
         self.copy(self.f.fun.arg(), arg_tmp_place);
 
         self.f.parse_call(
-            self.req | NeededBy::Val,
+            CallMeta {
+                req: self.req | NeededBy::Val,
+                tail: false,
+            },
             self.f.fun.arg(),
             inner_fun_place,
             Some(tmp_place),
@@ -892,7 +898,10 @@ impl<'a> ConvertCtx<'a> {
             return Ok(());
         }
         self.f.parse_call(
-            self.req & NeededBy::Val,
+            CallMeta {
+                req: self.req & NeededBy::Val,
+                tail: false,
+            },
             arg_tmp_place,
             inner_fun_place,
             ret_if_needed,

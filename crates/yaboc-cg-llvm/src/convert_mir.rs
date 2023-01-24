@@ -7,12 +7,11 @@ use inkwell::{
     AddressSpace, IntPredicate,
 };
 
-use mir::{ControlFlow, Strictness};
+use mir::{CallMeta, ControlFlow, Strictness};
 use yaboc_absint::AbstractDomain;
 use yaboc_ast::expr::Atom;
 use yaboc_ast::ConstraintAtom;
 use yaboc_base::interner::FieldName;
-use yaboc_dependents::RequirementSet;
 use yaboc_hir::BlockId;
 use yaboc_hir_types::{NominalId, NOBACKTRACK_BIT, VTABLE_BIT};
 use yaboc_layout::{mir_subst::FunctionSubstitute, ILayout, Layout, MonoLayout};
@@ -388,7 +387,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     fn parse_call(
         &mut self,
         ret: Option<PlaceRef>,
-        call_kind: RequirementSet,
+        call_kind: CallMeta,
         fun: PlaceRef,
         arg: PlaceRef,
         ctrl: ControlFlow,

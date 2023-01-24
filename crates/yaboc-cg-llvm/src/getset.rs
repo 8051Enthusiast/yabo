@@ -103,7 +103,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         slot: u64,
-        call_kind: RequirementSet,
+        call_kind: CallMeta,
         use_impl: bool,
     ) -> IntValue<'llvm> {
         let parser = match fun.layout.maybe_mono() {

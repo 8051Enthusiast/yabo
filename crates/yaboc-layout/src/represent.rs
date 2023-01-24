@@ -1,7 +1,8 @@
 use fxhash::FxHashMap;
 use sha2::Digest;
 use std::{collections::BTreeMap, fmt::Write};
-use yaboc_dependents::{NeededBy, RequirementSet};
+use yaboc_dependents::NeededBy;
+use yaboc_mir::CallMeta;
 
 use yaboc_base::{
     databased_display::DatabasedDisplay,
@@ -302,7 +303,7 @@ impl<'a> LayoutHasher<'a> {
 
 #[derive(Clone, Copy)]
 pub enum LayoutPart {
-    Parse(PSize, RequirementSet, bool),
+    Parse(PSize, CallMeta, bool),
     Field(Identifier),
     VTable,
     Start,
@@ -319,7 +320,8 @@ pub enum LayoutPart {
 impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
-            LayoutPart::Parse(p, reqs, public) => {
+            LayoutPart::Parse(p, info, public) => {
+                let reqs = info.req;
                 write!(f, "parse_{p}_")?;
                 if reqs.contains(NeededBy::Val) {
                     write!(f, "v")?;
@@ -329,6 +331,9 @@ impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
                 }
                 if reqs.contains(NeededBy::Backtrack) {
                     write!(f, "b")?;
+                }
+                if info.tail {
+                    write!(f, "_tail")?;
                 }
                 if !*public {
                     write!(f, "_impl")?;

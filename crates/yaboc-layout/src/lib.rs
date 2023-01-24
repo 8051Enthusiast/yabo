@@ -1025,7 +1025,7 @@ mod tests {
     use yaboc_dependents::{DependentsDatabase, NeededBy};
     use yaboc_hir::{HirDatabase, Parser};
     use yaboc_hir_types::{HirTypesDatabase, TyHirs};
-    use yaboc_mir::MirDatabase;
+    use yaboc_mir::{CallMeta, MirDatabase};
     use yaboc_resolve::ResolveDatabase;
     use yaboc_types::{TypeInterner, TypeInternerDatabase};
 
@@ -1083,7 +1083,11 @@ def for[int] *> main = {
             assert_eq!(
                 lay.symbol(
                     &mut outlayer,
-                    LayoutPart::Parse(0, NeededBy::Len | NeededBy::Backtrack, false),
+                    LayoutPart::Parse(
+                        0,
+                        CallMeta::new(NeededBy::Len | NeededBy::Backtrack, false),
+                        false
+                    ),
                     &ctx.db
                 ),
                 "main$2cd949028b83d5a5$parse_0_lb_impl"
@@ -1094,7 +1098,11 @@ def for[int] *> main = {
             assert_eq!(
                 lay.symbol(
                     &mut outlayer,
-                    LayoutPart::Parse(0, NeededBy::Val | NeededBy::Backtrack, true),
+                    LayoutPart::Parse(
+                        0,
+                        CallMeta::new(NeededBy::Val | NeededBy::Backtrack, false),
+                        true
+                    ),
                     &ctx.db
                 ),
                 "block_1b15571abd710f7a$16713963642194ce$parse_0_vb"

@@ -7,7 +7,7 @@ use regex_automata::DFA;
 use yaboc_dependents::RequirementSet;
 use yaboc_hir_types::DerefLevel;
 use yaboc_layout::{ILayout, IMonoLayout, MonoLayout};
-use yaboc_mir::ReturnStatus;
+use yaboc_mir::{CallMeta, ReturnStatus};
 use yaboc_types::{PrimitiveType, Type, TypeInterner};
 
 use crate::{
@@ -45,7 +45,7 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
             .db
             .intern_type(Type::Primitive(PrimitiveType::Int));
         let single = IMonoLayout::int_single(cg.layouts);
-        let req = RequirementSet::all();
+        let req = CallMeta::new(RequirementSet::all(), false);
         let slot =
             cg.collected_layouts.parser_slots.layout_vtable_offsets[&((from, req), single.inner())];
         let parser_fun = cg.parser_fun_val(single, slot, req);
