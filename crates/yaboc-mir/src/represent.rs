@@ -6,8 +6,8 @@ use yaboc_dependents::RequirementSet;
 use crate::{strictness::Strictness, ControlFlow, FunKind, InsRef};
 
 use super::{
-    BBRef, Comp, ExceptionRetreat, Function, IntBinOp, IntUnOp, MirInstr, Mirs, Place,
-    PlaceOrigin, PlaceRef, ReturnStatus, StackRef, Val,
+    BBRef, Comp, ExceptionRetreat, Function, IntBinOp, IntUnOp, MirInstr, Mirs, Place, PlaceOrigin,
+    PlaceRef, ReturnStatus, StackRef, Val,
 };
 
 impl Display for StackRef {
@@ -142,7 +142,10 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
                 } else {
                     write!(f, "_ = ")?;
                 }
-                dbwrite!(f, db, "parse {}({}), {}, {}", fun, arg, kind, retreat)
+                if kind.tail {
+                    write!(f, "tail ")?;
+                }
+                dbwrite!(f, db, "parse {}({}), {}, {}", fun, arg, &kind.req, retreat)
             }
             MirInstr::Field(target, inner, field, cont) => {
                 dbwrite!(f, db, "{} = access_field {}.", target, inner)?;

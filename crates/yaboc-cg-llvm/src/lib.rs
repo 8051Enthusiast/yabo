@@ -52,7 +52,7 @@ use yaboc_layout::{
     },
     AbsLayoutCtx, ILayout, IMonoLayout, Layout, LayoutError, MonoLayout,
 };
-use yaboc_mir::{Mirs, ReturnStatus};
+use yaboc_mir::{CallMeta, Mirs, ReturnStatus};
 use yaboc_types::{PrimitiveType, Type, TypeInterner};
 
 use self::{convert_mir::MirTranslator, convert_thunk::ThunkContext};
@@ -295,7 +295,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret: CgReturnValue<'llvm>,
         fun: CgValue<'comp, 'llvm>,
         from: CgValue<'comp, 'llvm>,
-        call_kind: RequirementSet,
+        call_kind: CallMeta,
     ) -> IntValue<'llvm> {
         let slot = self.collected_layouts.parser_slots.layout_vtable_offsets
             [&((from.layout, call_kind), fun.layout)];
@@ -450,7 +450,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn build_nominal_components(
         &mut self,
         val: CgMonoValue<'comp, 'llvm>,
-        req: RequirementSet,
+        req: CallMeta,
     ) -> (CgValue<'comp, 'llvm>, CgMonoValue<'comp, 'llvm>, u64) {
         let MonoLayout::Nominal(pd, _, args) = val.layout.mono_layout().0 else {
             panic!("build_nominal_components has to be called with a nominal parser layout");

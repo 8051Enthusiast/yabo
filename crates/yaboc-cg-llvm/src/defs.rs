@@ -1,3 +1,5 @@
+use yaboc_mir::CallMeta;
+
 use super::*;
 
 impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
@@ -125,7 +127,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         slot: PSize,
-        req: RequirementSet,
+        req: CallMeta,
     ) -> FunctionValue<'llvm> {
         self.ppip_fun_val(layout, LayoutPart::Parse(slot, req, true))
     }
@@ -134,7 +136,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         slot: PSize,
-        req: RequirementSet,
+        req: CallMeta,
     ) -> FunctionValue<'llvm> {
         self.ppip_fun_val(layout, LayoutPart::Parse(slot, req, false))
     }
@@ -194,7 +196,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         slot: PSize,
-        req: RequirementSet,
+        req: CallMeta,
         is_non_null: bool,
     ) -> PointerValue<'llvm> {
         if is_non_null {
