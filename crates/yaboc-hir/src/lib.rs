@@ -382,6 +382,11 @@ macro_rules! hir_node_enum {
                     $(HirNode::$variant(_) => kind.contains(HirNodeKind::$variant)),*
                 }
             }
+            pub fn kind(&self) -> HirNodeKind {
+                match self {
+                    $(HirNode::$variant(_) => HirNodeKind::$variant),*
+                }
+            }
             pub fn id(&self) -> DefId {
                 match self {
                     $(HirNode::$variant(x) => x.id.id()),*
