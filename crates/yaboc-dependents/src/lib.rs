@@ -2,7 +2,10 @@ mod backtrack;
 pub mod error;
 mod represent;
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use enumflags2::{bitflags, BitFlags};
 use yaboc_ast::expr::{ExprIter, ExpressionHead, OpWithData};
@@ -10,16 +13,18 @@ use yaboc_base::{
     dbpanic,
     error::{SResult, SilencedError},
     error_type,
-    interner::DefId,
+    interner::{DefId, FieldName},
 };
 use yaboc_hir::{self as hir, HirIdWrapper, ParserAtom, ParserPredecessor};
 use yaboc_hir_types::TyHirs;
 use yaboc_resolve::expr::ResolvedAtom;
 
-use petgraph::{graph::NodeIndex, visit::EdgeRef, Graph};
+use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 
 use backtrack::can_backtrack;
 use fxhash::{FxHashMap, FxHashSet};
+
+pub use represent::dependency_dot;
 
 #[salsa::query_group(DependentsDatabase)]
 pub trait Dependents: TyHirs {
@@ -32,10 +37,21 @@ pub trait Dependents: TyHirs {
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum SubValueKind {
-    Val,
     Front,
-    Back,
     Bt,
+    Back,
+    Val,
+}
+
+impl SubValueKind {
+    fn all() -> [Self; 4] {
+        [
+            SubValueKind::Front,
+            SubValueKind::Bt,
+            SubValueKind::Back,
+            SubValueKind::Val,
+        ]
+    }
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -72,6 +88,28 @@ impl SubValue {
             kind: SubValueKind::Bt,
             id,
         }
+    }
+}
+
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
+pub struct SubValuePrio {
+    pub tail: bool,
+    pub backtrack: bool,
+    pub subvalue: SubValue,
+}
+
+impl Ord for SubValuePrio {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.tail
+            .cmp(&other.tail)
+            .then(self.backtrack.cmp(&other.backtrack).reverse())
+            .then(self.subvalue.cmp(&other.subvalue))
+    }
+}
+
+impl PartialOrd for SubValuePrio {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -296,18 +334,30 @@ fn node_subvalue_kinds(node: &hir::HirNode) -> &'static [SubValueKind] {
 }
 
 pub struct DependencyGraph {
+    block: hir::BlockId,
     val_map: FxHashMap<SubValue, NodeIndex>,
     graph: Graph<SubValue, bool>,
 }
 
 impl DependencyGraph {
-    fn init_nodes(&mut self, db: &dyn Dependents, block: hir::BlockId) -> SResult<()> {
-        for hir_node in hir::walk::ChildIter::new(block.lookup(db)?.root_context.0, db)
+    pub fn new(db: &dyn Dependents, block: hir::BlockId) -> SResult<Self> {
+        let mut ret = Self {
+            block,
+            val_map: FxHashMap::default(),
+            graph: Graph::new(),
+        };
+        ret.init_nodes(db)?;
+        ret.init_edges(db)?;
+        Ok(ret)
+    }
+
+    fn init_nodes(&mut self, db: &dyn Dependents) -> SResult<()> {
+        for hir_node in hir::walk::ChildIter::new(self.block.lookup(db)?.root_context.0, db)
             .without_kinds(hir::HirNodeKind::Block)
-            .chain(std::iter::once(db.hir_node(block.id())?))
+            .chain(std::iter::once(db.hir_node(self.block.id())?))
         {
             match hir_node {
-                hir::HirNode::Block(b) if b.id != block => continue,
+                hir::HirNode::Block(b) if b.id != self.block => continue,
                 _ => {}
             }
             let kinds = node_subvalue_kinds(&hir_node);
@@ -335,40 +385,36 @@ impl DependencyGraph {
         }
     }
 
-    fn init_edges(&mut self, db: &dyn Dependents, block: hir::BlockId) -> SResult<()> {
+    fn init_edges(&mut self, db: &dyn Dependents) -> SResult<()> {
         for &sub_value in self.val_map.clone().keys() {
             let hir_node = db.hir_node(sub_value.id)?;
             match sub_value.kind {
                 SubValueKind::Val => {
-                    self.add_edges(db, sub_value, val_refs(db, &hir_node, block)?);
+                    self.add_edges(db, sub_value, val_refs(db, &hir_node, self.block)?)
                 }
                 SubValueKind::Front => self.add_edges(
                     db,
                     sub_value,
-                    between_parser_refs(db, &hir_node, block)?.map(|x| (x, true)),
+                    between_parser_refs(db, &hir_node, self.block)?.map(|x| (x, true)),
                 ),
-                SubValueKind::Back => {
-                    self.add_edges(
-                        db,
-                        sub_value,
-                        inner_parser_refs(db, &hir_node)?
-                            .into_iter()
-                            .map(|x| (x, true)),
-                    );
-                }
-                SubValueKind::Bt => {
-                    self.add_edges(
-                        db,
-                        sub_value,
-                        bt_refs(db, &hir_node)?.into_iter().map(|x| (x, true)),
-                    );
-                }
+                SubValueKind::Back => self.add_edges(
+                    db,
+                    sub_value,
+                    inner_parser_refs(db, &hir_node)?
+                        .into_iter()
+                        .map(|x| (x, true)),
+                ),
+                SubValueKind::Bt => self.add_edges(
+                    db,
+                    sub_value,
+                    bt_refs(db, &hir_node)?.into_iter().map(|x| (x, true)),
+                ),
             };
         }
         Ok(())
     }
 
-    pub fn find_descendants(&self, sub_values: &[SubValue]) -> FxHashSet<SubValue> {
+    pub fn find_reachable(&self, sub_values: &[SubValue]) -> FxHashSet<SubValue> {
         let mut visited = FxHashSet::default();
         let mut stack = Vec::new();
         for &sub_value in sub_values {
@@ -387,14 +433,176 @@ impl DependencyGraph {
         visited
     }
 
-    pub fn new(db: &dyn Dependents, block: hir::BlockId) -> SResult<Self> {
-        let mut ret = Self {
-            val_map: FxHashMap::default(),
-            graph: Graph::new(),
-        };
-        ret.init_nodes(db, block)?;
-        ret.init_edges(db, block)?;
+    fn id_is_tail(&self, id: DefId, existing: &FxHashSet<DefId>) -> Result<bool, SilencedError> {
+        // this is art, don't touch
+        for kind in SubValueKind::all() {
+            let subvalue = SubValue::new(kind, id);
+            let Some(&idx) = self.val_map.get(&subvalue) else { continue };
+            for nidx in self.graph.neighbors_directed(idx, Direction::Incoming) {
+                let neighbor_val = self.graph[nidx];
+                let edge_idx = self.graph.find_edge(nidx, idx).unwrap();
+                let true = self.graph.edge_weight(edge_idx).unwrap() else { continue };
+                let false = existing.contains(&neighbor_val.id) else { continue };
+                let false = neighbor_val.id == self.block.0 else { continue };
+                let false = neighbor_val.id == id else { continue };
+                let SubValueKind::Back = subvalue.kind else { return Ok(false) };
+                let SubValueKind::Back = neighbor_val.kind else { return Ok(false) };
+            }
+        }
+        Ok(true)
+    }
+
+    pub fn tail_returns(&self, db: &(impl Dependents + ?Sized)) -> SResult<FxHashSet<DefId>> {
+        let block = self.block.lookup(db)?;
+        let mut ret = FxHashSet::default();
+        if !block.returns {
+            return Ok(ret);
+        }
+        let root_ctx = block.root_context.lookup(db)?;
+        let mut return_id_stack = vec![*root_ctx.vars.set[&FieldName::Return].inner()];
+        'outer: while let Some(id) = return_id_stack.pop() {
+            let true = self.id_is_tail(id, &ret)? else { continue };
+
+            ret.insert(id);
+
+            let hir::HirNode::ChoiceIndirection(c) = db.hir_node(id)? else {
+                continue
+            };
+            let choice = c.target_choice.lookup(db)?;
+            if let Some([_, back]) = choice.endpoints {
+                let ParserPredecessor::ChildOf(_) = back else { continue };
+            }
+            let ctx = choice.parent_context.lookup(db)?;
+            for child in ctx.children.iter().map(|x| db.hir_node(*x)) {
+                let child = child?;
+                let hir::HirNode::ChoiceIndirection(c) = child else { continue };
+                if c.target_choice != choice.id {
+                    continue;
+                }
+                let id_val = SubValue::new_val(c.id.0);
+                for neigh in self
+                    .graph
+                    .neighbors_directed(self.val_map[&id_val], Direction::Incoming)
+                {
+                    let subval = self.graph[neigh];
+                    let node = db.hir_node(subval.id)?;
+                    let edge = self.graph.find_edge(neigh, self.val_map[&id_val]).unwrap();
+                    // control edges shouldn't be considered
+                    if !self.graph[edge] {
+                        continue;
+                    }
+                    //
+                    if !node.is_kind(hir::HirNodeKind::ChoiceIndirection.into())
+                        && subval.id != self.block.0
+                    {
+                        continue 'outer;
+                    }
+                }
+            }
+
+            return_id_stack.extend(c.choices.iter().map(|x| x.1));
+        }
         Ok(ret)
+    }
+
+    pub fn reachables(&self) -> [FxHashSet<SubValue>; 3] {
+        let reachable_val = self.find_reachable(&[SubValue::new_val(self.block.id())]);
+        let reachable_back = self.find_reachable(&[SubValue::new_back(self.block.id())]);
+        let reachable_bt = self.find_reachable(&[SubValue::new_bt(self.block.id())]);
+        [reachable_val, reachable_back, reachable_bt]
+    }
+
+    pub fn eval_order(mut self, db: &dyn Dependents) -> SResult<BlockSerialization> {
+        let mut eval_order = Vec::new();
+        let mut parse_requirements: BTreeMap<_, RequirementMatrix> = BTreeMap::new();
+        let tails = self.tail_returns(db)?;
+
+        let [reachable_val, reachable_back, reachable_bt] = self.reachables();
+
+        let mut edgeless = BTreeSet::default();
+
+        let get_prio = |graph: &Graph<SubValue, bool>, idx: NodeIndex<u32>| {
+            let subvalue = graph[idx];
+            let tail = tails.contains(&subvalue.id);
+            let backtrack = db.can_backtrack(subvalue.id).unwrap_or_default();
+            SubValuePrio {
+                tail,
+                backtrack,
+                subvalue,
+            }
+        };
+
+        for idx in self.val_map.values() {
+            let outdegree = self.graph.edges_directed(*idx, Direction::Outgoing).count();
+            if outdegree == 0 {
+                edgeless.insert(get_prio(&self.graph, *idx));
+            }
+        }
+
+        while let Some(prio) = edgeless.first().copied() {
+            edgeless.take(&prio);
+            let val = prio.subvalue;
+            let idx = self.val_map[&val];
+            for neighbor in self
+                .graph
+                .neighbors_directed(idx, Direction::Incoming)
+                .collect::<Vec<_>>()
+            {
+                let edge_idx = self.graph.find_edge(neighbor, idx).unwrap();
+                self.graph.remove_edge(edge_idx);
+                if self
+                    .graph
+                    .edges_directed(neighbor, Direction::Outgoing)
+                    .count()
+                    == 0
+                {
+                    edgeless.insert(get_prio(&self.graph, neighbor));
+                }
+            }
+            let mut requirements = RequirementSet::empty();
+            if reachable_val.contains(&val) {
+                requirements |= NeededBy::Val;
+            }
+            if reachable_back.contains(&val) {
+                requirements |= NeededBy::Len;
+            }
+            if reachable_bt.contains(&val) {
+                requirements |= NeededBy::Backtrack;
+            }
+
+            let required_by = match val.kind {
+                SubValueKind::Bt => NeededBy::Backtrack.into(),
+                SubValueKind::Val => NeededBy::Val.into(),
+                SubValueKind::Front => RequirementSet::empty(),
+                SubValueKind::Back => NeededBy::Len.into(),
+            };
+            let matrix = RequirementMatrix::from_outer_product(required_by, requirements);
+            parse_requirements
+                .entry(val.id)
+                .and_modify(|e| *e = *e | matrix)
+                .or_insert(matrix);
+            eval_order.push(SubValueInfo {
+                val,
+                requirements,
+                tail: prio.tail,
+            })
+        }
+        Ok(BlockSerialization {
+            eval_order: Arc::new(eval_order),
+            parse_requirements: Arc::new(parse_requirements),
+            tails: Arc::new(tails.into_iter().collect()),
+        })
+    }
+
+    pub fn find_cycles(&self) -> Vec<Vec<SubValue>> {
+        let condensed_graph = petgraph::algo::condensation(self.graph.clone(), false);
+        let mut cycles = Vec::new();
+        for node in condensed_graph.node_indices() {
+            if condensed_graph.contains_edge(node, node) {
+                cycles.push(condensed_graph.node_weight(node).unwrap().clone());
+            }
+        }
+        cycles
     }
 }
 
@@ -488,12 +696,14 @@ impl std::ops::BitOr for RequirementMatrix {
 pub struct SubValueInfo {
     pub val: SubValue,
     pub requirements: RequirementSet,
+    pub tail: bool,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct BlockSerialization {
     pub eval_order: Arc<Vec<SubValueInfo>>,
     pub parse_requirements: Arc<BTreeMap<DefId, RequirementMatrix>>,
+    pub tails: Arc<BTreeSet<DefId>>,
 }
 
 error_type!(BlockSerializationError(Arc<Vec<Vec<SubValue>>>) in self);
@@ -512,75 +722,29 @@ pub fn block_serialization(
 ) -> Result<BlockSerialization, BlockSerializationError> {
     let graph = DependencyGraph::new(db, block)?;
 
-    let reachable_block_val = graph.find_descendants(&[SubValue::new_val(block.id())]);
-    let reachable_block_back = graph.find_descendants(&[SubValue::new_back(block.id())]);
-    let reachable_block_bt = graph.find_descendants(&[SubValue::new_bt(block.id())]);
-
-    let condensed_graph = petgraph::algo::condensation(graph.graph, false);
-    let mut errors = Vec::new();
-    for node in condensed_graph.node_indices() {
-        if condensed_graph.contains_edge(node, node) {
-            errors.push(condensed_graph.node_weight(node).unwrap().clone());
-        }
-    }
+    let errors = graph.find_cycles();
     if !errors.is_empty() {
         return Err(BlockSerializationError {
             inner: Arc::new(errors),
         });
     }
-    let mut eval_order = Vec::new();
-    let mut parse_requirements: BTreeMap<_, RequirementMatrix> = BTreeMap::new();
-    for node in petgraph::algo::toposort(&condensed_graph, None)
-        .unwrap()
-        .into_iter()
-    {
-        let nodes = condensed_graph.node_weight(node).unwrap();
-        eval_order.extend(nodes.iter().copied().map(|val| {
-            let mut requirements = RequirementSet::empty();
-            if reachable_block_val.contains(&val) {
-                requirements |= NeededBy::Val;
-            }
-            if reachable_block_back.contains(&val) {
-                requirements |= NeededBy::Len;
-            }
-            if reachable_block_bt.contains(&val) {
-                requirements |= NeededBy::Backtrack;
-            }
 
-            let required_by = match val.kind {
-                SubValueKind::Bt => NeededBy::Backtrack.into(),
-                SubValueKind::Val => NeededBy::Val.into(),
-                SubValueKind::Front => RequirementSet::empty(),
-                SubValueKind::Back => NeededBy::Len.into(),
-            };
-            let matrix = RequirementMatrix::from_outer_product(required_by, requirements);
-            parse_requirements
-                .entry(val.id)
-                .and_modify(|e| *e = *e | matrix)
-                .or_insert(matrix);
-            SubValueInfo { val, requirements }
-        }));
-    }
-    eval_order.reverse();
-    Ok(BlockSerialization {
-        eval_order: Arc::new(eval_order),
-        parse_requirements: Arc::new(parse_requirements),
-    })
+    Ok(graph.eval_order(db)?)
 }
 
 #[cfg(test)]
 mod tests {
-    use hir::{HirDatabase, Parser};
+    use hir::{BlockId, HirDatabase};
     use yaboc_ast::{import::Import, AstDatabase};
     use yaboc_base::{
         config::ConfigDatabase,
-        interner::{FieldName, InternerDatabase, PathComponent},
-        source::FileDatabase,
+        interner::InternerDatabase,
+        source::{FileDatabase, FileId},
         Context,
     };
-    use yaboc_hir_types::{HirTypesDatabase, NominalId};
+    use yaboc_hir_types::{id_cursor::IdCursor, HirTypesDatabase};
     use yaboc_resolve::ResolveDatabase;
-    use yaboc_types::{TypeInterner, TypeInternerDatabase};
+    use yaboc_types::TypeInternerDatabase;
 
     use super::*;
     #[salsa::database(
@@ -635,18 +799,11 @@ def *main = {
 }
         "#,
         );
-        let main = ctx.parser("main");
-        let block = match ctx
-            .db
-            .lookup_intern_type(ctx.db.parser_returns(main).unwrap().deref)
-        {
-            yaboc_types::Type::Nominal(n) => match NominalId::from_nominal_head(&n) {
-                NominalId::Block(b) => b,
-                NominalId::Def(_) => panic!(),
-            },
-            _ => panic!(),
-        };
-        let _ = ctx.db.block_serialization(block).unwrap();
+        let block = IdCursor::at_file(&ctx.db, FileId::default())
+            .pd("main")
+            .expr()
+            .expr_block(0);
+        let _ = ctx.db.block_serialization(BlockId(block.id)).unwrap();
         // TODO(8051): write actual test
     }
     #[test]
@@ -666,30 +823,14 @@ def for[int] *> main = {
 }
             ",
         );
-        let main = ctx.parser("main");
-        let block = match ctx
-            .db
-            .lookup_intern_type(ctx.db.parser_returns(main).unwrap().deref)
-        {
-            yaboc_types::Type::Nominal(n) => match NominalId::from_nominal_head(&n) {
-                NominalId::Block(b) => b,
-                NominalId::Def(_) => panic!(),
-            },
-            _ => panic!(),
-        };
-        let s = ctx.db.block_serialization(block).unwrap();
-        let field = |f| {
-            let c = ctx.id(f);
-            let inner_id = block
-                .lookup(&ctx.db)
-                .unwrap()
-                .root_context
-                .child(&ctx.db, PathComponent::Named(FieldName::Ident(c)));
-            inner_id
-        };
-        let a = s.parse_requirements[&field("a")];
-        let b = s.parse_requirements[&field("b")];
-        let c = s.parse_requirements[&field("c")];
+        let block = IdCursor::at_file(&ctx.db, FileId::default())
+            .pd("main")
+            .expr()
+            .expr_block(0);
+        let s = ctx.db.block_serialization(BlockId(block.id)).unwrap();
+        let a = s.parse_requirements[&block.field("a").id];
+        let b = s.parse_requirements[&block.field("b").id];
+        let c = s.parse_requirements[&block.field("c").id];
         assert_eq!(
             format!("{}", a),
             "111\n\
@@ -714,5 +855,70 @@ def for[int] *> main = {
             format!("{}", c * (NeededBy::Len | NeededBy::Val)),
             "Len | Val"
         );
+    }
+
+    #[test]
+    fn tail_return() {
+        let ctx = Context::<DependentsTestDatabase>::mock(
+            r"
+def for[int] *> main: int = {
+  x: ~
+  | let _ = x if 3
+    return: main
+  | let return = 4
+}
+        ",
+        );
+        let block = IdCursor::at_file(&ctx.db, FileId::default())
+            .pd("main")
+            .expr()
+            .expr_block(0);
+        let s = ctx.db.block_serialization(BlockId(block.id)).unwrap();
+        let ret_choice = block.return_field();
+        assert!(s.tails.contains(&ret_choice.id));
+        let ret_parse = ret_choice.choice(0);
+        assert!(s.tails.contains(&ret_parse.id));
+        let ret_let = ret_choice.choice(1);
+        assert!(s.tails.contains(&ret_let.id));
+    }
+    #[test]
+    fn choice_ref_no_tail() {
+        let ctx = Context::<DependentsTestDatabase>::mock(
+            r"
+def for[int] *> main: int = {
+    x: ~
+    let y = z if 3
+    | let z = x if 3..4
+      return: main
+    | let return = 4
+}
+        ",
+        );
+        let block = IdCursor::at_file(&ctx.db, FileId::default())
+            .pd("main")
+            .expr()
+            .expr_block(0);
+        let s = ctx.db.block_serialization(BlockId(block.id)).unwrap();
+        let ret_parse = block.return_field().choice(0);
+        assert!(!s.tails.contains(&ret_parse.id));
+    }
+    #[test]
+    fn bt_no_tail() {
+        let ctx = Context::<DependentsTestDatabase>::mock(
+            r"
+def for[int] *> main: int = {
+    x: ~ if 1..4
+    | return: main?
+    | let return = x if 1..2
+}
+        ",
+        );
+        let block = IdCursor::at_file(&ctx.db, FileId::default())
+            .pd("main")
+            .expr()
+            .expr_block(0);
+        let s = ctx.db.block_serialization(BlockId(block.id)).unwrap();
+        let ret_parse = block.return_field().choice(0);
+        assert!(!s.tails.contains(&ret_parse.id));
     }
 }

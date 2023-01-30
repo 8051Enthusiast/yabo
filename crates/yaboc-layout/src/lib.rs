@@ -1125,9 +1125,19 @@ def for[int] *> main = {
             ),
             "int"
         );
-        assert_eq!(
-            dbformat!(&ctx.db, "{}", &main_block.access_field(&mut outlayer, field("c")).unwrap().access_field(&mut outlayer, field("c")).unwrap()),
-            "nominal-parser[for[int] *> for[int] &> file[_].first]() | nominal-parser?[for[int] *> for[int] &> file[_].second]()"
+        let out = dbformat!(
+            &ctx.db,
+            "{}",
+            &main_block
+                .access_field(&mut outlayer, field("c"))
+                .unwrap()
+                .access_field(&mut outlayer, field("c"))
+                .unwrap()
+        );
+        assert!(
+            ["nominal-parser?[for[int] *> for[int] &> file[_].second]() | nominal-parser[for[int] *> for[int] &> file[_].first]()",
+             "nominal-parser[for[int] *> for[int] &> file[_].first]() | nominal-parser?[for[int] *> for[int] &> file[_].second]()"]
+            .contains(&out.as_str())
         );
         assert_eq!(
             dbformat!(

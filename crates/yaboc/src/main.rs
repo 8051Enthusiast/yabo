@@ -9,6 +9,7 @@ use std::ffi::OsString;
 #[derive(clap::ValueEnum, Clone, Copy)]
 enum EmitKind {
     Hir,
+    Deps,
     Mir,
     Llvm,
     Object,
@@ -66,6 +67,7 @@ fn main() {
     match match args.emit {
         EmitKind::Hir => context.write_hir(outfile).map_err(|x| x.to_string()),
         EmitKind::Mir => context.write_mir(outfile).map_err(|x| x.to_string()),
+        EmitKind::Deps => context.write_deps(outfile).map_err(|x| x.to_string()),
         EmitKind::Llvm => context.write_llvm(outfile),
         EmitKind::Object => context.write_object(outfile),
         EmitKind::SharedLib => context.write_shared_lib(outfile),

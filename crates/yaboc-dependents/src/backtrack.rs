@@ -89,22 +89,27 @@ fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<(bool, bo
 }
 
 pub fn can_backtrack(db: &dyn Dependents, def: DefId) -> SResult<bool> {
-    match db.hir_node(def)? {
+    let result = match db.hir_node(def)? {
+        HirNode::Expr(e) => {
+            let (will, _) = expr_backtrack_status(db, e.id)?;
+            will
+        }
         HirNode::Let(l) => {
             let (will, _) = expr_backtrack_status(db, l.expr)?;
-            Ok(will)
+            will
         }
         HirNode::Parse(p) => {
             let (will, can) = expr_backtrack_status(db, p.expr)?;
-            Ok(will || can)
+            will || can
         }
-        HirNode::Choice(c) => db.can_backtrack(c.subcontexts.last().unwrap().0),
-        HirNode::ChoiceIndirection(_) => Ok(false),
-        HirNode::Context(c) => Ok(c
+        HirNode::Choice(c) => db.can_backtrack(c.subcontexts.last().unwrap().0)?,
+        HirNode::ChoiceIndirection(_) => false,
+        HirNode::Context(c) => c
             .children
             .iter()
-            .any(|c| db.can_backtrack(*c).unwrap_or(false))),
-        HirNode::Block(b) => db.can_backtrack(b.root_context.0),
-        _ => panic!("can backtrack can only be called on children of a context"),
-    }
+            .any(|c| db.can_backtrack(*c).unwrap_or(false)),
+        HirNode::Block(b) => db.can_backtrack(b.root_context.0)?,
+        _ => false,
+    };
+    Ok(result)
 }

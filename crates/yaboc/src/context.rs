@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, process::Command, sync::Arc};
+use std::{ffi::OsStr, io::Write, process::Command, sync::Arc};
 
 use bumpalo::Bump;
 use inkwell::support::LLVMString;
@@ -84,6 +84,17 @@ impl Driver {
         let hir_graph = HirGraph(&self.db);
         dot::render(&hir_graph, &mut out)?;
         Ok(())
+    }
+
+    pub fn write_deps(&self, outfile: &OsStr) -> Result<(), std::io::Error> {
+        let Ok(s) = yaboc_dependents::dependency_dot(&self.db) else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Error while generating dependency graph",
+            ));
+        };
+        let mut out = std::fs::File::create(outfile)?;
+        out.write_all(s.as_bytes())
     }
 
     fn codegen_and_then(
