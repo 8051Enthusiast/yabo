@@ -78,7 +78,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let mut layout_collector = LayoutCollector::new(layouts);
         let pds = compiler_database.db.all_exported_parserdefs();
         layout_collector.collect(&pds)?;
-        let collected_layouts = Rc::new(layout_collector.into_results());
+        let collected_layouts = Rc::new(layout_collector.into_results().unwrap());
         Target::initialize_all(&InitializationConfig {
             asm_parser: true,
             asm_printer: true,

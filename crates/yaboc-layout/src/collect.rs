@@ -1,3 +1,4 @@
+mod tailsize;
 use std::{collections::hash_map::Entry, sync::Arc};
 
 use fxhash::{FxHashMap, FxHashSet};
@@ -5,12 +6,16 @@ use petgraph::unionfind::UnionFind;
 
 use yaboc_absint::{AbstractDomain, AbstractExpression, Arg, BlockEvaluated};
 use yaboc_ast::expr::{Dyadic, ExprIter, ExpressionHead, OpWithData, ValBinOp, ValVarOp, Variadic};
-use yaboc_base::error::Silencable;
+use yaboc_base::error::{SResult, Silencable};
 use yaboc_dependents::{NeededBy, RequirementSet};
 use yaboc_hir::{HirIdWrapper, HirNode, ParserDefId};
 use yaboc_hir_types::DerefLevel;
 use yaboc_mir::CallMeta;
 use yaboc_types::{PrimitiveType, Type, TypeId};
+
+use crate::prop::SizeAlign;
+
+use self::tailsize::{CallSite, TailCollector};
 
 use super::{
     canon_layout, flat_layouts, prop::PSize, AbsLayoutCtx, ILayout, IMonoLayout, Layout,
@@ -43,6 +48,7 @@ pub struct LayoutCollection<'a> {
     pub primitives: LayoutSet<'a>,
     pub parser_slots: CallSlotResult<'a, (ILayout<'a>, CallMeta)>,
     pub funcall_slots: CallSlotResult<'a, ILayout<'a>>,
+    pub tail_sa: FxHashMap<(ILayout<'a>, IMonoLayout<'a>), Option<SizeAlign>>,
 }
 
 pub struct LayoutCollector<'a, 'b> {
@@ -362,7 +368,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         Ok(())
     }
 
-    pub fn into_results(self) -> LayoutCollection<'a> {
+    pub fn into_results(self) -> SResult<LayoutCollection<'a>> {
         let parser_slots = self.parses.into_layout_vtable_offsets();
         let funcall_slots = self.funcalls.into_layout_vtable_offsets();
         let mut primitives = FxHashSet::default();
@@ -391,7 +397,16 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             })
             .collect();
 
-        LayoutCollection {
+        let mut tail_sa = FxHashMap::default();
+        let mut tail_collector = TailCollector::new(self.ctx);
+        for (parser, froms) in parser_slots.occupied_entries.iter() {
+            for (_, (from, _)) in froms.iter() {
+                let sa = tail_collector.size(CallSite(*from, *parser))?;
+                tail_sa.insert((*from, *parser), sa);
+            }
+        }
+
+        Ok(LayoutCollection {
             root,
             arrays: self.arrays,
             blocks: self.blocks,
@@ -401,7 +416,8 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             primitives,
             parser_slots,
             funcall_slots,
-        }
+            tail_sa,
+        })
     }
 }
 
