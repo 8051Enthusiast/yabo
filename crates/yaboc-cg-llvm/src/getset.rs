@@ -104,11 +104,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         slot: u64,
-        call_kind: CallMeta,
+        req: RequirementSet,
         fun_kind: ParserFunKind,
     ) -> IntValue<'llvm> {
         let parser = match fun.layout.maybe_mono() {
-            Some(mono) => self.sym_callable(mono, LayoutPart::Parse(slot, call_kind, fun_kind)),
+            Some(mono) => self.sym_callable(mono, LayoutPart::Parse(slot, req, fun_kind)),
             None => self.vtable_callable::<vtable::ParserVTable>(
                 fun.ptr,
                 &[ParserVTableFields::apply_table as u64, slot],
@@ -131,7 +131,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         slot: u64,
-        call_kind: CallMeta,
+        call_kind: RequirementSet,
     ) -> IntValue<'llvm> {
         self.call_parser_fun(ret, fun, arg, slot, call_kind, ParserFunKind::Worker)
     }
@@ -142,7 +142,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         slot: u64,
-        call_kind: CallMeta,
+        call_kind: RequirementSet,
     ) -> IntValue<'llvm> {
         self.call_parser_fun(ret, fun, arg, slot, call_kind, ParserFunKind::Wrapper)
     }
@@ -153,7 +153,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         slot: u64,
-        call_kind: CallMeta,
+        call_kind: RequirementSet,
         parent_fun: Option<CgValue<'comp, 'llvm>>,
     ) -> IntValue<'llvm> {
         let parser = match fun.layout.maybe_mono() {

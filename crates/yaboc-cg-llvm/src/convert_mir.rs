@@ -418,9 +418,9 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             .map(|r| self.return_val(r))
             .unwrap_or_else(|| self.cg.undef_ret());
         if let Some(ctrl) = ctrl {
-            let ret = self
-                .cg
-                .call_parser_fun_wrapper(ret_val, fun_val, arg_val, slot, call_kind);
+            let ret =
+                self.cg
+                    .call_parser_fun_wrapper(ret_val, fun_val, arg_val, slot, call_kind.req);
             self.controlflow_case(ret, ctrl)
         } else {
             let parent_fun = if self.mir_fun.f.place(fun).place == Place::Captures {
@@ -430,9 +430,14 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             } else {
                 Some(self.fun.into())
             };
-            let ret = self
-                .cg
-                .call_parser_fun_tail(ret_val, fun_val, arg_val, slot, call_kind, parent_fun);
+            let ret = self.cg.call_parser_fun_tail(
+                ret_val,
+                fun_val,
+                arg_val,
+                slot,
+                call_kind.req,
+                parent_fun,
+            );
             self.cg.builder.build_return(Some(&ret));
         }
     }

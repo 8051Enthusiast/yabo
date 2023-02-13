@@ -45,10 +45,10 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
             .db
             .intern_type(Type::Primitive(PrimitiveType::Int));
         let single = IMonoLayout::int_single(cg.layouts);
-        let req = CallMeta::new(RequirementSet::all(), false);
-        let slot =
-            cg.collected_layouts.parser_slots.layout_vtable_offsets[&((from, req), single.inner())];
-        let parser_fun = cg.parser_fun_val_tail(single, slot, req);
+        let info = CallMeta::new(RequirementSet::all(), false);
+        let slot = cg.collected_layouts.parser_slots.layout_vtable_offsets
+            [&((from, info), single.inner())];
+        let parser_fun = cg.parser_fun_val_tail(single, slot, info.req);
 
         let int_layout = cg.layouts.dcx.intern(yaboc_layout::Layout::Mono(
             MonoLayout::Primitive(PrimitiveType::Int),

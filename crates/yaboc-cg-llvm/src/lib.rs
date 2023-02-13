@@ -313,7 +313,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> IntValue<'llvm> {
         let slot = self.collected_layouts.parser_slots.layout_vtable_offsets
             [&((from.layout, call_kind), fun.layout)];
-        self.call_parser_fun_wrapper(ret, fun, from, slot, call_kind)
+        self.call_parser_fun_wrapper(ret, fun, from, slot, call_kind.req)
     }
 
     fn module_string(&mut self, s: &str) -> PointerValue<'llvm> {
