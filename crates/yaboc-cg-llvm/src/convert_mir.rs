@@ -353,6 +353,10 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                     .builder
                     .build_and(cmp_start, cmp_end, "cmp_assert_range")
             }
+            ConstraintAtom::NotEof => {
+                // always true since it is checked for the parser and not the returned value
+                self.cg.llvm.bool_type().const_int(1, false)
+            }
         };
         let next_block = self.bb(ctrl.next);
         let fallback_block = ctrl

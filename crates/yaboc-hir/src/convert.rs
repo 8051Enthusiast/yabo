@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use ast::expr::Ignorable;
 use fxhash::FxHashSet;
 
 use super::*;
@@ -16,6 +17,9 @@ pub enum HirConversionError {
     DuplicateArg {
         name: Identifier,
         place: Span,
+    },
+    EofInconsistentConjunction {
+        span: Span,
     },
     Silenced,
 }
@@ -34,6 +38,28 @@ impl Silencable for HirConversionError {
 }
 
 error_type!(HirConversionErrors(BTreeSet<HirConversionError>) in crate);
+
+fn ignores_eof(ast: &ast::ConstraintExpression) -> Result<bool, HirConversionError> {
+    match ast.0.as_ref().map_inner(|i| ignores_eof(i)).transpose()? {
+        ExpressionHead::Niladic(m) => match m.inner {
+            ast::ConstraintAtom::NotEof => Ok(false),
+            _ => Ok(true),
+        },
+        ExpressionHead::Monadic(m) => Ok(m.inner),
+        ExpressionHead::Dyadic(d) => match d.op.inner {
+            expr::ConstraintBinOp::And => Ok(d.inner[0] && d.inner[1]),
+            expr::ConstraintBinOp::Or => {
+                let [left, right] = d.inner;
+                if left != right {
+                    Err(HirConversionError::EofInconsistentConjunction { span: d.op.data })
+                } else {
+                    Ok(left)
+                }
+            }
+        },
+        ExpressionHead::Variadic(v) => v.op.ignore(),
+    }
+}
 
 fn val_expression(
     ast: &ast::ValExpression,
@@ -72,7 +98,16 @@ fn val_expression(
         &mut |monadic, _| OpWithData {
             data: monadic.data,
             inner: monadic.inner.map_expr(|x| {
-                x.fold(&mut |head| ctx.db.intern_hir_constraint(head.map_data_ref(&add_span)))
+                let id =
+                    x.fold(&mut |head| ctx.db.intern_hir_constraint(head.map_data_ref(&add_span)));
+                let has_no_eof = match ignores_eof(x) {
+                    Err(e) => {
+                        ctx.add_errors(Some(e));
+                        true
+                    }
+                    Ok(x) => !x,
+                };
+                HirConstraintExpressionRoot { id, has_no_eof }
             }),
         },
         &mut |dyadic, _, _| dyadic.clone(),

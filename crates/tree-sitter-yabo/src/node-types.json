@@ -102,6 +102,10 @@
             "named": true
           },
           {
+            "type": "not_eof",
+            "named": true
+          },
+          {
             "type": "number_literal",
             "named": true
           },
@@ -151,6 +155,10 @@
           },
           {
             "type": "char_literal",
+            "named": true
+          },
+          {
+            "type": "not_eof",
             "named": true
           },
           {
@@ -671,6 +679,10 @@
           },
           {
             "type": "char_literal",
+            "named": true
+          },
+          {
+            "type": "not_eof",
             "named": true
           },
           {
@@ -1777,6 +1789,10 @@
             "named": true
           },
           {
+            "type": "not_eof",
+            "named": true
+          },
+          {
             "type": "number_literal",
             "named": true
           },
@@ -2380,6 +2396,10 @@
   {
     "type": "mem",
     "named": false
+  },
+  {
+    "type": "not_eof",
+    "named": true
   },
   {
     "type": "number_literal",

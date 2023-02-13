@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::refs;
-use hir::HirConstraintId;
+use hir::HirConstraintExpressionRoot;
 use yaboc_ast::expr::{
     Atom, Expression, ExpressionHead, KindWithData, OpWithData, ValBinOp, ValUnOp, ValVarOp,
 };
@@ -33,7 +33,7 @@ pub struct ResolvedKind;
 
 impl ExpressionKind for ResolvedKind {
     type NiladicOp = ResolvedAtom;
-    type MonadicOp = ValUnOp<HirConstraintId>;
+    type MonadicOp = ValUnOp<HirConstraintExpressionRoot>;
     type DyadicOp = ValBinOp;
     type VariadicOp = ValVarOp;
 }

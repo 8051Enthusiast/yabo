@@ -327,11 +327,15 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     self.collect_nominal_parse(arg, parser, info)?
                 }
                 UnprocessedCall::IfParser(from, inner, info) => {
-                    let MonoLayout::IfParser(inner, _, _) = inner.mono_layout().0 else {
+                    let MonoLayout::IfParser(inner, c, _) = inner.mono_layout().0 else {
                         panic!("unexpected non-if-parser layout");
                     };
                     self.register_layouts(*inner);
-                    self.register_parse(from, *inner, CallMeta::new(info | NeededBy::Val, false));
+                    let mut first_req = info | NeededBy::Val;
+                    if c.has_no_eof {
+                        first_req |= NeededBy::Len
+                    }
+                    self.register_parse(from, *inner, CallMeta::new(first_req, false));
                     self.register_parse(from, *inner, CallMeta::new(info & NeededBy::Val, false));
                 }
             }

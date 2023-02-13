@@ -323,6 +323,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                 ConstraintAtom::Atom(Atom::Field(name)) => {
                     self.infctx.access_field(ty, name.0)?;
                 }
+                ConstraintAtom::NotEof => {}
             },
             ExpressionHead::Monadic(m) => match m.op.inner {
                 expr::ConstraintUnOp::Not => self.constr_expression_type(m.inner, ty)?,
@@ -383,7 +384,10 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                             }
                             ValUnOp::Wiggle(c, _) => {
                                 let (inner, cont) = self.infctx.if_checked(inner)?;
-                                self.constr_expression_type(*c, inner)?;
+                                self.constr_expression_type(c.id, inner)?;
+                                if c.has_no_eof {
+                                    self.infctx.check_parser(cont)?;
+                                }
                                 cont
                             }
                             ValUnOp::Dot(name, _) => self.infctx.access_field(inner, *name)?,
