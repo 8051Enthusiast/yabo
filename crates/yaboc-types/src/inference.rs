@@ -771,6 +771,12 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         self.constrain(to_be_checked, if_result)?;
         Ok((result, cont))
     }
+    pub fn check_parser(&mut self, ty: InfTypeId<'intern>) -> Result<(), TypeError> {
+        let result = self.var();
+        let arg = self.var();
+        let parser = self.parser(result, arg);
+        self.constrain(ty, parser)
+    }
     pub fn array_call(
         &mut self,
         kind: ArrayKind,

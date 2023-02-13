@@ -1790,6 +1790,10 @@
         {
           "type": "SYMBOL",
           "name": "range"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "not_eof"
         }
       ]
     },
@@ -2013,6 +2017,10 @@
     "array": {
       "type": "STRING",
       "value": "[~]"
+    },
+    "not_eof": {
+      "type": "STRING",
+      "value": "!eof"
     },
     "type_var": {
       "type": "PATTERN",

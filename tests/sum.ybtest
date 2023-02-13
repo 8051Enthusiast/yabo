@@ -1,0 +1,33 @@
+====[ source code ]====
+import std
+
+def *sum(acc: int): int = {
+  | x: std.u16l if !eof, return: sum(acc + x)
+  | let return = acc
+}
+
+export def *test = sum(0)
+
+====[ binary 1 ]====
+01 02 03 04
+
+====[ output 1 ]====
+1540
+
+====[ binary 2 ]====
+ff
+
+====[ output 2 ]====
+0
+
+====[ binary 3 ]====
+ff ff ff ff
+
+====[ output 3 ]====
+131070
+
+====[ binary 4 ]====
+ff ff ff ff ff ff ff
+
+====[ output 4 ]====
+196605

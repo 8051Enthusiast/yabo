@@ -288,6 +288,7 @@ module.exports = grammar({
     _constraint_atom: $ => choice(
       $._atom,
       $.range,
+      $.not_eof,
     ),
     val_dot: $ => prec.left(PREC.DOT, seq(
       field('left', $._expression),
@@ -341,6 +342,7 @@ module.exports = grammar({
     single: $ => '~',
     nil: $ => '+',
     array: $ => '[~]',
+    not_eof: $ => '!eof',
     type_var: $ => /\'[A-Za-z_][A-Za-z_0-9]*/,
     bt_name: $ => seq(
       field('name', $._field_name),

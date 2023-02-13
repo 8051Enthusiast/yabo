@@ -503,6 +503,12 @@ fn module_file(db: &dyn Hirs, file: FileId) -> Result<Module, SilencedError> {
     Ok(Module { id, defs, imports })
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct HirConstraintExpressionRoot {
+    pub id: HirConstraintId,
+    pub has_no_eof: bool,
+}
+
 pub type HirConstraint = AstConstraint;
 
 pub type HirConstraintSpanned = expr::KindWithData<HirConstraint, SpanIndex>;
@@ -515,7 +521,7 @@ pub struct HirVal;
 impl ExpressionKind for HirVal {
     type VariadicOp = expr::ValVarOp;
     type DyadicOp = expr::ValBinOp;
-    type MonadicOp = expr::ValUnOp<HirConstraintId>;
+    type MonadicOp = expr::ValUnOp<HirConstraintExpressionRoot>;
     type NiladicOp = ParserAtom;
 }
 

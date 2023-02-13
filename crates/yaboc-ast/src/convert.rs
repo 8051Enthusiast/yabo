@@ -557,6 +557,7 @@ astify! {
         Dyadic(binary_constraint_expression),
         Monadic(unary_constraint_expression),
         Niladic(with_span_data(range)),
+        Niladic(with_span_data(not_eof)),
         Niladic(with_span_data(atom..)),
     };
 }
@@ -700,6 +701,10 @@ fn nil(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ParserAtom> {
 
 fn array(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ParserAtom> {
     Ok(ParserAtom::Array)
+}
+
+fn not_eof(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ConstraintAtom> {
+    Ok(ConstraintAtom::NotEof)
 }
 
 fn question_mark(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<()> {

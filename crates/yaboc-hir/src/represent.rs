@@ -164,7 +164,7 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for W<&Expression<HirValSpanned>> {
                 expr::ValUnOp::Not => dbwrite!(f, db, "!{}", inner),
                 expr::ValUnOp::Neg => dbwrite!(f, db, "-{}", inner),
                 expr::ValUnOp::Wiggle(right, kind) => {
-                    dbwrite!(f, db, "{} {} {}", inner, kind, right)
+                    dbwrite!(f, db, "{} {} {}", inner, kind, &right.id)
                 }
                 expr::ValUnOp::Dot(a, b) => {
                     dbwrite!(f, db, "{}.{}", inner, a)?;

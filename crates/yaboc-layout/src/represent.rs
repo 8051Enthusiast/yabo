@@ -101,7 +101,7 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
                         wiggle,
                         ty,
                         inner,
-                        referenced
+                        &referenced.id
                     )?;
                     Ok(())
                 }
@@ -284,7 +284,8 @@ impl<'a> LayoutHasher<'a> {
                 state.update(self.hash(*inner, db));
                 // TODO(8051): ideally, we'd hash the content here in a way that
                 // is reproducible, but for now we just hash the id.
-                id.as_u32().update_hash(state, db);
+                id.id.as_u32().update_hash(state, db);
+                (id.has_no_eof as u8).update_hash(state, db);
                 (*wiggle as u8).update_hash(state, db);
             }
             MonoLayout::ArrayParser(inner) => {

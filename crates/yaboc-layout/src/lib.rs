@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use fxhash::{FxHashMap, FxHashSet};
 
-use hir::HirConstraintId;
+use hir::HirConstraintExpressionRoot;
 use yaboc_absint::{AbsInt, AbsIntCtx, AbstractDomain, Arg};
 use yaboc_ast::expr::{
     self, ExpressionHead, OpWithData, ValBinOp, ValUnOp, ValVarOp, Variadic, WiggleKind,
@@ -86,7 +86,7 @@ pub enum MonoLayout<Inner> {
     Single,
     Nil,
     Regex(Regex, bool),
-    IfParser(Inner, HirConstraintId, WiggleKind),
+    IfParser(Inner, HirConstraintExpressionRoot, WiggleKind),
     ArrayParser(Option<Inner>),
     Nominal(
         hir::ParserDefId,

@@ -1,0 +1,3 @@
+====[ source code ]====
+export def *test = ~ if !eof or 0
+#~^error[203] !eof inconsistently applied to conjunctions in constraint

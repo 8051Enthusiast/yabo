@@ -143,6 +143,7 @@ pub enum TypeAtom {
 pub enum ConstraintAtom {
     Atom(Atom),
     Range(i64, i64),
+    NotEof,
 }
 
 impl From<Atom> for ConstraintAtom {

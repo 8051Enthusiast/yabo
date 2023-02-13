@@ -42,5 +42,16 @@ fn conversion_report(error: HirConversionError) -> Option<Report> {
                 .with_code(202)
                 .with_label(Label::new(place).with_message("this argument is duplicate")),
         ),
+        HirConversionError::EofInconsistentConjunction { span } => Some(
+            Report::new(
+                DiagnosticKind::Error,
+                span.file,
+                "!eof inconsistently applied to conjunctions in constraint",
+            )
+            .with_code(203)
+            .with_label(
+                Label::new(span).with_message("all conjunctions must be either !eof or not"),
+            ),
+        ),
     }
 }

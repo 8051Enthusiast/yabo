@@ -1,0 +1,5 @@
+====[ source code ]====
+export def *test = {
+  let return = 3 if !eof
+#~^ error[507] expected a parser, but got int
+}

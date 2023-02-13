@@ -5,7 +5,7 @@ use std::{
 
 use fxhash::{FxHashMap, FxHashSet};
 
-use hir::{HirConstraintId, HirNodeKind};
+use hir::{HirConstraintExpressionRoot, HirConstraintId, HirNodeKind};
 use yaboc_ast::expr::{
     self, ConstraintBinOp, ConstraintUnOp, Dyadic, ExprIter, Expression, ExpressionHead, Ignorable,
     KindWithData, Monadic, ValBinOp, ValUnOp, Variadic, WiggleKind,
@@ -489,7 +489,7 @@ impl<'a> ConvertCtx<'a> {
                                 WiggleKind::Try => self.retreat.error,
                             };
                             let cont = self.f.new_bb();
-                            self.convert_constraint(*constr, ldt_ref, cont)?;
+                            self.convert_constraint(constr.id, ldt_ref, cont)?;
                             self.f.set_bb(cont);
                             self.retreat.backtrack = old_backtrack;
                             place_ref
@@ -880,7 +880,7 @@ impl<'a> ConvertCtx<'a> {
         Ok(())
     }
 
-    pub fn if_parser(&mut self, constr: HirConstraintId) -> SResult<()> {
+    pub fn if_parser(&mut self, constr: HirConstraintExpressionRoot) -> SResult<()> {
         let ldt_ret = if let Some(ret) = self.f.fun.ret() {
             let ret_ty = self.f.fun.place(ret).ty;
             let ldt_ret = self.db.least_deref_type(ret_ty)?;
@@ -903,19 +903,26 @@ impl<'a> ConvertCtx<'a> {
         // the following parse call might mutate the argument, therefore we make a copy
         self.copy(self.f.fun.arg(), arg_tmp_place);
 
+        let mut first_call_req = self.req | NeededBy::Val;
+        let mut retreat = self.retreat;
+        if constr.has_no_eof {
+            first_call_req |= NeededBy::Len;
+            retreat.eof = retreat.backtrack;
+        }
+
         self.f.parse_call(
             CallMeta {
-                req: self.req | NeededBy::Val,
+                req: first_call_req,
                 tail: false,
             },
             self.f.fun.arg(),
             inner_fun_place,
             Some(tmp_place),
             retlen,
-            self.retreat,
+            retreat,
         );
         let convert_succ = self.f.new_bb();
-        self.convert_constraint(constr, tmp_place, convert_succ)?;
+        self.convert_constraint(constr.id, tmp_place, convert_succ)?;
         self.f.set_bb(convert_succ);
         let ret_if_needed = self
             .req

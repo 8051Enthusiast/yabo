@@ -39,6 +39,7 @@ impl<DB: Asts + ?Sized> DatabasedDisplay<DB> for ConstraintAtom {
             ConstraintAtom::Range(start, end) => {
                 dbwrite!(f, db, "{}..{}", start, end)
             }
+            ConstraintAtom::NotEof => write!(f, "!eof"),
         }
     }
 }

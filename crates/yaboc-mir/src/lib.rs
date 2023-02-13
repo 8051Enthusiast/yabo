@@ -14,7 +14,7 @@ use yaboc_base::{
     interner::{DefId, FieldName},
 };
 use yaboc_dependents::{Dependents, NeededBy, RequirementSet, SubValue};
-use yaboc_hir::{BlockId, ExprId, HirConstraintId, HirIdWrapper, ParserDefId};
+use yaboc_hir::{BlockId, ExprId, HirConstraintExpressionRoot, HirIdWrapper, ParserDefId};
 use yaboc_types::TypeId;
 
 use self::convert::ConvertCtx;
@@ -48,7 +48,7 @@ fn strictness(
 pub enum FunKind {
     Block(BlockId),
     ParserDef(ParserDefId),
-    If(HirConstraintId, TypeId, WiggleKind),
+    If(HirConstraintExpressionRoot, TypeId, WiggleKind),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -713,7 +713,7 @@ fn mir_pd(db: &dyn Mirs, pd: ParserDefId, requirements: RequirementSet) -> SResu
 
 fn mir_if(
     db: &dyn Mirs,
-    constr: HirConstraintId,
+    constr: HirConstraintExpressionRoot,
     ty: TypeId,
     kind: WiggleKind,
     requirements: RequirementSet,
