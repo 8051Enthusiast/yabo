@@ -8,6 +8,7 @@ use yaboc_mir::FunKind;
 use crate::{
     convert_regex::RegexTranslator,
     convert_thunk::{BlockThunk, CreateArgsThunk, TypecastThunk, ValThunk},
+    defs::TAILCC,
 };
 
 use super::*;
@@ -40,6 +41,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         fun: FunctionValue<'llvm>,
         wrapper: FunctionValue<'llvm>,
+        tail: bool
     ) -> FunctionValue<'llvm> {
         let args = wrapper
             .get_param_iter()
@@ -49,7 +51,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.add_entry_block(wrapper);
         }
         let call = self.builder.build_call(fun, &args, "call");
-        call.set_tail_call(true);
+        call.set_tail_call(tail);
+        call.set_call_convention(TAILCC);
         let ret = call.try_as_basic_value().left().unwrap().into_int_value();
         self.builder.build_return(Some(&ret));
         wrapper
@@ -81,9 +84,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let (ret, fun_arg, from) = parser_values(wrapper, layout, from);
         self.add_entry_block(wrapper);
         let Some(val) = self.setup_tail_fun_copy(from.layout, fun_arg) else {
-            return self.wrap_direct_call(inner, wrapper);
+            // cannot be a tail call because of different calling conventions
+            return self.wrap_direct_call(inner, wrapper, false);
         };
-        let ret = self.build_call_with_int_ret(
+        let ret = self.build_tailcc_call_with_int_ret(
             inner.into(),
             &[
                 ret.ptr.into(),
@@ -195,7 +199,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         if !req.contains(NeededBy::Val) || !thunky {
             // just call impl_fun and return
             let llvm_fun = self.parser_fun_val_tail(layout, slot, req);
-            return self.wrap_direct_call(impl_fun, llvm_fun);
+            return self.wrap_direct_call(impl_fun, llvm_fun, true);
         }
 
         if !(req & !NeededBy::Val).is_empty() {
@@ -409,7 +413,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         translator.build();
 
         if block.returns {
-            self.wrap_direct_call(impl_fun, llvm_fun);
+            self.wrap_direct_call(impl_fun, llvm_fun, true);
             return llvm_fun;
         }
 
@@ -541,7 +545,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         } else {
             arg
         };
-        let ret = self.build_call_with_int_ret(
+        let ret = self.build_tailcc_call_with_int_ret(
             regex_impl.into(),
             &[
                 ret_copy.ptr.into(),

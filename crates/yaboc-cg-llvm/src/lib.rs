@@ -9,6 +9,7 @@ mod vtables;
 
 use std::{ffi::OsStr, fmt::Debug, path::Path, rc::Rc};
 
+use defs::TAILCC;
 use fxhash::FxHashMap;
 use inkwell::{
     attributes::{Attribute, AttributeLoc},
@@ -303,6 +304,20 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .expect("function shuold not return void")
             .into_int_value()
     }
+
+    fn build_tailcc_call_with_int_ret(
+        &mut self,
+        call_fun: CallableValue<'llvm>,
+        args: &[BasicMetadataValueEnum<'llvm>],
+    ) -> IntValue<'llvm> {
+        let call = self.builder.build_call(call_fun, args, "call");
+        call.set_call_convention(TAILCC);
+        call.try_as_basic_value()
+            .left()
+            .expect("function shuold not return void")
+            .into_int_value()
+    }
+
 
     fn build_parser_call(
         &mut self,
