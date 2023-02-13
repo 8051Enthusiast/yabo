@@ -128,12 +128,33 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub(super) fn call_parser_fun_impl(
         &mut self,
         ret: CgReturnValue<'llvm>,
-        fun: CgValue<'comp, 'llvm>,
+        fun: CgMonoValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         slot: u64,
         call_kind: RequirementSet,
+        tail: bool,
     ) -> IntValue<'llvm> {
-        self.call_parser_fun(ret, fun, arg, slot, call_kind, ParserFunKind::Worker)
+        let parser = self.sym_callable(
+            fun.layout,
+            LayoutPart::Parse(slot, call_kind, ParserFunKind::Worker),
+        );
+        let call_ret = self.builder.build_call(
+            parser,
+            &[
+                ret.ptr.into(),
+                fun.ptr.into(),
+                ret.head.into(),
+                arg.ptr.into(),
+            ],
+            "impl_tail_call",
+        );
+        call_ret.set_tail_call(tail);
+        let ret = call_ret
+            .try_as_basic_value()
+            .left()
+            .unwrap()
+            .into_int_value();
+        ret
     }
 
     pub(super) fn call_parser_fun_wrapper(
