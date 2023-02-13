@@ -1,3 +1,4 @@
+use yaboc_layout::represent::ParserFunKind;
 use yaboc_types::TypeId;
 
 use crate::val::CgReturnValue;
@@ -97,17 +98,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.build_call_with_int_ret(access, &[ret.ptr.into(), arg.ptr.into(), ret.head.into()])
     }
 
-    pub(super) fn call_parser_fun(
+    fn call_parser_fun(
         &mut self,
         ret: CgReturnValue<'llvm>,
         fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         slot: u64,
         call_kind: CallMeta,
-        use_impl: bool,
+        fun_kind: ParserFunKind,
     ) -> IntValue<'llvm> {
         let parser = match fun.layout.maybe_mono() {
-            Some(mono) => self.sym_callable(mono, LayoutPart::Parse(slot, call_kind, !use_impl)),
+            Some(mono) => self.sym_callable(mono, LayoutPart::Parse(slot, call_kind, fun_kind)),
             None => self.vtable_callable::<vtable::ParserVTable>(
                 fun.ptr,
                 &[ParserVTableFields::apply_table as u64, slot],
@@ -122,6 +123,82 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 arg.ptr.into(),
             ],
         )
+    }
+
+    pub(super) fn call_parser_fun_impl(
+        &mut self,
+        ret: CgReturnValue<'llvm>,
+        fun: CgValue<'comp, 'llvm>,
+        arg: CgValue<'comp, 'llvm>,
+        slot: u64,
+        call_kind: CallMeta,
+    ) -> IntValue<'llvm> {
+        self.call_parser_fun(ret, fun, arg, slot, call_kind, ParserFunKind::Worker)
+    }
+
+    pub(super) fn call_parser_fun_wrapper(
+        &mut self,
+        ret: CgReturnValue<'llvm>,
+        fun: CgValue<'comp, 'llvm>,
+        arg: CgValue<'comp, 'llvm>,
+        slot: u64,
+        call_kind: CallMeta,
+    ) -> IntValue<'llvm> {
+        self.call_parser_fun(ret, fun, arg, slot, call_kind, ParserFunKind::Wrapper)
+    }
+
+    pub(super) fn call_parser_fun_tail(
+        &mut self,
+        ret: CgReturnValue<'llvm>,
+        fun: CgValue<'comp, 'llvm>,
+        arg: CgValue<'comp, 'llvm>,
+        slot: u64,
+        call_kind: CallMeta,
+        parent_fun: Option<CgValue<'comp, 'llvm>>,
+    ) -> IntValue<'llvm> {
+        let parser = match fun.layout.maybe_mono() {
+            Some(mono) => self.sym_callable(
+                mono,
+                LayoutPart::Parse(slot, call_kind, ParserFunKind::TailWrapper),
+            ),
+            None => self.vtable_callable::<vtable::ParserVTable>(
+                fun.ptr,
+                &[ParserVTableFields::apply_table as u64, slot],
+            ),
+        };
+        let sa = fun.layout.size_align_without_vtable(self.layouts).unwrap();
+        let size = self.const_i64(sa.size as i64);
+        let fun = if let Some(parent_fun) = parent_fun {
+            self.builder
+                .build_memcpy(
+                    parent_fun.ptr,
+                    sa.align() as u32,
+                    fun.ptr,
+                    sa.align() as u32,
+                    size,
+                )
+                .unwrap();
+            parent_fun
+        } else {
+            fun
+        };
+        let call_ret = self.builder.build_call(
+            parser,
+            &[
+                ret.ptr.into(),
+                fun.ptr.into(),
+                ret.head.into(),
+                arg.ptr.into(),
+            ],
+            "tail_call",
+        );
+        call_ret.set_tail_call(true);
+        let ret = call_ret
+            .try_as_basic_value()
+            .left()
+            .unwrap()
+            .into_int_value();
+        ret
     }
 
     pub(super) fn call_fun_create(

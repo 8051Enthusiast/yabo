@@ -48,7 +48,7 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
         let req = CallMeta::new(RequirementSet::all(), false);
         let slot =
             cg.collected_layouts.parser_slots.layout_vtable_offsets[&((from, req), single.inner())];
-        let parser_fun = cg.parser_fun_val(single, slot, req);
+        let parser_fun = cg.parser_fun_val_tail(single, slot, req);
 
         let int_layout = cg.layouts.dcx.intern(yaboc_layout::Layout::Mono(
             MonoLayout::Primitive(PrimitiveType::Int),

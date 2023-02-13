@@ -248,21 +248,23 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         CgReturnValue::new(head, undef_ptr)
     }
 
-    fn build_layout_alloca(&mut self, layout: ILayout<'comp>, name: &str) -> PointerValue<'llvm> {
-        let sa = layout
-            .size_align(self.layouts)
-            .expect("Could not get size/alignment of layout");
+    fn build_sa_alloca(
+        &mut self,
+        sa: SizeAlign,
+        vtable: Option<bool>,
+        name: &str,
+    ) -> PointerValue<'llvm> {
         let ty = self.sa_type(sa);
         let ptr = self.builder.build_alloca(ty, "alloca");
         self.set_last_instr_align(sa).unwrap();
         let u8_ptr_ty = self.llvm.i8_type().ptr_type(AddressSpace::default());
-        match layout.layout.1 {
-            Layout::None => self.any_ptr().get_undef(),
-            Layout::Mono(_, _) => self
+        match vtable {
+            None => self.any_ptr().get_undef(),
+            Some(false) => self
                 .builder
                 .build_bitcast(ptr, u8_ptr_ty, name)
                 .into_pointer_value(),
-            Layout::Multi(_) => {
+            Some(true) => {
                 let cast_ptr = self
                     .builder
                     .build_bitcast(ptr, u8_ptr_ty, name)
@@ -271,6 +273,18 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 self.build_byte_gep(cast_ptr, ptr_width, name)
             }
         }
+    }
+
+    fn build_layout_alloca(&mut self, layout: ILayout<'comp>, name: &str) -> PointerValue<'llvm> {
+        let sa = layout
+            .size_align(self.layouts)
+            .expect("Could not get size/alignment of layout");
+        let vtable = match layout.layout.1 {
+            Layout::None => None,
+            Layout::Mono(_, _) => Some(false),
+            Layout::Multi(_) => Some(true),
+        };
+        self.build_sa_alloca(sa, vtable, name)
     }
 
     fn build_alloca_value(&mut self, layout: ILayout<'comp>, name: &str) -> CgValue<'comp, 'llvm> {
@@ -299,7 +313,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> IntValue<'llvm> {
         let slot = self.collected_layouts.parser_slots.layout_vtable_offsets
             [&((from.layout, call_kind), fun.layout)];
-        self.call_parser_fun(ret, fun, from, slot, call_kind, false)
+        self.call_parser_fun_wrapper(ret, fun, from, slot, call_kind)
     }
 
     fn module_string(&mut self, s: &str) -> PointerValue<'llvm> {
@@ -476,8 +490,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn build_copy_invariant(&mut self, dest: CgValue<'comp, 'llvm>, src: CgValue<'comp, 'llvm>) {
-        assert_eq!(dest.layout, src.layout);
-        let sa = src.layout.size_align(self.layouts).unwrap();
+        let sa = dest.layout.size_align(self.layouts).unwrap();
         let src_ptr = self.get_object_start(src);
         let dest_ptr = self.get_object_start(dest);
         let size = self.const_i64(sa.size as i64);

@@ -423,7 +423,7 @@ def run_tests(target_dir: str) -> int:
         with futures.ProcessPoolExecutor() as executor:
             results = executor.map(run_test, files)
             return sum(results)
-    except futures.process.BrokenProcessPool:
+    except (futures.process.BrokenProcessPool, ValueError):
         print('Encountered segfault, running tests sequentially')
         total_failed = 0
         for file in files:

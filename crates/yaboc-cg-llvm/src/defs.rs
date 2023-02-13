@@ -1,3 +1,4 @@
+use yaboc_layout::represent::ParserFunKind;
 use yaboc_mir::CallMeta;
 
 use super::*;
@@ -123,13 +124,25 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         f
     }
 
-    pub(super) fn parser_fun_val(
+    pub(super) fn parser_fun_val_wrapper(
         &mut self,
         layout: IMonoLayout<'comp>,
         slot: PSize,
         req: CallMeta,
     ) -> FunctionValue<'llvm> {
-        self.ppip_fun_val(layout, LayoutPart::Parse(slot, req, true))
+        self.ppip_fun_val(layout, LayoutPart::Parse(slot, req, ParserFunKind::Wrapper))
+    }
+
+    pub(super) fn parser_fun_val_tail(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+        slot: PSize,
+        req: CallMeta,
+    ) -> FunctionValue<'llvm> {
+        self.ppip_fun_val(
+            layout,
+            LayoutPart::Parse(slot, req, ParserFunKind::TailWrapper),
+        )
     }
 
     pub(super) fn parser_impl_fun_val(
@@ -138,7 +151,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         slot: PSize,
         req: CallMeta,
     ) -> FunctionValue<'llvm> {
-        self.ppip_fun_val(layout, LayoutPart::Parse(slot, req, false))
+        self.ppip_fun_val(layout, LayoutPart::Parse(slot, req, ParserFunKind::Worker))
     }
 
     pub(super) fn arg_level_and_offset(
@@ -199,12 +212,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         req: CallMeta,
         is_non_null: bool,
     ) -> PointerValue<'llvm> {
-        if is_non_null {
-            self.parser_fun_val(layout, slot, req)
+        if !is_non_null {
+            ParserFun::codegen_ty(self).into_pointer_type().const_null()
+        } else if req.tail {
+            self.parser_fun_val_tail(layout, slot, req)
                 .as_global_value()
                 .as_pointer_value()
         } else {
-            ParserFun::codegen_ty(self).into_pointer_type().const_null()
+            self.parser_fun_val_wrapper(layout, slot, req)
+                .as_global_value()
+                .as_pointer_value()
         }
     }
 

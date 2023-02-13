@@ -3,7 +3,8 @@ use std::fmt::Display;
 use fxhash::FxHashSet;
 use yaboc_base::{
     dbformat,
-    error::{SResult, SilencedError}, interner::DefId,
+    error::{SResult, SilencedError},
+    interner::DefId,
 };
 use yaboc_resolve::parserdef_ssc::FunctionSscId;
 
@@ -65,9 +66,7 @@ impl Display for DerefLevel {
 
 pub fn deref_level(db: &dyn TyHirs, ty: TypeId) -> SResult<DerefLevel> {
     match db.lookup_intern_type(ty) {
-        Type::ForAll(inner, _) => {
-            db.deref_level(inner)
-        }
+        Type::ForAll(inner, _) => db.deref_level(inner),
         Type::Nominal(nom) => {
             let id = match NominalId::from_nominal_head(&nom) {
                 NominalId::Def(id) => id,

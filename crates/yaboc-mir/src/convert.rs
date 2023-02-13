@@ -1,5 +1,5 @@
 use std::{
-    collections::{hash_map::Entry, BTreeMap},
+    collections::{hash_map::Entry, BTreeMap, BTreeSet},
     sync::Arc,
 };
 
@@ -47,6 +47,7 @@ pub struct ConvertCtx<'a> {
     processed_parse_sites: FxHashSet<DefId>,
     req: RequirementSet,
     req_transformer: Arc<BTreeMap<DefId, RequirementMatrix>>,
+    tails: Arc<BTreeSet<DefId>>,
     returns_self: bool,
 }
 
@@ -700,18 +701,22 @@ impl<'a> ConvertCtx<'a> {
     }
 
     fn terminate_context(&mut self, context: ContextId, superchoice: ChoiceId, cont: BBRef) {
-        if !self.context_bb.contains_key(&context) {
+        let Some(&(_, end_bb)) = self.context_bb.get(&context) else {
             // context was never referenced and contains nothing
             self.context_data
                 .remove(&context)
                 .expect("context not initialized or removed multiple times");
             return;
-        }
+        };
         self.change_context(context);
         let context_data = self
             .context_data
             .remove(&context)
             .expect("context not initialized or removed multiple times");
+        if let Some(MirInstr::ParseCall(.., None)) = self.f.fun.bb(end_bb).ins.last() {
+            // we have a tail call, we cannot copy anything or set discriminants
+            return;
+        }
         for (from, to) in context_data.field_move_targets.iter() {
             let to_place = match self.val_place_at_def(*to) {
                 Some(p) => p,
@@ -780,31 +785,53 @@ impl<'a> ConvertCtx<'a> {
             |_, _| Ok(parser_fun),
         )?;
         let addr = self.front_place_at_def(call_loc).unwrap();
-        let ret = call_info
-            .req
-            .contains(NeededBy::Val)
-            .then(|| self.val_place_at_def(call_loc).unwrap());
-        let ty = self.f.fun.place(self.f.fun.arg()).ty;
-        let retlen = if call_info.req.contains(NeededBy::Len) {
-            let place = self.f.add_place(PlaceInfo {
-                place: Place::ModifiedBy(self.next_ins()),
-                ty,
-                remove_bt: false,
-            });
-            self.places.insert(SubValue::new_back(call_loc), place);
-            Some(place)
+        let ret = if call_info.req.contains(NeededBy::Val) {
+            if call_info.tail {
+                self.f.fun.ret()
+            } else {
+                Some(self.val_place_at_def(call_loc).unwrap())
+            }
         } else {
             None
         };
-        self.f
-            .parse_call(call_info, addr, ldt_parser_fun, ret, retlen, self.retreat);
+        let ty = self.f.fun.place(self.f.fun.arg()).ty;
+        let retlen = if call_info.req.contains(NeededBy::Len) {
+            if call_info.tail {
+                self.f.fun.retlen()
+            } else {
+                let place = self.f.add_place(PlaceInfo {
+                    place: Place::ModifiedBy(self.next_ins()),
+                    ty,
+                    remove_bt: false,
+                });
+                self.places.insert(SubValue::new_back(call_loc), place);
+                Some(place)
+            }
+        } else {
+            None
+        };
+        if call_info.tail {
+            if addr != self.f.fun.arg() {
+                self.copy(addr, self.f.fun.arg());
+            }
+            self.f.tail_parse_call(
+                call_info,
+                self.f.fun.arg(),
+                ldt_parser_fun,
+                ret,
+                self.f.fun.retlen(),
+            );
+        } else {
+            self.f
+                .parse_call(call_info, addr, ldt_parser_fun, ret, retlen, self.retreat);
+        }
         Ok(())
     }
 
     fn call_info_at_id(&self, id: DefId) -> CallMeta {
         CallMeta {
             req: self.req_transformer[&id] * self.req,
-            tail: false,
+            tail: self.tails.contains(&id),
         }
     }
 
@@ -849,7 +876,7 @@ impl<'a> ConvertCtx<'a> {
             .contains(NeededBy::Len)
             .then(|| self.back_place_at_def(call_loc).unwrap());
         self.f
-            .parse_call(info, addr, ldt_parser_fun, ret, retlen, self.retreat);
+            .tail_parse_call(info, addr, ldt_parser_fun, ret, retlen);
         Ok(())
     }
 
@@ -984,6 +1011,11 @@ impl<'a> ConvertCtx<'a> {
             hir::HirNode::ChoiceIndirection(_) => return Ok(()),
             // arg and return place already have this function
             hir::HirNode::Block(b) if sub_value.kind == SubValueKind::Back => {
+                // if the last call is a tail call, we don't need this
+                let bb = self.f.current_bb;
+                if let Some(MirInstr::ParseCall(.., None)) = self.f.fun.bb(bb).ins.last() {
+                    return Ok(());
+                }
                 let last_place_back = self.context_data[&b.root_context]
                     .ends
                     .map(|x| self.back_place_at_def(x.1).unwrap())
@@ -1121,6 +1153,7 @@ impl<'a> ConvertCtx<'a> {
         let returns_self: bool = requirements.contains(NeededBy::Val) && !block.returns;
         let processed_parse_sites = FxHashSet::default();
         let req_transformer = order.parse_requirements.clone();
+        let tails = order.tails.clone();
         f.set_bb(f.fun.entry());
         Ok(ConvertCtx {
             db,
@@ -1136,6 +1169,7 @@ impl<'a> ConvertCtx<'a> {
             processed_parse_sites,
             req: requirements,
             req_transformer,
+            tails,
         })
     }
 
@@ -1201,6 +1235,9 @@ impl<'a> ConvertCtx<'a> {
         let mut req_transformer = BTreeMap::default();
         req_transformer.insert(id.0, RequirementMatrix::id());
         let req_transformer = Arc::new(req_transformer);
+        let mut tails = BTreeSet::default();
+        tails.insert(id.0);
+        let tails = Arc::new(tails);
         f.set_bb(f.fun.entry());
         Ok(ConvertCtx {
             db,
@@ -1216,6 +1253,7 @@ impl<'a> ConvertCtx<'a> {
             processed_parse_sites,
             req: requirements,
             req_transformer,
+            tails,
         })
     }
 
@@ -1250,10 +1288,16 @@ impl<'a> ConvertCtx<'a> {
             returns_self: false,
             processed_parse_sites: Default::default(),
             req_transformer: Default::default(),
+            tails: Default::default(),
         })
     }
 
     pub fn finish_fun(mut self) -> Function {
+        let bb = self.f.fun.bb(self.f.current_bb);
+        // don't add a return statement if we have a tail call
+        if let Some(MirInstr::ParseCall(.., None)) = bb.ins.last() {
+            return self.f.fun;
+        }
         self.f.ret(ReturnStatus::Ok);
         self.f.fun
     }

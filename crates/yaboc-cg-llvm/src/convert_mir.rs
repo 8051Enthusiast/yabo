@@ -7,11 +7,11 @@ use inkwell::{
     AddressSpace, IntPredicate,
 };
 
-use mir::{CallMeta, ControlFlow, Strictness};
+use mir::{CallMeta, ControlFlow, Place, Strictness};
 use yaboc_absint::AbstractDomain;
 use yaboc_ast::expr::Atom;
 use yaboc_ast::ConstraintAtom;
-use yaboc_base::interner::FieldName;
+use yaboc_base::{dbpanic, interner::FieldName};
 use yaboc_hir::BlockId;
 use yaboc_hir_types::{NominalId, NOBACKTRACK_BIT, VTABLE_BIT};
 use yaboc_layout::{mir_subst::FunctionSubstitute, ILayout, Layout, MonoLayout};
@@ -390,7 +390,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         call_kind: CallMeta,
         fun: PlaceRef,
         arg: PlaceRef,
-        ctrl: ControlFlow,
+        ctrl: Option<ControlFlow>,
     ) {
         let fun_val = self.place_val(fun);
         let arg_val = self.place_val(arg);
@@ -405,16 +405,36 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             None => {
                 // TODO(8051): should be turned into an llvm unreachable in the future,
                 // but for now this is a panic to catch more errors
-                panic!("call slot not available")
+                dbpanic!(
+                    &self.cg.compiler_database.db,
+                    "call slot not available: ({}, {}) *> {}",
+                    &arg_val.layout,
+                    &call_kind,
+                    &fun_val.layout
+                )
             }
         };
         let ret_val = ret
             .map(|r| self.return_val(r))
             .unwrap_or_else(|| self.cg.undef_ret());
-        let ret = self
-            .cg
-            .call_parser_fun(ret_val, fun_val, arg_val, slot, call_kind, false);
-        self.controlflow_case(ret, ctrl)
+        if let Some(ctrl) = ctrl {
+            let ret = self
+                .cg
+                .call_parser_fun_wrapper(ret_val, fun_val, arg_val, slot, call_kind);
+            self.controlflow_case(ret, ctrl)
+        } else {
+            let parent_fun = if self.mir_fun.f.place(fun).place == Place::Captures {
+                // don't copy in case it is already the arg since that would
+                // result in issues with memcpy
+                None
+            } else {
+                Some(self.fun.into())
+            };
+            let ret = self
+                .cg
+                .call_parser_fun_tail(ret_val, fun_val, arg_val, slot, call_kind, parent_fun);
+            self.cg.builder.build_return(Some(&ret));
+        }
     }
 
     fn store_val(&mut self, ret: PlaceRef, val: Val) {
