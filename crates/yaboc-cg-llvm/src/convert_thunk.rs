@@ -129,7 +129,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TypecastThunk<'comp, 'llvm> {
         };
         cg.build_copy_invariant(arg_copy, from);
 
-        let ret = cg.call_parser_fun_impl(ret, fun.into(), arg_copy, slot, NeededBy::Val.into());
+        let ret = cg.call_parser_fun_impl(ret, fun, arg_copy, slot, NeededBy::Val.into(), false);
         cg.builder.build_return(Some(&ret));
         if let Some(bb) = previous_bb {
             cg.builder.position_at_end(bb);
@@ -270,7 +270,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for ValThunk<'comp> {
 
         let (ret, fun, arg) = parser_values(fun, self.fun, self.from);
 
-        let ret = cg.call_parser_fun_impl(ret, fun.into(), arg, self.slot, req);
+        let ret = cg.call_parser_fun_impl(ret, fun, arg, self.slot, req, true);
         cg.builder.build_return(Some(&ret));
         if let Some(bb) = previous_bb {
             cg.builder.position_at_end(bb);
@@ -326,7 +326,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for BlockThunk<'comp> {
         let (ret_val, fun_val, arg_val) = parser_values(fun, self.fun, self.from);
         let ret_val = ret_val.with_ptr(return_ptr);
 
-        let ret = cg.call_parser_fun_impl(ret_val, fun_val.into(), arg_val, self.slot, self.req);
+        let ret = cg.call_parser_fun_impl(ret_val, fun_val, arg_val, self.slot, self.req, true);
         cg.builder.build_return(Some(&ret));
         if let Some(bb) = previous_bb {
             cg.builder.position_at_end(bb);
