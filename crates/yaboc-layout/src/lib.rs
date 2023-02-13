@@ -200,7 +200,7 @@ impl<'a> IMonoLayout<'a> {
     ) -> (ILayout<'a>, IMonoLayout<'a>) {
         let mono = self.mono_layout().0;
         let MonoLayout::Nominal(pd, Some(from), to) = mono else {
-            panic!("Expected nominal layout with from type");
+            dbpanic!(ctx.db, "Expected nominal layout with from type, got {}", &self.inner());
         };
         let parser_ty = ctx.db.intern_type(Type::ParserArg {
             result: self.mono_layout().1,
@@ -1086,11 +1086,11 @@ def for[int] *> main = {
                     LayoutPart::Parse(
                         0,
                         CallMeta::new(NeededBy::Len | NeededBy::Backtrack, false),
-                        false
+                        represent::ParserFunKind::Worker,
                     ),
                     &ctx.db
                 ),
-                "main$2cd949028b83d5a5$parse_0_lb_impl"
+                "main$2cd949028b83d5a5$parse_0_lb_worker"
             );
         }
         let main_block = outlayer.pd_result()[&canon_2004].as_ref().unwrap().returned;
@@ -1101,7 +1101,7 @@ def for[int] *> main = {
                     LayoutPart::Parse(
                         0,
                         CallMeta::new(NeededBy::Val | NeededBy::Backtrack, false),
-                        true
+                        represent::ParserFunKind::Wrapper,
                     ),
                     &ctx.db
                 ),

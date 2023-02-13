@@ -302,8 +302,15 @@ impl<'a> LayoutHasher<'a> {
 }
 
 #[derive(Clone, Copy)]
+pub enum ParserFunKind {
+    Wrapper,
+    TailWrapper,
+    Worker,
+}
+
+#[derive(Clone, Copy)]
 pub enum LayoutPart {
-    Parse(PSize, CallMeta, bool),
+    Parse(PSize, CallMeta, ParserFunKind),
     Field(Identifier),
     VTable,
     Start,
@@ -320,7 +327,7 @@ pub enum LayoutPart {
 impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
-            LayoutPart::Parse(p, info, public) => {
+            LayoutPart::Parse(p, info, kind) => {
                 let reqs = info.req;
                 write!(f, "parse_{p}_")?;
                 if reqs.contains(NeededBy::Val) {
@@ -332,11 +339,10 @@ impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
                 if reqs.contains(NeededBy::Backtrack) {
                     write!(f, "b")?;
                 }
-                if info.tail {
-                    write!(f, "_tail")?;
-                }
-                if !*public {
-                    write!(f, "_impl")?;
+                match kind {
+                    ParserFunKind::Wrapper => {}
+                    ParserFunKind::TailWrapper => write!(f, "_tail")?,
+                    ParserFunKind::Worker => write!(f, "_worker")?,
                 }
                 Ok(())
             }

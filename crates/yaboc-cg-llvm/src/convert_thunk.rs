@@ -20,15 +20,15 @@ use crate::{
 
 use super::CodeGenCtx;
 
-pub trait ThunkInfo<'comp> {
-    fn alloc_size<'llvm>(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> SizeAlign;
-    fn function<'llvm>(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm>;
-    fn build_copy_region_ptr<'llvm>(
+pub trait ThunkInfo<'comp, 'llvm> {
+    fn alloc_size(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> SizeAlign;
+    fn function(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm>;
+    fn build_copy_region_ptr(
         &self,
         cg: &mut CodeGenCtx<'llvm, 'comp>,
         idx: u8,
     ) -> Option<(PointerValue<'llvm>, SizeAlign)>;
-    fn build_tail<'llvm>(
+    fn build_tail(
         &self,
         cg: &mut CodeGenCtx<'llvm, 'comp>,
         after_copy: bool,
@@ -37,22 +37,49 @@ pub trait ThunkInfo<'comp> {
     fn target_layout(&self) -> IMonoLayout<'comp>;
 }
 
-pub struct TypecastThunk<'comp> {
-    pub layout: IMonoLayout<'comp>,
+pub struct TypecastThunk<'comp, 'llvm> {
+    layout: IMonoLayout<'comp>,
+    arg_copy: Option<CgValue<'comp, 'llvm>>,
+    fun_copy: Option<CgMonoValue<'comp, 'llvm>>,
+    f: FunctionValue<'llvm>,
 }
 
-impl<'comp> ThunkInfo<'comp> for TypecastThunk<'comp> {
-    fn alloc_size<'llvm>(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> SizeAlign {
+impl<'comp, 'llvm> TypecastThunk<'comp, 'llvm> {
+    pub fn new(cg: &mut CodeGenCtx<'llvm, 'comp>, layout: IMonoLayout<'comp>) -> Self {
+        let f = cg.typecast_fun_val(layout);
+        cg.add_entry_block(f);
+        let (arg_copy, fun_copy) = if let MonoLayout::Nominal(..) = layout.mono_layout().0 {
+            let (from, layout) = layout.unapply_nominal(cg.layouts);
+            let arg_copy = cg.build_alloca_value(from, "arg_copy");
+            let fun_copy = if let Some(sa) = cg.collected_layouts.tail_sa[&(from, layout)] {
+                let sa_alloc = cg.build_sa_alloca(sa, Some(false), "fun_copy");
+                Some(CgMonoValue::new(layout, sa_alloc))
+            } else {
+                None
+            };
+            (Some(arg_copy), fun_copy)
+        } else {
+            (None, None)
+        };
+        Self {
+            layout,
+            arg_copy,
+            fun_copy,
+            f,
+        }
+    }
+}
+
+impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TypecastThunk<'comp, 'llvm> {
+    fn alloc_size(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> SizeAlign {
         self.layout.inner().size_align(cg.layouts).unwrap()
     }
 
-    fn function<'llvm>(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
-        let f = cg.typecast_fun_val(self.layout);
-        cg.add_entry_block(f);
-        f
+    fn function(&self, _cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
+        self.f
     }
 
-    fn build_copy_region_ptr<'llvm>(
+    fn build_copy_region_ptr(
         &self,
         cg: &mut CodeGenCtx<'llvm, 'comp>,
         idx: u8,
@@ -73,7 +100,7 @@ impl<'comp> ThunkInfo<'comp> for TypecastThunk<'comp> {
         self.layout
     }
 
-    fn build_tail<'llvm>(
+    fn build_tail(
         &self,
         cg: &mut CodeGenCtx<'llvm, 'comp>,
         after_copy: bool,
@@ -82,6 +109,7 @@ impl<'comp> ThunkInfo<'comp> for TypecastThunk<'comp> {
         if after_copy {
             return None;
         }
+        let arg_copy = self.arg_copy.unwrap();
         let previous_bb = cg.builder.get_insert_block();
         let fun = cg.current_function();
         let current_bb = cg.llvm.append_basic_block(fun, "tail");
@@ -94,14 +122,20 @@ impl<'comp> ThunkInfo<'comp> for TypecastThunk<'comp> {
         let ret = CgReturnValue::new(target_level, ret_ptr);
 
         let (from, fun, slot) = cg.build_nominal_components(thunk, pd_val_req());
+        let fun = if let Some(fun_cpy) = self.fun_copy {
+            cg.build_copy_invariant(fun_cpy.into(), fun.into());
+            fun_cpy
+        } else {
+            fun
+        };
+        cg.build_copy_invariant(arg_copy, from);
 
-        let ret = cg.call_parser_fun(
+        let ret = cg.call_parser_fun_impl(
             ret,
             fun.into(),
-            from,
+            arg_copy,
             slot,
             CallMeta::new(NeededBy::Val.into(), false),
-            true,
         );
         cg.builder.build_return(Some(&ret));
         if let Some(bb) = previous_bb {
@@ -117,16 +151,16 @@ pub struct CreateArgsThunk<'comp> {
     pub slot: PSize,
 }
 
-impl<'comp> ThunkInfo<'comp> for CreateArgsThunk<'comp> {
-    fn alloc_size<'llvm>(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> SizeAlign {
+impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for CreateArgsThunk<'comp> {
+    fn alloc_size(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> SizeAlign {
         self.to.inner().size_align(cg.layouts).unwrap()
     }
-    fn function<'llvm>(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
+    fn function(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
         let f = cg.function_create_args_fun_val(self.from, self.slot);
         cg.add_entry_block(f);
         f
     }
-    fn build_copy_region_ptr<'llvm>(
+    fn build_copy_region_ptr(
         &self,
         cg: &mut CodeGenCtx<'llvm, 'comp>,
         idx: u8,
@@ -146,7 +180,7 @@ impl<'comp> ThunkInfo<'comp> for CreateArgsThunk<'comp> {
         self.to
     }
 
-    fn build_tail<'llvm>(
+    fn build_tail(
         &self,
         _cg: &mut CodeGenCtx<'llvm, 'comp>,
         _after_copy: bool,
@@ -157,28 +191,46 @@ impl<'comp> ThunkInfo<'comp> for CreateArgsThunk<'comp> {
 }
 
 pub struct ValThunk<'comp> {
-    pub from: ILayout<'comp>,
-    pub fun: IMonoLayout<'comp>,
-    pub thunk: IMonoLayout<'comp>,
-    pub slot: PSize,
-    pub req: CallMeta,
+    from: ILayout<'comp>,
+    fun: IMonoLayout<'comp>,
+    thunk: IMonoLayout<'comp>,
+    slot: PSize,
+    req: CallMeta,
 }
 
-impl<'comp> ThunkInfo<'comp> for ValThunk<'comp> {
-    fn alloc_size<'llvm>(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> SizeAlign {
+impl<'comp> ValThunk<'comp> {
+    pub fn new(
+        from: ILayout<'comp>,
+        fun: IMonoLayout<'comp>,
+        thunk: IMonoLayout<'comp>,
+        slot: PSize,
+        req: CallMeta,
+    ) -> Self {
+        Self {
+            from,
+            fun,
+            thunk,
+            slot,
+            req,
+        }
+    }
+}
+
+impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for ValThunk<'comp> {
+    fn alloc_size(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> SizeAlign {
         self.from
             .size_align(cg.layouts)
             .unwrap()
             .cat(self.fun.inner().size_align(cg.layouts).unwrap())
     }
 
-    fn function<'llvm>(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
-        let f = cg.parser_fun_val(self.fun, self.slot, self.req);
+    fn function(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
+        let f = cg.parser_fun_val_tail(self.fun, self.slot, self.req);
         cg.add_entry_block(f);
         f
     }
 
-    fn build_copy_region_ptr<'llvm>(
+    fn build_copy_region_ptr(
         &self,
         cg: &mut CodeGenCtx<'llvm, 'comp>,
         idx: u8,
@@ -204,7 +256,7 @@ impl<'comp> ThunkInfo<'comp> for ValThunk<'comp> {
         None
     }
 
-    fn build_tail<'llvm>(
+    fn build_tail(
         &self,
         cg: &mut CodeGenCtx<'llvm, 'comp>,
         after_copy: bool,
@@ -225,7 +277,7 @@ impl<'comp> ThunkInfo<'comp> for ValThunk<'comp> {
 
         let (ret, fun, arg) = parser_values(fun, self.fun, self.from);
 
-        let ret = cg.call_parser_fun(ret, fun.into(), arg, self.slot, info, true);
+        let ret = cg.call_parser_fun_impl(ret, fun.into(), arg, self.slot, info);
         cg.builder.build_return(Some(&ret));
         if let Some(bb) = previous_bb {
             cg.builder.position_at_end(bb);
@@ -246,18 +298,18 @@ pub struct BlockThunk<'comp> {
     pub slot: PSize,
 }
 
-impl<'comp> ThunkInfo<'comp> for BlockThunk<'comp> {
-    fn alloc_size<'llvm>(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> SizeAlign {
+impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for BlockThunk<'comp> {
+    fn alloc_size(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> SizeAlign {
         self.result.inner().size_align(cg.layouts).unwrap()
     }
 
-    fn function<'llvm>(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
-        let f = cg.parser_fun_val(self.fun, self.slot, self.req);
+    fn function(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
+        let f = cg.parser_fun_val_tail(self.fun, self.slot, self.req);
         cg.add_entry_block(f);
         f
     }
 
-    fn build_copy_region_ptr<'llvm>(
+    fn build_copy_region_ptr(
         &self,
         _cg: &mut CodeGenCtx<'llvm, 'comp>,
         _idx: u8,
@@ -265,7 +317,7 @@ impl<'comp> ThunkInfo<'comp> for BlockThunk<'comp> {
         None
     }
 
-    fn build_tail<'llvm>(
+    fn build_tail(
         &self,
         cg: &mut CodeGenCtx<'llvm, 'comp>,
         after_copy: bool,
@@ -281,7 +333,7 @@ impl<'comp> ThunkInfo<'comp> for BlockThunk<'comp> {
         let (ret_val, fun_val, arg_val) = parser_values(fun, self.fun, self.from);
         let ret_val = ret_val.with_ptr(return_ptr);
 
-        let ret = cg.call_parser_fun(ret_val, fun_val.into(), arg_val, self.slot, self.req, true);
+        let ret = cg.call_parser_fun_impl(ret_val, fun_val.into(), arg_val, self.slot, self.req);
         cg.builder.build_return(Some(&ret));
         if let Some(bb) = previous_bb {
             cg.builder.position_at_end(bb);
@@ -294,7 +346,7 @@ impl<'comp> ThunkInfo<'comp> for BlockThunk<'comp> {
     }
 }
 
-pub struct ThunkContext<'llvm, 'comp, 'r, Info: ThunkInfo<'comp>> {
+pub struct ThunkContext<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> {
     cg: &'r mut CodeGenCtx<'llvm, 'comp>,
     kind: Info,
     fun: FunctionValue<'llvm>,
@@ -302,7 +354,7 @@ pub struct ThunkContext<'llvm, 'comp, 'r, Info: ThunkInfo<'comp>> {
     ret: CgReturnValue<'llvm>,
 }
 
-impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp>> ThunkContext<'llvm, 'comp, 'r, Info> {
+impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp, 'r, Info> {
     pub fn new(cg: &'r mut CodeGenCtx<'llvm, 'comp>, kind: Info) -> Self {
         let fun = kind.function(cg);
         let return_ptr = fun.get_nth_param(0).unwrap().into_pointer_value();

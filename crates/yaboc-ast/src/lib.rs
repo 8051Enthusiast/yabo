@@ -11,7 +11,7 @@ use expr::{Unused, *};
 
 use yaboc_base::{
     error::{SResult, Silencable},
-    interner::{FieldName, Identifier, Interner, TypeVar, Regex},
+    interner::{FieldName, Identifier, Interner, Regex, TypeVar},
     source::{FieldSpan, FileId, Files, IdSpan, Span, Spanned},
 };
 

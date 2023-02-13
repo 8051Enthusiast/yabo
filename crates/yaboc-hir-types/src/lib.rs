@@ -1,6 +1,6 @@
 pub mod error;
-pub mod id_cursor;
 mod full;
+pub mod id_cursor;
 mod public;
 mod returns;
 mod signature;

@@ -240,7 +240,7 @@ pub enum MirInstr {
         CallMeta,
         PlaceRef,
         PlaceRef,
-        ControlFlow,
+        Option<ControlFlow>,
     ),
     Field(PlaceRef, PlaceRef, FieldName, ControlFlow),
     AssertVal(PlaceRef, ConstraintAtom, ControlFlow),
@@ -271,7 +271,7 @@ impl MirInstr {
             }),
             MirInstr::AssertVal(_, _, control_flow)
             | MirInstr::Field(_, _, _, control_flow)
-            | MirInstr::ParseCall(_, _, _, _, _, control_flow)
+            | MirInstr::ParseCall(_, _, _, _, _, Some(control_flow))
             | MirInstr::ApplyArgs(_, _, _, _, control_flow)
             | MirInstr::Copy(_, _, control_flow) => Some(*control_flow),
             _ => None,
@@ -322,7 +322,9 @@ impl BasicBlock {
     pub fn append_ins(&mut self, ins: MirInstr) {
         if let Some(last_ins) = self.ins.last() {
             if last_ins.is_terminator() {
-                panic!("Cannot append instruction to a block with a terminator");
+                panic!(
+                    "Cannot append instruction {ins:?} to a block with a terminator {last_ins:?}",
+                );
             }
         }
         self.ins.push(ins)
@@ -631,9 +633,22 @@ impl FunctionWriter {
                 call_info,
                 arg,
                 fun,
-                ControlFlow::new_with_exc(new_block, exc),
+                Some(ControlFlow::new_with_exc(new_block, exc)),
             ));
         self.set_bb(new_block);
+    }
+    pub fn tail_parse_call(
+        &mut self,
+        call_info: CallMeta,
+        arg: PlaceRef,
+        fun: PlaceRef,
+        ret: Option<PlaceRef>,
+        retlen: Option<PlaceRef>,
+    ) {
+        self.fun
+            .bb_mut(self.current_bb)
+            .append_ins(MirInstr::ParseCall(ret, retlen, call_info, arg, fun, None));
+        self.fun.success_returns.push(self.current_bb);
     }
 
     pub fn apply_args(

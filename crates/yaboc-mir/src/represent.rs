@@ -3,7 +3,7 @@ use std::{fmt::Display, io::Write};
 use yaboc_base::{databased_display::DatabasedDisplay, dbwrite};
 use yaboc_dependents::RequirementSet;
 
-use crate::{strictness::Strictness, ControlFlow, FunKind, InsRef};
+use crate::{strictness::Strictness, CallMeta, ControlFlow, FunKind, InsRef};
 
 use super::{
     BBRef, Comp, ExceptionRetreat, Function, IntBinOp, IntUnOp, MirInstr, Mirs, Place, PlaceOrigin,
@@ -116,6 +116,12 @@ impl Display for ExceptionRetreat {
     }
 }
 
+impl Display for CallMeta {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {})", self.req, self.tail)
+    }
+}
+
 impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &(&Function, &DB)) -> std::fmt::Result {
         match self {
@@ -145,7 +151,12 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
                 if kind.tail {
                     write!(f, "tail ")?;
                 }
-                dbwrite!(f, db, "parse {}({}), {}, {}", fun, arg, &kind.req, retreat)
+                dbwrite!(f, db, "parse {}({}), {}", fun, arg, &kind.req)?;
+                if let Some(retreat) = retreat {
+                    dbwrite!(f, db.1, ", {}", retreat)
+                } else {
+                    Ok(())
+                }
             }
             MirInstr::Field(target, inner, field, cont) => {
                 dbwrite!(f, db, "{} = access_field {}.", target, inner)?;
