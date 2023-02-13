@@ -3,6 +3,9 @@ use yaboc_mir::CallMeta;
 
 use super::*;
 
+// llvm id for the tailcc calling convention
+pub const TAILCC: u32 = 18;
+
 impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn fun_val(
         &mut self,
@@ -139,10 +142,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         slot: PSize,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        self.ppip_fun_val(
+        let ret = self.ppip_fun_val(
             layout,
             LayoutPart::Parse(slot, req, ParserFunKind::TailWrapper),
-        )
+        );
+        ret.set_call_conventions(TAILCC);
+        ret.as_global_value().set_visibility(GlobalVisibility::Default);
+        ret.set_linkage(Linkage::Internal);
+        ret
     }
 
     pub(super) fn parser_impl_fun_val(
@@ -151,7 +158,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         slot: PSize,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        self.ppip_fun_val(layout, LayoutPart::Parse(slot, req, ParserFunKind::Worker))
+        let ret = self.ppip_fun_val(layout, LayoutPart::Parse(slot, req, ParserFunKind::Worker));
+        ret.set_call_conventions(TAILCC);
+        ret.as_global_value().set_visibility(GlobalVisibility::Default);
+        ret.set_linkage(Linkage::Internal);
+        ret
     }
 
     pub(super) fn arg_level_and_offset(
