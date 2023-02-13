@@ -128,7 +128,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         slot: PSize,
-        req: CallMeta,
+        req: RequirementSet,
     ) -> FunctionValue<'llvm> {
         self.ppip_fun_val(layout, LayoutPart::Parse(slot, req, ParserFunKind::Wrapper))
     }
@@ -137,7 +137,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         slot: PSize,
-        req: CallMeta,
+        req: RequirementSet,
     ) -> FunctionValue<'llvm> {
         self.ppip_fun_val(
             layout,
@@ -149,7 +149,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         slot: PSize,
-        req: CallMeta,
+        req: RequirementSet,
     ) -> FunctionValue<'llvm> {
         self.ppip_fun_val(layout, LayoutPart::Parse(slot, req, ParserFunKind::Worker))
     }
@@ -209,17 +209,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         slot: PSize,
-        req: CallMeta,
+        info: CallMeta,
         is_non_null: bool,
     ) -> PointerValue<'llvm> {
         if !is_non_null {
             ParserFun::codegen_ty(self).into_pointer_type().const_null()
-        } else if req.tail {
-            self.parser_fun_val_tail(layout, slot, req)
+        } else if info.tail {
+            self.parser_fun_val_tail(layout, slot, info.req)
                 .as_global_value()
                 .as_pointer_value()
         } else {
-            self.parser_fun_val_wrapper(layout, slot, req)
+            self.parser_fun_val_wrapper(layout, slot, info.req)
                 .as_global_value()
                 .as_pointer_value()
         }

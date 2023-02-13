@@ -4,14 +4,13 @@ use inkwell::{
     IntPredicate,
 };
 
-use yaboc_dependents::NeededBy;
+use yaboc_dependents::{NeededBy, RequirementSet};
 use yaboc_hir_types::{TyHirs, MALLOC_BIT, NOBACKTRACK_BIT, VTABLE_BIT};
 use yaboc_layout::{
     collect::pd_val_req,
     prop::{PSize, SizeAlign, TargetSized},
     ILayout, IMonoLayout, MonoLayout,
 };
-use yaboc_mir::CallMeta;
 
 use crate::{
     get_fun_args, parser_values,
@@ -130,13 +129,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TypecastThunk<'comp, 'llvm> {
         };
         cg.build_copy_invariant(arg_copy, from);
 
-        let ret = cg.call_parser_fun_impl(
-            ret,
-            fun.into(),
-            arg_copy,
-            slot,
-            CallMeta::new(NeededBy::Val.into(), false),
-        );
+        let ret = cg.call_parser_fun_impl(ret, fun.into(), arg_copy, slot, NeededBy::Val.into());
         cg.builder.build_return(Some(&ret));
         if let Some(bb) = previous_bb {
             cg.builder.position_at_end(bb);
@@ -195,7 +188,7 @@ pub struct ValThunk<'comp> {
     fun: IMonoLayout<'comp>,
     thunk: IMonoLayout<'comp>,
     slot: PSize,
-    req: CallMeta,
+    req: RequirementSet,
 }
 
 impl<'comp> ValThunk<'comp> {
@@ -204,7 +197,7 @@ impl<'comp> ValThunk<'comp> {
         fun: IMonoLayout<'comp>,
         thunk: IMonoLayout<'comp>,
         slot: PSize,
-        req: CallMeta,
+        req: RequirementSet,
     ) -> Self {
         Self {
             from,
@@ -262,12 +255,12 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for ValThunk<'comp> {
         after_copy: bool,
         _return_ptr: PointerValue<'llvm>,
     ) -> Option<BasicBlock<'llvm>> {
-        let info = if after_copy {
-            self.req.with_req(|req| req & !NeededBy::Val)
+        let req = if after_copy {
+            self.req & !NeededBy::Val
         } else {
             self.req
         };
-        if info.req.is_empty() {
+        if req.is_empty() {
             return None;
         }
         let previous_bb = cg.builder.get_insert_block();
@@ -277,7 +270,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for ValThunk<'comp> {
 
         let (ret, fun, arg) = parser_values(fun, self.fun, self.from);
 
-        let ret = cg.call_parser_fun_impl(ret, fun.into(), arg, self.slot, info);
+        let ret = cg.call_parser_fun_impl(ret, fun.into(), arg, self.slot, req);
         cg.builder.build_return(Some(&ret));
         if let Some(bb) = previous_bb {
             cg.builder.position_at_end(bb);
@@ -294,7 +287,7 @@ pub struct BlockThunk<'comp> {
     pub from: ILayout<'comp>,
     pub fun: IMonoLayout<'comp>,
     pub result: IMonoLayout<'comp>,
-    pub req: CallMeta,
+    pub req: RequirementSet,
     pub slot: PSize,
 }
 

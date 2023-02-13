@@ -66,9 +66,9 @@ pub struct LayoutCollector<'a, 'b> {
 }
 
 pub enum UnprocessedCall<'a> {
-    NominalParser(ILayout<'a>, IMonoLayout<'a>, CallMeta),
-    Block(ILayout<'a>, IMonoLayout<'a>, CallMeta),
-    IfParser(ILayout<'a>, IMonoLayout<'a>, CallMeta),
+    NominalParser(ILayout<'a>, IMonoLayout<'a>, RequirementSet),
+    Block(ILayout<'a>, IMonoLayout<'a>, RequirementSet),
+    IfParser(ILayout<'a>, IMonoLayout<'a>, RequirementSet),
 }
 
 impl<'a, 'b> LayoutCollector<'a, 'b> {
@@ -156,13 +156,13 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 MonoLayout::BlockParser(_, _, _) => {
                     if self.processed_calls.insert((left, mono, info)) {
                         self.unprocessed
-                            .push(UnprocessedCall::Block(left, mono, info));
+                            .push(UnprocessedCall::Block(left, mono, info.req));
                     }
                 }
                 MonoLayout::NominalParser(_, _, _) => {
                     if self.processed_calls.insert((left, mono, info)) {
                         self.unprocessed
-                            .push(UnprocessedCall::NominalParser(left, mono, info));
+                            .push(UnprocessedCall::NominalParser(left, mono, info.req));
                     }
                 }
                 MonoLayout::Regex(..) => {
@@ -176,7 +176,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 MonoLayout::IfParser(..) => {
                     if self.processed_calls.insert((left, mono, info)) {
                         self.unprocessed
-                            .push(UnprocessedCall::IfParser(left, mono, info));
+                            .push(UnprocessedCall::IfParser(left, mono, info.req));
                     }
                 }
                 _ => {}
@@ -247,7 +247,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     fn collect_block(
         &mut self,
         block: &BlockEvaluated<ILayout<'a>>,
-        info: CallMeta,
+        info: RequirementSet,
     ) -> Result<(), LayoutError> {
         for expr in block.expr_vals.values() {
             self.collect_expr(expr)?;
@@ -259,7 +259,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             if let HirNode::Parse(p) = self.ctx.db.hir_node(node)? {
                 let expr_val = block.expr_vals[&p.expr].0.root_data().val;
                 let parse_req =
-                    CallMeta::new(requirements[&p.id.0] * info.req, tails.contains(&p.id.0));
+                    CallMeta::new(requirements[&p.id.0] * info, tails.contains(&p.id.0));
                 self.register_parse(block.from, expr_val, parse_req);
             }
             self.register_layouts(value)
@@ -271,7 +271,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         &mut self,
         arg: ILayout<'a>,
         parser: IMonoLayout<'a>,
-        mut info: CallMeta,
+        mut info: RequirementSet,
     ) -> Result<(), LayoutError> {
         let (MonoLayout::NominalParser(id, thunk_args, bt), ty) = parser.mono_layout() else {
             panic!("unexpected non-nominal-parser layout");
@@ -279,10 +279,10 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         let Type::ParserArg { arg: arg_ty, .. } = self.ctx.db.lookup_intern_type(ty) else {
             panic!("unexpected non-parserarg type");
         };
-        info.tail = true;
         if !*bt {
-            info.req &= !NeededBy::Backtrack
+            info &= !NeededBy::Backtrack
         }
+        let mut info = CallMeta::new(info, true);
         let thunky = id.lookup(self.ctx.db).unwrap().thunky;
         let mut args = FxHashMap::default();
         let thunk_ty = self.ctx.db.parser_result(ty).unwrap();
@@ -317,7 +317,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         panic!("unexpected non-block-parser layout");
                     };
                     if !*bt {
-                        info.req &= !NeededBy::Backtrack
+                        info &= !NeededBy::Backtrack
                     }
                     if let Some(block) = &self.ctx.block_result()[&(arg, parser.0)].clone() {
                         self.collect_block(block, info)?
@@ -326,14 +326,13 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 UnprocessedCall::NominalParser(arg, parser, info) => {
                     self.collect_nominal_parse(arg, parser, info)?
                 }
-                UnprocessedCall::IfParser(from, inner, mut info) => {
+                UnprocessedCall::IfParser(from, inner, info) => {
                     let MonoLayout::IfParser(inner, _, _) = inner.mono_layout().0 else {
                         panic!("unexpected non-if-parser layout");
                     };
                     self.register_layouts(*inner);
-                    info.tail = false;
-                    self.register_parse(from, *inner, info.with_req(|req| req | NeededBy::Val));
-                    self.register_parse(from, *inner, info.with_req(|req| req & NeededBy::Val));
+                    self.register_parse(from, *inner, CallMeta::new(info | NeededBy::Val, false));
+                    self.register_parse(from, *inner, CallMeta::new(info & NeededBy::Val, false));
                 }
             }
         }
