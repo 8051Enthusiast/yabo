@@ -1,0 +1,29 @@
+====[ source code ]====
+import std
+
+fun *apply_with_data(data: *'t, f: *'t('t), default: 't): 't = {
+  | x: data if !eof, return: f(x)
+  | let return = default
+}
+
+fun *apply_with_byte(f: *int(int), default: int) = apply_with_data(std.u8l, f, default)
+
+fun *sum(acc: int, x: int): int = apply_with_byte(sum(acc + x), acc + x)
+
+export fun *test = sum(0, 0)
+
+====[ binary 1 ]====
+01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 10
+
+====[ output 1 ]====
+136
+
+====[ binary 2 ]====
+ff ff ff ff
+
+====[ output 2 ]====
+1020
+
+====[ binary 3 ]====
+====[ output 3 ]====
+0
