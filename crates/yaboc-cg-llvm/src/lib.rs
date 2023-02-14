@@ -553,8 +553,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     pub fn llvm_code(self, outfile: &OsStr) -> Result<(), LLVMString> {
-        //        self.module.verify()?;
-        //        self.pass_manager.run_on(&self.module);
+        //  self.module.verify()?;
+        //  self.pass_manager.run_on(&self.module);
         self.module.print_to_file(outfile)?;
         Ok(())
     }
