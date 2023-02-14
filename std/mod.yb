@@ -42,7 +42,7 @@ fun for['t] *> summap_acc(f: for['t] *> int, acc: int): int = {
 
 # With f being a parser returning an int, returns the sum of all the ints
 # until the parser fails.
-def for['t] *> summap(f: for['t] *> int) = summap_acc(f?, 0)
+fun for['t] *> summap(f: for['t] *> int) = summap_acc(f?, 0)
 
 # Returns a cons-list of the given parser contingent in memory.
 def *list(element: *'r) = {
