@@ -17,7 +17,7 @@ use inkwell::{
     builder::Builder,
     context::Context,
     module::{Linkage, Module},
-    passes::{PassManager, PassManagerBuilder},
+    passes::PassBuilderOptions,
     support::LLVMString,
     targets::{
         CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetData, TargetMachine,
@@ -63,7 +63,7 @@ pub struct CodeGenCtx<'llvm, 'comp> {
     target: TargetMachine,
     target_data: TargetData,
     builder: Builder<'llvm>,
-    pass_manager: PassManager<Module<'llvm>>,
+    pass_options: PassBuilderOptions,
     module: Module<'llvm>,
     compiler_database: &'comp yaboc_base::Context<YabocDatabase>,
     layouts: &'comp mut AbsLayoutCtx<'comp>,
@@ -98,7 +98,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 &triple,
                 &cfg.target_cpu,
                 &cfg.target_features,
-                OptimizationLevel::Default,
+                OptimizationLevel::Aggressive,
                 RelocMode::PIC,
                 CodeModel::Default,
             )
@@ -106,17 +106,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let target_data = target.get_target_data();
         module.set_data_layout(&target.get_target_data().get_data_layout());
         module.set_triple(&triple);
-        let pmb = PassManagerBuilder::create();
-        pmb.set_optimization_level(OptimizationLevel::Default);
-        pmb.set_inliner_with_threshold(250);
-        let pass_manager = PassManager::create(());
-        pass_manager.add_always_inliner_pass();
-        pmb.populate_module_pass_manager(&pass_manager);
+        let pbo = PassBuilderOptions::create();
+        pbo.set_loop_interleaving(true);
+        pbo.set_loop_unrolling(true);
+        pbo.set_merge_functions(true);
+        pbo.set_loop_vectorization(true);
+        pbo.set_loop_slp_vectorization(true);
         Ok(CodeGenCtx {
             llvm: llvm_context,
             target,
             builder,
-            pass_manager,
+            pass_options: pbo,
             module,
             compiler_database,
             layouts,
@@ -317,7 +317,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .expect("function shuold not return void")
             .into_int_value()
     }
-
 
     fn build_parser_call(
         &mut self,
@@ -553,15 +552,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     pub fn llvm_code(self, outfile: &OsStr) -> Result<(), LLVMString> {
-        //  self.module.verify()?;
-        //  self.pass_manager.run_on(&self.module);
+        self.module.verify()?;
+        self.module
+            .run_passes("always-inline,default<O3>", &self.target, self.pass_options)?;
         self.module.print_to_file(outfile)?;
         Ok(())
     }
 
     pub fn object_file(self, outfile: &OsStr) -> Result<(), LLVMString> {
         self.module.verify()?;
-        self.pass_manager.run_on(&self.module);
+        self.module
+            .run_passes("always-inline,default<O3>", &self.target, self.pass_options)?;
         self.target
             .write_to_file(&self.module, FileType::Object, Path::new(outfile))?;
         Ok(())
