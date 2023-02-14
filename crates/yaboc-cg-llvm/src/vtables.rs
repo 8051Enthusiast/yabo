@@ -35,7 +35,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let vtable =
             self.module
                 .add_global(vtable_type, Some(AddressSpace::default()), &vtable_sym);
-        vtable.set_visibility(GlobalVisibility::Hidden);
+        vtable.set_linkage(Linkage::Internal);
         vtable
     }
 
@@ -53,7 +53,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let vtable =
             self.module
                 .add_global(vtable_type, Some(AddressSpace::default()), &vtable_sym);
-        vtable.set_visibility(GlobalVisibility::Hidden);
+        vtable.set_linkage(Linkage::Internal);
         vtable
     }
 
