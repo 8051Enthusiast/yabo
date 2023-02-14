@@ -1,16 +1,13 @@
 ====[ source code ]====
 import std
 
-def for[int] *> score = {
+export def *test = std.summap({
   opp: ~, ~, own: ~, ~
-  let return = own - 0x57 + (own + 2 - opp if 0x41..0x43) % 3 * 3
-}
-
-export def *test = std.summap(score?)
+  let return = own - 0x57 + (own + 2 - opp) % 3 * 3
+} if !eof)
 ====[ binary 1 ]====
 43 20 5a 0a
 42 20 58 0a
 41 20 59 0a
-00 00 00 00
 ====[ output 1 ]====
 15
