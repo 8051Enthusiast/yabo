@@ -20,7 +20,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let sf_type = self.llvm.i64_type().fn_type(types, false);
         let fun = self
             .module
-            .add_function(&sf_sym, sf_type, Some(Linkage::External));
+            .add_function(&sf_sym, sf_type, Some(Linkage::Internal));
         let noalias = Attribute::get_named_enum_kind_id("noalias");
         let noalias_attr = self.llvm.create_enum_attribute(noalias, 0);
         for (i, ty) in types.iter().enumerate() {
@@ -30,8 +30,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         fun.as_global_value()
             .set_unnamed_address(UnnamedAddress::Global);
-        fun.as_global_value()
-            .set_visibility(GlobalVisibility::Hidden);
         fun
     }
 
@@ -140,7 +138,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         slot: PSize,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        self.ppip_fun_val(layout, LayoutPart::Parse(slot, req, ParserFunKind::Wrapper))
+        let ret = self.ppip_fun_val(layout, LayoutPart::Parse(slot, req, ParserFunKind::Wrapper));
+        ret
     }
 
     pub(super) fn parser_fun_val_tail(
@@ -154,9 +153,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             LayoutPart::Parse(slot, req, ParserFunKind::TailWrapper),
         );
         ret.set_call_conventions(TAILCC);
-        ret.as_global_value()
-            .set_visibility(GlobalVisibility::Default);
-        ret.set_linkage(Linkage::Internal);
         ret
     }
 
@@ -168,9 +164,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> FunctionValue<'llvm> {
         let ret = self.ppip_fun_val(layout, LayoutPart::Parse(slot, req, ParserFunKind::Worker));
         ret.set_call_conventions(TAILCC);
-        ret.as_global_value()
-            .set_visibility(GlobalVisibility::Default);
-        ret.set_linkage(Linkage::Internal);
         ret
     }
 
