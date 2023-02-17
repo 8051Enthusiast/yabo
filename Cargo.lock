@@ -1029,6 +1029,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "yaboc-expr"
+version = "0.1.0"
+dependencies = [
+ "smallvec",
+]
+
+[[package]]
 name = "yaboc-hir"
 version = "0.1.0"
 dependencies = [
