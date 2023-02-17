@@ -6,6 +6,9 @@ pub trait ExprPart: Sized {
     type K: ExprKind;
     type Inner;
     type TransExpr<ToK: ExprKind, ToInner>: ExprPart<K = ToK, Inner = ToInner>;
+    fn transitivity<K2: ExprKind, K3: ExprKind, Inner2, Inner3>(
+        s: <Self::TransExpr<K2, Inner2> as ExprPart>::TransExpr<K3, Inner3>,
+    ) -> Self::TransExpr<K3, Inner3>;
     fn map_core_expr<ToK: ExprKind, ToInner>(
         self,
         f: impl FnOnce(ExprHead<Self::K, Self::Inner>) -> ExprHead<ToK, ToInner>,
@@ -42,7 +45,10 @@ pub enum ExprHead<K: ExprKind, Inner> {
 }
 
 impl<K: ExprKind, Inner> ExprHead<K, Inner> {
-    pub fn map_inner<NewInner>(self, mut f: impl FnMut(Inner) -> NewInner) -> ExprHead<K, NewInner> {
+    pub fn map_inner<NewInner>(
+        self,
+        mut f: impl FnMut(Inner) -> NewInner,
+    ) -> ExprHead<K, NewInner> {
         match self {
             ExprHead::Niladic(op) => ExprHead::Niladic(op),
             ExprHead::Monadic(Monadic(op, inner)) => ExprHead::Monadic(Monadic(op, f(inner))),
@@ -107,6 +113,13 @@ impl<K: ExprKind, Inner> ExprPart for ExprHead<K, Inner> {
     type Inner = Inner;
     type TransExpr<ToK: ExprKind, ToInner> = ExprHead<ToK, ToInner>;
 
+    #[inline(always)]
+    fn transitivity<K2: ExprKind, K3: ExprKind, Inner2, Inner3>(
+        s: <Self::TransExpr<K2, Inner2> as ExprPart>::TransExpr<K3, Inner3>,
+    ) -> Self::TransExpr<K3, Inner3> {
+        s
+    }
+
     fn map_core_expr<ToK: ExprKind, ToInner>(
         self,
         f: impl FnOnce(ExprHead<K, Inner>) -> ExprHead<ToK, ToInner>,
@@ -157,6 +170,13 @@ impl<Expr: ExprPart, Data> ExprPart for (Expr, Data) {
     type K = Expr::K;
     type Inner = Expr::Inner;
     type TransExpr<ToK: ExprKind, ToInner> = (Expr::TransExpr<ToK, ToInner>, Data);
+
+    #[inline(always)]
+    fn transitivity<K2: ExprKind, K3: ExprKind, Inner2, Inner3>(
+        s: <Self::TransExpr<K2, Inner2> as ExprPart>::TransExpr<K3, Inner3>,
+    ) -> Self::TransExpr<K3, Inner3> {
+        (Expr::transitivity(s.0), s.1)
+    }
 
     fn map_core_expr<ToK: ExprKind, ToInner>(
         self,
