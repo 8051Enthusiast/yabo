@@ -58,16 +58,16 @@ impl<K: ExprKind, Inner> ExprHead<K, Inner> {
             }
         }
     }
-    pub fn new_niladic(op: K::NiladicOp) -> Self {
+    pub const fn new_niladic(op: K::NiladicOp) -> Self {
         ExprHead::Niladic(op)
     }
-    pub fn new_monadic(op: K::MonadicOp, inner: Inner) -> Self {
+    pub const fn new_monadic(op: K::MonadicOp, inner: Inner) -> Self {
         ExprHead::Monadic(Monadic(op, inner))
     }
-    pub fn new_dyadic(op: K::DyadicOp, inner: [Inner; 2]) -> Self {
+    pub const fn new_dyadic(op: K::DyadicOp, inner: [Inner; 2]) -> Self {
         ExprHead::Dyadic(Dyadic(op, inner))
     }
-    pub fn new_variadic(op: K::VariadicOp, inner: SmallVec<[Inner; 4]>) -> Self {
+    pub const fn new_variadic(op: K::VariadicOp, inner: SmallVec<[Inner; 4]>) -> Self {
         ExprHead::Variadic(Variadic(op, inner))
     }
     pub fn map_op_with_state<ToK: ExprKind, T>(
