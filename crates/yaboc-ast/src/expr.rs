@@ -672,6 +672,15 @@ impl<C> ValUnOp<C> {
             Dot(atom, b) => Dot(*atom, *b),
         }
     }
+    pub fn try_map_expr<D, E>(&self, f: impl FnOnce(&C) -> Result<D, E>) -> Result<ValUnOp<D>, E> {
+        use ValUnOp::*;
+        Ok(match self {
+            Not => Not,
+            Neg => Neg,
+            Wiggle(expr, kind) => Wiggle(f(expr)?, *kind),
+            Dot(atom, b) => Dot(*atom, *b),
+        })
+    }
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]

@@ -1045,6 +1045,7 @@ dependencies = [
  "salsa",
  "yaboc-ast",
  "yaboc-base",
+ "yaboc-expr",
 ]
 
 [[package]]
@@ -1057,6 +1058,7 @@ dependencies = [
  "salsa",
  "yaboc-ast",
  "yaboc-base",
+ "yaboc-expr",
  "yaboc-hir",
  "yaboc-resolve",
  "yaboc-types",
@@ -1093,6 +1095,7 @@ dependencies = [
  "yaboc-ast",
  "yaboc-base",
  "yaboc-dependents",
+ "yaboc-expr",
  "yaboc-hir",
  "yaboc-hir-types",
  "yaboc-resolve",

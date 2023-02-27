@@ -10,9 +10,10 @@ use std::{collections::BTreeMap, fmt::Debug, hash::Hash, rc::Rc, sync::Arc};
 use bumpalo::Bump;
 use fxhash::FxHashMap;
 
+use hir::HirConstraint;
 use yaboc_ast::expr::{
-    self, Atom, Dyadic, ExprIter, Expression, ExpressionHead, Ignorable, Monadic, OpWithData,
-    TypeBinOp, TypeUnOp, ValBinOp, ValUnOp, Variadic,
+    self, Atom, Dyadic, ExprIter, Expression, ExpressionHead, Monadic, OpWithData, TypeBinOp,
+    TypeUnOp, ValBinOp, ValUnOp, Variadic,
 };
 use yaboc_ast::{ArrayKind, ConstraintAtom};
 use yaboc_base::{
@@ -20,6 +21,7 @@ use yaboc_base::{
     interner::{DefId, FieldName, TypeVar, TypeVarName},
     source::{IndirectSpan, SpanIndex},
 };
+use yaboc_expr::{ExprHead, Expression as NewExpression, IdxExpression};
 use yaboc_hir::{
     self as hir, walk::ChildIter, ExprId, HirIdWrapper, HirNodeKind, ParseStatement, ParserDefRef,
 };
@@ -302,40 +304,30 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
     }
     fn constr_expression_type(
         &mut self,
-        expr: hir::HirConstraintId,
+        expr: &IdxExpression<HirConstraint>,
         ty: InfTypeId<'intern>,
     ) -> Result<(), TypeError> {
-        let expr = self.db.lookup_intern_hir_constraint(expr);
-        match expr {
-            ExpressionHead::Niladic(f) => match f.inner {
+        expr.as_ref().try_for_each(|expr| match expr {
+            ExprHead::Niladic(f) => match f {
                 ConstraintAtom::Atom(Atom::Number(_)) | ConstraintAtom::Range(_, _) => {
                     let int = self.infctx.int();
-                    self.infctx.constrain(ty, int)?;
+                    self.infctx.constrain(ty, int)
                 }
                 ConstraintAtom::Atom(Atom::Char(_)) => {
                     let char = self.infctx.char();
-                    self.infctx.constrain(ty, char)?;
+                    self.infctx.constrain(ty, char)
                 }
                 ConstraintAtom::Atom(Atom::Bool(_)) => {
                     let bool = self.infctx.bit();
-                    self.infctx.constrain(ty, bool)?;
+                    self.infctx.constrain(ty, bool)
                 }
                 ConstraintAtom::Atom(Atom::Field(name)) => {
-                    self.infctx.access_field(ty, name.0)?;
+                    self.infctx.access_field(ty, name.0).map(|_| ())
                 }
-                ConstraintAtom::NotEof => {}
+                ConstraintAtom::NotEof => Ok(()),
             },
-            ExpressionHead::Monadic(m) => match m.op.inner {
-                expr::ConstraintUnOp::Not => self.constr_expression_type(m.inner, ty)?,
-                expr::ConstraintUnOp::Dot(..) => todo!(),
-            },
-            ExpressionHead::Dyadic(d) => {
-                self.constr_expression_type(d.inner[0], ty)?;
-                self.constr_expression_type(d.inner[1], ty)?;
-            }
-            ExpressionHead::Variadic(u) => u.ignore(),
-        };
-        Ok(())
+            _ => Ok(()),
+        })
     }
     pub fn val_expression_type(
         &mut self,
@@ -384,8 +376,9 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                             }
                             ValUnOp::Wiggle(c, _) => {
                                 let (inner, cont) = self.infctx.if_checked(inner)?;
-                                self.constr_expression_type(c.id, inner)?;
-                                if c.has_no_eof {
+                                let expr = self.db.lookup_intern_hir_constraint(*c);
+                                self.constr_expression_type(&expr.expr, inner)?;
+                                if expr.has_no_eof {
                                     self.infctx.check_parser(cont)?;
                                 }
                                 cont

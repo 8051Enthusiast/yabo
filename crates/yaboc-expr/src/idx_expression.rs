@@ -1,6 +1,9 @@
 use std::ops::Index;
 
-use crate::{IdxExprRef, ExprHead, ExprIdx, ExprKind, InvariantLifetime, ShapedData, ZipExpression, Expression, ExprRef};
+use crate::{
+    ExprHead, ExprIdx, ExprKind, ExprRef, Expression, IdxExprRef, InvariantLifetime, ShapedData,
+    ZipExpression,
+};
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct IdxExpression<K: ExprKind> {
@@ -56,6 +59,9 @@ impl<K: ExprKind> IdxExpression<K> {
     }
     pub fn get(&self, idx: ExprIdx<K>) -> &ExprHead<K, ExprIdx<K>> {
         &self.heads[idx.as_usize()]
+    }
+    pub fn root(&self) -> ExprIdx<K> {
+        ExprIdx::new_from_usize(self.heads.len() - 1)
     }
 }
 

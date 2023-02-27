@@ -1,8 +1,9 @@
 use yaboc_ast::{
-    expr::{Dyadic, ExpressionHead, Ignorable, Monadic, OpWithData, Variadic},
+    expr::{Dyadic, ExpressionHead, Monadic, OpWithData, Variadic},
     ArrayKind,
 };
 use yaboc_base::{databased_display::DatabasedDisplay, dbwrite};
+use yaboc_expr::Expression as NewExpression;
 
 use super::*;
 
@@ -142,17 +143,16 @@ pub struct W<T>(pub T);
 
 impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for HirConstraintId {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
-        match db.lookup_intern_hir_constraint(*self) {
-            ExpressionHead::Niladic(a) => a.inner.db_fmt(f, db),
-            ExpressionHead::Monadic(Monadic { op, inner }) => match &op.inner {
-                expr::ConstraintUnOp::Not => dbwrite!(f, db, "!{}", &inner),
-                expr::ConstraintUnOp::Dot(a) => dbwrite!(f, db, "{}.{}", &inner, a),
-            },
-            ExpressionHead::Dyadic(Dyadic { op, inner }) => {
-                dbwrite!(f, db, "{} {} {}", &inner[0], &op.inner, &inner[1])
-            }
-            ExpressionHead::Variadic(v) => v.ignore(),
-        }
+        use yaboc_expr::WriteEvent::*;
+        db.lookup_intern_hir_constraint(*self)
+            .expr
+            .try_print(|event| match event {
+                Niladic(x) => x.db_fmt(f, db),
+                OpenMonadic(ConstraintUnOp::Not) => dbwrite!(f, db, "!"),
+                CloseMonadic(ConstraintUnOp::Dot(right)) => dbwrite!(f, db, ".{}", right),
+                InterDyadic(op) => dbwrite!(f, db, " {} ", op),
+                _ => Ok(()),
+            })
     }
 }
 
@@ -164,7 +164,7 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for W<&Expression<HirValSpanned>> {
                 expr::ValUnOp::Not => dbwrite!(f, db, "!{}", inner),
                 expr::ValUnOp::Neg => dbwrite!(f, db, "-{}", inner),
                 expr::ValUnOp::Wiggle(right, kind) => {
-                    dbwrite!(f, db, "{} {} {}", inner, kind, &right.id)
+                    dbwrite!(f, db, "{} {} {}", inner, kind, right)
                 }
                 expr::ValUnOp::Dot(a, b) => {
                     dbwrite!(f, db, "{}.{}", inner, a)?;

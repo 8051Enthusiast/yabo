@@ -158,39 +158,35 @@ fn univariate_string(s: PartialEval<Univariate, i64>) -> String {
     }
 }
 
-fn eval(
-    expr: DataRefExpr<Bivariate, Range<usize>>,
-    x: i64,
-    y: i64,
-) -> Result<i64, Range<usize>> {
-    let expr = expr
-        .try_partial_eval::<i64, Univariate, _>(
-            |n, _| Ok(PartialEval::Eval(n)),
-            |_, (head, span)| {
-                let span = span.clone();
-                Ok(PartialEval::Eval(match head {
-                    ExprHead::Niladic(PartialEval::Eval(n)) => n,
-                    ExprHead::Niladic(PartialEval::Uneval(Bivariate::X)) => x,
-                    ExprHead::Niladic(PartialEval::Uneval(Bivariate::Y)) => y,
-                    ExprHead::Monadic(Monadic(op, inner)) => {
-                        let PartialEval::Eval((n, _)) = inner else {
+fn eval(expr: DataRefExpr<Bivariate, Range<usize>>, x: i64, y: i64) -> Result<i64, Range<usize>> {
+    let expr = expr.try_partial_eval::<i64, Univariate, _>(
+        |n, _| Ok(PartialEval::Eval(n)),
+        |_, (head, span)| {
+            let span = span.clone();
+            Ok(PartialEval::Eval(match head {
+                ExprHead::Niladic(PartialEval::Eval(n)) => n,
+                ExprHead::Niladic(PartialEval::Uneval(Bivariate::X)) => x,
+                ExprHead::Niladic(PartialEval::Uneval(Bivariate::Y)) => y,
+                ExprHead::Monadic(op, inner) => {
+                    let PartialEval::Eval((n, _)) = inner else {
                             return Ok(PartialEval::Uneval(ExprHead::new_monadic(op, inner)))
                         };
-                        n.checked_neg().ok_or(span)?
-                    }
-                    ExprHead::Dyadic(Dyadic(op, inner)) => {
-                        let [PartialEval::Eval((lhs, _)), PartialEval::Eval((rhs, _))] = inner else {
+                    n.checked_neg().ok_or(span)?
+                }
+                ExprHead::Dyadic(op, inner) => {
+                    let [PartialEval::Eval((lhs, _)), PartialEval::Eval((rhs, _))] = inner else {
                             return Ok(PartialEval::Uneval(ExprHead::new_dyadic(op, inner)))
                         };
-                        match op {
-                            BinOp::Add => lhs.checked_add(rhs),
-                            BinOp::Mul => lhs.checked_mul(rhs),
-                        }.ok_or(span)?
+                    match op {
+                        BinOp::Add => lhs.checked_add(rhs),
+                        BinOp::Mul => lhs.checked_mul(rhs),
                     }
-                    ExprHead::Variadic(v) => match v.0 {}
-                }))
-            },
-        )?;
+                    .ok_or(span)?
+                }
+                ExprHead::Variadic(v, _) => match v {},
+            }))
+        },
+    )?;
     let Some(ExprHead::Niladic(PartialEval::Eval(n))) = expr.expr().heads.last() else {
         panic!("expression did not evaluate to a number")
     };
@@ -209,13 +205,13 @@ fn eval_y(expr: &IdxExpression<Bivariate>, y: i64) -> IdxExpression<Univariate> 
                     ))
                 }
                 ExprHead::Niladic(PartialEval::Uneval(Bivariate::Y)) => y,
-                ExprHead::Monadic(Monadic(UnOp::Neg, inner)) => {
+                ExprHead::Monadic(UnOp::Neg, inner) => {
                     let PartialEval::Eval((n, _)) = inner else {
                         return PartialEval::Uneval(ExprHead::new_monadic(UnOp::Neg, inner))
                     };
                     -n
                 }
-                ExprHead::Dyadic(Dyadic(op, inner)) => {
+                ExprHead::Dyadic(op, inner) => {
                     let [PartialEval::Eval((lhs, _)), PartialEval::Eval((rhs, _))] = inner else {
                         return PartialEval::Uneval(ExprHead::new_dyadic(op, inner))
                     };
@@ -224,7 +220,7 @@ fn eval_y(expr: &IdxExpression<Bivariate>, y: i64) -> IdxExpression<Univariate> 
                         BinOp::Mul => lhs * rhs,
                     }
                 }
-                ExprHead::Variadic(v) => match v.0 {}
+                ExprHead::Variadic(v, _) => match v {}
             })
         },
     ).into_expr()
@@ -236,17 +232,17 @@ where
 {
     expr.as_ref().fold(|head| match head {
         ExprHead::Niladic(n) => f(n),
-        ExprHead::Monadic(Monadic(UnOp::Neg, inner)) => {
+        ExprHead::Monadic(UnOp::Neg, inner) => {
             format!("-{}", inner)
         }
-        ExprHead::Dyadic(Dyadic(op, inner)) => {
+        ExprHead::Dyadic(op, inner) => {
             let op = match op {
                 BinOp::Add => " + ",
                 BinOp::Mul => " * ",
             };
             format!("{}{}{}", inner[0], op, inner[1])
         }
-        ExprHead::Variadic(v) => match v.0 {},
+        ExprHead::Variadic(v, _) => match v {},
     })
 }
 

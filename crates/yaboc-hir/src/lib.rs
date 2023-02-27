@@ -15,8 +15,14 @@ use std::{
 };
 
 use salsa::InternId;
-use yaboc_ast::expr::{self, Atom, Expression, ExpressionHead, ExpressionKind};
-use yaboc_ast::{ArrayKind, AstConstraint, TopLevelStatement};
+use yaboc_ast::{
+    expr::{
+        self, Atom, ConstraintBinOp, ConstraintUnOp, Expression, ExpressionHead, ExpressionKind,
+        Unused,
+    },
+    ConstraintAtom,
+};
+use yaboc_ast::{ArrayKind, TopLevelStatement};
 use yaboc_base::{
     dbpanic,
     error::{SResult, SilencedError},
@@ -32,6 +38,7 @@ use fxhash::FxHashMap;
 use variable_set::VariableSet;
 
 use convert::hir_parser_collection;
+use yaboc_expr::{ExprKind, IdxExpression, ShapedData};
 
 use self::{convert::HirConversionErrors, walk::ChildIter};
 
@@ -63,10 +70,7 @@ pub trait Hirs: yaboc_ast::Asts {
     fn parserdef_arg_index(&self, pd: ParserDefId, id: DefId) -> SResult<Option<usize>>;
     fn std_item(&self, item: StdItem) -> SResult<ParserDefId>;
     #[salsa::interned]
-    fn intern_hir_constraint(
-        &self,
-        c: ExpressionHead<HirConstraintSpanned, HirConstraintId>,
-    ) -> HirConstraintId;
+    fn intern_hir_constraint(&self, c: HirConstraintExpressionRoot) -> HirConstraintId;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -503,13 +507,22 @@ fn module_file(db: &dyn Hirs, file: FileId) -> Result<Module, SilencedError> {
     Ok(Module { id, defs, imports })
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct HirConstraintExpressionRoot {
-    pub id: HirConstraintId,
+    pub expr: IdxExpression<HirConstraint>,
+    pub data: ShapedData<Vec<SpanIndex>, HirConstraint>,
     pub has_no_eof: bool,
 }
 
-pub type HirConstraint = AstConstraint;
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct HirConstraint;
+
+impl ExprKind for HirConstraint {
+    type NiladicOp = ConstraintAtom;
+    type MonadicOp = ConstraintUnOp;
+    type DyadicOp = ConstraintBinOp;
+    type VariadicOp = Unused;
+}
 
 pub type HirConstraintSpanned = expr::KindWithData<HirConstraint, SpanIndex>;
 
@@ -521,7 +534,7 @@ pub struct HirVal;
 impl ExpressionKind for HirVal {
     type VariadicOp = expr::ValVarOp;
     type DyadicOp = expr::ValBinOp;
-    type MonadicOp = expr::ValUnOp<HirConstraintExpressionRoot>;
+    type MonadicOp = expr::ValUnOp<HirConstraintId>;
     type NiladicOp = ParserAtom;
 }
 

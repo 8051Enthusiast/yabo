@@ -1,5 +1,4 @@
-use crate::{ExprKind, Expression, IdxExprRef, IdxExpression, ShapedData};
-
+use crate::{ExprHead, ExprIdx, ExprKind, Expression, IdxExprRef, IdxExpression, ShapedData};
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub struct ZipExpression<Expr, Data> {
@@ -92,3 +91,30 @@ impl<K: ExprKind, Data: IntoIterator, Expr: Expression<K>> Expression<K>
 
 pub type DataExpr<K, D> = ZipExpression<IdxExpression<K>, ShapedData<Vec<D>, K>>;
 pub type DataRefExpr<'a, K, D> = ZipExpression<IdxExprRef<'a, K>, &'a ShapedData<Vec<D>, K>>;
+
+impl<K: ExprKind, D> DataExpr<K, D> {
+    pub fn new_from_unfold<T>(init: T, mut unfold: impl FnMut(T) -> (ExprHead<K, T>, D)) -> Self {
+        let mut heads = Vec::new();
+        let mut data = Vec::new();
+        Self::new_impl(&mut heads, &mut data, init, &mut unfold);
+        let idx_expr = IdxExpression { heads };
+        Self {
+            expr: idx_expr,
+            data: ShapedData::from_raw_data(data),
+        }
+    }
+
+    fn new_impl<T>(
+        heads: &mut Vec<ExprHead<K, ExprIdx<K>>>,
+        data: &mut Vec<D>,
+        element: T,
+        unfold: &mut impl FnMut(T) -> (ExprHead<K, T>, D),
+    ) -> ExprIdx<K> {
+        let (unfolded, datum) = unfold(element);
+        let unfolded = unfolded.map_inner(|inner| Self::new_impl(heads, data, inner, unfold));
+        let ret = ExprIdx::new_from_usize(heads.len());
+        heads.push(unfolded);
+        data.push(datum);
+        ret
+    }
+}

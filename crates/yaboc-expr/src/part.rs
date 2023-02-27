@@ -1,6 +1,6 @@
 use smallvec::SmallVec;
 
-use crate::{Dyadic, ExprKind, Monadic, Variadic};
+use crate::ExprKind;
 
 pub trait ExprPart: Sized {
     type K: ExprKind;
@@ -39,9 +39,9 @@ pub trait TransposablePart: ExprPart<Inner = Result<Self::InnerOutput, Self::Inn
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum ExprHead<K: ExprKind, Inner> {
     Niladic(K::NiladicOp),
-    Monadic(Monadic<K::MonadicOp, Inner>),
-    Dyadic(Dyadic<K::DyadicOp, Inner>),
-    Variadic(Variadic<K::VariadicOp, Inner>),
+    Monadic(K::MonadicOp, Inner),
+    Dyadic(K::DyadicOp, [Inner; 2]),
+    Variadic(K::VariadicOp, SmallVec<[Inner; 4]>),
 }
 
 impl<K: ExprKind, Inner> ExprHead<K, Inner> {
@@ -51,10 +51,10 @@ impl<K: ExprKind, Inner> ExprHead<K, Inner> {
     ) -> ExprHead<K, NewInner> {
         match self {
             ExprHead::Niladic(op) => ExprHead::Niladic(op),
-            ExprHead::Monadic(Monadic(op, inner)) => ExprHead::Monadic(Monadic(op, f(inner))),
-            ExprHead::Dyadic(Dyadic(op, inner)) => ExprHead::Dyadic(Dyadic(op, inner.map(f))),
-            ExprHead::Variadic(Variadic(op, inner)) => {
-                ExprHead::Variadic(Variadic(op, inner.into_iter().map(f).collect()))
+            ExprHead::Monadic(op, inner) => ExprHead::Monadic(op, f(inner)),
+            ExprHead::Dyadic(op, inner) => ExprHead::Dyadic(op, inner.map(f)),
+            ExprHead::Variadic(op, inner) => {
+                ExprHead::Variadic(op, inner.into_iter().map(f).collect())
             }
         }
     }
@@ -62,13 +62,13 @@ impl<K: ExprKind, Inner> ExprHead<K, Inner> {
         ExprHead::Niladic(op)
     }
     pub const fn new_monadic(op: K::MonadicOp, inner: Inner) -> Self {
-        ExprHead::Monadic(Monadic(op, inner))
+        ExprHead::Monadic(op, inner)
     }
     pub const fn new_dyadic(op: K::DyadicOp, inner: [Inner; 2]) -> Self {
-        ExprHead::Dyadic(Dyadic(op, inner))
+        ExprHead::Dyadic(op, inner)
     }
     pub const fn new_variadic(op: K::VariadicOp, inner: SmallVec<[Inner; 4]>) -> Self {
-        ExprHead::Variadic(Variadic(op, inner))
+        ExprHead::Variadic(op, inner)
     }
     pub fn map_op_with_state<ToK: ExprKind, T>(
         self,
@@ -80,15 +80,9 @@ impl<K: ExprKind, Inner> ExprHead<K, Inner> {
     ) -> ExprHead<ToK, Inner> {
         match self {
             ExprHead::Niladic(op) => ExprHead::Niladic(map_nil(state, op)),
-            ExprHead::Monadic(Monadic(op, inner)) => {
-                ExprHead::Monadic(Monadic(map_mon(state, op), inner))
-            }
-            ExprHead::Dyadic(Dyadic(op, inner)) => {
-                ExprHead::Dyadic(Dyadic(map_dya(state, op), inner))
-            }
-            ExprHead::Variadic(Variadic(op, inner)) => {
-                ExprHead::Variadic(Variadic(map_var(state, op), inner))
-            }
+            ExprHead::Monadic(op, inner) => ExprHead::Monadic(map_mon(state, op), inner),
+            ExprHead::Dyadic(op, inner) => ExprHead::Dyadic(map_dya(state, op), inner),
+            ExprHead::Variadic(op, inner) => ExprHead::Variadic(map_var(state, op), inner),
         }
     }
     pub fn map_op<ToK: ExprKind>(
@@ -136,13 +130,9 @@ impl<K: ExprKind, Inner> ExprPart for ExprHead<K, Inner> {
     fn as_ref(&self) -> Self::AsRef<'_> {
         match self {
             ExprHead::Niladic(op) => ExprHead::Niladic(op),
-            ExprHead::Monadic(Monadic(op, inner)) => ExprHead::Monadic(Monadic(op, inner)),
-            ExprHead::Dyadic(Dyadic(op, [inner0, inner1])) => {
-                ExprHead::Dyadic(Dyadic(op, [inner0, inner1]))
-            }
-            ExprHead::Variadic(Variadic(op, inner)) => {
-                ExprHead::Variadic(Variadic(op, inner.iter().collect()))
-            }
+            ExprHead::Monadic(op, inner) => ExprHead::Monadic(op, inner),
+            ExprHead::Dyadic(op, [inner0, inner1]) => ExprHead::Dyadic(op, [inner0, inner1]),
+            ExprHead::Variadic(op, inner) => ExprHead::Variadic(op, inner.iter().collect()),
         }
     }
 }
@@ -154,14 +144,12 @@ impl<K: ExprKind, Inner, E> TransposablePart for ExprHead<K, Result<Inner, E>> {
     fn transpose(self) -> Result<Self::Transposed, E> {
         match self {
             ExprHead::Niladic(op) => Ok(ExprHead::Niladic(op)),
-            ExprHead::Monadic(Monadic(op, inner)) => Ok(ExprHead::Monadic(Monadic(op, inner?))),
-            ExprHead::Dyadic(Dyadic(op, [inner0, inner1])) => {
-                Ok(ExprHead::Dyadic(Dyadic(op, [inner0?, inner1?])))
-            }
-            ExprHead::Variadic(Variadic(op, inner)) => Ok(ExprHead::Variadic(Variadic(
+            ExprHead::Monadic(op, inner) => Ok(ExprHead::Monadic(op, inner?)),
+            ExprHead::Dyadic(op, [inner0, inner1]) => Ok(ExprHead::Dyadic(op, [inner0?, inner1?])),
+            ExprHead::Variadic(op, inner) => Ok(ExprHead::Variadic(
                 op,
                 inner.into_iter().collect::<Result<SmallVec<_>, _>>()?,
-            ))),
+            )),
         }
     }
 }
