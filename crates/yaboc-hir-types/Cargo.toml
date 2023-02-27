@@ -9,6 +9,7 @@ description.workspace = true
 salsa = "0.16.1"
 fxhash = "0.2.1"
 yaboc-base = { path = "../yaboc-base" }
+yaboc-expr = { path = "../yaboc-expr" }
 yaboc-ast = { path = "../yaboc-ast" }
 yaboc-hir = { path = "../yaboc-hir" }
 yaboc-resolve = { path = "../yaboc-resolve" }

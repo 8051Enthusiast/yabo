@@ -45,15 +45,6 @@ impl<U, E> PartialEval<U, E> {
     }
 }
 
-#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
-pub struct Monadic<Op, Inner>(pub Op, pub Inner);
-
-#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
-pub struct Dyadic<Op, Inner>(pub Op, pub [Inner; 2]);
-
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct Variadic<Op, Inner>(pub Op, pub SmallVec<[Inner; 4]>);
-
 #[repr(transparent)]
 pub struct ExprIdx<K>(NonZeroU32, PhantomData<K>);
 
@@ -107,6 +98,18 @@ impl<K> ExprIdx<K> {
     }
 }
 
+pub enum WriteEvent<'a, K: ExprKind> {
+    Niladic(&'a K::NiladicOp),
+    OpenMonadic(&'a K::MonadicOp),
+    CloseMonadic(&'a K::MonadicOp),
+    OpenDyadic(&'a K::DyadicOp),
+    InterDyadic(&'a K::DyadicOp),
+    CloseDyadic(&'a K::DyadicOp),
+    OpenVariadic(&'a K::VariadicOp),
+    InterVariadic(&'a K::VariadicOp, usize),
+    CloseVariadic(&'a K::VariadicOp),
+}
+
 #[derive(Default)]
 pub struct InvariantLifetime<'id>(PhantomData<*mut &'id ()>);
 pub struct ExprRef<'id, K>(ExprIdx<K>, InvariantLifetime<'id>);
@@ -118,6 +121,10 @@ pub trait Expression<K: ExprKind>: Sized {
     type Iter: Iterator<Item = Self::Part>;
     fn iter_parts(self) -> Self::Iter;
     fn len(&self) -> usize;
+
+    fn root(&self) -> ExprIdx<K> {
+        ExprIdx::new_from_usize(self.len() - 1)
+    }
 
     type MapOp<ToK: ExprKind>: Expression<ToK>;
     fn map_op_with_state<ToK: ExprKind, State>(
@@ -214,6 +221,36 @@ pub trait Expression<K: ExprKind>: Sized {
         })
     }
 
+    fn for_each(self, mut f: impl FnMut(Self::Part)) {
+        for part in self.iter_parts() {
+            f(part);
+        }
+    }
+
+    fn try_for_each<E>(self, mut f: impl FnMut(Self::Part) -> Result<(), E>) -> Result<(), E> {
+        for part in self.iter_parts() {
+            f(part)?;
+        }
+        Ok(())
+    }
+
+    fn print(&self, mut f: impl FnMut(WriteEvent<K>))
+    where
+        Self: Index<ExprIdx<K>, Output = ExprHead<K, ExprIdx<K>>>,
+    {
+        enum Never {}
+        let _ = print_impl::<_, _, Never>(self, self.root(), &mut |x| {
+            f(x);
+            Ok(())
+        });
+    }
+    fn try_print<E>(&self, mut f: impl FnMut(WriteEvent<K>) -> Result<(), E>) -> Result<(), E>
+    where
+        Self: Index<ExprIdx<K>, Output = ExprHead<K, ExprIdx<K>>>,
+    {
+        print_impl(self, self.root(), &mut f)
+    }
+
     fn partial_eval<Ev: Clone + Hash + Debug + Eq, ToK: ExprKind>(
         self,
         mut default: impl FnMut(Ev, ExprIdx<K>) -> ToK::NiladicOp,
@@ -266,11 +303,10 @@ pub trait Expression<K: ExprKind>: Sized {
             add_to_expr((idx, ExprHead::Niladic(default(res, idx))));
         }
         let expr = IdxExpression { heads };
-        let reidx = ReidxExpr {
+        ReidxExpr {
             expr,
             reidx: reindex,
-        };
-        reidx
+        }
     }
 
     fn try_partial_eval<Ev: Clone + Hash + Debug + Eq, ToK: ExprKind, Error>(
@@ -335,6 +371,43 @@ pub trait Expression<K: ExprKind>: Sized {
         };
         Ok(reidx)
     }
+}
+
+fn print_impl<K: ExprKind, Expr: Expression<K>, E>(
+    expr: &Expr,
+    idx: ExprIdx<K>,
+    f: &mut impl FnMut(WriteEvent<K>) -> Result<(), E>,
+) -> Result<(), E>
+where
+    Expr: Index<ExprIdx<K>, Output = ExprHead<K, ExprIdx<K>>>,
+{
+    let part = &expr[idx];
+    match part {
+        ExprHead::Niladic(op) => f(WriteEvent::Niladic(op))?,
+        ExprHead::Monadic(op, arg) => {
+            f(WriteEvent::OpenMonadic(op))?;
+            print_impl(expr, *arg, f)?;
+            f(WriteEvent::CloseMonadic(op))?;
+        }
+        ExprHead::Dyadic(op, [lhs, rhs]) => {
+            f(WriteEvent::OpenDyadic(op))?;
+            print_impl(expr, *lhs, f)?;
+            f(WriteEvent::InterDyadic(op))?;
+            print_impl(expr, *rhs, f)?;
+            f(WriteEvent::CloseDyadic(op))?;
+        }
+        ExprHead::Variadic(op, args) => {
+            f(WriteEvent::OpenVariadic(op))?;
+            for (i, arg) in args.iter().enumerate() {
+                if i > 0 {
+                    f(WriteEvent::InterVariadic(op, i - 1))?;
+                }
+                print_impl(expr, *arg, f)?;
+            }
+            f(WriteEvent::CloseVariadic(op))?;
+        }
+    };
+    Ok(())
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]

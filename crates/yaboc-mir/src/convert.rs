@@ -5,9 +5,9 @@ use std::{
 
 use fxhash::{FxHashMap, FxHashSet};
 
-use hir::{HirConstraintExpressionRoot, HirConstraintId, HirNodeKind};
+use hir::{HirConstraint, HirConstraintId, HirNodeKind};
 use yaboc_ast::expr::{
-    self, ConstraintBinOp, ConstraintUnOp, Dyadic, ExprIter, Expression, ExpressionHead, Ignorable,
+    self, ConstraintBinOp, ConstraintUnOp, Dyadic, ExprIter, Expression, ExpressionHead,
     KindWithData, Monadic, ValBinOp, ValUnOp, Variadic, WiggleKind,
 };
 use yaboc_base::{
@@ -19,6 +19,7 @@ use yaboc_base::{
 use yaboc_dependents::{
     BlockSerialization, NeededBy, RequirementMatrix, RequirementSet, SubValue, SubValueKind,
 };
+use yaboc_expr::{ExprHead, ExprIdx, IdxExpression};
 use yaboc_hir::{
     self as hir, variable_set::VarStatus, BlockId, ChoiceId, ContextId, ExprId, HirIdWrapper,
     HirNode, ParserDefId, ParserPredecessor,
@@ -489,7 +490,9 @@ impl<'a> ConvertCtx<'a> {
                                 WiggleKind::Try => self.retreat.error,
                             };
                             let cont = self.f.new_bb();
-                            self.convert_constraint(constr.id, ldt_ref, cont)?;
+                            let constr = self.db.lookup_intern_hir_constraint(*constr);
+                            let root = constr.expr.root();
+                            self.convert_constraint(&constr.expr, root, ldt_ref, cont)?;
                             self.f.set_bb(cont);
                             self.retreat.backtrack = old_backtrack;
                             place_ref
@@ -658,45 +661,46 @@ impl<'a> ConvertCtx<'a> {
 
     fn convert_constraint(
         &mut self,
-        expr: HirConstraintId,
+        expr: &IdxExpression<HirConstraint>,
+        idx: ExprIdx<HirConstraint>,
         val: PlaceRef,
         mut cont: BBRef,
     ) -> SResult<()> {
-        match self.db.lookup_intern_hir_constraint(expr) {
-            ExpressionHead::Niladic(n) => {
-                self.f.assert_val(val, n.inner, self.retreat.backtrack);
+        match &expr[idx] {
+            ExprHead::Niladic(n) => {
+                self.f.assert_val(val, n.clone(), self.retreat.backtrack);
                 self.f.branch(cont);
                 Ok(())
             }
-            ExpressionHead::Monadic(Monadic { op, inner }) => match op.inner {
+            ExprHead::Monadic(op, inner) => match op {
                 ConstraintUnOp::Not => {
                     std::mem::swap(&mut cont, &mut self.retreat.backtrack);
-                    self.convert_constraint(inner, val, cont)?;
+                    self.convert_constraint(expr, *inner, val, cont)?;
                     self.retreat.backtrack = cont;
                     Ok(())
                 }
                 ConstraintUnOp::Dot(_) => todo!(),
             },
-            ExpressionHead::Dyadic(Dyadic { op, inner }) => match op.inner {
+            ExprHead::Dyadic(op, [lhs, rhs]) => match op {
                 ConstraintBinOp::And => {
                     let right_bb = self.f.new_bb();
-                    self.convert_constraint(inner[0], val, right_bb)?;
+                    self.convert_constraint(expr, *lhs, val, right_bb)?;
                     self.f.set_bb(right_bb);
-                    self.convert_constraint(inner[1], val, cont)?;
+                    self.convert_constraint(expr, *rhs, val, cont)?;
                     Ok(())
                 }
                 ConstraintBinOp::Or => {
                     let right_bb = self.f.new_bb();
                     let old_backtrack = self.retreat.backtrack;
                     self.retreat.backtrack = right_bb;
-                    self.convert_constraint(inner[0], val, cont)?;
+                    self.convert_constraint(expr, *lhs, val, cont)?;
                     self.f.set_bb(right_bb);
                     self.retreat.backtrack = old_backtrack;
-                    self.convert_constraint(inner[1], val, cont)?;
+                    self.convert_constraint(expr, *rhs, val, cont)?;
                     Ok(())
                 }
             },
-            ExpressionHead::Variadic(v) => v.ignore(),
+            ExprHead::Variadic(v, _) => match *v {},
         }
     }
 
@@ -880,7 +884,8 @@ impl<'a> ConvertCtx<'a> {
         Ok(())
     }
 
-    pub fn if_parser(&mut self, constr: HirConstraintExpressionRoot) -> SResult<()> {
+    pub fn if_parser(&mut self, constr: HirConstraintId) -> SResult<()> {
+        let constr = self.db.lookup_intern_hir_constraint(constr);
         let ldt_ret = if let Some(ret) = self.f.fun.ret() {
             let ret_ty = self.f.fun.place(ret).ty;
             let ldt_ret = self.db.least_deref_type(ret_ty)?;
@@ -922,7 +927,8 @@ impl<'a> ConvertCtx<'a> {
             retreat,
         );
         let convert_succ = self.f.new_bb();
-        self.convert_constraint(constr.id, tmp_place, convert_succ)?;
+        let root = constr.expr.root();
+        self.convert_constraint(&constr.expr, root, tmp_place, convert_succ)?;
         self.f.set_bb(convert_succ);
         let ret_if_needed = self
             .req

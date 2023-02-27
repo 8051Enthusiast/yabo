@@ -332,7 +332,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     };
                     self.register_layouts(*inner);
                     let mut first_req = info | NeededBy::Val;
-                    if c.has_no_eof {
+                    if self.ctx.db.lookup_intern_hir_constraint(*c).has_no_eof {
                         first_req |= NeededBy::Len
                     }
                     self.register_parse(from, *inner, CallMeta::new(first_req, false));
