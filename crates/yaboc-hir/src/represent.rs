@@ -1,5 +1,5 @@
 use yaboc_ast::{
-    expr::{Dyadic, ExpressionHead, Monadic, OpWithData, Variadic},
+    expr::{Dyadic, ExpressionHead, Monadic, Variadic},
     ArrayKind,
 };
 use yaboc_base::{databased_display::DatabasedDisplay, dbwrite};
@@ -191,35 +191,20 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for W<&Expression<HirValSpanned>> {
     }
 }
 
-impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for W<&Expression<HirTypeSpanned>> {
+impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for W<&DataExpr<HirType, SpanIndex>> {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
-        match &self.0 .0.as_ref().map_inner(|x| W(&**x)) {
-            ExpressionHead::Niladic(a) => a.inner.db_fmt(f, db),
-            ExpressionHead::Monadic(Monadic { op, inner }) => match &op.inner {
-                expr::TypeUnOp::Wiggle(right) => dbwrite!(f, db, "{} ~ {}", inner, right),
-                expr::TypeUnOp::ByteParser => dbwrite!(f, db, "*{}", inner),
-            },
-            ExpressionHead::Dyadic(Dyadic { op, inner }) => {
-                dbwrite!(f, db, "{} {} {}", &inner[0], &op.inner, &inner[1])
+        self.0.expr.try_print(|event| match event {
+            yaboc_expr::WriteEvent::Niladic(a) => a.db_fmt(f, db),
+            yaboc_expr::WriteEvent::OpenMonadic(expr::TypeUnOp::ByteParser) => write!(f, "*"),
+            yaboc_expr::WriteEvent::CloseMonadic(expr::TypeUnOp::Wiggle(right)) => {
+                dbwrite!(f, db, " ~ {}", right)
             }
-            ExpressionHead::Variadic(Variadic {
-                op:
-                    OpWithData {
-                        inner: expr::TypeVarOp::Call,
-                        ..
-                    },
-                inner,
-            }) => {
-                dbwrite!(f, db, "{}(", &inner[0])?;
-                for (i, arg) in inner[1..].iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    dbwrite!(f, db, "{}", arg)?;
-                }
-                write!(f, ")")
-            }
-        }
+            yaboc_expr::WriteEvent::InterDyadic(op) => write!(f, " {} ", op),
+            yaboc_expr::WriteEvent::InterVariadic(expr::TypeVarOp::Call, 0) => write!(f, "("),
+            yaboc_expr::WriteEvent::InterVariadic(expr::TypeVarOp::Call, 1..) => write!(f, ", "),
+            yaboc_expr::WriteEvent::CloseVariadic(expr::TypeVarOp::Call) => write!(f, ")"),
+            _ => Ok(()),
+        })
     }
 }
 

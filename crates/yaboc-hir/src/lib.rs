@@ -38,7 +38,7 @@ use fxhash::FxHashMap;
 use variable_set::VariableSet;
 
 use convert::hir_parser_collection;
-use yaboc_expr::{ExprKind, IdxExpression, ShapedData};
+use yaboc_expr::{DataExpr, ExprKind, IdxExpression, ShapedData};
 
 use self::{convert::HirConversionErrors, walk::ChildIter};
 
@@ -298,6 +298,7 @@ fn argnum(db: &dyn Hirs, pd: ParserDefId) -> SResult<Option<usize>> {
     let pd = pd.lookup(db)?;
     Ok(pd.args.map(|x| x.len()))
 }
+
 fn parserdef_arg(db: &dyn Hirs, pd: ParserDefId, name: Identifier) -> SResult<Option<ArgDefId>> {
     let pd = pd.lookup(db)?;
     let arg = pd
@@ -320,6 +321,7 @@ fn parserdef_arg_index(db: &dyn Hirs, pd: ParserDefId, id: DefId) -> SResult<Opt
         .position(|x| x.0 == id);
     Ok(index)
 }
+
 fn std_item(db: &dyn Hirs, item: StdItem) -> SResult<ParserDefId> {
     let name = match item {
         StdItem::Compose => "compose",
@@ -543,14 +545,12 @@ pub type HirValSpanned = expr::KindWithData<HirVal, SpanIndex>;
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct HirType;
 
-impl ExpressionKind for HirType {
-    type VariadicOp = expr::TypeVarOp;
-    type DyadicOp = expr::TypeBinOp;
-    type MonadicOp = expr::TypeUnOp<HirConstraintId>;
+impl ExprKind for HirType {
     type NiladicOp = TypeAtom;
+    type MonadicOp = expr::TypeUnOp<HirConstraintId>;
+    type DyadicOp = expr::TypeBinOp;
+    type VariadicOp = expr::TypeVarOp;
 }
-
-pub type HirTypeSpanned = expr::KindWithData<HirType, SpanIndex>;
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct ValExpression {
@@ -582,7 +582,7 @@ impl Import {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct TypeExpression {
     pub id: TExprId,
-    pub expr: Expression<HirTypeSpanned>,
+    pub expr: DataExpr<HirType, SpanIndex>,
 }
 
 impl TypeExpression {
@@ -765,9 +765,9 @@ pub enum TypePrimitive {
 }
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDefRef {
-    pub from: Option<Expression<HirTypeSpanned>>,
+    pub from: Option<DataExpr<HirType, SpanIndex>>,
     pub name: Vec<IndexSpanned<Identifier>>,
-    pub args: Vec<Expression<HirTypeSpanned>>,
+    pub args: Vec<DataExpr<HirType, SpanIndex>>,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -783,7 +783,7 @@ pub enum ParserAtom {
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct TypeArray {
     pub direction: ArrayKind,
-    pub expr: Expression<HirTypeSpanned>,
+    pub expr: DataExpr<HirType, SpanIndex>,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]

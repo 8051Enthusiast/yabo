@@ -20,7 +20,7 @@ pub fn parser_args_error(
     let bump = Bump::new();
     let mut tcx = TypingContext::new(db, arg_resolver, loc, &bump, false);
     let from_expr = pd.from.lookup(db)?;
-    let from_infty = tcx.resolve_type_expr(&from_expr.expr, pd.from)?;
+    let from_infty = tcx.resolve_type_expr(&from_expr.expr.as_ref(), pd.from)?;
     let mut arg_inftys = pd
         .args
         .as_ref()
@@ -29,7 +29,7 @@ pub fn parser_args_error(
             for arg in x.iter() {
                 let arg_ty = arg.lookup(db)?.ty;
                 let arg_expr = arg_ty.lookup(db)?;
-                let arg_infty = tcx.resolve_type_expr(&arg_expr.expr, arg_ty)?;
+                let arg_infty = tcx.resolve_type_expr(&arg_expr.expr.as_ref(), arg_ty)?;
                 ret.push(arg_infty);
             }
             Ok(ret)
