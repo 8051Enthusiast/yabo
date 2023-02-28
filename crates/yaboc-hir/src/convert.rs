@@ -150,11 +150,11 @@ fn convert_type_expression(
     expr: &ast::TypeExpression,
     ctx: &HirConversionCtx,
     add_span: &impl Fn(&Span) -> SpanIndex,
-) -> Expression<HirTypeSpanned> {
-    let expr = expr.map(add_span);
-    expr.convert(
-        &mut |niladic| {
-            let new_atom = match &niladic.inner {
+) -> DataExpr<HirType, SpanIndex> {
+    DataExpr::new_from_unfold(expr, |expr| {
+        let span = *expr.0.root_data();
+        let expr = match &expr.0 {
+            ExpressionHead::Niladic(n) => match &n.inner {
                 ast::TypeAtom::ParserDef(pd) => {
                     let from = pd
                         .from
@@ -173,32 +173,40 @@ fn convert_type_expression(
                             atom: name.inner,
                         })
                         .collect();
-                    TypeAtom::ParserDef(Box::new(ParserDefRef { from, name, args }))
+                    ExprHead::Niladic(TypeAtom::ParserDef(Box::new(ParserDefRef {
+                        from,
+                        name,
+                        args,
+                    })))
                 }
+                ast::TypeAtom::Primitive(a) => ExprHead::Niladic(TypeAtom::Primitive((*a).into())),
                 ast::TypeAtom::Array(arr) => {
                     let new_expr = convert_type_expression(&arr.expr, ctx, add_span);
-                    TypeAtom::Array(Box::new(TypeArray {
+                    ExprHead::Niladic(TypeAtom::Array(Box::new(TypeArray {
                         direction: arr.direction.inner,
                         expr: new_expr,
-                    }))
+                    })))
                 }
-                ast::TypeAtom::Primitive(a) => TypeAtom::Primitive((*a).into()),
-                ast::TypeAtom::TypeVar(v) => TypeAtom::TypeVar(*v),
-            };
-            OpWithData {
-                data: niladic.data,
-                inner: new_atom,
+                ast::TypeAtom::TypeVar(v) => ExprHead::Niladic(TypeAtom::TypeVar(*v)),
+            },
+            ExpressionHead::Monadic(monadic) => {
+                let new_op = monadic
+                    .op
+                    .inner
+                    .map_expr(|constr| constraint_expression(constr, ctx, add_span));
+                ExprHead::Monadic(new_op, &*monadic.inner)
             }
-        },
-        &mut |monadic, _| OpWithData {
-            data: monadic.data,
-            inner: monadic
-                .inner
-                .map_expr(|constr| constraint_expression(constr, ctx, add_span)),
-        },
-        &mut |dyadic, _, _| dyadic.clone(),
-        &mut |variadic, _| variadic.clone(),
-    )
+            ExpressionHead::Dyadic(dyadic) => ExprHead::Dyadic(
+                dyadic.op.inner.clone(),
+                [&*dyadic.inner[0], &*dyadic.inner[1]],
+            ),
+            ExpressionHead::Variadic(variadic) => ExprHead::Variadic(
+                variadic.op.inner,
+                variadic.inner.iter().map(|x| &**x).collect(),
+            ),
+        };
+        (expr, add_span(&span))
+    })
 }
 
 fn type_expression(ast: &ast::TypeExpression, ctx: &HirConversionCtx, id: TExprId) {

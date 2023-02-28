@@ -41,7 +41,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         fun: FunctionValue<'llvm>,
         wrapper: FunctionValue<'llvm>,
-        tail: bool
+        tail: bool,
     ) -> FunctionValue<'llvm> {
         let args = wrapper
             .get_param_iter()
