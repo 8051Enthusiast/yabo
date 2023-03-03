@@ -291,50 +291,14 @@ pub trait Expression<K: ExprKind>: Sized {
             Ev,
         >,
     ) -> ReidxExpr<K, ToK> {
-        let mut heads: Vec<ExprHead<ToK, ExprIdx<ToK>>> = Vec::with_capacity(self.len());
-        let mut results: Vec<(ExprIdx<K>, PartialEval<ExprIdx<ToK>, Ev>)> =
-            Vec::with_capacity(self.len());
-        let mut reindex: Vec<ExprIdx<K>> = Vec::with_capacity(self.len());
-        let mut i = 0;
-        let mut add_to_expr = |(idx, expr): (ExprIdx<K>, ExprHead<ToK, ExprIdx<ToK>>)| {
-            heads.push(expr);
-            reindex.push(idx);
-            ExprIdx::new(&mut i)
-        };
-        for (idx, part) in self.iter_parts_with_idx() {
-            let part = part.map_inner(|idx| {
-                let ret = results[idx.as_usize()].clone();
-                match ret.1 {
-                    PartialEval::Uneval(x) => {
-                        PartialEval::Uneval(ExprRef(x, InvariantLifetime::default()))
-                    }
-                    PartialEval::Eval(x) => PartialEval::Eval((x, ret.0)),
-                }
-            });
-            let evaled = f(InvariantLifetime::default(), part);
-            let res = match evaled {
-                PartialEval::Uneval(x) => {
-                    let expr_with_subidx = x.map_inner(|subexpr| {
-                        let (ev, subidx) = match subexpr {
-                            PartialEval::Uneval(idx) => return idx.0,
-                            PartialEval::Eval(ev) => ev,
-                        };
-                        let def = default(ev, subidx);
-                        add_to_expr((subidx, ExprHead::Niladic(def)))
-                    });
-                    PartialEval::Uneval(add_to_expr((idx, expr_with_subidx)))
-                }
-                PartialEval::Eval(e) => PartialEval::Eval(e),
-            };
-            results.push((idx, res));
-        }
-        if let (idx, PartialEval::Eval(res)) = results.pop().unwrap() {
-            add_to_expr((idx, ExprHead::Niladic(default(res, idx))));
-        }
-        let expr = IdxExpression { heads };
-        ReidxExpr {
-            expr,
-            reidx: reindex,
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        enum Never {}
+        match self.try_partial_eval::<_, _, Never>(
+            |ev, idx| Ok(default(ev, idx)),
+            |inv, expr| Ok(f(inv, expr)),
+        ) {
+            Ok(x) => x,
+            Err(v) => match v {},
         }
     }
 
