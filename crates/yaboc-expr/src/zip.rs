@@ -61,15 +61,6 @@ impl<Expr: TakeRef, Data: TakeRef> TakeRef for ZipExpr<Expr, Data> {
     }
 }
 
-impl<K: ExprKind, Data> ZipExpr<IdxExpression<K>, Data> {
-    pub fn asref(&self) -> ZipExpr<IdxExprRef<K>, &Data> {
-        ZipExpr {
-            expr: self.expr.asref(),
-            data: &self.data,
-        }
-    }
-}
-
 impl<K, Expr: IndexExpr<K>, Data: IndexExpr<K>> IndexExpr<K> for ZipExpr<Expr, Data> {
     type Output<'a> = (Expr::Output<'a>, Data::Output<'a>)
     where

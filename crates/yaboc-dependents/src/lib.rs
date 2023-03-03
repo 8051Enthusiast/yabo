@@ -126,7 +126,7 @@ fn val_refs(
         }
         hir::HirNode::Expr(expr) => {
             let mut ret = FxHashSet::default();
-            for (e, _) in expr.expr.asref().iter_parts() {
+            for (e, _) in expr.expr.take_ref().iter_parts() {
                 match e {
                     ExprHead::Niladic(ParserAtom::Block(b)) => ret.extend(
                         db.captures(b)
