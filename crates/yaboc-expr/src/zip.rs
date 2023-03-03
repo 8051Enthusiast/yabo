@@ -1,17 +1,20 @@
-use crate::{ExprHead, ExprIdx, ExprKind, Expression, IdxExprRef, IdxExpression, ShapedData};
+use crate::{
+    fetch::FetchKindData, shaped_data::IndexExpr, ExprHead, ExprIdx, ExprKind, Expression,
+    IdxExprRef, IdxExpression, ShapedData, TakeRef,
+};
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
-pub struct ZipExpression<Expr, Data> {
+pub struct ZipExpr<Expr, Data> {
     pub expr: Expr,
     pub data: Data,
 }
 
-impl<Expr, Data: IntoIterator> ZipExpression<Expr, Data> {
+impl<Expr, Data: IntoIterator> ZipExpr<Expr, Data> {
     pub fn zip<D2: IntoIterator>(
         self,
         data: D2,
-    ) -> ZipExpression<Expr, impl Iterator<Item = (Data::Item, D2::Item)>> {
-        ZipExpression {
+    ) -> ZipExpr<Expr, impl Iterator<Item = (Data::Item, D2::Item)>> {
+        ZipExpr {
             expr: self.expr,
             data: self.data.into_iter().zip(data.into_iter()),
         }
@@ -20,49 +23,68 @@ impl<Expr, Data: IntoIterator> ZipExpression<Expr, Data> {
     pub fn map<D2>(
         self,
         f: impl FnMut(Data::Item) -> D2,
-    ) -> ZipExpression<Expr, impl Iterator<Item = D2>> {
-        ZipExpression {
+    ) -> ZipExpr<Expr, impl Iterator<Item = D2>> {
+        ZipExpr {
             expr: self.expr,
             data: self.data.into_iter().map(f),
         }
     }
 
-    pub fn collect(self) -> ZipExpression<Expr, Vec<Data::Item>> {
-        ZipExpression {
+    pub fn collect(self) -> ZipExpr<Expr, Vec<Data::Item>> {
+        ZipExpr {
             expr: self.expr,
             data: self.data.into_iter().collect(),
         }
     }
 }
 
-impl<'a, Expr, D: 'a, Data: IntoIterator<Item = &'a D>> ZipExpression<Expr, Data> {
-    pub fn cloned(self) -> ZipExpression<Expr, std::iter::Cloned<Data::IntoIter>>
+impl<'a, Expr, D: 'a, Data: IntoIterator<Item = &'a D>> ZipExpr<Expr, Data> {
+    pub fn cloned(self) -> ZipExpr<Expr, std::iter::Cloned<Data::IntoIter>>
     where
         D: Clone,
     {
-        ZipExpression {
+        ZipExpr {
             expr: self.expr,
             data: self.data.into_iter().cloned(),
         }
     }
 }
 
-impl<K: ExprKind, Data> ZipExpression<IdxExpression<K>, Data> {
-    pub fn as_ref(&self) -> ZipExpression<IdxExprRef<K>, &Data> {
-        ZipExpression {
-            expr: self.expr.as_ref(),
+impl<Expr: TakeRef, Data: TakeRef> TakeRef for ZipExpr<Expr, Data> {
+    type Ref<'a> = ZipExpr<Expr::Ref<'a>, Data::Ref<'a>> where Self: 'a;
+
+    fn take_ref(&self) -> Self::Ref<'_> {
+        ZipExpr {
+            expr: self.expr.take_ref(),
+            data: self.data.take_ref(),
+        }
+    }
+}
+
+impl<K: ExprKind, Data> ZipExpr<IdxExpression<K>, Data> {
+    pub fn asref(&self) -> ZipExpr<IdxExprRef<K>, &Data> {
+        ZipExpr {
+            expr: self.expr.asref(),
             data: &self.data,
         }
     }
 }
 
-impl<K: ExprKind, Data: IntoIterator, Expr: Expression<K>> Expression<K>
-    for ZipExpression<Expr, Data>
-{
+impl<K, Expr: IndexExpr<K>, Data: IndexExpr<K>> IndexExpr<K> for ZipExpr<Expr, Data> {
+    type Output<'a> = (Expr::Output<'a>, Data::Output<'a>)
+    where
+        Self: 'a;
+
+    fn index_expr(&self, idx: ExprIdx<K>) -> Self::Output<'_> {
+        (self.expr.index_expr(idx), self.data.index_expr(idx))
+    }
+}
+
+impl<K: ExprKind, Data: IntoIterator, Expr: Expression<K>> Expression<K> for ZipExpr<Expr, Data> {
     type Part = (Expr::Part, Data::Item);
     type Iter = std::iter::Zip<Expr::Iter, Data::IntoIter>;
 
-    type MapOp<ToK: ExprKind> = ZipExpression<Expr::MapOp<ToK>, Data>;
+    type MapOp<ToK: ExprKind> = ZipExpr<Expr::MapOp<ToK>, Data>;
 
     fn map_op_with_state<ToK: ExprKind, State>(
         self,
@@ -72,7 +94,7 @@ impl<K: ExprKind, Data: IntoIterator, Expr: Expression<K>> Expression<K>
         map_dya: impl FnMut(&mut State, <K as ExprKind>::DyadicOp) -> ToK::DyadicOp,
         map_var: impl FnMut(&mut State, <K as ExprKind>::VariadicOp) -> ToK::VariadicOp,
     ) -> Self::MapOp<ToK> {
-        ZipExpression {
+        ZipExpr {
             expr: self
                 .expr
                 .map_op_with_state(state, map_nil, map_mon, map_dya, map_var),
@@ -89,8 +111,54 @@ impl<K: ExprKind, Data: IntoIterator, Expr: Expression<K>> Expression<K>
     }
 }
 
-pub type DataExpr<K, D> = ZipExpression<IdxExpression<K>, ShapedData<Vec<D>, K>>;
-pub type DataRefExpr<'a, K, D> = ZipExpression<IdxExprRef<'a, K>, &'a ShapedData<Vec<D>, K>>;
+pub struct IntoZip<A, B>(A, B);
+
+impl<A: IntoIterator, B: IntoIterator> IntoIterator for IntoZip<A, B> {
+    type Item = (A::Item, B::Item);
+    type IntoIter = std::iter::Zip<A::IntoIter, B::IntoIter>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter().zip(self.1.into_iter())
+    }
+}
+impl<DB: ?Sized, K, Id, A, B> FetchKindData<(A, B), Id, DB> for K
+where
+    K: ExprKind + FetchKindData<A, Id, DB> + FetchKindData<B, Id, DB>,
+    <K as FetchKindData<B, Id, DB>>::Err: From<<K as FetchKindData<A, Id, DB>>::Err>,
+    Id: Copy,
+{
+    type Data =
+        IntoZip<<K as FetchKindData<A, Id, DB>>::Data, <K as FetchKindData<B, Id, DB>>::Data>;
+    type Err = <K as FetchKindData<B, Id, DB>>::Err;
+
+    fn fetch_kind_data(db: &DB, id: Id) -> Result<Self::Data, Self::Err> {
+        Ok(IntoZip(
+            <K as FetchKindData<A, Id, DB>>::fetch_kind_data(db, id)?,
+            <K as FetchKindData<B, Id, DB>>::fetch_kind_data(db, id)?,
+        ))
+    }
+}
+
+impl<A: TakeRef, B: TakeRef> TakeRef for IntoZip<A, B> {
+    type Ref<'a> = IntoZip<A::Ref<'a>, B::Ref<'a>> where Self: 'a;
+
+    fn take_ref(&self) -> Self::Ref<'_> {
+        IntoZip(self.0.take_ref(), self.1.take_ref())
+    }
+}
+
+impl<K, A: IndexExpr<K>, B: IndexExpr<K>> IndexExpr<K> for IntoZip<A, B> {
+    type Output<'a> = (A::Output<'a>, B::Output<'a>)
+    where
+        Self: 'a;
+
+    fn index_expr(&self, idx: ExprIdx<K>) -> Self::Output<'_> {
+        (self.0.index_expr(idx), self.1.index_expr(idx))
+    }
+}
+
+pub type DataExpr<K, D> = ZipExpr<IdxExpression<K>, ShapedData<Vec<D>, K>>;
+pub type DataRefExpr<'a, K, D> = ZipExpr<IdxExprRef<'a, K>, ShapedData<&'a [D], K>>;
 
 impl<K: ExprKind, D> DataExpr<K, D> {
     pub fn new_from_unfold<T>(init: T, mut unfold: impl FnMut(T) -> (ExprHead<K, T>, D)) -> Self {

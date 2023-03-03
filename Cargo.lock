@@ -942,6 +942,7 @@ dependencies = [
  "yaboc-ast",
  "yaboc-base",
  "yaboc-dependents",
+ "yaboc-expr",
  "yaboc-hir",
  "yaboc-hir-types",
  "yaboc-resolve",
@@ -1022,6 +1023,7 @@ dependencies = [
  "salsa",
  "yaboc-ast",
  "yaboc-base",
+ "yaboc-expr",
  "yaboc-hir",
  "yaboc-hir-types",
  "yaboc-resolve",
@@ -1078,6 +1080,7 @@ dependencies = [
  "yaboc-ast",
  "yaboc-base",
  "yaboc-dependents",
+ "yaboc-expr",
  "yaboc-hir",
  "yaboc-hir-types",
  "yaboc-mir",
@@ -1111,6 +1114,7 @@ dependencies = [
  "salsa",
  "yaboc-ast",
  "yaboc-base",
+ "yaboc-expr",
  "yaboc-hir",
 ]
 

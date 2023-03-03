@@ -704,12 +704,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .db
             .lookup_intern_type(layout.mono_layout().1);
         let return_layout = if let Type::FunctionArg(_, arg_tys) = fun_type {
-            let new_args = args
-                .iter()
-                .copied()
-                .zip(arg_tys.iter().copied())
-                .collect::<Vec<_>>();
-            let result = layout.inner().apply_fun(self.layouts, &new_args).unwrap();
+            let new_args = args.iter().copied().zip(arg_tys.iter().copied());
+            let result = layout.inner().apply_fun(self.layouts, new_args).unwrap();
             let all_monos = flat_layouts(&result);
             assert_eq!(all_monos.len(), 1);
             all_monos.last().unwrap()

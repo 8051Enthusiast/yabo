@@ -1,20 +1,29 @@
-use yaboc_ast::expr::ExpressionHead;
 use yaboc_base::{
     dbformat,
     error::{SResult, Silencable, SilencedError},
     interner::DefId,
 };
+use yaboc_expr::{FetchExpr, FetchKindData, TakeRef};
 
 use super::*;
 
-pub fn public_expr_type(db: &dyn TyHirs, loc: hir::ExprId) -> SResult<(TypedExpression, TypeId)> {
+impl<DB: TyHirs + ?Sized> FetchKindData<PubTypeId, ExprId, DB> for Resolved {
+    type Data = Arc<ShapedData<Vec<TypeId>, Resolved>>;
+    type Err = SilencedError;
+
+    fn fetch_kind_data(db: &DB, id: ExprId) -> Result<Self::Data, Self::Err> {
+        Ok(db.public_expr_type(id)?.0)
+    }
+}
+
+pub fn public_expr_type(db: &dyn TyHirs, loc: hir::ExprId) -> SResult<(Arc<ExprTypeData>, TypeId)> {
     public_expr_type_impl(db, loc).silence()
 }
 
 fn public_expr_type_impl(
     db: &dyn TyHirs,
     loc: hir::ExprId,
-) -> Result<(TypedExpression, TypeId), SpannedTypeError> {
+) -> Result<(Arc<ExprTypeData>, TypeId), SpannedTypeError> {
     let spanned = |x| SpannedTypeError::new(x, IndirectSpan::default_span(loc.0));
     let bump = Bump::new();
     let mut ctx = PublicResolver::new_typing_context_and_loc(db, loc.0, &bump)?;
@@ -42,7 +51,7 @@ fn public_expr_type_impl(
     ctx.infctx.constrain(expr_ret, ret).map_err(spanned)?;
     let ret = ctx.inftype_to_concrete_type(ret).map_err(spanned)?;
     let expr = ctx.inf_expressions[&loc].clone();
-    Ok((ctx.expr_to_concrete_type(&expr, loc)?, ret))
+    Ok((Arc::new(ctx.expr_to_concrete_type(&expr, loc)?), ret))
 }
 
 pub fn public_type(db: &dyn TyHirs, loc: DefId) -> SResult<TypeId> {
@@ -85,13 +94,12 @@ fn ambient_type_impl(db: &dyn TyHirs, loc: hir::ParseId) -> Result<TypeId, TypeE
         .lookup(db)?
         .block_id
         .lookup(db)?;
-    let (typed_expr, _) = db.public_expr_type(block.enclosing_expr)?;
-    let block_ty = ExprIter::new(&typed_expr)
-        .find_map(|x| match &x.0 {
-            ExpressionHead::Niladic(expr::OpWithData {
-                inner: ResolvedAtom::Block(b),
-                data,
-            }) if *b == block.id => Some(data.0),
+    let expr = Resolved::expr_with_data::<(SpanIndex, PubTypeId)>(db, block.enclosing_expr)?;
+    let block_ty = expr
+        .take_ref()
+        .iter_parts()
+        .find_map(|(head, (_, ty))| match head {
+            ExprHead::Niladic(ResolvedAtom::Block(b)) if b == block.id => Some(*ty),
             _ => None,
         })
         .ok_or_else(SilencedError::new)?;
@@ -123,7 +131,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern, PublicResolver<'a, 'intern>> {
         parserdef: &hir::ParserDef,
     ) -> Result<Option<InfTypeId<'intern>>, SpannedTypeError> {
         let ty_expr = parserdef.from.lookup(self.db)?.expr;
-        let from = self.resolve_type_expr(&ty_expr.as_ref(), parserdef.from)?;
+        let from = self.resolve_type_expr(ty_expr.take_ref(), parserdef.from)?;
         Ok(Some(from))
     }
 }

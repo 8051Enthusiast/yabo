@@ -94,7 +94,7 @@ fn constraint_expression(
 }
 
 fn val_expression(
-    ast: &ast::ValExpression,
+    expr: &ast::ValExpression,
     ctx: &HirConversionCtx,
     id: ExprId,
     parent_context: Option<ContextId>,
@@ -108,9 +108,9 @@ fn val_expression(
         children.push(new_id);
         new_id
     };
-    let expr: Expression<HirValSpanned> = ast.map(&add_span).convert(
-        &mut |niladic| {
-            let inner = match &niladic.inner {
+    let expr = DataExpr::new_from_unfold(expr, |expr| {
+        let expr_res = match &expr.0 {
+            ExpressionHead::Niladic(n) => ExprHead::Niladic(match &n.inner {
                 ast::ParserAtom::Atom(atom) => ParserAtom::Atom(atom.clone()),
                 ast::ParserAtom::Single => ParserAtom::Single,
                 ast::ParserAtom::Nil => ParserAtom::Nil,
@@ -121,21 +121,21 @@ fn val_expression(
                     block(b, ctx, nid, parent_context, id);
                     ParserAtom::Block(nid)
                 }
-            };
-            expr::OpWithData {
-                data: niladic.data,
-                inner,
+            }),
+            ExpressionHead::Monadic(m) => ExprHead::Monadic(
+                m.op.inner
+                    .map_expr(|constr| constraint_expression(constr, ctx, &add_span)),
+                &*m.inner,
+            ),
+            ExpressionHead::Dyadic(d) => {
+                ExprHead::Dyadic(d.op.inner.clone(), [&*d.inner[0], &*d.inner[1]])
             }
-        },
-        &mut |monadic, _| OpWithData {
-            data: monadic.data,
-            inner: monadic
-                .inner
-                .map_expr(|constr| constraint_expression(constr, ctx, &add_span)),
-        },
-        &mut |dyadic, _, _| dyadic.clone(),
-        &mut |variadic, _| variadic.clone(),
-    );
+            ExpressionHead::Variadic(v) => {
+                ExprHead::Variadic(v.op.inner.clone(), v.inner.iter().map(|e| &**e).collect())
+            }
+        };
+        (expr_res, add_span(expr.0.root_data()))
+    });
     let expr = ValExpression {
         id,
         expr,

@@ -16,10 +16,7 @@ use std::{
 
 use salsa::InternId;
 use yaboc_ast::{
-    expr::{
-        self, Atom, ConstraintBinOp, ConstraintUnOp, Expression, ExpressionHead, ExpressionKind,
-        Unused,
-    },
+    expr::{self, Atom, ConstraintBinOp, ConstraintUnOp, Expression, ExpressionHead, Unused},
     ConstraintAtom,
 };
 use yaboc_ast::{ArrayKind, TopLevelStatement};
@@ -533,14 +530,12 @@ pub type ConstraintExpression = Expression<HirConstraintSpanned>;
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct HirVal;
 
-impl ExpressionKind for HirVal {
-    type VariadicOp = expr::ValVarOp;
-    type DyadicOp = expr::ValBinOp;
-    type MonadicOp = expr::ValUnOp<HirConstraintId>;
+impl ExprKind for HirVal {
     type NiladicOp = ParserAtom;
+    type MonadicOp = expr::ValUnOp<HirConstraintId>;
+    type DyadicOp = expr::ValBinOp;
+    type VariadicOp = expr::ValVarOp;
 }
-
-pub type HirValSpanned = expr::KindWithData<HirVal, SpanIndex>;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct HirType;
@@ -555,7 +550,7 @@ impl ExprKind for HirType {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct ValExpression {
     pub id: ExprId,
-    pub expr: Expression<HirValSpanned>,
+    pub expr: DataExpr<HirVal, SpanIndex>,
     pub children: Vec<DefId>,
     pub parent_context: Option<ContextId>,
 }

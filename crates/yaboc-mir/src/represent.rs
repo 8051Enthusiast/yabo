@@ -239,7 +239,7 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<DB> for PlaceOrigin {
         match self {
             PlaceOrigin::Node(n) => dbwrite!(f, db, "node {}", n),
             PlaceOrigin::Ambient(_, n) => dbwrite!(f, db, "ambient {}", n),
-            PlaceOrigin::Expr(n, i) => dbwrite!(f, db, "expr {}:{}", &n.0, &i),
+            PlaceOrigin::Expr(n, i) => dbwrite!(f, db, "expr {}:{}", &n.0, &i.as_usize()),
             PlaceOrigin::Ret => write!(f, "ret"),
             PlaceOrigin::Arg => write!(f, "arg"),
         }

@@ -81,7 +81,7 @@ impl<'db, DB: ?Sized + TyHirs> IdCursor<'db, DB> {
             HirNode::Let(_) | HirNode::Parse(_) | HirNode::ChoiceIndirection(_) => {
                 self.db.parser_type_at(self.id).unwrap()
             }
-            HirNode::Expr(e) => self.db.parser_expr_at(e.id).unwrap().0.root_data().0,
+            HirNode::Expr(e) => *self.db.parser_expr_at(e.id).unwrap().root_data(),
             HirNode::ParserDef(pd) => self.db.parser_returns(pd.id).unwrap().deref,
             _ => panic!("attempt to get return block of non-parser node"),
         };

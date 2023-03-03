@@ -1,7 +1,4 @@
-use yaboc_ast::{
-    expr::{Dyadic, ExpressionHead, Monadic, Variadic},
-    ArrayKind,
-};
+use yaboc_ast::ArrayKind;
 use yaboc_base::{databased_display::DatabasedDisplay, dbwrite};
 use yaboc_expr::Expression as NewExpression;
 
@@ -44,7 +41,26 @@ impl std::fmt::Display for Qualifier {
 
 impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for ValExpression {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
-        W(&self.expr).db_fmt(f, db)
+        use yaboc_expr::WriteEvent::*;
+        self.expr.expr.try_print(|event| match event {
+            Niladic(a) => a.db_fmt(f, db),
+            OpenMonadic(expr::ValUnOp::Not) => write!(f, "!"),
+            OpenMonadic(expr::ValUnOp::Neg) => write!(f, "-"),
+            CloseMonadic(expr::ValUnOp::Wiggle(right, kind)) => {
+                dbwrite!(f, db, " {} {}", kind, right)
+            }
+            CloseMonadic(expr::ValUnOp::Dot(a, false)) => {
+                dbwrite!(f, db, ".{}", a)
+            }
+            CloseMonadic(expr::ValUnOp::Dot(a, true)) => {
+                dbwrite!(f, db, ".{}?", a)
+            }
+            InterDyadic(op) => write!(f, " {} ", op),
+            InterVariadic(_, 0) => write!(f, "("),
+            InterVariadic(_, 1..) => write!(f, ", "),
+            CloseVariadic(_) => write!(f, ")"),
+            _ => Ok(()),
+        })
     }
 }
 
@@ -153,41 +169,6 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for HirConstraintId {
                 InterDyadic(op) => dbwrite!(f, db, " {} ", op),
                 _ => Ok(()),
             })
-    }
-}
-
-impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for W<&Expression<HirValSpanned>> {
-    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
-        match &self.0 .0.as_ref().map_inner(|x| W(&**x)) {
-            ExpressionHead::Niladic(a) => a.inner.db_fmt(f, db),
-            ExpressionHead::Monadic(Monadic { op, inner }) => match &op.inner {
-                expr::ValUnOp::Not => dbwrite!(f, db, "!{}", inner),
-                expr::ValUnOp::Neg => dbwrite!(f, db, "-{}", inner),
-                expr::ValUnOp::Wiggle(right, kind) => {
-                    dbwrite!(f, db, "{} {} {}", inner, kind, right)
-                }
-                expr::ValUnOp::Dot(a, b) => {
-                    dbwrite!(f, db, "{}.{}", inner, a)?;
-                    if *b {
-                        write!(f, "?")?;
-                    }
-                    Ok(())
-                }
-            },
-            ExpressionHead::Dyadic(Dyadic { op, inner }) => {
-                dbwrite!(f, db, "{} {} {}", &inner[0], &op.inner, &inner[1])
-            }
-            ExpressionHead::Variadic(Variadic { inner, .. }) => {
-                dbwrite!(f, db, "{}(", &inner[0])?;
-                for (i, arg) in inner[1..].iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    dbwrite!(f, db, "{}", arg)?;
-                }
-                write!(f, ")")
-            }
-        }
     }
 }
 
