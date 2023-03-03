@@ -4,7 +4,7 @@ use crate::refs;
 use hir::{ExprId, HirConstraintId};
 use yaboc_ast::expr::{Atom, ValBinOp, ValUnOp, ValVarOp};
 use yaboc_base::error::SilencedError;
-use yaboc_base::interner::{DefId, FieldName, Regex};
+use yaboc_base::interner::{DefId, Regex};
 use yaboc_base::source::SpanIndex;
 use yaboc_expr::{
     DataRefExpr, ExprHead, ExprKind, Expression, FetchExpr, FetchKindData, IdxExpression,
@@ -61,44 +61,37 @@ impl<DB: Resolves + ?Sized> FetchKindData<SpanIndex, ExprId, DB> for Resolved {
     }
 }
 
-fn new_resolved_atom(
-    db: &dyn Resolves,
-    loc: DefId,
-    name: FieldName,
-    bt: bool,
-    expr_id: ExprId,
-    span: SpanIndex,
-    parent_block: Option<hir::BlockId>,
-) -> Result<PartialEval<ResolvedAtom, hir::ModuleId>, ResolveError> {
-    let (id, kind) = match refs::resolve_var_ref(db, loc, name)? {
-        refs::Resolved::Value(id, kind) => (id, kind),
-        refs::Resolved::Module(m) => return Ok(PartialEval::Eval(m)),
-        refs::Resolved::Unresolved => return Err(ResolveError::Unresolved(expr_id, span, name)),
-    };
-    Ok(PartialEval::Uneval(match kind {
-        refs::VarType::ParserDef => ResolvedAtom::ParserDef(hir::ParserDefId(id), bt),
-        refs::VarType::Value => {
-            let is_captured = parent_block
-                .map(|x| !x.0.is_ancestor_of(db, id))
-                .unwrap_or(false);
-            let is_arg = db.hir_node(id)?.is_kind(hir::HirNodeKind::ArgDef.into());
-            if is_captured || is_arg {
-                ResolvedAtom::Captured(id, bt)
-            } else {
-                ResolvedAtom::Val(id, bt)
-            }
-        }
-    }))
-}
-
 fn resolve_expr_modules(
     db: &dyn Resolves,
     expr_id: ExprId,
     expr: DataRefExpr<hir::HirVal, SpanIndex>,
 ) -> Result<ReidxExpr<hir::HirVal, Resolved>, ResolveError> {
     let parent_block = db.hir_parent_block(expr_id.0)?;
-    let new_resolved_atom =
-        |loc, name, bt, span| new_resolved_atom(db, loc, name, bt, expr_id, span, parent_block);
+
+    let new_resolved_atom = |loc, name, bt, span| {
+        let (id, kind) = match refs::resolve_var_ref(db, loc, name)? {
+            refs::Resolved::Value(id, kind) => (id, kind),
+            refs::Resolved::Module(m) => return Ok(PartialEval::Eval(m)),
+            refs::Resolved::Unresolved => {
+                return Err(ResolveError::Unresolved(expr_id, span, name))
+            }
+        };
+        Ok(PartialEval::Uneval(match kind {
+            refs::VarType::ParserDef => ResolvedAtom::ParserDef(hir::ParserDefId(id), bt),
+            refs::VarType::Value => {
+                let is_captured = parent_block
+                    .map(|x| !x.0.is_ancestor_of(db, id))
+                    .unwrap_or(false);
+                let is_arg = db.hir_node(id)?.is_kind(hir::HirNodeKind::ArgDef.into());
+                if is_captured || is_arg {
+                    ResolvedAtom::Captured(id, bt)
+                } else {
+                    ResolvedAtom::Val(id, bt)
+                }
+            }
+        }))
+    };
+
     expr.try_partial_eval::<hir::ModuleId, Resolved, _>(
         |_, idx| {
             Err(ResolveError::ModuleInExpression(
