@@ -14,7 +14,7 @@ use yaboc_base::error::SResult;
 use yaboc_base::error::{Silencable, SilencedError};
 use yaboc_base::interner::{DefId, FieldName, Identifier};
 use yaboc_base::source::{FileId, SpanIndex};
-use yaboc_expr::{ExprHead, Expression};
+use yaboc_expr::{ExprHead, Expression, TakeRef};
 use yaboc_hir::walk::ChildIter;
 use yaboc_hir::{self as hir, ExprId, HirIdWrapper};
 
@@ -96,7 +96,7 @@ pub fn captures(db: &dyn Resolves, id: hir::BlockId) -> Arc<BTreeSet<DefId>> {
             ret.extend(
                 resolved_expr
                     .expr
-                    .asref()
+                    .take_ref()
                     .iter_parts()
                     .filter_map(|subexpr| {
                         if let ExprHead::Niladic(expr::ResolvedAtom::Captured(capture, _)) = subexpr

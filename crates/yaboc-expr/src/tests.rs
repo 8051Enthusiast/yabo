@@ -192,7 +192,7 @@ fn eval(expr: DataRefExpr<Bivariate, Range<usize>>, x: i64, y: i64) -> Result<i6
 }
 
 fn eval_y(expr: &IdxExpression<Bivariate>, y: i64) -> IdxExpression<Univariate> {
-    expr.asref().partial_eval::<_, Univariate>(
+    expr.take_ref().partial_eval::<_, Univariate>(
         |n, _| PartialEval::Eval(n),
         |_, head| {
             PartialEval::Eval(match head {
@@ -228,7 +228,7 @@ fn as_string<K>(expr: &IdxExpression<K>, mut f: impl FnMut(K::NiladicOp) -> Stri
 where
     K: ExprKind<MonadicOp = UnOp, DyadicOp = BinOp, VariadicOp = Nothing>,
 {
-    expr.asref().fold(|head| match head {
+    expr.take_ref().fold(|head| match head {
         ExprHead::Niladic(n) => f(n),
         ExprHead::Monadic(UnOp::Neg, inner) => {
             format!("-{}", inner)

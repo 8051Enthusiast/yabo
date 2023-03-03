@@ -311,7 +311,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         expr: &IdxExpression<HirConstraint>,
         ty: InfTypeId<'intern>,
     ) -> Result<(), TypeError> {
-        expr.asref().try_for_each(|expr| match expr {
+        expr.take_ref().try_for_each(|expr| match expr {
             ExprHead::Niladic(f) => match f {
                 ConstraintAtom::Atom(Atom::Number(_)) | ConstraintAtom::Range(_, _) => {
                     let int = self.infctx.int();

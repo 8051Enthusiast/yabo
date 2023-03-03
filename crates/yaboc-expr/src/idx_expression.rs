@@ -27,10 +27,6 @@ impl<K: ExprKind> IdxExpression<K> {
         ret
     }
 
-    pub fn asref(&self) -> IdxExprRef<K> {
-        IdxExprRef(self)
-    }
-
     pub fn build_new<R>(f: impl for<'id> FnOnce(&mut ExprBuilder<'id, K>) -> R) -> Self {
         let mut builder = ExprBuilder {
             heads: vec![],
