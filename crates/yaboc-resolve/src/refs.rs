@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 
-use yaboc_ast::expr::{Atom, ExpressionHead};
+use yaboc_ast::expr::Atom;
 use yaboc_base::interner::{DefId, FieldName, Identifier};
+use yaboc_expr::{ExprHead, Expression};
 use yaboc_hir::{walk, HirIdWrapper, HirNode};
 
 use super::*;
@@ -85,13 +86,9 @@ pub fn resolve_var_ref(
 // identifiers inside of expression
 pub fn expr_idents(expr: &hir::ValExpression) -> Vec<FieldName> {
     let mut ret = Vec::new();
-    for node in yaboc_ast::expr::ExprIter::new(&expr.expr) {
-        let ident = match &node.0 {
-            ExpressionHead::Niladic(a) => match a.inner {
-                hir::ParserAtom::Atom(Atom::Field((ident, _))) => ident,
-                _ => continue,
-            },
-            _ => continue,
+    for part in expr.expr.expr.asref().iter_parts() {
+        let ExprHead::Niladic(hir::ParserAtom::Atom(Atom::Field((ident, _)))) = part else {
+            continue
         };
         ret.push(ident);
     }

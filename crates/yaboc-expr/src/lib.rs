@@ -1,4 +1,5 @@
 #![allow(clippy::type_complexity)]
+mod fetch;
 mod idx_expression;
 mod part;
 mod shaped_data;
@@ -10,11 +11,12 @@ use std::marker::PhantomData;
 use std::ops::Index;
 use std::{fmt::Debug, num::NonZeroU32};
 
+pub use fetch::{FetchData, FetchExpr, FetchKindData};
 pub use idx_expression::{ExprBuilder, ExprDataBuilder, IdxExpression};
 pub use part::{ExprHead, ExprPart, TransposablePart};
-pub use shaped_data::ShapedData;
+pub use shaped_data::{IndexExpr, ShapedData};
 pub use smallvec::SmallVec;
-pub use zip::{DataExpr, DataRefExpr, ZipExpression};
+pub use zip::{DataExpr, DataRefExpr, ZipExpr};
 
 pub trait ExprKind: Clone + Hash + Eq + Debug {
     type NiladicOp: Clone + Hash + Eq + Debug;
@@ -42,6 +44,33 @@ impl<U, E> PartialEval<U, E> {
             PartialEval::Uneval(u) => PartialEval::Uneval(f(u)),
             PartialEval::Eval(e) => PartialEval::Eval(e),
         }
+    }
+}
+
+pub trait TakeRef {
+    type Ref<'a>
+    where
+        Self: 'a;
+    fn take_ref(&self) -> Self::Ref<'_>;
+}
+
+impl<T: TakeRef> TakeRef for std::sync::Arc<T> {
+    type Ref<'a> = T::Ref<'a>
+    where
+        Self: 'a;
+
+    fn take_ref(&self) -> Self::Ref<'_> {
+        (**self).take_ref()
+    }
+}
+
+impl<T: TakeRef> TakeRef for std::rc::Rc<T> {
+    type Ref<'a> = T::Ref<'a>
+    where
+        Self: 'a;
+
+    fn take_ref(&self) -> Self::Ref<'_> {
+        (**self).take_ref()
     }
 }
 
@@ -417,11 +446,28 @@ impl<'a, K: ExprKind> IdxExprRef<'a, K> {
     pub fn get(&self, idx: ExprIdx<K>) -> &ExprHead<K, ExprIdx<K>> {
         &self.0[idx]
     }
+
+    pub fn zip<D>(self, other: D) -> ZipExpr<Self, D> {
+        ZipExpr {
+            expr: self,
+            data: other,
+        }
+    }
 }
 
 impl<'a, K: ExprKind> Index<ExprIdx<K>> for IdxExprRef<'a, K> {
     type Output = ExprHead<K, ExprIdx<K>>;
     fn index(&self, idx: ExprIdx<K>) -> &Self::Output {
+        &self.0[idx]
+    }
+}
+
+impl<'a, K: ExprKind> IndexExpr<K> for IdxExprRef<'a, K> {
+    type Output<'b> = &'b ExprHead<K, ExprIdx<K>>
+    where
+        Self: 'b;
+
+    fn index_expr(&self, idx: ExprIdx<K>) -> Self::Output<'_> {
         &self.0[idx]
     }
 }

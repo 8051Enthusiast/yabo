@@ -2,11 +2,12 @@ use std::sync::Arc;
 
 use fxhash::FxHashMap;
 
-use yaboc_absint::{AbsIntCtx, AbstractExprInfo};
-use yaboc_ast::expr::ExprIter;
+use yaboc_absint::AbsIntCtx;
 use yaboc_base::{error::SilencedError, interner::DefId};
+use yaboc_expr::{IndexExpr, ShapedData};
 use yaboc_hir::{walk::ChildIter, ExprId, HirIdWrapper, HirNode, HirNodeKind, ParserDefId};
 use yaboc_mir::{Function, Place, PlaceOrigin, PlaceRef, StackRef, Strictness};
+use yaboc_resolve::expr::Resolved;
 use yaboc_types::{PrimitiveType, Type, TypeId};
 
 use super::{ILayout, IMonoLayout, Layout, LayoutError, MonoLayout};
@@ -37,10 +38,7 @@ impl<'a> FunctionSubstitute<'a> {
         let subst = Some(evaluated.typesubst.clone());
         let mut expr_map = FxHashMap::default();
         for (id, expr) in evaluated.expr_vals.iter() {
-            for r in ExprIter::new(expr) {
-                let AbstractExprInfo { val, idx, .. } = *r.0.root_data();
-                expr_map.insert((*id, idx), val);
-            }
+            expr_map.insert(*id, expr.clone());
         }
         let ret = evaluated.returned;
         let mut vals = evaluated.vals.clone();
@@ -93,10 +91,7 @@ impl<'a> FunctionSubstitute<'a> {
         let expr_id = pd.lookup(ctx.db)?.to;
         let mut expr_map = FxHashMap::default();
         if let Some(expr) = evaluated.expr_vals.as_ref() {
-            for r in ExprIter::new(expr) {
-                let AbstractExprInfo { val, idx, .. } = *r.0.root_data();
-                expr_map.insert((expr_id, idx), val);
-            }
+            expr_map.insert(expr_id, expr.clone());
         }
         let vals = FxHashMap::default();
         let sub_info = SubInfo {
@@ -168,18 +163,18 @@ struct SubInfo<T> {
     fun: T,
     arg: T,
     ret: T,
-    expr: FxHashMap<(ExprId, usize), T>,
+    expr: FxHashMap<ExprId, ShapedData<Vec<(T, TypeId)>, Resolved>>,
     vals: FxHashMap<DefId, T>,
     subst: Option<Arc<Vec<TypeId>>>,
 }
 
-impl<'a> SubInfo<ILayout<'a>> {
-    fn stack_layouts(&self, f: &Function) -> Vec<ILayout<'a>> {
+impl<'intern> SubInfo<ILayout<'intern>> {
+    fn stack_layouts(&self, f: &Function) -> Vec<ILayout<'intern>> {
         f.iter_stack()
             .map(|(_, place_origin)| match place_origin {
                 PlaceOrigin::Node(id) => self.vals[&id],
                 PlaceOrigin::Ambient(_, _) => self.arg,
-                PlaceOrigin::Expr(e, idx) => self.expr[&(e, idx)],
+                PlaceOrigin::Expr(e, idx) => self.expr[&e].index_expr(idx).0,
                 PlaceOrigin::Ret => self.ret,
                 PlaceOrigin::Arg => self.arg,
             })
@@ -189,11 +184,11 @@ impl<'a> SubInfo<ILayout<'a>> {
     fn place_layouts(
         &self,
         f: &Function,
-        stack_layouts: &mut [ILayout<'a>],
+        stack_layouts: &mut [ILayout<'intern>],
         strictness: &[Strictness],
-        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
-    ) -> Result<Vec<(ILayout<'a>, TypeId, Strictness)>, LayoutError> {
-        let mut place_layouts: Vec<(ILayout<'a>, TypeId, Strictness)> = Vec::new();
+        ctx: &mut AbsIntCtx<'intern, ILayout<'intern>>,
+    ) -> Result<Vec<(ILayout<'intern>, TypeId, Strictness)>, LayoutError> {
+        let mut place_layouts: Vec<(ILayout<'intern>, TypeId, Strictness)> = Vec::new();
         for (p, place_info) in f.iter_places() {
             let layout = match place_info.place {
                 Place::Captures => self.fun,

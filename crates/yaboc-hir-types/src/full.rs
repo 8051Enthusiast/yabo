@@ -5,6 +5,7 @@ use yaboc_base::{
     error::{SResult, Silencable, SilencedError},
     interner::{DefId, PathComponent},
 };
+use yaboc_expr::FetchKindData;
 use yaboc_hir::walk::ChildIter;
 use yaboc_types::inference::{InfTypeId, NominalInfHead, TypeResolver};
 
@@ -14,7 +15,16 @@ use super::*;
 pub struct ParserFullTypes {
     pub id: hir::ParserDefId,
     pub types: Arc<BTreeMap<DefId, TypeId>>,
-    pub exprs: Arc<BTreeMap<hir::ExprId, TypedExpression>>,
+    pub exprs: Arc<BTreeMap<hir::ExprId, ExprTypeData>>,
+}
+
+impl<DB: TyHirs + ?Sized> FetchKindData<FullTypeId, ExprId, DB> for Resolved {
+    type Err = SilencedError;
+    type Data = Arc<ExprTypeData>;
+
+    fn fetch_kind_data(db: &DB, id: ExprId) -> Result<Self::Data, Self::Err> {
+        db.parser_expr_at(id)
+    }
 }
 
 pub fn parser_full_types(
@@ -54,10 +64,16 @@ pub fn parser_type_at(db: &dyn TyHirs, id: DefId) -> SResult<TypeId> {
     res
 }
 
-pub fn parser_expr_at(db: &dyn TyHirs, id: hir::ExprId) -> SResult<TypedExpression> {
+pub fn parser_expr_at(db: &dyn TyHirs, id: hir::ExprId) -> SResult<Arc<ExprTypeData>> {
     let parent_pd = db.hir_parent_parserdef(id.0)?;
     let types = db.parser_full_types(parent_pd).silence()?;
-    types.exprs.get(&id).cloned().ok_or_else(SilencedError::new)
+    Ok(Arc::new(
+        types
+            .exprs
+            .get(&id)
+            .cloned()
+            .ok_or_else(SilencedError::new)?,
+    ))
 }
 
 impl<'a, 'intern> TypingContext<'a, 'intern, FullResolver<'a, 'intern>> {

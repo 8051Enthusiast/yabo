@@ -1,8 +1,8 @@
 use std::ops::Index;
 
 use crate::{
-    ExprHead, ExprIdx, ExprKind, ExprRef, Expression, IdxExprRef, InvariantLifetime, ShapedData,
-    ZipExpression,
+    shaped_data::IndexExpr, ExprHead, ExprIdx, ExprKind, ExprRef, Expression, IdxExprRef,
+    InvariantLifetime, ShapedData, TakeRef, ZipExpr,
 };
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -27,7 +27,7 @@ impl<K: ExprKind> IdxExpression<K> {
         ret
     }
 
-    pub fn as_ref(&self) -> IdxExprRef<K> {
+    pub fn asref(&self) -> IdxExprRef<K> {
         IdxExprRef(self)
     }
 
@@ -43,25 +43,27 @@ impl<K: ExprKind> IdxExpression<K> {
     }
     pub fn build_new_with_data<R, D>(
         f: impl for<'id> FnOnce(&mut ExprDataBuilder<'id, K, D>) -> R,
-    ) -> ZipExpression<Self, ShapedData<Vec<D>, K>> {
+    ) -> ZipExpr<Self, ShapedData<Vec<D>, K>> {
         let mut builder = ExprDataBuilder {
             heads: vec![],
             data: vec![],
             _marker: InvariantLifetime::default(),
         };
         f(&mut builder);
-        ZipExpression {
+        ZipExpr {
             expr: IdxExpression {
                 heads: builder.heads,
             },
             data: ShapedData::from_raw_data(builder.data),
         }
     }
+
     pub fn get(&self, idx: ExprIdx<K>) -> &ExprHead<K, ExprIdx<K>> {
         &self.heads[idx.as_usize()]
     }
-    pub fn root(&self) -> ExprIdx<K> {
-        ExprIdx::new_from_usize(self.heads.len() - 1)
+
+    pub fn zip<D>(self, data: ShapedData<D, K>) -> ZipExpr<Self, ShapedData<D, K>> {
+        ZipExpr { expr: self, data }
     }
 }
 
@@ -137,5 +139,22 @@ impl<'id, K: ExprKind, Data> ExprDataBuilder<'id, K, Data> {
         self.heads.push(head.map_inner(|expr| expr.0));
         self.data.push(data);
         ExprRef(ExprIdx::new_from_usize(idx), InvariantLifetime::default())
+    }
+}
+
+impl<K: ExprKind> TakeRef for IdxExpression<K> {
+    type Ref<'a> = IdxExprRef<'a, K> where Self: 'a;
+    fn take_ref(&self) -> Self::Ref<'_> {
+        IdxExprRef(self)
+    }
+}
+
+impl<K: ExprKind> IndexExpr<K> for IdxExpression<K> {
+    type Output<'a> = &'a ExprHead<K, ExprIdx<K>>
+    where
+        Self: 'a;
+
+    fn index_expr(&self, idx: ExprIdx<K>) -> Self::Output<'_> {
+        &self.heads[idx.as_usize()]
     }
 }

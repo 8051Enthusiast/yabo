@@ -3,7 +3,7 @@ mod represent;
 use std::sync::Arc;
 
 use hir::BlockId;
-use yaboc_ast::expr::{self, ExpressionHead, KindWithData};
+use yaboc_ast::expr;
 use yaboc_base::{
     dbpanic,
     error::{IsSilenced, Silencable},
@@ -11,10 +11,11 @@ use yaboc_base::{
     source::SpanIndex,
 };
 use yaboc_dependents::{Dependents, SubValueKind};
+use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, ShapedData, TakeRef};
 use yaboc_hir as hir;
 use yaboc_hir::HirIdWrapper;
-use yaboc_hir_types::NominalId;
-use yaboc_resolve::expr::ResolvedKind;
+use yaboc_hir_types::{FullTypeId, NominalId};
+use yaboc_resolve::expr::Resolved;
 use yaboc_types::{Type, TypeId};
 
 use fxhash::{FxHashMap, FxHashSet};
@@ -47,7 +48,8 @@ pub trait AbstractDomain<'a>: Sized + Clone + std::hash::Hash + Eq + std::fmt::D
     ) -> Result<Self, Self::Err>;
     fn eval_expr(
         ctx: &mut AbsIntCtx<'a, Self>,
-        expr: ExpressionHead<expr::KindWithData<ResolvedKind, TypeId>, (Self, TypeId)>,
+        expr: ExprHead<Resolved, &(Self, TypeId)>,
+        ty: TypeId,
     ) -> Result<Self, Self::Err>;
     fn typecast(self, ctx: &mut AbsIntCtx<'a, Self>, ty: TypeId)
         -> Result<(Self, bool), Self::Err>;
@@ -63,21 +65,20 @@ pub struct AbstractExprInfo<Dom> {
     pub ty: TypeId,
 }
 
-pub type AbstractExpression<Dom> =
-    expr::Expression<expr::KindWithData<ResolvedKind, AbstractExprInfo<Dom>>>;
+pub type AbstractData<Dom> = ShapedData<Vec<(Dom, TypeId)>, Resolved>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PdEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
     pub returned: Dom,
     pub from: Dom,
-    pub expr_vals: Option<AbstractExpression<Dom>>,
+    pub expr_vals: Option<AbstractData<Dom>>,
     pub typesubst: Arc<Vec<TypeId>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlockEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
     pub id: BlockId,
-    pub expr_vals: FxHashMap<hir::ExprId, AbstractExpression<Dom>>,
+    pub expr_vals: FxHashMap<hir::ExprId, AbstractData<Dom>>,
     pub from: Dom,
     pub vals: FxHashMap<DefId, Dom>,
     pub returned: Dom,
@@ -99,7 +100,7 @@ pub struct AbsIntCtx<'a, Dom: AbstractDomain<'a>> {
     new_pd: FxHashSet<(TypeId, Dom)>,
 
     block_vars: FxHashMap<DefId, Dom>,
-    block_expr_vals: FxHashMap<hir::ExprId, AbstractExpression<Dom>>,
+    block_expr_vals: FxHashMap<hir::ExprId, AbstractData<Dom>>,
     block_result: FxHashMap<(Dom, Dom), Option<BlockEvaluated<Dom>>>,
     active_block: Option<Dom>,
 
@@ -166,46 +167,30 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         ret
     }
 
-    fn eval_expr(
-        &mut self,
-        expr: expr::Expression<expr::KindWithData<ResolvedKind, (TypeId, SpanIndex)>>,
-    ) -> Result<AbstractExpression<Dom>, Dom::Err> {
-        let mut idx = 0;
-        expr.try_scan(&mut |expr| -> Result<AbstractExprInfo<Dom>, _> {
-            let ret_idx = idx;
-            idx += 1;
-            let owned_expr = expr.make_owned();
-            let span = owned_expr.root_data().1;
-            let ty = self.subst_type(owned_expr.root_data().0);
-            let subst_expr: ExpressionHead<KindWithData<_, TypeId>, _> =
-                owned_expr.map_data(|_| ty).map_inner(|x| (x.val, x.ty));
-            let ret = Dom::eval_expr(self, subst_expr)?;
-            let casted_ret = ret.typecast(self, ty).map(|x| x.0)?;
-            Ok(AbstractExprInfo {
-                val: casted_ret,
-                span,
-                idx: ret_idx,
-                ty,
-            })
-        })
+    fn eval_expr<'b, 'c>(
+        &'b mut self,
+        expr: impl Expression<Resolved, Part = (ExprHead<Resolved, ExprIdx<Resolved>>, &'c TypeId)>,
+    ) -> Result<AbstractData<Dom>, Dom::Err> {
+        expr.try_scan(
+            |(expr, ty): (ExprHead<_, _>, _)| -> Result<(Dom, TypeId), Dom::Err> {
+                let ty = self.subst_type(*ty);
+                let ret = Dom::eval_expr(self, expr, ty)?;
+                let casted_ret = ret.typecast(self, ty).map(|x| x.0)?;
+                Ok((casted_ret, ty))
+            },
+        )
     }
 
-    fn eval_expr_with_ambience(
-        &mut self,
-        expr: expr::Expression<expr::KindWithData<ResolvedKind, (TypeId, SpanIndex)>>,
+    fn eval_expr_with_ambience<'b, 'c>(
+        &'b mut self,
+        expr: impl Expression<Resolved, Part = (ExprHead<Resolved, ExprIdx<Resolved>>, &'c TypeId)>,
         from: (Dom, TypeId),
         result_type: TypeId,
-    ) -> Result<(Dom, AbstractExpression<Dom>), Dom::Err> {
+    ) -> Result<(Dom, AbstractData<Dom>), Dom::Err> {
         let res = self.eval_expr(expr)?;
-        let roo = res.0.root_data().clone();
-        let applied = ExpressionHead::new_dyadic(
-            expr::OpWithData {
-                inner: expr::ValBinOp::ParserApply,
-                data: result_type,
-            },
-            [from, (roo.val, roo.ty)],
-        );
-        let ret_val = Dom::eval_expr(self, applied)?;
+        let root = res.root_data().clone();
+        let applied = ExprHead::new_dyadic(expr::ValBinOp::ParserApply, [&from, &root]);
+        let ret_val = Dom::eval_expr(self, applied, result_type)?;
         let casted_ret = ret_val.typecast(self, result_type)?.0;
         Ok((casted_ret, res))
     }
@@ -217,10 +202,10 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         from_ty: TypeId,
     ) -> Result<PdEvaluated<Dom>, Dom::Err> {
         let from = val.get_arg(self, Arg::From)?;
-        let expr = self.db.parser_expr_at(parserdef.to)?;
+        let expr = Resolved::expr_with_data::<FullTypeId>(self.db, parserdef.to)?;
         let result_type = self.subst_type(self.db.parser_returns(parserdef.id)?.deref);
         let (ret_val, expr_vals) =
-            self.eval_expr_with_ambience(expr, (from.clone(), from_ty), result_type)?;
+            self.eval_expr_with_ambience(expr.take_ref(), (from.clone(), from_ty), result_type)?;
         let ret = PdEvaluated {
             returned: ret_val,
             from,
@@ -365,18 +350,22 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             let result_ty = self.subst_type(self.db.parser_type_at(subvalue.id)?);
             let val = match self.db.hir_node(subvalue.id)? {
                 hir::HirNode::Let(statement) => {
-                    let expr = self.db.parser_expr_at(statement.expr)?;
-                    let res_expr = self.eval_expr(expr)?;
-                    let res = res_expr.0.root_data().val.clone();
-                    self.set_block_var(statement.expr.0, res.clone());
+                    let expr = Resolved::expr_with_data::<FullTypeId>(self.db, statement.expr)?;
+                    let res_expr = self.eval_expr(expr.take_ref())?;
+                    let res = res_expr.root_data();
+                    self.set_block_var(statement.expr.0, res.0.clone());
+                    let ret = res.0.clone().typecast(self, result_ty)?.0;
                     self.block_expr_vals.insert(statement.expr, res_expr);
-                    res.typecast(self, result_ty)?.0
+                    ret
                 }
                 hir::HirNode::Parse(statement) => {
-                    let expr = self.db.parser_expr_at(statement.expr)?;
-                    let (res, res_expr) =
-                        self.eval_expr_with_ambience(expr, (from.clone(), arg_type), result_ty)?;
-                    self.set_block_var(statement.expr.0, res_expr.0.root_data().val.clone());
+                    let expr = Resolved::expr_with_data::<FullTypeId>(self.db, statement.expr)?;
+                    let (res, res_expr) = self.eval_expr_with_ambience(
+                        expr.take_ref(),
+                        (from.clone(), arg_type),
+                        result_ty,
+                    )?;
+                    self.set_block_var(statement.expr.0, res_expr.root_data().0.clone());
                     self.block_expr_vals.insert(statement.expr, res_expr);
                     res
                 }

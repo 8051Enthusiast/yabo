@@ -8,16 +8,16 @@ use std::{
 };
 
 use enumflags2::{bitflags, BitFlags};
-use yaboc_ast::expr::{ExprIter, ExpressionHead, OpWithData};
 use yaboc_base::{
     dbpanic,
     error::{SResult, SilencedError},
     error_type,
     interner::{DefId, FieldName},
 };
+use yaboc_expr::{ExprHead, Expression, FetchExpr, TakeRef};
 use yaboc_hir::{self as hir, HirIdWrapper, ParserAtom, ParserPredecessor};
 use yaboc_hir_types::TyHirs;
-use yaboc_resolve::expr::ResolvedAtom;
+use yaboc_resolve::expr::{Resolved, ResolvedAtom};
 
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 
@@ -126,12 +126,9 @@ fn val_refs(
         }
         hir::HirNode::Expr(expr) => {
             let mut ret = FxHashSet::default();
-            for e in ExprIter::new(&expr.expr) {
-                match e.0 {
-                    ExpressionHead::Niladic(OpWithData {
-                        inner: ParserAtom::Block(b),
-                        ..
-                    }) => ret.extend(
+            for (e, _) in expr.expr.asref().iter_parts() {
+                match e {
+                    ExprHead::Niladic(ParserAtom::Block(b)) => ret.extend(
                         db.captures(b)
                             .iter()
                             .copied()
@@ -141,12 +138,9 @@ fn val_refs(
                     _ => continue,
                 };
             }
-            let rexpr = db.resolve_expr(expr.id)?;
-            ret.extend(ExprIter::new(&rexpr).filter_map(|x| match x.0 {
-                ExpressionHead::Niladic(OpWithData {
-                    inner: ResolvedAtom::Val(v, _),
-                    ..
-                }) => Some((SubValue::new_val(v), true)),
+            let rexpr = Resolved::fetch_expr(db, expr.id)?;
+            ret.extend(rexpr.take_ref().iter_parts().filter_map(|x| match x {
+                ExprHead::Niladic(ResolvedAtom::Val(v, _)) => Some((SubValue::new_val(v), true)),
                 _ => None,
             }));
             Ok(ret)

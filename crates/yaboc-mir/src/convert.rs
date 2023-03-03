@@ -6,25 +6,25 @@ use std::{
 use fxhash::{FxHashMap, FxHashSet};
 
 use hir::{HirConstraint, HirConstraintId, HirNodeKind};
-use yaboc_ast::expr::{
-    self, ConstraintBinOp, ConstraintUnOp, Dyadic, ExprIter, Expression, ExpressionHead,
-    KindWithData, Monadic, ValBinOp, ValUnOp, Variadic, WiggleKind,
-};
+use yaboc_ast::expr::{ConstraintBinOp, ConstraintUnOp, ValBinOp, ValUnOp, ValVarOp, WiggleKind};
 use yaboc_base::{
     dbpanic,
     error::SResult,
     interner::{DefId, FieldName, PathComponent},
-    source::SpanIndex,
 };
 use yaboc_dependents::{
     BlockSerialization, NeededBy, RequirementMatrix, RequirementSet, SubValue, SubValueKind,
 };
-use yaboc_expr::{ExprHead, ExprIdx, IdxExpression};
+use yaboc_expr::{
+    ExprHead, ExprIdx, Expression, FetchExpr, FetchKindData, IdxExpression, IndexExpr, TakeRef,
+    ZipExpr,
+};
 use yaboc_hir::{
     self as hir, variable_set::VarStatus, BlockId, ChoiceId, ContextId, ExprId, HirIdWrapper,
     HirNode, ParserDefId, ParserPredecessor,
 };
-use yaboc_resolve::expr::{ResolvedAtom, ResolvedKind};
+use yaboc_hir_types::FullTypeId;
+use yaboc_resolve::expr::{Resolved, ResolvedAtom};
 use yaboc_types::{PrimitiveType, Type, TypeId};
 
 use crate::{CallMeta, InsRef};
@@ -34,7 +34,12 @@ use super::{
     Place, PlaceInfo, PlaceOrigin, PlaceRef, ReturnStatus, Val,
 };
 
-pub type TypedIndexedExpr = Expression<KindWithData<ResolvedKind, (TypeId, SpanIndex, usize)>>;
+// anyone wanna play some type tetris?
+type IndexTypeExpr = ZipExpr<
+    Arc<IdxExpression<Resolved>>,
+    <Resolved as FetchKindData<(ExprIdx<Resolved>, FullTypeId), ExprId, dyn Mirs>>::Data,
+>;
+
 pub struct ConvertCtx<'a> {
     db: &'a dyn Mirs,
     int: TypeId,
@@ -418,13 +423,23 @@ impl<'a> ConvertCtx<'a> {
     fn convert_expr(
         &mut self,
         expr_id: ExprId,
-        expr: &TypedIndexedExpr,
+        expr: &IndexTypeExpr,
         place: Option<PlaceRef>,
     ) -> SResult<PlaceRef> {
-        let (ty, _, idx) = *expr.0.root_data();
+        self.convert_expr_impl(expr_id, expr, expr.expr.root(), place)
+    }
+
+    fn convert_expr_impl(
+        &mut self,
+        expr_id: ExprId,
+        expr: &IndexTypeExpr,
+        idx: ExprIdx<Resolved>,
+        place: Option<PlaceRef>,
+    ) -> SResult<PlaceRef> {
+        let (idx, &ty) = expr.data.index_expr(idx);
         let origin = PlaceOrigin::Expr(expr_id, idx);
-        Ok(match &expr.0 {
-            ExpressionHead::Niladic(n) => match &n.inner {
+        Ok(match expr.expr.index_expr(idx) {
+            ExprHead::Niladic(n) => match n {
                 ResolvedAtom::Val(val, backtracks) => self
                     .load_var(*val, ty, place, origin, !*backtracks)
                     .expect("Invalid refernce to variable"),
@@ -443,13 +458,14 @@ impl<'a> ConvertCtx<'a> {
                     self.create_block_parser(*block, ty, place, origin)?
                 }
             },
-            ExpressionHead::Monadic(Monadic { op, inner }) => {
-                let inner_ty = inner.0.root_data().0;
-                let inner_origin = PlaceOrigin::Expr(expr_id, inner.0.root_data().2);
-                let recurse = |ctx: &mut Self, plc| ctx.convert_expr(expr_id, inner, plc);
-                match &op.inner {
+            ExprHead::Monadic(op, inner) => {
+                let (inner_idx, &inner_ty) = expr.data.index_expr(*inner);
+                let inner_origin = PlaceOrigin::Expr(expr_id, inner_idx);
+                let recurse =
+                    |ctx: &mut Self, plc| ctx.convert_expr_impl(expr_id, expr, *inner, plc);
+                match &op {
                     ValUnOp::Not | ValUnOp::Neg => {
-                        let op: IntUnOp = (&op.inner).try_into().unwrap();
+                        let op: IntUnOp = op.try_into().unwrap();
                         let inner = self.copy_if_different_levels(
                             self.int,
                             inner_ty,
@@ -519,17 +535,16 @@ impl<'a> ConvertCtx<'a> {
                     }
                 }
             }
-            ExpressionHead::Dyadic(Dyadic {
-                op,
-                inner: [left, right],
-            }) => {
-                let left_ty = left.0.root_data().0;
-                let right_ty = right.0.root_data().0;
-                let lrecurse = |ctx: &mut Self, plc| ctx.convert_expr(expr_id, left, plc);
-                let rrecurse = |ctx: &mut Self, plc| ctx.convert_expr(expr_id, right, plc);
-                let lorigin = PlaceOrigin::Expr(expr_id, left.0.root_data().2);
-                let rorigin = PlaceOrigin::Expr(expr_id, right.0.root_data().2);
-                match &op.inner {
+            ExprHead::Dyadic(op, [left, right]) => {
+                let (left_idx, &left_ty) = expr.data.index_expr(*left);
+                let (right_idx, &right_ty) = expr.data.index_expr(*right);
+                let lrecurse =
+                    |ctx: &mut Self, plc| ctx.convert_expr_impl(expr_id, expr, *left, plc);
+                let rrecurse =
+                    |ctx: &mut Self, plc| ctx.convert_expr_impl(expr_id, expr, *right, plc);
+                let lorigin = PlaceOrigin::Expr(expr_id, left_idx);
+                let rorigin = PlaceOrigin::Expr(expr_id, right_idx);
+                match &op {
                     ValBinOp::And
                     | ValBinOp::Xor
                     | ValBinOp::Or
@@ -540,7 +555,7 @@ impl<'a> ConvertCtx<'a> {
                     | ValBinOp::Div
                     | ValBinOp::Modulo
                     | ValBinOp::Mul => {
-                        let op: IntBinOp = (&op.inner).try_into().unwrap();
+                        let op: IntBinOp = op.try_into().unwrap();
                         let left = self
                             .copy_if_different_levels(self.int, left_ty, None, lorigin, lrecurse)?;
                         let right = self.copy_if_different_levels(
@@ -557,7 +572,7 @@ impl<'a> ConvertCtx<'a> {
                     | ValBinOp::Greater
                     | ValBinOp::Uneq
                     | ValBinOp::Equals => {
-                        let op: Comp = (&op.inner).try_into().unwrap();
+                        let op: Comp = op.try_into().unwrap();
                         let left = self
                             .copy_if_different_levels(self.int, left_ty, None, lorigin, lrecurse)?;
                         let right = self.copy_if_different_levels(
@@ -617,10 +632,10 @@ impl<'a> ConvertCtx<'a> {
                     ValBinOp::Compose => unreachable!(),
                 }
             }
-            ExpressionHead::Variadic(Variadic { inner, .. }) => {
-                let fun_ty = inner[0].0.root_data().0;
+            ExprHead::Variadic(ValVarOp::Call, inner) => {
+                let (fun_idx, &fun_ty) = expr.data.index_expr(inner[0]);
                 let fun_ldt = self.db.least_deref_type(fun_ty)?;
-                let fun_origin = PlaceOrigin::Expr(expr_id, inner[0].0.root_data().2);
+                let fun_origin = PlaceOrigin::Expr(expr_id, fun_idx);
                 let fun_arg_num =
                     if let Type::FunctionArg(_, args) = self.db.lookup_intern_type(fun_ldt) {
                         args.len()
@@ -632,12 +647,12 @@ impl<'a> ConvertCtx<'a> {
                     fun_ty,
                     None,
                     fun_origin,
-                    |ctx, plc| ctx.convert_expr(expr_id, &inner[0], plc),
+                    |ctx, plc| ctx.convert_expr_impl(expr_id, expr, inner[0], plc),
                 )?;
                 let place_ref = self.unwrap_or_stack(place, ty, origin);
                 let inner_results = inner[1..]
                     .iter()
-                    .map(|inner| self.convert_expr(expr_id, inner, None))
+                    .map(|inner| self.convert_expr_impl(expr_id, expr, *inner, None))
                     .collect::<Result<Vec<_>, _>>()?;
                 // fun_arg_num: 6           (available arguments)
                 // inner_results.len(): 4   (given arguments)
@@ -986,12 +1001,8 @@ impl<'a> ConvertCtx<'a> {
                 if let Some(ctx) = e.parent_context {
                     self.change_context(ctx)
                 }
-                let mut idx: usize = 0;
-                let resolved_expr = self.db.parser_expr_at(e.id)?.map_mut(&mut |f| {
-                    let res = (f.0, f.1, idx);
-                    idx += 1;
-                    res
-                });
+                let resolved_expr =
+                    Resolved::expr_with_data::<(ExprIdx<Resolved>, FullTypeId)>(self.db, e.id)?;
                 let place = self.val_place_at_def(e.id.0).unwrap();
                 self.convert_expr(e.id, &resolved_expr, Some(place))?;
             }
@@ -1106,7 +1117,7 @@ impl<'a> ConvertCtx<'a> {
                     | HirNode::Parse(_)
                     | HirNode::ChoiceIndirection(_)
                     | HirNode::ArgDef(_) => db.parser_type_at(val.id)?,
-                    HirNode::Expr(e) => db.parser_expr_at(e.id)?.0.root_data().0,
+                    HirNode::Expr(e) => *db.parser_expr_at(e.id)?.root_data(),
                     HirNode::Choice(_) => continue,
                     HirNode::Block(_) => continue,
                     HirNode::TExpr(_)
@@ -1136,17 +1147,14 @@ impl<'a> ConvertCtx<'a> {
         order: &BlockSerialization,
     ) -> SResult<Self> {
         let block = id.lookup(db)?;
-        let block_expr = db.parser_expr_at(block.enclosing_expr)?;
-        let block_ty = ExprIter::new(&block_expr)
-            .find_map(|x| match &x.0 {
-                ExpressionHead::Niladic(expr::OpWithData {
-                    inner: ResolvedAtom::Block(b),
-                    data,
-                }) if *b == id => Some(*data),
+        let block_ty = Resolved::expr_with_data::<FullTypeId>(db, block.enclosing_expr)?
+            .take_ref()
+            .iter_parts()
+            .find_map(|(x, ty)| match &x {
+                ExprHead::Niladic(ResolvedAtom::Block(b)) if *b == id => Some(*ty),
                 _ => None,
             })
-            .expect("could not find block within enclosing expression")
-            .0;
+            .expect("could not find block within enclosing expression");
         let Type::ParserArg { result, arg } = db.lookup_intern_type(block_ty) else {
             dbpanic!(db, "should have been a parser type, was {}", &block_ty)
         };
@@ -1194,17 +1202,10 @@ impl<'a> ConvertCtx<'a> {
         let mut places: FxHashMap<SubValue, PlaceRef> = FxHashMap::default();
         let pd = id.lookup(db)?;
         let expr = db.parser_expr_at(pd.to)?;
-        let expr_ty = expr.0.root_data().0;
-        let mut idx = 0;
-        let idx = expr.fold(&mut |_| {
-            let i = idx;
-            idx += 1;
-            i
-        });
-        let expr_place = Place::Stack(f.new_stack_ref(PlaceOrigin::Expr(pd.to, idx)));
+        let expr_place = Place::Stack(f.new_stack_ref(PlaceOrigin::Expr(pd.to, expr.root())));
         let expr_place_ref = f.add_place(PlaceInfo {
             place: expr_place,
-            ty: expr_ty,
+            ty: *expr.root_data(),
             remove_bt: false,
         });
         places.insert(SubValue::new_val(pd.to.0), expr_place_ref);

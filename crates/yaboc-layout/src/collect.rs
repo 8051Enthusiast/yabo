@@ -4,13 +4,15 @@ use std::{collections::hash_map::Entry, sync::Arc};
 use fxhash::{FxHashMap, FxHashSet};
 use petgraph::unionfind::UnionFind;
 
-use yaboc_absint::{AbstractDomain, AbstractExpression, Arg, BlockEvaluated};
-use yaboc_ast::expr::{Dyadic, ExprIter, ExpressionHead, OpWithData, ValBinOp, ValVarOp, Variadic};
+use yaboc_absint::{AbstractDomain, Arg, BlockEvaluated};
+use yaboc_ast::expr::{ValBinOp, ValVarOp};
 use yaboc_base::error::{SResult, Silencable};
 use yaboc_dependents::{NeededBy, RequirementSet};
+use yaboc_expr::{DataRefExpr, ExprHead, Expression, FetchExpr, IndexExpr, TakeRef};
 use yaboc_hir::{HirIdWrapper, HirNode, ParserDefId};
 use yaboc_hir_types::DerefLevel;
 use yaboc_mir::CallMeta;
+use yaboc_resolve::expr::Resolved;
 use yaboc_types::{PrimitiveType, Type, TypeId};
 
 use crate::prop::SizeAlign;
@@ -209,34 +211,25 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         Ok(())
     }
 
-    fn collect_expr(&mut self, expr: &AbstractExpression<ILayout<'a>>) -> Result<(), LayoutError> {
-        for part in ExprIter::new(expr) {
-            let dom = part.0.root_data().val;
-            self.register_layouts(dom);
-            match &part.0 {
-                ExpressionHead::Dyadic(Dyadic {
-                    op:
-                        OpWithData {
-                            inner: ValBinOp::ParserApply,
-                            ..
-                        },
-                    inner: [left, right],
-                }) => self.register_parse(
-                    left.0.root_data().val,
-                    right.0.root_data().val,
+    fn collect_expr(
+        &mut self,
+        expr: DataRefExpr<Resolved, (ILayout<'a>, TypeId)>,
+    ) -> Result<(), LayoutError> {
+        for (part, (dom, _)) in expr.clone().iter_parts() {
+            self.register_layouts(*dom);
+            match &part {
+                ExprHead::Dyadic(ValBinOp::ParserApply, [left, right]) => self.register_parse(
+                    expr.data.index_expr(*left).0,
+                    expr.data.index_expr(*right).0,
                     apply_req(),
                 ),
-                ExpressionHead::Variadic(Variadic {
-                    op:
-                        OpWithData {
-                            inner: ValVarOp::Call,
-                            ..
-                        },
-                    inner: args,
-                }) => self.register_funcall(
-                    args[0].0.root_data().val,
-                    args[1..].iter().map(|x| x.0.root_data().val).collect(),
-                    args[0].0.root_data().ty,
+                ExprHead::Variadic(ValVarOp::Call, args) => self.register_funcall(
+                    expr.data.index_expr(args[0]).0,
+                    args[1..]
+                        .iter()
+                        .map(|x| expr.data.index_expr(*x).0)
+                        .collect(),
+                    expr.data.index_expr(args[0]).1,
                 )?,
                 _ => (),
             }
@@ -249,15 +242,16 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         block: &BlockEvaluated<ILayout<'a>>,
         info: RequirementSet,
     ) -> Result<(), LayoutError> {
-        for expr in block.expr_vals.values() {
-            self.collect_expr(expr)?;
+        for (id, expr) in block.expr_vals.iter() {
+            let inner_expr = Resolved::fetch_expr(self.ctx.db, *id)?;
+            self.collect_expr(inner_expr.take_ref().zip(expr.take_ref()))?;
         }
         let bs = self.ctx.db.block_serialization(block.id).silence()?;
         let requirements = bs.parse_requirements;
         let tails = bs.tails;
         for (&node, &value) in block.vals.iter() {
             if let HirNode::Parse(p) = self.ctx.db.hir_node(node)? {
-                let expr_val = block.expr_vals[&p.expr].0.root_data().val;
+                let expr_val = block.expr_vals[&p.expr].root_data().0;
                 let parse_req =
                     CallMeta::new(requirements[&p.id.0] * info, tails.contains(&p.id.0));
                 self.register_parse(block.from, expr_val, parse_req);
@@ -273,7 +267,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         parser: IMonoLayout<'a>,
         mut info: RequirementSet,
     ) -> Result<(), LayoutError> {
-        let (MonoLayout::NominalParser(id, thunk_args, bt), ty) = parser.mono_layout() else {
+        let (MonoLayout::NominalParser(pd, thunk_args, bt), ty) = parser.mono_layout() else {
             panic!("unexpected non-nominal-parser layout");
         };
         let Type::ParserArg { arg: arg_ty, .. } = self.ctx.db.lookup_intern_type(ty) else {
@@ -283,22 +277,23 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             info &= !NeededBy::Backtrack
         }
         let mut info = CallMeta::new(info, true);
-        let thunky = id.lookup(self.ctx.db).unwrap().thunky;
+        let parserdef = pd.lookup(self.ctx.db).unwrap();
         let mut args = FxHashMap::default();
         let thunk_ty = self.ctx.db.parser_result(ty).unwrap();
         args.insert(Arg::From, (arg, arg_ty));
-        let arg_ids = id.lookup(self.ctx.db).unwrap().args.unwrap_or_default();
+        let arg_ids = parserdef.args.unwrap_or_default();
         for (id, arg) in arg_ids.iter().zip(thunk_args.iter()) {
             args.insert(Arg::Named(id.0), *arg);
         }
-        let thunk = ILayout::make_thunk(self.ctx, *id, thunk_ty, &args).unwrap();
-        if thunky {
+        let thunk = ILayout::make_thunk(self.ctx, *pd, thunk_ty, &args).unwrap();
+        if parserdef.thunky {
             self.register_layouts(thunk);
         }
         if let Some(pd_eval) = self.ctx.pd_result()[&thunk].clone() {
             if let Some(val) = &pd_eval.expr_vals {
-                self.collect_expr(val)?;
-                let root = val.0.root_data().val;
+                let expr = Resolved::fetch_expr(self.ctx.db, parserdef.to).unwrap();
+                self.collect_expr(expr.take_ref().zip(val.take_ref()))?;
+                let root = val.root_data().0;
                 self.register_parse(pd_eval.from, root, info);
                 // the branch taken after the thunk is copied as-is and no value is needed
                 info.req &= !NeededBy::Val;

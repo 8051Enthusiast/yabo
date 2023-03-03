@@ -12,18 +12,17 @@ use fxhash::{FxHashMap, FxHashSet};
 
 use hir::HirConstraintId;
 use yaboc_absint::{AbsInt, AbsIntCtx, AbstractDomain, Arg};
-use yaboc_ast::expr::{
-    self, ExpressionHead, OpWithData, ValBinOp, ValUnOp, ValVarOp, Variadic, WiggleKind,
-};
+use yaboc_ast::expr::{ValBinOp, ValUnOp, ValVarOp, WiggleKind};
 use yaboc_ast::ArrayKind;
 use yaboc_base::dbpanic;
 use yaboc_base::error::{IsSilenced, SResult, SilencedError};
 use yaboc_base::interner::{DefId, FieldName, Regex};
 use yaboc_base::low_effort_interner::{Interner, Uniq};
+use yaboc_expr::ExprHead;
 use yaboc_hir::{self as hir, HirIdWrapper};
 use yaboc_hir_types::{DerefLevel, NominalId};
 use yaboc_mir::Mirs;
-use yaboc_resolve::expr::{ResolvedAtom, ResolvedKind};
+use yaboc_resolve::expr::{Resolved, ResolvedAtom};
 use yaboc_types::{PrimitiveType, Type, TypeId};
 
 use self::prop::{PSize, SizeAlign, TargetSized, Zst};
@@ -437,7 +436,7 @@ impl<'a> ILayout<'a> {
     pub fn apply_fun(
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
-        args: &[(ILayout<'a>, TypeId)],
+        args: impl Iterator<Item = (ILayout<'a>, TypeId)> + Clone,
     ) -> Result<ILayout<'a>, LayoutError> {
         self.try_map(ctx, |layout, ctx| {
             let (result_type, arg_types) = match ctx.db.lookup_intern_type(layout.mono_layout().1) {
@@ -446,7 +445,7 @@ impl<'a> ILayout<'a> {
             };
             let typecast_args = arg_types
                 .iter()
-                .zip(args.iter())
+                .zip(args.clone())
                 .map(|(ty, (arg, _))| arg.typecast(ctx, *ty).map(|x| (x.0, *ty)))
                 .collect::<Result<Vec<_>, _>>()?;
             match layout.mono_layout().0 {
@@ -864,12 +863,12 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
 
     fn eval_expr(
         ctx: &mut AbsIntCtx<'a, Self>,
-        expr: expr::ExpressionHead<expr::KindWithData<ResolvedKind, TypeId>, (ILayout<'a>, TypeId)>,
+        expr: ExprHead<Resolved, &(Self, TypeId)>,
+        ty: TypeId,
     ) -> Result<Self, Self::Err> {
-        let ret_type = *expr.root_data();
-        let mut make_layout = |x| ctx.dcx.intern(Layout::Mono(x, ret_type));
+        let mut make_layout = |x| ctx.dcx.intern(Layout::Mono(x, ty));
         Ok(match expr {
-            ExpressionHead::Niladic(n) => match n.inner {
+            ExprHead::Niladic(n) => match n {
                 ResolvedAtom::Char(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Char)),
                 ResolvedAtom::Number(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Int)),
                 ResolvedAtom::Bool(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Bit)),
@@ -897,7 +896,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                     }
                     let res = ctx.dcx.intern(Layout::Mono(
                         MonoLayout::BlockParser(block_id, captures, true),
-                        ret_type,
+                        ty,
                     ));
                     res
                 }
@@ -911,29 +910,29 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                     capture_value.with_backtrack_status(ctx, bt)
                 }
             },
-            ExpressionHead::Monadic(m) => match m.op.inner {
+            ExprHead::Monadic(op, inner) => match op {
                 ValUnOp::Not | ValUnOp::Neg => {
                     make_layout(MonoLayout::Primitive(PrimitiveType::Int))
                 }
                 ValUnOp::Wiggle(cid, kind) => {
-                    let ldt_parser_ty = ctx.db.least_deref_type(m.inner.1)?;
+                    let ldt_parser_ty = ctx.db.least_deref_type(inner.1)?;
                     let parser_type = ctx.db.lookup_intern_type(ldt_parser_ty);
                     if matches!(parser_type, Type::ParserArg { .. }) {
-                        let casted_inner = m.inner.0.typecast(ctx, ldt_parser_ty)?.0;
+                        let casted_inner = inner.0.typecast(ctx, ldt_parser_ty)?.0;
                         ctx.dcx.intern(Layout::Mono(
                             MonoLayout::IfParser(casted_inner, cid, kind),
-                            ret_type,
+                            ty,
                         ))
                     } else {
-                        m.inner.0
+                        inner.0
                     }
                 }
-                ValUnOp::Dot(a, _) => m.inner.0.access_field(ctx, a)?,
+                ValUnOp::Dot(a, _) => inner.0.access_field(ctx, a)?,
             },
-            ExpressionHead::Dyadic(d) => match d.op.inner {
-                ValBinOp::ParserApply => d.inner[1].0.apply_arg(ctx, d.inner[0].0)?,
+            ExprHead::Dyadic(op, [lhs, rhs]) => match op {
+                ValBinOp::ParserApply => rhs.0.apply_arg(ctx, lhs.0)?,
                 ValBinOp::Compose => unreachable!(),
-                ValBinOp::Else => d.inner[0].0.join(ctx, d.inner[1].0)?.0,
+                ValBinOp::Else => lhs.0.join(ctx, rhs.0)?.0,
                 ValBinOp::LesserEq
                 | ValBinOp::Lesser
                 | ValBinOp::GreaterEq
@@ -951,14 +950,9 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 | ValBinOp::Modulo
                 | ValBinOp::Mul => make_layout(MonoLayout::Primitive(PrimitiveType::Int)),
             },
-            ExpressionHead::Variadic(Variadic {
-                op:
-                    OpWithData {
-                        inner: ValVarOp::Call,
-                        ..
-                    },
-                inner,
-            }) => inner[0].0.apply_fun(ctx, &inner[1..])?,
+            ExprHead::Variadic(ValVarOp::Call, inner) => inner[0]
+                .0
+                .apply_fun(ctx, inner[1..].iter().copied().copied())?,
         })
     }
 

@@ -1,6 +1,6 @@
 pub mod diagnostic;
 
-use std::{collections::HashSet, error::Error, sync::Arc};
+use std::{collections::HashSet, convert::Infallible, error::Error, sync::Arc};
 
 pub type SResult<T> = Result<T, SilencedError>;
 
@@ -18,6 +18,12 @@ pub struct SilencedError(());
 impl SilencedError {
     pub fn new() -> Self {
         Self::default()
+    }
+}
+
+impl From<Infallible> for SilencedError {
+    fn from(never: Infallible) -> Self {
+        match never {}
     }
 }
 

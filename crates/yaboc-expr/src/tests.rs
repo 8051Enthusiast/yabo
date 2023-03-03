@@ -54,7 +54,7 @@ fn num<'id>(
     let mut digits = 0;
     let mut start = None;
     for (i, c) in &mut *chars {
-        if c.is_digit(10) {
+        if c.is_ascii_digit() {
             start = start.or(Some(i));
             digits += 1;
             num = num * 10 + c.to_digit(10).unwrap() as i64;
@@ -62,14 +62,12 @@ fn num<'id>(
             break;
         }
     }
-    if let Some(start) = start {
-        Some(builder.add_expr(
+    start.map(|start| {
+        builder.add_expr(
             ExprHead::new_niladic(PartialEval::Eval(num)),
             start..start + digits,
-        ))
-    } else {
-        None
-    }
+        )
+    })
 }
 
 fn atom<'id>(
@@ -194,7 +192,7 @@ fn eval(expr: DataRefExpr<Bivariate, Range<usize>>, x: i64, y: i64) -> Result<i6
 }
 
 fn eval_y(expr: &IdxExpression<Bivariate>, y: i64) -> IdxExpression<Univariate> {
-    expr.as_ref().partial_eval::<_, Univariate>(
+    expr.asref().partial_eval::<_, Univariate>(
         |n, _| PartialEval::Eval(n),
         |_, head| {
             PartialEval::Eval(match head {
@@ -230,7 +228,7 @@ fn as_string<K>(expr: &IdxExpression<K>, mut f: impl FnMut(K::NiladicOp) -> Stri
 where
     K: ExprKind<MonadicOp = UnOp, DyadicOp = BinOp, VariadicOp = Nothing>,
 {
-    expr.as_ref().fold(|head| match head {
+    expr.asref().fold(|head| match head {
         ExprHead::Niladic(n) => f(n),
         ExprHead::Monadic(UnOp::Neg, inner) => {
             format!("-{}", inner)
@@ -249,14 +247,14 @@ where
 #[test]
 fn simple_poly() {
     let expr = parse("3 * x + 2 * -y");
-    assert_eq!(eval(expr.as_ref(), 1, 2), Ok(-1));
-    assert_eq!(eval(expr.as_ref(), 2, 3), Ok(0));
+    assert_eq!(eval(expr.take_ref(), 1, 2), Ok(-1));
+    assert_eq!(eval(expr.take_ref(), 2, 3), Ok(0));
 }
 
 #[test]
 fn overflowing_poly() {
     let expr = parse("x * x * x * y");
-    assert_eq!(eval(expr.as_ref(), 100000, 50000), Err(10..11))
+    assert_eq!(eval(expr.take_ref(), 100000, 50000), Err(10..11))
 }
 
 #[test]

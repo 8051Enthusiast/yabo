@@ -48,7 +48,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
             let HirNode::Parse(p) = self.ctx.db.hir_node(*id)? else {
                 continue;
             };
-            let expr_result = call_result.expr_vals[&p.expr].0.root_data().val;
+            let expr_result = call_result.expr_vals[&p.expr].root_data().0;
             for inner_fun in &expr_result {
                 let inner_site = CallSite(site.0, inner_fun);
                 if already_called.insert(inner_site) {
@@ -66,7 +66,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
     ) -> SResult<()> {
         let nom = site.1.inner().apply_arg(self.ctx, site.0).unwrap();
         let res = self.ctx.pd_result()[&nom].as_ref().unwrap().clone();
-        for inner_fun in &res.expr_vals.unwrap().0.root_data().val {
+        for inner_fun in &res.expr_vals.unwrap().root_data().0 {
             f(self, CallSite(site.0, inner_fun))?;
         }
         Ok(())

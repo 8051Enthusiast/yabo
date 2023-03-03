@@ -1,13 +1,15 @@
 use std::sync::Arc;
 
 use crate::refs;
-use hir::HirConstraintId;
-use yaboc_ast::expr::{
-    Atom, Expression, ExpressionHead, KindWithData, OpWithData, ValBinOp, ValUnOp, ValVarOp,
-};
-use yaboc_ast::expr::{Dyadic, ExpressionKind};
-use yaboc_base::interner::{DefId, Regex};
+use hir::{ExprId, HirConstraintId};
+use yaboc_ast::expr::{Atom, ValBinOp, ValUnOp, ValVarOp};
+use yaboc_base::error::SilencedError;
+use yaboc_base::interner::{DefId, FieldName, Regex};
 use yaboc_base::source::SpanIndex;
+use yaboc_expr::{
+    DataRefExpr, ExprHead, ExprKind, Expression, FetchExpr, FetchKindData, IdxExpression,
+    IndexExpr, PartialEval, ReidxExpr, ShapedData, SmallVec, TakeRef, ZipExpr,
+};
 use yaboc_hir as hir;
 use yaboc_hir::HirIdWrapper;
 
@@ -29,142 +31,144 @@ pub enum ResolvedAtom {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ResolvedKind;
+pub struct Resolved;
 
-impl ExpressionKind for ResolvedKind {
+impl ExprKind for Resolved {
     type NiladicOp = ResolvedAtom;
     type MonadicOp = ValUnOp<HirConstraintId>;
     type DyadicOp = ValBinOp;
     type VariadicOp = ValVarOp;
 }
 
-pub type ResolvedExpr = Expression<KindWithData<ResolvedKind, SpanIndex>>;
+pub type ResolvedExpr =
+    ZipExpr<Arc<IdxExpression<Resolved>>, Arc<ShapedData<Vec<SpanIndex>, Resolved>>>;
+
+impl<DB: Resolves + ?Sized> FetchExpr<hir::ExprId, DB> for Resolved {
+    type Expr = Arc<IdxExpression<Resolved>>;
+    type Err = SilencedError;
+
+    fn fetch_expr(db: &DB, id: ExprId) -> Result<Self::Expr, Self::Err> {
+        Ok(db.resolve_expr(id)?.expr)
+    }
+}
+
+impl<DB: Resolves + ?Sized> FetchKindData<SpanIndex, ExprId, DB> for Resolved {
+    type Data = Arc<ShapedData<Vec<SpanIndex>, Resolved>>;
+    type Err = SilencedError;
+
+    fn fetch_kind_data(db: &DB, id: ExprId) -> Result<Self::Data, Self::Err> {
+        Ok(db.resolve_expr(id)?.data)
+    }
+}
+
+fn new_resolved_atom(
+    db: &dyn Resolves,
+    loc: DefId,
+    name: FieldName,
+    bt: bool,
+    expr_id: ExprId,
+    span: SpanIndex,
+    parent_block: Option<hir::BlockId>,
+) -> Result<PartialEval<ResolvedAtom, hir::ModuleId>, ResolveError> {
+    let (id, kind) = match refs::resolve_var_ref(db, loc, name)? {
+        refs::Resolved::Value(id, kind) => (id, kind),
+        refs::Resolved::Module(m) => return Ok(PartialEval::Eval(m)),
+        refs::Resolved::Unresolved => return Err(ResolveError::Unresolved(expr_id, span, name)),
+    };
+    Ok(PartialEval::Uneval(match kind {
+        refs::VarType::ParserDef => ResolvedAtom::ParserDef(hir::ParserDefId(id), bt),
+        refs::VarType::Value => {
+            let is_captured = parent_block
+                .map(|x| !x.0.is_ancestor_of(db, id))
+                .unwrap_or(false);
+            let is_arg = db.hir_node(id)?.is_kind(hir::HirNodeKind::ArgDef.into());
+            if is_captured || is_arg {
+                ResolvedAtom::Captured(id, bt)
+            } else {
+                ResolvedAtom::Val(id, bt)
+            }
+        }
+    }))
+}
+
+fn resolve_expr_modules(
+    db: &dyn Resolves,
+    expr_id: ExprId,
+    expr: DataRefExpr<hir::HirVal, SpanIndex>,
+) -> Result<ReidxExpr<hir::HirVal, Resolved>, ResolveError> {
+    let parent_block = db.hir_parent_block(expr_id.0)?;
+    let new_resolved_atom =
+        |loc, name, bt, span| new_resolved_atom(db, loc, name, bt, expr_id, span, parent_block);
+    expr.try_partial_eval::<hir::ModuleId, Resolved, _>(
+        |_, idx| {
+            Err(ResolveError::ModuleInExpression(
+                expr_id,
+                *expr.data.index_expr(idx),
+            ))
+        },
+        |_, (head, span)| {
+            Ok(PartialEval::Uneval(match head {
+                ExprHead::Niladic(n) => ExprHead::Niladic(match n {
+                    hir::ParserAtom::Atom(Atom::Number(s)) => ResolvedAtom::Number(s),
+                    hir::ParserAtom::Atom(Atom::Char(s)) => ResolvedAtom::Char(s),
+                    hir::ParserAtom::Atom(Atom::Bool(s)) => ResolvedAtom::Bool(s),
+                    hir::ParserAtom::Single => ResolvedAtom::Single,
+                    hir::ParserAtom::Nil => ResolvedAtom::Nil,
+                    hir::ParserAtom::Array => ResolvedAtom::Array,
+                    hir::ParserAtom::Regex(r, bt) => ResolvedAtom::Regex(r, bt),
+                    hir::ParserAtom::Block(b) => ResolvedAtom::Block(b),
+                    hir::ParserAtom::Atom(Atom::Field((f, bt))) => {
+                        match new_resolved_atom(expr_id.0, f, bt, *span)? {
+                            PartialEval::Uneval(k) => k,
+                            PartialEval::Eval(m) => return Ok(PartialEval::Eval(m)),
+                        }
+                    }
+                }),
+                ExprHead::Monadic(ValUnOp::Dot(field, bt), PartialEval::Eval((m, _))) => {
+                    match new_resolved_atom(m.0, field, bt, *span)? {
+                        PartialEval::Uneval(k) => ExprHead::Niladic(k),
+                        PartialEval::Eval(m) => return Ok(PartialEval::Eval(m)),
+                    }
+                }
+                ExprHead::Monadic(op, inner) => ExprHead::Monadic(op, inner),
+                ExprHead::Dyadic(op, inner) => ExprHead::Dyadic(op, inner),
+                ExprHead::Variadic(op, inner) => ExprHead::Variadic(op, inner),
+            }))
+        },
+    )
+}
 
 pub fn resolve_expr_error(
     db: &dyn Resolves,
     expr_id: hir::ExprId,
-) -> Result<Arc<ResolvedExpr>, ResolveError> {
+) -> Result<ResolvedExpr, ResolveError> {
     let expr = expr_id.lookup(db)?.expr;
-    let parent_block = db.hir_parent_block(expr_id.0)?;
-    let new_resolved_atom = |loc, name, bt, span| {
-        let (id, kind, bt) = match refs::resolve_var_ref(db, loc, name)? {
-            refs::Resolved::Value(id, kind) => (id, kind, bt),
-            refs::Resolved::Module(m) => return Ok(Err(m)),
-            refs::Resolved::Unresolved => {
-                return Err(ResolveError::Unresolved(expr_id, span, name))
-            }
+    let resolved = resolve_expr_modules(db, expr_id, expr.take_ref())?;
+    let sugar_spans = resolved.migrate_data(&expr.data);
+    let zip_expr = resolved.into_expr().zip(sugar_spans);
+    let compose = ExprHead::Niladic(ResolvedAtom::ParserDef(
+        db.std_item(hir::StdItem::Compose)?,
+        true,
+    ));
+    let desugared = ZipExpr::new_from_unfold(Ok(zip_expr.root()), |id| {
+        let id = match id {
+            Ok(id) => id,
+            Err(span) => return (compose.clone(), span),
         };
-        Ok(Ok(match kind {
-            refs::VarType::ParserDef => ResolvedAtom::ParserDef(hir::ParserDefId(id), bt),
-            refs::VarType::Value => {
-                let is_captured = parent_block
-                    .map(|x| !x.0.is_ancestor_of(db, id))
-                    .unwrap_or(false);
-                let is_arg = db.hir_node(id)?.is_kind(hir::HirNodeKind::ArgDef.into());
-                if is_captured || is_arg {
-                    ResolvedAtom::Captured(id, bt)
-                } else {
-                    ResolvedAtom::Val(id, bt)
-                }
-            }
-        }))
-    };
-    let root_span = *expr.0.root_data();
-    let expr = expr.try_fold(&mut |head| -> Result<
-        Result<ResolvedExpr, hir::ModuleId>,
-        ResolveError,
-    > {
-        match &head {
-            ExpressionHead::Niladic(nil) => {
-                let new = match &nil.inner {
-                    hir::ParserAtom::Atom(Atom::Number(s)) => ResolvedAtom::Number(*s),
-                    hir::ParserAtom::Atom(Atom::Char(s)) => ResolvedAtom::Char(*s),
-                    hir::ParserAtom::Atom(Atom::Bool(s)) => ResolvedAtom::Bool(*s),
-                    hir::ParserAtom::Single => ResolvedAtom::Single,
-                    hir::ParserAtom::Nil => ResolvedAtom::Nil,
-                    hir::ParserAtom::Array => ResolvedAtom::Array,
-                    hir::ParserAtom::Regex(r, bt) => ResolvedAtom::Regex(*r, *bt),
-                    hir::ParserAtom::Block(b) => ResolvedAtom::Block(*b),
-                    hir::ParserAtom::Atom(Atom::Field((f, bt))) => {
-                        match new_resolved_atom(expr_id.0, *f, *bt, nil.data)? {
-                            Ok(k) => k,
-                            Err(m) => return Ok(Err(m)),
-                        }
-                    }
-                };
-                return Ok(Ok(Expression::new_niladic(OpWithData {
-                    data: nil.data,
-                    inner: new,
-                })));
-            }
-            ExpressionHead::Monadic(m) => {
-                if let ValUnOp::Dot(name, bt) = &m.op.inner {
-                    if let Err(module) = m.inner {
-                        match new_resolved_atom(module.0, *name, *bt, m.op.data)? {
-                            Ok(new) => {
-                                return Ok(Ok(Expression::new_niladic(OpWithData {
-                                    data: m.op.data,
-                                    inner: new,
-                                })))
-                            }
-                            Err(m) => return Ok(Err(m)),
-                        };
-                    };
-                }
-            }
-            _ => {}
-        };
-        let root_span = *head.root_data();
-        let r = head.try_map_inner(|f| {
-            f.map_err(|_| ResolveError::ModuleInExpression(expr_id, root_span))
-        })?;
-        match r {
-            ExpressionHead::Niladic(_) => unreachable!(),
-            ExpressionHead::Monadic(m) => Ok(Ok(Expression::new_monadic(
-                OpWithData {
-                    data: m.op.data,
-                    inner: m.op.inner,
-                },
-                m.inner,
-            ))),
-            ExpressionHead::Dyadic(Dyadic {
-                op:
-                    OpWithData {
-                        inner: ValBinOp::Compose,
-                        data,
-                    },
-                inner: [left, right],
-            }) => {
-                let pd = Expression::new_niladic(OpWithData {
-                    data,
-                    inner: ResolvedAtom::ParserDef(db.std_item(hir::StdItem::Compose)?, true),
-                });
-                Ok(Ok(Expression::new_variadic(
-                    OpWithData {
-                        data,
-                        inner: ValVarOp::Call,
-                    },
-                    vec![pd, left, right],
-                )))
-            }
-            ExpressionHead::Dyadic(d) => Ok(Ok(Expression::new_dyadic(
-                OpWithData {
-                    data: d.op.data,
-                    inner: d.op.inner,
-                },
-                d.inner,
-            ))),
-            ExpressionHead::Variadic(v) => Ok(Ok(Expression::new_variadic(
-                OpWithData {
-                    data: v.op.data,
-                    inner: v.op.inner,
-                },
-                v.inner,
-            ))),
+        let (head, span) = zip_expr.index_expr(id);
+        if let ExprHead::Dyadic(ValBinOp::Compose, [lhs, rhs]) = head {
+            return (
+                ExprHead::Variadic(
+                    ValVarOp::Call,
+                    SmallVec::from_slice(&[Err(*span), Ok(*lhs), Ok(*rhs)]),
+                ),
+                *span,
+            );
         }
-    })?;
-    match expr {
-        Ok(x) => Ok(Arc::new(x)),
-        Err(_) => Err(ResolveError::ModuleInExpression(expr_id, root_span)),
-    }
+        (head.clone().map_inner(Ok), *span)
+    });
+    Ok(ZipExpr {
+        expr: Arc::new(desugared.expr),
+        data: Arc::new(desugared.data),
+    })
 }

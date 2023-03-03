@@ -14,7 +14,9 @@ use yaboc_base::{
     interner::{DefId, FieldName},
 };
 use yaboc_dependents::{Dependents, NeededBy, RequirementSet, SubValue};
+use yaboc_expr::ExprIdx;
 use yaboc_hir::{BlockId, ExprId, HirConstraintId, HirIdWrapper, ParserDefId};
+use yaboc_resolve::expr::Resolved;
 use yaboc_types::TypeId;
 
 use self::convert::ConvertCtx;
@@ -354,7 +356,7 @@ pub enum Place {
 pub enum PlaceOrigin {
     Node(DefId),
     Ambient(BlockId, DefId),
-    Expr(ExprId, usize),
+    Expr(ExprId, ExprIdx<Resolved>),
     Ret,
     Arg,
 }

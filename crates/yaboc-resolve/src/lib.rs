@@ -10,11 +10,11 @@ use fxhash::FxHashMap;
 use parserdef_ssc::{mod_parser_ssc, parser_ssc};
 use petgraph::Graph;
 
-use yaboc_ast::expr::{ExprIter, ExpressionHead, OpWithData};
 use yaboc_base::error::SResult;
 use yaboc_base::error::{Silencable, SilencedError};
 use yaboc_base::interner::{DefId, FieldName, Identifier};
 use yaboc_base::source::{FileId, SpanIndex};
+use yaboc_expr::{ExprHead, Expression};
 use yaboc_hir::walk::ChildIter;
 use yaboc_hir::{self as hir, ExprId, HirIdWrapper};
 
@@ -32,8 +32,8 @@ pub trait Resolves: crate::hir::Hirs {
         module: hir::ModuleId,
     ) -> SResult<Arc<BTreeMap<hir::ParserDefId, FunctionSscId>>>;
     fn parser_ssc(&self, parser: hir::ParserDefId) -> SResult<FunctionSscId>;
-    fn resolve_expr_error(&self, expr_id: hir::ExprId) -> Result<Arc<ResolvedExpr>, ResolveError>;
-    fn resolve_expr(&self, expr_id: hir::ExprId) -> SResult<Arc<ResolvedExpr>>;
+    fn resolve_expr_error(&self, expr_id: hir::ExprId) -> Result<ResolvedExpr, ResolveError>;
+    fn resolve_expr(&self, expr_id: hir::ExprId) -> SResult<ResolvedExpr>;
     fn captures(&self, id: hir::BlockId) -> Arc<BTreeSet<DefId>>;
     fn parserdef_ref(&self, loc: DefId, name: Vec<Identifier>)
         -> SResult<Option<hir::ParserDefId>>;
@@ -75,7 +75,7 @@ fn cyclic_import(db: &dyn Resolves) -> Option<Arc<Vec<ResolveError>>> {
     }
 }
 
-fn resolve_expr(db: &dyn Resolves, expr_id: hir::ExprId) -> SResult<Arc<ResolvedExpr>> {
+fn resolve_expr(db: &dyn Resolves, expr_id: hir::ExprId) -> SResult<ResolvedExpr> {
     db.resolve_expr_error(expr_id).silence()
 }
 
@@ -93,17 +93,20 @@ pub fn captures(db: &dyn Resolves, id: hir::BlockId) -> Arc<BTreeSet<DefId>> {
             } else {
                 continue;
             };
-            ret.extend(ExprIter::new(&resolved_expr).filter_map(|subexpr| {
-                if let ExpressionHead::Niladic(OpWithData {
-                    inner: expr::ResolvedAtom::Captured(capture, _),
-                    ..
-                }) = subexpr.0
-                {
-                    Some(capture)
-                } else {
-                    None
-                }
-            }));
+            ret.extend(
+                resolved_expr
+                    .expr
+                    .asref()
+                    .iter_parts()
+                    .filter_map(|subexpr| {
+                        if let ExprHead::Niladic(expr::ResolvedAtom::Captured(capture, _)) = subexpr
+                        {
+                            Some(capture)
+                        } else {
+                            None
+                        }
+                    }),
+            );
         }
     }
     Arc::new(ret)
