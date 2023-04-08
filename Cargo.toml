@@ -5,3 +5,6 @@ version = "0.1.0"
 edition = "2021"
 description = "runtimeless functional language for defining binary parsers"
 license = "MIT"
+[workspace.dependencies]
+salsa = "0.16.1"
+smallvec = { version = "1.10.0", features = ["union", "const_generics"] }

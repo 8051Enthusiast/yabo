@@ -591,7 +591,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         };
         let dfa = regex_automata::dense::Builder::new()
             .anchored(true)
-            .unicode(false)
             .allow_invalid_utf8(true)
             .dot_matches_new_line(true)
             .case_insensitive(false)
