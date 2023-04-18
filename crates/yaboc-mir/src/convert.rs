@@ -5,8 +5,7 @@ use std::{
 
 use fxhash::{FxHashMap, FxHashSet};
 
-use hir::{HirConstraint, HirConstraintId, HirNodeKind};
-use yaboc_ast::expr::{ConstraintBinOp, ConstraintUnOp, ValBinOp, ValUnOp, ValVarOp, WiggleKind};
+use hir::{HirConstraintId, HirNodeKind};
 use yaboc_base::{
     dbpanic,
     error::SResult,
@@ -15,38 +14,26 @@ use yaboc_base::{
 use yaboc_dependents::{
     BlockSerialization, NeededBy, RequirementMatrix, RequirementSet, SubValue, SubValueKind,
 };
-use yaboc_expr::{
-    ExprHead, ExprIdx, Expression, FetchExpr, FetchKindData, IdxExpression, IndexExpr, TakeRef,
-    ZipExpr,
-};
+use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
 use yaboc_hir::{
     self as hir, variable_set::VarStatus, BlockId, ChoiceId, ContextId, ExprId, HirIdWrapper,
     HirNode, ParserDefId, ParserPredecessor,
 };
 use yaboc_hir_types::FullTypeId;
 use yaboc_resolve::expr::{Resolved, ResolvedAtom};
-use yaboc_types::{PrimitiveType, Type, TypeId};
+use yaboc_types::{Type, TypeId};
 
-use crate::{CallMeta, InsRef};
+use crate::{expr::ConvertExpr, CallMeta};
 
 use super::{
-    BBRef, Comp, ExceptionRetreat, Function, FunctionWriter, IntBinOp, IntUnOp, MirInstr, Mirs,
-    Place, PlaceInfo, PlaceOrigin, PlaceRef, ReturnStatus, Val,
+    BBRef, ExceptionRetreat, Function, FunctionWriter, MirInstr, Mirs, Place, PlaceInfo,
+    PlaceOrigin, PlaceRef, ReturnStatus,
 };
 
-// anyone wanna play some type tetris?
-type IndexTypeExpr = ZipExpr<
-    Arc<IdxExpression<Resolved>>,
-    <Resolved as FetchKindData<(ExprIdx<Resolved>, FullTypeId), ExprId, dyn Mirs>>::Data,
->;
-
 pub struct ConvertCtx<'a> {
+    w: ConvertExpr<'a>,
     db: &'a dyn Mirs,
-    int: TypeId,
-    f: FunctionWriter,
-    retreat: ExceptionRetreat,
     top_level_retreat: ExceptionRetreat,
-    places: FxHashMap<SubValue, PlaceRef>,
     context_bb: FxHashMap<ContextId, (BBRef, BBRef)>,
     current_context: Option<ContextId>,
     context_data: FxHashMap<ContextId, ContextData>,
@@ -172,49 +159,16 @@ impl ContextData {
 }
 
 impl<'a> ConvertCtx<'a> {
-    fn val_place_at_def(&self, id: DefId) -> Option<PlaceRef> {
-        self.places
-            .get(&SubValue {
-                kind: SubValueKind::Val,
-                id,
-            })
-            .copied()
-    }
-
-    fn front_place_at_def(&self, id: DefId) -> Option<PlaceRef> {
-        self.places
-            .get(&SubValue {
-                kind: SubValueKind::Front,
-                id,
-            })
-            .copied()
-    }
-
-    fn back_place_at_def(&self, id: DefId) -> Option<PlaceRef> {
-        self.places
-            .get(&SubValue {
-                kind: SubValueKind::Back,
-                id,
-            })
-            .copied()
-    }
-
     // gets the bbs for the context and initializes if necessary
     fn context_bb(&mut self, context: ContextId) -> (BBRef, BBRef) {
         match self.context_bb.entry(context) {
             Entry::Occupied(o) => *o.get(),
             Entry::Vacant(v) => {
-                let bb = self.f.new_bb();
+                let bb = self.w.f.new_bb();
                 v.insert((bb, bb));
                 (bb, bb)
             }
         }
-    }
-
-    fn next_ins(&self) -> InsRef {
-        let current_bb = self.f.current_bb;
-        let offset = self.f.fun.bb(current_bb).ins.len();
-        InsRef(current_bb, offset as u32)
     }
 
     pub fn change_context(&mut self, context: ContextId) {
@@ -225,497 +179,19 @@ impl<'a> ConvertCtx<'a> {
             self.context_bb
                 .get_mut(&ctx)
                 .expect("uninitialized context")
-                .1 = self.f.current_bb;
+                .1 = self.w.f.current_bb;
         }
         self.current_context = Some(context);
         let current_end = self.context_bb(context).1;
-        self.f.set_bb(current_end);
+        self.w.f.set_bb(current_end);
         // if you end up with a crash here, that means a subvalue was used after
         // the context was terminated, which indicates a problem in dependents
         let context_backtrack = self.context_data[&context].backtracks_to;
 
-        self.retreat.backtrack = if let Some(bt) = context_backtrack {
+        self.w.retreat.backtrack = if let Some(bt) = context_backtrack {
             self.context_bb(bt).0
         } else {
             self.top_level_retreat.backtrack
-        }
-    }
-
-    fn make_place_ref(&mut self, place: Place, ty: TypeId) -> PlaceRef {
-        let place_info = PlaceInfo {
-            place,
-            ty,
-            remove_bt: false,
-        };
-        self.f.add_place(place_info)
-    }
-
-    fn new_stack_place(&mut self, ty: TypeId, origin: PlaceOrigin) -> PlaceRef {
-        let new_place = Place::Stack(self.f.new_stack_ref(origin));
-        self.make_place_ref(new_place, ty)
-    }
-
-    fn new_remove_bt_stack_place(&mut self, ty: TypeId, origin: PlaceOrigin) -> PlaceRef {
-        let new_place = Place::Stack(self.f.new_stack_ref(origin));
-        let place_info = PlaceInfo {
-            place: new_place,
-            ty,
-            remove_bt: true,
-        };
-        self.f.add_place(place_info)
-    }
-
-    fn unwrap_or_stack(
-        &mut self,
-        place: Option<PlaceRef>,
-        ty: TypeId,
-        origin: PlaceOrigin,
-    ) -> PlaceRef {
-        place.unwrap_or_else(|| self.new_stack_place(ty, origin))
-    }
-
-    fn copy(&mut self, origin: PlaceRef, target: PlaceRef) {
-        self.f.copy(origin, target, self.retreat.error);
-    }
-
-    fn copy_if_different_levels(
-        &mut self,
-        target_ty: TypeId,
-        inner_ty: TypeId,
-        place: Option<PlaceRef>,
-        origin: PlaceOrigin,
-        cont: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
-    ) -> SResult<PlaceRef> {
-        if self.db.deref_level(target_ty)? == self.db.deref_level(inner_ty)? {
-            return cont(self, place);
-        }
-        let inner = cont(self, None)?;
-        let target = self.unwrap_or_stack(place, target_ty, origin);
-        self.copy(inner, target);
-        Ok(target)
-    }
-
-    fn load_var(
-        &mut self,
-        var: DefId,
-        ty: TypeId,
-        place: Option<PlaceRef>,
-        origin: PlaceOrigin,
-        remove_bt: bool,
-    ) -> Option<PlaceRef> {
-        let place_ref = self.val_place_at_def(var)?;
-        if self.f.fun.place(place_ref).ty == ty && place.is_none() && !remove_bt {
-            return Some(place_ref);
-        }
-        if let Some(place) = place {
-            if remove_bt {
-                let between_place = self.new_remove_bt_stack_place(ty, origin);
-                self.copy(place_ref, between_place);
-                self.copy(between_place, place);
-                return Some(place);
-            }
-        }
-        let new_place = self.unwrap_or_stack(place, ty, origin);
-        self.copy(place_ref, new_place);
-        Some(new_place)
-    }
-
-    fn load_captured(
-        &mut self,
-        captured: DefId,
-        ty: TypeId,
-        place: Option<PlaceRef>,
-        origin: PlaceOrigin,
-        remove_bt: bool,
-    ) -> SResult<PlaceRef> {
-        let cap_ty = self.db.parser_type_at(captured)?;
-        let place_ref = self.f.add_place(PlaceInfo {
-            place: Place::Captured(self.f.fun.cap(), captured),
-            ty: cap_ty,
-            remove_bt: false,
-        });
-        if self.db.deref_level(ty) == self.db.deref_level(cap_ty) && place.is_none() && !remove_bt {
-            return Ok(place_ref);
-        }
-        if let Some(place) = place {
-            if remove_bt {
-                let between_place = self.new_remove_bt_stack_place(ty, origin);
-                self.copy(place_ref, between_place);
-                self.copy(between_place, place);
-                return Ok(place);
-            }
-        }
-        let new_place = self.unwrap_or_stack(place, ty, origin);
-        self.copy(place_ref, new_place);
-        Ok(new_place)
-    }
-
-    fn load_int(
-        &mut self,
-        n: i64,
-        ty: TypeId,
-        place: Option<PlaceRef>,
-        origin: PlaceOrigin,
-    ) -> PlaceRef {
-        let place_ref = self.unwrap_or_stack(place, ty, origin);
-        self.f
-            .append_ins(MirInstr::StoreVal(place_ref, Val::Int(n)));
-        place_ref
-    }
-
-    fn load_char(
-        &mut self,
-        c: u32,
-        ty: TypeId,
-        place: Option<PlaceRef>,
-        origin: PlaceOrigin,
-    ) -> PlaceRef {
-        let place_ref = self.unwrap_or_stack(place, ty, origin);
-        self.f
-            .append_ins(MirInstr::StoreVal(place_ref, Val::Char(c)));
-        place_ref
-    }
-
-    fn load_bool(
-        &mut self,
-        b: bool,
-        ty: TypeId,
-        place: Option<PlaceRef>,
-        origin: PlaceOrigin,
-    ) -> PlaceRef {
-        let place_ref = self.unwrap_or_stack(place, ty, origin);
-        self.f
-            .append_ins(MirInstr::StoreVal(place_ref, Val::Bool(b)));
-        place_ref
-    }
-
-    fn create_block_parser(
-        &mut self,
-        block: BlockId,
-        ty: TypeId,
-        place: Option<PlaceRef>,
-        origin: PlaceOrigin,
-    ) -> SResult<PlaceRef> {
-        let captures = self.db.captures(block);
-        let place_ref = self.unwrap_or_stack(place, ty, origin);
-        for captured in captures.iter() {
-            let cap_ty = self.db.parser_type_at(*captured)?;
-            let bp_ref = |ctx: &mut Self, block| {
-                ctx.f.add_place(PlaceInfo {
-                    place: Place::Captured(block, *captured),
-                    ty: cap_ty,
-                    remove_bt: false,
-                })
-            };
-
-            let target = bp_ref(self, place_ref);
-
-            let origin = match self.val_place_at_def(*captured) {
-                Some(p) => p,
-                None => bp_ref(self, self.f.fun.cap()),
-            };
-
-            self.copy(origin, target);
-        }
-        Ok(place_ref)
-    }
-
-    fn convert_expr(
-        &mut self,
-        expr_id: ExprId,
-        expr: &IndexTypeExpr,
-        place: Option<PlaceRef>,
-    ) -> SResult<PlaceRef> {
-        self.convert_expr_impl(expr_id, expr, expr.expr.root(), place)
-    }
-
-    fn convert_expr_impl(
-        &mut self,
-        expr_id: ExprId,
-        expr: &IndexTypeExpr,
-        idx: ExprIdx<Resolved>,
-        place: Option<PlaceRef>,
-    ) -> SResult<PlaceRef> {
-        let (idx, &ty) = expr.data.index_expr(idx);
-        let origin = PlaceOrigin::Expr(expr_id, idx);
-        Ok(match expr.expr.index_expr(idx) {
-            ExprHead::Niladic(n) => match n {
-                ResolvedAtom::Val(val, backtracks) => self
-                    .load_var(*val, ty, place, origin, !*backtracks)
-                    .expect("Invalid refernce to variable"),
-                ResolvedAtom::Captured(cap, backtracks) => {
-                    self.load_captured(*cap, ty, place, origin, !*backtracks)?
-                }
-                ResolvedAtom::Number(n) => self.load_int(*n, ty, place, origin),
-                ResolvedAtom::Char(c) => self.load_char(*c, ty, place, origin),
-                ResolvedAtom::Bool(b) => self.load_bool(*b, ty, place, origin),
-                ResolvedAtom::ParserDef(_, _)
-                | ResolvedAtom::Single
-                | ResolvedAtom::Nil
-                | ResolvedAtom::Array
-                | ResolvedAtom::Regex(..) => self.unwrap_or_stack(place, ty, origin),
-                ResolvedAtom::Block(block) => {
-                    self.create_block_parser(*block, ty, place, origin)?
-                }
-            },
-            ExprHead::Monadic(op, inner) => {
-                let (inner_idx, &inner_ty) = expr.data.index_expr(*inner);
-                let inner_origin = PlaceOrigin::Expr(expr_id, inner_idx);
-                let recurse =
-                    |ctx: &mut Self, plc| ctx.convert_expr_impl(expr_id, expr, *inner, plc);
-                match &op {
-                    ValUnOp::Not | ValUnOp::Neg => {
-                        let op: IntUnOp = op.try_into().unwrap();
-                        let inner = self.copy_if_different_levels(
-                            self.int,
-                            inner_ty,
-                            None,
-                            inner_origin,
-                            recurse,
-                        )?;
-                        let place_ref = self.unwrap_or_stack(place, ty, origin);
-                        self.f.append_ins(MirInstr::IntUn(place_ref, op, inner));
-                        place_ref
-                    }
-                    ValUnOp::Wiggle(constr, kind) => {
-                        if matches!(self.db.lookup_intern_type(ty), Type::ParserArg { .. }) {
-                            let place_ref = self.unwrap_or_stack(place, ty, origin);
-                            let inner_place = self.f.add_place(PlaceInfo {
-                                place: Place::Front(place_ref),
-                                ty,
-                                remove_bt: false,
-                            });
-                            self.copy_if_different_levels(
-                                ty,
-                                inner_ty,
-                                Some(inner_place),
-                                inner_origin,
-                                recurse,
-                            )?;
-                            place_ref
-                        } else {
-                            let place_ref = self.copy_if_different_levels(
-                                self.int, inner_ty, place, origin, recurse,
-                            )?;
-                            let place_ldt = self.db.least_deref_type(ty)?;
-                            let ldt_ref = self.new_stack_place(place_ldt, inner_origin);
-                            self.copy(place_ref, ldt_ref);
-                            let old_backtrack = self.retreat.backtrack;
-                            self.retreat.backtrack = match kind {
-                                WiggleKind::If => self.retreat.backtrack,
-                                WiggleKind::Try => self.retreat.error,
-                            };
-                            let cont = self.f.new_bb();
-                            let constr = self.db.lookup_intern_hir_constraint(*constr);
-                            let root = constr.expr.root();
-                            self.convert_constraint(&constr.expr, root, ldt_ref, cont)?;
-                            self.f.set_bb(cont);
-                            self.retreat.backtrack = old_backtrack;
-                            place_ref
-                        }
-                    }
-                    ValUnOp::Dot(field, bt) => {
-                        let inner_ldt = self.db.least_deref_type(inner_ty)?;
-                        let block_ref = self.copy_if_different_levels(
-                            inner_ldt,
-                            inner_ty,
-                            None,
-                            inner_origin,
-                            recurse,
-                        )?;
-                        let place_ref = self.unwrap_or_stack(place, ty, origin);
-                        let backtrack = if *bt {
-                            self.retreat.backtrack
-                        } else {
-                            self.retreat.error
-                        };
-                        self.f
-                            .field(block_ref, *field, place_ref, self.retreat.error, backtrack);
-                        place_ref
-                    }
-                }
-            }
-            ExprHead::Dyadic(op, [left, right]) => {
-                let (left_idx, &left_ty) = expr.data.index_expr(*left);
-                let (right_idx, &right_ty) = expr.data.index_expr(*right);
-                let lrecurse =
-                    |ctx: &mut Self, plc| ctx.convert_expr_impl(expr_id, expr, *left, plc);
-                let rrecurse =
-                    |ctx: &mut Self, plc| ctx.convert_expr_impl(expr_id, expr, *right, plc);
-                let lorigin = PlaceOrigin::Expr(expr_id, left_idx);
-                let rorigin = PlaceOrigin::Expr(expr_id, right_idx);
-                match &op {
-                    ValBinOp::And
-                    | ValBinOp::Xor
-                    | ValBinOp::Or
-                    | ValBinOp::ShiftR
-                    | ValBinOp::ShiftL
-                    | ValBinOp::Minus
-                    | ValBinOp::Plus
-                    | ValBinOp::Div
-                    | ValBinOp::Modulo
-                    | ValBinOp::Mul => {
-                        let op: IntBinOp = op.try_into().unwrap();
-                        let left = self
-                            .copy_if_different_levels(self.int, left_ty, None, lorigin, lrecurse)?;
-                        let right = self.copy_if_different_levels(
-                            self.int, right_ty, None, rorigin, rrecurse,
-                        )?;
-                        let place_ref = self.unwrap_or_stack(place, ty, origin);
-                        self.f
-                            .append_ins(MirInstr::IntBin(place_ref, op, left, right));
-                        place_ref
-                    }
-                    ValBinOp::LesserEq
-                    | ValBinOp::Lesser
-                    | ValBinOp::GreaterEq
-                    | ValBinOp::Greater
-                    | ValBinOp::Uneq
-                    | ValBinOp::Equals => {
-                        let op: Comp = op.try_into().unwrap();
-                        let left = self
-                            .copy_if_different_levels(self.int, left_ty, None, lorigin, lrecurse)?;
-                        let right = self.copy_if_different_levels(
-                            self.int, right_ty, None, rorigin, rrecurse,
-                        )?;
-                        let place_ref = self.unwrap_or_stack(place, ty, origin);
-                        self.f
-                            .append_ins(MirInstr::Comp(place_ref, op, left, right));
-                        place_ref
-                    }
-                    ValBinOp::ParserApply => {
-                        let left_ldt = self.db.least_deref_type(left_ty)?;
-                        let left = self
-                            .copy_if_different_levels(left_ldt, left_ty, None, lorigin, lrecurse)?;
-                        let right = rrecurse(self, None)?;
-                        let place_ref = self.unwrap_or_stack(place, ty, origin);
-                        self.f.parse_call(
-                            CallMeta {
-                                req: NeededBy::Val | NeededBy::Backtrack,
-                                tail: false,
-                            },
-                            left,
-                            right,
-                            Some(place_ref),
-                            None,
-                            self.retreat,
-                        );
-                        place_ref
-                    }
-                    ValBinOp::Else => {
-                        let place_ref = self.unwrap_or_stack(place, ty, origin);
-                        let right_bb = self.f.new_bb();
-                        let continue_bb = self.f.new_bb();
-                        let old_backtrack = self.retreat.backtrack;
-                        self.retreat.backtrack = right_bb;
-                        self.copy_if_different_levels(
-                            ty,
-                            left_ty,
-                            Some(place_ref),
-                            lorigin,
-                            lrecurse,
-                        )?;
-                        self.f.branch(continue_bb);
-                        self.f.set_bb(right_bb);
-                        self.retreat.backtrack = old_backtrack;
-                        self.copy_if_different_levels(
-                            ty,
-                            right_ty,
-                            Some(place_ref),
-                            rorigin,
-                            rrecurse,
-                        )?;
-                        self.f.branch(continue_bb);
-                        self.f.set_bb(continue_bb);
-                        place_ref
-                    }
-                    ValBinOp::Compose => unreachable!(),
-                }
-            }
-            ExprHead::Variadic(ValVarOp::Call, inner) => {
-                let (fun_idx, &fun_ty) = expr.data.index_expr(inner[0]);
-                let fun_ldt = self.db.least_deref_type(fun_ty)?;
-                let fun_origin = PlaceOrigin::Expr(expr_id, fun_idx);
-                let fun_arg_num =
-                    if let Type::FunctionArg(_, args) = self.db.lookup_intern_type(fun_ldt) {
-                        args.len()
-                    } else {
-                        unreachable!()
-                    };
-                let fun_place = self.copy_if_different_levels(
-                    fun_ldt,
-                    fun_ty,
-                    None,
-                    fun_origin,
-                    |ctx, plc| ctx.convert_expr_impl(expr_id, expr, inner[0], plc),
-                )?;
-                let place_ref = self.unwrap_or_stack(place, ty, origin);
-                let inner_results = inner[1..]
-                    .iter()
-                    .map(|inner| self.convert_expr_impl(expr_id, expr, *inner, None))
-                    .collect::<Result<Vec<_>, _>>()?;
-                // fun_arg_num: 6           (available arguments)
-                // inner_results.len(): 4   (given arguments)
-                // _________________________
-                // | 5 | 4 | 3 | 2 | 1 | 0 | <- index for set_arg functions (which lowers to vtable->set_arg_info[-1 - index])
-                // |[0]|[1]|[2]|[3]|___|___| <- inner_results ([i])
-                // \_______________/\______/
-                //    applied args  unapplied
-                let first_arg_index = fun_arg_num as u64 - 1;
-                self.f.apply_args(
-                    fun_place,
-                    inner_results,
-                    place_ref,
-                    first_arg_index,
-                    self.retreat.error,
-                );
-                place_ref
-            }
-        })
-    }
-
-    fn convert_constraint(
-        &mut self,
-        expr: &IdxExpression<HirConstraint>,
-        idx: ExprIdx<HirConstraint>,
-        val: PlaceRef,
-        mut cont: BBRef,
-    ) -> SResult<()> {
-        match &expr[idx] {
-            ExprHead::Niladic(n) => {
-                self.f.assert_val(val, n.clone(), self.retreat.backtrack);
-                self.f.branch(cont);
-                Ok(())
-            }
-            ExprHead::Monadic(op, inner) => match op {
-                ConstraintUnOp::Not => {
-                    std::mem::swap(&mut cont, &mut self.retreat.backtrack);
-                    self.convert_constraint(expr, *inner, val, cont)?;
-                    self.retreat.backtrack = cont;
-                    Ok(())
-                }
-                ConstraintUnOp::Dot(_) => todo!(),
-            },
-            ExprHead::Dyadic(op, [lhs, rhs]) => match op {
-                ConstraintBinOp::And => {
-                    let right_bb = self.f.new_bb();
-                    self.convert_constraint(expr, *lhs, val, right_bb)?;
-                    self.f.set_bb(right_bb);
-                    self.convert_constraint(expr, *rhs, val, cont)?;
-                    Ok(())
-                }
-                ConstraintBinOp::Or => {
-                    let right_bb = self.f.new_bb();
-                    let old_backtrack = self.retreat.backtrack;
-                    self.retreat.backtrack = right_bb;
-                    self.convert_constraint(expr, *lhs, val, cont)?;
-                    self.f.set_bb(right_bb);
-                    self.retreat.backtrack = old_backtrack;
-                    self.convert_constraint(expr, *rhs, val, cont)?;
-                    Ok(())
-                }
-            },
-            ExprHead::Variadic(v, _) => match *v {},
         }
     }
 
@@ -732,37 +208,38 @@ impl<'a> ConvertCtx<'a> {
             .context_data
             .remove(&context)
             .expect("context not initialized or removed multiple times");
-        if let Some(MirInstr::ParseCall(.., None)) = self.f.fun.bb(end_bb).ins.last() {
+        if let Some(MirInstr::ParseCall(.., None)) = self.w.f.fun.bb(end_bb).ins.last() {
             // we have a tail call, we cannot copy anything or set discriminants
             return;
         }
         for (from, to) in context_data.field_move_targets.iter() {
-            let to_place = match self.val_place_at_def(*to) {
+            let to_place = match self.w.val_place_at_def(*to) {
                 Some(p) => p,
                 None => continue,
             };
-            let from_place = self.val_place_at_def(*from).unwrap();
-            self.copy(from_place, to_place);
+            let from_place = self.w.val_place_at_def(*from).unwrap();
+            self.w.copy(from_place, to_place);
         }
         if self.returns_self {
-            if let Some(ret) = self.f.fun.ret() {
+            if let Some(ret) = self.w.f.fun.ret() {
                 for field in context_data.affected_discriminants {
                     let has_field = context_data.field_ids.get(&field).is_some();
-                    self.f
+                    self.w
+                        .f
                         .append_ins(MirInstr::SetDiscriminant(ret, field, has_field));
                 }
             }
         }
-        if let Some(to_place) = self.back_place_at_def(superchoice.0) {
+        if let Some(to_place) = self.w.back_place_at_def(superchoice.0) {
             let from_place = if let Some((_, end)) = context_data.ends {
-                self.back_place_at_def(end)
+                self.w.back_place_at_def(end)
             } else {
-                self.front_place_at_def(superchoice.0)
+                self.w.front_place_at_def(superchoice.0)
             }
             .expect("could not find last parse end of context");
-            self.copy(from_place, to_place);
+            self.w.copy(from_place, to_place);
         }
-        self.f.branch(cont);
+        self.w.f.branch(cont);
     }
 
     fn end_choice(&mut self, subcontexts: &[ContextId], id: ChoiceId) {
@@ -773,9 +250,9 @@ impl<'a> ConvertCtx<'a> {
             Some(x) => self.context_bb[x].0,
             None => return,
         };
-        self.f.branch(first_context_bb);
-        let cont = self.f.new_bb();
-        self.f.set_bb(cont);
+        self.w.f.branch(first_context_bb);
+        let cont = self.w.f.new_bb();
+        self.w.f.set_bb(cont);
         for context in subcontexts.iter() {
             self.terminate_context(*context, id, cont)
         }
@@ -784,65 +261,62 @@ impl<'a> ConvertCtx<'a> {
 
     fn let_statement(&mut self, statement: &hir::LetStatement) {
         let target = self
+            .w
             .val_place_at_def(statement.id.0)
             .expect("let statement has no place");
         let expr_val = self
+            .w
             .val_place_at_def(statement.expr.0)
             .expect("let statement's expression has no place");
-        self.copy(expr_val, target);
+        self.w.copy(expr_val, target);
     }
 
     fn call_expr(&mut self, call_loc: DefId, expr: ExprId, call_info: CallMeta) -> SResult<()> {
-        let parser_fun = self.val_place_at_def(expr.0).unwrap();
-        let parser_ty = self.f.fun.place(parser_fun).ty;
+        let parser_fun = self.w.val_place_at_def(expr.0).unwrap();
+        let parser_ty = self.w.f.fun.place(parser_fun).ty;
         let ldt_parser = self.db.least_deref_type(parser_ty)?;
-        let ldt_parser_fun = self.copy_if_different_levels(
+        let ldt_parser_fun = self.w.copy_if_different_levels(
             ldt_parser,
             parser_ty,
             None,
             PlaceOrigin::Node(expr.0),
             |_, _| Ok(parser_fun),
         )?;
-        let addr = self.front_place_at_def(call_loc).unwrap();
+        let addr = self.w.front_place_at_def(call_loc).unwrap();
         let ret = if call_info.req.contains(NeededBy::Val) {
             if call_info.tail {
-                self.f.fun.ret()
+                self.w.f.fun.ret()
             } else {
-                Some(self.val_place_at_def(call_loc).unwrap())
+                Some(self.w.val_place_at_def(call_loc).unwrap())
             }
         } else {
             None
         };
-        let ty = self.f.fun.place(self.f.fun.arg()).ty;
+        let ty = self.w.f.fun.place(self.w.f.fun.arg()).ty;
         let retlen = if call_info.req.contains(NeededBy::Len) {
             if call_info.tail {
-                self.f.fun.retlen()
+                self.w.f.fun.retlen()
             } else {
-                let place = self.f.add_place(PlaceInfo {
-                    place: Place::ModifiedBy(self.next_ins()),
-                    ty,
-                    remove_bt: false,
-                });
-                self.places.insert(SubValue::new_back(call_loc), place);
-                Some(place)
+                Some(self.w.create_current_ins_retlen_place(ty, call_loc))
             }
         } else {
             None
         };
         if call_info.tail {
-            if addr != self.f.fun.arg() {
-                self.copy(addr, self.f.fun.arg());
+            if addr != self.w.f.fun.arg() {
+                self.w.copy(addr, self.w.f.fun.arg());
             }
-            self.f.tail_parse_call(
+            self.w.f.tail_parse_call(
                 call_info,
-                self.f.fun.arg(),
+                self.w.f.fun.arg(),
                 ldt_parser_fun,
                 ret,
-                self.f.fun.retlen(),
+                self.w.f.fun.retlen(),
             );
         } else {
-            self.f
-                .parse_call(call_info, addr, ldt_parser_fun, ret, retlen, self.retreat);
+            self.w
+                .f
+                .parse_call(call_info, addr, ldt_parser_fun, ret, retlen, self.w.retreat);
         }
         Ok(())
     }
@@ -875,84 +349,86 @@ impl<'a> ConvertCtx<'a> {
         }
         let call_loc = pd.id.0;
         let expr = pd.to;
-        let parser_fun = self.val_place_at_def(expr.0).unwrap();
-        let parser_ty = self.f.fun.place(parser_fun).ty;
+        let parser_fun = self.w.val_place_at_def(expr.0).unwrap();
+        let parser_ty = self.w.f.fun.place(parser_fun).ty;
         let ldt_parser = self.db.least_deref_type(parser_ty)?;
-        let ldt_parser_fun = self.copy_if_different_levels(
+        let ldt_parser_fun = self.w.copy_if_different_levels(
             ldt_parser,
             parser_ty,
             None,
             PlaceOrigin::Node(expr.0),
             |_, _| Ok(parser_fun),
         )?;
-        let addr = self.front_place_at_def(call_loc).unwrap();
+        let addr = self.w.front_place_at_def(call_loc).unwrap();
         let ret = info
             .req
             .contains(NeededBy::Val)
-            .then(|| self.val_place_at_def(call_loc).unwrap());
+            .then(|| self.w.val_place_at_def(call_loc).unwrap());
         let retlen = info
             .req
             .contains(NeededBy::Len)
-            .then(|| self.back_place_at_def(call_loc).unwrap());
-        self.f
+            .then(|| self.w.back_place_at_def(call_loc).unwrap());
+        self.w
+            .f
             .tail_parse_call(info, addr, ldt_parser_fun, ret, retlen);
         Ok(())
     }
 
     pub fn if_parser(&mut self, constr: HirConstraintId) -> SResult<()> {
         let constr = self.db.lookup_intern_hir_constraint(constr);
-        let ldt_ret = if let Some(ret) = self.f.fun.ret() {
-            let ret_ty = self.f.fun.place(ret).ty;
+        let ldt_ret = if let Some(ret) = self.w.f.fun.ret() {
+            let ret_ty = self.w.f.fun.place(ret).ty;
             let ldt_ret = self.db.least_deref_type(ret_ty)?;
             Some(ldt_ret)
         } else {
             None
         };
-        let tmp_place = self.new_stack_place(ldt_ret.unwrap(), PlaceOrigin::Ret);
-        let arg_ty = self.f.fun.place(self.f.fun.arg()).ty;
-        let arg_tmp_place = self.new_stack_place(arg_ty, PlaceOrigin::Arg);
-        let retlen = self.req.contains(NeededBy::Len).then(|| self.f.fun.arg());
-        let fun_place = self.f.fun.cap();
-        let fun_ty = self.f.fun.place(fun_place).ty;
-        let inner_fun_place = self.f.add_place(PlaceInfo {
+        let tmp_place = self.w.f.new_stack_place(ldt_ret.unwrap(), PlaceOrigin::Ret);
+        let arg_ty = self.w.f.fun.place(self.w.f.fun.arg()).ty;
+        let arg_tmp_place = self.w.f.new_stack_place(arg_ty, PlaceOrigin::Arg);
+        let retlen = self.req.contains(NeededBy::Len).then(|| self.w.f.fun.arg());
+        let fun_place = self.w.f.fun.cap();
+        let fun_ty = self.w.f.fun.place(fun_place).ty;
+        let inner_fun_place = self.w.f.add_place(PlaceInfo {
             place: Place::Front(fun_place),
             ty: fun_ty,
             remove_bt: false,
         });
 
         // the following parse call might mutate the argument, therefore we make a copy
-        self.copy(self.f.fun.arg(), arg_tmp_place);
+        self.w.copy(self.w.f.fun.arg(), arg_tmp_place);
 
         let mut first_call_req = self.req | NeededBy::Val;
-        let mut retreat = self.retreat;
+        let mut retreat = self.w.retreat;
         if constr.has_no_eof {
             first_call_req |= NeededBy::Len;
             retreat.eof = retreat.backtrack;
         }
 
-        self.f.parse_call(
+        self.w.f.parse_call(
             CallMeta {
                 req: first_call_req,
                 tail: false,
             },
-            self.f.fun.arg(),
+            self.w.f.fun.arg(),
             inner_fun_place,
             Some(tmp_place),
             retlen,
             retreat,
         );
-        let convert_succ = self.f.new_bb();
+        let convert_succ = self.w.f.new_bb();
         let root = constr.expr.root();
-        self.convert_constraint(&constr.expr, root, tmp_place, convert_succ)?;
-        self.f.set_bb(convert_succ);
+        self.w
+            .convert_constraint(&constr.expr, root, tmp_place, convert_succ)?;
+        self.w.f.set_bb(convert_succ);
         let ret_if_needed = self
             .req
             .contains(NeededBy::Val)
-            .then(|| self.f.fun.ret().unwrap());
+            .then(|| self.w.f.fun.ret().unwrap());
         if (self.req & NeededBy::Val).is_empty() {
             return Ok(());
         }
-        self.f.parse_call(
+        self.w.f.parse_call(
             CallMeta {
                 req: self.req & NeededBy::Val,
                 tail: false,
@@ -961,7 +437,7 @@ impl<'a> ConvertCtx<'a> {
             inner_fun_place,
             ret_if_needed,
             None,
-            self.retreat,
+            self.w.retreat,
         );
         Ok(())
     }
@@ -971,14 +447,14 @@ impl<'a> ConvertCtx<'a> {
             ParserPredecessor::ChildOf(c) => {
                 let parent_choice = self.context_data[&c].parent_choice;
                 match parent_choice {
-                    Some(x) => self.front_place_at_def(x.0).unwrap(),
-                    None => self.f.fun.arg(),
+                    Some(x) => self.w.front_place_at_def(x.0).unwrap(),
+                    None => self.w.f.fun.arg(),
                 }
             }
-            ParserPredecessor::After(p) => self.back_place_at_def(p).unwrap(),
+            ParserPredecessor::After(p) => self.w.back_place_at_def(p).unwrap(),
         };
-        let to_place = self.front_place_at_def(id).unwrap();
-        self.copy(from_place, to_place);
+        let to_place = self.w.front_place_at_def(id).unwrap();
+        self.w.copy(from_place, to_place);
     }
 
     fn parse_statement_front(&mut self, parse: &hir::ParseStatement) {
@@ -1003,8 +479,8 @@ impl<'a> ConvertCtx<'a> {
                 }
                 let resolved_expr =
                     Resolved::expr_with_data::<(ExprIdx<Resolved>, FullTypeId)>(self.db, e.id)?;
-                let place = self.val_place_at_def(e.id.0).unwrap();
-                self.convert_expr(e.id, &resolved_expr, Some(place))?;
+                let place = self.w.val_place_at_def(e.id.0).unwrap();
+                self.w.convert_expr(e.id, &resolved_expr, Some(place))?;
             }
             hir::HirNode::Parse(p) => {
                 self.change_context(p.parent_context);
@@ -1036,16 +512,16 @@ impl<'a> ConvertCtx<'a> {
             // arg and return place already have this function
             hir::HirNode::Block(b) if sub_value.kind == SubValueKind::Back => {
                 // if the last call is a tail call, we don't need this
-                let bb = self.f.current_bb;
-                if let Some(MirInstr::ParseCall(.., None)) = self.f.fun.bb(bb).ins.last() {
+                let bb = self.w.f.current_bb;
+                if let Some(MirInstr::ParseCall(.., None)) = self.w.f.fun.bb(bb).ins.last() {
                     return Ok(());
                 }
                 let last_place_back = self.context_data[&b.root_context]
                     .ends
-                    .map(|x| self.back_place_at_def(x.1).unwrap())
-                    .unwrap_or_else(|| self.f.fun.arg());
-                let current_place = self.back_place_at_def(b.id.0).unwrap();
-                self.copy(last_place_back, current_place);
+                    .map(|x| self.w.back_place_at_def(x.1).unwrap())
+                    .unwrap_or_else(|| self.w.f.fun.arg());
+                let current_place = self.w.back_place_at_def(b.id.0).unwrap();
+                self.w.copy(last_place_back, current_place);
             }
             hir::HirNode::Block(_) => return Ok(()),
             hir::HirNode::Module(_)
@@ -1164,7 +640,6 @@ impl<'a> ConvertCtx<'a> {
             top_level_retreat.backtrack = top_level_retreat.error;
         }
         let retreat = top_level_retreat;
-        let int: TypeId = db.intern_type(Type::Primitive(PrimitiveType::Int));
         let places = Self::block_places(db, &block, requirements, order, &mut f)?;
         let context_data: FxHashMap<ContextId, ContextData> =
             ContextData::build_context_tree(db, block.root_context)?;
@@ -1176,13 +651,10 @@ impl<'a> ConvertCtx<'a> {
         let req_transformer = order.parse_requirements.clone();
         let tails = order.tails.clone();
         f.set_bb(f.fun.entry());
+        let w = ConvertExpr::new(db, f, retreat, places);
         Ok(ConvertCtx {
             db,
-            int,
-            f,
-            retreat,
             top_level_retreat,
-            places,
             context_bb,
             current_context,
             context_data,
@@ -1191,6 +663,7 @@ impl<'a> ConvertCtx<'a> {
             req: requirements,
             req_transformer,
             tails,
+            w,
         })
     }
 
@@ -1239,7 +712,6 @@ impl<'a> ConvertCtx<'a> {
             top_level_retreat.backtrack = top_level_retreat.error;
         }
         let retreat = top_level_retreat;
-        let int: TypeId = db.intern_type(Type::Primitive(PrimitiveType::Int));
         let context_data = FxHashMap::default();
         let context_bb = FxHashMap::default();
         let places = Self::pd_places(db, id, &mut f)?;
@@ -1253,13 +725,10 @@ impl<'a> ConvertCtx<'a> {
         tails.insert(id.0);
         let tails = Arc::new(tails);
         f.set_bb(f.fun.entry());
+        let w = ConvertExpr::new(db, f, retreat, places);
         Ok(ConvertCtx {
             db,
-            int,
-            f,
-            retreat,
             top_level_retreat,
-            places,
             context_bb,
             current_context,
             context_data,
@@ -1268,6 +737,7 @@ impl<'a> ConvertCtx<'a> {
             req: requirements,
             req_transformer,
             tails,
+            w,
         })
     }
 
@@ -1286,16 +756,12 @@ impl<'a> ConvertCtx<'a> {
             top_level_retreat.backtrack = top_level_retreat.error;
         }
         let retreat = top_level_retreat;
-        let int: TypeId = db.intern_type(Type::Primitive(PrimitiveType::Int));
         f.set_bb(f.fun.entry());
+        let w = ConvertExpr::new(db, f, retreat, Default::default());
         Ok(ConvertCtx {
             db,
-            int,
-            f,
-            retreat,
             top_level_retreat,
             req: requirements,
-            places: Default::default(),
             context_bb: Default::default(),
             current_context: Default::default(),
             context_data: Default::default(),
@@ -1303,16 +769,17 @@ impl<'a> ConvertCtx<'a> {
             processed_parse_sites: Default::default(),
             req_transformer: Default::default(),
             tails: Default::default(),
+            w,
         })
     }
 
     pub fn finish_fun(mut self) -> Function {
-        let bb = self.f.fun.bb(self.f.current_bb);
+        let bb = self.w.f.fun.bb(self.w.f.current_bb);
         // don't add a return statement if we have a tail call
         if let Some(MirInstr::ParseCall(.., None)) = bb.ins.last() {
-            return self.f.fun;
+            return self.w.f.fun;
         }
-        self.f.ret(ReturnStatus::Ok);
-        self.f.fun
+        self.w.f.ret(ReturnStatus::Ok);
+        self.w.f.fun
     }
 }

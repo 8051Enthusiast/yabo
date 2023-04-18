@@ -1,6 +1,7 @@
 mod convert;
 mod represent;
 mod strictness;
+mod expr;
 
 use std::num::NonZeroU32;
 
@@ -690,6 +691,37 @@ impl FunctionWriter {
             ));
         self.set_bb(new_block);
     }
+
+    pub fn next_ins(&self) -> InsRef {
+        let current_bb = self.current_bb;
+        let offset = self.fun.bb(current_bb).ins.len();
+        InsRef(current_bb, offset as u32)
+    }
+
+    pub fn make_place_ref(&mut self, place: Place, ty: TypeId) -> PlaceRef {
+        let place_info = PlaceInfo {
+            place,
+            ty,
+            remove_bt: false,
+        };
+        self.add_place(place_info)
+    }
+
+    pub fn new_stack_place(&mut self, ty: TypeId, origin: PlaceOrigin) -> PlaceRef {
+        let new_place = Place::Stack(self.new_stack_ref(origin));
+        self.make_place_ref(new_place, ty)
+    }
+
+    pub fn new_remove_bt_stack_place(&mut self, ty: TypeId, origin: PlaceOrigin) -> PlaceRef {
+        let new_place = Place::Stack(self.new_stack_ref(origin));
+        let place_info = PlaceInfo {
+            place: new_place,
+            ty,
+            remove_bt: true,
+        };
+        self.add_place(place_info)
+    }
+
 }
 
 fn mir_block(db: &dyn Mirs, block: BlockId, requirements: RequirementSet) -> SResult<Function> {
