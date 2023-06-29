@@ -15,8 +15,8 @@ use yaboc_resolve::expr::{Resolved, ResolvedAtom};
 use yaboc_types::{PrimitiveType, Type, TypeId};
 
 use crate::{
-    BBRef, CallMeta, Comp, ExceptionRetreat, FunctionWriter, IntBinOp, IntUnOp, MirInstr, Place,
-    PlaceInfo, PlaceOrigin, PlaceRef, Val,
+    BBRef, CallMeta, Comp, ExceptionRetreat, FunctionWriter, IntBinOp, IntUnOp, Place, PlaceInfo,
+    PlaceOrigin, PlaceRef,
 };
 
 // anyone wanna play some type tetris?
@@ -62,6 +62,10 @@ impl<'a> ConvertExpr<'a> {
             retreat,
             places,
         }
+    }
+
+    pub fn register_place(&mut self, sub: SubValue, place: PlaceRef) {
+        assert!(self.places.insert(sub, place).is_none());
     }
 
     pub fn val_place_at_def(&self, id: DefId) -> Option<PlaceRef> {
@@ -194,8 +198,7 @@ impl<'a> ConvertExpr<'a> {
         origin: PlaceOrigin,
     ) -> PlaceRef {
         let place_ref = self.unwrap_or_stack(place, ty, origin);
-        self.f
-            .append_ins(MirInstr::StoreVal(place_ref, Val::Int(n)));
+        self.f.load_int(n, place_ref);
         place_ref
     }
 
@@ -207,8 +210,7 @@ impl<'a> ConvertExpr<'a> {
         origin: PlaceOrigin,
     ) -> PlaceRef {
         let place_ref = self.unwrap_or_stack(place, ty, origin);
-        self.f
-            .append_ins(MirInstr::StoreVal(place_ref, Val::Char(c)));
+        self.f.load_char(c, place_ref);
         place_ref
     }
 
@@ -220,8 +222,13 @@ impl<'a> ConvertExpr<'a> {
         origin: PlaceOrigin,
     ) -> PlaceRef {
         let place_ref = self.unwrap_or_stack(place, ty, origin);
-        self.f
-            .append_ins(MirInstr::StoreVal(place_ref, Val::Bool(b)));
+        self.f.load_bool(b, place_ref);
+        place_ref
+    }
+
+    fn load_undef(&mut self, ty: TypeId, place: Option<PlaceRef>, origin: PlaceOrigin) -> PlaceRef {
+        let place_ref = self.unwrap_or_stack(place, ty, origin);
+        self.f.load_undef(place_ref);
         place_ref
     }
 
@@ -306,8 +313,9 @@ impl<'a> ConvertExpr<'a> {
         expr_id: ExprId,
         expr: &IndexTypeExpr,
         place: Option<PlaceRef>,
+        fun_dep: impl Fn(ExprIdx<Resolved>) -> bool,
     ) -> SResult<PlaceRef> {
-        self.convert_expr_impl(expr_id, expr, expr.expr.root(), place)
+        self.convert_expr_impl(expr_id, expr, expr.expr.root(), place, &fun_dep)
     }
 
     fn convert_expr_impl(
@@ -316,9 +324,13 @@ impl<'a> ConvertExpr<'a> {
         expr: &IndexTypeExpr,
         idx: ExprIdx<Resolved>,
         place: Option<PlaceRef>,
+        fun_dep: &impl Fn(ExprIdx<Resolved>) -> bool,
     ) -> SResult<PlaceRef> {
         let (idx, &ty) = expr.data.index_expr(idx);
         let origin = PlaceOrigin::Expr(expr_id, idx);
+        if !fun_dep(idx) {
+            return Ok(self.load_undef(ty, place, origin));
+        }
         Ok(match expr.expr.index_expr(idx) {
             ExprHead::Niladic(n) => match n {
                 ResolvedAtom::Val(val, backtracks) => self
@@ -342,8 +354,9 @@ impl<'a> ConvertExpr<'a> {
             ExprHead::Monadic(op, inner) => {
                 let (inner_idx, &inner_ty) = expr.data.index_expr(*inner);
                 let inner_origin = PlaceOrigin::Expr(expr_id, inner_idx);
-                let recurse =
-                    |ctx: &mut Self, plc| ctx.convert_expr_impl(expr_id, expr, *inner, plc);
+                let recurse = |ctx: &mut Self, plc| {
+                    ctx.convert_expr_impl(expr_id, expr, *inner, plc, fun_dep)
+                };
                 match &op {
                     ValUnOp::Not | ValUnOp::Neg => {
                         let op: IntUnOp = op.try_into().unwrap();
@@ -355,7 +368,7 @@ impl<'a> ConvertExpr<'a> {
                             recurse,
                         )?;
                         let place_ref = self.unwrap_or_stack(place, ty, origin);
-                        self.f.append_ins(MirInstr::IntUn(place_ref, op, inner));
+                        self.f.int_un_op(place_ref, op, inner);
                         place_ref
                     }
                     ValUnOp::Wiggle(constr, kind) => {
@@ -420,9 +433,10 @@ impl<'a> ConvertExpr<'a> {
                 let (left_idx, &left_ty) = expr.data.index_expr(*left);
                 let (right_idx, &right_ty) = expr.data.index_expr(*right);
                 let lrecurse =
-                    |ctx: &mut Self, plc| ctx.convert_expr_impl(expr_id, expr, *left, plc);
-                let rrecurse =
-                    |ctx: &mut Self, plc| ctx.convert_expr_impl(expr_id, expr, *right, plc);
+                    |ctx: &mut Self, plc| ctx.convert_expr_impl(expr_id, expr, *left, plc, fun_dep);
+                let rrecurse = |ctx: &mut Self, plc| {
+                    ctx.convert_expr_impl(expr_id, expr, *right, plc, fun_dep)
+                };
                 let lorigin = PlaceOrigin::Expr(expr_id, left_idx);
                 let rorigin = PlaceOrigin::Expr(expr_id, right_idx);
                 match &op {
@@ -443,8 +457,7 @@ impl<'a> ConvertExpr<'a> {
                             self.int, right_ty, None, rorigin, rrecurse,
                         )?;
                         let place_ref = self.unwrap_or_stack(place, ty, origin);
-                        self.f
-                            .append_ins(MirInstr::IntBin(place_ref, op, left, right));
+                        self.f.int_bin_op(place_ref, op, left, right);
                         place_ref
                     }
                     ValBinOp::LesserEq
@@ -460,8 +473,7 @@ impl<'a> ConvertExpr<'a> {
                             self.int, right_ty, None, rorigin, rrecurse,
                         )?;
                         let place_ref = self.unwrap_or_stack(place, ty, origin);
-                        self.f
-                            .append_ins(MirInstr::Comp(place_ref, op, left, right));
+                        self.f.comp(place_ref, op, left, right);
                         place_ref
                     }
                     ValBinOp::ParserApply => {
@@ -528,12 +540,12 @@ impl<'a> ConvertExpr<'a> {
                     fun_ty,
                     None,
                     fun_origin,
-                    |ctx, plc| ctx.convert_expr_impl(expr_id, expr, inner[0], plc),
+                    |ctx, plc| ctx.convert_expr_impl(expr_id, expr, inner[0], plc, fun_dep),
                 )?;
                 let place_ref = self.unwrap_or_stack(place, ty, origin);
                 let inner_results = inner[1..]
                     .iter()
-                    .map(|inner| self.convert_expr_impl(expr_id, expr, *inner, None))
+                    .map(|inner| self.convert_expr_impl(expr_id, expr, *inner, None, fun_dep))
                     .collect::<Result<Vec<_>, _>>()?;
                 // fun_arg_num: 6           (available arguments)
                 // inner_results.len(): 4   (given arguments)

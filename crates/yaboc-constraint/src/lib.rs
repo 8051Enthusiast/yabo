@@ -1,24 +1,67 @@
-mod len_term;
+mod len;
+pub mod represent;
+
+use std::sync::Arc;
 
 use fxhash::FxHashMap;
+use salsa::InternKey;
 use yaboc_base::{
     error::SResult,
     interner::{Interner, Regex},
 };
 use yaboc_dependents::Dependents;
 use yaboc_hir as hir;
-use yaboc_len::{regex::RegexError, ArgKind, Env, SizeCalcCtx, Val};
+use yaboc_len::{regex::RegexError, ArgKind, Env, PolyCircuit, SizeCalcCtx, SmallBitVec, Val};
 use yaboc_resolve::{parserdef_ssc::FunctionSscId, Resolves};
 
-use len_term::{len_term, PdLenTerm};
+use len::len_term;
+pub use len::{Origin, PdLenTerm};
 use yaboc_types::{PrimitiveType, Type};
 
 #[salsa::query_group(ConstraintDatabase)]
 pub trait Constraints: Interner + Resolves + Dependents {
     fn regex_len(&self, regex: Regex) -> Result<Option<i128>, RegexError>;
-    fn len_term(&self, pd: hir::ParserDefId) -> SResult<PdLenTerm>;
-    fn fun_len(&self, pd: hir::ParserDefId) -> Val;
-    fn ssc_fun_len(&self, ssc: FunctionSscId) -> Vec<Val>;
+    fn len_term(&self, pd: hir::ParserDefId) -> SResult<Arc<PdLenTerm>>;
+    fn fun_len(&self, pd: hir::ParserDefId) -> LenVal;
+    fn len_vals(&self, ssc: hir::ParserDefId) -> Arc<LenVals>;
+    fn ssc_len_vals(&self, ssc: FunctionSscId) -> Arc<Vec<LenVals>>;
+
+    #[salsa::interned]
+    fn intern_polycircuit(&self, circuit: Arc<PolyCircuit>) -> PolyCircuitId;
+}
+
+pub type LenVal = Val<PolyCircuitId>;
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct LenVals {
+    pub vals: Vec<LenVal>,
+    pub call_sites: FxHashMap<Origin, SmallBitVec>,
+    pub fun_val: LenVal,
+    pub root: usize,
+}
+
+impl Default for LenVals {
+    fn default() -> Self {
+        Self {
+            vals: Default::default(),
+            call_sites: Default::default(),
+            fun_val: Val::Undefined,
+            root: Default::default(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
+pub struct PolyCircuitId(salsa::InternId);
+
+impl InternKey for PolyCircuitId {
+    fn from_intern_id(v: salsa::InternId) -> Self {
+        PolyCircuitId(v)
+    }
+
+    fn as_intern_id(&self) -> salsa::InternId {
+        self.0
+    }
 }
 
 pub fn regex_len(db: &dyn Constraints, regex: Regex) -> Result<Option<i128>, RegexError> {
@@ -28,21 +71,32 @@ pub fn regex_len(db: &dyn Constraints, regex: Regex) -> Result<Option<i128>, Reg
 
 pub struct LenInferCtx<'a, DB: Constraints + ?Sized> {
     db: &'a DB,
-    local_vals: FxHashMap<hir::ParserDefId, Val>,
-    local_terms: &'a FxHashMap<hir::ParserDefId, Option<PdLenTerm>>,
+    local_vals: FxHashMap<hir::ParserDefId, LenVals>,
+    local_terms: &'a FxHashMap<hir::ParserDefId, Option<Arc<PdLenTerm>>>,
 }
 
 impl<'a, DB: Constraints + ?Sized> LenInferCtx<'a, DB> {
     pub fn new(
         db: &'a DB,
-        local_vals: FxHashMap<hir::ParserDefId, Val>,
-        local_terms: &'a FxHashMap<hir::ParserDefId, Option<PdLenTerm>>,
+        local_vals: FxHashMap<hir::ParserDefId, LenVals>,
+        local_terms: &'a FxHashMap<hir::ParserDefId, Option<Arc<PdLenTerm>>>,
     ) -> Self {
         Self {
             db,
             local_vals,
             local_terms,
         }
+    }
+
+    fn call_deps(
+        &self,
+        pd: hir::ParserDefId,
+        size_ctx: &SizeCalcCtx<Self>,
+    ) -> FxHashMap<Origin, SmallBitVec> {
+        let mut ret = FxHashMap::default();
+        let terms = self.local_terms[&pd].as_ref().unwrap();
+        size_ctx.call_site_deps(&terms.term_spans, &terms.call_arities, &mut ret);
+        ret
     }
 
     pub fn infer(&mut self) {
@@ -52,12 +106,24 @@ impl<'a, DB: Constraints + ?Sized> LenInferCtx<'a, DB> {
             for (pd, term) in self.local_terms.iter() {
                 let Some(term) = &term else {continue};
                 let args = arg_kinds(self.db, *pd).unwrap_or_default();
-                let mut subctx = SizeCalcCtx::new(&*self, &*term.expr, &args);
+                let mut subctx = SizeCalcCtx::new(&*self, &term.expr, &args);
                 let new_val = subctx.fun_val(term.root);
-                if new_val.has_expanded_from(&self.local_vals[pd]) {
-                    changed = true;
-                    self.local_vals.insert(*pd, new_val);
-                }
+                let old_val = self
+                    .local_vals
+                    .get(pd)
+                    .map_or(Val::Dynamic, |x| x.fun_val.clone());
+                changed |= new_val.has_expanded_from(&old_val);
+
+                let root = term.root;
+                let call_sites = self.call_deps(*pd, &subctx);
+                let vals = subctx.vals();
+                let new_term_vals = LenVals {
+                    vals,
+                    call_sites,
+                    fun_val: new_val,
+                    root,
+                };
+                self.local_vals.insert(*pd, new_term_vals);
             }
         }
     }
@@ -65,13 +131,22 @@ impl<'a, DB: Constraints + ?Sized> LenInferCtx<'a, DB> {
 
 impl<'db, DB: Constraints + ?Sized> Env for LenInferCtx<'db, DB> {
     type ParserRef = hir::ParserDefId;
+    type PolyCircuitId = PolyCircuitId;
 
-    fn size_info(&self, pd: &Self::ParserRef) -> Val {
-        if let Some(val) = self.local_vals.get(pd).cloned() {
-            val
+    fn size_info(&self, pd: &Self::ParserRef) -> LenVal {
+        if let Some(val) = self.local_vals.get(pd) {
+            val.fun_val.clone()
         } else {
             self.db.fun_len(*pd)
         }
+    }
+
+    fn lookup_circuit(&self, id: Self::PolyCircuitId) -> Arc<PolyCircuit> {
+        self.db.lookup_intern_polycircuit(id)
+    }
+
+    fn intern_circuit(&self, circuit: Arc<PolyCircuit>) -> Self::PolyCircuitId {
+        self.db.intern_polycircuit(circuit)
     }
 }
 
@@ -103,32 +178,41 @@ fn arg_kinds(db: &(impl Constraints + ?Sized), pd: hir::ParserDefId) -> SResult<
     Ok(ret)
 }
 
-pub fn ssc_fun_len(db: &dyn Constraints, ssc: FunctionSscId) -> Vec<Val> {
+pub fn ssc_len_vals(db: &dyn Constraints, ssc: FunctionSscId) -> Arc<Vec<LenVals>> {
     let pds = db.lookup_intern_recursion_scc(ssc);
     let terms = pds.iter().map(|x| (*x, db.len_term(*x).ok())).collect();
 
-    let vals = pds
-        .iter()
-        .map(|x| (*x, yaboc_len::Val::Undefined))
-        .collect();
+    let vals = pds.iter().map(|x| (*x, LenVals::default())).collect();
 
     let mut ctx = LenInferCtx::new(db, vals, &terms);
 
     ctx.infer();
 
-    pds.iter()
-        .map(|x| ctx.local_vals.remove(x).unwrap())
-        .collect()
+    Arc::new(
+        pds.iter()
+            .map(|x| ctx.local_vals.remove(x).unwrap())
+            .collect(),
+    )
 }
 
-pub fn fun_len(db: &dyn Constraints, pd: hir::ParserDefId) -> Val {
+pub fn fun_len(db: &dyn Constraints, pd: hir::ParserDefId) -> LenVal {
     let Ok(ssc) = db.parser_ssc(pd) else {
         return Val::Undefined
     };
     let pds = db.lookup_intern_recursion_scc(ssc);
     let idx = pds.iter().position(|x| *x == pd).unwrap();
-    let fun_vals = db.ssc_fun_len(ssc);
-    fun_vals[idx].clone()
+    let fun_vals = db.ssc_len_vals(ssc);
+    fun_vals[idx].fun_val.clone()
+}
+
+pub fn len_vals(db: &dyn Constraints, pd: hir::ParserDefId) -> Arc<LenVals> {
+    let Ok(ssc) = db.parser_ssc(pd) else {
+        return Default::default()
+    };
+    let pds = db.lookup_intern_recursion_scc(ssc);
+    let idx = pds.iter().position(|x| *x == pd).unwrap();
+    let fun_vals = db.ssc_len_vals(ssc);
+    Arc::new(fun_vals[idx].clone())
 }
 
 #[cfg(test)]
@@ -248,7 +332,7 @@ mod tests {
         let poly_unify = ctx.parser("poly_unify");
         assert!(matches!(ctx.db.fun_len(poly_unify), Val::Poly(..)));
     }
-    
+
     #[test]
     fn static_size() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
@@ -263,5 +347,21 @@ mod tests {
         assert!(deps[0]);
         // currently not as fine-grained because that's a pain
         // assert!(!deps[1]);
+    }
+    #[test]
+    fn dyn_recurse() {
+        let ctx = Context::<ConstraintTestDatabase>::mock(
+            r#"
+            fun for[int] *> number_acc(base: int, n: int): int = {
+              x: ~
+              let s = n * base + x
+              | return: number_acc?(base, s)
+              | let return = s
+            }"#,
+        );
+        let number_acc = ctx.parser("number_acc");
+        dbg!(ctx.db.len_term(number_acc).unwrap());
+        dbg!(ctx.db.len_vals(number_acc));
+        assert_eq!(ctx.db.fun_len(number_acc), Val::Dynamic);
     }
 }

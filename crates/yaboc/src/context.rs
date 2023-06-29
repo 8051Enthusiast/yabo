@@ -97,6 +97,17 @@ impl Driver {
         out.write_all(s.as_bytes())
     }
 
+    pub fn write_lens(&self, outfile: &OsStr) -> Result<(), std::io::Error> {
+        let Ok(s) = yaboc_constraint::represent::len_dot(&self.db) else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Error while generating length graph",
+            ));
+        };
+        let mut out = std::fs::File::create(outfile)?;
+        out.write_all(s.as_bytes())
+    }
+
     fn codegen_and_then(
         &self,
         f: impl FnOnce(CodeGenCtx) -> Result<(), LLVMString>,

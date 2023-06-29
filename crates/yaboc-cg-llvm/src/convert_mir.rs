@@ -452,6 +452,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             Val::Char(c) => self.cg.llvm.i32_type().const_int(c as u64, false),
             Val::Int(i) => self.cg.const_i64(i),
             Val::Bool(b) => self.cg.llvm.i8_type().const_int(b as u64, false),
+            Val::Undefined => return,
         };
         let casted_ret_ptr = self
             .cg
@@ -608,6 +609,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::ParseCall(ret, _, call_kind, arg, fun, ctrl) => {
                 self.parse_call(ret, call_kind, fun, arg, ctrl)
             }
+            MirInstr::LenCall(..) => todo!(),
             MirInstr::Field(ret, place, field, ctrl) => self.field(ret, place, field, ctrl),
             MirInstr::AssertVal(place, val, ctrl) => self.assert_value(place, val, ctrl),
             MirInstr::SetDiscriminant(block, field, val) => {

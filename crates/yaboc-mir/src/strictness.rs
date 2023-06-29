@@ -217,6 +217,7 @@ impl<'a> StrictnessCtx<'a> {
             | MirInstr::StoreVal(ret, _)
             | MirInstr::ApplyArgs(ret, _, _, _, _)
             | MirInstr::Copy(ret, _, _)
+            | MirInstr::LenCall(ret, _, _)
             | MirInstr::Field(ret, _, _, _) => (Some(*ret), None),
             MirInstr::ParseCall(ret, retlen, _, _, _, _) => (*ret, *retlen),
             MirInstr::AssertVal(_, _, _)
@@ -250,6 +251,7 @@ impl<'a> StrictnessCtx<'a> {
             }
             MirInstr::IntUn(_, _, a)
             | MirInstr::AssertVal(a, _, _)
+            | MirInstr::LenCall(_, a, _)
             | MirInstr::Field(_, a, _, _) => {
                 insert(*a, Use::new_static(DerefLevel::zero()));
             }

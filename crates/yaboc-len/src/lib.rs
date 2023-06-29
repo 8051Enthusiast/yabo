@@ -1,12 +1,15 @@
 #![allow(mixed_script_confusables)]
 pub mod prob_array;
 pub mod regex;
+mod represent;
+
+pub use represent::len_graph;
 
 use prob_array::{RandomArray, UNINIT};
 use smallvec::SmallVec;
-use std::{cmp::Ordering, ops::Index, slice, sync::Arc};
+use std::{cmp::Ordering, collections::HashMap, hash::{BuildHasher, Hash}, ops::Index, slice, sync::Arc};
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct SmallBitVec(SmallVec<[u64; 2]>);
 
 impl Index<usize> for SmallBitVec {
@@ -65,7 +68,7 @@ impl SmallBitVec {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PolyOp {
     Mul([usize; 2]),
     Add([usize; 2]),
@@ -73,6 +76,12 @@ pub enum PolyOp {
 }
 
 impl PolyOp {
+    pub fn ref_indices(&self) -> &[usize] {
+        match self {
+            PolyOp::Mul(x) | PolyOp::Add(x) => x,
+            PolyOp::Neg(x) => slice::from_ref(x),
+        }
+    }
     fn remap_indices(&self, index: &[usize]) -> Self {
         match self {
             PolyOp::Mul([a, b]) => PolyOp::Mul([index[*a], index[*b]]),
@@ -82,14 +91,14 @@ impl PolyOp {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PolyGate {
     Const(i128),
     Arg(u32),
     Op(PolyOp),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct PolyCircuit {
     pub gates: Vec<PolyGate>,
     pub deps: SmallBitVec,
@@ -110,13 +119,14 @@ pub enum Term<ParserRef> {
     Arr,
     Unify([usize; 2]),
     UnifyDyn([usize; 2]),
+    Copy(usize),
 }
 
 impl<ParserRef> Term<ParserRef> {
     fn ref_indices(&self) -> &[usize] {
         match self {
             Term::Pd(_) | Term::Arg(_) | Term::Const(_) | Term::Opaque | Term::Arr => &[],
-            Term::OpaqueUn(x) | Term::Neg(x) => slice::from_ref(x),
+            Term::OpaqueUn(x) | Term::Neg(x) | Term::Copy(x) => slice::from_ref(x),
             Term::OpaqueBin(x)
             | Term::Apply(x)
             | Term::Unify(x)
@@ -148,20 +158,20 @@ pub enum Fun<ParserRef> {
     Static(SmallBitVec),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Val {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Val<PolyCircuitId> {
     Undefined,
     Const(u32, i128),
     Arg(u32, u32),
     PolyOp(PolyOp),
-    Poly(u32, Arc<PolyCircuit>),
-    PartialPolyApply(u32, [usize; 2], Arc<PolyCircuit>),
+    Poly(u32, PolyCircuitId, SmallBitVec),
+    PartialPolyApply(u32, [usize; 2], PolyCircuitId, SmallBitVec),
     Static(u32, SmallBitVec),
     Dynamic,
 }
 
-impl Val {
-    fn is_dynamic(&self) -> bool {
+impl<PolyCircuitId: Clone + std::fmt::Debug> Val<PolyCircuitId> {
+    pub fn is_dynamic(&self) -> bool {
         matches!(self, Val::Dynamic)
     }
 
@@ -186,24 +196,24 @@ impl Val {
         )
     }
 
-    fn rank(&self) -> Option<u32> {
+    pub fn rank(&self) -> Option<u32> {
         match self {
             Val::Undefined => None,
-            Val::Const(rank, ..) => Some(*rank),
-            Val::Arg(rank, ..) => Some(*rank),
-            Val::Poly(rank, ..) => Some(*rank),
             Val::PolyOp(..) => Some(0),
-            Val::PartialPolyApply(rank, ..) => Some(*rank),
-            Val::Static(rank, ..) => Some(*rank),
+            Val::Const(rank, ..)
+            | Val::Arg(rank, ..)
+            | Val::Poly(rank, ..)
+            | Val::PartialPolyApply(rank, ..)
+            | Val::Static(rank, ..) => Some(*rank),
             Val::Dynamic => None,
         }
     }
 
-    fn as_arg_fun(&self) -> Val {
+    fn as_arg_fun(&self) -> Self {
         match self {
             Val::Static(rank, deps) if !deps.is_zero_until(*rank as usize) => Val::Dynamic,
-            Val::Poly(rank, x) | Val::PartialPolyApply(rank, .., x)
-                if !x.deps.is_zero_until(*rank as usize) =>
+            Val::Poly(rank, .., x) | Val::PartialPolyApply(rank, .., x)
+                if !x.is_zero_until(*rank as usize) =>
             {
                 Val::Dynamic
             }
@@ -211,18 +221,28 @@ impl Val {
         }
     }
 
+    pub fn uses_next_arg(&self) -> bool {
+        match self {
+            Val::Undefined | Val::Const(_, _) | Val::Arg(_, _) | Val::PolyOp(_) => false,
+            Val::Poly(rank, _, deps)
+            | Val::PartialPolyApply(rank, _, _, deps)
+            | Val::Static(rank, deps) => deps[*rank as usize - 1],
+            Val::Dynamic => true,
+        }
+    }
+
     fn deps(&self) -> SmallBitVec {
         match self {
             Val::Const(rank, _) | Val::Arg(rank, _) => SmallBitVec::zeroes(*rank as usize),
-            Val::Poly(_, x) | Val::PartialPolyApply(_, _, x) => x.deps.clone(),
+            Val::Poly(.., x) | Val::PartialPolyApply(.., x) => x.clone(),
             Val::Static(_, deps) => deps.clone(),
             Val::PolyOp(_) | Val::Undefined | Val::Dynamic => SmallBitVec::default(),
         }
     }
 
-    fn ref_indices(&self) -> &[usize] {
+    pub fn ref_indices(&self) -> &[usize] {
         match self {
-            Val::PolyOp(PolyOp::Mul(x) | PolyOp::Add(x)) | Val::PartialPolyApply(_, x, _) => x,
+            Val::PolyOp(PolyOp::Mul(x) | PolyOp::Add(x)) | Val::PartialPolyApply(_, x, ..) => x,
             Val::PolyOp(PolyOp::Neg(x)) => slice::from_ref(x),
             _ => &[],
         }
@@ -241,7 +261,7 @@ impl Val {
         }
     }
 
-    pub fn has_expanded_from(&self, other: &Val) -> bool {
+    pub fn has_expanded_from(&self, other: &Self) -> bool {
         match self.fun_hierarchy_rank().cmp(&other.fun_hierarchy_rank()) {
             Ordering::Less => panic!("cannot shrink during absint: {:?} < {:?}", self, other),
             Ordering::Equal => false,
@@ -267,18 +287,22 @@ pub enum ArgKind {
     Const(u32),
     Dynamic,
 }
-pub trait Env {
-    type ParserRef: Copy + std::fmt::Debug;
+pub trait Env: Sized {
+    type ParserRef: Copy + Eq + std::fmt::Debug;
+    type PolyCircuitId: Copy + Eq + std::fmt::Debug;
 
-    fn size_info(&self, pd: &Self::ParserRef) -> Val;
+    fn size_info(&self, pd: &Self::ParserRef) -> Val<Self::PolyCircuitId>;
+
+    fn lookup_circuit(&self, id: Self::PolyCircuitId) -> Arc<PolyCircuit>;
+    fn intern_circuit(&self, circuit: Arc<PolyCircuit>) -> Self::PolyCircuitId;
 }
 
 pub struct SizeCalcCtx<'a, Γ: Env> {
     env: &'a Γ,
     size_expr: &'a SizeExpr<Γ::ParserRef>,
     poly_vals: Vec<RandomArray>,
-    vals: Vec<Val>,
-    arr_circuit: Arc<PolyCircuit>,
+    pub vals: Vec<Val<Γ::PolyCircuitId>>,
+    arr_circuit: Γ::PolyCircuitId,
     args: &'a [ArgKind],
     arg_poly_vals: Vec<RandomArray>,
 }
@@ -298,12 +322,13 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 PolyGate::Op(PolyOp::Mul([0, 1])),
             ],
         };
+        let arr_circuit = env.intern_circuit(Arc::new(arr_circuit));
         let mut ret = Self {
             env,
             poly_vals: vec![UNINIT; size_expr.terms.len()],
             vals: Vec::with_capacity(size_expr.terms.len()),
             size_expr,
-            arr_circuit: Arc::new(arr_circuit),
+            arr_circuit,
             args,
             arg_poly_vals,
         };
@@ -311,23 +336,23 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         ret
     }
 
-    fn poly_args_impl(&mut self, fun: Val) -> Vec<Parameter> {
+    fn poly_args_impl(&mut self, fun: Val<Γ::PolyCircuitId>) -> Vec<Parameter> {
         match fun {
-            Val::PartialPolyApply(_, [fun, arg], _) => {
+            Val::PartialPolyApply(_, [fun, arg], ..) => {
                 let mut args = self.poly_args_impl(self.vals[fun].clone());
                 args.push(Parameter::Val(arg));
                 args
             }
-            Val::Poly(rank, _) => Vec::with_capacity(rank as usize),
+            Val::Poly(rank, ..) => Vec::with_capacity(rank as usize),
             _ => panic!("not a polynomial"),
         }
     }
 
-    fn poly_args(&mut self, fun: Val) -> Vec<Parameter> {
+    fn poly_args(&mut self, fun: Val<Γ::PolyCircuitId>) -> Vec<Parameter> {
         let mut args = self.poly_args_impl(fun.clone());
         let rank = match fun {
             Val::PartialPolyApply(rank, ..) => rank,
-            Val::Poly(rank, _) => rank,
+            Val::Poly(rank, ..) => rank,
             _ => panic!("not a polynomial"),
         };
         // for comparing polynomials, we need to make sure there are at least
@@ -412,8 +437,9 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                     }
                 }
             }
-            Val::Poly(_, circ) | Val::PartialPolyApply(.., circ) => {
+            Val::Poly(.., circ, _) | Val::PartialPolyApply(.., circ, _) => {
                 let args = self.poly_args(self.vals[idx].clone());
+                let circ = self.env.lookup_circuit(circ);
                 self.poly_vals[idx] = self.eval_circuit(&circ, &args);
             }
             _ => panic!("attempt to evaluate non-polynomial value"),
@@ -425,7 +451,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         deps: [usize; N],
         exec_op: impl Fn([i128; N]) -> (i128, bool),
         poly_op: PolyOp,
-    ) -> Val {
+    ) -> Val<Γ::PolyCircuitId> {
         if deps
             .iter()
             .any(|x| matches!(&self.vals[*x], Val::Undefined))
@@ -455,7 +481,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         }
     }
 
-    fn opaque_op(&self, args: &[usize]) -> Val {
+    fn opaque_op(&self, args: &[usize]) -> Val<Γ::PolyCircuitId> {
         #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
         enum State {
             Static,
@@ -481,42 +507,47 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             State::Undefined => Val::Undefined,
         }
     }
-    fn apply_fun(&self, fun: usize, arg: usize) -> Val {
+
+    fn apply_fun(&self, fun: usize, arg: usize) -> Val<Γ::PolyCircuitId> {
         let argv = self.vals[arg].as_arg_fun();
-        match [&self.vals[fun], &argv] {
-            [Val::Undefined, _] | [_, Val::Undefined] => Val::Undefined,
-            [Val::Arg(rank @ 1.., a), _] => Val::Arg(*rank - 1, *a),
-            [Val::Const(rank @ 1.., c), _] => Val::Const(*rank - 1, *c),
-            [Val::Static(rank @ 1.., deps), arg] => {
-                if deps[*rank as usize - 1] && arg.is_dynamic() {
+        match (&self.vals[fun], &argv, self.vals[fun].uses_next_arg()) {
+            (Val::Undefined, ..) | (_, Val::Undefined, true) => Val::Undefined,
+            (Val::Arg(rank @ 1.., a), _, _) => Val::Arg(*rank - 1, *a),
+            (Val::Const(rank @ 1.., c), _, _) => Val::Const(*rank - 1, *c),
+            (Val::Static(1.., _), Val::Dynamic, true) => Val::Dynamic,
+            (Val::Static(rank @ 1.., deps), ..) => {
+                if *rank == 1 {
+                    Val::Static(*rank - 1, SmallBitVec::default())
+                } else {
+                    Val::Static(*rank - 1, deps.clone())
+                }
+            }
+            (
+                Val::PartialPolyApply(rank @ 1.., _, circ, deps)
+                | Val::Poly(rank @ 1.., circ, deps),
+                argv,
+                true,
+            ) => {
+                if argv.is_dynamic() {
                     Val::Dynamic
+                } else if argv.is_poly() {
+                    Val::PartialPolyApply(*rank - 1, [fun, arg], *circ, deps.clone())
                 } else {
-                    if *rank == 1 {
-                        Val::Static(*rank - 1, SmallBitVec::default())
-                    } else {
-                        Val::Static(*rank - 1, deps.clone())
-                    }
+                    Val::Static(*rank - 1, deps.clone())
                 }
             }
-            [Val::PartialPolyApply(rank @ 1.., _, x) | Val::Poly(rank @ 1.., x), argv] => {
-                let new_rank = *rank - 1;
-                if x.deps[new_rank as usize] {
-                    if argv.is_dynamic() {
-                        Val::Dynamic
-                    } else if argv.is_poly() {
-                        Val::PartialPolyApply(new_rank, [fun, arg], x.clone())
-                    } else {
-                        Val::Static(new_rank, x.deps.clone())
-                    }
-                } else {
-                    Val::PartialPolyApply(new_rank, [fun, arg], x.clone())
-                }
-            }
+            (
+                Val::PartialPolyApply(rank @ 1.., _, circ, deps)
+                | Val::Poly(rank @ 1.., circ, deps),
+                _,
+                false,
+            ) => Val::PartialPolyApply(*rank - 1, [fun, arg], *circ, deps.clone()),
+
             _ => Val::Dynamic,
         }
     }
 
-    fn unify(&mut self, ops @ [lidx, ridx]: [usize; 2], dy: bool) -> Val {
+    fn unify(&mut self, ops @ [lidx, ridx]: [usize; 2], dy: bool) -> Val<Γ::PolyCircuitId> {
         let maybe_static = |rank, deps| {
             if dy {
                 Val::Dynamic
@@ -532,9 +563,9 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 let deps = ldeps.or(&rdeps);
                 maybe_static(rank, deps)
             }
-            [Val::Static(rank, ldeps), Val::Poly(_, x) | Val::PartialPolyApply(_, _, x)]
-            | [Val::Poly(_, x) | Val::PartialPolyApply(_, _, x), Val::Static(rank, ldeps)] => {
-                let deps = ldeps.or(&x.deps);
+            [Val::Static(rank, ldeps), Val::Poly(.., x) | Val::PartialPolyApply(.., x)]
+            | [Val::Poly(.., x) | Val::PartialPolyApply(.., x), Val::Static(rank, ldeps)] => {
+                let deps = ldeps.or(&x);
                 maybe_static(rank, deps)
             }
             [Val::Static(rank, deps), Val::Arg(..) | Val::Const(..) | Val::PolyOp(..)]
@@ -603,15 +634,16 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 Term::Neg(arg) => {
                     self.poly_op([*arg], |[x]| x.overflowing_neg(), PolyOp::Neg(*arg))
                 }
-                Term::Arr => Val::Poly(2, self.arr_circuit.clone()),
+                Term::Arr => Val::Poly(2, self.arr_circuit, SmallBitVec::ones(2)),
                 Term::Unify(ops) => self.unify(*ops, false),
                 Term::UnifyDyn(ops) => self.unify(*ops, true),
+                Term::Copy(val) => self.vals[*val].clone(),
             };
             self.vals.push(val);
         }
     }
 
-    pub fn static_deps(&mut self) -> Vec<SmallBitVec> {
+    pub fn static_arg_deps(&mut self) -> Vec<SmallBitVec> {
         let mut arg_deps = vec![SmallBitVec::zeroes(self.args.len()); self.size_expr.terms.len()];
         for (i, term) in self.size_expr.terms.iter().enumerate() {
             for dep in term.ref_indices() {
@@ -672,6 +704,9 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 args.set(self.args.len() - *a as usize - 1);
             }
             if val.is_poly_fun() {
+                // higher order functions are not directly included
+                // in the circuit but flattened through the include_circuit
+                // method
                 included[i] = false;
             }
             for dep in val.ref_indices() {
@@ -700,8 +735,9 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                     let op = op.remap_indices(&gates_index);
                     gates.push(PolyGate::Op(op))
                 }
-                Val::Poly(0, circuit) | Val::PartialPolyApply(0, _, circuit) => {
+                Val::Poly(0, circuit, _) | Val::PartialPolyApply(0, _, circuit, _) => {
                     let parameters = self.poly_args(self.vals[i].clone());
+                    let circuit = self.env.lookup_circuit(circuit);
                     let last =
                         self.include_circuit(&circuit, &mut gates, &gates_index, &parameters);
                     gates_index.push(last);
@@ -715,17 +751,51 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         Some(PolyCircuit { gates, deps: args })
     }
 
-    pub fn fun_val(&mut self, root: usize) -> Val {
+    pub fn call_site_deps<T: Copy + Eq + Hash, H: BuildHasher + Default>(
+        &self,
+        origins: &[T],
+        sizes: &[usize],
+        deps: &mut HashMap<T, SmallBitVec, H>,
+    ) {
+        let mut idx = sizes.len();
+        while idx > 0 {
+            idx -= 1;
+            let size@1.. = sizes[idx] else {
+                continue;
+            };
+            let mut call_deps = SmallBitVec::zeroes(size);
+            let mut f_idx = idx;
+            for i in (0..size).rev() {
+                let Term::Apply([f, _]) = &self.size_expr.terms[f_idx] else {
+                    panic!("call site does not consist of apply terms")
+                };
+                if self.vals[*f].uses_next_arg() {
+                    call_deps.set(i);
+                }
+                f_idx = *f;
+            }
+            let origin = origins[idx];
+            deps.insert(origin, call_deps);
+        }
+    }
+
+    pub fn vals(self) -> Vec<Val<Γ::PolyCircuitId>> {
+        self.vals
+    }
+
+    pub fn fun_val(&mut self, root: usize) -> Val<Γ::PolyCircuitId> {
         let arg_count = self.args.len() as u32;
         match &self.vals[root] {
             Val::Undefined => Val::Undefined,
             Val::Const(0, c) => Val::Const(arg_count, *c),
-            Val::Arg(0, _) | Val::PolyOp(_) | Val::Poly(0, _) | Val::PartialPolyApply(0, _, _) => {
+            Val::Arg(0, _) | Val::PolyOp(_) | Val::Poly(0, ..) | Val::PartialPolyApply(0, ..) => {
                 let circuit = self.to_polycircuit(root).unwrap();
-                Val::Poly(arg_count, Arc::new(circuit))
+                let deps = circuit.deps.clone();
+                let circuit_id = self.env.intern_circuit(Arc::new(circuit));
+                Val::Poly(arg_count, circuit_id, deps)
             }
             Val::Static(0, _) => {
-                let deps = self.static_deps().remove(root);
+                let deps = self.static_arg_deps().remove(root);
                 Val::Static(arg_count, deps)
             }
             Val::Dynamic => Val::Dynamic,

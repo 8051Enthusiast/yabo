@@ -14,13 +14,13 @@ use yaboc_base::{
 use yaboc_dependents::{
     BlockSerialization, NeededBy, RequirementMatrix, RequirementSet, SubValue, SubValueKind,
 };
-use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
+use yaboc_expr::{ExprIdx, Expression, FetchExpr};
 use yaboc_hir::{
     self as hir, variable_set::VarStatus, BlockId, ChoiceId, ContextId, ExprId, HirIdWrapper,
     HirNode, ParserDefId, ParserPredecessor,
 };
 use yaboc_hir_types::FullTypeId;
-use yaboc_resolve::expr::{Resolved, ResolvedAtom};
+use yaboc_resolve::expr::Resolved;
 use yaboc_types::{Type, TypeId};
 
 use crate::{expr::ConvertExpr, CallMeta};
@@ -480,7 +480,8 @@ impl<'a> ConvertCtx<'a> {
                 let resolved_expr =
                     Resolved::expr_with_data::<(ExprIdx<Resolved>, FullTypeId)>(self.db, e.id)?;
                 let place = self.w.val_place_at_def(e.id.0).unwrap();
-                self.w.convert_expr(e.id, &resolved_expr, Some(place))?;
+                self.w
+                    .convert_expr(e.id, &resolved_expr, Some(place), |_| true)?;
             }
             hir::HirNode::Parse(p) => {
                 self.change_context(p.parent_context);
@@ -623,18 +624,7 @@ impl<'a> ConvertCtx<'a> {
         order: &BlockSerialization,
     ) -> SResult<Self> {
         let block = id.lookup(db)?;
-        let block_ty = Resolved::expr_with_data::<FullTypeId>(db, block.enclosing_expr)?
-            .take_ref()
-            .iter_parts()
-            .find_map(|(x, ty)| match &x {
-                ExprHead::Niladic(ResolvedAtom::Block(b)) if *b == id => Some(*ty),
-                _ => None,
-            })
-            .expect("could not find block within enclosing expression");
-        let Type::ParserArg { result, arg } = db.lookup_intern_type(block_ty) else {
-            dbpanic!(db, "should have been a parser type, was {}", &block_ty)
-        };
-        let mut f: FunctionWriter = FunctionWriter::new(block_ty, arg, result, requirements);
+        let mut f = FunctionWriter::new_block(db, &block, requirements)?;
         let mut top_level_retreat = f.make_top_level_retreat();
         if !requirements.contains(NeededBy::Backtrack) {
             top_level_retreat.backtrack = top_level_retreat.error;
@@ -697,16 +687,7 @@ impl<'a> ConvertCtx<'a> {
         id: ParserDefId,
         requirements: RequirementSet,
     ) -> SResult<Self> {
-        let sig = db.parser_args(id)?;
-        let from = sig.from.unwrap_or_else(|| db.intern_type(Type::Any));
-        let thunk = db.intern_type(Type::Nominal(sig.thunk));
-        let ret_ty = db.parser_returns(id)?.deref;
-        let fun_ty = db.intern_type(Type::ParserArg {
-            result: thunk,
-            arg: from,
-        });
-        let arg_ty = from;
-        let mut f = FunctionWriter::new(fun_ty, arg_ty, ret_ty, requirements);
+        let mut f = FunctionWriter::new_pd(db, id, requirements)?;
         let mut top_level_retreat = f.make_top_level_retreat();
         if !requirements.contains(NeededBy::Backtrack) {
             top_level_retreat.backtrack = top_level_retreat.error;
