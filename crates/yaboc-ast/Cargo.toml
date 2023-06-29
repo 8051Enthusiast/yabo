@@ -7,8 +7,8 @@ description.workspace = true
 
 [dependencies]
 salsa = "0.16.1"
-tree-sitter = "0.20.9"
+tree-sitter = "0.20.10"
 yaboc-base = { path = "../yaboc-base" }
 tree-sitter-yabo = { path = "../tree-sitter-yabo" }
-sha2 = "0.10.6"
+sha2 = "0.10.7"
 fxhash = "0.2.1"

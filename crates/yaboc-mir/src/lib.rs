@@ -319,7 +319,7 @@ impl MirInstr {
                 MirInstr::AssertVal(*place, atom.clone(), control_flow.map_bb(f))
             }
             MirInstr::Field(place, val, field, control_flow) => {
-                MirInstr::Field(*place, *val, field.clone(), control_flow.map_bb(f))
+                MirInstr::Field(*place, *val, *field, control_flow.map_bb(f))
             }
             MirInstr::ParseCall(ret, val, meta, parser, args, Some(control_flow)) => {
                 MirInstr::ParseCall(

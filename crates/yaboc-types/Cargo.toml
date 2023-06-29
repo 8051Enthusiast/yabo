@@ -9,6 +9,6 @@ description.workspace = true
 salsa = "0.16.1"
 yaboc-base = { path = "../yaboc-base" }
 yaboc-ast = { path = "../yaboc-ast" }
-sha2 = "0.10.6"
-bumpalo = "3.11.1"
+sha2 = "0.10.7"
+bumpalo = "3.13.0"
 fxhash = "0.2.1"

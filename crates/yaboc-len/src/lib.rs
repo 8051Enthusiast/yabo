@@ -7,7 +7,14 @@ pub use represent::len_graph;
 
 use prob_array::{RandomArray, UNINIT};
 use smallvec::SmallVec;
-use std::{cmp::Ordering, collections::HashMap, hash::{BuildHasher, Hash}, ops::Index, slice, sync::Arc};
+use std::{
+    cmp::Ordering,
+    collections::HashMap,
+    hash::{BuildHasher, Hash},
+    ops::Index,
+    slice,
+    sync::Arc,
+};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct SmallBitVec(SmallVec<[u64; 2]>);
@@ -178,8 +185,8 @@ impl<PolyCircuitId: Clone + std::fmt::Debug> Val<PolyCircuitId> {
     fn is_poly(&self) -> bool {
         matches!(
             self,
-            Val::Poly(_, ..)
-                | Val::Const(_, ..)
+            Val::Poly(..)
+                | Val::Const(..)
                 | Val::Arg(_, _)
                 | Val::PolyOp(..)
                 | Val::PartialPolyApply(..)
@@ -657,7 +664,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
     }
 
     fn include_circuit(
-        &mut self,
+        &self,
         included_circuit: &PolyCircuit,
         new_gates: &mut Vec<PolyGate>,
         term_indices: &[usize],
@@ -689,7 +696,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         *index.last().unwrap()
     }
 
-    fn to_polycircuit(&mut self, root: usize) -> Option<PolyCircuit> {
+    fn create_polycircuit(&mut self, root: usize) -> Option<PolyCircuit> {
         if !self.vals.get(root).map_or(false, |x| x.is_poly()) {
             return None;
         }
@@ -789,7 +796,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             Val::Undefined => Val::Undefined,
             Val::Const(0, c) => Val::Const(arg_count, *c),
             Val::Arg(0, _) | Val::PolyOp(_) | Val::Poly(0, ..) | Val::PartialPolyApply(0, ..) => {
-                let circuit = self.to_polycircuit(root).unwrap();
+                let circuit = self.create_polycircuit(root).unwrap();
                 let deps = circuit.deps.clone();
                 let circuit_id = self.env.intern_circuit(Arc::new(circuit));
                 Val::Poly(arg_count, circuit_id, deps)

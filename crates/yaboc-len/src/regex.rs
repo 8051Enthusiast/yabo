@@ -2,7 +2,7 @@ use regex_syntax::hir::{Class, Hir, HirKind, Literal, RepetitionKind, Repetition
 
 pub type RegexError = regex_syntax::Error;
 
-pub fn regex_len(regex: &str) -> Result<Option<i128>, RegexError> {
+pub fn regex_len(regex: &str) -> Result<Option<i128>, Box<RegexError>> {
     let regex = regex_syntax::ParserBuilder::new()
         .allow_invalid_utf8(true)
         .dot_matches_new_line(true)

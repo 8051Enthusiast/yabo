@@ -79,7 +79,7 @@ pub struct ExprIdx<K>(NonZeroU32, PhantomData<K>);
 
 impl<K> Clone for ExprIdx<K> {
     fn clone(&self) -> Self {
-        ExprIdx(self.0, PhantomData::default())
+        ExprIdx(self.0, PhantomData)
     }
 }
 
@@ -110,20 +110,14 @@ impl<K> ExprIdx<K> {
         self.0.get() as usize - 1
     }
     pub fn ignore_shape<ToK>(self) -> ExprIdx<ToK> {
-        ExprIdx(self.0, PhantomData::default())
+        ExprIdx(self.0, PhantomData)
     }
     fn new(idx: &mut usize) -> Self {
         *idx += 1;
-        ExprIdx(
-            NonZeroU32::new(*idx as u32).unwrap(),
-            PhantomData::default(),
-        )
+        ExprIdx(NonZeroU32::new(*idx as u32).unwrap(), PhantomData)
     }
     pub fn new_from_usize(idx: usize) -> Self {
-        ExprIdx(
-            NonZeroU32::new(idx as u32 + 1).unwrap(),
-            PhantomData::default(),
-        )
+        ExprIdx(NonZeroU32::new(idx as u32 + 1).unwrap(), PhantomData)
     }
 }
 
