@@ -119,7 +119,7 @@ impl<K> ExprIdx<K> {
             PhantomData::default(),
         )
     }
-    fn new_from_usize(idx: usize) -> Self {
+    pub fn new_from_usize(idx: usize) -> Self {
         ExprIdx(
             NonZeroU32::new(idx as u32 + 1).unwrap(),
             PhantomData::default(),

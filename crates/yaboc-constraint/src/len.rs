@@ -8,7 +8,7 @@ use yaboc_base::{
     error::{SResult, Silencable, SilencedError},
     interner::DefId,
 };
-use yaboc_dependents::{SubValue, SubValueKind};
+use yaboc_dependents::{BlockSerialization, SubValue, SubValueKind};
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
 use yaboc_hir as hir;
 use yaboc_len::{SizeExpr, Term};
@@ -17,11 +17,13 @@ use yaboc_resolve::expr::{Resolved, ResolvedAtom};
 pub struct SizeTermBuilder<'a> {
     db: &'a dyn Constraints,
     terms: SizeExpr<hir::ParserDefId>,
+    call_arities: Vec<usize>,
     term_spans: Vec<Origin>,
     vals: FxHashMap<SubValue, usize>,
+    block_locs: FxHashMap<hir::BlockId, usize>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Origin {
     Expr(hir::ExprId, ExprIdx<Resolved>),
     Node(DefId),
@@ -32,8 +34,10 @@ impl<'a> SizeTermBuilder<'a> {
         Self {
             db,
             terms: SizeExpr::new(),
+            call_arities: Vec::new(),
             term_spans: Vec::new(),
             vals: FxHashMap::default(),
+            block_locs: FxHashMap::default(),
         }
     }
 
@@ -44,13 +48,16 @@ impl<'a> SizeTermBuilder<'a> {
     }
 
     fn create_block(&mut self, bid: hir::BlockId) -> SResult<usize> {
-        let ser = self.db.block_serialization(bid).silence()?;
+        let ser: BlockSerialization = self.db.block_serialization(bid).silence()?;
         let mut whole_result = None;
         for val_loc in ser.eval_order.iter() {
             let loc = Origin::Node(val_loc.val.id);
             let val = match (self.db.hir_node(val_loc.val.id)?, val_loc.val.kind) {
                 (_, SubValueKind::Bt) => continue,
-                (hir::HirNode::Let(l), _) => self.vals[&SubValue::new_val(l.expr.0)],
+                (hir::HirNode::Let(l), _) => {
+                    let old_val = self.vals[&SubValue::new_val(l.expr.0)];
+                    self.push_term(Term::Copy(old_val), loc)
+                }
                 (hir::HirNode::Expr(e), _) => self.create_expr(e.id)?,
                 (
                     hir::HirNode::Parse(hir::ParseStatement { front: pred, .. })
@@ -77,7 +84,8 @@ impl<'a> SizeTermBuilder<'a> {
                 (hir::HirNode::Block(_), SubValueKind::Val) => self.push_term(Term::Opaque, loc),
                 (hir::HirNode::Block(b), SubValueKind::Back) => {
                     let x = if let Some((_, last)) = b.root_context.lookup(self.db)?.endpoints {
-                        self.vals[&SubValue::new_back(last)]
+                        let old_val = self.vals[&SubValue::new_back(last)];
+                        self.push_term(Term::Copy(old_val), loc)
                     } else {
                         self.push_term(Term::Const(0), loc)
                     };
@@ -95,13 +103,15 @@ impl<'a> SizeTermBuilder<'a> {
                 }
                 (hir::HirNode::Choice(c), SubValueKind::Back) => {
                     let mut current_term = None;
+                    let front = self.vals[&SubValue::new_front(c.id.0)];
                     for subctx in c.subcontexts.iter() {
                         let endpoints = subctx.lookup(self.db)?.endpoints;
                         let loc = Origin::Node(subctx.0);
                         let term = if let Some((_, end)) = endpoints {
-                            self.vals[&SubValue::new_back(end)]
+                            let inner_len = self.vals[&SubValue::new_back(end)];
+                            self.push_term(Term::Add([front, inner_len]), loc)
                         } else {
-                            self.push_term(Term::Const(0), loc)
+                            self.push_term(Term::Copy(front), loc)
                         };
                         current_term = match current_term {
                             Some(t) => Some(self.push_term(Term::UnifyDyn([t, term]), loc)),
@@ -114,7 +124,9 @@ impl<'a> SizeTermBuilder<'a> {
             };
             self.vals.insert(val_loc.val, val);
         }
-        Ok(whole_result.expect("block is never terminated"))
+        let res = whole_result.expect("block is never terminated");
+        self.block_locs.insert(bid, res);
+        Ok(res)
     }
 
     fn create_expr(&mut self, expr_id: hir::ExprId) -> SResult<usize> {
@@ -205,16 +217,28 @@ impl<'a> SizeTermBuilder<'a> {
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PdLenTerm {
-    pub expr: Arc<SizeExpr<hir::ParserDefId>>,
+    pub expr: SizeExpr<hir::ParserDefId>,
+    pub call_arities: Vec<usize>,
+    pub term_spans: Vec<Origin>,
+    pub vals: Arc<FxHashMap<SubValue, usize>>,
     pub root: usize,
+    pub block_locs: FxHashMap<hir::BlockId, usize>,
 }
 
-pub fn len_term(db: &dyn Constraints, pd: hir::ParserDefId) -> SResult<PdLenTerm> {
+pub fn len_term(db: &dyn Constraints, pd: hir::ParserDefId) -> SResult<Arc<PdLenTerm>> {
     let mut ctx = SizeTermBuilder::new(db);
     let root = ctx.create_pd(pd)?;
+    let call_arities = ctx.call_arities;
     let expr = ctx.terms;
-    Ok(PdLenTerm {
-        expr: Arc::new(expr),
+    let term_spans = ctx.term_spans;
+    let block_locs = ctx.block_locs;
+    let vals = Arc::new(ctx.vals);
+    Ok(Arc::new(PdLenTerm {
+        expr,
         root,
-    })
+        call_arities,
+        vals,
+        term_spans,
+        block_locs,
+    }))
 }

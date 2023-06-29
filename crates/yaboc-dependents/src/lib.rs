@@ -14,8 +14,8 @@ use yaboc_base::{
     error_type,
     interner::{DefId, FieldName},
 };
-use yaboc_expr::{ExprHead, Expression, FetchExpr, TakeRef};
-use yaboc_hir::{self as hir, HirIdWrapper, ParserAtom, ParserPredecessor};
+use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
+use yaboc_hir::{self as hir, HirIdWrapper, ParserPredecessor};
 use yaboc_hir_types::TyHirs;
 use yaboc_resolve::expr::{Resolved, ResolvedAtom};
 
@@ -113,6 +113,30 @@ impl PartialOrd for SubValuePrio {
     }
 }
 
+pub fn add_term_val_refs<DB: Dependents + ?Sized>(
+    db: &DB,
+    parent_block: Option<hir::BlockId>,
+    term: &ExprHead<Resolved, ExprIdx<Resolved>>,
+    mut add_val: impl FnMut(DefId),
+) {
+    match term {
+        ExprHead::Niladic(ResolvedAtom::Block(b)) => db
+            .captures(*b)
+            .iter()
+            .copied()
+            .filter(|target| {
+                if let Some(parent_block) = parent_block {
+                    parent_block.0.is_ancestor_of(db, *target)
+                } else {
+                    true
+                }
+            })
+            .for_each(add_val),
+        ExprHead::Niladic(ResolvedAtom::Val(v, _)) => add_val(*v),
+        _ => {}
+    }
+}
+
 fn val_refs(
     db: &dyn Dependents,
     node: &hir::HirNode,
@@ -126,23 +150,12 @@ fn val_refs(
         }
         hir::HirNode::Expr(expr) => {
             let mut ret = FxHashSet::default();
-            for (e, _) in expr.expr.take_ref().iter_parts() {
-                match e {
-                    ExprHead::Niladic(ParserAtom::Block(b)) => ret.extend(
-                        db.captures(b)
-                            .iter()
-                            .copied()
-                            .filter(|target| parent_block.0.is_ancestor_of(db, *target))
-                            .map(|target| (SubValue::new_val(target), true)),
-                    ),
-                    _ => continue,
-                };
-            }
             let rexpr = Resolved::fetch_expr(db, expr.id)?;
-            ret.extend(rexpr.take_ref().iter_parts().filter_map(|x| match x {
-                ExprHead::Niladic(ResolvedAtom::Val(v, _)) => Some((SubValue::new_val(v), true)),
-                _ => None,
-            }));
+            for term in rexpr.take_ref().iter_parts() {
+                add_term_val_refs(db, Some(parent_block), &term, |v| {
+                    ret.insert((SubValue::new_val(v), true));
+                });
+            }
             Ok(ret)
         }
         hir::HirNode::Parse(p) => {

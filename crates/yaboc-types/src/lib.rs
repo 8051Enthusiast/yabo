@@ -42,6 +42,11 @@ pub trait TypeInterner: yaboc_base::source::Files + yaboc_base::interner::Intern
     fn substitute_typevar(&self, ty: TypeId, replacements: Arc<Vec<TypeId>>) -> TypeId;
     fn parser_result(&self, ty: TypeId) -> Option<TypeId>;
     fn type_hash(&self, ty: TypeId) -> [u8; 32];
+    fn int(&self) -> TypeId;
+}
+
+fn int(db: &dyn TypeInterner) -> TypeId {
+    db.intern_type(Type::Primitive(PrimitiveType::Int))
 }
 
 fn type_hash(db: &dyn TypeInterner, id: TypeId) -> [u8; 32] {

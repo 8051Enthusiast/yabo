@@ -1,33 +1,40 @@
 mod convert;
+mod expr;
+mod len;
 mod represent;
 mod strictness;
-mod expr;
 
 use std::num::NonZeroU32;
 
 use fxhash::FxHashMap;
 
+use len::LenMirCtx;
 pub use strictness::Strictness;
 use yaboc_ast::expr::{ValBinOp, ValUnOp, WiggleKind};
 use yaboc_ast::ConstraintAtom;
+use yaboc_base::dbpanic;
 use yaboc_base::{
     error::{SResult, Silencable},
     interner::{DefId, FieldName},
 };
+use yaboc_constraint::{Constraints, Origin};
 use yaboc_dependents::{Dependents, NeededBy, RequirementSet, SubValue};
-use yaboc_expr::ExprIdx;
-use yaboc_hir::{BlockId, ExprId, HirConstraintId, HirIdWrapper, ParserDefId};
-use yaboc_resolve::expr::Resolved;
-use yaboc_types::TypeId;
+use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
+use yaboc_hir::{Block, BlockId, ExprId, HirConstraintId, HirIdWrapper, ParserDefId};
+use yaboc_hir_types::FullTypeId;
+use yaboc_resolve::expr::{Resolved, ResolvedAtom};
+use yaboc_types::{Type, TypeId};
 
 use self::convert::ConvertCtx;
 
 pub use represent::print_all_mir;
 
 #[salsa::query_group(MirDatabase)]
-pub trait Mirs: Dependents {
+pub trait Mirs: Dependents + Constraints {
     fn mir(&self, kind: FunKind, requirements: RequirementSet) -> SResult<Function>;
     fn strictness(&self, kind: FunKind, requirements: RequirementSet) -> SResult<Vec<Strictness>>;
+    fn len_mir(&self, kind: FunKind) -> SResult<Function>;
+    fn len_strictness(&self, kind: FunKind) -> SResult<Vec<Strictness>>;
 }
 
 fn mir(db: &dyn Mirs, kind: FunKind, requirements: RequirementSet) -> SResult<Function> {
@@ -44,6 +51,19 @@ fn strictness(
     requirements: RequirementSet,
 ) -> SResult<Vec<Strictness>> {
     let fun = db.mir(kind, requirements)?;
+    strictness::StrictnessCtx::new(&fun, db)?.run()
+}
+
+fn len_mir(db: &dyn Mirs, kind: FunKind) -> SResult<Function> {
+    match kind {
+        FunKind::Block(block) => LenMirCtx::new_block(db, block),
+        FunKind::ParserDef(pd) => LenMirCtx::new_pd(db, pd),
+        FunKind::If(_, ty, _) => LenMirCtx::new_if(db, ty),
+    }
+}
+
+fn len_strictness(db: &dyn Mirs, kind: FunKind) -> SResult<Vec<Strictness>> {
+    let fun = db.len_mir(kind)?;
     strictness::StrictnessCtx::new(&fun, db)?.run()
 }
 
@@ -164,6 +184,7 @@ pub enum Val {
     Char(u32),
     Int(i64),
     Bool(bool),
+    Undefined,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -205,6 +226,14 @@ impl ControlFlow {
             .flatten()
             .chain(std::iter::once(self.next))
     }
+    pub fn map_bb(&self, mut f: impl FnMut(BBRef) -> BBRef) -> Self {
+        Self {
+            next: f(self.next),
+            backtrack: self.backtrack.map(&mut f),
+            error: self.error.map(&mut f),
+            eof: self.eof.map(f),
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
@@ -245,6 +274,7 @@ pub enum MirInstr {
         PlaceRef,
         Option<ControlFlow>,
     ),
+    LenCall(PlaceRef, PlaceRef, ControlFlow),
     Field(PlaceRef, PlaceRef, FieldName, ControlFlow),
     AssertVal(PlaceRef, ConstraintAtom, ControlFlow),
     Branch(BBRef),
@@ -260,6 +290,7 @@ impl MirInstr {
                 | MirInstr::AssertVal(..)
                 | MirInstr::Field(..)
                 | MirInstr::ParseCall(..)
+                | MirInstr::LenCall(..)
                 | MirInstr::ApplyArgs(..)
                 | MirInstr::Copy(..)
         )
@@ -275,9 +306,44 @@ impl MirInstr {
             MirInstr::AssertVal(_, _, control_flow)
             | MirInstr::Field(_, _, _, control_flow)
             | MirInstr::ParseCall(_, _, _, _, _, Some(control_flow))
+            | MirInstr::LenCall(_, _, control_flow)
             | MirInstr::ApplyArgs(_, _, _, _, control_flow)
             | MirInstr::Copy(_, _, control_flow) => Some(*control_flow),
             _ => None,
+        }
+    }
+    pub fn map_bb(&self, mut f: impl FnMut(BBRef) -> BBRef) -> Self {
+        match self {
+            MirInstr::Branch(bb) => MirInstr::Branch(f(*bb)),
+            MirInstr::AssertVal(place, atom, control_flow) => {
+                MirInstr::AssertVal(*place, atom.clone(), control_flow.map_bb(f))
+            }
+            MirInstr::Field(place, val, field, control_flow) => {
+                MirInstr::Field(*place, *val, field.clone(), control_flow.map_bb(f))
+            }
+            MirInstr::ParseCall(ret, val, meta, parser, args, Some(control_flow)) => {
+                MirInstr::ParseCall(
+                    *ret,
+                    *val,
+                    *meta,
+                    *parser,
+                    *args,
+                    Some(control_flow.map_bb(f)),
+                )
+            }
+            MirInstr::LenCall(ret, val, control_flow) => {
+                MirInstr::LenCall(*ret, *val, control_flow.map_bb(f))
+            }
+            MirInstr::ApplyArgs(ret, val, args, offset, control_flow) => {
+                MirInstr::ApplyArgs(*ret, *val, args.clone(), *offset, control_flow.map_bb(f))
+            }
+            MirInstr::Copy(ret, val, control_flow) => {
+                MirInstr::Copy(*ret, *val, control_flow.map_bb(f))
+            }
+            _ => {
+                assert!(self.control_flow().is_none());
+                self.clone()
+            }
         }
     }
 }
@@ -288,6 +354,10 @@ pub struct BBRef(NonZeroU32);
 impl BBRef {
     pub fn as_index(self) -> usize {
         u32::from(self.0) as usize - 1
+    }
+
+    fn from_index(index: usize) -> Self {
+        Self(u32::try_from(index + 1).unwrap().try_into().unwrap())
     }
 }
 
@@ -360,6 +430,16 @@ pub enum PlaceOrigin {
     Expr(ExprId, ExprIdx<Resolved>),
     Ret,
     Arg,
+    PolyLen,
+}
+
+impl From<Origin> for PlaceOrigin {
+    fn from(value: Origin) -> Self {
+        match value {
+            Origin::Expr(id, idx) => Self::Expr(id, idx),
+            Origin::Node(id) => Self::Node(id),
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -472,6 +552,53 @@ impl Function {
     pub fn success_returns(&self) -> &[BBRef] {
         &self.success_returns
     }
+
+    pub fn remove_unused_bb(mut self) -> Self {
+        let mut used = vec![false; self.bb.len()];
+        let mut queue = vec![self.entry()];
+        while let Some(bb) = queue.pop() {
+            if used[bb.as_index()] {
+                continue;
+            }
+            used[bb.as_index()] = true;
+            let bb_data = self.bb(bb);
+            if let Some(controlflow) = bb_data.terminator().control_flow() {
+                for succ in controlflow.successors() {
+                    queue.push(succ);
+                }
+            }
+        }
+        let mut current_index = 0;
+        let mut new_index = Vec::with_capacity(self.bb.len());
+        for is_used in used.iter() {
+            new_index.push(current_index);
+            current_index += *is_used as usize;
+        }
+        let mut new_bbs = Vec::with_capacity(current_index);
+
+        let remap = |bbref: BBRef| -> BBRef { BBRef::from_index(new_index[bbref.as_index()]) };
+
+        for (bb, bb_data) in self.iter_bb() {
+            if !used[bb.as_index()] {
+                continue;
+            }
+            let mut new_bb = BasicBlock::default();
+            for ins in bb_data.ins() {
+                let new_ins = ins.map_bb(remap);
+                new_bb.ins.push(new_ins);
+            }
+            new_bbs.push(new_bb);
+        }
+
+        self.bb = new_bbs;
+        self.success_returns = self
+            .success_returns
+            .into_iter()
+            .filter(|x| used[x.as_index()])
+            .map(remap)
+            .collect();
+        self
+    }
 }
 
 pub struct FunctionWriter {
@@ -522,6 +649,37 @@ impl FunctionWriter {
             builder.fun.retlen = Some(retlen);
         }
         builder
+    }
+
+    pub fn new_block(db: &dyn Mirs, block: &Block, req: RequirementSet) -> SResult<Self> {
+        let id = block.id;
+        let block_ty = Resolved::expr_with_data::<FullTypeId>(db, block.enclosing_expr)?
+            .take_ref()
+            .iter_parts()
+            .find_map(|(x, ty)| match &x {
+                ExprHead::Niladic(ResolvedAtom::Block(b)) if *b == id => Some(*ty),
+                _ => None,
+            })
+            .expect("could not find block within enclosing expression");
+        let Type::ParserArg { result, arg } = db.lookup_intern_type(block_ty) else {
+            dbpanic!(db, "should have been a parser type, was {}", &block_ty)
+        };
+        let f = FunctionWriter::new(block_ty, arg, result, req);
+        Ok(f)
+    }
+
+    pub fn new_pd(db: &dyn Mirs, id: ParserDefId, req: RequirementSet) -> SResult<Self> {
+        let sig = db.parser_args(id)?;
+        let from = sig.from.unwrap_or_else(|| db.intern_type(Type::Any));
+        let thunk = db.intern_type(Type::Nominal(sig.thunk));
+        let ret_ty = db.parser_returns(id)?.deref;
+        let fun_ty = db.intern_type(Type::ParserArg {
+            result: thunk,
+            arg: from,
+        });
+        let arg_ty = from;
+        let f = FunctionWriter::new(fun_ty, arg_ty, ret_ty, req);
+        Ok(f)
     }
 
     pub fn make_top_level_retreat(&mut self) -> ExceptionRetreat {
@@ -640,6 +798,7 @@ impl FunctionWriter {
             ));
         self.set_bb(new_block);
     }
+
     pub fn tail_parse_call(
         &mut self,
         call_info: CallMeta,
@@ -652,6 +811,46 @@ impl FunctionWriter {
             .bb_mut(self.current_bb)
             .append_ins(MirInstr::ParseCall(ret, retlen, call_info, arg, fun, None));
         self.fun.success_returns.push(self.current_bb);
+    }
+
+    pub fn load_int(&mut self, n: i64, place: PlaceRef) {
+        self.append_ins(MirInstr::StoreVal(place, Val::Int(n)));
+    }
+
+    pub fn load_char(&mut self, c: u32, place: PlaceRef) {
+        self.append_ins(MirInstr::StoreVal(place, Val::Char(c)));
+    }
+
+    pub fn load_bool(&mut self, b: bool, place: PlaceRef) {
+        self.append_ins(MirInstr::StoreVal(place, Val::Bool(b)));
+    }
+
+    pub fn load_undef(&mut self, place: PlaceRef) {
+        self.append_ins(MirInstr::StoreVal(place, Val::Undefined));
+    }
+
+    pub fn int_bin_op(&mut self, target: PlaceRef, op: IntBinOp, left: PlaceRef, right: PlaceRef) {
+        self.append_ins(MirInstr::IntBin(target, op, left, right));
+    }
+
+    pub fn int_un_op(&mut self, target: PlaceRef, op: IntUnOp, arg: PlaceRef) {
+        self.append_ins(MirInstr::IntUn(target, op, arg));
+    }
+
+    pub fn comp(&mut self, target: PlaceRef, op: Comp, left: PlaceRef, right: PlaceRef) {
+        self.append_ins(MirInstr::Comp(target, op, left, right));
+    }
+
+    pub fn len_call(&mut self, fun: PlaceRef, ret: PlaceRef, exc: ExceptionRetreat) {
+        let new_block = self.new_bb();
+        self.fun
+            .bb_mut(self.current_bb)
+            .append_ins(MirInstr::LenCall(
+                ret,
+                fun,
+                ControlFlow::new_with_exc(new_block, exc),
+            ));
+        self.set_bb(new_block);
     }
 
     pub fn apply_args(
@@ -721,7 +920,6 @@ impl FunctionWriter {
         };
         self.add_place(place_info)
     }
-
 }
 
 fn mir_block(db: &dyn Mirs, block: BlockId, requirements: RequirementSet) -> SResult<Function> {
@@ -764,6 +962,7 @@ mod tests {
     use yaboc_base::{
         config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase, Context,
     };
+    use yaboc_constraint::ConstraintDatabase;
     use yaboc_dependents::{DependentsDatabase, NeededBy};
     use yaboc_hir::{HirDatabase, Hirs, Parser};
     use yaboc_hir_types::HirTypesDatabase;
@@ -780,6 +979,7 @@ mod tests {
         TypeInternerDatabase,
         HirTypesDatabase,
         DependentsDatabase,
+        ConstraintDatabase,
         MirDatabase
     )]
     #[derive(Default)]

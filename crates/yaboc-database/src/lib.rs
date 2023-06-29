@@ -1,6 +1,7 @@
 use yaboc_absint::AbsIntDatabase;
 use yaboc_ast::AstDatabase;
 use yaboc_base::{config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase};
+use yaboc_constraint::ConstraintDatabase;
 use yaboc_dependents::DependentsDatabase;
 use yaboc_hir::HirDatabase;
 use yaboc_hir_types::HirTypesDatabase;
@@ -19,6 +20,7 @@ use yaboc_types::TypeInternerDatabase;
     TypeInternerDatabase,
     HirTypesDatabase,
     DependentsDatabase,
+    ConstraintDatabase,
     MirDatabase,
     AbsIntDatabase,
     LayoutDatabase

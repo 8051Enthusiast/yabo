@@ -23,7 +23,7 @@ use yaboc_hir::{self as hir, HirIdWrapper};
 use yaboc_hir_types::{DerefLevel, NominalId};
 use yaboc_mir::Mirs;
 use yaboc_resolve::expr::{Resolved, ResolvedAtom};
-use yaboc_types::{PrimitiveType, Type, TypeId};
+use yaboc_types::{PrimitiveType, Type, TypeId, TypeInterner};
 
 use self::prop::{PSize, SizeAlign, TargetSized, Zst};
 use self::represent::{LayoutHasher, LayoutPart, LayoutSymbol};
@@ -776,6 +776,14 @@ impl<'a> LayoutContext<'a> {
     pub fn manifestation(&self, layout: ILayout<'a>) -> Arc<StructManifestation> {
         self.manifestations[&layout].clone()
     }
+
+    pub fn int(&mut self, db: &(impl TypeInterner + ?Sized)) -> ILayout<'a> {
+        let int_ty = db.intern_type(Type::Primitive(PrimitiveType::Int));
+        self.intern(Layout::Mono(
+            MonoLayout::Primitive(PrimitiveType::Int),
+            int_ty,
+        ))
+    }
 }
 
 impl<'a> AbstractDomain<'a> for ILayout<'a> {
@@ -1016,6 +1024,7 @@ mod tests {
     use yaboc_base::{
         config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase, Context,
     };
+    use yaboc_constraint::ConstraintDatabase;
     use yaboc_dependents::{DependentsDatabase, NeededBy};
     use yaboc_hir::{HirDatabase, Parser};
     use yaboc_hir_types::{HirTypesDatabase, TyHirs};
@@ -1033,6 +1042,7 @@ mod tests {
         TypeInternerDatabase,
         HirTypesDatabase,
         DependentsDatabase,
+        ConstraintDatabase,
         MirDatabase,
         AbsIntDatabase,
         LayoutDatabase
