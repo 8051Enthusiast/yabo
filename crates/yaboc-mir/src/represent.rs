@@ -308,7 +308,7 @@ pub fn print_all_mir<DB: Mirs, W: Write>(db: &DB, w: &mut W) -> std::io::Result<
         for ((place, _), strictness) in fun.iter_places().zip(strictness.iter()) {
             dbwrite!(w, &(&fun, db), "{}: {}\n", &place, &strictness)?;
         }
-        
+
         dbwrite!(
             w,
             db,

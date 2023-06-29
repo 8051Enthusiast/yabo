@@ -20,7 +20,7 @@ use yaboc_types::{PrimitiveType, Type};
 
 #[salsa::query_group(ConstraintDatabase)]
 pub trait Constraints: Interner + Resolves + Dependents {
-    fn regex_len(&self, regex: Regex) -> Result<Option<i128>, RegexError>;
+    fn regex_len(&self, regex: Regex) -> Result<Option<i128>, Box<RegexError>>;
     fn len_term(&self, pd: hir::ParserDefId) -> SResult<Arc<PdLenTerm>>;
     fn fun_len(&self, pd: hir::ParserDefId) -> LenVal;
     fn len_vals(&self, ssc: hir::ParserDefId) -> Arc<LenVals>;
@@ -64,7 +64,7 @@ impl InternKey for PolyCircuitId {
     }
 }
 
-pub fn regex_len(db: &dyn Constraints, regex: Regex) -> Result<Option<i128>, RegexError> {
+pub fn regex_len(db: &dyn Constraints, regex: Regex) -> Result<Option<i128>, Box<RegexError>> {
     let regex_str = db.lookup_intern_regex(regex);
     yaboc_len::regex::regex_len(&regex_str)
 }

@@ -65,7 +65,9 @@ pub fn len_graph<P: std::fmt::Debug, T: std::fmt::Debug + Clone>(
 ) -> String {
     let mut ret = String::new();
     for (i, (term, val)) in terms.iter().zip(val.iter()).enumerate() {
-        ret.push_str(&format!("{prefix}{i} [label=\"[{i}]|<t>{term}|<v>{val}\"];\n"));
+        ret.push_str(&format!(
+            "{prefix}{i} [label=\"[{i}]|<t>{term}|<v>{val}\"];\n"
+        ));
     }
     for (i, val) in val.iter().enumerate() {
         for j in val.ref_indices() {

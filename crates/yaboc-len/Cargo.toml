@@ -7,5 +7,5 @@ description.workspace = true
 
 [dependencies]
 rand = "0.8.5"
-regex-syntax = "0.6.28"
+regex-syntax = "0.6.29"
 smallvec = { workspace = true }

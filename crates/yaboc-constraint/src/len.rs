@@ -141,7 +141,7 @@ impl<'a> SizeTermBuilder<'a> {
                 ResolvedAtom::Regex(r, _) => {
                     let len = self.db.regex_len(r).map_err(|_| SilencedError::new())?;
                     if let Some(len) = len {
-                        Ok(self.push_term(Term::Const(len.into()), src))
+                        Ok(self.push_term(Term::Const(len), src))
                     } else {
                         Ok(self.push_term(Term::Opaque, src))
                     }
