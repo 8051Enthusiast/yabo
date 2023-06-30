@@ -100,6 +100,14 @@ impl<K: ExprKind, Inner> ExprHead<K, Inner> {
             |(), op| map_var(op),
         )
     }
+    pub fn inner_refs(&self) -> &[Inner] {
+        match self {
+            ExprHead::Niladic(_) => &[],
+            ExprHead::Monadic(_, inner) => std::slice::from_ref(inner),
+            ExprHead::Dyadic(_, inner) => inner,
+            ExprHead::Variadic(_, inner) => inner,
+        }
+    }
 }
 
 impl<K: ExprKind, Inner> ExprPart for ExprHead<K, Inner> {

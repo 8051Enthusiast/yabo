@@ -75,7 +75,7 @@ impl Driver {
 
     pub fn write_mir(&self, outfile: &OsStr) -> Result<(), std::io::Error> {
         let mut out = std::fs::File::create(outfile)?;
-        print_all_mir(&self.db, &mut out)?;
+        print_all_mir(&self.db, &mut out, true)?;
         Ok(())
     }
 

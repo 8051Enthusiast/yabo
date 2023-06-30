@@ -44,6 +44,7 @@ impl<'a> SizeTermBuilder<'a> {
     fn push_term(&mut self, term: Term<hir::ParserDefId>, span: Origin) -> usize {
         let index = self.terms.push(term);
         self.term_spans.push(span);
+        self.call_arities.push(0);
         index
     }
 
@@ -154,7 +155,9 @@ impl<'a> SizeTermBuilder<'a> {
                 ResolvedAtom::Array => {
                     let arr = self.push_term(Term::Arr, src);
                     let one = self.push_term(Term::Const(1), src);
-                    Ok(self.push_term(Term::Apply([arr, one]), src))
+                    let arr_appl = self.push_term(Term::Apply([arr, one]), src);
+                    *self.call_arities.last_mut().unwrap() = 1;
+                    Ok(arr_appl)
                 }
                 ResolvedAtom::Block(bid) => self.create_block(bid),
             },
@@ -193,6 +196,7 @@ impl<'a> SizeTermBuilder<'a> {
                 for arg in args[1..].iter() {
                     ret = self.push_term(Term::Apply([ret, *arg]), src);
                 }
+                *self.call_arities.last_mut().unwrap() = args.len() - 1;
                 Ok(ret)
             }
         })
