@@ -62,11 +62,12 @@ pub fn len_graph<P: std::fmt::Debug, T: std::fmt::Debug + Clone>(
     prefix: &str,
     terms: &[Term<P>],
     val: &[Val<T>],
+    arities: &[usize],
 ) -> String {
     let mut ret = String::new();
-    for (i, (term, val)) in terms.iter().zip(val.iter()).enumerate() {
+    for (i, ((term, val), arity)) in terms.iter().zip(val.iter()).zip(arities.iter()).enumerate() {
         ret.push_str(&format!(
-            "{prefix}{i} [label=\"[{i}]|<t>{term}|<v>{val}\"];\n"
+            "{prefix}{i} [label=\"{{[{i}]|{arity}}}|<t>{term}|<v>{val}\"];\n"
         ));
     }
     for (i, val) in val.iter().enumerate() {

@@ -50,14 +50,16 @@ impl<'a> LenMirCtx<'a> {
                 continue;
             }
             if let ExprHead::Variadic(ValVarOp::Call, args) = term {
-                dbg!(&self.terms);
-                dbg!(&self.vals);
                 let call_site = Origin::Expr(expr_id, ExprIdx::new_from_usize(idx));
-                dbg!(call_site);
                 let call_deps = self.vals.call_sites[&call_site].clone();
                 used[args[0].as_usize()] = true;
                 for (i, arg_idx) in args[1..].iter().enumerate() {
-                    used[arg_idx.as_usize()] = call_deps[args.len() - i - 2];
+                    let is_used = call_deps[i];
+                    used[arg_idx.as_usize()] = is_used;
+                }
+            } else {
+                for arg_idx in term.inner_refs() {
+                    used[arg_idx.as_usize()] = true;
                 }
             }
         }
@@ -214,11 +216,12 @@ impl<'a> LenMirCtx<'a> {
             let ldt_ty = self.db.least_deref_type(expr_ty)?;
             let ldt_place = if ldt_ty != expr_ty {
                 let expr_origin = PlaceOrigin::Node(parse.expr.0);
-                self.w.f.new_stack_place(ldt_ty, expr_origin)
+                let ldt_place = self.w.f.new_stack_place(ldt_ty, expr_origin);
+                self.w.copy(expr_place, ldt_place);
+                ldt_place
             } else {
                 expr_place
             };
-            self.w.copy(expr_place, ldt_place);
             self.w.f.len_call(ldt_place, len_place, self.w.retreat);
         }
 
@@ -245,23 +248,28 @@ impl<'a> LenMirCtx<'a> {
             let n = i64::try_from(c).unwrap();
             self.w.f.load_int(n, len_place);
         } else {
-            let original_retreat = self.w.retreat;
+            let start_bb = self.w.f.current_bb;
             let mut next_bb = cont_bb;
+            let original_retreat = self.w.retreat;
+
             for context in choice.subcontexts.iter().rev() {
                 let current_bb = self.w.f.new_bb();
                 self.w.f.set_bb(current_bb);
                 if next_bb != cont_bb {
                     self.w.retreat = ExceptionRetreat {
-                        backtrack: cont_bb,
-                        eof: cont_bb,
-                        error: cont_bb,
+                        backtrack: next_bb,
+                        eof: next_bb,
+                        error: next_bb,
                     };
                 }
                 self.build_context(*context, len_place)?;
                 self.w.f.branch(cont_bb);
+
                 next_bb = current_bb;
             }
 
+            self.w.f.set_bb(start_bb);
+            self.w.f.branch(next_bb);
             self.w.f.set_bb(cont_bb);
             self.w.retreat = original_retreat;
         }

@@ -283,7 +283,11 @@ impl Display for Strictness {
     }
 }
 
-pub fn print_all_mir<DB: Mirs, W: Write>(db: &DB, w: &mut W) -> std::io::Result<()> {
+pub fn print_all_mir<DB: Mirs, W: Write>(
+    db: &DB,
+    w: &mut W,
+    include_strictness: bool,
+) -> std::io::Result<()> {
     let convert_error_ignore = |e| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -301,12 +305,14 @@ pub fn print_all_mir<DB: Mirs, W: Write>(db: &DB, w: &mut W) -> std::io::Result<
             .mir(FunKind::ParserDef(pd), RequirementSet::all())
             .map_err(convert_error_ignore)?;
         dbwrite!(w, db, "{}", &fun)?;
-        writeln!(w, "--strictness:")?;
-        let strictness = db
-            .strictness(FunKind::ParserDef(pd), RequirementSet::all())
-            .map_err(convert_error_ignore)?;
-        for ((place, _), strictness) in fun.iter_places().zip(strictness.iter()) {
-            dbwrite!(w, &(&fun, db), "{}: {}\n", &place, &strictness)?;
+        if include_strictness {
+            writeln!(w, "--strictness:")?;
+            let strictness = db
+                .strictness(FunKind::ParserDef(pd), RequirementSet::all())
+                .map_err(convert_error_ignore)?;
+            for ((place, _), strictness) in fun.iter_places().zip(strictness.iter()) {
+                dbwrite!(w, &(&fun, db), "{}: {}\n", &place, &strictness)?;
+            }
         }
 
         dbwrite!(
@@ -319,12 +325,14 @@ pub fn print_all_mir<DB: Mirs, W: Write>(db: &DB, w: &mut W) -> std::io::Result<
             .len_mir(FunKind::ParserDef(pd))
             .map_err(convert_error_ignore)?;
         dbwrite!(w, db, "{}", &fun)?;
-        writeln!(w, "--strictness:")?;
-        let strictness = db
-            .len_strictness(FunKind::ParserDef(pd))
-            .map_err(convert_error_ignore)?;
-        for ((place, _), strictness) in fun.iter_places().zip(strictness.iter()) {
-            dbwrite!(w, &(&fun, db), "{}: {}\n", &place, &strictness)?;
+        if include_strictness {
+            writeln!(w, "--strictness:")?;
+            let strictness = db
+                .len_strictness(FunKind::ParserDef(pd))
+                .map_err(convert_error_ignore)?;
+            for ((place, _), strictness) in fun.iter_places().zip(strictness.iter()) {
+                dbwrite!(w, &(&fun, db), "{}: {}\n", &place, &strictness)?;
+            }
         }
 
         for block in db.all_parserdef_blocks(pd).iter() {
@@ -333,12 +341,14 @@ pub fn print_all_mir<DB: Mirs, W: Write>(db: &DB, w: &mut W) -> std::io::Result<
                 .map_err(convert_error_ignore)?;
             dbwrite!(w, db, "---\nmir block {}:\n", &block.0)?;
             dbwrite!(w, db, "{}", &fun)?;
-            writeln!(w, "--strictness:")?;
-            let strictness = db
-                .strictness(FunKind::Block(*block), RequirementSet::all())
-                .map_err(convert_error_ignore)?;
-            for ((place, _), strictness) in fun.iter_places().zip(strictness.iter()) {
-                dbwrite!(w, &(&fun, db), "{}: {}\n", &place, &strictness)?;
+            if include_strictness {
+                writeln!(w, "--strictness:")?;
+                let strictness = db
+                    .strictness(FunKind::Block(*block), RequirementSet::all())
+                    .map_err(convert_error_ignore)?;
+                for ((place, _), strictness) in fun.iter_places().zip(strictness.iter()) {
+                    dbwrite!(w, &(&fun, db), "{}: {}\n", &place, &strictness)?;
+                }
             }
 
             let fun = db
@@ -346,12 +356,14 @@ pub fn print_all_mir<DB: Mirs, W: Write>(db: &DB, w: &mut W) -> std::io::Result<
                 .map_err(convert_error_ignore)?;
             dbwrite!(w, db, "---\nmir len block {}:\n", &block.0)?;
             dbwrite!(w, db, "{}", &fun)?;
-            writeln!(w, "--strictness:")?;
-            let strictness = db
-                .len_strictness(FunKind::Block(*block))
-                .map_err(convert_error_ignore)?;
-            for ((place, _), strictness) in fun.iter_places().zip(strictness.iter()) {
-                dbwrite!(w, &(&fun, db), "{}: {}\n", &place, &strictness)?;
+            if include_strictness {
+                writeln!(w, "--strictness:")?;
+                let strictness = db
+                    .len_strictness(FunKind::Block(*block))
+                    .map_err(convert_error_ignore)?;
+                for ((place, _), strictness) in fun.iter_places().zip(strictness.iter()) {
+                    dbwrite!(w, &(&fun, db), "{}: {}\n", &place, &strictness)?;
+                }
             }
         }
     }
