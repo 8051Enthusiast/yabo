@@ -7,7 +7,7 @@ use yaboc_base::{error::SilencedError, interner::DefId};
 use yaboc_dependents::RequirementSet;
 use yaboc_expr::{IndexExpr, ShapedData};
 use yaboc_hir::{walk::ChildIter, ExprId, HirIdWrapper, HirNode, HirNodeKind, ParserDefId};
-use yaboc_mir::{FunKind, Function, Place, PlaceOrigin, PlaceRef, StackRef, Strictness};
+use yaboc_mir::{FunKind, Function, Place, PlaceOrigin, PlaceRef, StackRef, Strictness, MirKind};
 use yaboc_resolve::expr::Resolved;
 use yaboc_types::{PrimitiveType, Type, TypeId};
 
@@ -169,8 +169,8 @@ pub fn function_substitute<'a>(
     fun: IMonoLayout<'a>,
     ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
 ) -> Result<FunctionSubstitute<'a>, LayoutError> {
-    let block_mir = ctx.db.mir(fun_info, req)?;
-    let strictness = ctx.db.strictness(fun_info, req)?;
+    let block_mir = ctx.db.mir(fun_info, MirKind::Call(req))?;
+    let strictness = ctx.db.strictness(fun_info, MirKind::Call(req))?;
     match fun_info {
         FunKind::Block(_) => {
             FunctionSubstitute::new_from_block(block_mir, &strictness, from, fun, ctx)

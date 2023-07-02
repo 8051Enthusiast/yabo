@@ -3,7 +3,7 @@ use yaboc_layout::{
     collect::{pd_len_req, pd_val_req},
     represent::ParserFunKind,
 };
-use yaboc_mir::FunKind;
+use yaboc_mir::{FunKind, MirKind};
 
 use crate::{
     convert_regex::RegexTranslator,
@@ -115,15 +115,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let mir = self
             .compiler_database
             .db
-            .mir(FunKind::ParserDef(*pd), req)
+            .mir(FunKind::ParserDef(*pd), MirKind::Call(req))
             .unwrap();
         let strictness = self
             .compiler_database
             .db
-            .strictness(FunKind::ParserDef(*pd), req)
+            .strictness(FunKind::ParserDef(*pd), MirKind::Call(req))
             .unwrap();
-        FunctionSubstitute::new_from_pd(mir, &strictness, from, layout, *pd, self.layouts)
-            .unwrap()
+        FunctionSubstitute::new_from_pd(mir, &strictness, from, layout, *pd, self.layouts).unwrap()
     }
 
     fn mir_block_fun(
@@ -142,12 +141,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let mir = self
             .compiler_database
             .db
-            .mir(FunKind::Block(*bd), req)
+            .mir(FunKind::Block(*bd), MirKind::Call(req))
             .unwrap();
         let strictness = self
             .compiler_database
             .db
-            .strictness(FunKind::Block(*bd), req)
+            .strictness(FunKind::Block(*bd), MirKind::Call(req))
             .unwrap();
         FunctionSubstitute::new_from_block(mir, &strictness, from, layout, self.layouts).unwrap()
     }
@@ -162,8 +161,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
         let funkind = FunKind::If(*cid, ty, *wiggle);
-        let mir = self.compiler_database.db.mir(funkind, req).unwrap();
-        let strictness = self.compiler_database.db.strictness(funkind, req).unwrap();
+        let mir = self
+            .compiler_database
+            .db
+            .mir(funkind, MirKind::Call(req))
+            .unwrap();
+        let strictness = self
+            .compiler_database
+            .db
+            .strictness(funkind, MirKind::Call(req))
+            .unwrap();
         FunctionSubstitute::new_from_if(mir, &strictness, from, layout, self.layouts).unwrap()
     }
 

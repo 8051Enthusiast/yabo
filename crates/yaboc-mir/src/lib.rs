@@ -29,41 +29,33 @@ use self::convert::ConvertCtx;
 
 pub use represent::print_all_mir;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum MirKind {
+    Call(RequirementSet),
+    Len,
+}
+
 #[salsa::query_group(MirDatabase)]
 pub trait Mirs: Dependents + Constraints {
-    fn mir(&self, kind: FunKind, requirements: RequirementSet) -> SResult<Function>;
-    fn strictness(&self, kind: FunKind, requirements: RequirementSet) -> SResult<Vec<Strictness>>;
-    fn len_mir(&self, kind: FunKind) -> SResult<Function>;
-    fn len_strictness(&self, kind: FunKind) -> SResult<Vec<Strictness>>;
+    fn mir(&self, kind: FunKind, mir_kind: MirKind) -> SResult<Function>;
+    fn strictness(&self, kind: FunKind, mir_kind: MirKind) -> SResult<Vec<Strictness>>;
 }
 
-fn mir(db: &dyn Mirs, kind: FunKind, requirements: RequirementSet) -> SResult<Function> {
-    match kind {
-        FunKind::Block(block) => mir_block(db, block, requirements),
-        FunKind::ParserDef(pd) => mir_pd(db, pd, requirements),
-        FunKind::If(constraint, ty, wiggle) => mir_if(db, constraint, ty, wiggle, requirements),
+fn mir(db: &dyn Mirs, kind: FunKind, mir_kind: MirKind) -> SResult<Function> {
+    match (kind, mir_kind) {
+        (FunKind::Block(block), MirKind::Call(req)) => mir_block(db, block, req),
+        (FunKind::ParserDef(pd), MirKind::Call(req)) => mir_pd(db, pd, req),
+        (FunKind::If(constraint, ty, wiggle), MirKind::Call(req)) => {
+            mir_if(db, constraint, ty, wiggle, req)
+        }
+        (FunKind::Block(block), MirKind::Len) => LenMirCtx::new_block(db, block),
+        (FunKind::ParserDef(pd), MirKind::Len) => LenMirCtx::new_pd(db, pd),
+        (FunKind::If(_, ty, _), MirKind::Len) => LenMirCtx::new_if(db, ty),
     }
 }
 
-fn strictness(
-    db: &dyn Mirs,
-    kind: FunKind,
-    requirements: RequirementSet,
-) -> SResult<Vec<Strictness>> {
-    let fun = db.mir(kind, requirements)?;
-    strictness::StrictnessCtx::new(&fun, db)?.run()
-}
-
-fn len_mir(db: &dyn Mirs, kind: FunKind) -> SResult<Function> {
-    match kind {
-        FunKind::Block(block) => LenMirCtx::new_block(db, block),
-        FunKind::ParserDef(pd) => LenMirCtx::new_pd(db, pd),
-        FunKind::If(_, ty, _) => LenMirCtx::new_if(db, ty),
-    }
-}
-
-fn len_strictness(db: &dyn Mirs, kind: FunKind) -> SResult<Vec<Strictness>> {
-    let fun = db.len_mir(kind)?;
+fn strictness(db: &dyn Mirs, kind: FunKind, mir_kind: MirKind) -> SResult<Vec<Strictness>> {
+    let fun = db.mir(kind, mir_kind)?;
     strictness::StrictnessCtx::new(&fun, db)?.run()
 }
 
@@ -1012,14 +1004,22 @@ def for[int] *> main = {
         let blocks = ctx.db.all_parserdef_blocks(main);
         for need in [NeededBy::Val, NeededBy::Len] {
             for block in blocks.iter() {
-                ctx.db.mir(FunKind::Block(*block), need.into()).unwrap();
+                ctx.db
+                    .mir(FunKind::Block(*block), MirKind::Call(need.into()))
+                    .unwrap();
             }
         }
         ctx.db
-            .mir(FunKind::ParserDef(main), NeededBy::Val.into())
+            .mir(
+                FunKind::ParserDef(main),
+                MirKind::Call(NeededBy::Val.into()),
+            )
             .unwrap();
         ctx.db
-            .mir(FunKind::ParserDef(main), NeededBy::Len.into())
+            .mir(
+                FunKind::ParserDef(main),
+                MirKind::Call(NeededBy::Len.into()),
+            )
             .unwrap();
     }
 }
