@@ -122,7 +122,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .db
             .strictness(FunKind::ParserDef(*pd), req)
             .unwrap();
-        FunctionSubstitute::new_from_pd(mir, &strictness, from, layout.inner(), *pd, self.layouts)
+        FunctionSubstitute::new_from_pd(mir, &strictness, from, layout, *pd, self.layouts)
             .unwrap()
     }
 

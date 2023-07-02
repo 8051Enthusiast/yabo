@@ -2,7 +2,7 @@ mod represent;
 
 use std::sync::Arc;
 
-use hir::BlockId;
+use hir::{BlockId, Hirs};
 use yaboc_ast::expr;
 use yaboc_base::{
     dbpanic,
@@ -14,9 +14,9 @@ use yaboc_dependents::{Dependents, SubValueKind};
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, ShapedData, TakeRef};
 use yaboc_hir as hir;
 use yaboc_hir::HirIdWrapper;
-use yaboc_hir_types::{FullTypeId, NominalId};
+use yaboc_hir_types::{FullTypeId, NominalId, TyHirs};
 use yaboc_resolve::expr::Resolved;
-use yaboc_types::{Type, TypeId};
+use yaboc_types::{Type, TypeId, TypeInterner};
 
 use fxhash::{FxHashMap, FxHashSet};
 
@@ -31,6 +31,7 @@ pub enum Arg {
 
 pub trait AbstractDomain<'a>: Sized + Clone + std::hash::Hash + Eq + std::fmt::Debug {
     type Err: IsSilenced;
+    type DB: ?Sized + AbsInt;
     type DomainContext;
     fn widen(self, ctx: &mut AbsIntCtx<'a, Self>, other: Self) -> Result<(Self, bool), Self::Err>;
     fn join(self, ctx: &mut AbsIntCtx<'a, Self>, other: Self) -> Result<(Self, bool), Self::Err>;
@@ -86,7 +87,7 @@ pub struct BlockEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
 }
 
 pub struct AbsIntCtx<'a, Dom: AbstractDomain<'a>> {
-    pub db: &'a dyn AbsInt,
+    pub db: &'a Dom::DB,
     pub dcx: Dom::DomainContext,
 
     type_substitutions: Arc<Vec<TypeId>>,
@@ -108,7 +109,7 @@ pub struct AbsIntCtx<'a, Dom: AbstractDomain<'a>> {
 }
 
 impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
-    pub fn new(db: &'a dyn AbsInt, mut dcx: Dom::DomainContext) -> Self {
+    pub fn new(db: &'a Dom::DB, mut dcx: Dom::DomainContext) -> Self {
         let bottom = Dom::bottom(&mut dcx);
         Self {
             db,
