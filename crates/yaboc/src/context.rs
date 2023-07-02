@@ -126,7 +126,10 @@ impl Driver {
             .collect();
         let mut layouts = yaboc_layout::AbsLayoutCtx::new(&self.db, layout_ctx);
         instantiate(&mut layouts, &exported_tys).unwrap();
-        let mut codegen = yaboc_cg_llvm::CodeGenCtx::new(&llvm, self, &mut layouts).unwrap();
+        let mut codegen = match yaboc_cg_llvm::CodeGenCtx::new(&llvm, self, &mut layouts) {
+            Ok(x) => x,
+            Err(e) => panic!("Error while creating codegen context: {e:#?}"),
+        };
         codegen.create_all_vtables();
         codegen.create_all_funs();
         codegen.create_pd_exports();
