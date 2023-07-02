@@ -4,18 +4,17 @@ use std::{collections::hash_map::Entry, sync::Arc};
 use fxhash::{FxHashMap, FxHashSet};
 use petgraph::unionfind::UnionFind;
 
-use yaboc_absint::{AbstractDomain, Arg, BlockEvaluated};
-use yaboc_ast::expr::{ValBinOp, ValVarOp};
-use yaboc_base::error::{SResult, Silencable};
+use yaboc_absint::{AbstractDomain, Arg};
 use yaboc_dependents::{NeededBy, RequirementSet};
-use yaboc_expr::{DataRefExpr, ExprHead, Expression, FetchExpr, IndexExpr, TakeRef};
-use yaboc_hir::{HirIdWrapper, HirNode, ParserDefId};
+use yaboc_hir::{HirIdWrapper, ParserDefId};
 use yaboc_hir_types::DerefLevel;
-use yaboc_mir::CallMeta;
-use yaboc_resolve::expr::Resolved;
+use yaboc_mir::{CallMeta, MirInstr};
 use yaboc_types::{PrimitiveType, Type, TypeId};
 
-use crate::prop::SizeAlign;
+use crate::{
+    mir_subst::{function_substitute, FunctionSubstitute},
+    prop::SizeAlign,
+};
 
 use self::tailsize::{CallSite, TailCollector};
 
@@ -145,46 +144,46 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         }
     }
 
-    fn register_parse(&mut self, left: ILayout<'a>, right: ILayout<'a>, info: CallMeta) {
+    fn register_parse(&mut self, arg: ILayout<'a>, parser: ILayout<'a>, info: CallMeta) {
         if info.req.is_empty() {
             return;
         }
-        let right = right
+        let parser = parser
             .deref_to_level(self.ctx, DerefLevel::zero())
             .unwrap()
             .0;
-        for mono in &right {
+        for mono in &parser {
             match mono.mono_layout().0 {
-                MonoLayout::BlockParser(_, _, _) => {
-                    if self.processed_calls.insert((left, mono, info)) {
+                MonoLayout::BlockParser(..) => {
+                    if self.processed_calls.insert((arg, mono, info)) {
                         self.unprocessed
-                            .push(UnprocessedCall::Block(left, mono, info.req));
+                            .push(UnprocessedCall::Block(arg, mono, info.req));
                     }
                 }
-                MonoLayout::NominalParser(_, _, _) => {
-                    if self.processed_calls.insert((left, mono, info)) {
+                MonoLayout::NominalParser(..) => {
+                    if self.processed_calls.insert((arg, mono, info)) {
                         self.unprocessed
-                            .push(UnprocessedCall::NominalParser(left, mono, info.req));
+                            .push(UnprocessedCall::NominalParser(arg, mono, info.req));
                     }
                 }
                 MonoLayout::Regex(..) => {
                     let single = IMonoLayout::int_single(self.ctx);
                     self.register_layouts(single.inner());
                     self.parses.add_call(
-                        (left, CallMeta::new(RequirementSet::all(), false)),
+                        (arg, CallMeta::new(RequirementSet::all(), false)),
                         single.inner(),
                     );
                 }
                 MonoLayout::IfParser(..) => {
-                    if self.processed_calls.insert((left, mono, info)) {
+                    if self.processed_calls.insert((arg, mono, info)) {
                         self.unprocessed
-                            .push(UnprocessedCall::IfParser(left, mono, info.req));
+                            .push(UnprocessedCall::IfParser(arg, mono, info.req));
                     }
                 }
                 _ => {}
             }
         }
-        self.parses.add_call((left, info), right)
+        self.parses.add_call((arg, info), parser)
     }
 
     fn register_funcall(
@@ -211,53 +210,54 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         Ok(())
     }
 
-    fn collect_expr(
+    fn collect_ins(
         &mut self,
-        expr: DataRefExpr<Resolved, (ILayout<'a>, TypeId)>,
+        mir: &FunctionSubstitute<'a>,
+        ins: MirInstr,
     ) -> Result<(), LayoutError> {
-        for (part, (dom, _)) in expr.clone().iter_parts() {
-            self.register_layouts(*dom);
-            match &part {
-                ExprHead::Dyadic(ValBinOp::ParserApply, [left, right]) => self.register_parse(
-                    expr.data.index_expr(*left).0,
-                    expr.data.index_expr(*right).0,
-                    apply_req(),
-                ),
-                ExprHead::Variadic(ValVarOp::Call, args) => self.register_funcall(
-                    expr.data.index_expr(args[0]).0,
-                    args[1..]
-                        .iter()
-                        .map(|x| expr.data.index_expr(*x).0)
-                        .collect(),
-                    expr.data.index_expr(args[0]).1,
-                )?,
-                _ => (),
+        match ins {
+            MirInstr::ApplyArgs(_, fun, args, _, _) => {
+                let fun_layout = mir.place(fun);
+                let args = args.iter().map(|arg| mir.place(*arg)).collect::<Vec<_>>();
+                let ty = mir.place_type(fun);
+                self.register_funcall(fun_layout, args, ty)?;
+                Ok(())
             }
+            MirInstr::ParseCall(_, _, meta, arg, fun, _) => {
+                let fun_layout = mir.place(fun);
+                let arg_layout = mir.place(arg);
+                self.register_parse(arg_layout, fun_layout, meta);
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn collect_mir(&mut self, mir: &FunctionSubstitute<'a>) -> Result<(), LayoutError> {
+        for layout in mir.stack_layouts.iter() {
+            self.register_layouts(*layout);
+        }
+        for ins in mir.f.iter_bb().flat_map(|(_, block)| block.ins()) {
+            self.collect_ins(mir, ins)?;
         }
         Ok(())
     }
 
     fn collect_block(
         &mut self,
-        block: &BlockEvaluated<ILayout<'a>>,
-        info: RequirementSet,
+        arg: ILayout<'a>,
+        parser: IMonoLayout<'a>,
+        mut info: RequirementSet,
     ) -> Result<(), LayoutError> {
-        for (id, expr) in block.expr_vals.iter() {
-            let inner_expr = Resolved::fetch_expr(self.ctx.db, *id)?;
-            self.collect_expr(inner_expr.take_ref().zip(expr.take_ref()))?;
-        }
-        let bs = self.ctx.db.block_serialization(block.id).silence()?;
-        let requirements = bs.parse_requirements;
-        let tails = bs.tails;
-        for (&node, &value) in block.vals.iter() {
-            if let HirNode::Parse(p) = self.ctx.db.hir_node(node)? {
-                let expr_val = block.expr_vals[&p.expr].root_data().0;
-                let parse_req =
-                    CallMeta::new(requirements[&p.id.0] * info, tails.contains(&p.id.0));
-                self.register_parse(block.from, expr_val, parse_req);
-            }
-            self.register_layouts(value)
-        }
+        let MonoLayout::BlockParser(id, _, bt) = parser.mono_layout().0 else {
+            panic!("unexpected non-block-parser layout");
+        };
+        if !*bt {
+            info &= !NeededBy::Backtrack
+        };
+        let fsub =
+            function_substitute(yaboc_mir::FunKind::Block(*id), info, arg, parser, self.ctx)?;
+        self.collect_mir(&fsub)?;
         Ok(())
     }
 
@@ -276,7 +276,6 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         if !*bt {
             info &= !NeededBy::Backtrack
         }
-        let mut info = CallMeta::new(info, true);
         let parserdef = pd.lookup(self.ctx.db).unwrap();
         let mut args = FxHashMap::default();
         let thunk_ty = self.ctx.db.parser_result(ty).unwrap();
@@ -285,21 +284,25 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         for (id, arg) in arg_ids.iter().zip(thunk_args.iter()) {
             args.insert(Arg::Named(id.0), *arg);
         }
-        let thunk = ILayout::make_thunk(self.ctx, *pd, thunk_ty, &args).unwrap();
+        let thunk = IMonoLayout::make_thunk(*pd, thunk_ty, &args, self.ctx).unwrap();
         if parserdef.thunky {
-            self.register_layouts(thunk);
+            self.register_layouts(thunk.inner());
         }
-        if let Some(pd_eval) = self.ctx.pd_result()[&thunk].clone() {
-            if let Some(val) = &pd_eval.expr_vals {
-                let expr = Resolved::fetch_expr(self.ctx.db, parserdef.to).unwrap();
-                self.collect_expr(expr.take_ref().zip(val.take_ref()))?;
-                let root = val.root_data().0;
-                self.register_parse(pd_eval.from, root, info);
-                // the branch taken after the thunk is copied as-is and no value is needed
-                info.req &= !NeededBy::Val;
-                self.register_parse(pd_eval.from, root, info);
-            }
-            self.register_layouts(pd_eval.returned)
+        let (arg_layout, parser_layout) = thunk.unapply_nominal(self.ctx);
+        let val_info = if info.contains(NeededBy::Val) {
+            Some(info & !NeededBy::Val)
+        } else {
+            None
+        };
+        for info in std::iter::once(info).chain(val_info) {
+            let fsub = function_substitute(
+                yaboc_mir::FunKind::ParserDef(*pd),
+                info,
+                arg_layout,
+                parser_layout,
+                self.ctx,
+            )?;
+            self.collect_mir(&fsub)?;
         }
         Ok(())
     }
@@ -307,16 +310,8 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     fn proc_list(&mut self) -> Result<(), LayoutError> {
         while let Some(mono) = self.unprocessed.pop() {
             match mono {
-                UnprocessedCall::Block(arg, parser, mut info) => {
-                    let MonoLayout::BlockParser(_, _, bt) = parser.mono_layout().0 else {
-                        panic!("unexpected non-block-parser layout");
-                    };
-                    if !*bt {
-                        info &= !NeededBy::Backtrack
-                    }
-                    if let Some(block) = &self.ctx.block_result()[&(arg, parser.0)].clone() {
-                        self.collect_block(block, info)?
-                    }
+                UnprocessedCall::Block(arg, parser, info) => {
+                    self.collect_block(arg, parser, info)?
                 }
                 UnprocessedCall::NominalParser(arg, parser, info) => {
                     self.collect_nominal_parse(arg, parser, info)?
@@ -366,7 +361,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         Ok(())
     }
 
-    pub fn into_results(self) -> SResult<LayoutCollection<'a>> {
+    pub fn into_results(self) -> Result<LayoutCollection<'a>, LayoutError> {
         let parser_slots = self.parses.into_layout_vtable_offsets();
         let funcall_slots = self.funcalls.into_layout_vtable_offsets();
         let mut primitives = FxHashSet::default();

@@ -1,8 +1,11 @@
 use fxhash::{FxHashMap, FxHashSet};
-use yaboc_base::error::SResult;
-use yaboc_hir::{BlockId, HirNode};
+use yaboc_dependents::RequirementSet;
+use yaboc_mir::{CallMeta, FunKind, MirInstr};
 
-use crate::{prop::SizeAlign, AbsLayoutCtx, ILayout, IMonoLayout, MonoLayout};
+use crate::{
+    mir_subst::function_substitute, prop::SizeAlign, AbsLayoutCtx, ILayout, IMonoLayout,
+    LayoutError, MonoLayout,
+};
 
 #[derive(Default, Clone, Copy)]
 struct CallSiteVertex {
@@ -32,25 +35,25 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
         }
     }
 
-    fn for_each_block_callsite(
+    fn for_each_tail_callsite(
         &mut self,
-        block: BlockId,
         site: CallSite<'comp>,
-        mut f: impl FnMut(&mut Self, CallSite<'comp>) -> SResult<()>,
-    ) -> SResult<()> {
-        let deps = self.ctx.db.block_serialization(block).unwrap();
-        let call_result = self.ctx.block_result()[&(site.0, site.1.inner())]
-            .as_ref()
-            .unwrap()
-            .clone();
+        mut f: impl FnMut(&mut Self, CallSite<'comp>) -> Result<(), LayoutError>,
+    ) -> Result<(), LayoutError> {
+        let fun_kind = match site.1.mono_layout().0 {
+            MonoLayout::NominalParser(pd, _, _) => FunKind::ParserDef(*pd),
+            MonoLayout::BlockParser(b, _, _) => FunKind::Block(*b),
+            _ => return Ok(()),
+        };
+        let fsub = function_substitute(fun_kind, RequirementSet::all(), site.0, site.1, self.ctx)?;
         let mut already_called = FxHashSet::default();
-        for id in deps.tails.iter() {
-            let HirNode::Parse(p) = self.ctx.db.hir_node(*id)? else {
+        for instr in fsub.f.iter_bb().flat_map(|(_, bb)| bb.ins()) {
+            let MirInstr::ParseCall(.., CallMeta { tail: true, .. }, arg, fun, _) = instr else {
                 continue;
             };
-            let expr_result = call_result.expr_vals[&p.expr].root_data().0;
-            for inner_fun in &expr_result {
-                let inner_site = CallSite(site.0, inner_fun);
+            let fun = fsub.place(fun);
+            for inner_fun in &fun {
+                let inner_site = CallSite(fsub.place(arg), inner_fun);
                 if already_called.insert(inner_site) {
                     f(self, inner_site)?;
                 }
@@ -59,32 +62,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
         Ok(())
     }
 
-    fn for_each_nominal_callsite(
-        &mut self,
-        site: CallSite<'comp>,
-        mut f: impl FnMut(&mut Self, CallSite<'comp>) -> SResult<()>,
-    ) -> SResult<()> {
-        let nom = site.1.inner().apply_arg(self.ctx, site.0).unwrap();
-        let res = self.ctx.pd_result()[&nom].as_ref().unwrap().clone();
-        for inner_fun in &res.expr_vals.unwrap().root_data().0 {
-            f(self, CallSite(site.0, inner_fun))?;
-        }
-        Ok(())
-    }
-
-    fn for_each_tail_callsite(
-        &mut self,
-        site: CallSite<'comp>,
-        f: impl FnMut(&mut Self, CallSite<'comp>) -> SResult<()>,
-    ) -> SResult<()> {
-        match site.1.mono_layout().0 {
-            MonoLayout::NominalParser(_, _, _) => self.for_each_nominal_callsite(site, f),
-            MonoLayout::BlockParser(b, _, _) => self.for_each_block_callsite(*b, site, f),
-            _ => Ok(()),
-        }
-    }
-
-    fn calulate_tail_size(&mut self, site: CallSite<'comp>) -> SResult<CallSiteVertex> {
+    fn calulate_tail_size(&mut self, site: CallSite<'comp>) -> Result<CallSiteVertex, LayoutError> {
         let mut current_vertex = CallSiteVertex {
             index: self.index,
             lowlink: self.index,
@@ -127,7 +105,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
         Ok(current_vertex)
     }
 
-    pub fn size(&mut self, site: CallSite<'comp>) -> SResult<Option<SizeAlign>> {
+    pub fn size(&mut self, site: CallSite<'comp>) -> Result<Option<SizeAlign>, LayoutError> {
         if let Some(&vertex) = self.vertices.get(&site) {
             return Ok(vertex.sa);
         }

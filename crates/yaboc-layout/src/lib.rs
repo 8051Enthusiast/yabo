@@ -213,6 +213,23 @@ impl<'a> IMonoLayout<'a> {
         let from_layout = from.0;
         (from_layout, to_mono)
     }
+
+    pub fn make_thunk(
+        id: hir::ParserDefId,
+        ty: TypeId,
+        fields: &FxHashMap<Arg, (ILayout<'a>, TypeId)>,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+    ) -> SResult<Self> {
+        let parserdef = id.lookup(ctx.db)?;
+        let from = fields.get(&Arg::From).copied();
+        let mut args = Vec::new();
+        for arg in parserdef.args.into_iter().flatten() {
+            let layout = fields[&Arg::Named(arg.0)];
+            args.push(layout);
+        }
+        let new_layout = Layout::Mono(MonoLayout::Nominal(id, from, args), ty);
+        Ok(IMonoLayout(ctx.dcx.intern(new_layout)))
+    }
 }
 
 pub fn flat_layouts<'a, 'l>(
@@ -788,6 +805,7 @@ impl<'a> LayoutContext<'a> {
 
 impl<'a> AbstractDomain<'a> for ILayout<'a> {
     type Err = LayoutError;
+    type DB = dyn Layouts;
     type DomainContext = LayoutContext<'a>;
 
     fn make_block(
@@ -999,15 +1017,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
         ty: TypeId,
         fields: &FxHashMap<Arg, (Self, TypeId)>,
     ) -> Result<Self, Self::Err> {
-        let parserdef = id.lookup(ctx.db)?;
-        let from = fields.get(&Arg::From).copied();
-        let mut args = Vec::new();
-        for arg in parserdef.args.into_iter().flatten() {
-            let layout = fields[&Arg::Named(arg.0)];
-            args.push(layout);
-        }
-        let new_layout = Layout::Mono(MonoLayout::Nominal(id, from, args), ty);
-        Ok(ctx.dcx.intern(new_layout))
+        Ok(IMonoLayout::make_thunk(id, ty, fields, ctx)?.inner())
     }
 
     fn bottom(ctx: &mut Self::DomainContext) -> Self {
