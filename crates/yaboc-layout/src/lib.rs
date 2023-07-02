@@ -708,13 +708,13 @@ pub fn canon_layout<'a, 'b>(
             let inner_type = ctx.db.lookup_intern_type(inner_ty);
             match inner_type {
                 Type::Primitive(PrimitiveType::Int) => Ok(make_layout(ctx, MonoLayout::SlicePtr)),
-                _ => Err(LayoutError),
+                _ => Err(LayoutError::LayoutError),
             }
         }
         Type::Nominal(n) => {
             let def_id = match NominalId::from_nominal_head(&n) {
                 NominalId::Def(d) => d,
-                NominalId::Block(_) => return Err(LayoutError),
+                NominalId::Block(_) => return Err(LayoutError::LayoutError),
             };
             let from = n
                 .parse_arg
@@ -727,9 +727,9 @@ pub fn canon_layout<'a, 'b>(
                 .collect::<Result<_, LayoutError>>()?;
             Ok(make_layout(ctx, MonoLayout::Nominal(def_id, from, args)))
         }
-        Type::ParserArg { .. } | Type::FunctionArg(_, _) => Err(LayoutError),
+        Type::ParserArg { .. } | Type::FunctionArg(_, _) => Err(LayoutError::LayoutError),
         Type::TypeVarRef(_, _) | Type::Any | Type::Bot | Type::Unknown | Type::ForAll(_, _) => {
-            Err(LayoutError)
+            Err(LayoutError::LayoutError)
         }
     }
 }
@@ -753,17 +753,20 @@ pub fn instantiate<'a>(
 }
 
 #[derive(Debug)]
-pub struct LayoutError;
+pub enum LayoutError {
+    LayoutError,
+    Silent(SilencedError),
+}
 
 impl From<yaboc_base::error::SilencedError> for LayoutError {
-    fn from(_: yaboc_base::error::SilencedError) -> Self {
-        LayoutError
+    fn from(s: yaboc_base::error::SilencedError) -> Self {
+        LayoutError::Silent(s)
     }
 }
 
 impl IsSilenced for LayoutError {
     fn is_silenced(&self) -> bool {
-        true
+        matches!(self, LayoutError::Silent(_))
     }
 }
 
