@@ -3,7 +3,7 @@ use std::{fmt::Display, io::Write};
 use yaboc_base::{databased_display::DatabasedDisplay, dbwrite};
 use yaboc_dependents::RequirementSet;
 
-use crate::{strictness::Strictness, CallMeta, ControlFlow, FunKind, InsRef};
+use crate::{strictness::Strictness, CallMeta, ControlFlow, FunKind, InsRef, MirKind};
 
 use super::{
     BBRef, Comp, ExceptionRetreat, Function, IntBinOp, IntUnOp, MirInstr, Mirs, Place, PlaceOrigin,
@@ -302,13 +302,13 @@ pub fn print_all_mir<DB: Mirs, W: Write>(
             &db.def_name(pd.0).unwrap()
         )?;
         let fun = db
-            .mir(FunKind::ParserDef(pd), RequirementSet::all())
+            .mir(FunKind::ParserDef(pd), MirKind::Call(RequirementSet::all()))
             .map_err(convert_error_ignore)?;
         dbwrite!(w, db, "{}", &fun)?;
         if include_strictness {
             writeln!(w, "--strictness:")?;
             let strictness = db
-                .strictness(FunKind::ParserDef(pd), RequirementSet::all())
+                .strictness(FunKind::ParserDef(pd), MirKind::Call(RequirementSet::all()))
                 .map_err(convert_error_ignore)?;
             for ((place, _), strictness) in fun.iter_places().zip(strictness.iter()) {
                 dbwrite!(w, &(&fun, db), "{}: {}\n", &place, &strictness)?;
@@ -322,13 +322,13 @@ pub fn print_all_mir<DB: Mirs, W: Write>(
             &db.def_name(pd.0).unwrap()
         )?;
         let fun = db
-            .len_mir(FunKind::ParserDef(pd))
+            .mir(FunKind::ParserDef(pd), MirKind::Len)
             .map_err(convert_error_ignore)?;
         dbwrite!(w, db, "{}", &fun)?;
         if include_strictness {
             writeln!(w, "--strictness:")?;
             let strictness = db
-                .len_strictness(FunKind::ParserDef(pd))
+                .strictness(FunKind::ParserDef(pd), MirKind::Len)
                 .map_err(convert_error_ignore)?;
             for ((place, _), strictness) in fun.iter_places().zip(strictness.iter()) {
                 dbwrite!(w, &(&fun, db), "{}: {}\n", &place, &strictness)?;
@@ -337,14 +337,14 @@ pub fn print_all_mir<DB: Mirs, W: Write>(
 
         for block in db.all_parserdef_blocks(pd).iter() {
             let fun = db
-                .mir(FunKind::Block(*block), RequirementSet::all())
+                .mir(FunKind::Block(*block), MirKind::Call(RequirementSet::all()))
                 .map_err(convert_error_ignore)?;
             dbwrite!(w, db, "---\nmir block {}:\n", &block.0)?;
             dbwrite!(w, db, "{}", &fun)?;
             if include_strictness {
                 writeln!(w, "--strictness:")?;
                 let strictness = db
-                    .strictness(FunKind::Block(*block), RequirementSet::all())
+                    .strictness(FunKind::Block(*block), MirKind::Call(RequirementSet::all()))
                     .map_err(convert_error_ignore)?;
                 for ((place, _), strictness) in fun.iter_places().zip(strictness.iter()) {
                     dbwrite!(w, &(&fun, db), "{}: {}\n", &place, &strictness)?;
@@ -352,14 +352,14 @@ pub fn print_all_mir<DB: Mirs, W: Write>(
             }
 
             let fun = db
-                .len_mir(FunKind::Block(*block))
+                .mir(FunKind::Block(*block), MirKind::Len)
                 .map_err(convert_error_ignore)?;
             dbwrite!(w, db, "---\nmir len block {}:\n", &block.0)?;
             dbwrite!(w, db, "{}", &fun)?;
             if include_strictness {
                 writeln!(w, "--strictness:")?;
                 let strictness = db
-                    .len_strictness(FunKind::Block(*block))
+                    .strictness(FunKind::Block(*block), MirKind::Len)
                     .map_err(convert_error_ignore)?;
                 for ((place, _), strictness) in fun.iter_places().zip(strictness.iter()) {
                     dbwrite!(w, &(&fun, db), "{}: {}\n", &place, &strictness)?;
