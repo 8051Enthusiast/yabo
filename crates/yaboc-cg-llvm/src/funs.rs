@@ -432,7 +432,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .as_ref()
             .unwrap()
             .returned;
-        let mono_layout = flat_layouts(&return_layout).next().unwrap();
+        let mono_layout = return_layout.maybe_mono().unwrap();
 
         let block_data = BlockThunk {
             from,
@@ -716,9 +716,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let return_layout = if let Type::FunctionArg(_, arg_tys) = fun_type {
             let new_args = args.iter().copied().zip(arg_tys.iter().copied());
             let result = layout.inner().apply_fun(self.layouts, new_args).unwrap();
-            let all_monos = flat_layouts(&result);
-            assert_eq!(all_monos.len(), 1);
-            all_monos.last().unwrap()
+            result.maybe_mono().unwrap()
         } else {
             dbpanic!(
                 &self.compiler_database.db,

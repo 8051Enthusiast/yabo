@@ -42,8 +42,7 @@ use yaboc_hir::{BlockId, HirIdWrapper, Hirs, ParserDefId};
 use yaboc_hir_types::{DerefLevel, TyHirs};
 use yaboc_layout::{
     canon_layout,
-    collect::{root_req, LayoutCollection, LayoutCollector},
-    flat_layouts,
+    collect::{root_req, LayoutCollection},
     mir_subst::FunctionSubstitute,
     prop::{CodegenTypeContext, PSize, SizeAlign, TargetSized},
     represent::{truncated_hex, LayoutPart},
@@ -76,10 +75,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         compiler_database: &'comp yaboc_base::Context<YabocDatabase>,
         layouts: &'comp mut AbsLayoutCtx<'comp>,
     ) -> Result<Self, LayoutError> {
-        let mut layout_collector = LayoutCollector::new(layouts);
         let pds = compiler_database.db.all_exported_parserdefs();
-        layout_collector.collect(&pds)?;
-        let collected_layouts = Rc::new(layout_collector.into_results().unwrap());
+        let collected_layouts =
+            Rc::new(yaboc_layout::collect::collected_layouts(layouts, &pds).unwrap());
         Target::initialize_all(&InitializationConfig {
             asm_parser: true,
             asm_printer: true,

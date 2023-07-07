@@ -8,7 +8,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use fxhash::{FxHashMap, FxHashSet};
+use fxhash::FxHashMap;
 
 use hir::HirConstraintId;
 use yaboc_absint::{AbsInt, AbsIntCtx, AbstractDomain, Arg};
@@ -738,24 +738,6 @@ pub fn canon_layout<'a, 'b>(
     }
 }
 
-pub fn instantiate<'a>(
-    ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
-    types: &[TypeId],
-) -> Result<(), LayoutError> {
-    let mut pd_eval_worklist = FxHashSet::default();
-    for &ty in types {
-        let root_layout = canon_layout(ctx, ty)?;
-        pd_eval_worklist.insert((ty, root_layout));
-    }
-    while !pd_eval_worklist.is_empty() {
-        for (ty, layout) in pd_eval_worklist.drain() {
-            ctx.eval_pd(layout, ty);
-        }
-        pd_eval_worklist = ctx.new_pds();
-    }
-    Ok(())
-}
-
 #[derive(Debug)]
 pub enum LayoutError {
     LayoutError,
@@ -1071,6 +1053,8 @@ mod tests {
 
     impl salsa::Database for LayoutTestDatabase {}
 
+    use crate::collect::collected_layouts;
+
     use super::*;
 
     #[test]
@@ -1098,7 +1082,7 @@ def for[int] *> main = {
         let main_ty = ctx
             .db
             .intern_type(Type::Nominal(ctx.db.parser_args(main).unwrap().thunk));
-        instantiate(&mut outlayer, &[main_ty]).unwrap();
+        collected_layouts(&mut outlayer, &[main]).unwrap();
         let canon_2004 = canon_layout(&mut outlayer, main_ty).unwrap();
         for lay in &canon_2004 {
             assert_eq!(
