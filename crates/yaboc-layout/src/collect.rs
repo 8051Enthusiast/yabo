@@ -301,6 +301,8 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         if parserdef.thunky {
             self.register_layouts(thunk.inner());
         }
+        // instantiate info for thunk
+        thunk.deref(self.ctx)?;
         let (arg_layout, parser_layout) = thunk.unapply_nominal(self.ctx);
         let val_info = if let MirKind::Call(req) = info {
             if req.contains(NeededBy::Val) {
@@ -435,6 +437,15 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             tail_sa,
         })
     }
+}
+
+pub fn collected_layouts<'a>(
+    ctx: &mut AbsLayoutCtx<'a>,
+    pds: &[ParserDefId],
+) -> Result<LayoutCollection<'a>, LayoutError> {
+    let mut collector = LayoutCollector::new(ctx);
+    collector.collect(pds)?;
+    collector.into_results()
 }
 
 pub struct CallInfo<'a, Arg: std::hash::Hash + Eq + Copy> {

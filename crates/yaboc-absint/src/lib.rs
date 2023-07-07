@@ -149,8 +149,6 @@ pub struct AbsIntCtx<'a, Dom: AbstractDomain<'a>> {
     call_needs_fixpoint: FxHashSet<usize>,
     active_calls: FxHashMap<Dom, usize>,
     pd_result: FxHashMap<Dom, EpochVal<Option<PdEvaluated<Dom>>>>,
-    existing_pd: FxHashSet<(TypeId, Dom)>,
-    new_pd: FxHashSet<(TypeId, Dom)>,
 
     block_vars: FxHashMap<DefId, Dom>,
     block_expr_vals: FxHashMap<hir::ExprId, AbstractData<Dom>>,
@@ -173,8 +171,6 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             call_needs_fixpoint: Default::default(),
             active_calls: Default::default(),
             pd_result: Default::default(),
-            existing_pd: Default::default(),
-            new_pd: Default::default(),
             block_vars: Default::default(),
             block_expr_vals: Default::default(),
             block_result: Default::default(),
@@ -533,15 +529,6 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             args.insert(Arg::Named(def), (arg.clone(), *ty));
         }
         let pd = Dom::make_thunk(self, pd_id, result_type, &args)?;
-        if !self.existing_pd.contains(&(result_type, pd.clone())) {
-            self.new_pd.insert((result_type, pd.clone()));
-        }
         Ok(pd)
-    }
-
-    pub fn new_pds(&mut self) -> FxHashSet<(TypeId, Dom)> {
-        let new_pd = std::mem::take(&mut self.new_pd);
-        self.existing_pd.extend(new_pd.iter().cloned());
-        new_pd
     }
 }

@@ -12,11 +12,9 @@ use yaboc_base::{
 };
 use yaboc_cg_llvm::CodeGenCtx;
 use yaboc_database::YabocDatabase;
-use yaboc_hir::{represent::HirGraph, Hirs};
-use yaboc_hir_types::TyHirs;
-use yaboc_layout::{instantiate, InternedLayout, LayoutContext};
+use yaboc_hir::represent::HirGraph;
+use yaboc_layout::{InternedLayout, LayoutContext};
 use yaboc_mir::print_all_mir;
-use yaboc_types::{Type, TypeInterner};
 const ERROR_FNS: &[fn(&YabocDatabase) -> Vec<Report>] = &[
     yaboc_ast::error::errors,
     yaboc_hir::error::errors,
@@ -116,16 +114,7 @@ impl Driver {
         let bump = Bump::new();
         let intern = low_effort_interner::Interner::<InternedLayout>::new(&bump);
         let layout_ctx = LayoutContext::new(intern);
-        let exported_pds = self.db.all_exported_parserdefs();
-        let exported_tys: Vec<_> = exported_pds
-            .iter()
-            .map(|x| {
-                self.db
-                    .intern_type(Type::Nominal(self.db.parser_args(*x).unwrap().thunk))
-            })
-            .collect();
         let mut layouts = yaboc_layout::AbsLayoutCtx::new(&self.db, layout_ctx);
-        instantiate(&mut layouts, &exported_tys).unwrap();
         let mut codegen = match yaboc_cg_llvm::CodeGenCtx::new(&llvm, self, &mut layouts) {
             Ok(x) => x,
             Err(e) => panic!("Error while creating codegen context: {e:#?}"),
