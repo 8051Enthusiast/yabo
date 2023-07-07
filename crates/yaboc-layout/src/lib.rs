@@ -1099,8 +1099,8 @@ def for[int] *> main = {
             .db
             .intern_type(Type::Nominal(ctx.db.parser_args(main).unwrap().thunk));
         instantiate(&mut outlayer, &[main_ty]).unwrap();
-        let kanon_2006 = canon_layout(&mut outlayer, main_ty).unwrap();
-        for lay in &kanon_2006 {
+        let canon_2004 = canon_layout(&mut outlayer, main_ty).unwrap();
+        for lay in &canon_2004 {
             assert_eq!(
                 lay.symbol(
                     &mut outlayer,
@@ -1114,8 +1114,8 @@ def for[int] *> main = {
                 "main$2cd949028b83d5a5$parse_0_lb_worker"
             );
         }
-        let main_block = outlayer.pd_result()[&kanon_2006]
-            .0
+        let main_block = outlayer.pd_result()[&canon_2004]
+            .val()
             .as_ref()
             .unwrap()
             .returned;

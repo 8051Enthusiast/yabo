@@ -33,7 +33,7 @@ impl<'a> FunctionSubstitute<'a> {
                 panic!("non-block-parser as argument")
             };
         let evaluated = ctx.block_result()[&(from, block.0)]
-            .0
+            .val()
             .as_ref()
             .ok_or_else(SilencedError::new)?;
         let subst = Some(evaluated.typesubst.clone());
@@ -87,7 +87,7 @@ impl<'a> FunctionSubstitute<'a> {
         };
         let lookup_layout = fun.inner().apply_arg(ctx, from)?;
         let evaluated = ctx.pd_result()[&lookup_layout]
-            .0
+            .val()
             .as_ref()
             .ok_or_else(SilencedError::new)?;
         let subst = Some(evaluated.typesubst.clone());

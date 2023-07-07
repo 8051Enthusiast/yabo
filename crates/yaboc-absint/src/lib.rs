@@ -30,7 +30,7 @@ pub enum Arg {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Epoch(NonZeroU64);
+struct Epoch(NonZeroU64);
 
 impl Epoch {
     fn next(&self) -> Self {
@@ -45,6 +45,34 @@ impl Epoch {
 impl Default for Epoch {
     fn default() -> Self {
         Self(NonZeroU64::new(1).unwrap())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct EpochVal<T> {
+    val: T,
+    epoch: Epoch,
+}
+
+impl<T> EpochVal<T> {
+    fn new(val: T, epoch: Epoch) -> Self {
+        Self { val, epoch }
+    }
+
+    pub fn val(&self) -> &T {
+        &self.val
+    }
+
+    pub fn into_val(self) -> T {
+        self.val
+    }
+
+    fn val_with_epoch(&self, epoch: Epoch) -> Option<&T> {
+        if self.epoch < epoch {
+            Some(&self.val)
+        } else {
+            None
+        }
     }
 }
 
@@ -120,13 +148,13 @@ pub struct AbsIntCtx<'a, Dom: AbstractDomain<'a>> {
     depth: usize,
     call_needs_fixpoint: FxHashSet<usize>,
     active_calls: FxHashMap<Dom, usize>,
-    pd_result: FxHashMap<Dom, (Option<PdEvaluated<Dom>>, Epoch)>,
+    pd_result: FxHashMap<Dom, EpochVal<Option<PdEvaluated<Dom>>>>,
     existing_pd: FxHashSet<(TypeId, Dom)>,
     new_pd: FxHashSet<(TypeId, Dom)>,
 
     block_vars: FxHashMap<DefId, Dom>,
     block_expr_vals: FxHashMap<hir::ExprId, AbstractData<Dom>>,
-    block_result: FxHashMap<(Dom, Dom), (Option<BlockEvaluated<Dom>>, Epoch)>,
+    block_result: FxHashMap<(Dom, Dom), EpochVal<Option<BlockEvaluated<Dom>>>>,
     active_block: Option<Dom>,
 
     errors: Vec<(Dom, Dom::Err)>,
@@ -155,11 +183,11 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         }
     }
 
-    pub fn pd_result(&self) -> &FxHashMap<Dom, (Option<PdEvaluated<Dom>>, Epoch)> {
+    pub fn pd_result(&self) -> &FxHashMap<Dom, EpochVal<Option<PdEvaluated<Dom>>>> {
         &self.pd_result
     }
 
-    pub fn block_result(&self) -> &FxHashMap<(Dom, Dom), (Option<BlockEvaluated<Dom>>, Epoch)> {
+    pub fn block_result(&self) -> &FxHashMap<(Dom, Dom), EpochVal<Option<BlockEvaluated<Dom>>>> {
         &self.block_result
     }
 
@@ -189,8 +217,10 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
 
     fn set_pd_ret(&mut self, evaluated: Option<PdEvaluated<Dom>>) -> Option<Dom> {
         let ret = evaluated.as_ref().map(|x| x.returned.clone());
-        self.pd_result
-            .insert(self.current_pd.clone(), (evaluated, self.cache_epoch));
+        self.pd_result.insert(
+            self.current_pd.clone(),
+            EpochVal::new(evaluated, self.cache_epoch),
+        );
         ret
     }
 
@@ -271,10 +301,10 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
     }
     pub fn eval_pd(&mut self, pd: Dom, ty: TypeId) -> Option<Dom> {
         let new_type_substitutions = self.type_substitutions(ty);
-        if let Some((pd, epoch)) = self.pd_result.get(&pd) {
+        if let Some(val) = self.pd_result.get(&pd) {
             // if we are in the same epoch, the value still might
             // change due to a fixpoint
-            if *epoch < self.cache_epoch {
+            if let Some(pd) = val.val_with_epoch(self.cache_epoch) {
                 return Some(pd.as_ref()?.returned.clone());
             }
         }
@@ -285,13 +315,13 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                 self.cache_epoch.update();
             }
             self.call_needs_fixpoint.insert(depth);
-            if let Some((pd, _)) = self.pd_result.get(&pd) {
-                return pd.as_ref().map(|x| x.returned.clone());
+            if let Some(pd) = self.pd_result.get(&pd) {
+                return pd.val().as_ref().map(|x| x.returned.clone());
             }
             let bottom = Dom::bottom(&mut self.dcx);
             self.pd_result.insert(
                 pd,
-                (
+                EpochVal::new(
                     Some(PdEvaluated {
                         returned: bottom.clone(),
                         from: bottom.clone(),
@@ -458,8 +488,8 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         result_type: TypeId,
         arg_type: TypeId,
     ) -> Option<Dom> {
-        if let Some((block_info, epoch)) = self.block_result.get(&(block.clone(), from.clone())) {
-            if *epoch < self.cache_epoch {
+        if let Some(val) = self.block_result.get(&(block.clone(), from.clone())) {
+            if let Some(block_info) = val.val_with_epoch(self.cache_epoch) {
                 return block_info.as_ref().map(|x| x.returned.clone());
             }
         }
@@ -483,7 +513,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             typesubst: self.type_substitutions.clone(),
         });
         self.block_result
-            .insert((from, block), (evaluated, self.cache_epoch));
+            .insert((from, block), EpochVal::new(evaluated, self.cache_epoch));
 
         res
     }
