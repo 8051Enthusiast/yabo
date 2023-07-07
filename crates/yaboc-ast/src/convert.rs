@@ -293,15 +293,22 @@ fn monadic<Kind: ExpressionKind>(
     }
 }
 
+fn maybe_last<T>(mut t: Vec<T>) -> Option<T> {
+    t.pop()
+}
+fn last<T>(mut t: Vec<T>) -> T {
+    t.pop().unwrap()
+}
+
 macro_rules! maybe_unwrap {
     (?) => {
-        |mut t: Vec<_>| t.pop()
+        maybe_last
     };
     (!) => {
-        |mut t: Vec<_>| t.pop().unwrap()
+        last
     };
     (*) => {
-        |t| t
+        std::convert::identity
     };
 }
 

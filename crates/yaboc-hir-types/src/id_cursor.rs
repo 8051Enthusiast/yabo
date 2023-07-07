@@ -16,11 +16,7 @@ pub struct IdCursor<'db, DB: ?Sized + TyHirs> {
 
 impl<'db, DB: ?Sized + TyHirs> Clone for IdCursor<'db, DB> {
     fn clone(&self) -> Self {
-        Self {
-            db: self.db,
-            id: self.id,
-            kind: self.kind,
-        }
+        *self
     }
 }
 

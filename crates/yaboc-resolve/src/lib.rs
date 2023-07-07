@@ -51,9 +51,13 @@ fn cyclic_import(db: &dyn Resolves) -> Option<Arc<Vec<ResolveError>>> {
     for module in db.all_modules() {
         let file = db.lookup_intern_hir_path(module.0).path()[0].unwrap_file();
         let from = index_map[&file];
-        let Ok(imports) = db.imports(file) else {continue};
+        let Ok(imports) = db.imports(file) else {
+            continue;
+        };
         for import_name in imports.iter() {
-            let Ok(to) = db.import_id(file, import_name.inner) else {continue};
+            let Ok(to) = db.import_id(file, import_name.inner) else {
+                continue;
+            };
             let to = index_map[&to];
             graph.add_edge(from, to, ());
         }

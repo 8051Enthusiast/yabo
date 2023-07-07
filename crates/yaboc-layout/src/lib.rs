@@ -199,7 +199,11 @@ impl<'a> IMonoLayout<'a> {
     ) -> (ILayout<'a>, IMonoLayout<'a>) {
         let mono = self.mono_layout().0;
         let MonoLayout::Nominal(pd, Some(from), to) = mono else {
-            dbpanic!(ctx.db, "Expected nominal layout with from type, got {}", &self.inner());
+            dbpanic!(
+                ctx.db,
+                "Expected nominal layout with from type, got {}",
+                &self.inner()
+            );
         };
         let parser_ty = ctx.db.intern_type(Type::ParserArg {
             result: self.mono_layout().1,

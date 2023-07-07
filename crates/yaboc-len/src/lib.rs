@@ -410,7 +410,9 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 }
             }
         }
-        let [.., res] = poly_vals[..] else { panic!("empty circuit") };
+        let [.., res] = poly_vals[..] else {
+            panic!("empty circuit")
+        };
         res
     }
 
@@ -474,10 +476,14 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         {
             return Val::Static(0, SmallBitVec::default());
         }
-        let Some(consts) = deps.iter().map(|x| match &self.vals[*x] {
-            Val::Const(0, x) => Some(*x),
-            _ => None,
-        }).collect::<Option<SmallVec<[i128; N]>>>() else {
+        let Some(consts) = deps
+            .iter()
+            .map(|x| match &self.vals[*x] {
+                Val::Const(0, x) => Some(*x),
+                _ => None,
+            })
+            .collect::<Option<SmallVec<[i128; N]>>>()
+        else {
             return Val::PolyOp(poly_op);
         };
         let (res, overflow) = exec_op(consts.as_slice().try_into().unwrap());
@@ -767,7 +773,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         let mut idx = sizes.len();
         while idx > 0 {
             idx -= 1;
-            let size@1.. = sizes[idx] else {
+            let size @ 1.. = sizes[idx] else {
                 continue;
             };
             let mut call_deps = SmallBitVec::zeroes(size);

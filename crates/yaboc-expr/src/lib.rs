@@ -79,7 +79,7 @@ pub struct ExprIdx<K>(NonZeroU32, PhantomData<K>);
 
 impl<K> Clone for ExprIdx<K> {
     fn clone(&self) -> Self {
-        ExprIdx(self.0, PhantomData)
+        *self
     }
 }
 

@@ -207,10 +207,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         part: LayoutPart,
     ) -> CallableValue<'llvm> {
         let sym = self.sym(layout, part);
-        let Some(fun) = self
-            .module
-            .get_function(&sym)
-        else {
+        let Some(fun) = self.module.get_function(&sym) else {
             panic!("could not find symbol {sym}");
         };
         fun.into()

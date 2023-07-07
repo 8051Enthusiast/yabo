@@ -47,7 +47,7 @@ impl<DB: Asts + Default> Import for Context<DB> {
                 continue;
             }
             let Ok(imports) = self.db.imports(f) else {
-                continue
+                continue;
             };
             for import in imports.iter() {
                 let imported_file =

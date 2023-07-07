@@ -575,7 +575,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
             .iter_parts()
         {
             let ExprHead::Niladic(ResolvedAtom::Block(block_id)) = &part else {
-                continue
+                continue;
             };
             let spanned = |e| SpannedTypeError::new(e, IndirectSpan::new(expr.id.0, *span));
             let ambient = self.infctx.reuse_parser_arg(*ty).map_err(spanned)?;
