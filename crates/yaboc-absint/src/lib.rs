@@ -1,6 +1,6 @@
 mod represent;
 
-use std::sync::Arc;
+use std::{num::NonZeroU64, sync::Arc};
 
 use hir::{BlockId, Hirs};
 use yaboc_ast::expr;
@@ -27,6 +27,25 @@ pub trait AbsInt: Dependents {}
 pub enum Arg {
     Named(DefId),
     From,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Epoch(NonZeroU64);
+
+impl Epoch {
+    fn next(&self) -> Self {
+        Self(NonZeroU64::new(self.0.get() + 1).unwrap())
+    }
+    
+    fn update(&mut self) {
+        *self = self.next();
+    }
+}
+
+impl Default for Epoch {
+    fn default() -> Self {
+        Self(NonZeroU64::new(1).unwrap())
+    }
 }
 
 pub trait AbstractDomain<'a>: Sized + Clone + std::hash::Hash + Eq + std::fmt::Debug {
@@ -90,13 +109,18 @@ pub struct AbsIntCtx<'a, Dom: AbstractDomain<'a>> {
     pub db: &'a Dom::DB,
     pub dcx: Dom::DomainContext,
 
+    // values in the current epoch might change later
+    // because of fixpoint iteration, but values from
+    // previous epochs are stable
+    cache_epoch: Epoch,
+
     type_substitutions: Arc<Vec<TypeId>>,
 
     current_pd: Dom,
     depth: usize,
     call_needs_fixpoint: FxHashSet<usize>,
     active_calls: FxHashMap<Dom, usize>,
-    pd_result: FxHashMap<Dom, Option<PdEvaluated<Dom>>>,
+    pd_result: FxHashMap<Dom, (Option<PdEvaluated<Dom>>, Epoch)>,
     existing_pd: FxHashSet<(TypeId, Dom)>,
     new_pd: FxHashSet<(TypeId, Dom)>,
 
@@ -115,6 +139,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             db,
             dcx,
             current_pd: bottom,
+            cache_epoch: Default::default(),
             type_substitutions: Default::default(),
             depth: Default::default(),
             call_needs_fixpoint: Default::default(),
@@ -130,7 +155,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         }
     }
 
-    pub fn pd_result(&self) -> &FxHashMap<Dom, Option<PdEvaluated<Dom>>> {
+    pub fn pd_result(&self) -> &FxHashMap<Dom, (Option<PdEvaluated<Dom>>, Epoch)> {
         &self.pd_result
     }
 
@@ -164,7 +189,8 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
 
     fn set_pd_ret(&mut self, evaluated: Option<PdEvaluated<Dom>>) -> Option<Dom> {
         let ret = evaluated.as_ref().map(|x| x.returned.clone());
-        self.pd_result.insert(self.current_pd.clone(), evaluated);
+        self.pd_result
+            .insert(self.current_pd.clone(), (evaluated, self.cache_epoch));
         ret
     }
 
@@ -245,22 +271,35 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
     }
     pub fn eval_pd(&mut self, pd: Dom, ty: TypeId) -> Option<Dom> {
         let new_type_substitutions = self.type_substitutions(ty);
-        // TODO(8051): work out a way to cache when possible
-        // we can't always cache because of fixpoints invalidating the cache
+        if let Some((pd, epoch)) = self.pd_result.get(&pd) {
+            // if we are in the same epoch, the value still might
+            // change due to a fixpoint
+            if *epoch < self.cache_epoch {
+                return Some(pd.as_ref()?.returned.clone());
+            }
+        }
         if let Some(&depth) = self.active_calls.get(&pd) {
+            if self.call_needs_fixpoint.is_empty() {
+                // we can only increment the epoch if we are not
+                // currently in a fixpoint computation
+                self.cache_epoch.update();
+            }
             self.call_needs_fixpoint.insert(depth);
-            if let Some(pd) = self.pd_result.get(&pd) {
+            if let Some((pd, _)) = self.pd_result.get(&pd) {
                 return pd.as_ref().map(|x| x.returned.clone());
             }
             let bottom = Dom::bottom(&mut self.dcx);
             self.pd_result.insert(
                 pd,
-                Some(PdEvaluated {
-                    returned: bottom.clone(),
-                    from: bottom.clone(),
-                    expr_vals: None,
-                    typesubst: new_type_substitutions,
-                }),
+                (
+                    Some(PdEvaluated {
+                        returned: bottom.clone(),
+                        from: bottom.clone(),
+                        expr_vals: None,
+                        typesubst: new_type_substitutions,
+                    }),
+                    self.cache_epoch,
+                ),
             );
             return Some(bottom);
         }
@@ -290,6 +329,12 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         let mut ret = self.set_pd_ret(result);
         if self.call_needs_fixpoint.remove(&self.depth) {
             ret = self.eval_pd_fixpoint(pd.clone(), ret, &parserdef, from_ty);
+        }
+        if self.call_needs_fixpoint.is_empty() {
+            // update the epoch since we are not in a fixpoint computation
+            // so that the current value does not get invalidated
+            // in case we do enter a fixpoint computation later
+            self.cache_epoch.update();
         }
 
         self.active_block = old_active_block;

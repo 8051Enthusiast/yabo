@@ -86,6 +86,7 @@ impl<'a> FunctionSubstitute<'a> {
         };
         let lookup_layout = fun.inner().apply_arg(ctx, from)?;
         let evaluated = ctx.pd_result()[&lookup_layout]
+            .0
             .as_ref()
             .ok_or_else(SilencedError::new)?;
         let subst = Some(evaluated.typesubst.clone());
