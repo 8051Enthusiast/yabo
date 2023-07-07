@@ -123,7 +123,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 self.cg.build_field_gep(a, outer, inner_layout).ptr
             }
             mir::Place::ModifiedBy(ins_ref) => {
-                let MirInstr::ParseCall(_, _, _, front, _, _) = self.mir_fun.f.ins_at(ins_ref) else {
+                let MirInstr::ParseCall(_, _, _, front, _, _) = self.mir_fun.f.ins_at(ins_ref)
+                else {
                     unreachable!()
                 };
                 self.place_ptr(front)
@@ -532,7 +533,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             .cg
             .compiler_database
             .db
-            .lookup_intern_type(self.mir_fun.f.place(fun).ty) else {
+            .lookup_intern_type(self.mir_fun.f.place(fun).ty)
+        else {
             panic!("apply_args on non-function");
         };
         let arg_layout = args

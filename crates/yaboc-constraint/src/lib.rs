@@ -104,7 +104,7 @@ impl<'a, DB: Constraints + ?Sized> LenInferCtx<'a, DB> {
         while changed {
             changed = false;
             for (pd, term) in self.local_terms.iter() {
-                let Some(term) = &term else {continue};
+                let Some(term) = &term else { continue };
                 let args = arg_kinds(self.db, *pd).unwrap_or_default();
                 let mut subctx = SizeCalcCtx::new(&*self, &term.expr, &args);
                 let new_val = subctx.fun_val(term.root);
@@ -153,7 +153,7 @@ impl<'db, DB: Constraints + ?Sized> Env for LenInferCtx<'db, DB> {
 fn arg_kinds(db: &(impl Constraints + ?Sized), pd: hir::ParserDefId) -> SResult<Vec<ArgKind>> {
     let signature = db.parser_args(pd)?;
     let Some(args) = &signature.args else {
-        return Ok(Vec::new())
+        return Ok(Vec::new());
     };
 
     let mut ret = Vec::new();
@@ -197,7 +197,7 @@ pub fn ssc_len_vals(db: &dyn Constraints, ssc: FunctionSscId) -> Arc<Vec<LenVals
 
 pub fn fun_len(db: &dyn Constraints, pd: hir::ParserDefId) -> LenVal {
     let Ok(ssc) = db.parser_ssc(pd) else {
-        return Val::Undefined
+        return Val::Undefined;
     };
     let pds = db.lookup_intern_recursion_scc(ssc);
     let idx = pds.iter().position(|x| *x == pd).unwrap();
@@ -207,7 +207,7 @@ pub fn fun_len(db: &dyn Constraints, pd: hir::ParserDefId) -> LenVal {
 
 pub fn len_vals(db: &dyn Constraints, pd: hir::ParserDefId) -> Arc<LenVals> {
     let Ok(ssc) = db.parser_ssc(pd) else {
-        return Default::default()
+        return Default::default();
     };
     let pds = db.lookup_intern_recursion_scc(ssc);
     let idx = pds.iter().position(|x| *x == pd).unwrap();

@@ -16,7 +16,7 @@ impl<Expr, Data: IntoIterator> ZipExpr<Expr, Data> {
     ) -> ZipExpr<Expr, impl Iterator<Item = (Data::Item, D2::Item)>> {
         ZipExpr {
             expr: self.expr,
-            data: self.data.into_iter().zip(data.into_iter()),
+            data: self.data.into_iter().zip(data),
         }
     }
 
@@ -94,7 +94,7 @@ impl<K: ExprKind, Data: IntoIterator, Expr: Expression<K>> Expression<K> for Zip
     }
 
     fn iter_parts(self) -> Self::Iter {
-        self.expr.iter_parts().zip(self.data.into_iter())
+        self.expr.iter_parts().zip(self.data)
     }
 
     fn len(&self) -> usize {
@@ -109,7 +109,7 @@ impl<A: IntoIterator, B: IntoIterator> IntoIterator for IntoZip<A, B> {
     type IntoIter = std::iter::Zip<A::IntoIter, B::IntoIter>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter().zip(self.1.into_iter())
+        self.0.into_iter().zip(self.1)
     }
 }
 impl<DB: ?Sized, K, Id, A, B> FetchKindData<(A, B), Id, DB> for K

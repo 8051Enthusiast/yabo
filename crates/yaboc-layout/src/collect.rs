@@ -1,5 +1,5 @@
 mod tailsize;
-use std::{collections::hash_map::Entry, sync::Arc};
+use std::{collections::hash_map::Entry, rc::Rc};
 
 use fxhash::{FxHashMap, FxHashSet};
 use petgraph::unionfind::UnionFind;
@@ -8,7 +8,7 @@ use yaboc_absint::{AbstractDomain, Arg};
 use yaboc_dependents::{NeededBy, RequirementSet};
 use yaboc_hir::{HirIdWrapper, ParserDefId};
 use yaboc_hir_types::DerefLevel;
-use yaboc_mir::{CallMeta, MirInstr};
+use yaboc_mir::{CallMeta, MirInstr, MirKind};
 use yaboc_types::{PrimitiveType, Type, TypeId};
 
 use crate::{
@@ -67,9 +67,9 @@ pub struct LayoutCollector<'a, 'b> {
 }
 
 pub enum UnprocessedCall<'a> {
-    NominalParser(ILayout<'a>, IMonoLayout<'a>, RequirementSet),
-    Block(ILayout<'a>, IMonoLayout<'a>, RequirementSet),
-    IfParser(ILayout<'a>, IMonoLayout<'a>, RequirementSet),
+    NominalParser(ILayout<'a>, IMonoLayout<'a>, MirKind),
+    Block(ILayout<'a>, IMonoLayout<'a>, MirKind),
+    IfParser(ILayout<'a>, IMonoLayout<'a>, MirKind),
 }
 
 impl<'a, 'b> LayoutCollector<'a, 'b> {
@@ -156,14 +156,20 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             match mono.mono_layout().0 {
                 MonoLayout::BlockParser(..) => {
                     if self.processed_calls.insert((arg, mono, info)) {
-                        self.unprocessed
-                            .push(UnprocessedCall::Block(arg, mono, info.req));
+                        self.unprocessed.push(UnprocessedCall::Block(
+                            arg,
+                            mono,
+                            MirKind::Call(info.req),
+                        ));
                     }
                 }
                 MonoLayout::NominalParser(..) => {
                     if self.processed_calls.insert((arg, mono, info)) {
-                        self.unprocessed
-                            .push(UnprocessedCall::NominalParser(arg, mono, info.req));
+                        self.unprocessed.push(UnprocessedCall::NominalParser(
+                            arg,
+                            mono,
+                            MirKind::Call(info.req),
+                        ));
                     }
                 }
                 MonoLayout::Regex(..) => {
@@ -176,8 +182,11 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 }
                 MonoLayout::IfParser(..) => {
                     if self.processed_calls.insert((arg, mono, info)) {
-                        self.unprocessed
-                            .push(UnprocessedCall::IfParser(arg, mono, info.req));
+                        self.unprocessed.push(UnprocessedCall::IfParser(
+                            arg,
+                            mono,
+                            MirKind::Call(info.req),
+                        ));
                     }
                 }
                 _ => {}
@@ -247,13 +256,15 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         &mut self,
         arg: ILayout<'a>,
         parser: IMonoLayout<'a>,
-        mut info: RequirementSet,
+        mut info: MirKind,
     ) -> Result<(), LayoutError> {
         let MonoLayout::BlockParser(id, _, bt) = parser.mono_layout().0 else {
             panic!("unexpected non-block-parser layout");
         };
         if !*bt {
-            info &= !NeededBy::Backtrack
+            if let MirKind::Call(req) = info {
+                info = MirKind::Call(req & !NeededBy::Backtrack);
+            }
         };
         let fsub =
             function_substitute(yaboc_mir::FunKind::Block(*id), info, arg, parser, self.ctx)?;
@@ -265,7 +276,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         &mut self,
         arg: ILayout<'a>,
         parser: IMonoLayout<'a>,
-        mut info: RequirementSet,
+        mut info: MirKind,
     ) -> Result<(), LayoutError> {
         let (MonoLayout::NominalParser(pd, thunk_args, bt), ty) = parser.mono_layout() else {
             panic!("unexpected non-nominal-parser layout");
@@ -274,7 +285,9 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             panic!("unexpected non-parserarg type");
         };
         if !*bt {
-            info &= !NeededBy::Backtrack
+            if let MirKind::Call(req) = info {
+                info = MirKind::Call(req & !NeededBy::Backtrack);
+            }
         }
         let parserdef = pd.lookup(self.ctx.db).unwrap();
         let mut args = FxHashMap::default();
@@ -289,8 +302,12 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             self.register_layouts(thunk.inner());
         }
         let (arg_layout, parser_layout) = thunk.unapply_nominal(self.ctx);
-        let val_info = if info.contains(NeededBy::Val) {
-            Some(info & !NeededBy::Val)
+        let val_info = if let MirKind::Call(req) = info {
+            if req.contains(NeededBy::Val) {
+                Some(MirKind::Call(req & !NeededBy::Val))
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -321,12 +338,18 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         panic!("unexpected non-if-parser layout");
                     };
                     self.register_layouts(*inner);
-                    let mut first_req = info | NeededBy::Val;
-                    if self.ctx.db.lookup_intern_hir_constraint(*c).has_no_eof {
-                        first_req |= NeededBy::Len
+                    if let MirKind::Call(info) = info {
+                        let mut first_req = info | NeededBy::Val;
+                        if self.ctx.db.lookup_intern_hir_constraint(*c).has_no_eof {
+                            first_req |= NeededBy::Len
+                        }
+                        self.register_parse(from, *inner, CallMeta::new(first_req, false));
+                        self.register_parse(
+                            from,
+                            *inner,
+                            CallMeta::new(info & NeededBy::Val, false),
+                        );
                     }
-                    self.register_parse(from, *inner, CallMeta::new(first_req, false));
-                    self.register_parse(from, *inner, CallMeta::new(info & NeededBy::Val, false));
                 }
             }
         }
@@ -429,7 +452,7 @@ impl<'a, Arg: std::hash::Hash + Eq + Copy> Default for CallInfo<'a, Arg> {
 #[derive(Debug)]
 pub struct CallSlotResult<'a, Arg> {
     pub layout_vtable_offsets: FxHashMap<(Arg, ILayout<'a>), PSize>,
-    pub occupied_entries: FxHashMap<IMonoLayout<'a>, Arc<FxHashMap<PSize, Arg>>>,
+    pub occupied_entries: FxHashMap<IMonoLayout<'a>, Rc<FxHashMap<PSize, Arg>>>,
 }
 
 impl<'a, Arg: std::hash::Hash + Eq + Copy> CallInfo<'a, Arg> {
@@ -486,7 +509,7 @@ impl<'a, Arg: std::hash::Hash + Eq + Copy> CallInfo<'a, Arg> {
         }
         let arc_parser_occupied_entries = parser_occupied_entries
             .into_iter()
-            .map(|(k, v)| (k, Arc::new(v)))
+            .map(|(k, v)| (k, Rc::new(v)))
             .collect();
         CallSlotResult {
             layout_vtable_offsets,

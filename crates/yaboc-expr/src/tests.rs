@@ -167,14 +167,14 @@ fn eval(expr: DataRefExpr<Bivariate, Range<usize>>, x: i64, y: i64) -> Result<i6
                 ExprHead::Niladic(PartialEval::Uneval(Bivariate::Y)) => y,
                 ExprHead::Monadic(op, inner) => {
                     let PartialEval::Eval((n, _)) = inner else {
-                            return Ok(PartialEval::Uneval(ExprHead::new_monadic(op, inner)))
-                        };
+                        return Ok(PartialEval::Uneval(ExprHead::new_monadic(op, inner)));
+                    };
                     n.checked_neg().ok_or(span)?
                 }
                 ExprHead::Dyadic(op, inner) => {
                     let [PartialEval::Eval((lhs, _)), PartialEval::Eval((rhs, _))] = inner else {
-                            return Ok(PartialEval::Uneval(ExprHead::new_dyadic(op, inner)))
-                        };
+                        return Ok(PartialEval::Uneval(ExprHead::new_dyadic(op, inner)));
+                    };
                     match op {
                         BinOp::Add => lhs.checked_add(rhs),
                         BinOp::Mul => lhs.checked_mul(rhs),
@@ -192,36 +192,39 @@ fn eval(expr: DataRefExpr<Bivariate, Range<usize>>, x: i64, y: i64) -> Result<i6
 }
 
 fn eval_y(expr: &IdxExpression<Bivariate>, y: i64) -> IdxExpression<Univariate> {
-    expr.take_ref().partial_eval::<_, Univariate>(
-        |n, _| PartialEval::Eval(n),
-        |_, head| {
-            PartialEval::Eval(match head {
-                ExprHead::Niladic(PartialEval::Eval(n)) => n,
-                ExprHead::Niladic(PartialEval::Uneval(Bivariate::X)) => {
-                    return PartialEval::Uneval(ExprHead::new_niladic(
-                        PartialEval::Uneval(Univariate::X),
-                    ))
-                }
-                ExprHead::Niladic(PartialEval::Uneval(Bivariate::Y)) => y,
-                ExprHead::Monadic(UnOp::Neg, inner) => {
-                    let PartialEval::Eval((n, _)) = inner else {
-                        return PartialEval::Uneval(ExprHead::new_monadic(UnOp::Neg, inner))
-                    };
-                    -n
-                }
-                ExprHead::Dyadic(op, inner) => {
-                    let [PartialEval::Eval((lhs, _)), PartialEval::Eval((rhs, _))] = inner else {
-                        return PartialEval::Uneval(ExprHead::new_dyadic(op, inner))
-                    };
-                    match op {
-                        BinOp::Add => lhs + rhs,
-                        BinOp::Mul => lhs * rhs,
+    expr.take_ref()
+        .partial_eval::<_, Univariate>(
+            |n, _| PartialEval::Eval(n),
+            |_, head| {
+                PartialEval::Eval(match head {
+                    ExprHead::Niladic(PartialEval::Eval(n)) => n,
+                    ExprHead::Niladic(PartialEval::Uneval(Bivariate::X)) => {
+                        return PartialEval::Uneval(ExprHead::new_niladic(PartialEval::Uneval(
+                            Univariate::X,
+                        )))
                     }
-                }
-                ExprHead::Variadic(v, _) => match v {}
-            })
-        },
-    ).into_expr()
+                    ExprHead::Niladic(PartialEval::Uneval(Bivariate::Y)) => y,
+                    ExprHead::Monadic(UnOp::Neg, inner) => {
+                        let PartialEval::Eval((n, _)) = inner else {
+                            return PartialEval::Uneval(ExprHead::new_monadic(UnOp::Neg, inner));
+                        };
+                        -n
+                    }
+                    ExprHead::Dyadic(op, inner) => {
+                        let [PartialEval::Eval((lhs, _)), PartialEval::Eval((rhs, _))] = inner
+                        else {
+                            return PartialEval::Uneval(ExprHead::new_dyadic(op, inner));
+                        };
+                        match op {
+                            BinOp::Add => lhs + rhs,
+                            BinOp::Mul => lhs * rhs,
+                        }
+                    }
+                    ExprHead::Variadic(v, _) => match v {},
+                })
+            },
+        )
+        .into_expr()
 }
 
 fn as_string<K>(expr: &IdxExpression<K>, mut f: impl FnMut(K::NiladicOp) -> String) -> String

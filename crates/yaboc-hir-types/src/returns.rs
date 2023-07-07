@@ -183,7 +183,7 @@ fn check_for_typevar(db: &dyn TyHirs, ty: TypeId) -> Result<TypeId, TypeError> {
 fn find_cyclic_return_types(db: &dyn TyHirs, tys: &mut [Result<ParserDefType, SpannedTypeError>]) {
     let mut targets: FxHashMap<DefId, Option<DefId>> = FxHashMap::default();
     for mty in tys.iter() {
-        let Ok(pdty) = *mty else {continue};
+        let Ok(pdty) = *mty else { continue };
         let target = match match db.lookup_intern_type(pdty.deref) {
             Type::ForAll(inner, _) => db.lookup_intern_type(inner),
             otherwise => otherwise,
@@ -220,7 +220,7 @@ fn find_cyclic_return_types(db: &dyn TyHirs, tys: &mut [Result<ParserDefType, Sp
             on_stack.remove(i);
         }
         for ty in tys.iter_mut() {
-            let Ok(pdty) = ty else {continue};
+            let Ok(pdty) = ty else { continue };
             if on_stack.contains(&pdty.id.0) {
                 *ty = Err(SpannedTypeError::new(
                     error,

@@ -557,7 +557,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
             );
         }
         let [lower_head, upper_head] = [lower, upper].map(InfTypeHead::from);
-        if if let (InfTypeHead::Loop(f), InfTypeHead::Loop(g)) = (lower_head, upper_head) {
+        if if let [InfTypeHead::Loop(f), InfTypeHead::Loop(g)] = [lower_head, upper_head] {
             f <= g
         } else {
             lower_head == upper_head

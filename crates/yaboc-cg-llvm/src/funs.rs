@@ -64,7 +64,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         fun: CgMonoValue<'comp, 'llvm>,
     ) -> Option<CgMonoValue<'comp, 'llvm>> {
         let Some(sa) = self.collected_layouts.tail_sa[&(from, fun.layout)] else {
-            return None
+            return None;
         };
         let fun_copy_ptr = self.build_sa_alloca(sa, Some(false), "fun_copy");
         let fun_buf = CgMonoValue::new(fun.layout, fun_copy_ptr);
@@ -131,8 +131,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         mut req: RequirementSet,
     ) -> FunctionSubstitute<'comp> {
-        let MonoLayout::BlockParser(bd, _, bt) = layout.mono_layout().0
-        else {
+        let MonoLayout::BlockParser(bd, _, bt) = layout.mono_layout().0 else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
         if !bt {
@@ -197,7 +196,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let MonoLayout::NominalParser(pd, args, _) = layout.mono_layout().0 else {
             panic!("create_pd_parse has to be called with a nominal parser layout");
         };
-        let Type::ParserArg { arg: arg_ty, .. } = self.compiler_database.db.lookup_intern_type(layout.mono_layout().1) else {
+        let Type::ParserArg { arg: arg_ty, .. } = self
+            .compiler_database
+            .db
+            .lookup_intern_type(layout.mono_layout().1)
+        else {
             panic!("create_pd_parse has to be called with a nominal parser layout");
         };
 
@@ -532,7 +535,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
         let MonoLayout::Regex(regex, bt) = layout.mono_layout().0 else {
-                panic!("called build_regex_parse on non-regex")
+            panic!("called build_regex_parse on non-regex")
         };
         let regex_str = self.compiler_database.db.lookup_intern_regex(*regex);
         let regex_impl = self.create_regex_parse_impl(from, layout, &regex_str, slot, req);

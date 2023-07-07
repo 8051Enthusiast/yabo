@@ -533,7 +533,9 @@ impl Function {
     pub fn preds(&self) -> Vec<Vec<BBRef>> {
         let mut preds = vec![vec![]; self.bb.len()];
         for (bb, bb_data) in self.iter_bb() {
-            let Some(controlflow) = bb_data.terminator().control_flow() else {continue};
+            let Some(controlflow) = bb_data.terminator().control_flow() else {
+                continue;
+            };
             for succ in controlflow.successors() {
                 preds[succ.as_index()].push(bb);
             }

@@ -238,7 +238,10 @@ impl<'collection> FileResolver<'collection> {
             return Ok(*f);
         }
         let Some(origin_path) = self.files.path(origin) else {
-            return Err(FileLoadError::DoesNotExist { source: (origin, span), name });
+            return Err(FileLoadError::DoesNotExist {
+                source: (origin, span),
+                name,
+            });
         };
         let path_dir = Path::new(&origin_path).parent().unwrap();
         // have to think more about what to do when canonicalization failed, as we don't want duplicate errors

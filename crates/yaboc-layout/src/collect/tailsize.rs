@@ -1,6 +1,6 @@
 use fxhash::{FxHashMap, FxHashSet};
 use yaboc_dependents::RequirementSet;
-use yaboc_mir::{CallMeta, FunKind, MirInstr};
+use yaboc_mir::{CallMeta, FunKind, MirInstr, MirKind};
 
 use crate::{
     mir_subst::function_substitute, prop::SizeAlign, AbsLayoutCtx, ILayout, IMonoLayout,
@@ -45,7 +45,13 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
             MonoLayout::BlockParser(b, _, _) => FunKind::Block(*b),
             _ => return Ok(()),
         };
-        let fsub = function_substitute(fun_kind, RequirementSet::all(), site.0, site.1, self.ctx)?;
+        let fsub = function_substitute(
+            fun_kind,
+            MirKind::Call(RequirementSet::all()),
+            site.0,
+            site.1,
+            self.ctx,
+        )?;
         let mut already_called = FxHashSet::default();
         for instr in fsub.f.iter_bb().flat_map(|(_, bb)| bb.ins()) {
             let MirInstr::ParseCall(.., CallMeta { tail: true, .. }, arg, fun, _) = instr else {

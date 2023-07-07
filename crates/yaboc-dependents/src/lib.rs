@@ -444,16 +444,30 @@ impl DependencyGraph {
         // this is art, don't touch
         for kind in SubValueKind::all() {
             let subvalue = SubValue::new(kind, id);
-            let Some(&idx) = self.val_map.get(&subvalue) else { continue };
+            let Some(&idx) = self.val_map.get(&subvalue) else {
+                continue;
+            };
             for nidx in self.graph.neighbors_directed(idx, Direction::Incoming) {
                 let neighbor_val = self.graph[nidx];
                 let edge_idx = self.graph.find_edge(nidx, idx).unwrap();
-                let true = self.graph.edge_weight(edge_idx).unwrap() else { continue };
-                let false = existing.contains(&neighbor_val.id) else { continue };
-                let false = neighbor_val.id == self.block.0 else { continue };
-                let false = neighbor_val.id == id else { continue };
-                let SubValueKind::Back = subvalue.kind else { return Ok(false) };
-                let SubValueKind::Back = neighbor_val.kind else { return Ok(false) };
+                let true = self.graph.edge_weight(edge_idx).unwrap() else {
+                    continue;
+                };
+                let false = existing.contains(&neighbor_val.id) else {
+                    continue;
+                };
+                let false = neighbor_val.id == self.block.0 else {
+                    continue;
+                };
+                let false = neighbor_val.id == id else {
+                    continue;
+                };
+                let SubValueKind::Back = subvalue.kind else {
+                    return Ok(false);
+                };
+                let SubValueKind::Back = neighbor_val.kind else {
+                    return Ok(false);
+                };
             }
         }
         Ok(true)
@@ -468,21 +482,27 @@ impl DependencyGraph {
         let root_ctx = block.root_context.lookup(db)?;
         let mut return_id_stack = vec![*root_ctx.vars.set[&FieldName::Return].inner()];
         'outer: while let Some(id) = return_id_stack.pop() {
-            let true = self.id_is_tail(id, &ret)? else { continue };
+            let true = self.id_is_tail(id, &ret)? else {
+                continue;
+            };
 
             ret.insert(id);
 
             let hir::HirNode::ChoiceIndirection(c) = db.hir_node(id)? else {
-                continue
+                continue;
             };
             let choice = c.target_choice.lookup(db)?;
             if let Some([_, back]) = choice.endpoints {
-                let ParserPredecessor::ChildOf(_) = back else { continue };
+                let ParserPredecessor::ChildOf(_) = back else {
+                    continue;
+                };
             }
             let ctx = choice.parent_context.lookup(db)?;
             for child in ctx.children.iter().map(|x| db.hir_node(*x)) {
                 let child = child?;
-                let hir::HirNode::ChoiceIndirection(c) = child else { continue };
+                let hir::HirNode::ChoiceIndirection(c) = child else {
+                    continue;
+                };
                 if c.target_choice != choice.id {
                     continue;
                 }

@@ -95,7 +95,7 @@ impl<K, D: IntoIterator> ShapedData<D, K> {
         D2: IntoIterator,
     {
         ShapedData {
-            data: self.data.into_iter().zip(other.data.into_iter()),
+            data: self.data.into_iter().zip(other.data),
             _marker: PhantomData,
         }
     }
