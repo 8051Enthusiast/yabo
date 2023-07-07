@@ -36,7 +36,7 @@ impl Epoch {
     fn next(&self) -> Self {
         Self(NonZeroU64::new(self.0.get() + 1).unwrap())
     }
-    
+
     fn update(&mut self) {
         *self = self.next();
     }
@@ -126,7 +126,7 @@ pub struct AbsIntCtx<'a, Dom: AbstractDomain<'a>> {
 
     block_vars: FxHashMap<DefId, Dom>,
     block_expr_vals: FxHashMap<hir::ExprId, AbstractData<Dom>>,
-    block_result: FxHashMap<(Dom, Dom), Option<BlockEvaluated<Dom>>>,
+    block_result: FxHashMap<(Dom, Dom), (Option<BlockEvaluated<Dom>>, Epoch)>,
     active_block: Option<Dom>,
 
     errors: Vec<(Dom, Dom::Err)>,
@@ -159,7 +159,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         &self.pd_result
     }
 
-    pub fn block_result(&self) -> &FxHashMap<(Dom, Dom), Option<BlockEvaluated<Dom>>> {
+    pub fn block_result(&self) -> &FxHashMap<(Dom, Dom), (Option<BlockEvaluated<Dom>>, Epoch)> {
         &self.block_result
     }
 
@@ -458,9 +458,11 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         result_type: TypeId,
         arg_type: TypeId,
     ) -> Option<Dom> {
-        //if let Some(block_info) = self.block_result.get(&(block.clone(), from.clone())) {
-        //    return block_info.as_ref().map(|x| x.returned.clone());
-        //}
+        if let Some((block_info, epoch)) = self.block_result.get(&(block.clone(), from.clone())) {
+            if *epoch < self.cache_epoch {
+                return block_info.as_ref().map(|x| x.returned.clone());
+            }
+        }
         let mut old_block_vars = std::mem::take(&mut self.block_vars);
         let mut old_block_expr = std::mem::take(&mut self.block_expr_vals);
         let old_block = std::mem::replace(&mut self.active_block, Some(block.clone()));
@@ -480,7 +482,8 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             returned,
             typesubst: self.type_substitutions.clone(),
         });
-        self.block_result.insert((from, block), evaluated);
+        self.block_result
+            .insert((from, block), (evaluated, self.cache_epoch));
 
         res
     }

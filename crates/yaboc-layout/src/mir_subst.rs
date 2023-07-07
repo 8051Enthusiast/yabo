@@ -33,6 +33,7 @@ impl<'a> FunctionSubstitute<'a> {
                 panic!("non-block-parser as argument")
             };
         let evaluated = ctx.block_result()[&(from, block.0)]
+            .0
             .as_ref()
             .ok_or_else(SilencedError::new)?;
         let subst = Some(evaluated.typesubst.clone());

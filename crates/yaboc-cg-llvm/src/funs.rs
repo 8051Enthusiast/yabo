@@ -428,6 +428,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
 
         let return_layout = self.layouts.block_result()[&(from, layout.inner())]
+            .0
             .as_ref()
             .unwrap()
             .returned;
