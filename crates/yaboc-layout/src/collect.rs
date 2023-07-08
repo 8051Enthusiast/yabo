@@ -258,7 +258,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         parser: IMonoLayout<'a>,
         mut info: MirKind,
     ) -> Result<(), LayoutError> {
-        let MonoLayout::BlockParser(id, _, bt) = parser.mono_layout().0 else {
+        let MonoLayout::BlockParser(id, _, _, bt) = parser.mono_layout().0 else {
             panic!("unexpected non-block-parser layout");
         };
         if !*bt {
@@ -266,6 +266,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 info = MirKind::Call(req & !NeededBy::Backtrack);
             }
         };
+        parser.inner().apply_arg(self.ctx, arg)?;
         let fsub =
             function_substitute(yaboc_mir::FunKind::Block(*id), info, arg, parser, self.ctx)?;
         self.collect_mir(&fsub)?;
