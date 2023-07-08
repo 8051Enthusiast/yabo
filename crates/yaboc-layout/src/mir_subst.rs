@@ -27,7 +27,7 @@ impl<'a> FunctionSubstitute<'a> {
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
         let (def, captures) =
-            if let MonoLayout::BlockParser(def, captures, _) = block.mono_layout().0 {
+            if let MonoLayout::BlockParser(def, captures, _, _) = block.mono_layout().0 {
                 (def, captures)
             } else {
                 panic!("non-block-parser as argument")

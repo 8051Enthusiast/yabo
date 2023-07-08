@@ -61,12 +61,19 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
                     }
                     write!(f, "}}")
                 }
-                MonoLayout::BlockParser(bd, captures, bt) => {
+                MonoLayout::BlockParser(bd, captures, tysubs, bt) => {
                     write!(f, "block-parser")?;
                     if *bt {
                         write!(f, "?")?;
                     }
-                    dbwrite!(f, db, "[{}, {}]{{", &bd.0, ty)?;
+                    dbwrite!(f, db, "[{}, {}, [", &bd.0, ty)?;
+                    for (i, ty) in tysubs.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        dbwrite!(f, db, "{}", ty)?;
+                    }
+                    write!(f, "]]{{")?;
                     for (i, (capture, layout)) in captures.iter().enumerate() {
                         if i > 0 {
                             write!(f, ", ")?;
@@ -257,10 +264,14 @@ impl<'a> LayoutHasher<'a> {
                     state.update(hash);
                 }
             }
-            MonoLayout::BlockParser(def, map, bt) => {
+            MonoLayout::BlockParser(def, map, tysubs, bt) => {
                 state.update([6]);
                 def.0.update_hash(state, db);
                 self.hash_captures(state, map, db);
+                tysubs.len().update_hash(state, db);
+                for ty in tysubs.iter() {
+                    state.update(db.type_hash(*ty));
+                }
                 state.update([*bt as u8]);
             }
             MonoLayout::Nil => {
@@ -378,7 +389,7 @@ pub fn truncated_hex(array: &[u8]) -> String {
 impl<'a> LayoutSymbol<'a> {
     pub fn symbol<DB: Layouts + ?Sized>(&self, hasher: &mut LayoutHasher<'a>, db: &DB) -> String {
         let name_prefix = match self.layout.mono_layout().0 {
-            MonoLayout::BlockParser(def, _, backtracks) => {
+            MonoLayout::BlockParser(def, _, _, backtracks) => {
                 if *backtracks {
                     format!("parse_block_{}_b", &truncated_hex(&db.def_hash(def.0)))
                 } else {

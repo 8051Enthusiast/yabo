@@ -131,7 +131,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         mut req: RequirementSet,
     ) -> FunctionSubstitute<'comp> {
-        let MonoLayout::BlockParser(bd, _, bt) = layout.mono_layout().0 else {
+        let MonoLayout::BlockParser(bd, _, _, bt) = layout.mono_layout().0 else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
         if !bt {
@@ -407,7 +407,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         slot: PSize,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        let MonoLayout::BlockParser(block, _, _) = layout.mono_layout().0 else {
+        let MonoLayout::BlockParser(block, _, _, _) = layout.mono_layout().0 else {
             panic!("Expected block parser layout")
         };
         let block = block.lookup(&self.compiler_database.db).unwrap();
@@ -765,8 +765,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             let fun = match layout.mono_layout().0 {
                 MonoLayout::Single => Self::create_single_parse,
                 MonoLayout::Nil => Self::create_nil_parse,
-                MonoLayout::NominalParser(_, _, _) => Self::create_pd_parse,
-                MonoLayout::BlockParser(_, _, _) => Self::create_block_parse,
+                MonoLayout::NominalParser(..) => Self::create_pd_parse,
+                MonoLayout::BlockParser(..) => Self::create_block_parse,
                 MonoLayout::Regex(..) => Self::create_regex_parse,
                 MonoLayout::IfParser(..) => Self::create_if_parse,
                 MonoLayout::ArrayParser(..) => Self::create_array_parse,

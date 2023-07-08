@@ -211,6 +211,10 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             .substitute_typevar(ty, self.type_substitutions.clone())
     }
 
+    pub fn current_type_substitutions(&self) -> Arc<Vec<TypeId>> {
+        self.type_substitutions.clone()
+    }
+
     fn set_pd_ret(&mut self, evaluated: Option<PdEvaluated<Dom>>) -> Option<Dom> {
         let ret = evaluated.as_ref().map(|x| x.returned.clone());
         self.pd_result.insert(
@@ -419,7 +423,8 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                 | hir::HirNode::ChoiceIndirection(_) => {}
                 _ => continue,
             }
-            let result_ty = self.subst_type(self.db.parser_type_at(subvalue.id)?);
+            let unsub_ty = self.db.parser_type_at(subvalue.id)?;
+            let result_ty = self.subst_type(unsub_ty);
             let val = match self.db.hir_node(subvalue.id)? {
                 hir::HirNode::Let(statement) => {
                     let expr = Resolved::expr_with_data::<FullTypeId>(self.db, statement.expr)?;
@@ -483,6 +488,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         from: Dom,
         result_type: TypeId,
         arg_type: TypeId,
+        typesubst: Arc<Vec<TypeId>>,
     ) -> Option<Dom> {
         if let Some(val) = self.block_result.get(&(block.clone(), from.clone())) {
             if let Some(block_info) = val.val_with_epoch(self.cache_epoch) {
@@ -492,10 +498,13 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         let mut old_block_vars = std::mem::take(&mut self.block_vars);
         let mut old_block_expr = std::mem::take(&mut self.block_expr_vals);
         let old_block = std::mem::replace(&mut self.active_block, Some(block.clone()));
+        let old_type_substitutions =
+            std::mem::replace(&mut self.type_substitutions, typesubst.clone());
 
         let res = self.eval_block_impl(block_id, from.clone(), result_type, arg_type);
         let res = self.strip_error(res);
 
+        self.type_substitutions = old_type_substitutions;
         self.active_block = old_block;
         std::mem::swap(&mut self.block_expr_vals, &mut old_block_expr);
         std::mem::swap(&mut self.block_vars, &mut old_block_vars);
@@ -506,7 +515,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             from: from.clone(),
             vals: old_block_vars,
             returned,
-            typesubst: self.type_substitutions.clone(),
+            typesubst,
         });
         self.block_result
             .insert((from, block), EpochVal::new(evaluated, self.cache_epoch));
