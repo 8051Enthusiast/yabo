@@ -170,18 +170,14 @@ pub fn function_substitute<'a>(
     fun: IMonoLayout<'a>,
     ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
 ) -> Result<FunctionSubstitute<'a>, LayoutError> {
-    let block_mir = ctx.db.mir(fun_info, req)?;
+    let mir = ctx.db.mir(fun_info, req)?;
     let strictness = ctx.db.strictness(fun_info, req)?;
     match fun_info {
-        FunKind::Block(_) => {
-            FunctionSubstitute::new_from_block(block_mir, &strictness, from, fun, ctx)
-        }
+        FunKind::Block(_) => FunctionSubstitute::new_from_block(mir, &strictness, from, fun, ctx),
         FunKind::ParserDef(pd) => {
-            FunctionSubstitute::new_from_pd(block_mir, &strictness, from, fun, pd, ctx)
+            FunctionSubstitute::new_from_pd(mir, &strictness, from, fun, pd, ctx)
         }
-        FunKind::If(_, _, _) => {
-            FunctionSubstitute::new_from_if(block_mir, &strictness, from, fun, ctx)
-        }
+        FunKind::If(_, _, _) => FunctionSubstitute::new_from_if(mir, &strictness, from, fun, ctx),
     }
 }
 
