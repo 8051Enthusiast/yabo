@@ -1090,6 +1090,7 @@ dependencies = [
  "yaboc-absint",
  "yaboc-ast",
  "yaboc-base",
+ "yaboc-constraint",
  "yaboc-database",
  "yaboc-dependents",
  "yaboc-hir",

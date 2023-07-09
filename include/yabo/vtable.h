@@ -46,9 +46,11 @@ struct NominalVTable {
 };
 
 typedef int64_t (*ParseFun)(void *, void *, uint64_t, void *);
+typedef int64_t (*LenFun)(int64_t *, void *);
 
 struct ParserVTable {
 	struct VTableHeader head;
+	LenFun len_impl;
 	int64_t (*apply_table[])(void *, void *, uint64_t, void *);
 };
 

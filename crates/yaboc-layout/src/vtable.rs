@@ -48,11 +48,13 @@ target_struct! {
 }
 
 pub type ParserFun = fn(ret: *mut u8, fun: *const u8, target_head: i64, from: *const u8) -> i64;
+pub type LenFun = fn(ret: *mut u8, from: *const u8) -> i64;
 
 target_struct! {
     pub struct ParserVTable {
         pub set_arg_info: [ArgDescriptor; 0],
         pub head: VTableHeader,
+        pub len_impl: Option<LenFun>,
         pub apply_table: [Option<ParserFun>; 0],
     }
 }
@@ -107,7 +109,7 @@ mod tests {
         assert_eq!(
             ParserVTable::tsize(),
             SizeAlign {
-                size: 40,
+                size: 48,
                 align_mask: 0b111,
             }
         );
