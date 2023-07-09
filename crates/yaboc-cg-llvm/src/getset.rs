@@ -404,4 +404,20 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let fun_arg = CgReturnValue::new(head, fun_arg_ptr);
         self.call_typecast_fun(fun_arg, arg)
     }
+
+    pub(super) fn call_len_fun(
+        &mut self,
+        ret: PointerValue<'llvm>,
+        fun: CgValue<'comp, 'llvm>,
+    ) -> IntValue<'llvm> {
+        let create = match fun.layout.maybe_mono() {
+            Some(mono) => self.sym_callable(mono, LayoutPart::Len),
+            None => self.vtable_callable::<vtable::ParserVTable>(
+                fun.ptr,
+                &[ParserVTableFields::len_impl as u64],
+            ),
+        };
+        self.build_call_with_int_ret(create, &[ret.into(), fun.ptr.into()])
+    }
+
 }

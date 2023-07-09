@@ -338,6 +338,7 @@ pub enum LayoutPart {
     Span,
     CreateArgs(PSize),
     SetArg(PSize),
+    Len,
 }
 
 impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
@@ -372,6 +373,7 @@ impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
             LayoutPart::Span => write!(f, "span"),
             LayoutPart::CreateArgs(p) => write!(f, "create_args_{p}"),
             LayoutPart::SetArg(idx) => write!(f, "set_arg_{idx}"),
+            LayoutPart::Len => write!(f, "len"),
         }
     }
 }

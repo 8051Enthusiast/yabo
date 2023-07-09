@@ -14,6 +14,7 @@ yaboc-resolve = { path = "../yaboc-resolve" }
 yaboc-types = { path = "../yaboc-types" }
 yaboc-hir-types = { path = "../yaboc-hir-types" }
 yaboc-dependents = { path = "../yaboc-dependents" }
+yaboc-constraint = { path = "../yaboc-constraint" }
 yaboc-absint = { path = "../yaboc-absint" }
 yaboc-mir = { path = "../yaboc-mir" }
 yaboc-layout = { path = "../yaboc-layout" }

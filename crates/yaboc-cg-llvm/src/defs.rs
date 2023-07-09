@@ -132,6 +132,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         f
     }
 
+    pub(super) fn len_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
+        self.pp_fun_val(layout, LayoutPart::Len)
+    }
+
     pub(super) fn parser_fun_val_wrapper(
         &mut self,
         layout: IMonoLayout<'comp>,

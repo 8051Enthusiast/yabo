@@ -389,6 +389,18 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         self.controlflow_case(ret, ctrl)
     }
 
+    fn len_call(
+        &mut self,
+        ret: PlaceRef,
+        fun: PlaceRef,
+        ctrl: ControlFlow,
+    ) {
+        let fun_val = self.place_val(fun);
+        let ret_val = self.return_val(ret).ptr;
+        let ret = self.cg.call_len_fun(ret_val, fun_val);
+        self.controlflow_case(ret, ctrl)
+    }
+
     fn parse_call(
         &mut self,
         ret: Option<PlaceRef>,
@@ -611,7 +623,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::ParseCall(ret, _, call_kind, arg, fun, ctrl) => {
                 self.parse_call(ret, call_kind, fun, arg, ctrl)
             }
-            MirInstr::LenCall(..) => todo!(),
+            MirInstr::LenCall(ret, fun, ctrl) => self.len_call(ret, fun, ctrl),
             MirInstr::Field(ret, place, field, ctrl) => self.field(ret, place, field, ctrl),
             MirInstr::AssertVal(place, val, ctrl) => self.assert_value(place, val, ctrl),
             MirInstr::SetDiscriminant(block, field, val) => {

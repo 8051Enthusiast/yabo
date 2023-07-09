@@ -1,6 +1,9 @@
+use yaboc_base::low_effort_interner::Uniq;
+use yaboc_constraint::Constraints;
 use yaboc_dependents::NeededBy;
 use yaboc_layout::{
     collect::{pd_len_req, pd_val_req},
+    mir_subst::function_substitute,
     represent::ParserFunKind,
 };
 use yaboc_mir::{FunKind, MirKind};
@@ -528,6 +531,21 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         llvm_fun
     }
 
+    fn create_error_parse(
+        &mut self,
+        _: ILayout<'comp>,
+        layout: IMonoLayout<'comp>,
+        slot: PSize,
+        req: RequirementSet,
+    ) -> FunctionValue<'llvm> {
+        let llvm_fun = self.parser_fun_val_tail(layout, slot, req);
+        self.add_entry_block(llvm_fun);
+        self.set_always_inline(llvm_fun);
+        self.builder
+            .build_return(Some(&self.const_i64(ReturnStatus::Error as i64)));
+        llvm_fun
+    }
+
     fn create_regex_parse(
         &mut self,
         from: ILayout<'comp>,
@@ -694,6 +712,86 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.terminate_tail_typecast(field, return_val);
     }
 
+    fn create_const_len_fun(&mut self, layout: IMonoLayout<'comp>, len: i64) {
+        let fun = self.len_fun_val(layout);
+        let [return_ptr, _] = get_fun_args(fun);
+        self.add_entry_block(fun);
+        let llvm_len = self.const_i64(len);
+        let return_ptr = self.build_cast::<*mut i64, _>(return_ptr);
+        self.builder.build_store(return_ptr, llvm_len);
+        self.builder
+            .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)));
+    }
+
+    fn create_fail_len_fun(&mut self, layout: IMonoLayout<'comp>) {
+        let fun = self.len_fun_val(layout);
+        self.add_entry_block(fun);
+        self.builder
+            .build_return(Some(&self.const_i64(ReturnStatus::Error as i64)));
+    }
+
+    fn create_array_len_fun(&mut self, layout: IMonoLayout<'comp>) {
+        let fun = self.len_fun_val(layout);
+        self.add_entry_block(fun);
+        let [return_ptr, fun_ptr] = get_fun_args(fun).map(|v| v.into_pointer_value());
+        let len_ptr = self.build_cast::<*const i64, _>(fun_ptr);
+        let return_ptr = self.build_cast::<*mut i64, _>(return_ptr);
+        let len = self.builder.build_load(len_ptr, "len").into_int_value();
+        self.builder.build_store(return_ptr, len);
+        self.builder
+            .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)));
+    }
+
+    fn create_mir_len_fun(&mut self, layout: IMonoLayout<'comp>) {
+        let fun = self.len_fun_val(layout);
+        let [return_ptr, fun_ptr] = get_fun_args(fun).map(|v| v.into_pointer_value());
+        let int_layout = self.layouts.dcx.int(&self.compiler_database.db);
+        let int_value = CgValue::new(int_layout, self.any_ptr().const_null());
+        let fun_value = CgMonoValue::new(layout, fun_ptr);
+        let head = self.const_i64(DerefLevel::zero().into_shifted_runtime_value() as i64);
+        let ret_value = CgReturnValue::new(head, return_ptr);
+        let fun_kind = match layout.mono_layout().0 {
+            MonoLayout::NominalParser(pd, ..) => FunKind::ParserDef(*pd),
+            MonoLayout::BlockParser(bd, ..) => FunKind::Block(*bd),
+            MonoLayout::IfParser(_, constr, wiggle) => {
+                FunKind::If(*constr, layout.mono_layout().1, *wiggle)
+            }
+            _ => dbpanic!(
+                &self.compiler_database.db,
+                "called create_mir_len_fun on non-parser {}",
+                &layout.inner()
+            ),
+        };
+        let mir =
+            function_substitute(fun_kind, MirKind::Len, int_layout, layout, self.layouts).unwrap();
+        MirTranslator::new(self, Rc::new(mir), fun, fun_value, int_value)
+            .with_ret_val(ret_value)
+            .build();
+    }
+
+    fn create_len_fun(&mut self, layout: IMonoLayout<'comp>) {
+        match layout.mono_layout().0 {
+            MonoLayout::Single => self.create_const_len_fun(layout, 1),
+            MonoLayout::Nil => self.create_const_len_fun(layout, 0),
+            MonoLayout::Regex(regex, _) => {
+                if let Some(len) = self.compiler_database.db.regex_len(*regex).unwrap() {
+                    self.create_const_len_fun(layout, len as i64)
+                } else {
+                    self.create_fail_len_fun(layout)
+                }
+            }
+            MonoLayout::ArrayParser(_) => self.create_array_len_fun(layout),
+            MonoLayout::IfParser(_, _, _)
+            | MonoLayout::NominalParser(_, _, _)
+            | MonoLayout::BlockParser(_, _, _, _) => self.create_mir_len_fun(layout),
+            _ => dbpanic!(
+                &self.compiler_database.db,
+                "called create_len_fun on non-parser {}",
+                &layout.inner()
+            ),
+        }
+    }
+
     fn create_create_fun_args(
         &mut self,
         layout: IMonoLayout<'comp>,
@@ -762,7 +860,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .unwrap_or_default()
             .iter()
         {
-            let fun = match layout.mono_layout().0 {
+            let mut create_fun = match layout.mono_layout().0 {
                 MonoLayout::Single => Self::create_single_parse,
                 MonoLayout::Nil => Self::create_nil_parse,
                 MonoLayout::NominalParser(..) => Self::create_pd_parse,
@@ -771,7 +869,20 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 MonoLayout::IfParser(..) => Self::create_if_parse,
                 MonoLayout::ArrayParser(..) => Self::create_array_parse,
                 _ => panic!("non-parser in parser layout collection"),
-            }(self, from, layout, *slot, req.req);
+            };
+            // if the from arg is an integer, that means that we created a int parse during
+            // collection, which should only happen when a place that gets instantiated with
+            // an undefined value has a thunk layout.
+            // in this case the parse call gets created by the vtable even though the value
+            // actually never gets created, so we need to create a parse call that just returns
+            // an error
+            if let ILayout {
+                layout: Uniq(_, Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int), _)),
+            } = from
+            {
+                create_fun = Self::create_error_parse
+            }
+            let fun = create_fun(self, from, layout, *slot, req.req);
             self.create_wrapper_parse(from, layout, *slot, req.req, fun);
         }
     }
@@ -847,6 +958,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         for layout in collected_layouts.functions.iter() {
             self.create_funcalls(*layout);
+        }
+        for layout in collected_layouts.lens.iter() {
+            self.create_len_fun(*layout);
         }
     }
 }

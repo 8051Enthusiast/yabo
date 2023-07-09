@@ -48,6 +48,7 @@ pub struct LayoutCollection<'a> {
     pub parsers: LayoutSet<'a>,
     pub functions: LayoutSet<'a>,
     pub primitives: LayoutSet<'a>,
+    pub lens: LayoutSet<'a>,
     pub parser_slots: CallSlotResult<'a, (ILayout<'a>, CallMeta)>,
     pub funcall_slots: CallSlotResult<'a, ILayout<'a>>,
     pub tail_sa: FxHashMap<(ILayout<'a>, IMonoLayout<'a>), Option<SizeAlign>>,
@@ -63,6 +64,7 @@ pub struct LayoutCollector<'a, 'b> {
     nominals: LayoutSet<'a>,
     parsers: LayoutSet<'a>,
     functions: LayoutSet<'a>,
+    lens: LayoutSet<'a>,
     root: Vec<(ILayout<'a>, IMonoLayout<'a>)>,
     processed_calls: FxHashSet<(ILayout<'a>, IMonoLayout<'a>, CallMeta)>,
     unprocessed: Vec<UnprocessedCall<'a>>,
@@ -70,6 +72,7 @@ pub struct LayoutCollector<'a, 'b> {
 
 const TRACE_COLLECTION: bool = false;
 
+#[derive(Debug)]
 pub enum UnprocessedCall<'a> {
     NominalParser(ILayout<'a>, IMonoLayout<'a>, MirKind),
     Block(ILayout<'a>, IMonoLayout<'a>, MirKind),
@@ -89,6 +92,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             nominals: Default::default(),
             parsers: Default::default(),
             functions: Default::default(),
+            lens: Default::default(),
             processed_calls: Default::default(),
             unprocessed: Default::default(),
             root: Default::default(),
@@ -159,17 +163,18 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     if self.parsers.insert(mono) && TRACE_COLLECTION {
                         dbeprintln!(self.ctx.db, "[collection] registered parser {}", &mono);
                     }
-                    if self.parsers.insert(mono.remove_backtracking(self.ctx)) && TRACE_COLLECTION {
-                        dbeprintln!(self.ctx.db, "[collection] registered parser {}", &mono);
+                    let nbt = mono.remove_backtracking(self.ctx);
+                    if self.parsers.insert(nbt) && TRACE_COLLECTION {
+                        dbeprintln!(self.ctx.db, "[collection] registered parser {}", &nbt);
                     }
                 }
                 MonoLayout::ArrayParser(None) => {
                     if self.functions.insert(mono) && TRACE_COLLECTION {
                         dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
                     }
-                    if self.functions.insert(mono.remove_backtracking(self.ctx)) && TRACE_COLLECTION
-                    {
-                        dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
+                    let nbt = mono.remove_backtracking(self.ctx);
+                    if self.functions.insert(nbt) && TRACE_COLLECTION {
+                        dbeprintln!(self.ctx.db, "[collection] registered function {}", &nbt);
                     }
                 }
                 MonoLayout::Primitive(_) => {}
@@ -290,7 +295,9 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             MonoLayout::IfParser(..) => {
                 Some(UnprocessedCall::IfParser(self.int, parser, MirKind::Len))
             }
-            MonoLayout::Block(..) => Some(UnprocessedCall::Block(self.int, parser, MirKind::Len)),
+            MonoLayout::BlockParser(..) => {
+                Some(UnprocessedCall::Block(self.int, parser, MirKind::Len))
+            }
             _ => None,
         }
     }
@@ -317,8 +324,10 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             MirInstr::LenCall(_, fun, _) => {
                 let fun_layout = mir.place(fun);
                 for parser in &fun_layout {
-                    if let Some(call) = self.parser_len_proc_entry(parser) {
-                        self.unprocessed.push(call);
+                    if self.lens.insert(parser) {
+                        if let Some(call) = self.parser_len_proc_entry(parser) {
+                            self.unprocessed.push(call);
+                        }
                     }
                 }
                 Ok(())
@@ -511,6 +520,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             eprintln!("[collection] ---- starting collection ----");
         }
         self.proc_list()?;
+        self.lens = self.parsers.clone();
         for parser in self.parsers.iter() {
             if let Some(parser) = self.parser_len_proc_entry(*parser) {
                 self.unprocessed.push(parser);
@@ -571,6 +581,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             nominals: self.nominals,
             parsers: self.parsers,
             functions: self.functions,
+            lens: self.lens,
             primitives,
             parser_slots,
             funcall_slots,

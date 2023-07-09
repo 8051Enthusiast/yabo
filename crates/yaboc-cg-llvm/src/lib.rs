@@ -547,9 +547,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     pub fn llvm_code(self, outfile: &OsStr) -> Result<(), LLVMString> {
-        self.module.verify()?;
-        self.module
-            .run_passes("always-inline,default<O3>", &self.target, self.pass_options)?;
+        //self.module.verify()?;
+        //self.module
+        //    .run_passes("always-inline,default<O3>", &self.target, self.pass_options)?;
         self.module.print_to_file(outfile)?;
         Ok(())
     }

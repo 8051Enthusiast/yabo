@@ -1,4 +1,4 @@
-use yaboc_layout::vtable::{BlockFieldFun, CreateArgFun};
+use yaboc_layout::vtable::{BlockFieldFun, CreateArgFun, LenFun};
 
 use super::*;
 
@@ -181,6 +181,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 self.parser_impl_struct_val(layout, slot, req, is_non_null)
             })
             .collect();
+        let len_impl = if self.collected_layouts.lens.contains(&layout) {
+            self.len_fun_val(layout).as_global_value().as_pointer_value()
+        } else {
+            LenFun::codegen_ty(self).into_pointer_type().const_null()
+        };
         let vtable_array = ParserFun::codegen_ty(self)
             .into_pointer_type()
             .const_array(&vtable_impls);
@@ -188,6 +193,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             &[
                 arg_impl_array.into(),
                 vtable_header.into(),
+                len_impl.into(),
                 vtable_array.into(),
             ],
             false,

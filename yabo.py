@@ -102,15 +102,17 @@ class NominalVTable(Structure):
 
 
 PARSER_TY = CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64, _voidptr)
-
+LEN_FUN_TY = CFUNCTYPE(c_int64, POINTER(c_int64), POINTER(c_ubyte))
 
 class ParserVTable(Structure):
     __slots__ = [
         'head',
+        'len_impl',
         'apply_table',
     ]
     _fields_ = [
         ('head', VTableHeader),
+        ('len_impl', LEN_FUN_TY),
         ('apply_table', POINTER(PARSER_TY)),
     ]
 
