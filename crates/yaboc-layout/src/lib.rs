@@ -398,7 +398,7 @@ impl<'a> ILayout<'a> {
             MonoLayout::Nominal(pd, _, args) | MonoLayout::NominalParser(pd, args, _) => {
                 return Ok(ctx.db.parserdef_arg_index(*pd, id)?.map(|i| args[i].0))
             }
-            _ => panic!("Attempting to get captured variable outside block"),
+            otherwise => panic!("Attempting to get captured variable inside {:?}", otherwise),
         }
         .get(&id)
         .copied())
@@ -412,6 +412,10 @@ impl<'a> ILayout<'a> {
                 ctx.dcx
                     .intern(Layout::Mono(MonoLayout::Primitive(int), int_ty))
             }
+            // for calculating the length of a parser, the argument is an int, and the result
+            // of applying an int to a parser is never used, so here we use the bottom
+            // value
+            MonoLayout::Primitive(PrimitiveType::Int) => ctx.dcx.intern(Layout::None),
             _ => panic!("Attempting to get an primitive element from non-array"),
         })
     }

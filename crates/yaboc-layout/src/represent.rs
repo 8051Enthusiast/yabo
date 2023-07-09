@@ -133,6 +133,12 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
     }
 }
 
+impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for IMonoLayout<'a> {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
+        self.0.db_fmt(f, db)
+    }
+}
+
 #[derive(Default)]
 pub struct LayoutHasher<'a> {
     map: FxHashMap<ILayout<'a>, [u8; 32]>,

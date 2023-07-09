@@ -176,7 +176,7 @@ impl<'a> LenMirCtx<'a> {
         let arg_ids = pd.args.clone().unwrap_or_default();
         for (arg_id, arg_ty) in arg_ids.iter().zip(arg_tys.iter()) {
             let place = self.w.f.add_place(PlaceInfo {
-                place: Place::Captured(self.w.f.fun.arg(), arg_id.0),
+                place: Place::Captured(self.w.f.fun.cap(), arg_id.0),
                 ty: *arg_ty,
                 remove_bt: false,
             });

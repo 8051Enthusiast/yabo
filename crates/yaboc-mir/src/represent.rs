@@ -283,6 +283,15 @@ impl Display for Strictness {
     }
 }
 
+impl Display for MirKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MirKind::Call(req) => write!(f, "call {}", req),
+            MirKind::Len => write!(f, "len"),
+        }
+    }
+}
+
 pub fn print_all_mir<DB: Mirs, W: Write>(
     db: &DB,
     w: &mut W,
