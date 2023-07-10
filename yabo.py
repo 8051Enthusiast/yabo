@@ -300,7 +300,16 @@ class FunArgValue(YaboValue):
 
 
 class ParserValue(YaboValue):
-    pass
+    def len(self):
+        casted_vtable = ctypes.cast(
+            pointer(self._val.get_vtable()), POINTER(ParserVTable))
+        casted_data = ctypes.cast(
+            self._val.data_ptr(), POINTER(c_ubyte))
+        len_int = c_int64(0)
+        ret = casted_vtable.contents.len_impl(POINTER(c_int64)(len_int),
+                                                casted_data)
+        _check_status(ret)
+        return len_int.value
 
 
 class UnitValue(YaboValue):

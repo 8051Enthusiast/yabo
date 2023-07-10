@@ -206,7 +206,11 @@ def dictionarified_obj(obj):
     if ty is yabo.ArrayValue:
         return "array"
     if ty is yabo.ParserValue:
-        return "parser"
+        try:
+            len = obj.len()
+            return f"parser({len})"
+        except:
+            return "parser"
     if ty is yabo.FunArgValue:
         return "fun_args"
     if ty is yabo.UnitValue:
