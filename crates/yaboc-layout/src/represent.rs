@@ -112,11 +112,11 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
                     )?;
                     Ok(())
                 }
-                MonoLayout::ArrayParser(inner) => {
+                MonoLayout::ArrayParser(parser, inner) => {
                     if let Some(inner) = inner {
-                        dbwrite!(f, db, "array-parser[{}]({})", ty, inner)
+                        dbwrite!(f, db, "array-parser[{}]({}, {})", ty, parser, inner)
                     } else {
-                        dbwrite!(f, db, "array-parser[{}]", ty)
+                        dbwrite!(f, db, "array-parser[{}]({})", ty, parser)
                     }
                 }
             },
@@ -304,8 +304,9 @@ impl<'a> LayoutHasher<'a> {
                 id.as_u32().update_hash(state, db);
                 (*wiggle as u8).update_hash(state, db);
             }
-            MonoLayout::ArrayParser(inner) => {
+            MonoLayout::ArrayParser(parser, inner) => {
                 state.update([12]);
+                state.update(self.hash(*parser, db));
                 if let Some(inner) = inner {
                     state.update([1]);
                     state.update(self.hash(*inner, db));
@@ -427,8 +428,8 @@ impl<'a> LayoutSymbol<'a> {
                 }
             }
             MonoLayout::IfParser(..) => String::from("parser_if"),
-            MonoLayout::ArrayParser(Some(_)) => String::from("parse_array"),
-            MonoLayout::ArrayParser(None) => String::from("fun_parse_array"),
+            MonoLayout::ArrayParser(_, Some(_)) => String::from("parse_array"),
+            MonoLayout::ArrayParser(_, None) => String::from("fun_parse_array"),
             MonoLayout::Primitive(_)
             | MonoLayout::SlicePtr
             | MonoLayout::Single

@@ -176,7 +176,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         argnum: PSize,
     ) -> (i64, PSize) {
-        if let MonoLayout::ArrayParser(_) = layout.mono_layout().0 {
+        if let MonoLayout::ArrayParser(_, _) = layout.mono_layout().0 {
             assert!(argnum == 0);
             return (0, 0);
         }

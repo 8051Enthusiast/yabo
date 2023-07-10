@@ -780,7 +780,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     self.create_fail_len_fun(layout)
                 }
             }
-            MonoLayout::ArrayParser(_) => self.create_array_len_fun(layout),
+            MonoLayout::ArrayParser(_, _) => self.create_array_len_fun(layout),
             MonoLayout::IfParser(_, _, _)
             | MonoLayout::NominalParser(_, _, _)
             | MonoLayout::BlockParser(_, _, _, _) => self.create_mir_len_fun(layout),
