@@ -9,6 +9,6 @@ export def for[int] *> test = {
 10
 ====[ output 1 ]====
 {
-	"parser_with_invisible_thunk": "parser",
+	"parser_with_invisible_thunk": "parser(1)",
 	"x": 16
 }

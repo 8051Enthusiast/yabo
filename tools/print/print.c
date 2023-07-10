@@ -87,8 +87,14 @@ int print_loop(DynValue val, int indent, FILE *out)
 
 int print_parser(DynValue val, int indent, FILE *out)
 {
-	// not really much we can print
-	return fputs("\"parser\"", out);
+	struct ParserVTable *vtable = (struct ParserVTable *)dyn_vtable(val);
+	int64_t len;
+	int64_t ret = vtable->len_impl(&len, dyn_data(&val));
+	if (ret != OK) {
+		return fputs("\"parser\"", out);
+	} else {
+		return fprintf(out, "\"parser(%" PRId64 ")\"", len);
+	}
 }
 
 int print_fun_args(DynValue val, int indent, FILE *out)
