@@ -155,7 +155,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     }
                 }
                 MonoLayout::BlockParser(..)
-                | MonoLayout::ArrayParser(Some(_))
+                | MonoLayout::ArrayParser(_, Some(_))
                 | MonoLayout::Single
                 | MonoLayout::Nil
                 | MonoLayout::IfParser(..)
@@ -168,7 +168,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         dbeprintln!(self.ctx.db, "[collection] registered parser {}", &nbt);
                     }
                 }
-                MonoLayout::ArrayParser(None) => {
+                MonoLayout::ArrayParser(_, None) => {
                     if self.functions.insert(mono) && TRACE_COLLECTION {
                         dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
                     }
