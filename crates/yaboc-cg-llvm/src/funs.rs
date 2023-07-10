@@ -332,6 +332,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)));
     }
 
+    fn create_array_len(&mut self, layout: IMonoLayout<'comp>) {
+        let fun = self.array_len_fun_val(layout);
+        self.set_always_inline(fun);
+        let entry = self.llvm.append_basic_block(fun, "entry");
+        self.builder.position_at_end(entry);
+        let [arg] = get_fun_args(fun).map(|x| x.into_pointer_value());
+        let [arg_start, arg_end] = self.get_slice_ptrs(arg);
+        let len = self.builder.build_ptr_diff(arg_end, arg_start, "len");
+        self.builder.build_return(Some(&len));
+    }
+
     fn create_array_skip(&mut self, layout: IMonoLayout<'comp>) {
         let fun = self.skip_fun_val(layout);
         self.set_always_inline(fun);
@@ -477,10 +488,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.set_always_inline(llvm_fun);
         self.add_entry_block(llvm_fun);
         let (ret, _, arg) = parser_values(llvm_fun, layout, from);
-        let [ptr, end_ptr] = self.get_slice_ptrs(arg.ptr);
         let fail_block = self.llvm.append_basic_block(llvm_fun, "fail");
         let ok_block = self.llvm.append_basic_block(llvm_fun, "ok");
-        let ptr_diff = self.builder.build_ptr_diff(end_ptr, ptr, "ptr_diff");
+        let ptr_diff = self.call_array_len_fun(arg);
         let is_zero = self.builder.build_int_compare(
             IntPredicate::EQ,
             ptr_diff,
@@ -652,8 +662,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
         let len_ptr = self.build_cast::<*const i64, _>(len_ptr.ptr);
         let len = self.builder.build_load(len_ptr, "len").into_int_value();
-        let [start, end] = self.get_slice_ptrs(arg.ptr);
-        let slice_len = self.builder.build_ptr_diff(end, start, "slice_len");
+        let slice_len = self.call_array_len_fun(arg);
         let is_out_of_bounds =
             self.builder
                 .build_int_compare(IntPredicate::ULT, slice_len, len, "is_out_of_bounds");
@@ -713,7 +722,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_const_len_fun(&mut self, layout: IMonoLayout<'comp>, len: i64) {
-        let fun = self.len_fun_val(layout);
+        let fun = self.parser_len_fun_val(layout);
         let [return_ptr, _] = get_fun_args(fun);
         self.add_entry_block(fun);
         let llvm_len = self.const_i64(len);
@@ -724,14 +733,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_fail_len_fun(&mut self, layout: IMonoLayout<'comp>) {
-        let fun = self.len_fun_val(layout);
+        let fun = self.parser_len_fun_val(layout);
         self.add_entry_block(fun);
         self.builder
             .build_return(Some(&self.const_i64(ReturnStatus::Error as i64)));
     }
 
-    fn create_array_len_fun(&mut self, layout: IMonoLayout<'comp>) {
-        let fun = self.len_fun_val(layout);
+    fn create_array_parser_len_fun(&mut self, layout: IMonoLayout<'comp>) {
+        let fun = self.parser_len_fun_val(layout);
         self.add_entry_block(fun);
         let [return_ptr, fun_ptr] = get_fun_args(fun).map(|v| v.into_pointer_value());
         let len_ptr = self.build_cast::<*const i64, _>(fun_ptr);
@@ -743,7 +752,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_mir_len_fun(&mut self, layout: IMonoLayout<'comp>) {
-        let fun = self.len_fun_val(layout);
+        let fun = self.parser_len_fun_val(layout);
         let [return_ptr, fun_ptr] = get_fun_args(fun).map(|v| v.into_pointer_value());
         let int_layout = self.layouts.dcx.int(&self.compiler_database.db);
         let int_value = CgValue::new(int_layout, self.any_ptr().const_null());
@@ -780,7 +789,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     self.create_fail_len_fun(layout)
                 }
             }
-            MonoLayout::ArrayParser(_, _) => self.create_array_len_fun(layout),
+            MonoLayout::ArrayParser(_, _) => self.create_array_parser_len_fun(layout),
             MonoLayout::IfParser(_, _, _)
             | MonoLayout::NominalParser(_, _, _)
             | MonoLayout::BlockParser(_, _, _, _) => self.create_mir_len_fun(layout),
@@ -932,6 +941,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_array_funs(&mut self, layout: IMonoLayout<'comp>) {
         self.create_array_current_element(layout);
         self.create_array_single_forward(layout);
+        self.create_array_len(layout);
         self.create_array_skip(layout);
         self.create_array_span(layout);
     }

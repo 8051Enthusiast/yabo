@@ -68,6 +68,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let vtable_header = self.vtable_header(layout);
         let single_foward = self.single_forward_fun_val(layout);
         let current_element = self.current_element_fun_val(layout);
+        let array_len = self.array_len_fun_val(layout);
         let skip = self.skip_fun_val(layout);
         let span = self.span_fun_val(layout);
         let vtable_val = self.llvm.const_struct(
@@ -75,6 +76,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 vtable_header.into(),
                 single_foward.as_global_value().as_pointer_value().into(),
                 current_element.as_global_value().as_pointer_value().into(),
+                array_len.as_global_value().as_pointer_value().into(),
                 skip.as_global_value().as_pointer_value().into(),
                 span.as_global_value().as_pointer_value().into(),
             ],
@@ -182,7 +184,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             })
             .collect();
         let len_impl = if self.collected_layouts.lens.contains(&layout) {
-            self.len_fun_val(layout).as_global_value().as_pointer_value()
+            self.parser_len_fun_val(layout).as_global_value().as_pointer_value()
         } else {
             LenFun::codegen_ty(self).into_pointer_type().const_null()
         };

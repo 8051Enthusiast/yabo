@@ -71,6 +71,7 @@ target_struct! {
 
 pub type SingleForwardFun = fn(from: *mut u8) -> i64;
 pub type CurrentElementFun = fn(ret: *mut u8, from: *const u8, target_head: i64) -> i64;
+pub type ArrayLenFun = fn(from: *const u8) -> i64;
 pub type SkipFun = fn(ret: *mut u8, offset: u64) -> i64;
 pub type SpanFun = fn(ret: *mut u8, from: *const u8, target_head: i64, to: *const u8) -> i64;
 
@@ -79,6 +80,7 @@ target_struct! {
         pub head: VTableHeader,
         pub single_forward_impl: SingleForwardFun,
         pub current_element_impl: CurrentElementFun,
+        pub len_impl: Option<ArrayLenFun>,
         pub skip_impl: Option<SkipFun>,
         pub span_impl: Option<SpanFun>,
     }
@@ -116,7 +118,7 @@ mod tests {
         assert_eq!(
             ArrayVTable::tsize(),
             SizeAlign {
-                size: 72,
+                size: 80,
                 align_mask: 0b111,
             }
         );
