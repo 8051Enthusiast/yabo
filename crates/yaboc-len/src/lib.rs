@@ -158,6 +158,18 @@ impl<Pd> SizeExpr<Pd> {
         self.terms.push(term);
         self.terms.len() - 1
     }
+    pub fn static_arg_deps(&self, arg_count: usize) -> Vec<SmallBitVec> {
+        let mut arg_deps = vec![SmallBitVec::zeroes(arg_count); self.terms.len()];
+        for (i, term) in self.terms.iter().enumerate() {
+            for dep in term.ref_indices() {
+                arg_deps[i] = arg_deps[i].or(&arg_deps[*dep]);
+            }
+            if let Term::Arg(a) = term {
+                arg_deps[i].set(arg_count - *a as usize - 1);
+            }
+        }
+        arg_deps
+    }
 }
 
 pub enum Fun<ParserRef> {
@@ -656,19 +668,6 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         }
     }
 
-    pub fn static_arg_deps(&mut self) -> Vec<SmallBitVec> {
-        let mut arg_deps = vec![SmallBitVec::zeroes(self.args.len()); self.size_expr.terms.len()];
-        for (i, term) in self.size_expr.terms.iter().enumerate() {
-            for dep in term.ref_indices() {
-                arg_deps[i] = arg_deps[i].or(&arg_deps[*dep]);
-            }
-            if let Term::Arg(a) = term {
-                arg_deps[i].set(self.args.len() - *a as usize - 1);
-            }
-        }
-        arg_deps
-    }
-
     fn include_circuit(
         &self,
         included_circuit: &PolyCircuit,
@@ -808,7 +807,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 Val::Poly(arg_count, circuit_id, deps)
             }
             Val::Static(0, _) => {
-                let deps = self.static_arg_deps().remove(root);
+                let deps = self.size_expr.static_arg_deps(self.args.len()).remove(root);
                 Val::Static(arg_count, deps)
             }
             Val::Dynamic => Val::Dynamic,
