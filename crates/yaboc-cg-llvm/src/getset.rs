@@ -255,6 +255,34 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.build_call_with_int_ret(current, &[ret.ptr.into(), arg.ptr.into(), ret.head.into()])
     }
 
+    pub(super) fn call_single_forward_fun(
+        &mut self,
+        arg: CgValue<'comp, 'llvm>,
+    ) -> IntValue<'llvm> {
+        let single_forward = match arg.layout.maybe_mono() {
+            Some(mono) => self.sym_callable(mono, LayoutPart::SingleForward),
+            None => self.vtable_callable::<vtable::ArrayVTable>(
+                arg.ptr,
+                &[ArrayVTableFields::single_forward_impl as u64],
+            ),
+        };
+        self.build_call_with_int_ret(single_forward, &[arg.ptr.into()])
+    }
+
+    pub(super) fn call_array_len_fun(
+        &mut self,
+        arg: CgValue<'comp, 'llvm>,
+    ) -> IntValue<'llvm> {
+        let len = match arg.layout.maybe_mono() {
+            Some(mono) => self.sym_callable(mono, LayoutPart::ArrayLen),
+            None => self.vtable_callable::<vtable::ArrayVTable>(
+                arg.ptr,
+                &[ArrayVTableFields::len_impl as u64],
+            ),
+        };
+        self.build_call_with_int_ret(len, &[arg.ptr.into()])
+    }
+
     pub(super) fn call_skip_fun(
         &mut self,
         arg: CgValue<'comp, 'llvm>,
@@ -268,20 +296,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             ),
         };
         self.build_call_with_int_ret(skip, &[arg.ptr.into(), count.into()])
-    }
-
-    pub(super) fn call_single_forward_fun(
-        &mut self,
-        arg: CgValue<'comp, 'llvm>,
-    ) -> IntValue<'llvm> {
-        let single_forward = match arg.layout.maybe_mono() {
-            Some(mono) => self.sym_callable(mono, LayoutPart::SingleForward),
-            None => self.vtable_callable::<vtable::ArrayVTable>(
-                arg.ptr,
-                &[ArrayVTableFields::single_forward_impl as u64],
-            ),
-        };
-        self.build_call_with_int_ret(single_forward, &[arg.ptr.into()])
     }
 
     pub(super) fn call_span_fun(

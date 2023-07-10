@@ -93,6 +93,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.p_fun_val(layout, LayoutPart::SingleForward)
     }
 
+    pub(super) fn array_len_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
+        self.p_fun_val(layout, LayoutPart::ArrayLen)
+    }
+
     pub(super) fn span_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
         self.ppip_fun_val(layout, LayoutPart::Span)
     }
@@ -132,7 +136,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         f
     }
 
-    pub(super) fn len_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
+    pub(super) fn parser_len_fun_val(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+    ) -> FunctionValue<'llvm> {
         self.pp_fun_val(layout, LayoutPart::Len)
     }
 

@@ -122,13 +122,17 @@ class ArrayVTable(Structure):
         'head',
         'single_forward_impl',
         'current_element_impl',
+        'array_len_impl',
         'skip_impl',
+        'span_impl',
     ]
     _fields_ = [
         ('head', VTableHeader),
         ('single_forward_impl', CFUNCTYPE(c_int64, _voidptr)),
         ('current_element_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64)),
+        ('array_len_impl', CFUNCTYPE(c_int64, _voidptr)),
         ('skip_impl', CFUNCTYPE(c_int64, _voidptr, c_uint64)),
+        ('span_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_uint64, _voidptr)),
     ]
 
 class Slice(Structure):

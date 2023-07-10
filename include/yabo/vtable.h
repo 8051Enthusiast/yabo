@@ -58,5 +58,7 @@ struct ArrayVTable {
 	struct VTableHeader head;
 	int64_t (*single_forward_impl)(void *);
 	int64_t (*current_element_impl)(void *, void *, uint64_t);
+	int64_t (*array_len_impl)(void *);
 	int64_t (*skip_impl)(void *, uint64_t);
+	int64_t (*span_impl)(void *, void *, uint64_t, void *);
 };
