@@ -23,7 +23,7 @@ pub trait Constraints: Interner + Resolves + Dependents {
     fn regex_len(&self, regex: Regex) -> Result<Option<i128>, Box<RegexError>>;
     fn len_term(&self, pd: hir::ParserDefId) -> SResult<Arc<PdLenTerm>>;
     fn fun_len(&self, pd: hir::ParserDefId) -> LenVal;
-    fn len_vals(&self, ssc: hir::ParserDefId) -> Arc<LenVals>;
+    fn len_vals(&self, pd: hir::ParserDefId) -> Arc<LenVals>;
     fn ssc_len_vals(&self, ssc: FunctionSscId) -> Arc<Vec<LenVals>>;
 
     #[salsa::interned]
