@@ -384,13 +384,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.set_always_inline(fun);
         let entry = self.llvm.append_basic_block(fun, "entry");
         self.builder.position_at_end(entry);
-        let int_layout = canon_layout(
-            self.layouts,
-            self.compiler_database
-                .db
-                .intern_type(Type::Primitive(PrimitiveType::Int)),
-        )
-        .unwrap();
+        let int_layout = self.layouts.dcx.int(self.layouts.db);
         let int_buf = self.build_alloca_value(int_layout, "int_buf");
         let [return_ptr, from, target_head] = get_fun_args(fun);
         let from = self.build_cast::<*const *const u8, _>(from);
