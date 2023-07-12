@@ -340,6 +340,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
     }
 
+    pub(super) fn build_return_value(
+        &mut self,
+        layout: CgValue<'comp, 'llvm>,
+    ) -> CgReturnValue<'llvm> {
+        let head = self.build_deref_level_get(layout.layout.maybe_mono(), layout.ptr);
+        CgReturnValue::new(head, layout.ptr)
+    }
+
     pub(super) fn build_check_i64_bit_set(
         &mut self,
         val: IntValue<'llvm>,
@@ -435,7 +443,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         array: CgMonoValue<'comp, 'llvm>,
     ) -> CgValue<'comp, 'llvm> {
-        let MonoLayout::Array { parser, .. } = array.layout.mono_layout().0 else {
+        let (MonoLayout::Array { parser, .. } | MonoLayout::ArrayParser(Some((parser, _)))) =
+            array.layout.mono_layout().0
+        else {
             panic!("array_parser_field called on non-array");
         };
         let ptr = if parser.is_multi() {

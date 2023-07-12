@@ -495,8 +495,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let start_slice = self.build_array_slice_get(start);
         let end_slice = self.build_array_slice_get(end);
         let buf_slice = self.build_array_slice_get(bufsl);
-        let target_head = self.const_i64(DerefLevel::zero().into_shifted_runtime_value() as i64);
-        let buf_slice_ret = CgReturnValue::new(target_head, buf_slice.ptr);
+        let buf_slice_ret = self.build_return_value(buf_slice);
         self.call_span_fun(buf_slice_ret, start_slice, end_slice);
         self.terminate_tail_typecast(bufsl.into(), ret);
     }
@@ -735,11 +734,18 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         slot: PSize,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
+        let result_layout = layout
+            .inner()
+            .apply_arg(self.layouts, from)
+            .unwrap()
+            .maybe_mono()
+            .unwrap();
         let llvm_fun = self.parser_fun_val_tail(layout, slot, req);
         self.add_entry_block(llvm_fun);
-        let (ret_val, len_ptr, mut arg) = parser_values(llvm_fun, layout, from);
+        let (ret_val, parser, mut arg) = parser_values(llvm_fun, layout, from);
         let arg_copy = self.build_alloca_value(from, "arg_copy");
-        // make sure we don't modify the original arg
+        let ret_buf = self.build_alloca_mono_value(result_layout, "ret_buf");
+        // make sure we don't modify the original arg if the length is not required
         if !req.contains(NeededBy::Len) {
             let arg_second_copy = self.build_alloca_value(from, "arg_second_copy");
             self.build_copy_invariant(arg_second_copy, arg);
@@ -747,8 +753,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         self.build_copy_invariant(arg_copy, arg);
 
-        let len_ptr = self.build_cast::<*const i64, _>(len_ptr.ptr);
-        let len = self.builder.build_load(len_ptr, "len").into_int_value();
+        let (_, len_offset) = self.arg_level_and_offset(layout, 0);
+        let len_ptr =
+            self.build_byte_gep(parser.ptr, self.const_size_t(len_offset as i64), "len_ptr");
+        let len = self.build_i64_load(len_ptr, "len");
         let slice_len = self.call_array_len_fun(arg);
         let is_out_of_bounds =
             self.builder
@@ -763,12 +771,23 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.builder.position_at_end(succ_block);
         let ret = self.call_skip_fun(arg, len);
         self.non_zero_early_return(llvm_fun, ret);
-        let ret = if req.contains(NeededBy::Val) {
-            self.call_span_fun(ret_val, arg_copy, arg)
+        if req.contains(NeededBy::Val) {
+            let inner_slice = if let (MonoLayout::SlicePtr, _) = result_layout.mono_layout() {
+                CgValue::new(result_layout.inner(), ret_buf.ptr)
+            } else {
+                let inner_parser = self.build_array_parser_get(parser);
+                let result_parser = self.build_array_parser_get(ret_buf);
+                self.build_copy_invariant(result_parser, inner_parser);
+                self.build_array_slice_get(ret_buf)
+            };
+            let inner_slice_ret = self.build_return_value(inner_slice);
+            let ret = self.call_span_fun(inner_slice_ret, arg_copy, arg);
+            self.non_zero_early_return(llvm_fun, ret);
+            self.terminate_tail_typecast(ret_buf.into(), ret_val);
         } else {
-            self.const_i64(0)
+            self.builder
+                .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)));
         };
-        self.builder.build_return(Some(&ret));
         llvm_fun
     }
 
@@ -876,7 +895,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     self.create_fail_len_fun(layout)
                 }
             }
-            MonoLayout::ArrayParser(_, _) => self.create_array_parser_len_fun(layout),
+            MonoLayout::ArrayParser(_) => self.create_array_parser_len_fun(layout),
             MonoLayout::IfParser(_, _, _)
             | MonoLayout::NominalParser(_, _, _)
             | MonoLayout::BlockParser(_, _, _, _) => self.create_mir_len_fun(layout),

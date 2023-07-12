@@ -183,9 +183,21 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         argnum: PSize,
     ) -> (i64, PSize) {
-        if let MonoLayout::ArrayParser(_, _) = layout.mono_layout().0 {
+        if let MonoLayout::ArrayParser(s) = layout.mono_layout().0 {
+            if argnum == 1 {
+                return (0, 0);
+            }
             assert!(argnum == 0);
-            return (0, 0);
+            let Some((_, Some(l))) = s else {
+                dbpanic!(
+                    &self.compiler_database.db,
+                    "trying to non-existent int arg struct for array parser layout {}",
+                    &layout.inner()
+                );
+            };
+            let int_size = l.size_align(self.layouts).unwrap().size;
+            let whole_size = layout.inner().size_align(self.layouts).unwrap().size;
+            return (0, whole_size - int_size);
         }
         let (pd, args) = if let MonoLayout::NominalParser(pd, args, _) = layout.mono_layout().0 {
             (*pd, args)
