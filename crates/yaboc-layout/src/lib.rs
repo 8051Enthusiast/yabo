@@ -86,7 +86,7 @@ pub enum MonoLayout<Inner> {
     Nil,
     Regex(Regex, bool),
     IfParser(Inner, HirConstraintId, WiggleKind),
-    ArrayParser(Inner, Option<Inner>),
+    ArrayParser(Option<(Inner, Option<Inner>)>),
     Nominal(
         hir::ParserDefId,
         Option<(Inner, TypeId)>,
@@ -169,8 +169,9 @@ impl<'a> IMonoLayout<'a> {
     pub fn arg_num<DB: Layouts + ?Sized>(&self, db: &DB) -> SResult<Option<(usize, usize)>> {
         match self.mono_layout().0 {
             MonoLayout::NominalParser(pd, args, _) => Ok(db.argnum(*pd)?.map(|n| (n, args.len()))),
-            MonoLayout::ArrayParser(_, Some(_)) => Ok(Some((1, 1))),
-            MonoLayout::ArrayParser(_, None) => Ok(Some((1, 0))),
+            MonoLayout::ArrayParser(Some((_, Some(_)))) => Ok(Some((2, 2))),
+            MonoLayout::ArrayParser(Some((_, None))) => Ok(Some((2, 1))),
+            MonoLayout::ArrayParser(None) => Ok(Some((2, 0))),
             _ => Ok(None),
         }
     }
@@ -458,19 +459,21 @@ impl<'a> ILayout<'a> {
                     ))),
                     MonoLayout::Regex(..) => Ok(from),
                     MonoLayout::IfParser(inner, ..) => inner.apply_arg(ctx, from),
-                    MonoLayout::ArrayParser(
+                    MonoLayout::ArrayParser(Some((
                         ILayout {
                             layout: Uniq(_, Layout::Mono(MonoLayout::Single, _)),
                         },
                         Some(_),
-                    ) => Ok(from),
-                    MonoLayout::ArrayParser(parser, Some(_)) => Ok(ctx.dcx.intern(Layout::Mono(
-                        MonoLayout::Array {
-                            parser: *parser,
-                            slice: from,
-                        },
-                        result_type,
-                    ))),
+                    ))) => Ok(from),
+                    MonoLayout::ArrayParser(Some((parser, Some(_)))) => {
+                        Ok(ctx.dcx.intern(Layout::Mono(
+                            MonoLayout::Array {
+                                parser: *parser,
+                                slice: from,
+                            },
+                            result_type,
+                        )))
+                    }
                     _ => panic!("Attempting to apply argument to non-parser layout"),
                 }
             })
@@ -491,6 +494,9 @@ impl<'a> ILayout<'a> {
                 .zip(args.clone())
                 .map(|(ty, (arg, _))| arg.typecast(ctx, *ty).map(|x| (x.0, *ty)))
                 .collect::<Result<Vec<_>, _>>()?;
+            if typecast_args.is_empty() {
+                return Ok(layout.inner());
+            }
             match layout.mono_layout().0 {
                 MonoLayout::NominalParser(pd, present_args, backtracks) => {
                     let present_args = present_args
@@ -511,11 +517,25 @@ impl<'a> ILayout<'a> {
                     Ok(res)
                 }
                 // array parser just has a single int argument
-                MonoLayout::ArrayParser(inner_parser, None) => {
+                MonoLayout::ArrayParser(Some((inner_parser, None))) => {
                     assert_eq!(typecast_args.len(), 1);
                     let (arg, _) = typecast_args[0];
-                    let layout = MonoLayout::ArrayParser(*inner_parser, Some(arg));
+                    let layout = MonoLayout::ArrayParser(Some((*inner_parser, Some(arg))));
                     let ty = result_type;
+                    let res = ctx.dcx.intern(Layout::Mono(layout, ty));
+                    Ok(res)
+                }
+                // the parser argument
+                // note that the syntax makes it impossible to apply two arguments
+                // at once
+                MonoLayout::ArrayParser(None) => {
+                    assert_eq!(typecast_args.len(), 1);
+                    let (arg, _) = typecast_args[0];
+                    let layout = MonoLayout::ArrayParser(Some((arg, None)));
+                    let ty = ctx.db.intern_type(Type::FunctionArg(
+                        result_type,
+                        Arc::new(arg_types[1..].to_vec()),
+                    ));
                     let res = ctx.dcx.intern(Layout::Mono(layout, ty));
                     Ok(res)
                 }
@@ -586,9 +606,12 @@ impl<'a> ILayout<'a> {
                 self.block_parser_manifestation(ctx, captures)?.size
             }
             Layout::Mono(MonoLayout::IfParser(inner, _, _), _)
-            | Layout::Mono(MonoLayout::ArrayParser(inner, None), _) => inner.size_align(ctx)?,
+            | Layout::Mono(MonoLayout::ArrayParser(Some((inner, None))), _) => {
+                inner.size_align(ctx)?
+            }
             Layout::Mono(
-                MonoLayout::ArrayParser(parser, Some(l)) | MonoLayout::Array { parser, slice: l },
+                MonoLayout::ArrayParser(Some((parser, Some(l))))
+                | MonoLayout::Array { parser, slice: l },
                 _,
             ) => parser.size_align(ctx)?.cat(l.size_align(ctx)?),
             Layout::Mono(MonoLayout::Nominal(id, from, args), _) => {
@@ -602,9 +625,13 @@ impl<'a> ILayout<'a> {
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Char), _) => char::tsize(),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int), _) => i64::tsize(),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Unit), _) => Zst::tsize(),
-            Layout::Mono(MonoLayout::Single | MonoLayout::Nil | MonoLayout::Regex(_, _), _) => {
-                Zst::tsize()
-            }
+            Layout::Mono(
+                MonoLayout::Single
+                | MonoLayout::Nil
+                | MonoLayout::Regex(_, _)
+                | MonoLayout::ArrayParser(None),
+                _,
+            ) => Zst::tsize(),
             Layout::Mono(MonoLayout::Tuple(elements), _) => {
                 let mut size = Zst::tsize();
                 for element in elements {
@@ -924,8 +951,10 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                     };
                     let inner_ty = ctx.db.intern_type(Type::ParserArg { result: inner, arg });
                     let inner = ctx.dcx.intern(Layout::Mono(MonoLayout::Single, inner_ty));
-                    ctx.dcx
-                        .intern(Layout::Mono(MonoLayout::ArrayParser(inner, None), ty))
+                    ctx.dcx.intern(Layout::Mono(
+                        MonoLayout::ArrayParser(Some((inner, None))),
+                        ty,
+                    ))
                 }
                 ResolvedAtom::Regex(r, bt) => make_layout(MonoLayout::Regex(r, bt)),
                 ResolvedAtom::ParserDef(pd, bt) => {
