@@ -315,7 +315,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         [ptr, end_ptr]
     }
 
-    fn create_array_single_forward(&mut self, layout: IMonoLayout<'comp>) {
+    fn create_sliceptr_single_forward(&mut self, layout: IMonoLayout<'comp>) {
         let fun = self.single_forward_fun_val(layout);
         self.set_always_inline(fun);
 
@@ -332,7 +332,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)));
     }
 
-    fn create_array_len(&mut self, layout: IMonoLayout<'comp>) {
+    fn create_sliceptr_len(&mut self, layout: IMonoLayout<'comp>) {
         let fun = self.array_len_fun_val(layout);
         self.set_always_inline(fun);
         let entry = self.llvm.append_basic_block(fun, "entry");
@@ -343,7 +343,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.builder.build_return(Some(&len));
     }
 
-    fn create_array_skip(&mut self, layout: IMonoLayout<'comp>) {
+    fn create_sliceptr_skip(&mut self, layout: IMonoLayout<'comp>) {
         let fun = self.skip_fun_val(layout);
         self.set_always_inline(fun);
         let entry = self.llvm.append_basic_block(fun, "entry");
@@ -359,7 +359,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)));
     }
 
-    fn create_array_span(&mut self, layout: IMonoLayout<'comp>) {
+    fn create_sliceptr_span(&mut self, layout: IMonoLayout<'comp>) {
         let fun = self.span_fun_val(layout);
         self.set_always_inline(fun);
         self.add_entry_block(fun);
@@ -379,13 +379,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.terminate_tail_typecast(buf, ret)
     }
 
-    fn create_array_current_element(&mut self, layout: IMonoLayout<'comp>) {
+    fn create_sliceptr_current_element(&mut self, layout: IMonoLayout<'comp>) {
         let fun = self.current_element_fun_val(layout);
         self.set_always_inline(fun);
         let entry = self.llvm.append_basic_block(fun, "entry");
         self.builder.position_at_end(entry);
-        let int_layout = self.layouts.dcx.int(self.layouts.db);
-        let int_buf = self.build_alloca_value(int_layout, "int_buf");
+        let int_buf = self.build_alloca_int("int_buf");
         let [return_ptr, from, target_head] = get_fun_args(fun);
         let from = self.build_cast::<*const *const u8, _>(from);
         let ret = CgReturnValue::new(
@@ -405,7 +404,101 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .build_int_z_extend(byte, self.llvm.i64_type(), "int");
         let bitcasted_buf = self.build_cast::<*mut i64, _>(int_buf.ptr);
         self.builder.build_store(bitcasted_buf, int);
-        self.terminate_tail_typecast(int_buf, ret);
+        self.terminate_tail_typecast(int_buf.into(), ret);
+    }
+
+    fn build_array_item_len_get(
+        &mut self,
+        array: CgMonoValue<'comp, 'llvm>,
+        int_buf: CgMonoValue<'comp, 'llvm>,
+        fun: FunctionValue<'llvm>,
+    ) -> IntValue<'llvm> {
+        let parser = self.build_array_parser_get(array);
+        let status = self.call_len_fun(int_buf.ptr, parser);
+        self.non_zero_early_return(fun, status);
+        self.build_i64_load(int_buf.ptr, "item_len")
+    }
+
+    fn create_array_single_forward(&mut self, layout: IMonoLayout<'comp>) {
+        let fun = self.single_forward_fun_val(layout);
+        self.add_entry_block(fun);
+        let [arg] = get_fun_args(fun).map(|x| x.into_pointer_value());
+        let array = CgMonoValue::new(layout, arg);
+        let int_buf = self.build_alloca_int("item_len_buf");
+        let len = self.build_array_item_len_get(array, int_buf, fun);
+        let slice = self.build_array_slice_get(array);
+        let ret = self.call_skip_fun(slice, len);
+        self.builder.build_return(Some(&ret));
+    }
+
+    fn create_array_current_element(&mut self, layout: IMonoLayout<'comp>) {
+        let fun = self.current_element_fun_val(layout);
+        self.add_entry_block(fun);
+        let [return_ptr, from, target_head] = get_fun_args(fun);
+        let ret = CgReturnValue::new(
+            target_head.into_int_value(),
+            return_ptr.into_pointer_value(),
+        );
+        let array = CgMonoValue::new(layout, from.into_pointer_value());
+        let parser = self.build_array_parser_get(array);
+        let slice = self.build_array_slice_get(array);
+        let ret = self.build_parser_call(
+            ret,
+            parser,
+            slice,
+            CallMeta::new(NeededBy::Val.into(), false),
+        );
+        self.builder.build_return(Some(&ret));
+    }
+
+    fn create_array_len(&mut self, layout: IMonoLayout<'comp>) {
+        let fun = self.array_len_fun_val(layout);
+        self.add_entry_block(fun);
+        let [arg] = get_fun_args(fun).map(|x| x.into_pointer_value());
+        let array = CgMonoValue::new(layout, arg);
+        let int_buf = self.build_alloca_int("item_len_buf");
+        let len = self.build_array_item_len_get(array, int_buf, fun);
+        let slice = self.build_array_slice_get(array);
+        let slice_len = self.call_array_len_fun(slice);
+        let ret = self.builder.build_int_signed_div(slice_len, len, "ret");
+        self.builder.build_return(Some(&ret));
+    }
+
+    fn create_array_skip(&mut self, layout: IMonoLayout<'comp>) {
+        let fun = self.skip_fun_val(layout);
+        self.add_entry_block(fun);
+        let [arg, len] = get_fun_args(fun);
+        let len = len.into_int_value();
+        let arg = arg.into_pointer_value();
+        let array = CgMonoValue::new(layout, arg);
+        let int_buf = self.build_alloca_int("item_len_buf");
+        let item_len = self.build_array_item_len_get(array, int_buf, fun);
+        let slice = self.build_array_slice_get(array);
+        let skip_len = self.builder.build_int_mul(item_len, len, "skip_len");
+        let ret = self.call_skip_fun(slice, skip_len);
+        self.builder.build_return(Some(&ret));
+    }
+
+    fn create_array_span(&mut self, layout: IMonoLayout<'comp>) {
+        let fun = self.span_fun_val(layout);
+        self.set_always_inline(fun);
+        self.add_entry_block(fun);
+        let [ret, start, head, end] = get_fun_args(fun);
+        let [ret, start, end] = [ret, start, end].map(|x| x.into_pointer_value());
+        let bufsl = self.build_alloca_mono_value(layout, "bufsl");
+        let ret = CgReturnValue::new(head.into_int_value(), ret);
+        let start = CgMonoValue::new(layout, start);
+        let end = CgMonoValue::new(layout, end);
+        let buf_parser = self.build_array_parser_get(bufsl);
+        let start_parser = self.build_array_parser_get(start);
+        self.build_copy_invariant(buf_parser, start_parser);
+        let start_slice = self.build_array_slice_get(start);
+        let end_slice = self.build_array_slice_get(end);
+        let buf_slice = self.build_array_slice_get(bufsl);
+        let target_head = self.const_i64(DerefLevel::zero().into_shifted_runtime_value() as i64);
+        let buf_slice_ret = CgReturnValue::new(target_head, buf_slice.ptr);
+        self.call_span_fun(buf_slice_ret, start_slice, end_slice);
+        self.terminate_tail_typecast(bufsl.into(), ret);
     }
 
     fn create_block_parse(
@@ -933,11 +1026,23 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_array_funs(&mut self, layout: IMonoLayout<'comp>) {
-        self.create_array_current_element(layout);
-        self.create_array_single_forward(layout);
-        self.create_array_len(layout);
-        self.create_array_skip(layout);
-        self.create_array_span(layout);
+        match layout.mono_layout().0 {
+            MonoLayout::SlicePtr => {
+                self.create_sliceptr_current_element(layout);
+                self.create_sliceptr_single_forward(layout);
+                self.create_sliceptr_len(layout);
+                self.create_sliceptr_skip(layout);
+                self.create_sliceptr_span(layout);
+            }
+            MonoLayout::Array { .. } => {
+                self.create_array_current_element(layout);
+                self.create_array_single_forward(layout);
+                self.create_array_len(layout);
+                self.create_array_skip(layout);
+                self.create_array_span(layout);
+            }
+            _ => panic!("attempting to create array funs of non-array layout"),
+        }
     }
 
     fn create_nominal_funs(&mut self, layout: IMonoLayout<'comp>) {

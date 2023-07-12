@@ -96,6 +96,10 @@ pub enum MonoLayout<Inner> {
     Block(hir::BlockId, BTreeMap<FieldName, Inner>),
     BlockParser(hir::BlockId, BTreeMap<DefId, Inner>, Arc<Vec<TypeId>>, bool),
     Tuple(Vec<Inner>),
+    Array {
+        parser: Inner,
+        slice: Inner,
+    },
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -404,18 +408,23 @@ impl<'a> ILayout<'a> {
         .copied())
     }
 
-    fn array_primitive(self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> ILayout<'a> {
-        self.map(ctx, |layout, ctx| match layout.mono_layout().0 {
+    fn array_primitive(
+        self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+    ) -> Result<ILayout<'a>, LayoutError> {
+        self.try_map(ctx, |layout, ctx| match layout.mono_layout().0 {
             MonoLayout::SlicePtr => {
                 let int = PrimitiveType::Int;
                 let int_ty = ctx.db.intern_type(Type::Primitive(int));
-                ctx.dcx
-                    .intern(Layout::Mono(MonoLayout::Primitive(int), int_ty))
+                Ok(ctx
+                    .dcx
+                    .intern(Layout::Mono(MonoLayout::Primitive(int), int_ty)))
             }
+            MonoLayout::Array { parser, slice } => parser.apply_arg(ctx, *slice),
             // for calculating the length of a parser, the argument is an int, and the result
             // of applying an int to a parser is never used, so here we use the bottom
             // value
-            MonoLayout::Primitive(PrimitiveType::Int) => ctx.dcx.intern(Layout::None),
+            MonoLayout::Primitive(PrimitiveType::Int) => Ok(ctx.dcx.intern(Layout::None)),
             _ => panic!("Attempting to get an primitive element from non-array"),
         })
     }
@@ -442,14 +451,11 @@ impl<'a> ILayout<'a> {
                     MonoLayout::BlockParser(block_id, _, subst, _) => ctx
                         .eval_block(*block_id, self, from, result_type, arg_type, subst.clone())
                         .ok_or_else(|| SilencedError::new().into()),
-                    MonoLayout::Single => Ok(from.array_primitive(ctx)),
-                    MonoLayout::Nil => {
-                        let unit = ctx.db.intern_type(Type::Primitive(PrimitiveType::Unit));
-                        Ok(ctx.dcx.intern(Layout::Mono(
-                            MonoLayout::Primitive(PrimitiveType::Unit),
-                            unit,
-                        )))
-                    }
+                    MonoLayout::Single => from.array_primitive(ctx),
+                    MonoLayout::Nil => Ok(ctx.dcx.intern(Layout::Mono(
+                        MonoLayout::Primitive(PrimitiveType::Unit),
+                        result_type,
+                    ))),
                     MonoLayout::Regex(..) => Ok(from),
                     MonoLayout::IfParser(inner, ..) => inner.apply_arg(ctx, from),
                     MonoLayout::ArrayParser(
@@ -458,6 +464,13 @@ impl<'a> ILayout<'a> {
                         },
                         Some(_),
                     ) => Ok(from),
+                    MonoLayout::ArrayParser(parser, Some(_)) => Ok(ctx.dcx.intern(Layout::Mono(
+                        MonoLayout::Array {
+                            parser: *parser,
+                            slice: from,
+                        },
+                        result_type,
+                    ))),
                     _ => panic!("Attempting to apply argument to non-parser layout"),
                 }
             })
@@ -574,9 +587,10 @@ impl<'a> ILayout<'a> {
             }
             Layout::Mono(MonoLayout::IfParser(inner, _, _), _)
             | Layout::Mono(MonoLayout::ArrayParser(inner, None), _) => inner.size_align(ctx)?,
-            Layout::Mono(MonoLayout::ArrayParser(inner, Some(l)), _) => {
-                inner.size_align(ctx)?.cat(l.size_align(ctx)?)
-            }
+            Layout::Mono(
+                MonoLayout::ArrayParser(parser, Some(l)) | MonoLayout::Array { parser, slice: l },
+                _,
+            ) => parser.size_align(ctx)?.cat(l.size_align(ctx)?),
             Layout::Mono(MonoLayout::Nominal(id, from, args), _) => {
                 self.nominal_manifestation(ctx, *id, *from, args)?.size
             }
