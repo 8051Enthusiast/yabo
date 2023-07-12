@@ -269,10 +269,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.build_call_with_int_ret(single_forward, &[arg.ptr.into()])
     }
 
-    pub(super) fn call_array_len_fun(
-        &mut self,
-        arg: CgValue<'comp, 'llvm>,
-    ) -> IntValue<'llvm> {
+    pub(super) fn call_array_len_fun(&mut self, arg: CgValue<'comp, 'llvm>) -> IntValue<'llvm> {
         let len = match arg.layout.maybe_mono() {
             Some(mono) => self.sym_callable(mono, LayoutPart::ArrayLen),
             None => self.vtable_callable::<vtable::ArrayVTable>(
@@ -434,4 +431,40 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.build_call_with_int_ret(create, &[ret.into(), fun.ptr.into()])
     }
 
+    pub(super) fn build_array_parser_get(
+        &mut self,
+        array: CgMonoValue<'comp, 'llvm>,
+    ) -> CgValue<'comp, 'llvm> {
+        let MonoLayout::Array { parser, .. } = array.layout.mono_layout().0 else {
+            panic!("array_parser_field called on non-array");
+        };
+        let ptr = if parser.is_multi() {
+            self.build_byte_gep(
+                array.ptr,
+                self.const_i64(self.word_size() as i64),
+                "content_ptr",
+            )
+        } else {
+            array.ptr
+        };
+        CgValue::new(*parser, ptr)
+    }
+
+    pub(super) fn build_array_slice_get(
+        &mut self,
+        array: CgMonoValue<'comp, 'llvm>,
+    ) -> CgValue<'comp, 'llvm> {
+        let MonoLayout::Array { slice, .. } = array.layout.mono_layout().0 else {
+            panic!("array_slice_field called on non-array");
+        };
+        let offset = array
+            .layout
+            .inner()
+            .size_align_without_vtable(self.layouts)
+            .unwrap()
+            .size
+            - slice.size_align_without_vtable(self.layouts).unwrap().size;
+        let ptr = self.build_byte_gep(array.ptr, self.const_i64(offset as i64), "slice_ptr");
+        CgValue::new(*slice, ptr)
+    }
 }

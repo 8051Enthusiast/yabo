@@ -184,7 +184,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             })
             .collect();
         let len_impl = if self.collected_layouts.lens.contains(&layout) {
-            self.parser_len_fun_val(layout).as_global_value().as_pointer_value()
+            self.parser_len_fun_val(layout)
+                .as_global_value()
+                .as_pointer_value()
         } else {
             LenFun::codegen_ty(self).into_pointer_type().const_null()
         };

@@ -288,6 +288,21 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         CgValue::new(layout, ptr)
     }
 
+    fn build_alloca_mono_value(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+        name: &str,
+    ) -> CgMonoValue<'comp, 'llvm> {
+        let ptr = self.build_layout_alloca(layout.inner(), name);
+        CgMonoValue::new(layout, ptr)
+    }
+
+    fn build_alloca_int(&mut self, name: &str) -> CgMonoValue<'comp, 'llvm> {
+        let int_layout = self.layouts.dcx.int(self.layouts.db);
+        let ptr = self.build_layout_alloca(int_layout, name);
+        CgMonoValue::new(int_layout.maybe_mono().unwrap(), ptr)
+    }
+
     fn build_call_with_int_ret(
         &mut self,
         call_fun: CallableValue<'llvm>,
@@ -320,9 +335,26 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         from: CgValue<'comp, 'llvm>,
         call_kind: CallMeta,
     ) -> IntValue<'llvm> {
-        let slot = self.collected_layouts.parser_slots.layout_vtable_offsets
-            [&((from.layout, call_kind), fun.layout)];
+        let Some(&slot) = self
+            .collected_layouts
+            .parser_slots
+            .layout_vtable_offsets
+            .get(&((from.layout, call_kind), fun.layout))
+        else {
+            dbpanic!(
+                self.layouts.db,
+                "Could not find parser slot for {} *> {}, {}",
+                &from.layout,
+                &fun.layout,
+                &call_kind,
+            );
+        };
         self.call_parser_fun_wrapper(ret, fun, from, slot, call_kind.req)
+    }
+
+    fn build_i64_load(&mut self, ptr: PointerValue<'llvm>, name: &str) -> IntValue<'llvm> {
+        let ptr = self.build_cast::<*const i64, _>(ptr);
+        self.builder.build_load(ptr, name).into_int_value()
     }
 
     fn module_string(&mut self, s: &str) -> PointerValue<'llvm> {

@@ -107,6 +107,15 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         dbeprintln!(self.ctx.db, "[collection] registered array {}", &mono);
                     }
                 }
+                MonoLayout::Array { parser, slice } => {
+                    if self.arrays.insert(mono) && TRACE_COLLECTION {
+                        dbeprintln!(self.ctx.db, "[collection] registered array {}", &mono);
+                    }
+                    self.register_layouts(*slice);
+                    self.register_layouts(*parser);
+                    self.register_parse(*slice, *parser, pd_val_req());
+                    self.register_len(*parser);
+                }
                 MonoLayout::Nominal(_, _, _) => {
                     if self.nominals.insert(mono) {
                         if TRACE_COLLECTION {
@@ -302,6 +311,16 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         }
     }
 
+    fn register_len(&mut self, parser: ILayout<'a>) {
+        for parser in &parser {
+            if self.lens.insert(parser) {
+                if let Some(call) = self.parser_len_proc_entry(parser) {
+                    self.unprocessed.push(call);
+                }
+            }
+        }
+    }
+
     fn collect_ins(
         &mut self,
         mir: &FunctionSubstitute<'a>,
@@ -323,13 +342,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             }
             MirInstr::LenCall(_, fun, _) => {
                 let fun_layout = mir.place(fun);
-                for parser in &fun_layout {
-                    if self.lens.insert(parser) {
-                        if let Some(call) = self.parser_len_proc_entry(parser) {
-                            self.unprocessed.push(call);
-                        }
-                    }
-                }
+                self.register_len(fun_layout);
                 Ok(())
             }
             _ => Ok(()),
