@@ -408,7 +408,6 @@ pub enum ArrayKind {
     Each,
 }
 
-
 #[cfg(test)]
 mod tests {
     use yaboc_base::{

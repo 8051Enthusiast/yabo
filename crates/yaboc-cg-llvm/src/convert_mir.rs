@@ -389,12 +389,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         self.controlflow_case(ret, ctrl)
     }
 
-    fn len_call(
-        &mut self,
-        ret: PlaceRef,
-        fun: PlaceRef,
-        ctrl: ControlFlow,
-    ) {
+    fn len_call(&mut self, ret: PlaceRef, fun: PlaceRef, ctrl: ControlFlow) {
         let fun_val = self.place_val(fun);
         let ret_val = self.return_val(ret).ptr;
         let ret = self.cg.call_len_fun(ret_val, fun_val);
