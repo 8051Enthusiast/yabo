@@ -155,7 +155,6 @@ int print_array(DynValue val, int indent, FILE *out)
 			return EOF;
 		if (fputs(",\n", out) == EOF)
 			return EOF;
-		dyn_free(sub_value);
 	}
 	if (print_indent(indent, out) == EOF)
 		return EOF;
