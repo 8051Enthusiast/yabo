@@ -264,6 +264,10 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         ));
                     }
                 }
+                MonoLayout::ArrayParser(..) => {
+                    let result = parser.apply_arg(self.ctx, arg).unwrap();
+                    self.register_layouts(result);
+                }
                 _ => {}
             }
         }
