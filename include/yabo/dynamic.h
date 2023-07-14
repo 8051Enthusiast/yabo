@@ -61,6 +61,17 @@ static inline DynValue dyn_deref(DynValue val) {
 	return ret;
 }
 
+static inline DynValue dyn_copy(DynValue val) {
+	DynValue ret;
+	uint64_t level = dyn_vtable(val)->deref_level;
+	uint64_t status = dyn_vtable(val)->typecast_impl(&ret.in_data, dyn_data(&val), level | 3);
+	if (status != 0) {
+		ret.vtable = 0;
+		ret.in_data[0] = (char)status;
+	}
+	return ret;
+}
+
 static inline DynValue dyn_access_field(DynValue block, char *name) {
 	struct BlockVTable *vtable = (struct BlockVTable *)dyn_vtable(block);
 	char **start = vtable->fields->fields;
@@ -80,6 +91,30 @@ static inline DynValue dyn_access_field(DynValue block, char *name) {
 	if (status != 0) {
 		ret.vtable = 0;
 		ret.in_data[0] = (char)status;
+	}
+	return ret;
+}
+
+static DynValue dyn_access_index(DynValue array, int64_t index) {
+	DynValue array_copy = dyn_copy(array);
+	if (!array_copy.vtable) {
+		return array_copy;
+	}
+	struct ArrayVTable *vtable = (struct ArrayVTable *)dyn_vtable(array_copy);
+	uint64_t status = vtable->skip_impl(dyn_data(&array_copy), index);
+	if (status != 0) {
+		dyn_free(array_copy);
+		array_copy.vtable = 0;
+		array_copy.in_data[0] = (char)status;
+		return array_copy;
+	}
+	DynValue ret;
+	status = vtable->current_element_impl(&ret.in_data, dyn_data(&array_copy), YABO_ANY | 3);
+	if (status != 0) {
+		dyn_free(array_copy);
+		array_copy.vtable = 0;
+		array_copy.in_data[0] = (char)status;
+		return array_copy;
 	}
 	return ret;
 }

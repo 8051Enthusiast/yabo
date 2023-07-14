@@ -79,20 +79,17 @@ int print_bit(DynValue val, int indent, FILE *out)
 	return fputs(text, out);
 }
 
-int print_loop(DynValue val, int indent, FILE *out)
-{
-	// not implemented
-	return fputs("[]", out);
-}
-
 int print_parser(DynValue val, int indent, FILE *out)
 {
 	struct ParserVTable *vtable = (struct ParserVTable *)dyn_vtable(val);
 	int64_t len;
 	int64_t ret = vtable->len_impl(&len, dyn_data(&val));
-	if (ret != OK) {
+	if (ret != OK)
+	{
 		return fputs("\"parser\"", out);
-	} else {
+	}
+	else
+	{
 		return fprintf(out, "\"parser(%" PRId64 ")\"", len);
 	}
 }
@@ -143,6 +140,29 @@ int print_block(DynValue val, int indent, FILE *out)
 	return 0;
 }
 
+int print_array(DynValue val, int indent, FILE *out)
+{
+	struct ArrayVTable *vtable = (struct ArrayVTable *)dyn_vtable(val);
+	int64_t len = vtable->array_len_impl(dyn_data(&val));
+	if (fputs("[\n", out) == EOF)
+		return EOF;
+	for (int64_t i = 0; i < len; i++)
+	{
+		DynValue sub_value = dyn_access_index(val, i);
+		if (print_indent(indent + 2, out) == EOF)
+			return EOF;
+		if (print_recursive(sub_value, indent + 2, out) < 0)
+			return EOF;
+		if (fputs(",\n", out) == EOF)
+			return EOF;
+		dyn_free(sub_value);
+	}
+	if (print_indent(indent, out) == EOF)
+		return EOF;
+	fputc_ret(']', out);
+	return 0;
+}
+
 int print_nominal(DynValue val, int indent, FILE *out)
 {
 	DynValue deref = dyn_deref(val);
@@ -177,7 +197,7 @@ int print_recursive(DynValue val, int indent, FILE *out)
 			status = print_char(val, indent, out);
 			break;
 		case YABO_LOOP:
-			status = print_loop(val, indent, out);
+			status = print_array(val, indent, out);
 			break;
 		case YABO_PARSER:
 			status = print_parser(val, indent, out);

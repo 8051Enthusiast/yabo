@@ -1,3 +1,4 @@
+from copy import copy
 import ctypes
 from ctypes import (addressof, c_char_p, c_int64, c_int8, c_ubyte,
                     c_uint32, c_uint64, c_size_t, c_char, Structure,
@@ -236,6 +237,9 @@ class YaboValue:
         _check_status(status)
         return _new_value(ret, self._buf, self._lib)
 
+    def __copy__(self):
+        return self._typecast(self._val.get_vtable().deref_level | YABO_MALLOC)
+
     # yes i'm defining the evil function
     def __del__(self):
         if self._val.vtable_has_tag():
@@ -296,7 +300,39 @@ class BlockValue(YaboValue):
 
 
 class ArrayValue(YaboValue):
-    pass
+    def __len__(self):
+        array_vtable = ctypes.cast(
+            pointer(self._val.get_vtable()), POINTER(ArrayVTable))
+        array_len_impl = array_vtable.contents.array_len_impl
+        return array_len_impl(self._val.data_ptr())
+
+    def skip(self, n: int):
+        array_vtable = ctypes.cast(
+            pointer(self._val.get_vtable()), POINTER(ArrayVTable))
+        skip_impl = array_vtable.contents.skip_impl
+        status = skip_impl(self._val.data_ptr(), n)
+        _check_status(status)
+
+    def current_element(self):
+        array_vtable = ctypes.cast(
+            pointer(self._val.get_vtable()), POINTER(ArrayVTable))
+        current_element_impl = array_vtable.contents.current_element_impl
+        ret = DynValue()
+        status = current_element_impl(ret.data_field_ptr(),
+                                      self._val.data_ptr(), YABO_ANY | YABO_MALLOC)
+        _check_status(status)
+        return _new_value(ret, self._buf, self._lib)
+
+    def __getitem__(self, index: int):
+        if len(self) <= index:
+            raise IndexError(f'{index} is out of bounds')
+        cop = copy(self)
+        cop.skip(index)
+        return cop.current_element()
+    
+    def as_list(self):
+        return [self[i] for i in range(len(self))]
+    
 
 
 class FunArgValue(YaboValue):

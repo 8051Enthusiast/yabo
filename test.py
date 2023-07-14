@@ -204,11 +204,11 @@ def dictionarified_obj(obj):
     if ty is int or ty is str or ty is bool:
         return obj
     if ty is yabo.ArrayValue:
-        return "array"
+        return [dictionarified_obj(obj[i]) for i in range(len(obj))]
     if ty is yabo.ParserValue:
         try:
-            len = obj.len()
-            return f"parser({len})"
+            length = obj.len()
+            return f"parser({length})"
         except:
             return "parser"
     if ty is yabo.FunArgValue:
@@ -221,8 +221,9 @@ def dictionarified_obj(obj):
             ret_dict[field] = dictionarified_obj(obj.get(field))
         return ret_dict
 
-
-def wrap_maybe_field(inner: str, indent: str, field: Optional[str] = None):
+def wrap_maybe_field(inner: str, indent: str, field: Optional[str] | list = None):
+    if isinstance(field, list):
+        return f'{indent}{inner},\n'
     if field is None:
         return inner + '\n'
     return f'{indent}"{field}": {inner},\n'
@@ -238,6 +239,11 @@ def dict_with_indent(d, indent: str, field=None) -> str:
             ret = 'true'
         else:
             ret = 'false'
+    elif isinstance(d, list):
+        ret = '[\n'
+        for item in d:
+            ret += dict_with_indent(item, indent + '  ', field=[])
+        ret += f'{indent}]'
     elif not isinstance(d, dict):
         ret = str(d)
     else:
@@ -299,6 +305,20 @@ class DictHead:
         out += f'{indent}}}'
         return wrap_maybe_field(out, indent, field)
 
+class ListHead:
+    __slot__ = ['data']
+    data: list
+
+    def __init__(self, data):
+        self.data = data
+
+    def diff(self, indent='', field=None) -> str:
+        out = '[\n'
+        for i, value in enumerate(self.data):
+            out += value.diff(indent + '  ', field=[])
+        out += f'{indent}]'
+        return wrap_maybe_field(out, indent, field)
+
 
 def diff(left, right) -> Tuple[MatchingHead | DiffHead | DictHead, bool]:
     if isinstance(left, dict) and isinstance(right, dict):
@@ -311,6 +331,17 @@ def diff(left, right) -> Tuple[MatchingHead | DiffHead | DictHead, bool]:
             (ret[field], is_field_diff) = diff(left_field, right_field)
             is_different |= is_field_diff
         return (DictHead(ret), is_different)
+    
+    if isinstance(left, list) and isinstance(right, list):
+        is_different = False
+        max_len = max(len(left), len(right))
+        ret = [None] * max_len
+        for i in range(max_len):
+            left_field = left[i] if i < len(left) else None
+            right_field = right[i] if i < len(right) else None
+            (ret[i], is_field_diff) = diff(left_field, right_field)
+            is_different |= is_field_diff
+        return (ListHead(ret), is_different)
 
     if left != right:
         return (DiffHead(left, right), True)
