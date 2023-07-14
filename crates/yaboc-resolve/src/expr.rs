@@ -7,7 +7,7 @@ use yaboc_base::error::SilencedError;
 use yaboc_base::interner::{DefId, Regex};
 use yaboc_base::source::SpanIndex;
 use yaboc_expr::{
-    DataRefExpr, ExprHead, ExprKind, Expression, FetchExpr, FetchKindData, IdxExpression,
+    DataRefExpr, ExprHead, ExprIdx, ExprKind, Expression, FetchExpr, FetchKindData, IdxExpression,
     IndexExpr, PartialEval, ReidxExpr, ShapedData, SmallVec, TakeRef, ZipExpr,
 };
 use yaboc_hir as hir;
@@ -135,6 +135,14 @@ pub fn resolve_expr_error(
     db: &dyn Resolves,
     expr_id: hir::ExprId,
 ) -> Result<ResolvedExpr, ResolveError> {
+    #[derive(Clone, Copy)]
+    enum DesugarContinue {
+        Cont(ExprIdx<Resolved>),
+        Compose(SpanIndex),
+        Array(SpanIndex),
+    }
+    use DesugarContinue::*;
+
     let expr = expr_id.lookup(db)?.expr;
     let resolved = resolve_expr_modules(db, expr_id, expr.take_ref())?;
     let sugar_spans = resolved.migrate_data(&expr.data);
@@ -143,22 +151,32 @@ pub fn resolve_expr_error(
         db.std_item(hir::StdItem::Compose)?,
         true,
     ));
-    let desugared = ZipExpr::new_from_unfold(Ok(zip_expr.root()), |id| {
+    let array = ExprHead::Niladic(ResolvedAtom::Array);
+    let desugared = ZipExpr::new_from_unfold(Cont(zip_expr.root()), |id| {
         let id = match id {
-            Ok(id) => id,
-            Err(span) => return (compose.clone(), span),
+            Cont(id) => id,
+            Compose(span) => return (compose.clone(), span),
+            Array(span) => return (array.clone(), span),
         };
         let (head, span) = zip_expr.index_expr(id);
         if let ExprHead::Dyadic(ValBinOp::Compose, [lhs, rhs]) = head {
             return (
                 ExprHead::Variadic(
                     ValVarOp::Call,
-                    SmallVec::from_slice(&[Err(*span), Ok(*lhs), Ok(*rhs)]),
+                    SmallVec::from_slice(&[Compose(*span), Cont(*lhs), Cont(*rhs)]),
+                ),
+                *span,
+            );
+        } else if let ExprHead::Monadic(ValUnOp::Array, inner) = head {
+            return (
+                ExprHead::Variadic(
+                    ValVarOp::Call,
+                    SmallVec::from_slice(&[Array(*span), Cont(*inner)]),
                 ),
                 *span,
             );
         }
-        (head.clone().map_inner(Ok), *span)
+        (head.clone().map_inner(Cont), *span)
     });
     Ok(ZipExpr {
         expr: Arc::new(desugared.expr),

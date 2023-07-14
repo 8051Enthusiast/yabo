@@ -133,7 +133,7 @@ impl<'a> IMonoLayout<'a> {
 
     pub fn int_single(ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> IMonoLayout<'a> {
         let int = ctx.db.intern_type(Type::Primitive(PrimitiveType::Int));
-        let for_int = ctx.db.intern_type(Type::Loop(ArrayKind::For, int));
+        let for_int = ctx.db.intern_type(Type::Loop(ArrayKind::Each, int));
         let parser_ty = ctx.db.intern_type(Type::ParserArg {
             result: int,
             arg: for_int,
@@ -939,23 +939,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ResolvedAtom::Val(id, bt) => ctx.var_by_id(id)?.with_backtrack_status(ctx, bt),
                 ResolvedAtom::Single => make_layout(MonoLayout::Single),
                 ResolvedAtom::Nil => make_layout(MonoLayout::Nil),
-                ResolvedAtom::Array => {
-                    let Type::FunctionArg(parser, _) = ctx.db.lookup_intern_type(ty) else {
-                        panic!("Array type must be a function")
-                    };
-                    let Type::ParserArg { arg, .. } = ctx.db.lookup_intern_type(parser) else {
-                        panic!("Inner array type must be a parser")
-                    };
-                    let Type::Loop(_, inner) = ctx.db.lookup_intern_type(arg) else {
-                        panic!("Array type must take a loop")
-                    };
-                    let inner_ty = ctx.db.intern_type(Type::ParserArg { result: inner, arg });
-                    let inner = ctx.dcx.intern(Layout::Mono(MonoLayout::Single, inner_ty));
-                    ctx.dcx.intern(Layout::Mono(
-                        MonoLayout::ArrayParser(Some((inner, None))),
-                        ty,
-                    ))
-                }
+                ResolvedAtom::Array => make_layout(MonoLayout::ArrayParser(None)),
                 ResolvedAtom::Regex(r, bt) => make_layout(MonoLayout::Regex(r, bt)),
                 ResolvedAtom::ParserDef(pd, bt) => {
                     make_layout(MonoLayout::NominalParser(pd, Vec::new(), bt))
@@ -995,6 +979,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ValUnOp::Not | ValUnOp::Neg => {
                     make_layout(MonoLayout::Primitive(PrimitiveType::Int))
                 }
+                ValUnOp::Array => unreachable!(),
                 ValUnOp::Wiggle(cid, kind) => {
                     let ldt_parser_ty = ctx.db.least_deref_type(inner.1)?;
                     let parser_type = ctx.db.lookup_intern_type(ldt_parser_ty);
@@ -1161,7 +1146,7 @@ def for[int] *> main = {
                     ),
                     &ctx.db
                 ),
-                "main$2cd949028b83d5a5$parse_0_lb_worker"
+                "main$56ed3a3938b971b7$parse_0_lb_worker"
             );
         }
         let main_block = outlayer.pd_result()[&canon_2004]
@@ -1180,7 +1165,7 @@ def for[int] *> main = {
                     ),
                     &ctx.db
                 ),
-                "block_1b15571abd710f7a$16713963642194ce$parse_0_vb"
+                "block_1b15571abd710f7a$27258328b19e28cf$parse_0_vb"
             );
         }
         let field = |name| FieldName::Ident(ctx.id(name));
@@ -1210,8 +1195,8 @@ def for[int] *> main = {
                 .unwrap()
         );
         assert!(
-            ["nominal-parser?[for[int] *> for[int] &> file[_].second]() | nominal-parser[for[int] *> for[int] &> file[_].first]()",
-             "nominal-parser[for[int] *> for[int] &> file[_].first]() | nominal-parser?[for[int] *> for[int] &> file[_].second]()"]
+            ["nominal-parser?[each[int] *> each[int] &> file[_].second]() | nominal-parser[each[int] *> each[int] &> file[_].first]()",
+             "nominal-parser[each[int] *> each[int] &> file[_].first]() | nominal-parser?[each[int] *> each[int] &> file[_].second]()"]
             .contains(&out.as_str())
         );
         assert_eq!(

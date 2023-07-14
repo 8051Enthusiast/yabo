@@ -212,8 +212,8 @@ mod tests {
     fn test_type_expr() {
         let ctx = Context::<crate::tests::HirTypesTestDatabase>::mock(
             r#"
-def for['t] *> nil = {}
-def for['t] *> expr1 = {
+def each['t] *> nil = {}
+def each['t] *> expr1 = {
   a: ~
   b: {
     | let c: int = 2
@@ -225,9 +225,9 @@ def each[int] *> expr2 = {
   x: expr1
   let y: int = 3 + x.a
 }
-def for[for[int]] *> expr4 = {
+def each[each[int]] *> expr4 = {
   x: ~ |> ~
-  let b: for[int] *> int = ~
+  let b: each[int] *> int = ~
   y: ~ |> b
   let a: int = x + y
 }
@@ -267,10 +267,10 @@ def each[int] *> expr6 = {
         assert_eq!(full_type("expr1", &["a"]), "'0");
         assert_eq!(full_type("expr1", &["b", "c"]), "int");
         assert_eq!(full_type("expr1", &["b", "d"]), "'0");
-        assert_eq!(full_type("expr2", &["x"]), "for[int] &> file[_].expr1");
+        assert_eq!(full_type("expr2", &["x"]), "each[int] &> file[_].expr1");
         assert_eq!(full_type("expr2", &["y"]), "int");
         //assert_eq!(full_type("expr4", &["x"]), "int");
-        assert_eq!(full_type("expr4", &["b"]), "for[int] *> int");
+        assert_eq!(full_type("expr4", &["b"]), "each[int] *> int");
         //assert_eq!(full_type("expr4", &["y"]), "int");
         assert_eq!(full_type("expr4", &["a"]), "int");
         assert_eq!(full_type("expr5", &["x"]), "each[int] &> file[_].expr2");

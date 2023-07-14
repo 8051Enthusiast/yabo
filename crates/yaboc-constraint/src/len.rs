@@ -152,18 +152,13 @@ impl<'a> SizeTermBuilder<'a> {
                 ResolvedAtom::Bool(b) => Ok(self.push_term(Term::Const(b.into()), src)),
                 ResolvedAtom::Single => Ok(self.push_term(Term::Const(1), src)),
                 ResolvedAtom::Nil => Ok(self.push_term(Term::Const(0), src)),
-                ResolvedAtom::Array => {
-                    let arr = self.push_term(Term::Arr, src);
-                    let one = self.push_term(Term::Const(1), src);
-                    let arr_appl = self.push_term(Term::Apply([arr, one]), src);
-                    *self.call_arities.last_mut().unwrap() = 1;
-                    Ok(arr_appl)
-                }
+                ResolvedAtom::Array => Ok(self.push_term(Term::Arr, src)),
                 ResolvedAtom::Block(bid) => self.create_block(bid),
             },
             ExprHead::Monadic(m, inner) => match m {
                 ValUnOp::Neg => Ok(self.push_term(Term::Neg(inner), src)),
                 ValUnOp::Wiggle(_, _) => Ok(inner),
+                ValUnOp::Array => unreachable!(),
                 ValUnOp::Dot(_, _) | ValUnOp::Not => Ok(self.push_term(Term::OpaqueUn(inner), src)),
             },
             ExprHead::Dyadic(d, [lhs, rhs]) => match d {

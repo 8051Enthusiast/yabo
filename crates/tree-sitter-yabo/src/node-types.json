@@ -198,10 +198,6 @@
             "named": false
           },
           {
-            "type": "array",
-            "named": true
-          },
-          {
             "type": "binary_expression",
             "named": true
           },
@@ -352,10 +348,6 @@
           {
             "type": ")",
             "named": false
-          },
-          {
-            "type": "array",
-            "named": true
           },
           {
             "type": "binary_expression",
@@ -582,10 +574,6 @@
             "named": false
           },
           {
-            "type": "array",
-            "named": true
-          },
-          {
             "type": "binary_expression",
             "named": true
           },
@@ -722,10 +710,6 @@
             "named": false
           },
           {
-            "type": "array",
-            "named": true
-          },
-          {
             "type": "binary_expression",
             "named": true
           },
@@ -794,10 +778,6 @@
           {
             "type": ")",
             "named": false
-          },
-          {
-            "type": "array",
-            "named": true
           },
           {
             "type": "binary_expression",
@@ -890,10 +870,6 @@
           {
             "type": ")",
             "named": false
-          },
-          {
-            "type": "array",
-            "named": true
           },
           {
             "type": "binary_expression",
@@ -1051,10 +1027,6 @@
             "named": false
           },
           {
-            "type": "array",
-            "named": true
-          },
-          {
             "type": "binary_expression",
             "named": true
           },
@@ -1143,10 +1115,6 @@
           {
             "type": ")",
             "named": false
-          },
-          {
-            "type": "array",
-            "named": true
           },
           {
             "type": "binary_expression",
@@ -1391,10 +1359,6 @@
           {
             "type": ")",
             "named": false
-          },
-          {
-            "type": "array",
-            "named": true
           },
           {
             "type": "binary_expression",
@@ -1958,6 +1922,10 @@
             "named": false
           },
           {
+            "type": "[",
+            "named": false
+          },
+          {
             "type": "if",
             "named": false
           }
@@ -1974,10 +1942,6 @@
           {
             "type": ")",
             "named": false
-          },
-          {
-            "type": "array",
-            "named": true
           },
           {
             "type": "binary_expression",
@@ -2116,10 +2080,6 @@
           {
             "type": ")",
             "named": false
-          },
-          {
-            "type": "array",
-            "named": true
           },
           {
             "type": "binary_expression",
@@ -2332,10 +2292,6 @@
   {
     "type": "and",
     "named": false
-  },
-  {
-    "type": "array",
-    "named": true
   },
   {
     "type": "bit",

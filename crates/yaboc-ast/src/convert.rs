@@ -839,7 +839,7 @@ fn array_direction(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Span
     let str = spanned(node_to_string)(db, fd, c)?;
     Ok(Spanned {
         inner: match str.inner.as_str() {
-            "for" => ArrayKind::For,
+            "for" => ArrayKind::Each,
             "each" => ArrayKind::Each,
             otherwise => panic!("Unknown loop {otherwise}"),
         },

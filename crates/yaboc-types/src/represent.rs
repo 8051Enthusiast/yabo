@@ -38,7 +38,6 @@ impl<'a, DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeId<'a> {
             }
             InferenceType::Loop(k, inner) => {
                 match k {
-                    ArrayKind::For => write!(f, "for")?,
                     ArrayKind::Each => write!(f, "each")?,
                 };
                 dbwrite!(f, db, "[{}]", inner)
@@ -177,7 +176,6 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeHead {
                 dbwrite!(f, db, "{}", def)
             }
             InfTypeHead::Loop(kind) => match kind {
-                ArrayKind::For => write!(f, "for array"),
                 ArrayKind::Each => write!(f, "each array"),
             },
             InfTypeHead::ParserArg => write!(f, "a parser"),
@@ -231,7 +229,6 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for TypeId {
             }
             Type::Loop(k, inner) => {
                 match k {
-                    ArrayKind::For => write!(f, "for")?,
                     ArrayKind::Each => write!(f, "each")?,
                 };
                 dbwrite!(f, db, "[{}]", &inner)

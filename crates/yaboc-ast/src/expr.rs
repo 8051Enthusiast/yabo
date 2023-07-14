@@ -650,6 +650,7 @@ impl Display for ValBinOp {
 pub enum ValUnOp<C> {
     Not,
     Neg,
+    Array,
     Wiggle(C, WiggleKind),
     Dot(FieldName, bool),
 }
@@ -660,6 +661,7 @@ impl<C> ValUnOp<C> {
         Ok(match s {
             "!" => Not,
             "-" => Neg,
+            "[" => Array,
             otherwise => return Err(otherwise),
         })
     }
@@ -668,6 +670,7 @@ impl<C> ValUnOp<C> {
         match self {
             Not => Not,
             Neg => Neg,
+            Array => Array,
             Wiggle(expr, kind) => Wiggle(f(expr), *kind),
             Dot(atom, b) => Dot(*atom, *b),
         }
@@ -677,6 +680,7 @@ impl<C> ValUnOp<C> {
         Ok(match self {
             Not => Not,
             Neg => Neg,
+            Array => Array,
             Wiggle(expr, kind) => Wiggle(f(expr)?, *kind),
             Dot(atom, b) => Dot(*atom, *b),
         })

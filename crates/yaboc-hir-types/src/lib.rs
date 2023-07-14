@@ -180,7 +180,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
             }
             ExprHead::Monadic(TypeUnOp::ByteParser, inner) => {
                 let int = self.infctx.int();
-                let from = self.infctx.array(ArrayKind::For, int);
+                let from = self.infctx.array(ArrayKind::Each, int);
                 let inner = match &expr.expr[*inner] {
                     ExprHead::Niladic(hir::TypeAtom::ParserDef(pd)) => {
                         self.resolve_type_expr_parserdef_ref(pd, Some(from), span, id)?
@@ -333,6 +333,22 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
             _ => Ok(()),
         })
     }
+
+    fn infer_block(&mut self, b: hir::BlockId) -> Result<InfTypeId<'intern>, TypeError> {
+        let block = b.lookup(self.db)?;
+        Ok(if block.returns {
+            let from = self.infctx.var();
+            let to_id = block.root_context.0.child_field(self.db, FieldName::Return);
+            let to = self.inftypes[&to_id];
+            self.infctx.parser(to, from)
+        } else {
+            let pd = self.db.hir_parent_parserdef(b.0)?;
+            let ty_vars = (0..self.loc.vars.defs.len() as u32)
+                .map(|i| self.infctx.intern_infty(InferenceType::TypeVarRef(pd.0, i)))
+                .collect::<Vec<_>>();
+            self.infctx.block_call(b.0, &ty_vars)?
+        })
+    }
     pub fn val_expression_type(
         &mut self,
         expr: &resolve::ResolvedExpr,
@@ -369,6 +385,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                             self.infctx.constrain(inner, int)?;
                             int
                         }
+                        ValUnOp::Array => unreachable!(),
                         ValUnOp::Wiggle(c, _) => {
                             let (inner, cont) = self.infctx.if_checked(inner)?;
                             let expr = self.db.lookup_intern_hir_constraint(*c);
@@ -388,24 +405,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         ResolvedAtom::Nil => self.infctx.nil(),
                         ResolvedAtom::Array => self.infctx.array_parser(),
                         ResolvedAtom::Regex(..) => self.infctx.regex(),
-                        ResolvedAtom::Block(b) => {
-                            let block = b.lookup(self.db)?;
-                            if block.returns {
-                                let from = self.infctx.var();
-                                let to_id =
-                                    block.root_context.0.child_field(self.db, FieldName::Return);
-                                let to = self.inftypes[&to_id];
-                                self.infctx.parser(to, from)
-                            } else {
-                                let pd = self.db.hir_parent_parserdef(b.0)?;
-                                let ty_vars = (0..self.loc.vars.defs.len() as u32)
-                                    .map(|i| {
-                                        self.infctx.intern_infty(InferenceType::TypeVarRef(pd.0, i))
-                                    })
-                                    .collect::<Vec<_>>();
-                                self.infctx.block_call(b.0, &ty_vars)?
-                            }
-                        }
+                        ResolvedAtom::Block(b) => self.infer_block(*b)?,
                         ResolvedAtom::ParserDef(pd, _) => self.infctx.parserdef(pd.0)?,
                         ResolvedAtom::Val(v, _) | ResolvedAtom::Captured(v, _) => {
                             self.infctx.lookup(*v)?
