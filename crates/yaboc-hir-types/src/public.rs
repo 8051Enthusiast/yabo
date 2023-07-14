@@ -227,7 +227,7 @@ mod tests {
     fn public_types() {
         let ctx = Context::<HirTypesTestDatabase>::mock(
             r#"
-def for['t] *> expr1 = {
+def each['t] *> expr1 = {
     a: ~
     b: ~
     c: {
@@ -241,12 +241,12 @@ def each[int] *> expr2 = {
     | let y: int = 3
     | y: ~
 }
-def for[int] *> expr3 = ~
-def for[int] *> expr4 = {
+def each[int] *> expr3 = ~
+def each[int] *> expr4 = {
     | x: expr3
     | let x: int = 3
 }
-def for[for[int]] *> expr5 = {
+def each[each[int]] *> expr5 = {
     x: ~ |> expr3
 }
             "#,
@@ -273,12 +273,12 @@ def for[for[int]] *> expr5 = {
         assert_eq!("'0", public_type("expr1", &["a"]));
         assert_eq!("'0", public_type("expr1", &["b"]));
         assert_eq!(
-            "<anonymous block for['0] &> file[_].expr1.1.0.0.c.0.0>",
+            "<anonymous block each['0] &> file[_].expr1.1.0.0.c.0.0>",
             public_type("expr1", &["c"])
         );
         assert_eq!("int", public_type("expr1", &["c", "d"]));
         assert_eq!("'0", public_type("expr1", &["c", "e"]));
-        assert_eq!("for[int] &> file[_].expr1", public_type("expr2", &["x"]));
+        assert_eq!("each[int] &> file[_].expr1", public_type("expr2", &["x"]));
         assert_eq!("int", public_type("expr2", &["y"]));
         assert_eq!("int", public_type("expr4", &["x"]));
         //assert_eq!("for[int] &> file[_].expr3", public_type("expr5", &["x"]));

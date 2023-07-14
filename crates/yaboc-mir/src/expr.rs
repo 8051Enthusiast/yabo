@@ -371,6 +371,7 @@ impl<'a> ConvertExpr<'a> {
                         self.f.int_un_op(place_ref, op, inner);
                         place_ref
                     }
+                    ValUnOp::Array => unreachable!(),
                     ValUnOp::Wiggle(constr, kind) => {
                         if matches!(self.db.lookup_intern_type(ty), Type::ParserArg { .. }) {
                             let place_ref = self.unwrap_or_stack(place, ty, origin);

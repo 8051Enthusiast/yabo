@@ -7,7 +7,6 @@ use crate::{expr::Atom, ArrayKind, Asts, ConstraintAtom};
 impl<DB: Asts + ?Sized> StableHash<DB> for ArrayKind {
     fn update_hash(&self, state: &mut sha2::Sha256, db: &DB) {
         match self {
-            ArrayKind::For => 0u8,
             ArrayKind::Each => 1,
         }
         .update_hash(state, db)

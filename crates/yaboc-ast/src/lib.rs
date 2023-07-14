@@ -401,29 +401,13 @@ pub struct TypeArray {
     pub expr: TypeExpression,
     pub span: Span,
 }
-#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub enum ArrayKind {
-    For,
+    // some day
+    //For,
     Each,
 }
 
-impl PartialOrd for ArrayKind {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for ArrayKind {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match (self, other) {
-            (ArrayKind::For, ArrayKind::Each) => std::cmp::Ordering::Greater,
-            (ArrayKind::Each, ArrayKind::For) => std::cmp::Ordering::Less,
-            (ArrayKind::For, ArrayKind::For) | (ArrayKind::Each, ArrayKind::Each) => {
-                std::cmp::Ordering::Equal
-            }
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {

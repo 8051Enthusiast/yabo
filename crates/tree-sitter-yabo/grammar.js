@@ -190,7 +190,6 @@ module.exports = grammar({
       $.parser_block,
       $.single,
       $.nil,
-      $.array,
       seq('(', $._expression, ')'),
       $._atom,
     ),
@@ -271,10 +270,17 @@ module.exports = grammar({
         ))
       }));
     },
-    unary_expression: $ => prec(PREC.UNARY, seq(
-      field('op', choice('-', '!', 'if')),
-      field('right', $._expression)
-    )),
+    unary_expression: $ => prec(PREC.UNARY, choice(
+      seq(
+        field('op', choice('-', '!', 'if')),
+        field('right', $._expression)
+      ),
+      seq(
+        field('op', '['),
+        field('right', $._expression),
+        ']'
+      ))
+    ),
     _type_atom: $ => choice(
       $.primitive_type,
       $.type_var,
@@ -341,7 +347,6 @@ module.exports = grammar({
     ),
     single: $ => '~',
     nil: $ => '+',
-    array: $ => '[~]',
     not_eof: $ => '!eof',
     type_var: $ => /\'[A-Za-z_][A-Za-z_0-9]*/,
     bt_name: $ => seq(

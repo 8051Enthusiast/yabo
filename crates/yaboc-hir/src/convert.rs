@@ -240,7 +240,7 @@ fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDef
         let expr = Expression::new_niladic(OpWithData {
             inner: ast::TypeAtom::Array(Box::new(ast::TypeArray {
                 direction: Spanned {
-                    inner: ArrayKind::For,
+                    inner: ArrayKind::Each,
                     span,
                 },
                 expr: Expression::new_niladic(OpWithData {

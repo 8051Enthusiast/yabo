@@ -713,7 +713,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     }
     pub fn single(&mut self) -> InfTypeId<'intern> {
         let ty_var = self.var();
-        let for_loop = self.intern_infty(InferenceType::Loop(ArrayKind::For, ty_var));
+        let for_loop = self.intern_infty(InferenceType::Loop(ArrayKind::Each, ty_var));
         self.intern_infty(InferenceType::ParserArg {
             result: ty_var,
             arg: for_loop,
@@ -721,7 +721,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     }
     pub fn nil(&mut self) -> InfTypeId<'intern> {
         let ty_var = self.var();
-        let for_loop = self.intern_infty(InferenceType::Loop(ArrayKind::For, ty_var));
+        let for_loop = self.intern_infty(InferenceType::Loop(ArrayKind::Each, ty_var));
         let unit_type = self.intern_infty(InferenceType::Primitive(PrimitiveType::Unit));
         self.intern_infty(InferenceType::ParserArg {
             result: unit_type,
@@ -730,15 +730,21 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     }
     pub fn regex(&mut self) -> InfTypeId<'intern> {
         let int = self.int();
-        let int_array = self.array(ArrayKind::For, int);
+        let int_array = self.array(ArrayKind::Each, int);
         self.parser(int_array, int_array)
     }
     pub fn array_parser(&mut self) -> InfTypeId<'intern> {
+        // the type of an array is each['t] *> each['r](for['t] *> 'r, int)
         let int = self.int();
-        let int_array = self.array(ArrayKind::For, int);
-        let inner = self.parser(int_array, int_array);
-        let int_args = self.intern_infty_slice(&[int]);
-        self.function(inner, int_args)
+        let from = self.var();
+        let to = self.var();
+        let from_array = self.array(ArrayKind::Each, from);
+        let from_for_array = self.array(ArrayKind::Each, from);
+        let to_array = self.array(ArrayKind::Each, to);
+        let parser_arg = self.parser(to, from_for_array);
+        let returned_parser = self.parser(to_array, from_array);
+        let args = self.intern_infty_slice(&[parser_arg, int]);
+        self.function(returned_parser, args)
     }
     pub fn type_var(&mut self, id: DefId, index: u32) -> InfTypeId<'intern> {
         let inftype = InferenceType::TypeVarRef(id, index);
@@ -776,17 +782,6 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         let arg = self.var();
         let parser = self.parser(result, arg);
         self.constrain(ty, parser)
-    }
-    pub fn array_call(
-        &mut self,
-        kind: ArrayKind,
-        inner: InfTypeId<'intern>,
-    ) -> Result<InfTypeId<'intern>, TypeError> {
-        let arg = self.var();
-        let result = self.parser_apply(inner, arg)?;
-        let array = InferenceType::Loop(kind, result);
-        let array = self.intern_infty(array);
-        Ok(self.parser(array, arg))
     }
     pub fn block_call(
         &mut self,
