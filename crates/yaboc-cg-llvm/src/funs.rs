@@ -745,6 +745,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let (ret_val, parser, mut arg) = parser_values(llvm_fun, layout, from);
         let arg_copy = self.build_alloca_value(from, "arg_copy");
         let ret_buf = self.build_alloca_mono_value(result_layout, "ret_buf");
+        let int_buf = self.build_alloca_int("inner_parser_len");
         // make sure we don't modify the original arg if the length is not required
         if !req.contains(NeededBy::Len) {
             let arg_second_copy = self.build_alloca_value(from, "arg_second_copy");
@@ -757,10 +758,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let len_ptr =
             self.build_byte_gep(parser.ptr, self.const_size_t(len_offset as i64), "len_ptr");
         let len = self.build_i64_load(len_ptr, "len");
+        let parser_len = if let MonoLayout::SlicePtr = result_layout.mono_layout().0 {
+            self.const_i64(1)
+        } else {
+            let inner_parser = self.build_array_parser_get(parser);
+            let status = self.call_len_fun(int_buf.ptr, inner_parser);
+            self.non_zero_early_return(llvm_fun, status);
+            self.build_i64_load(int_buf.ptr, "parser_len")
+        };
+        let full_len = self.builder.build_int_mul(len, parser_len, "full_len");
         let slice_len = self.call_array_len_fun(arg);
         let is_out_of_bounds =
             self.builder
-                .build_int_compare(IntPredicate::ULT, slice_len, len, "is_out_of_bounds");
+                .build_int_compare(IntPredicate::ULT, slice_len, full_len, "is_out_of_bounds");
         let succ_block = self.llvm.append_basic_block(llvm_fun, "succ");
         let fail_block = self.llvm.append_basic_block(llvm_fun, "fail");
         self.builder
@@ -769,7 +779,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.builder
             .build_return(Some(&self.const_i64(ReturnStatus::Eof as i64)));
         self.builder.position_at_end(succ_block);
-        let ret = self.call_skip_fun(arg, len);
+        let ret = self.call_skip_fun(arg, full_len);
         self.non_zero_early_return(llvm_fun, ret);
         if req.contains(NeededBy::Val) {
             let inner_slice = if let (MonoLayout::SlicePtr, _) = result_layout.mono_layout() {
