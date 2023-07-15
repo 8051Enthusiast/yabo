@@ -1,0 +1,8 @@
+====[ source code ]====
+import std
+def *a = [std.basenum(16)](4)
+          #~^ error[601] nonsized parser where sized parser is expected
+
+# regex is unicode aware and therefore not constant size in bytes
+def *b = [/./](4)
+          #~^ error[601] nonsized parser where sized parser is expected

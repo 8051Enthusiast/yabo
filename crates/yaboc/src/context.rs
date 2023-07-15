@@ -21,6 +21,7 @@ const ERROR_FNS: &[fn(&YabocDatabase) -> Vec<Report>] = &[
     yaboc_resolve::error::errors,
     yaboc_dependents::error::errors,
     yaboc_hir_types::error::errors,
+    yaboc_constraint::error::errors,
 ];
 
 #[derive(Default)]

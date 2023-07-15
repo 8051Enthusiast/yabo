@@ -136,7 +136,8 @@ impl<'a> SizeTermBuilder<'a> {
         mapped.try_fold(|(head, src)| match head {
             ExprHead::Niladic(n) => match n {
                 ResolvedAtom::Val(id, _) | ResolvedAtom::Captured(id, _) => {
-                    Ok(self.vals[&SubValue::new_val(id)])
+                    let referencing = self.vals[&SubValue::new_val(id)];
+                    Ok(self.push_term(Term::Copy(referencing), src))
                 }
                 ResolvedAtom::ParserDef(pd, _) => Ok(self.push_term(Term::Pd(pd), src)),
                 ResolvedAtom::Regex(r, _) => {

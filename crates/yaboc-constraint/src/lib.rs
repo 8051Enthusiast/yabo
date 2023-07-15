@@ -1,17 +1,22 @@
+pub mod error;
 mod len;
 pub mod represent;
 
 use std::sync::Arc;
 
 use fxhash::FxHashMap;
+use hir::HirIdWrapper;
 use salsa::InternKey;
 use yaboc_base::{
-    error::SResult,
+    error::{SResult, Silencable, SilencedError},
     interner::{Interner, Regex},
+    source::IndirectSpan,
 };
 use yaboc_dependents::Dependents;
 use yaboc_hir as hir;
-use yaboc_len::{regex::RegexError, ArgKind, Env, PolyCircuit, SizeCalcCtx, SmallBitVec, Val};
+use yaboc_len::{
+    regex::RegexError, ArgKind, Env, PolyCircuit, SizeCalcCtx, SmallBitVec, Term, Val,
+};
 use yaboc_resolve::{parserdef_ssc::FunctionSscId, Resolves};
 
 use len::len_term;
@@ -25,6 +30,7 @@ pub trait Constraints: Interner + Resolves + Dependents {
     fn fun_len(&self, pd: hir::ParserDefId) -> LenVal;
     fn len_vals(&self, pd: hir::ParserDefId) -> Arc<LenVals>;
     fn ssc_len_vals(&self, ssc: FunctionSscId) -> Arc<Vec<LenVals>>;
+    fn len_errors(&self, pd: hir::ParserDefId) -> SResult<Vec<LenError>>;
 
     #[salsa::interned]
     fn intern_polycircuit(&self, circuit: Arc<PolyCircuit>) -> PolyCircuitId;
@@ -213,6 +219,86 @@ pub fn len_vals(db: &dyn Constraints, pd: hir::ParserDefId) -> Arc<LenVals> {
     let idx = pds.iter().position(|x| *x == pd).unwrap();
     let fun_vals = db.ssc_len_vals(ssc);
     Arc::new(fun_vals[idx].clone())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum LenError {
+    NonsizedInArray(IndirectSpan),
+    SizedWithNonsizedArg {
+        loc: IndirectSpan,
+        arg_loc: IndirectSpan,
+    },
+    Silenced(SilencedError),
+}
+
+impl Silencable for LenError {
+    type Out = SilencedError;
+
+    fn silence(self) -> Self::Out {
+        match self {
+            LenError::Silenced(e) => e,
+            LenError::NonsizedInArray(_) | LenError::SizedWithNonsizedArg { .. } => {
+                SilencedError::new()
+            }
+        }
+    }
+}
+
+impl From<SilencedError> for LenError {
+    fn from(e: SilencedError) -> Self {
+        LenError::Silenced(e)
+    }
+}
+
+pub fn len_errors(db: &dyn Constraints, pd: hir::ParserDefId) -> SResult<Vec<LenError>> {
+    let parserdef = pd.lookup(db)?;
+    let sig = db.parser_args(pd)?;
+    let int_ty = db.int();
+    let is_arg_sized: Vec<_> = sig
+        .args
+        .iter()
+        .flat_map(|x| x.iter())
+        .map(|x| x == &int_ty)
+        .collect();
+    let terms = db.len_term(pd)?;
+    let lens = db.len_vals(pd);
+    let mut errs = Vec::new();
+    let get_span = |idx| -> SResult<_> {
+        match terms.term_spans[idx] {
+            Origin::Expr(expr, idx) => {
+                let span_idx = db.resolve_expr(expr)?.data[idx];
+                Ok(IndirectSpan::new(expr.0, span_idx))
+            }
+            Origin::Node(id) => Ok(IndirectSpan::default_span(id)),
+        }
+    };
+    let arg_deps = terms.expr.static_arg_deps(is_arg_sized.len());
+    for term in terms.expr.terms.iter() {
+        let Term::Apply([arr, arg]) = term else {
+            continue;
+        };
+        if terms.expr.terms[*arr] != Term::Arr {
+            continue;
+        }
+        if lens.vals[*arg].is_dynamic() {
+            errs.push(LenError::NonsizedInArray(get_span(*arg)?));
+            continue;
+        }
+        for (j, _) in is_arg_sized.iter().enumerate().filter(|(_, x)| !*x) {
+            if !arg_deps[*arg][j] {
+                continue;
+            }
+            let arg_id = parserdef.args.as_ref().unwrap()[j];
+            let arg_span = IndirectSpan::default_span(arg_id.0);
+            errs.push(LenError::SizedWithNonsizedArg {
+                loc: get_span(*arg)?,
+                arg_loc: arg_span,
+            });
+            break;
+        }
+    }
+
+    Ok(errs)
 }
 
 #[cfg(test)]

@@ -150,7 +150,10 @@ def [expr3] *> expr5 = {}
         assert_eq!("[int]", arg_type("expr1"));
         assert_eq!("[[int] &> file[_].expr1]", arg_type("expr2"));
         assert_eq!("['0]", arg_type("expr3"));
-        assert_eq!("[[[int] &> file[_].expr1] *> [[int] &> file[_].expr1] &> file[_].expr2]", arg_type("expr4"));
+        assert_eq!(
+            "[[[int] &> file[_].expr1] *> [[int] &> file[_].expr1] &> file[_].expr2]",
+            arg_type("expr4")
+        );
         assert_eq!("[['0] &> file[_].expr3]", arg_type("expr5"));
     }
 }
