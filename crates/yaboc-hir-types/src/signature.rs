@@ -131,11 +131,11 @@ mod tests {
     fn arg_types() {
         let ctx = Context::<HirTypesTestDatabase>::mock(
             r#"
-def each[int] *> expr1 = {}
-def each[for[int] &> expr1] *> expr2 = {}
-def each['x] *> expr3 = {}
-def each[for[expr1] *> expr2] *> expr4 = {}
-def each[expr3] *> expr5 = {}
+def [int] *> expr1 = {}
+def [[int] &> expr1] *> expr2 = {}
+def ['x] *> expr3 = {}
+def [[expr1] *> expr2] *> expr4 = {}
+def [expr3] *> expr5 = {}
             "#,
         );
         let arg_type = |name| {
@@ -147,10 +147,10 @@ def each[expr3] *> expr5 = {}
                 .unwrap()
                 .to_db_string(&ctx.db)
         };
-        assert_eq!("each[int]", arg_type("expr1"));
-        assert_eq!("each[each[int] &> file[_].expr1]", arg_type("expr2"));
-        assert_eq!("each['0]", arg_type("expr3"));
-        assert_eq!("each[each[each[int] &> file[_].expr1] *> each[each[int] &> file[_].expr1] &> file[_].expr2]", arg_type("expr4"));
-        assert_eq!("each[each['0] &> file[_].expr3]", arg_type("expr5"));
+        assert_eq!("[int]", arg_type("expr1"));
+        assert_eq!("[[int] &> file[_].expr1]", arg_type("expr2"));
+        assert_eq!("['0]", arg_type("expr3"));
+        assert_eq!("[[[int] &> file[_].expr1] *> [[int] &> file[_].expr1] &> file[_].expr2]", arg_type("expr4"));
+        assert_eq!("[['0] &> file[_].expr3]", arg_type("expr5"));
     }
 }

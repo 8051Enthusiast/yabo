@@ -734,7 +734,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         self.parser(int_array, int_array)
     }
     pub fn array_parser(&mut self) -> InfTypeId<'intern> {
-        // the type of an array is each['t] *> each['r](for['t] *> 'r, int)
+        // the type of an array is ['t] *> ['r](['t] *> 'r, int)
         let int = self.int();
         let from = self.var();
         let to = self.var();

@@ -1112,14 +1112,14 @@ mod tests {
     fn layouts() {
         let ctx = Context::<LayoutTestDatabase>::mock(
             r"
-def for[int] *> first = ~
-def for[int] *> second = ~
-def for[int] *> main = {
+def [int] *> first = ~
+def [int] *> second = ~
+def [int] *> main = {
     a: ~
     b: ~
     c: {
-      | let c: for[int] *> first = first
-      | let c: for[int] *> second = second?
+      | let c: [int] *> first = first
+      | let c: [int] *> second = second?
     }
     d: c.c
 }
@@ -1195,8 +1195,8 @@ def for[int] *> main = {
                 .unwrap()
         );
         assert!(
-            ["nominal-parser?[each[int] *> each[int] &> file[_].second]() | nominal-parser[each[int] *> each[int] &> file[_].first]()",
-             "nominal-parser[each[int] *> each[int] &> file[_].first]() | nominal-parser?[each[int] *> each[int] &> file[_].second]()"]
+            ["nominal-parser?[[int] *> [int] &> file[_].second]() | nominal-parser[[int] *> [int] &> file[_].first]()",
+             "nominal-parser[[int] *> [int] &> file[_].first]() | nominal-parser?[[int] *> [int] &> file[_].second]()"]
             .contains(&out.as_str())
         );
         assert_eq!(

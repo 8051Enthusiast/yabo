@@ -36,10 +36,7 @@ impl<'a, DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeId<'a> {
                 }
                 Ok(())
             }
-            InferenceType::Loop(k, inner) => {
-                match k {
-                    ArrayKind::Each => write!(f, "each")?,
-                };
+            InferenceType::Loop(ArrayKind::Each, inner) => {
                 dbwrite!(f, db, "[{}]", inner)
             }
             InferenceType::ParserArg { result, arg } => {
@@ -175,9 +172,7 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeHead {
             InfTypeHead::Nominal(def) => {
                 dbwrite!(f, db, "{}", def)
             }
-            InfTypeHead::Loop(kind) => match kind {
-                ArrayKind::Each => write!(f, "each array"),
-            },
+            InfTypeHead::Loop(ArrayKind::Each) => write!(f, "array"),
             InfTypeHead::ParserArg => write!(f, "a parser"),
             InfTypeHead::FunctionArgs(arg) => write!(f, "a function with {arg} arguments"),
             InfTypeHead::Unknown => write!(f, "unknon"),
@@ -227,10 +222,7 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for TypeId {
                 }
                 Ok(())
             }
-            Type::Loop(k, inner) => {
-                match k {
-                    ArrayKind::Each => write!(f, "each")?,
-                };
+            Type::Loop(ArrayKind::Each, inner) => {
                 dbwrite!(f, db, "[{}]", &inner)
             }
             Type::ParserArg { result, arg } => {

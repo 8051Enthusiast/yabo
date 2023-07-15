@@ -12,7 +12,7 @@ use expr::{Unused, *};
 use yaboc_base::{
     error::{SResult, Silencable},
     interner::{FieldName, Identifier, Interner, Regex, TypeVar},
-    source::{FieldSpan, FileId, Files, IdSpan, Span, Spanned},
+    source::{FieldSpan, FileId, Files, IdSpan, Span},
 };
 
 use convert::ParseResult;
@@ -397,7 +397,6 @@ impl From<Range> for ConstraintAtom {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct TypeArray {
-    pub direction: Spanned<ArrayKind>,
     pub expr: TypeExpression,
     pub span: Span,
 }
@@ -427,7 +426,7 @@ mod tests {
     fn nested_choice() {
         let ctx = Context::<AstTestDatabase>::mock(
             r#"
-def for[u8] *> expr1 = {
+def [u8] *> expr1 = {
   x: u64
   | let b: u64 = 3
   | | let a: u64 = 0

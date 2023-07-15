@@ -305,7 +305,7 @@ mod tests {
     fn poly_size() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            fun for['a] *> compose(a: for['a] *> for['b], b: for['b] *> 'c) = {
+            fun ['a] *> compose(a: ['a] *> ['b], b: ['b] *> 'c) = {
               x: a, let return = x *> b
             }
         "#,
@@ -352,7 +352,7 @@ mod tests {
     fn dyn_recurse() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            fun for[int] *> number_acc(base: int, n: int): int = {
+            fun [int] *> number_acc(base: int, n: int): int = {
               x: ~
               let s = n * base + x
               | return: number_acc?(base, s)

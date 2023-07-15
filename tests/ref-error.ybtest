@@ -1,5 +1,5 @@
 ====[ source code ]====
-export def for[int] *> test = {
+export def [int] *> test = {
     let b: int = c
     #~^ error[301] could not resolve name
 }

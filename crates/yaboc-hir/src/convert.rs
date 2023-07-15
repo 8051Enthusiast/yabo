@@ -6,7 +6,7 @@ use yaboc_expr::{DataExpr, ExprHead};
 
 use super::*;
 use yaboc_ast::{self as ast, expr::OpWithData, TopLevelStatement};
-use yaboc_base::{error::Silencable, error_type, source::Spanned};
+use yaboc_base::{error::Silencable, error_type};
 
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum HirConversionError {
@@ -183,7 +183,7 @@ fn convert_type_expression(
                 ast::TypeAtom::Array(arr) => {
                     let new_expr = convert_type_expression(&arr.expr, ctx, add_span);
                     ExprHead::Niladic(TypeAtom::Array(Box::new(TypeArray {
-                        direction: arr.direction.inner,
+                        direction: ArrayKind::Each,
                         expr: new_expr,
                     })))
                 }
@@ -236,13 +236,9 @@ fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDef
         type_expression(f, ctx, from);
     } else {
         let span = ast.name.span;
-        // desugars to for[int]
+        // desugars to [int]
         let expr = Expression::new_niladic(OpWithData {
             inner: ast::TypeAtom::Array(Box::new(ast::TypeArray {
-                direction: Spanned {
-                    inner: ArrayKind::Each,
-                    span,
-                },
                 expr: Expression::new_niladic(OpWithData {
                     inner: ast::TypeAtom::Primitive(ast::TypePrimitive::Int),
                     data: ast.span,

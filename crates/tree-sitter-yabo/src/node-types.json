@@ -230,10 +230,6 @@
             "named": true
           },
           {
-            "type": "parser_array",
-            "named": true
-          },
-          {
             "type": "parser_block",
             "named": true
           },
@@ -379,10 +375,6 @@
           },
           {
             "type": "number_literal",
-            "named": true
-          },
-          {
-            "type": "parser_array",
             "named": true
           },
           {
@@ -606,10 +598,6 @@
             "named": true
           },
           {
-            "type": "parser_array",
-            "named": true
-          },
-          {
             "type": "parser_block",
             "named": true
           },
@@ -742,10 +730,6 @@
             "named": true
           },
           {
-            "type": "parser_array",
-            "named": true
-          },
-          {
             "type": "parser_block",
             "named": true
           },
@@ -809,10 +793,6 @@
           },
           {
             "type": "number_literal",
-            "named": true
-          },
-          {
-            "type": "parser_array",
             "named": true
           },
           {
@@ -901,10 +881,6 @@
           },
           {
             "type": "number_literal",
-            "named": true
-          },
-          {
-            "type": "parser_array",
             "named": true
           },
           {
@@ -1056,100 +1032,6 @@
           },
           {
             "type": "number_literal",
-            "named": true
-          },
-          {
-            "type": "parser_array",
-            "named": true
-          },
-          {
-            "type": "parser_block",
-            "named": true
-          },
-          {
-            "type": "regex_literal",
-            "named": true
-          },
-          {
-            "type": "single",
-            "named": true
-          },
-          {
-            "type": "unary_expression",
-            "named": true
-          },
-          {
-            "type": "val_dot",
-            "named": true
-          }
-        ]
-      }
-    }
-  },
-  {
-    "type": "parser_array",
-    "named": true,
-    "fields": {
-      "direction": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "each",
-            "named": false
-          },
-          {
-            "type": "for",
-            "named": false
-          }
-        ]
-      },
-      "expr": {
-        "multiple": true,
-        "required": true,
-        "types": [
-          {
-            "type": "(",
-            "named": false
-          },
-          {
-            "type": ")",
-            "named": false
-          },
-          {
-            "type": "binary_expression",
-            "named": true
-          },
-          {
-            "type": "bool_literal",
-            "named": true
-          },
-          {
-            "type": "bt_name",
-            "named": true
-          },
-          {
-            "type": "char_literal",
-            "named": true
-          },
-          {
-            "type": "constraint_apply",
-            "named": true
-          },
-          {
-            "type": "fun_application",
-            "named": true
-          },
-          {
-            "type": "nil",
-            "named": true
-          },
-          {
-            "type": "number_literal",
-            "named": true
-          },
-          {
-            "type": "parser_array",
             "named": true
           },
           {
@@ -1393,10 +1275,6 @@
             "named": true
           },
           {
-            "type": "parser_array",
-            "named": true
-          },
-          {
             "type": "parser_block",
             "named": true
           },
@@ -1610,20 +1488,6 @@
     "type": "type_array",
     "named": true,
     "fields": {
-      "direction": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "each",
-            "named": false
-          },
-          {
-            "type": "for",
-            "named": false
-          }
-        ]
-      },
       "expr": {
         "multiple": true,
         "required": true,
@@ -1976,10 +1840,6 @@
             "named": true
           },
           {
-            "type": "parser_array",
-            "named": true
-          },
-          {
             "type": "parser_block",
             "named": true
           },
@@ -2111,10 +1971,6 @@
           },
           {
             "type": "number_literal",
-            "named": true
-          },
-          {
-            "type": "parser_array",
             "named": true
           },
           {
@@ -2306,10 +2162,6 @@
     "named": false
   },
   {
-    "type": "each",
-    "named": false
-  },
-  {
     "type": "else",
     "named": false
   },
@@ -2319,10 +2171,6 @@
   },
   {
     "type": "false",
-    "named": false
-  },
-  {
-    "type": "for",
     "named": false
   },
   {

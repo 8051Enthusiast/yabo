@@ -1,11 +1,11 @@
 ====[ source code ]====
-def for[int] *> block = {
+def [int] *> block = {
   tag: ~
   | let ignore: int = tag if 1
     next: block
   | more: ~
 }
-export def for[int] *> test = {
+export def [int] *> test = {
   a: block
   b: block
 }

@@ -71,7 +71,7 @@ fn make_report(db: &(impl Resolves + ?Sized), err: &ResolveError) -> Option<Repo
             .with_label(Label::new(span).with_message("module used here"));
             Some(report)
         }
-        ResolveError::Silenced => None,
+        ResolveError::Silenced(_) => None,
     }
 }
 
