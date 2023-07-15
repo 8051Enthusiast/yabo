@@ -578,6 +578,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.builder.build_return(None);
     }
 
+    pub fn create_max_buf_size(&mut self) {
+        let size =
+            self.const_size_t(self.collected_layouts.max_sa.size as i64 + self.word_size() as i64);
+        let buf_size = self
+            .module
+            .add_global(size.get_type(), None, "yabo_max_buf_size");
+        buf_size.set_initializer(&size);
+        buf_size.set_linkage(Linkage::External);
+        buf_size.set_constant(true);
+    }
+
     pub fn llvm_code(self, outfile: &OsStr) -> Result<(), LLVMString> {
         //self.module.verify()?;
         //self.module

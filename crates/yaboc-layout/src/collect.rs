@@ -52,6 +52,7 @@ pub struct LayoutCollection<'a> {
     pub parser_slots: CallSlotResult<'a, (ILayout<'a>, CallMeta)>,
     pub funcall_slots: CallSlotResult<'a, ILayout<'a>>,
     pub tail_sa: FxHashMap<(ILayout<'a>, IMonoLayout<'a>), Option<SizeAlign>>,
+    pub max_sa: SizeAlign,
 }
 
 pub struct LayoutCollector<'a, 'b> {
@@ -66,6 +67,7 @@ pub struct LayoutCollector<'a, 'b> {
     functions: LayoutSet<'a>,
     lens: LayoutSet<'a>,
     root: Vec<(ILayout<'a>, IMonoLayout<'a>)>,
+    max_sa: SizeAlign,
     processed_calls: FxHashSet<(ILayout<'a>, IMonoLayout<'a>, CallMeta)>,
     unprocessed: Vec<UnprocessedCall<'a>>,
 }
@@ -93,6 +95,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             parsers: Default::default(),
             functions: Default::default(),
             lens: Default::default(),
+            max_sa: Default::default(),
             processed_calls: Default::default(),
             unprocessed: Default::default(),
             root: Default::default(),
@@ -101,6 +104,9 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
 
     fn register_layouts(&mut self, layout: ILayout<'a>) {
         for mono in &layout {
+            if let Ok(sa) = mono.inner().size_align_without_vtable(self.ctx) {
+                self.max_sa = self.max_sa.union(sa);
+            }
             match &mono.mono_layout().0 {
                 MonoLayout::SlicePtr => {
                     if self.arrays.insert(mono) && TRACE_COLLECTION {
@@ -599,6 +605,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             parsers: self.parsers,
             functions: self.functions,
             lens: self.lens,
+            max_sa: self.max_sa,
             primitives,
             parser_slots,
             funcall_slots,
