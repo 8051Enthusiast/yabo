@@ -121,12 +121,12 @@ pub enum ResolveError {
     Unresolved(ExprId, SpanIndex, FieldName),
     CyclicImport(Arc<Vec<FileId>>),
     ModuleInExpression(ExprId, SpanIndex),
-    Silenced,
+    Silenced(SilencedError),
 }
 
 impl From<SilencedError> for ResolveError {
-    fn from(_: SilencedError) -> Self {
-        ResolveError::Silenced
+    fn from(e: SilencedError) -> Self {
+        ResolveError::Silenced(e)
     }
 }
 
@@ -134,7 +134,10 @@ impl Silencable for ResolveError {
     type Out = SilencedError;
 
     fn silence(self) -> Self::Out {
-        SilencedError::new()
+        match self {
+            ResolveError::Silenced(e) => e,
+            _ => SilencedError::new(),
+        }
     }
 }
 

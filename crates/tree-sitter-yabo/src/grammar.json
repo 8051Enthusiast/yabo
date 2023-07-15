@@ -416,23 +416,6 @@
       "type": "SEQ",
       "members": [
         {
-          "type": "FIELD",
-          "name": "direction",
-          "content": {
-            "type": "CHOICE",
-            "members": [
-              {
-                "type": "STRING",
-                "value": "for"
-              },
-              {
-                "type": "STRING",
-                "value": "each"
-              }
-            ]
-          }
-        },
-        {
           "type": "STRING",
           "value": "["
         },
@@ -442,44 +425,6 @@
           "content": {
             "type": "SYMBOL",
             "name": "_type_expression"
-          }
-        },
-        {
-          "type": "STRING",
-          "value": "]"
-        }
-      ]
-    },
-    "parser_array": {
-      "type": "SEQ",
-      "members": [
-        {
-          "type": "FIELD",
-          "name": "direction",
-          "content": {
-            "type": "CHOICE",
-            "members": [
-              {
-                "type": "STRING",
-                "value": "for"
-              },
-              {
-                "type": "STRING",
-                "value": "each"
-              }
-            ]
-          }
-        },
-        {
-          "type": "STRING",
-          "value": "["
-        },
-        {
-          "type": "FIELD",
-          "name": "expr",
-          "content": {
-            "type": "SYMBOL",
-            "name": "_expression"
           }
         },
         {
@@ -795,10 +740,6 @@
         {
           "type": "SYMBOL",
           "name": "constraint_apply"
-        },
-        {
-          "type": "SYMBOL",
-          "name": "parser_array"
         },
         {
           "type": "SYMBOL",

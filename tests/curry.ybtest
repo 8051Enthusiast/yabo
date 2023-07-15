@@ -1,15 +1,15 @@
 ====[ source code ]====
-def for[int] *> linear_byte(m: int) = {
+def [int] *> linear_byte(m: int) = {
   byte: ~
   let return = m * byte
 }
 
-def for[int] *> affine_byte(m: int, a: int) = {
+def [int] *> affine_byte(m: int, a: int) = {
   byte: ~
   let return = m * byte + a
 }
 
-export def for[int] *> test = {
+export def [int] *> test = {
   tag: ~
   | let _ = tag if 0
     m: ~

@@ -148,7 +148,7 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for TypePrimitive {
 impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for TypeArray {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self.direction {
-            ArrayKind::Each => dbwrite!(f, db, "each[{}]", &W(&self.expr)),
+            ArrayKind::Each => dbwrite!(f, db, "[{}]", &W(&self.expr)),
         }
     }
 }

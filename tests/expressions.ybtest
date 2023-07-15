@@ -1,17 +1,17 @@
 ====[ source code ]====
-def for[int] *> i8l = {
+def [int] *> i8l = {
     byte: ~
     let sign_bit: int = byte & 0x80
     let return: int = byte - 2 * sign_bit
 }
 
-def for[int] *> i16l = {
+def [int] *> i16l = {
     lo: ~
     hi: i8l
     let return: int = lo + 256 * hi
 }
 
-export def for[int] *> test = {
+export def [int] *> test = {
     a: i16l
     unit: +
     b: i16l

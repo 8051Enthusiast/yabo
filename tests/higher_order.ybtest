@@ -1,16 +1,16 @@
 ====[ source code ]====
-def for[int] *> u16l = {
+def [int] *> u16l = {
   lo: ~
   hi: ~
   let return = lo | hi << 8
 }
 
-def for[int] *> higher_order(f: for[int] *> 't) = {
+def [int] *> higher_order(f: [int] *> 't) = {
   first: f
   second: f
 }
 
-export def for[int] *> test = {
+export def [int] *> test = {
   bytes: higher_order(~)
   shorts: higher_order(u16l)
 }

@@ -212,8 +212,8 @@ mod tests {
     fn test_type_expr() {
         let ctx = Context::<crate::tests::HirTypesTestDatabase>::mock(
             r#"
-def each['t] *> nil = {}
-def each['t] *> expr1 = {
+def ['t] *> nil = {}
+def ['t] *> expr1 = {
   a: ~
   b: {
     | let c: int = 2
@@ -221,25 +221,25 @@ def each['t] *> expr1 = {
     | let c: int = 1
   }
 }
-def each[int] *> expr2 = {
+def [int] *> expr2 = {
   x: expr1
   let y: int = 3 + x.a
 }
-def each[each[int]] *> expr4 = {
+def [[int]] *> expr4 = {
   x: ~ |> ~
-  let b: each[int] *> int = ~
+  let b: [int] *> int = ~
   y: ~ |> b
   let a: int = x + y
 }
-def each[int] *> expr5 = {
+def [int] *> expr5 = {
   x: expr2
   let b: expr2 = x
 }
-def each[int] *> expr6 = {
-  let expr3: each[int] *> expr5 = expr5
+def [int] *> expr6 = {
+  let expr3: [int] *> expr5 = expr5
   b: expr3
   inner: {
-    let expr3: each[int] *> expr2 = expr2
+    let expr3: [int] *> expr2 = expr2
     b: expr3
   }
 }
@@ -267,26 +267,26 @@ def each[int] *> expr6 = {
         assert_eq!(full_type("expr1", &["a"]), "'0");
         assert_eq!(full_type("expr1", &["b", "c"]), "int");
         assert_eq!(full_type("expr1", &["b", "d"]), "'0");
-        assert_eq!(full_type("expr2", &["x"]), "each[int] &> file[_].expr1");
+        assert_eq!(full_type("expr2", &["x"]), "[int] &> file[_].expr1");
         assert_eq!(full_type("expr2", &["y"]), "int");
         //assert_eq!(full_type("expr4", &["x"]), "int");
-        assert_eq!(full_type("expr4", &["b"]), "each[int] *> int");
+        assert_eq!(full_type("expr4", &["b"]), "[int] *> int");
         //assert_eq!(full_type("expr4", &["y"]), "int");
         assert_eq!(full_type("expr4", &["a"]), "int");
-        assert_eq!(full_type("expr5", &["x"]), "each[int] &> file[_].expr2");
-        assert_eq!(full_type("expr5", &["b"]), "each[int] &> file[_].expr2");
+        assert_eq!(full_type("expr5", &["x"]), "[int] &> file[_].expr2");
+        assert_eq!(full_type("expr5", &["b"]), "[int] &> file[_].expr2");
         assert_eq!(
             full_type("expr6", &["expr3"]),
-            "each[int] *> each[int] &> file[_].expr5"
+            "[int] *> [int] &> file[_].expr5"
         );
-        assert_eq!(full_type("expr6", &["b"]), "each[int] &> file[_].expr5");
+        assert_eq!(full_type("expr6", &["b"]), "[int] &> file[_].expr5");
         assert_eq!(
             full_type("expr6", &["inner", "expr3"]),
-            "each[int] *> each[int] &> file[_].expr2"
+            "[int] *> [int] &> file[_].expr2"
         );
         assert_eq!(
             full_type("expr6", &["inner", "b"]),
-            "each[int] &> file[_].expr2"
+            "[int] &> file[_].expr2"
         );
     }
 }

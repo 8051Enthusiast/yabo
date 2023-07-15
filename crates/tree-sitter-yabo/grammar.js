@@ -118,15 +118,8 @@ module.exports = grammar({
       $._dedent,
     ),
     type_array: $ => seq(
-      field('direction', choice('for', 'each')),
       '[',
       field('expr', $._type_expression),
-      ']',
-    ),
-    parser_array: $ => seq(
-      field('direction', choice('for', 'each')),
-      '[',
-      field('expr', $._expression),
       ']',
     ),
     constraint_apply: $ => prec.left(PREC.WIGGLE, seq(
@@ -186,7 +179,6 @@ module.exports = grammar({
       $.fun_application,
       $.val_dot,
       $.constraint_apply,
-      $.parser_array,
       $.parser_block,
       $.single,
       $.nil,

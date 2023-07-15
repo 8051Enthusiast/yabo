@@ -1,5 +1,5 @@
 ====[ source code ]====
-export def for[int] *> test = {
+export def [int] *> test = {
 	fst: ~
 	snd: ~
 }

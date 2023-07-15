@@ -317,9 +317,9 @@ mod tests {
     fn return_types() {
         let ctx = Context::<HirTypesTestDatabase>::mock(
             r#"
-def each['t] *> nil = {}
+def ['t] *> nil = {}
 def nil *> expr1 = {}
-def each[int] *> single = ~
+def [int] *> single = ~
             "#,
         );
         let return_type = |name| {
@@ -332,11 +332,11 @@ def each[int] *> single = ~
         };
         assert_eq!(
             return_type("nil"),
-            "<anonymous block each['0] &> file[_].nil.1.0>"
+            "<anonymous block ['0] &> file[_].nil.1.0>"
         );
         assert_eq!(
             return_type("expr1"),
-            "<anonymous block each['0] &> file[_].nil &> file[_].expr1.1.0>"
+            "<anonymous block ['0] &> file[_].nil &> file[_].expr1.1.0>"
         );
         assert_eq!(return_type("single"), "int");
     }
@@ -344,7 +344,7 @@ def each[int] *> single = ~
     fn block_with_return() {
         let ctx = Context::<HirTypesTestDatabase>::mock(
             r#"
-def each[int] *> u16l = {
+def [int] *> u16l = {
     low: ~
     high: ~
     let return: int = low + high * 256

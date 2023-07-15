@@ -481,7 +481,6 @@ astify! {
 
 astify! {
     struct type_array = TypeArray {
-        direction: array_direction[!],
         expr: expression(type_expression)[!],
     };
 }
@@ -833,18 +832,6 @@ fn node_to_string(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Strin
         .unwrap()
         .to_string();
     Ok(text)
-}
-
-fn array_direction(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Spanned<ArrayKind>> {
-    let str = spanned(node_to_string)(db, fd, c)?;
-    Ok(Spanned {
-        inner: match str.inner.as_str() {
-            "for" => ArrayKind::Each,
-            "each" => ArrayKind::Each,
-            otherwise => panic!("Unknown loop {otherwise}"),
-        },
-        span: str.span,
-    })
 }
 
 fn thunky_sign(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<bool> {

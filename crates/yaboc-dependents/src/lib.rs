@@ -837,9 +837,9 @@ def *main = {
     fn inner_choice() {
         let ctx = Context::<DependentsTestDatabase>::mock(
             r"
-def for['a] *> first = +
-def for['b] *> second = +
-def for[int] *> main = {
+def ['a] *> first = +
+def ['b] *> second = +
+def [int] *> main = {
     a: ~
     b: second?
     c: {
@@ -888,7 +888,7 @@ def for[int] *> main = {
     fn tail_return() {
         let ctx = Context::<DependentsTestDatabase>::mock(
             r"
-def for[int] *> main: int = {
+def [int] *> main: int = {
   x: ~
   | let _ = x if 3
     return: main
@@ -912,7 +912,7 @@ def for[int] *> main: int = {
     fn choice_ref_no_tail() {
         let ctx = Context::<DependentsTestDatabase>::mock(
             r"
-def for[int] *> main: int = {
+def [int] *> main: int = {
     x: ~
     let y = z if 3
     | let z = x if 3..4
@@ -933,7 +933,7 @@ def for[int] *> main: int = {
     fn bt_no_tail() {
         let ctx = Context::<DependentsTestDatabase>::mock(
             r"
-def for[int] *> main: int = {
+def [int] *> main: int = {
     x: ~ if 1..4
     | return: main?
     | let return = x if 1..2

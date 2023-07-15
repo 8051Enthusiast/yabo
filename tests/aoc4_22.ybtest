@@ -1,11 +1,11 @@
 ====[ source code ]====
 import std
 
-def for[int] *> range = {
+def [int] *> range = {
   start: std.basenum?(10), ~, end: std.basenum(10)
 }
 
-def for[int] *> is_subrange = {
+def [int] *> is_subrange = {
   a: range?, ~, b: range, std.newline
   | | std.assert?(a.start <= b.start)
       std.assert?(a.end >= b.end)
