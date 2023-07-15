@@ -124,6 +124,7 @@ impl Driver {
         codegen.create_all_funs();
         codegen.create_pd_exports();
         codegen.create_free_fun();
+        codegen.create_max_buf_size();
         f(codegen).map_err(|x| x.to_string())
     }
 
