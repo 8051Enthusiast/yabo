@@ -1,0 +1,3 @@
+====[ source code ]====
+def *test(f: *int) = [{f, ~}](3)
+                     #~^error[602] sized parser depending on nonsized argument

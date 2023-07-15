@@ -768,9 +768,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         };
         let full_len = self.builder.build_int_mul(len, parser_len, "full_len");
         let slice_len = self.call_array_len_fun(arg);
-        let is_out_of_bounds =
-            self.builder
-                .build_int_compare(IntPredicate::ULT, slice_len, full_len, "is_out_of_bounds");
+        let is_out_of_bounds = self.builder.build_int_compare(
+            IntPredicate::ULT,
+            slice_len,
+            full_len,
+            "is_out_of_bounds",
+        );
         let succ_block = self.llvm.append_basic_block(llvm_fun, "succ");
         let fail_block = self.llvm.append_basic_block(llvm_fun, "fail");
         self.builder
