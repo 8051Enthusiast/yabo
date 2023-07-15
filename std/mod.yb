@@ -18,7 +18,7 @@ def [int] *> digit(base: int) = {
 }
 
 fun [int] *> number_acc(base: int, n: int): int = {
-  x: digit?(base)
+  x: digit?(base) if !eof
   let s = n * base + x
   | return: number_acc?(base, s)
   | let return = s

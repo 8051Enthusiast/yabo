@@ -36,6 +36,7 @@ case_title = re.compile(r'^(binary|text|output)\s+(.+)$')
 # with error code 301
 error_comment = re.compile(r'^.*#(~\^*)\s*error\[(\d+)\]\s*(.*)$')
 
+arg_list = [ os.path.abspath(file) for file in sys.argv[1:] ]
 
 class ErrorLocation:
     contained_message: str
@@ -452,8 +453,7 @@ def run_test(path: str) -> int:
 # goes through all files in the target directory ending in .ybtest
 
 
-def run_tests(target_dir: str) -> int:
-    files = [os.path.join(target_dir, x) for x in os.listdir(target_dir)]
+def run_tests(files: list[str]) -> int:
     try:
         with futures.ProcessPoolExecutor() as executor:
             results = executor.map(run_test, files)
@@ -467,12 +467,17 @@ def run_tests(target_dir: str) -> int:
         return total_failed
         
 
-run_clippy()
+if len(arg_list) == 0:
+    run_clippy()
 
-if not run_compiler_unit_tests():
-    sys.exit(1)
-target_folder = os.path.join(current_script_dir, 'tests')
-total_failed = run_tests(target_folder)
+    if not run_compiler_unit_tests():
+        sys.exit(1)
+    target_dir = os.path.join(current_script_dir, 'tests')
+    files = [os.path.join(target_dir, x) for x in os.listdir(target_dir)]
+    total_failed = run_tests(files)
+else:
+    total_failed = run_tests(arg_list)
+
 if total_failed != 0:
     print(f'{total_failed} tests failed')
     sys.exit(1)
