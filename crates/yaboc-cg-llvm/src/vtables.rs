@@ -4,7 +4,7 @@ use super::*;
 
 impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn vtable_header(&mut self, layout: IMonoLayout<'comp>) -> StructValue<'llvm> {
-        let size_align = vtable::VTableHeader::tsize();
+        let size_align = layout.inner().size_align_without_vtable(self.layouts).unwrap();
         let head_discriminant = self
             .compiler_database
             .db
