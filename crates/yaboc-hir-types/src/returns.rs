@@ -37,7 +37,6 @@ pub struct DerefLevel(usize);
 
 const RESERVED_DEREF_METADATA_BITS: u8 = 8;
 pub const VTABLE_BIT: u8 = 0;
-pub const MALLOC_BIT: u8 = 1;
 pub const NOBACKTRACK_BIT: u8 = 2;
 
 impl DerefLevel {

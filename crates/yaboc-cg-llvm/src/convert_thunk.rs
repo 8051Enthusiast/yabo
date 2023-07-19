@@ -5,10 +5,10 @@ use inkwell::{
 };
 
 use yaboc_dependents::{NeededBy, RequirementSet};
-use yaboc_hir_types::{TyHirs, MALLOC_BIT, NOBACKTRACK_BIT, VTABLE_BIT};
+use yaboc_hir_types::{TyHirs, NOBACKTRACK_BIT, VTABLE_BIT};
 use yaboc_layout::{
     collect::pd_val_req,
-    prop::{PSize, SizeAlign, TargetSized},
+    prop::{PSize, SizeAlign},
     ILayout, IMonoLayout, MonoLayout,
 };
 
@@ -416,12 +416,7 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
         copy_phi.add_incoming(&[(&self.ret.ptr, check_vtable_bb)]);
 
         self.cg.builder.position_at_end(old_bb);
-        let alloc_sa = self.kind.alloc_size(self.cg);
-        if alloc_sa.size > <*const u8>::tsize().array(2).size {
-            self.check_malloc(copy_bb, copy_phi, check_vtable_bb, alloc_sa);
-        } else {
-            self.cg.builder.build_unconditional_branch(check_vtable_bb);
-        }
+        self.cg.builder.build_unconditional_branch(check_vtable_bb);
 
         self.cg.builder.position_at_end(copy_bb);
         let target_ptr = copy_phi.as_basic_value().into_pointer_value();
@@ -479,62 +474,6 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
         self.cg.builder.build_store(ret_vtable_ptr, vtable_pointer);
         copy_phi.add_incoming(&[(&self.ret.ptr, write_vtable_ptr)]);
         self.cg.builder.build_unconditional_branch(copy_bb);
-    }
-
-    fn check_malloc(
-        &mut self,
-        copy_bb: BasicBlock<'llvm>,
-        copy_phi: PhiValue<'llvm>,
-        otherwise: BasicBlock<'llvm>,
-        alloc_sa: SizeAlign,
-    ) {
-        let is_malloc = self.cg.build_check_i64_bit_set(self.ret.head, MALLOC_BIT);
-        let allocator_bb = self.cg.llvm.append_basic_block(self.fun, "allocator");
-        self.cg
-            .builder
-            .build_conditional_branch(is_malloc, allocator_bb, otherwise);
-
-        self.cg.builder.position_at_end(allocator_bb);
-        let vtable_pointer = self.build_vtable_any_ptr();
-        let tagged_vtable_ptr = self.build_malloc_tag_ptr(vtable_pointer);
-        let malloc_pointer = self.build_malloc(alloc_sa);
-        let target_as_ptr_ptr = self.cg.build_cast::<*mut *mut u8, _>(self.ret.ptr);
-        let before_ptr = unsafe {
-            self.cg.builder.build_in_bounds_gep(
-                target_as_ptr_ptr,
-                &[self.cg.const_size_t(-1)],
-                "before",
-            )
-        };
-        self.cg.builder.build_store(before_ptr, tagged_vtable_ptr);
-        self.cg
-            .builder
-            .build_store(target_as_ptr_ptr, malloc_pointer);
-        copy_phi.add_incoming(&[(&malloc_pointer, allocator_bb)]);
-        self.cg.builder.build_unconditional_branch(copy_bb);
-    }
-
-    fn build_malloc_tag_ptr(&mut self, ptr: PointerValue<'llvm>) -> PointerValue<'llvm> {
-        let int_type = self.cg.llvm.ptr_sized_int_type(&self.cg.target_data, None);
-        let vtable_ptr_int = self
-            .cg
-            .builder
-            .build_ptr_to_int(ptr, int_type, "vtable_ptr_int");
-        let tagged_vtable_ptr_int = self.cg.builder.build_or(
-            vtable_ptr_int,
-            self.cg.const_size_t(1),
-            "tagged_vtable_ptr_int",
-        );
-        self.cg
-            .builder
-            .build_int_to_ptr(tagged_vtable_ptr_int, self.cg.any_ptr(), "tagged_ptr")
-    }
-
-    fn build_malloc(&mut self, sa: SizeAlign) -> PointerValue<'llvm> {
-        let ty = self.cg.sa_type(sa);
-        let malloc_ptr = self.cg.builder.build_malloc(ty, "benloc").unwrap();
-        self.cg.set_last_instr_align(sa);
-        self.cg.build_cast::<*mut u8, _>(malloc_ptr)
     }
 
     fn build_vtable_any_ptr(&mut self) -> PointerValue<'llvm> {
