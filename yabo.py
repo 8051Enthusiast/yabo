@@ -1,5 +1,6 @@
 from copy import copy
 import ctypes
+import threading
 from ctypes import (addressof, c_char_p, c_int64, c_int8, c_ubyte,
                     c_uint32, c_uint64, c_size_t, c_char, Structure,
                     CFUNCTYPE, POINTER, byref, c_void_p, pointer)
@@ -13,7 +14,7 @@ YABO_FUN_ARGS = 0x600
 YABO_BLOCK = 0x700
 YABO_UNIT = 0x800
 YABO_ANY = ((1 << 64) - 1) & ~0xff
-YABO_MALLOC = 0x3
+YABO_VTABLE = 1
 
 OK = 0
 ERROR = 1
@@ -153,32 +154,56 @@ class Slice(Structure):
         self.end = ctypes.cast(pointer(end), POINTER(c_ubyte))
 
 class DynValue(Structure):
-    __slots__ = [
-        'vtable',
-        'data',
-    ]
-    _fields_ = [
-        ('vtable', POINTER(VTableHeader)),
-        ('data', POINTER(c_ubyte) * 2),
-    ]
-
     def vtable_has_tag(self) -> bool:
-        return addressof(self.vtable.contents) & 1 != 0
-
+        raise NotImplementedError
+    
     def get_vtable(self):
-        ptr_int_val = addressof(self.vtable.contents) & ~1
-        return VTableHeader.from_address(ptr_int_val)
-
+        raise NotImplementedError
+    
     def data_field_ptr(self):
-        offset = DynValue.data.offset
-        array_ptr = pointer(
-            (c_char * DynValue.data.size).from_buffer(self, offset))
-        return ctypes.cast(array_ptr, _voidptr)
+        raise NotImplementedError
 
     def data_ptr(self):
-        if self.vtable_has_tag():
-            return self.data[0]
-        return self.data_field_ptr()
+        raise NotImplementedError
+
+
+def sized_dyn_value(size: int):
+    class SizedDynValue(DynValue):
+        __slots__ = [
+            'vtable',
+            'data',
+        ]
+        _fields_ = [
+            ('vtable', POINTER(VTableHeader)),
+            ('data', c_char * size),
+        ]
+        def __copy__(self):
+            size = self.get_vtable().size
+            val_ty = sized_dyn_value(size)
+            val = val_ty.from_buffer_copy(self)
+            return val
+
+        def __deepcopy__(self, memo):
+            return self.__copy__()
+
+        def vtable_has_tag(self) -> bool:
+            return addressof(self.vtable.contents) & 1 != 0
+
+        def get_vtable(self):
+            ptr_int_val = addressof(self.vtable.contents) & ~1
+            return VTableHeader.from_address(ptr_int_val)
+
+        def data_field_ptr(self):
+            offset = type(self).data.offset
+            array_ptr = pointer(
+                (c_char * type(self).data.size).from_buffer(self, offset))
+            return ctypes.cast(array_ptr, _voidptr)
+
+        def data_ptr(self):
+            if self.vtable_has_tag():
+                return self.data[0]
+            return self.data_field_ptr()
+    return SizedDynValue
 
 
 def _check_status(status: int):
@@ -193,37 +218,47 @@ def _check_status(status: int):
 
 class Parser:
     impl: PARSER_TY
+    _lib: "YaboLib"
 
-    def __init__(self, impl: PARSER_TY, lib):
+    def __init__(self, impl: PARSER_TY, lib: "YaboLib"):
         self.impl = impl
         self._lib = lib
 
     def parse(self, buf: bytearray):
         parse = self.impl
         slice = Slice(buf)
-        ret = DynValue()
+        ret = self._lib.ret_buf()
         nullptr = ctypes.c_void_p()
         # the vtable pointer is stored at negative index 1, so we pass
         # a pointer to the data field
-        status = parse(ret.data_field_ptr(), nullptr, YABO_ANY |
-                       YABO_MALLOC, byref(slice))
+        status = parse(ret.data_field_ptr(), nullptr, YABO_ANY | YABO_VTABLE, byref(slice))
         _check_status(status)
         return _new_value(ret, buf, self._lib)
 
 
 class YaboLib(ctypes.CDLL):
+    _loc: threading.local
     def __init__(self, name: str):
         super().__init__(name)
+        self._loc = threading.local()
 
     def parser(self, name: str) -> Parser:
         impl = PARSER_TY.in_dll(self, name)
         return Parser(impl, self)
 
+    def ret_buf(self):
+        try:
+            return self._loc.ret_buf
+        except AttributeError:
+            size = c_size_t.in_dll(self, "yabo_max_buf_size").value
+            self._loc.ret_buf = sized_dyn_value(size)()
+            return self._loc.ret_buf
 
 class YaboValue:
     _val: DynValue
     _buf: bytearray
     _lib: YaboLib
+    _loc: threading.local
 
     def __init__(self, val: DynValue, buf: bytearray, lib: YaboLib):
         self._val = val
@@ -232,32 +267,20 @@ class YaboValue:
 
     def _typecast(self, typ: int):
         typecast = self._val.get_vtable().typecast_impl
-        ret = DynValue()
+        ret = self._lib.ret_buf()
         status = typecast(ret.data_field_ptr(), self._val.data_ptr(), typ)
         _check_status(status)
         return _new_value(ret, self._buf, self._lib)
 
     def __copy__(self):
-        return self._typecast(self._val.get_vtable().deref_level | YABO_MALLOC)
-
-    # yes i'm defining the evil function
-    def __del__(self):
-        if self._val.vtable_has_tag():
-            dataptr = self._val.data_ptr()
-            # set the vtable to the null pointer to avoid double frees
-            # (this clears the tag)
-            self._val.vtable = ctypes.cast(
-                ctypes.c_void_p(0), POINTER(VTableHeader))
-            free = self._lib.yabo_free
-            free(dataptr)
+        return self._typecast(self._val.get_vtable().deref_level | YABO_VTABLE)
 
 
 class NominalValue(YaboValue):
     def deref(self):
         level = self._val.get_vtable().deref_level
         level = max(level - 0x100, 0)
-        ret = DynValue()
-        return self._typecast(level | YABO_MALLOC)
+        return self._typecast(level | YABO_VTABLE)
 
 
 class BlockValue(YaboValue):
@@ -284,9 +307,9 @@ class BlockValue(YaboValue):
             access = self._access_impl[name]
         except KeyError:
             raise AttributeError(f'{name} is not a valid field')
-        ret = DynValue()
+        ret = self._lib.ret_buf()
         status = access(ret.data_field_ptr(), self._val.data_ptr(),
-                        YABO_ANY | YABO_MALLOC)
+                        YABO_ANY | YABO_VTABLE)
         if status == BACKTRACK:
             return None
         _check_status(status)
@@ -314,12 +337,12 @@ class ArrayValue(YaboValue):
         _check_status(status)
 
     def current_element(self):
+        ret = self._lib.ret_buf()
         array_vtable = ctypes.cast(
             pointer(self._val.get_vtable()), POINTER(ArrayVTable))
         current_element_impl = array_vtable.contents.current_element_impl
-        ret = DynValue()
         status = current_element_impl(ret.data_field_ptr(),
-                                      self._val.data_ptr(), YABO_ANY | YABO_MALLOC)
+                                      self._val.data_ptr(), YABO_ANY | YABO_VTABLE)
         _check_status(status)
         return _new_value(ret, self._buf, self._lib)
 
@@ -358,6 +381,8 @@ class UnitValue(YaboValue):
 
 def _new_value(val: DynValue, buf: bytearray, lib: YaboLib):
     head = val.get_vtable().head
+    if head not in [YABO_INTEGER, YABO_BIT, YABO_CHAR]:
+        val = copy(val)
     if head == YABO_INTEGER:
         return ctypes.cast(val.data_ptr(), POINTER(c_int64)).contents.value
     if head == YABO_BIT:

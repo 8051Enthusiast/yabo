@@ -27,7 +27,7 @@ impl<T: ?Sized> PartialEq for Uniq<T> {
 impl<T: ?Sized> Eq for Uniq<T> {}
 impl<T: ?Sized> PartialOrd for Uniq<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        (self as *const Uniq<T>).partial_cmp(&(other as *const _))
+        Some(self.cmp(other))
     }
 }
 impl<T: ?Sized> Ord for Uniq<T> {

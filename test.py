@@ -321,7 +321,7 @@ class ListHead:
         return wrap_maybe_field(out, indent, field)
 
 
-def diff(left, right) -> Tuple[MatchingHead | DiffHead | DictHead, bool]:
+def diff(left, right) -> Tuple[MatchingHead | DiffHead | DictHead | ListHead, bool]:
     if isinstance(left, dict) and isinstance(right, dict):
         is_different = False
         ret = {}
@@ -336,13 +336,14 @@ def diff(left, right) -> Tuple[MatchingHead | DiffHead | DictHead, bool]:
     if isinstance(left, list) and isinstance(right, list):
         is_different = False
         max_len = max(len(left), len(right))
-        ret = [None] * max_len
+        ret_list = []
         for i in range(max_len):
             left_field = left[i] if i < len(left) else None
             right_field = right[i] if i < len(right) else None
-            (ret[i], is_field_diff) = diff(left_field, right_field)
+            (list_element, is_field_diff) = diff(left_field, right_field)
+            ret_list.append(list_element)
             is_different |= is_field_diff
-        return (ListHead(ret), is_different)
+        return (ListHead(ret_list), is_different)
 
     if left != right:
         return (DiffHead(left, right), True)
