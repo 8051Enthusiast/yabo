@@ -563,21 +563,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
     }
 
-    pub fn create_free_fun(&mut self) {
-        let free_fun = self.module.add_function(
-            "yabo_free",
-            self.llvm
-                .void_type()
-                .fn_type(&[self.any_ptr().into()], false),
-            Some(Linkage::External),
-        );
-        let entry = self.llvm.append_basic_block(free_fun, "entry");
-        self.builder.position_at_end(entry);
-        let arg = free_fun.get_first_param().unwrap().into_pointer_value();
-        self.builder.build_free(arg);
-        self.builder.build_return(None);
-    }
-
     pub fn create_max_buf_size(&mut self) {
         let size =
             self.const_size_t(self.collected_layouts.max_sa.size as i64 + self.word_size() as i64);
