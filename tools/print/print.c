@@ -41,8 +41,7 @@ void free_stack(Stack stack)
 Stack bump(Stack stack)
 {
 	size_t size = stack.current->vtable->size;
-	// one sizeof(char*) for the header, one - 1 for the alignment
-	size_t aligned_size = (size + 2 * sizeof(char *) - 1) & ~(_Alignof(char *) - 1);
+	size_t aligned_size = (size + sizeof(DynValue) + _Alignof(DynValue) - 1) & ~(_Alignof(DynValue) - 1);
 	if (stack.limit - (char *)stack.current < aligned_size)
 	{
 		fprintf(stderr, "Value stack overflow\n");
