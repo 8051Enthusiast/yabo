@@ -9,3 +9,5 @@ a.out
 *.o
 *.so
 *.ll
+/tools/print/yaboprint
+/compile_flags.txt

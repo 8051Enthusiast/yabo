@@ -1,8 +1,8 @@
 #pragma once
-#include "vtable.h"
 #include <stdlib.h>
 #include <stddef.h>
 #include <string.h>
+#include "vtable.h"
 
 struct Slice {
 	void *start;
@@ -11,69 +11,43 @@ struct Slice {
 
 typedef struct {
 	struct VTableHeader *vtable;
-	union {
-		void *data;
-		char in_data[sizeof(struct Slice)];
-	};
+	char data[];
 } DynValue;
 
-static inline void dyn_free(DynValue val) {
-	if ((intptr_t)val.vtable & 1) {
-		free(val.data);
-	}
+static inline int64_t dyn_invalidate(DynValue *val, int64_t status) {
+	val->vtable = 0;
+	*((int64_t *)val->data) = status;
+	return status;
 }
 
-static inline struct VTableHeader *dyn_vtable(DynValue val) {
-	return (struct VTableHeader *)((intptr_t)val.vtable & ~1);
-}
-
-static inline void *dyn_data(DynValue *val) {
-	if ((intptr_t)val->vtable & 1) {
-		return val->data;
-	} else {
-		return val->in_data;
-	}
-}
-
-static inline DynValue dyn_parse_bytes(struct Slice bytes, ParseFun parser) {
-	DynValue ret;
-	DynValue retlen;
-	int64_t status = parser(&ret.in_data, NULL, YABO_ANY | 3, &bytes);
+static inline int64_t dyn_parse_bytes(DynValue *ret, struct Slice bytes, ParseFun parser) {
+	int64_t status = parser(ret->data, NULL, YABO_ANY | YABO_VTABLE, &bytes);
 	if (status != 0) {
-		ret.vtable = 0;
-		ret.in_data[0] = (char)status;
+		return dyn_invalidate(ret, status);
 	}
-	return ret;
+	return status;
 }
 
-static inline DynValue dyn_deref(DynValue val) {
-	DynValue ret;
-	struct NominalVTable *vtable = (struct NominalVTable *)dyn_vtable(val);
+static inline int64_t dyn_deref(DynValue *ret, DynValue *val) {
+	struct NominalVTable *vtable = (struct NominalVTable *)val->vtable;
 	uint64_t level = vtable->head.deref_level;
 	if (level > 0) {
 		level -= 256;
 	}
-	int64_t status = vtable->head.typecast_impl(&ret.in_data, dyn_data(&val), level | 3);
-	if (status != 0) {
-		ret.vtable = 0;
-		ret.in_data[0] = (char)status;
+	int64_t status = vtable->head.typecast_impl(ret->data, val->data, level | YABO_VTABLE);
+	if (status) {
+		return dyn_invalidate(ret,  status);
 	}
-	return ret;
+	return status;
 }
 
-static inline DynValue dyn_copy(DynValue val) {
-	DynValue ret;
-	uint64_t level = dyn_vtable(val)->deref_level;
-	uint64_t status = dyn_vtable(val)->typecast_impl(&ret.in_data, dyn_data(&val), level | 3);
-	if (status != 0) {
-		ret.vtable = 0;
-		ret.in_data[0] = (char)status;
-	}
-	return ret;
+static inline void dyn_copy(DynValue *ret, DynValue *val) {
+	size_t size = val->vtable->size;
+	memcpy(ret, val, size + sizeof(struct VTableHeader *));
 }
 
-static inline DynValue dyn_access_field(DynValue block, char *name) {
-	struct BlockVTable *vtable = (struct BlockVTable *)dyn_vtable(block);
+static inline int64_t dyn_access_field(DynValue *ret, DynValue *block, char *name) {
+	struct BlockVTable *vtable = (struct BlockVTable *)block->vtable;
 	char **start = vtable->fields->fields;
 	int64_t (*access_impl)(void *, void *, uint64_t) = NULL;
 	for(size_t i = 0; i < vtable->fields->number_fields; i++) {
@@ -84,49 +58,46 @@ static inline DynValue dyn_access_field(DynValue block, char *name) {
 		}
 	}
 	if (!access_impl) {
-		return (DynValue){0};
+		return dyn_invalidate(ret, ERROR);
 	}
-	DynValue ret;
-	int64_t status = access_impl(&ret.in_data, dyn_data(&block), YABO_ANY | 3);
-	if (status != 0) {
-		ret.vtable = 0;
-		ret.in_data[0] = (char)status;
+	int64_t status = access_impl(ret->data, block->data, YABO_ANY | YABO_VTABLE);
+	if (status) {
+		return dyn_invalidate(ret, status);
 	}
-	return ret;
+	return status;
 }
 
-static DynValue dyn_access_index(DynValue array, int64_t index) {
-	DynValue array_copy = dyn_copy(array);
-	if (!array_copy.vtable) {
-		return array_copy;
+static inline int64_t dyn_array_single_forward(DynValue *array) {
+	struct ArrayVTable *vtable = (struct ArrayVTable *)array->vtable;
+	uint64_t status = vtable->single_forward_impl(array->data);
+	if (status) {
+		return dyn_invalidate(array, status);
 	}
-	struct ArrayVTable *vtable = (struct ArrayVTable *)dyn_vtable(array_copy);
-	uint64_t status = vtable->skip_impl(dyn_data(&array_copy), index);
-	if (status != 0) {
-		dyn_free(array_copy);
-		array_copy.vtable = 0;
-		array_copy.in_data[0] = (char)status;
-		return array_copy;
-	}
-	DynValue ret;
-	status = vtable->current_element_impl(&ret.in_data, dyn_data(&array_copy), YABO_ANY | 3);
-	if (status != 0) {
-		dyn_free(array_copy);
-		array_copy.vtable = 0;
-		array_copy.in_data[0] = (char)status;
-		return array_copy;
-	}
-	return ret;
+	return status;
 }
 
-static inline int64_t dyn_int(DynValue integer) {
-	return *(int64_t *)dyn_data(&integer);
+static inline int64_t dyn_array_current_element(DynValue *ret, DynValue *array) {
+	struct ArrayVTable *vtable = (struct ArrayVTable *)array->vtable;
+	uint64_t status = vtable->current_element_impl(ret->data, array->data, YABO_ANY | YABO_VTABLE);
+	if (status) {
+		return dyn_invalidate(ret, status);
+	}
+	return status;
 }
 
-static inline int32_t dyn_char(DynValue chr) {
-	return *(int32_t *)dyn_data(&chr);
+static inline int64_t dyn_array_len(DynValue *array) {
+	struct ArrayVTable *vtable = (struct ArrayVTable *)array->vtable;
+	return vtable->array_len_impl(array->data);
 }
 
-static inline int8_t dyn_bit(DynValue bit) {
-	return *(int8_t *)dyn_data(&bit);
+static inline int64_t dyn_int(DynValue *integer) {
+	return *(int64_t *)integer->data;
+}
+
+static inline int32_t dyn_char(DynValue *chr) {
+	return *(int32_t *)chr->data;
+}
+
+static inline int8_t dyn_bit(DynValue *bit) {
+	return *(int8_t *)bit->data;
 }
