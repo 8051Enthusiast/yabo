@@ -11,6 +11,7 @@ enum YaboHead {
 	YABO_FUN_ARGS = 0x600,
 	YABO_BLOCK = 0x700,
 	YABO_ANY = UINT64_MAX & ~0xff,
+	YABO_VTABLE = 1,
 };
 
 enum ReturnStatus {
