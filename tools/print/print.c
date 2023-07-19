@@ -177,7 +177,6 @@ int print_nominal(DynValue *val, int indent, Stack stack, FILE *out) {
   return print_recursive(indent, stack, out);
 }
 
-// frees val
 int print_recursive(int indent, Stack stack, FILE *out) {
   int status;
   DynValue *val = stack.current;
