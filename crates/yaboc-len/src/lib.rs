@@ -118,6 +118,7 @@ pub enum Term<ParserRef> {
     Apply([usize; 2]),
     Const(i128),
     Opaque,
+    OpaqueScalar,
     OpaqueUn(usize),
     OpaqueBin([usize; 2]),
     Mul([usize; 2]),
@@ -132,7 +133,12 @@ pub enum Term<ParserRef> {
 impl<ParserRef> Term<ParserRef> {
     fn ref_indices(&self) -> &[usize] {
         match self {
-            Term::Pd(_) | Term::Arg(_) | Term::Const(_) | Term::Opaque | Term::Arr => &[],
+            Term::Pd(_)
+            | Term::Arg(_)
+            | Term::Const(_)
+            | Term::Opaque
+            | Term::OpaqueScalar
+            | Term::Arr => &[],
             Term::OpaqueUn(x) | Term::Neg(x) | Term::Copy(x) => slice::from_ref(x),
             Term::OpaqueBin(x)
             | Term::Apply(x)
@@ -153,19 +159,22 @@ impl<Pd> SizeExpr<Pd> {
     pub fn new() -> Self {
         Self { terms: vec![] }
     }
-
+    
     pub fn push(&mut self, term: Term<Pd>) -> usize {
         self.terms.push(term);
         self.terms.len() - 1
     }
+
     pub fn static_arg_deps(&self, arg_count: usize) -> Vec<SmallBitVec> {
-        let mut arg_deps = vec![SmallBitVec::zeroes(arg_count); self.terms.len()];
+        let mut arg_deps = vec![SmallBitVec::zeroes(arg_count + 1); self.terms.len()];
         for (i, term) in self.terms.iter().enumerate() {
             for dep in term.ref_indices() {
                 arg_deps[i] = arg_deps[i].or(&arg_deps[*dep]);
             }
-            if let Term::Arg(a) = term {
-                arg_deps[i].set(arg_count - *a as usize - 1);
+            match term {
+                Term::Arg(a) => arg_deps[i].set(arg_count - *a as usize - 1),
+                Term::OpaqueScalar => arg_deps[i].set(arg_count),
+                _ => (),
             }
         }
         arg_deps
@@ -644,6 +653,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 Term::Apply([fun, arg]) => self.apply_fun(*fun, *arg),
                 Term::Const(c) => Val::Const(0, *c),
                 Term::Opaque => Val::Dynamic,
+                Term::OpaqueScalar => Val::Static(0, SmallBitVec::default()),
                 Term::OpaqueUn(arg) => self.opaque_op(&[*arg]),
                 Term::OpaqueBin([lhs, rhs]) => self.opaque_op(&[*lhs, *rhs]),
                 Term::Mul(ops) => self.poly_op(
@@ -808,7 +818,11 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             }
             Val::Static(0, _) => {
                 let deps = self.size_expr.static_arg_deps(self.args.len()).remove(root);
-                Val::Static(arg_count, deps)
+                if deps[self.args.len()] {
+                    Val::Dynamic
+                } else {
+                    Val::Static(arg_count, deps)
+                }
             }
             Val::Dynamic => Val::Dynamic,
             _ => panic!("cannot have higher-order function as total length"),

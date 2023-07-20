@@ -335,6 +335,17 @@ impl<'a> LenMirCtx<'a> {
             w.f.ret(ReturnStatus::Error);
             return Ok(w.f.fun);
         }
+        // we have to check with static values whether they depend
+        // on a parsed value and if they do, we must return an error
+        // as we can not calculate it without the argument
+        if let Val::Static(..) = vals.vals[block_idx] {
+            let arg_deps = db.len_arg_deps(pd)?;
+            let arg_count = db.argnum(pd)?.unwrap_or_default();
+            if arg_deps[block_idx][arg_count] {
+                w.f.ret(ReturnStatus::Error);
+                return Ok(w.f.fun);
+            }
+        }
         let mut lenctx = LenMirCtx {
             db,
             w,

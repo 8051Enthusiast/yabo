@@ -13,6 +13,7 @@ use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
 use yaboc_hir as hir;
 use yaboc_len::{SizeExpr, Term};
 use yaboc_resolve::expr::{Resolved, ResolvedAtom};
+use yaboc_types::Type;
 
 pub struct SizeTermBuilder<'a> {
     db: &'a dyn Constraints,
@@ -73,7 +74,15 @@ impl<'a> SizeTermBuilder<'a> {
                     }
                     hir::ParserPredecessor::After(id) => self.vals[&SubValue::new_back(id)],
                 },
-                (hir::HirNode::Parse(_), SubValueKind::Val) => self.push_term(Term::Opaque, loc),
+                (hir::HirNode::Parse(_), SubValueKind::Val) => {
+                    let ty = self.db.parser_type_at(val_loc.val.id)?;
+                    let ldt_ty = self.db.least_deref_type(ty)?;
+                    let term = match self.db.lookup_intern_type(ldt_ty) {
+                        Type::Primitive(_) => Term::OpaqueScalar,
+                        _ => Term::Opaque,
+                    };
+                    self.push_term(term, loc)
+                }
                 (hir::HirNode::Parse(p), SubValueKind::Back) => {
                     let front = self.vals[&SubValue::new_front(p.id.0)];
                     let len = self.vals[&SubValue::new_val(p.expr.0)];

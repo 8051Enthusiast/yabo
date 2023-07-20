@@ -31,6 +31,7 @@ pub trait Constraints: Interner + Resolves + Dependents {
     fn len_vals(&self, pd: hir::ParserDefId) -> Arc<LenVals>;
     fn ssc_len_vals(&self, ssc: FunctionSscId) -> Arc<Vec<LenVals>>;
     fn len_errors(&self, pd: hir::ParserDefId) -> SResult<Vec<LenError>>;
+    fn len_arg_deps(&self, pd: hir::ParserDefId) -> SResult<Arc<[SmallBitVec]>>;
 
     #[salsa::interned]
     fn intern_polycircuit(&self, circuit: Arc<PolyCircuit>) -> PolyCircuitId;
@@ -184,6 +185,12 @@ fn arg_kinds(db: &(impl Constraints + ?Sized), pd: hir::ParserDefId) -> SResult<
     Ok(ret)
 }
 
+fn len_arg_deps(db: &dyn Constraints, pd: hir::ParserDefId) -> SResult<Arc<[SmallBitVec]>> {
+    let terms = db.len_term(pd)?;
+    let arg_count = db.argnum(pd)?.unwrap_or_default();
+    Ok(terms.expr.static_arg_deps(arg_count).into())
+}
+
 pub fn ssc_len_vals(db: &dyn Constraints, ssc: FunctionSscId) -> Arc<Vec<LenVals>> {
     let pds = db.lookup_intern_recursion_scc(ssc);
     let terms = pds.iter().map(|x| (*x, db.len_term(*x).ok())).collect();
@@ -272,7 +279,7 @@ pub fn len_errors(db: &dyn Constraints, pd: hir::ParserDefId) -> SResult<Vec<Len
             Origin::Node(id) => Ok(IndirectSpan::default_span(id)),
         }
     };
-    let arg_deps = terms.expr.static_arg_deps(is_arg_sized.len());
+    let arg_deps = db.len_arg_deps(pd)?;
     for term in terms.expr.terms.iter() {
         let Term::Apply([arr, arg]) = term else {
             continue;

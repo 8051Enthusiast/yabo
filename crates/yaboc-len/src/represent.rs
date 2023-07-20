@@ -1,4 +1,4 @@
-use crate::{PolyOp, Term, Val};
+use crate::{PolyOp, SmallBitVec, Term, Val};
 
 impl<T: std::fmt::Debug> std::fmt::Display for Term<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -8,6 +8,7 @@ impl<T: std::fmt::Debug> std::fmt::Display for Term<T> {
             Term::Apply([fun, arg]) => write!(f, "apply [{}] [{}]", fun, arg),
             Term::Const(c) => write!(f, "const {}", c),
             Term::Opaque => write!(f, "opaque"),
+            Term::OpaqueScalar => write!(f, "opaque scalar"),
             Term::OpaqueUn(inner) => write!(f, "op [{}]", inner),
             Term::OpaqueBin([lhs, rhs]) => write!(f, "[{}] op [{}]", lhs, rhs),
             Term::Mul([lhs, rhs]) => write!(f, "[{}] * [{}]", lhs, rhs),
@@ -63,11 +64,23 @@ pub fn len_graph<P: std::fmt::Debug, T: std::fmt::Debug + Clone>(
     terms: &[Term<P>],
     val: &[Val<T>],
     arities: &[usize],
+    arg_deps: &[SmallBitVec],
+    arg_count: usize,
 ) -> String {
     let mut ret = String::new();
-    for (i, ((term, val), arity)) in terms.iter().zip(val.iter()).zip(arities.iter()).enumerate() {
+    for (i, (((term, val), arity), arg_dep)) in terms
+        .iter()
+        .zip(val.iter())
+        .zip(arities.iter())
+        .zip(arg_deps.iter())
+        .enumerate()
+    {
+        let mut deps = String::with_capacity(arg_count + 1);
+        for i in 0..=arg_count {
+            deps.push(if arg_dep[i] { '1' } else { '0' })
+        }
         ret.push_str(&format!(
-            "{prefix}{i} [label=\"{{[{i}]|{arity}}}|<t>{term}|<v>{val}\"];\n"
+            "{prefix}{i} [label=\"{{[{i}]|{arity}}}|<t>{term}|<v>{val}|{deps}\"];\n"
         ));
     }
     for (i, val) in val.iter().enumerate() {
