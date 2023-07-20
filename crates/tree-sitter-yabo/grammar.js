@@ -51,9 +51,9 @@ module.exports = grammar({
         choice(
           seq(
             field('from', $._type_expression),
-            '*>',
+            field('op', choice('*>', '*sized>')),
           ),
-          '*',
+          field('op', choice('*', '*sized')),
         ),
         field('name', $.identifier),
         optional(field('argdefs', $.arg_def_list)),
@@ -83,12 +83,12 @@ module.exports = grammar({
     binary_type_expression: $ => choice(
       prec.left(PREC.PARSERTYPE, seq(
         field('left', $._type_expression),
-        field('op', '*>'),
+        field('op', choice('*>', '*sized>')),
         field('right', $._type_expression),
       )),
     ),
     unary_type_expression: $ => prec(PREC.PARSERTYPE + 1, seq(
-      field('op', '*'),
+      field('op', choice('*', '*sized')),
       field('right', $._type_expression)
     )),
     parser_block: $ => seq(

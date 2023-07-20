@@ -447,6 +447,7 @@ astify! {
         argdefs: arg_def_list[?],
         from: expression(type_expression)[?],
         to: expression(val_expression)[!],
+        op: parser_op_kind[!],
         ret_ty: expression(type_expression)[?],
     };
 }
@@ -851,5 +852,14 @@ fn primitive_type(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<TypeP
         "bit" => TypePrimitive::Bit,
         "char" => TypePrimitive::Char,
         otherwise => panic!("Unknown type primitive: {otherwise}"),
+    })
+}
+
+fn parser_op_kind(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<ParseOpKind> {
+    let str = node_to_string(db, fd, c)?;
+    Ok(match str.as_ref() {
+        "*sized" | "*sized>" => ParseOpKind::Sized,
+        "*" | "*>" => ParseOpKind::Dyn,
+        otherwise => panic!("Unknown parser op kind: {otherwise}"),
     })
 }
