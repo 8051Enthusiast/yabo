@@ -165,7 +165,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         let span = IndirectSpan::new(id.0, *expr.data.index_expr(idx));
         let ret = match &expr.expr[idx] {
             ExprHead::Dyadic(TypeBinOp::Ref, _) => unimplemented!(),
-            ExprHead::Dyadic(TypeBinOp::ParseArg | TypeBinOp::ConstParseArg, [lhs, rhs]) => {
+            ExprHead::Dyadic(TypeBinOp::ParseArg, [lhs, rhs]) => {
                 let from = self.resolve_type_expr_impl(expr, *lhs, id)?;
                 let inner = match &expr.expr[*rhs] {
                     ExprHead::Niladic(hir::TypeAtom::ParserDef(pd)) => {
@@ -178,7 +178,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
             ExprHead::Monadic(TypeUnOp::Wiggle(_), inner) => {
                 self.resolve_type_expr_impl(expr, *inner, id)?
             }
-            ExprHead::Monadic(TypeUnOp::ByteParser | TypeUnOp::ConstByteParser, inner) => {
+            ExprHead::Monadic(TypeUnOp::ByteParser, inner) => {
                 let int = self.infctx.int();
                 let from = self.infctx.array(ArrayKind::Each, int);
                 let inner = match &expr.expr[*inner] {
