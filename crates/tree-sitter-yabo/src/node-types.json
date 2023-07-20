@@ -458,10 +458,6 @@
           {
             "type": "*>",
             "named": false
-          },
-          {
-            "type": "*sized>",
-            "named": false
           }
         ]
       },
@@ -1161,28 +1157,6 @@
           {
             "type": "identifier",
             "named": true
-          }
-        ]
-      },
-      "op": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "*",
-            "named": false
-          },
-          {
-            "type": "*>",
-            "named": false
-          },
-          {
-            "type": "*sized",
-            "named": false
-          },
-          {
-            "type": "*sized>",
-            "named": false
           }
         ]
       },
@@ -1900,10 +1874,6 @@
           {
             "type": "*",
             "named": false
-          },
-          {
-            "type": "*sized",
-            "named": false
           }
         ]
       },
@@ -2101,14 +2071,6 @@
   },
   {
     "type": "*>",
-    "named": false
-  },
-  {
-    "type": "*sized",
-    "named": false
-  },
-  {
-    "type": "*sized>",
     "named": false
   },
   {

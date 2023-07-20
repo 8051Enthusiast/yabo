@@ -716,7 +716,6 @@ pub enum ValVarOp {
 pub enum TypeBinOp {
     Ref,
     ParseArg,
-    ConstParseArg,
 }
 
 impl TypeBinOp {
@@ -725,7 +724,6 @@ impl TypeBinOp {
         Ok(match s {
             "&>" => Ref,
             "*>" => ParseArg,
-            "*const>" => ConstParseArg,
             otherwise => return Err(otherwise),
         })
     }
@@ -739,7 +737,6 @@ impl Display for TypeBinOp {
             match self {
                 TypeBinOp::Ref => "&>",
                 TypeBinOp::ParseArg => "*>",
-                TypeBinOp::ConstParseArg => "*const>",
             }
         )
     }
@@ -748,7 +745,6 @@ impl Display for TypeBinOp {
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum TypeUnOp<C> {
     ByteParser,
-    ConstByteParser,
     Wiggle(C),
 }
 
@@ -757,7 +753,6 @@ impl<C> TypeUnOp<C> {
         use TypeUnOp::*;
         Ok(match s {
             "*" => ByteParser,
-            "*const" => ConstByteParser,
             otherwise => return Err(otherwise),
         })
     }
@@ -766,7 +761,6 @@ impl<C> TypeUnOp<C> {
         match self {
             Wiggle(expr) => Wiggle(f(expr)),
             ByteParser => ByteParser,
-            ConstByteParser => ConstByteParser,
         }
     }
 }

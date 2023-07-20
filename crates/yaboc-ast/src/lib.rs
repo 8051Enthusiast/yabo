@@ -276,7 +276,6 @@ pub struct ParserDefinition {
     pub argdefs: Option<ArgDefList>,
     pub to: ValExpression,
     pub ret_ty: Option<TypeExpression>,
-    pub op: ParseOpKind,
     pub span: Span,
 }
 
@@ -406,12 +405,6 @@ pub enum ArrayKind {
     // some day
     //For,
     Each,
-}
-
-#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug, PartialOrd, Ord)]
-pub enum ParseOpKind {
-    Sized,
-    Dyn,
 }
 
 #[cfg(test)]
