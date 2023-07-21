@@ -387,7 +387,7 @@ impl<'a> ILayout<'a> {
 
     fn get_captured(
         self,
-        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+        ctx: &AbsIntCtx<'a, ILayout<'a>>,
         id: DefId,
     ) -> Result<Option<ILayout<'a>>, LayoutError> {
         Ok(match match &self.layout.1 {
