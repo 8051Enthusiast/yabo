@@ -27,7 +27,7 @@ fn public_expr_type_impl(
     let spanned = |x| SpannedTypeError::new(x, IndirectSpan::default_span(loc.0));
     let bump = Bump::new();
     let mut ctx = PublicResolver::new_typing_context_and_loc(db, loc.0, &bump)?;
-    let parent = loc.0.parent(db);
+    let parent = loc.0.parent(db).unwrap();
     let (ambient, ret) = match db.hir_node(parent)? {
         hir::HirNode::Let(l) => (None, ctx.let_statement_types(&l)?),
         hir::HirNode::Parse(p) => (ctx.parse_statement_types(&p)?, None),

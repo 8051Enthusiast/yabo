@@ -159,7 +159,7 @@ impl<Pd> SizeExpr<Pd> {
     pub fn new() -> Self {
         Self { terms: vec![] }
     }
-    
+
     pub fn push(&mut self, term: Term<Pd>) -> usize {
         self.terms.push(term);
         self.terms.len() - 1

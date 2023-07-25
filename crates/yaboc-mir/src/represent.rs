@@ -31,12 +31,7 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for PlaceRef {
             Place::Stack(s) => s.db_fmt(f, db),
             Place::Field(inner, field) => {
                 inner.db_fmt(f, &(*fun, *db))?;
-                let name = db
-                    .lookup_intern_hir_path(field)
-                    .path()
-                    .last()
-                    .unwrap()
-                    .unwrap_named();
+                let name = field.unwrap_name(*db);
                 dbwrite!(f, *db, ".{}", &name)
             }
             Place::Captured(inner, field) => {

@@ -1,12 +1,7 @@
 use salsa::InternId;
 use sha2::{Digest, Sha256};
 
-use crate::{
-    databased_display::DatabasedDisplay,
-    dbwrite,
-    hash::{hash_array, StableHash},
-    source::FileId,
-};
+use crate::{databased_display::DatabasedDisplay, dbwrite, hash::StableHash, source::FileId};
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Identifier(InternId);
@@ -121,7 +116,6 @@ impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for FieldName {
 pub enum PathComponent {
     Named(FieldName),
     Unnamed(u32),
-    File(FileId),
 }
 
 impl<DB: Interner + ?Sized> StableHash<DB> for PathComponent {
@@ -135,21 +129,11 @@ impl<DB: Interner + ?Sized> StableHash<DB> for PathComponent {
                 state.update([1]);
                 n.update_hash(state, db);
             }
-            PathComponent::File(fd) => {
-                state.update([2]);
-                fd.update_hash(state, db);
-            }
         }
     }
 }
 
 impl PathComponent {
-    pub fn unwrap_file(self) -> FileId {
-        match self {
-            PathComponent::File(f) => f,
-            _ => panic!("Path component should have been file"),
-        }
-    }
     pub fn unwrap_named(self) -> FieldName {
         match self {
             PathComponent::Named(name) => name,
@@ -162,6 +146,12 @@ impl PathComponent {
             _ => panic!("Path component should have been identifier"),
         }
     }
+    pub fn unwrap_unnamed(self) -> u32 {
+        match self {
+            PathComponent::Unnamed(n) => n,
+            _ => panic!("Path component should have been unnamed"),
+        }
+    }
 }
 
 impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for PathComponent {
@@ -170,7 +160,27 @@ impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for PathComponent {
             PathComponent::Named(FieldName::Ident(n)) => n.db_fmt(f, db),
             PathComponent::Named(FieldName::Return) => write!(f, "return"),
             PathComponent::Unnamed(x) => write!(f, "{x}"),
-            PathComponent::File(fid) => dbwrite!(f, db, "{}", fid),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
+pub enum DefinitionPath {
+    Module(FileId),
+    Path(PathComponent, DefId),
+}
+
+impl DefinitionPath {
+    fn parent(&self) -> Option<DefId> {
+        match self {
+            DefinitionPath::Module(_) => None,
+            DefinitionPath::Path(_, id) => Some(*id),
+        }
+    }
+    fn component(&self) -> Option<PathComponent> {
+        match self {
+            DefinitionPath::Module(_) => None,
+            DefinitionPath::Path(component, _) => Some(*component),
         }
     }
 }
@@ -182,30 +192,40 @@ impl DefId {
     pub fn graphviz_name(&self) -> String {
         format!("HirNode{}", self.0.as_u32())
     }
-    pub fn parent<DB: Interner + ?Sized>(self, db: &DB) -> DefId {
-        let mut path = db.lookup_intern_hir_path(self);
-        path.pop();
-        db.intern_hir_path(path)
+    pub fn parent<DB: Interner + ?Sized>(self, db: &DB) -> Option<DefId> {
+        db.lookup_intern_hir_path(self).parent()
     }
     pub fn child<DB: Interner + ?Sized>(self, db: &DB, name: PathComponent) -> DefId {
-        let mut path = db.lookup_intern_hir_path(self);
-        path.push(name);
-        db.intern_hir_path(path)
+        let cons = DefinitionPath::Path(name, self);
+        db.intern_hir_path(cons)
     }
     pub fn child_field<DB: Interner + ?Sized>(self, db: &DB, name: FieldName) -> DefId {
         self.child(db, PathComponent::Named(name))
     }
     pub fn is_ancestor_of<DB: Interner + ?Sized>(self, db: &DB, other: DefId) -> bool {
-        let other_path = db.lookup_intern_hir_path(other);
-        let self_path = db.lookup_intern_hir_path(self);
-        other_path.0.starts_with(&self_path.0)
+        let mut id = Some(other);
+        while let Some(i) = id {
+            if i == self {
+                return true;
+            }
+            id = i.parent(db);
+        }
+        false
+    }
+    pub fn unwrap_path_end<DB: Interner + ?Sized>(self, db: &DB) -> PathComponent {
+        db.lookup_intern_hir_path(self).component().unwrap()
     }
     pub fn unwrap_name<DB: Interner + ?Sized>(self, db: &DB) -> Identifier {
         db.lookup_intern_hir_path(self)
-            .path()
-            .last()
+            .component()
             .unwrap()
             .unwrap_ident()
+    }
+    pub fn unwrap_unnamed_id<DB: Interner + ?Sized>(self, db: &DB) -> u32 {
+        db.lookup_intern_hir_path(self)
+            .component()
+            .unwrap()
+            .unwrap_unnamed()
     }
 }
 
@@ -218,61 +238,36 @@ impl salsa::InternKey for DefId {
         self.0
     }
 }
-
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct HirPath(Vec<PathComponent>);
-
-impl HirPath {
-    pub fn new_file(f: FileId) -> Self {
-        HirPath(vec![PathComponent::File(f)])
-    }
-    pub fn new_fid(f: FileId, n: FieldName) -> Self {
-        HirPath(vec![PathComponent::File(f), PathComponent::Named(n)])
-    }
-    pub fn path(&self) -> &[PathComponent] {
-        &self.0
-    }
-    pub fn push(&mut self, comp: PathComponent) {
-        self.0.push(comp)
-    }
-    pub fn pop(&mut self) -> Option<PathComponent> {
-        self.0.pop()
-    }
-}
-
-impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for HirPath {
-    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
-        for (i, component) in self.path().iter().enumerate() {
-            if i > 0 {
-                write!(f, ".")?;
-            }
-            dbwrite!(f, db, "{}", component)?;
-        }
-        Ok(())
-    }
-}
-
 impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for DefId {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
-        dbwrite!(f, db, "{}", &db.lookup_intern_hir_path(*self))
+        match db.lookup_intern_hir_path(*self) {
+            DefinitionPath::Module(fid) => dbwrite!(f, db, "{}", &fid),
+            DefinitionPath::Path(component, id) => dbwrite!(f, db, "{}.{}", &id, &component),
+        }
     }
 }
 
 impl<DB: Interner + ?Sized> StableHash<DB> for DefId {
     fn update_hash(&self, state: &mut sha2::Sha256, db: &DB) {
-        let path = db.lookup_intern_hir_path(*self);
-        hash_array(path.path(), state, db)
+        match db.lookup_intern_hir_path(*self) {
+            DefinitionPath::Module(fid) => {
+                state.update([0]);
+                fid.update_hash(state, db);
+            }
+            DefinitionPath::Path(component, id) => {
+                state.update([1]);
+                component.update_hash(state, db);
+                id.update_hash(state, db);
+            }
+        }
     }
 }
 
 fn def_name(db: &dyn Interner, defid: DefId) -> Option<FieldName> {
-    db.lookup_intern_hir_path(defid)
-        .path()
-        .last()
-        .and_then(|x| match x {
-            PathComponent::File(_) | PathComponent::Unnamed(_) => None,
-            PathComponent::Named(f) => Some(*f),
-        })
+    match db.lookup_intern_hir_path(defid) {
+        DefinitionPath::Path(PathComponent::Named(f), _) => Some(f),
+        _ => None,
+    }
 }
 
 fn def_hash(db: &dyn Interner, defid: DefId) -> [u8; 32] {
@@ -301,7 +296,7 @@ pub trait Interner: crate::source::Files {
     #[salsa::interned]
     fn intern_type_var(&self, identifier: TypeVarName) -> TypeVar;
     #[salsa::interned]
-    fn intern_hir_path(&self, path: HirPath) -> DefId;
+    fn intern_hir_path(&self, path: DefinitionPath) -> DefId;
     #[salsa::interned]
     fn intern_regex(&self, regex: String) -> Regex;
 

@@ -104,9 +104,8 @@ impl ContextData {
                     subchoices.insert(c.id, c.subcontexts.clone());
                 }
                 hir::HirNode::ChoiceIndirection(c) => {
-                    let field = match db.lookup_intern_hir_path(c.id.0).pop() {
-                        Some(PathComponent::Named(field)) => field,
-                        _ => panic!("choice indirection not field!"),
+                    let PathComponent::Named(field) = c.id.0.unwrap_path_end(db) else {
+                        panic!("could not find name of choice indirection")
                     };
                     match context
                         .vars
