@@ -78,7 +78,7 @@ pub fn resolve_var_ref(
                     None => db.hir_parent_module(current_id)?.id(),
                 }
             }
-            _ => current_id.parent(db),
+            _ => current_id.parent(db).unwrap(),
         }
     }
 }

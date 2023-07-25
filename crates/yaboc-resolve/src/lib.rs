@@ -12,7 +12,7 @@ use petgraph::Graph;
 
 use yaboc_base::error::SResult;
 use yaboc_base::error::{Silencable, SilencedError};
-use yaboc_base::interner::{DefId, FieldName, Identifier};
+use yaboc_base::interner::{DefId, DefinitionPath, FieldName, Identifier};
 use yaboc_base::source::{FileId, SpanIndex};
 use yaboc_expr::{ExprHead, Expression, TakeRef};
 use yaboc_hir::walk::ChildIter;
@@ -44,12 +44,16 @@ fn cyclic_import(db: &dyn Resolves) -> Option<Arc<Vec<ResolveError>>> {
     let mut graph = Graph::new();
     let mut index_map = FxHashMap::default();
     for module in db.all_modules() {
-        let file = db.lookup_intern_hir_path(module.0).path()[0].unwrap_file();
+        let DefinitionPath::Module(file) = db.lookup_intern_hir_path(module.0) else {
+            panic!("Module {:?} is not a file", module);
+        };
         let index = graph.add_node(file);
         index_map.insert(file, index);
     }
     for module in db.all_modules() {
-        let file = db.lookup_intern_hir_path(module.0).path()[0].unwrap_file();
+        let DefinitionPath::Module(file) = db.lookup_intern_hir_path(module.0) else {
+            panic!("Module {:?} is not a file", module);
+        };
         let from = index_map[&file];
         let Ok(imports) = db.imports(file) else {
             continue;

@@ -1,5 +1,5 @@
 use yaboc_base::{
-    interner::{DefId, FieldName, HirPath, IdentifierName, PathComponent},
+    interner::{DefId, DefinitionPath, FieldName, IdentifierName, PathComponent},
     source::FileId,
 };
 use yaboc_hir::{HirIdWrapper, HirNode, HirNodeKind};
@@ -28,8 +28,7 @@ impl<'db, DB: ?Sized + TyHirs> IdCursor<'db, DB> {
     }
 
     pub fn at_file(db: &'db DB, file: FileId) -> Self {
-        let path = HirPath::new_file(file);
-        let id = db.intern_hir_path(path);
+        let id = db.intern_hir_path(DefinitionPath::Module(file));
         if db.all_files().contains(&file) {
             Self {
                 db,

@@ -1,3 +1,4 @@
+use core::panic;
 use std::collections::HashMap;
 
 use ast::expr::Ignorable;
@@ -634,10 +635,22 @@ pub fn hir_parser_collection(
 ) -> Result<Option<HirParserCollection>, SilencedError> {
     let collection = HirParserCollection::new();
     let ctx = HirConversionCtx::new(collection, db);
-    let path = db.lookup_intern_hir_path(did);
-    let file = path.path()[0].unwrap_file();
-    let id = path.path()[1].unwrap_ident();
-    let parser = match db.top_level_statement(file, id)? {
+    let mut top_comp = did.unwrap_path_end(db);
+    let mut current_id = did.parent(db).expect("child of pd has no parent");
+    let file = loop {
+        let path = db.lookup_intern_hir_path(current_id);
+        match path {
+            DefinitionPath::Module(file) => break file,
+            DefinitionPath::Path(comp, parent) => {
+                top_comp = comp;
+                current_id = parent;
+            }
+        }
+    };
+    let PathComponent::Named(FieldName::Ident(name)) = top_comp else {
+        panic!("defid of parserdef does not have identifier as second component");
+    };
+    let parser = match db.top_level_statement(file, name)? {
         None | Some(TopLevelStatement::Import(_)) => return Ok(None),
         Some(TopLevelStatement::ParserDefinition(x)) => x,
     };

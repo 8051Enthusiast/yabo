@@ -84,16 +84,7 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for ParserAtom {
                 }
                 Ok(())
             }
-            ParserAtom::Block(id) => dbwrite!(
-                f,
-                db,
-                "block({})",
-                db.lookup_intern_hir_path(id.0)
-                    .path()
-                    .iter()
-                    .last()
-                    .unwrap()
-            ),
+            ParserAtom::Block(id) => dbwrite!(f, db, "block({})", &id.0.unwrap_unnamed_id(db)),
         }
     }
 }
@@ -342,14 +333,7 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                         let mut v: Vec<_> = children
                             .iter()
                             .map(|p| {
-                                let last_name = self
-                                    .0
-                                    .lookup_intern_hir_path(*p)
-                                    .path()
-                                    .iter()
-                                    .last()
-                                    .unwrap()
-                                    .to_db_string(self.0);
+                                let last_name = p.unwrap_path_end(self.0).to_db_string(self.0);
                                 (id.0, *p, last_name, dot::Style::Bold)
                             })
                             .collect();

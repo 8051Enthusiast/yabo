@@ -24,7 +24,7 @@ use yaboc_base::{
     dbpanic,
     error::{SResult, SilencedError},
     interner::{
-        DefId, FieldName, HirPath, Identifier, IdentifierName, PathComponent, Regex, TypeVar,
+        DefId, DefinitionPath, FieldName, Identifier, IdentifierName, PathComponent, Regex, TypeVar,
     },
     source::{FileId, IndexSpanned, IndirectSpan, Span, SpanIndex},
     Context,
@@ -95,29 +95,34 @@ impl HirConstraintId {
 }
 
 fn hir_node(db: &dyn Hirs, id: DefId) -> SResult<HirNode> {
-    let path = db.lookup_intern_hir_path(id);
-    let file = path.path()[0].unwrap_file();
-    let fid = match path.path().get(1) {
-        Some(PathComponent::Named(n)) => n,
-        None => return module_file(db, file).map(HirNode::Module),
-        _ => dbpanic!(
-            db,
-            "Hir path {} does not have identifier as second element",
-            &id
-        ),
+    let (top_component, top_parent) = match db.lookup_intern_hir_path(id) {
+        DefinitionPath::Module(file) => return module_file(db, file).map(HirNode::Module),
+        DefinitionPath::Path(top, top_parent) => (top, top_parent),
     };
-    if let Some(TopLevelStatement::Import(_)) = db.top_level_statement(file, fid.unwrap_ident())? {
-        assert!(path.path().len() == 2);
+    let collection_id = if let DefinitionPath::Module(file) = db.lookup_intern_hir_path(top_parent)
+    {
+        let PathComponent::Named(fid) = top_component else {
+            dbpanic!(
+                db,
+                "Hir path {} does not have identifier as second element",
+                &id
+            )
+        };
         let name = fid.unwrap_ident();
-        let mod_file = db.import_id(file, name)?;
-        let mod_path = db.intern_hir_path(HirPath::new_file(mod_file));
-        return Ok(HirNode::Import(Import {
-            id: ImportId(id),
-            name,
-            mod_ref: ModuleId(mod_path),
-        }));
-    }
-    let collection_id = db.intern_hir_path(HirPath::new_fid(file, *fid));
+        if let Some(TopLevelStatement::Import(_)) = db.top_level_statement(file, name)? {
+            let mod_file = db.import_id(file, name)?;
+            let mod_path = db.intern_hir_path(DefinitionPath::Module(mod_file));
+            return Ok(HirNode::Import(Import {
+                id: ImportId(id),
+                name,
+                mod_ref: ModuleId(mod_path),
+            }));
+        }
+        // if it is file.name, but not an import, it can only be a pd
+        id
+    } else {
+        db.hir_parent_parserdef(id)?.0
+    };
     let hir_ctx = db
         .hir_parser_collection(collection_id)?
         .unwrap_or_else(|| dbpanic!(db, "Access to inexistent HIR path {}", &id));
@@ -132,7 +137,7 @@ fn all_modules(db: &dyn Hirs) -> Vec<ModuleId> {
     db.all_files()
         .iter()
         .map(|id| {
-            let path = HirPath::new_file(*id);
+            let path = DefinitionPath::Module(*id);
             ModuleId(db.intern_hir_path(path))
         })
         .collect()
@@ -192,20 +197,34 @@ fn all_exported_parserdefs(db: &dyn Hirs) -> Vec<ParserDefId> {
         .collect()
 }
 
+/// finds the parent module of a given def id
+/// the def id will just consist of a single component, namely the file
 fn hir_parent_module(db: &dyn Hirs, id: DefId) -> SResult<ModuleId> {
-    // todo
-    Ok(ModuleId(db.intern_hir_path(HirPath::new_file(
-        db.lookup_intern_hir_path(id).path()[0].unwrap_file(),
-    ))))
+    let mut current_id = id;
+    loop {
+        let path = db.lookup_intern_hir_path(current_id);
+        match path {
+            DefinitionPath::Module(_) => return Ok(ModuleId(db.intern_hir_path(path))),
+            DefinitionPath::Path(_, parent) => current_id = parent,
+        }
+    }
 }
 
+/// finds the parent parserdef of a given def id
+/// the def id will just consist of two components, namely the file and a named component
 fn hir_parent_parserdef(db: &dyn Hirs, id: DefId) -> SResult<ParserDefId> {
-    let path = db.lookup_intern_hir_path(id);
-    // todo
-    Ok(ParserDefId(db.intern_hir_path(HirPath::new_fid(
-        path.path()[0].unwrap_file(),
-        path.path()[1].unwrap_named(),
-    ))))
+    let mut previous_id = id;
+    let mut current_id = id.parent(db).expect("child of pd has no parent");
+    loop {
+        let path = db.lookup_intern_hir_path(current_id);
+        match path {
+            DefinitionPath::Module(_) => return Ok(ParserDefId(previous_id)),
+            DefinitionPath::Path(_, parent) => {
+                previous_id = current_id;
+                current_id = parent;
+            }
+        }
+    }
 }
 
 fn hir_parent_block(db: &dyn Hirs, id: DefId) -> SResult<Option<BlockId>> {
@@ -214,12 +233,7 @@ fn hir_parent_block(db: &dyn Hirs, id: DefId) -> SResult<Option<BlockId>> {
         HirNode::ParserDef(_) => return Ok(None),
         _ => {}
     }
-    let mut path = db.lookup_intern_hir_path(id);
-    if path.pop().is_none() {
-        return Ok(None);
-    }
-    let id = db.intern_hir_path(path);
-    db.hir_parent_block(id)
+    db.hir_parent_block(id.parent(db).expect("child of pd has no parent"))
 }
 
 fn indirect_span(db: &dyn Hirs, span: IndirectSpan) -> SResult<Span> {
@@ -324,8 +338,10 @@ fn std_item(db: &dyn Hirs, item: StdItem) -> SResult<ParserDefId> {
         StdItem::Compose => "compose",
     };
     let compose = db.intern_identifier(IdentifierName { name: name.into() });
-    let compose_path = HirPath::new_fid(db.std()?, FieldName::Ident(compose));
-    let compose_item = db.intern_hir_path(compose_path);
+    let compose_item = db.intern_hir_path(DefinitionPath::Path(
+        PathComponent::Named(FieldName::Ident(compose)),
+        db.intern_hir_path(DefinitionPath::Module(db.std()?)),
+    ));
     let HirNode::ParserDef(compose_pd) = db.hir_node(compose_item)? else {
         panic!("compose is not a parser def");
     };
@@ -487,19 +503,25 @@ impl Module {
 }
 
 fn module_file(db: &dyn Hirs, file: FileId) -> Result<Module, SilencedError> {
-    let id = ModuleId(db.intern_hir_path(HirPath::new_file(file)));
+    let id = ModuleId(db.intern_hir_path(DefinitionPath::Module(file)));
     let symbols = db.symbols(file)?;
     let defs = symbols
         .iter()
         .flat_map(|(sym, is_parserdef)| {
-            let path = db.intern_hir_path(HirPath::new_fid(file, FieldName::Ident(*sym)));
+            let path = db.intern_hir_path(DefinitionPath::Path(
+                PathComponent::Named(FieldName::Ident(*sym)),
+                id.0,
+            ));
             is_parserdef.then(|| (*sym, ParserDefId(path)))
         })
         .collect();
     let imports = symbols
         .iter()
         .flat_map(|(sym, is_parserdef)| {
-            let path = db.intern_hir_path(HirPath::new_fid(file, FieldName::Ident(*sym)));
+            let path = db.intern_hir_path(DefinitionPath::Path(
+                PathComponent::Named(FieldName::Ident(*sym)),
+                id.0,
+            ));
             (!*is_parserdef).then_some((*sym, ImportId(path)))
         })
         .collect();
@@ -805,10 +827,12 @@ impl<DB: Hirs + Default> Parser for Context<DB> {
     fn parser(&self, s: &str) -> ParserDefId {
         use yaboc_ast::import::Import;
         let fd = FileId::default();
-        ParserDefId(
-            self.db
-                .intern_hir_path(HirPath::new_fid(fd, FieldName::Ident(self.id(s)))),
-        )
+        let module = self.db.intern_hir_path(DefinitionPath::Module(fd));
+        let pd = self.db.intern_hir_path(DefinitionPath::Path(
+            PathComponent::Named(FieldName::Ident(self.id(s))),
+            module,
+        ));
+        ParserDefId(pd)
     }
 }
 

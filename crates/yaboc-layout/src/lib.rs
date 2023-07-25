@@ -1146,7 +1146,7 @@ def [int] *> main = {
                     ),
                     &ctx.db
                 ),
-                "main$56ed3a3938b971b7$parse_0_lb_worker"
+                "main$54b43b3b86e9f014$parse_0_lb_worker"
             );
         }
         let main_block = outlayer.pd_result()[&canon_2004]
@@ -1165,7 +1165,7 @@ def [int] *> main = {
                     ),
                     &ctx.db
                 ),
-                "block_1b15571abd710f7a$27258328b19e28cf$parse_0_vb"
+                "block_6c872ebf06064930$260cc241e353548b$parse_0_vb"
             );
         }
         let field = |name| FieldName::Ident(ctx.id(name));
