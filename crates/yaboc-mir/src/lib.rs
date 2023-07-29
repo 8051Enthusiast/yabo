@@ -137,6 +137,7 @@ impl TryFrom<&ValBinOp> for IntBinOp {
             | ValBinOp::Uneq
             | ValBinOp::Equals
             | ValBinOp::Compose
+            | ValBinOp::Index
             | ValBinOp::ParserApply
             | ValBinOp::Else => return Err(()),
         })
@@ -165,6 +166,7 @@ impl TryFrom<&ValBinOp> for Comp {
             | ValBinOp::Modulo
             | ValBinOp::Mul
             | ValBinOp::Compose
+            | ValBinOp::Index
             | ValBinOp::ParserApply
             | ValBinOp::Else => return Err(()),
         })

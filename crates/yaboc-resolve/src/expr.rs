@@ -140,6 +140,8 @@ pub fn resolve_expr_error(
         Cont(ExprIdx<Resolved>),
         Compose(SpanIndex),
         Array(SpanIndex),
+        IndexCall(SpanIndex, ExprIdx<Resolved>),
+        Index(SpanIndex),
     }
     use DesugarContinue::*;
 
@@ -152,29 +154,53 @@ pub fn resolve_expr_error(
         true,
     ));
     let array = ExprHead::Niladic(ResolvedAtom::Array);
+    let index = ExprHead::Niladic(ResolvedAtom::ParserDef(
+        db.std_item(hir::StdItem::Index)?,
+        true,
+    ));
     let desugared = ZipExpr::new_from_unfold(Cont(zip_expr.root()), |id| {
         let id = match id {
             Cont(id) => id,
             Compose(span) => return (compose.clone(), span),
             Array(span) => return (array.clone(), span),
+            Index(span) => return (index.clone(), span),
+            IndexCall(span, idx) => {
+                return (
+                    ExprHead::Variadic(
+                        ValVarOp::Call,
+                        SmallVec::from_slice(&[Index(span), Cont(idx)]),
+                    ),
+                    span,
+                )
+            }
         };
         let (head, span) = zip_expr.index_expr(id);
-        if let ExprHead::Dyadic(ValBinOp::Compose, [lhs, rhs]) = head {
-            return (
-                ExprHead::Variadic(
-                    ValVarOp::Call,
-                    SmallVec::from_slice(&[Compose(*span), Cont(*lhs), Cont(*rhs)]),
-                ),
-                *span,
-            );
-        } else if let ExprHead::Monadic(ValUnOp::Array, inner) = head {
-            return (
-                ExprHead::Variadic(
-                    ValVarOp::Call,
-                    SmallVec::from_slice(&[Array(*span), Cont(*inner)]),
-                ),
-                *span,
-            );
+        match head {
+            ExprHead::Dyadic(ValBinOp::Compose, [lhs, rhs]) => {
+                return (
+                    ExprHead::Variadic(
+                        ValVarOp::Call,
+                        SmallVec::from_slice(&[Compose(*span), Cont(*lhs), Cont(*rhs)]),
+                    ),
+                    *span,
+                );
+            }
+            ExprHead::Monadic(ValUnOp::Array, inner) => {
+                return (
+                    ExprHead::Variadic(
+                        ValVarOp::Call,
+                        SmallVec::from_slice(&[Array(*span), Cont(*inner)]),
+                    ),
+                    *span,
+                );
+            }
+            ExprHead::Dyadic(ValBinOp::Index, [arr, idx]) => {
+                return (
+                    ExprHead::Dyadic(ValBinOp::ParserApply, [Cont(*arr), IndexCall(*span, *idx)]),
+                    *span,
+                );
+            }
+            _ => {}
         }
         (head.clone().map_inner(Cont), *span)
     });

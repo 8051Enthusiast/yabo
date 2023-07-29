@@ -179,6 +179,7 @@ impl<'a> SizeTermBuilder<'a> {
                     Ok(self.push_term(Term::Add([lhs, rhs]), src))
                 }
                 ValBinOp::Else => Ok(self.push_term(Term::Unify([lhs, rhs]), src)),
+                ValBinOp::Compose | ValBinOp::Index => unreachable!(),
                 ValBinOp::And
                 | ValBinOp::Xor
                 | ValBinOp::Or
@@ -192,7 +193,6 @@ impl<'a> SizeTermBuilder<'a> {
                 | ValBinOp::ShiftL
                 | ValBinOp::Div
                 | ValBinOp::Modulo
-                | ValBinOp::Compose
                 | ValBinOp::ParserApply => Ok(self.push_term(Term::OpaqueBin([lhs, rhs]), src)),
             },
             ExprHead::Variadic(ValVarOp::Call, args) => {
