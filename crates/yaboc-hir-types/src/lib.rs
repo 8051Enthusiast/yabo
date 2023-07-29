@@ -376,7 +376,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                             bit
                         }
                         Else => self.infctx.one_of(&[left, right])?,
-                        Compose => unreachable!(),
+                        Compose | Index => unreachable!(),
                         ParserApply => self.infctx.parser_apply(right, left)?,
                     },
                     ExprHead::Monadic(op, &inner) => match &op {

@@ -523,7 +523,7 @@ impl<'a> ConvertExpr<'a> {
                         self.f.set_bb(continue_bb);
                         place_ref
                     }
-                    ValBinOp::Compose => unreachable!(),
+                    ValBinOp::Compose | ValBinOp::Index => unreachable!(),
                 }
             }
             ExprHead::Variadic(ValVarOp::Call, inner) => {

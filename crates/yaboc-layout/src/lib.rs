@@ -997,7 +997,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
             },
             ExprHead::Dyadic(op, [lhs, rhs]) => match op {
                 ValBinOp::ParserApply => rhs.0.apply_arg(ctx, lhs.0)?,
-                ValBinOp::Compose => unreachable!(),
+                ValBinOp::Compose | ValBinOp::Index => unreachable!(),
                 ValBinOp::Else => lhs.0.join(ctx, rhs.0)?.0,
                 ValBinOp::LesserEq
                 | ValBinOp::Lesser

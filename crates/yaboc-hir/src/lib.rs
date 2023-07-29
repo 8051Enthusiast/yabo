@@ -73,6 +73,7 @@ pub trait Hirs: yaboc_ast::Asts {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StdItem {
     Compose,
+    Index,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -336,6 +337,7 @@ fn parserdef_arg_index(db: &dyn Hirs, pd: ParserDefId, id: DefId) -> SResult<Opt
 fn std_item(db: &dyn Hirs, item: StdItem) -> SResult<ParserDefId> {
     let name = match item {
         StdItem::Compose => "compose",
+        StdItem::Index => "index",
     };
     let compose = db.intern_identifier(IdentifierName { name: name.into() });
     let compose_item = db.intern_hir_path(DefinitionPath::Path(

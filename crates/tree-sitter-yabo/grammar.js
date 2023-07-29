@@ -254,13 +254,22 @@ module.exports = grammar({
         ['&', PREC.AND],
       ];
 
-      return choice(...table.map(([operator, precedence]) => {
+      const regular_ops = choice(...table.map(([operator, precedence]) => {
         return prec.left(precedence, seq(
           field('left', $._expression),
           field('op', operator),
           field('right', $._expression)
         ))
       }));
+      return choice(
+        regular_ops,
+        seq(
+          field('left', $._expression),
+          field('op', '.['),
+          field('right', $._expression),
+          ']'
+        )
+      )
     },
     unary_expression: $ => prec(PREC.UNARY, choice(
       seq(
