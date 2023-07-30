@@ -999,6 +999,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ValBinOp::ParserApply => rhs.0.apply_arg(ctx, lhs.0)?,
                 ValBinOp::Compose | ValBinOp::Index => unreachable!(),
                 ValBinOp::Else => lhs.0.join(ctx, rhs.0)?.0,
+                ValBinOp::Then => rhs.0,
                 ValBinOp::LesserEq
                 | ValBinOp::Lesser
                 | ValBinOp::GreaterEq

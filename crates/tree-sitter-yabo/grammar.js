@@ -8,13 +8,13 @@ const PREC = {
   ADD: 6,
   MULTIPLY: 7,
   PARSE: 8,
-  UNARY: 9,
-  WIGGLE: 11,
-  ELSE: 12,
-  DOT: 13,
-  ARGS: 14,
-  PARSERTYPE: 15,
-  PARSERDEF: 16,
+  ELSE: 11,
+  THEN: 12,
+  PREFIX: 13,
+  POSTFIX: 14,
+  ARGS: 15,
+  PARSERTYPE: 16,
+  PARSERDEF: 17,
 };
 module.exports = grammar({
   name: 'yabo',
@@ -122,12 +122,12 @@ module.exports = grammar({
       field('expr', $._type_expression),
       ']',
     ),
-    constraint_apply: $ => prec.left(PREC.WIGGLE, seq(
+    constraint_apply: $ => prec.left(PREC.POSTFIX, seq(
       field('left', $._expression),
       field('op', choice('~', 'if', 'try')),
       field('right', $._constraint_expression),
     )),
-    type_constraint: $ => prec.left(PREC.WIGGLE, seq(
+    type_constraint: $ => prec.left(PREC.POSTFIX, seq(
       field('left', $._type_expression),
       field('op', '~'),
       field('right', $._constraint_expression),
@@ -233,6 +233,7 @@ module.exports = grammar({
     )),
     binary_expression: $ => {
       const table = [
+        ['then', PREC.THEN],
         ['else', PREC.ELSE],
         ['*>', PREC.PARSE],
         ['|>', PREC.PARSE],
@@ -272,7 +273,7 @@ module.exports = grammar({
       )
     },
     unary_expression: $ => choice(
-      prec(PREC.UNARY, choice(
+      prec(PREC.PREFIX, choice(
         seq(
           field('op', choice('-', '!', 'if')),
           field('right', $._expression)
@@ -282,7 +283,7 @@ module.exports = grammar({
           field('right', $._expression),
           ']'
         ))),
-      prec(PREC.DOT,
+      prec(PREC.POSTFIX,
         seq(
           field('right', $._expression),
           '.',
@@ -305,7 +306,7 @@ module.exports = grammar({
       $.range,
       $.not_eof,
     ),
-    val_dot: $ => prec.left(PREC.DOT, seq(
+    val_dot: $ => prec.left(PREC.POSTFIX, seq(
       field('left', $._expression),
       field('op', '.'),
       field('right', $._atom),

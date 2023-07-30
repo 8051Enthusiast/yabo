@@ -76,7 +76,7 @@
         },
         {
           "type": "PREC",
-          "value": 16,
+          "value": 17,
           "content": {
             "type": "SEQ",
             "members": [
@@ -240,7 +240,7 @@
       "members": [
         {
           "type": "PREC_LEFT",
-          "value": 15,
+          "value": 16,
           "content": {
             "type": "SEQ",
             "members": [
@@ -275,7 +275,7 @@
     },
     "unary_type_expression": {
       "type": "PREC",
-      "value": 16,
+      "value": 17,
       "content": {
         "type": "SEQ",
         "members": [
@@ -435,7 +435,7 @@
     },
     "constraint_apply": {
       "type": "PREC_LEFT",
-      "value": 11,
+      "value": 14,
       "content": {
         "type": "SEQ",
         "members": [
@@ -481,7 +481,7 @@
     },
     "type_constraint": {
       "type": "PREC_LEFT",
-      "value": 11,
+      "value": 14,
       "content": {
         "type": "SEQ",
         "members": [
@@ -911,7 +911,7 @@
     },
     "fun_application": {
       "type": "PREC",
-      "value": 14,
+      "value": 15,
       "content": {
         "type": "SEQ",
         "members": [
@@ -986,7 +986,7 @@
     },
     "type_fun_application": {
       "type": "PREC",
-      "value": 14,
+      "value": 15,
       "content": {
         "type": "SEQ",
         "members": [
@@ -1014,6 +1014,39 @@
             {
               "type": "PREC_LEFT",
               "value": 12,
+              "content": {
+                "type": "SEQ",
+                "members": [
+                  {
+                    "type": "FIELD",
+                    "name": "left",
+                    "content": {
+                      "type": "SYMBOL",
+                      "name": "_expression"
+                    }
+                  },
+                  {
+                    "type": "FIELD",
+                    "name": "op",
+                    "content": {
+                      "type": "STRING",
+                      "value": "then"
+                    }
+                  },
+                  {
+                    "type": "FIELD",
+                    "name": "right",
+                    "content": {
+                      "type": "SYMBOL",
+                      "name": "_expression"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "PREC_LEFT",
+              "value": 11,
               "content": {
                 "type": "SEQ",
                 "members": [
@@ -1680,7 +1713,7 @@
       "members": [
         {
           "type": "PREC",
-          "value": 9,
+          "value": 13,
           "content": {
             "type": "CHOICE",
             "members": [
@@ -1748,7 +1781,7 @@
         },
         {
           "type": "PREC",
-          "value": 13,
+          "value": 14,
           "content": {
             "type": "SEQ",
             "members": [
@@ -1838,7 +1871,7 @@
     },
     "val_dot": {
       "type": "PREC_LEFT",
-      "value": 13,
+      "value": 14,
       "content": {
         "type": "SEQ",
         "members": [
@@ -1871,7 +1904,7 @@
     },
     "parserdef_ref": {
       "type": "PREC_LEFT",
-      "value": 14,
+      "value": 15,
       "content": {
         "type": "SEQ",
         "members": [

@@ -180,6 +180,7 @@ impl<'a> SizeTermBuilder<'a> {
                     Ok(self.push_term(Term::Add([lhs, rhs]), src))
                 }
                 ValBinOp::Else => Ok(self.push_term(Term::Unify([lhs, rhs]), src)),
+                ValBinOp::Then => Ok(rhs),
                 ValBinOp::Compose | ValBinOp::Index => unreachable!(),
                 ValBinOp::And
                 | ValBinOp::Xor

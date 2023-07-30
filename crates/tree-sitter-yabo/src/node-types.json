@@ -328,6 +328,10 @@
             "named": false
           },
           {
+            "type": "then",
+            "named": false
+          },
+          {
             "type": "|",
             "named": false
           },
@@ -2239,6 +2243,10 @@
   },
   {
     "type": "sizeof",
+    "named": false
+  },
+  {
+    "type": "then",
     "named": false
   },
   {
