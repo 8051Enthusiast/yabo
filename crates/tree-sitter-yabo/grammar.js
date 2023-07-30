@@ -9,12 +9,12 @@ const PREC = {
   MULTIPLY: 7,
   PARSE: 8,
   UNARY: 9,
-  WIGGLE: 10,
-  ELSE: 11,
-  DOT: 12,
-  ARGS: 13,
-  PARSERTYPE: 14,
-  PARSERDEF: 15,
+  WIGGLE: 11,
+  ELSE: 12,
+  DOT: 13,
+  ARGS: 14,
+  PARSERTYPE: 15,
+  PARSERDEF: 16,
 };
 module.exports = grammar({
   name: 'yabo',
@@ -271,16 +271,24 @@ module.exports = grammar({
         )
       )
     },
-    unary_expression: $ => prec(PREC.UNARY, choice(
-      seq(
-        field('op', choice('-', '!', 'if')),
-        field('right', $._expression)
-      ),
-      seq(
-        field('op', '['),
-        field('right', $._expression),
-        ']'
-      ))
+    unary_expression: $ => choice(
+      prec(PREC.UNARY, choice(
+        seq(
+          field('op', choice('-', '!', 'if')),
+          field('right', $._expression)
+        ),
+        seq(
+          field('op', '['),
+          field('right', $._expression),
+          ']'
+        ))),
+      prec(PREC.DOT,
+        seq(
+          field('right', $._expression),
+          '.',
+          field('op', 'size')
+        )
+      )
     ),
     _type_atom: $ => choice(
       $.primitive_type,

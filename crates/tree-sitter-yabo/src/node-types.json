@@ -1796,6 +1796,10 @@
           {
             "type": "if",
             "named": false
+          },
+          {
+            "type": "size",
+            "named": false
           }
         ]
       },
@@ -2232,6 +2236,10 @@
   {
     "type": "retvrn",
     "named": true
+  },
+  {
+    "type": "size",
+    "named": false
   },
   {
     "type": "true",

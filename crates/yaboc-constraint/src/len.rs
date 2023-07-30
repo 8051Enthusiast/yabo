@@ -168,6 +168,7 @@ impl<'a> SizeTermBuilder<'a> {
             ExprHead::Monadic(m, inner) => match m {
                 ValUnOp::Neg => Ok(self.push_term(Term::Neg(inner), src)),
                 ValUnOp::Wiggle(_, _) => Ok(inner),
+                ValUnOp::Size => Ok(self.push_term(Term::Size(inner), src)),
                 ValUnOp::Array => unreachable!(),
                 ValUnOp::Dot(_, _) | ValUnOp::Not => Ok(self.push_term(Term::OpaqueUn(inner), src)),
             },

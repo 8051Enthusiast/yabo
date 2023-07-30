@@ -372,6 +372,19 @@ impl<'a> ConvertExpr<'a> {
                         place_ref
                     }
                     ValUnOp::Array => unreachable!(),
+                    ValUnOp::Size => {
+                        let inner_ldt = self.db.least_deref_type(inner_ty)?;
+                        let inner = self.copy_if_different_levels(
+                            inner_ldt,
+                            inner_ty,
+                            None,
+                            inner_origin,
+                            recurse,
+                        )?;
+                        let place_ref = self.unwrap_or_stack(place, ty, origin);
+                        self.f.len_call(inner, place_ref, self.retreat);
+                        place_ref
+                    }
                     ValUnOp::Wiggle(constr, kind) => {
                         if matches!(self.db.lookup_intern_type(ty), Type::ParserArg { .. }) {
                             let place_ref = self.unwrap_or_stack(place, ty, origin);

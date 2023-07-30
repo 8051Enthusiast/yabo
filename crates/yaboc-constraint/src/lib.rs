@@ -281,12 +281,16 @@ pub fn len_errors(db: &dyn Constraints, pd: hir::ParserDefId) -> SResult<Vec<Len
     };
     let arg_deps = db.len_arg_deps(pd)?;
     for term in terms.expr.terms.iter() {
-        let Term::Apply([arr, arg]) = term else {
+        let arg = if let Term::Apply([arr, arg]) = term {
+            if terms.expr.terms[*arr] != Term::Arr {
+                continue;
+            }
+            arg
+        } else if let Term::Size(arg) = term {
+            arg
+        } else {
             continue;
         };
-        if terms.expr.terms[*arr] != Term::Arr {
-            continue;
-        }
         if lens.vals[*arg].is_dynamic() {
             errs.push(LenError::NonsizedInArray(get_span(*arg)?));
             continue;

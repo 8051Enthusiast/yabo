@@ -976,7 +976,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 }
             },
             ExprHead::Monadic(op, inner) => match op {
-                ValUnOp::Not | ValUnOp::Neg => {
+                ValUnOp::Not | ValUnOp::Neg | ValUnOp::Size => {
                     make_layout(MonoLayout::Primitive(PrimitiveType::Int))
                 }
                 ValUnOp::Array => unreachable!(),

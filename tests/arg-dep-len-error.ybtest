@@ -1,3 +1,8 @@
 ====[ source code ]====
 def *test(f: *int) = [{f, ~}](3)
                      #~^error[602] sized parser depending on nonsized argument
+
+def *test2(f: *int) = {
+  let return = {f, ~}.size
+               #~^error[602] sized parser depending on nonsized argument
+}

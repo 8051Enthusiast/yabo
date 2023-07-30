@@ -385,6 +385,10 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                             self.infctx.constrain(inner, int)?;
                             int
                         }
+                        ValUnOp::Size => {
+                            self.infctx.check_parser(inner)?;
+                            self.infctx.int()
+                        }
                         ValUnOp::Array => unreachable!(),
                         ValUnOp::Wiggle(c, _) => {
                             let (inner, cont) = self.infctx.if_checked(inner)?;
