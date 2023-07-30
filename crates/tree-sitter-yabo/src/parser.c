@@ -58,7 +58,7 @@ enum {
   anon_sym_AMP = 39,
   anon_sym_DOT_LBRACK = 40,
   anon_sym_DOT = 41,
-  anon_sym_size = 42,
+  anon_sym_sizeof = 42,
   anon_sym_DOT_DOT = 43,
   anon_sym_AMP_GT = 44,
   anon_sym_int = 45,
@@ -176,7 +176,7 @@ static const char * const ts_symbol_names[] = {
   [anon_sym_AMP] = "&",
   [anon_sym_DOT_LBRACK] = ".[",
   [anon_sym_DOT] = ".",
-  [anon_sym_size] = "size",
+  [anon_sym_sizeof] = "sizeof",
   [anon_sym_DOT_DOT] = "..",
   [anon_sym_AMP_GT] = "&>",
   [anon_sym_int] = "int",
@@ -294,7 +294,7 @@ static const TSSymbol ts_symbol_map[] = {
   [anon_sym_AMP] = anon_sym_AMP,
   [anon_sym_DOT_LBRACK] = anon_sym_DOT_LBRACK,
   [anon_sym_DOT] = anon_sym_DOT,
-  [anon_sym_size] = anon_sym_size,
+  [anon_sym_sizeof] = anon_sym_sizeof,
   [anon_sym_DOT_DOT] = anon_sym_DOT_DOT,
   [anon_sym_AMP_GT] = anon_sym_AMP_GT,
   [anon_sym_int] = anon_sym_int,
@@ -538,7 +538,7 @@ static const TSSymbolMetadata ts_symbol_metadata[] = {
     .visible = true,
     .named = false,
   },
-  [anon_sym_size] = {
+  [anon_sym_sizeof] = {
     .visible = true,
     .named = false,
   },
@@ -1741,31 +1741,37 @@ static bool ts_lex_keywords(TSLexer *lexer, TSStateId state) {
       if (lookahead == 'r') ADVANCE(58);
       END_STATE();
     case 53:
-      ACCEPT_TOKEN(anon_sym_size);
+      if (lookahead == 'o') ADVANCE(59);
       END_STATE();
     case 54:
       ACCEPT_TOKEN(anon_sym_true);
       END_STATE();
     case 55:
-      if (lookahead == 't') ADVANCE(59);
+      if (lookahead == 't') ADVANCE(60);
       END_STATE();
     case 56:
       ACCEPT_TOKEN(anon_sym_false);
       END_STATE();
     case 57:
-      if (lookahead == 't') ADVANCE(60);
+      if (lookahead == 't') ADVANCE(61);
       END_STATE();
     case 58:
-      if (lookahead == 'n') ADVANCE(61);
+      if (lookahead == 'n') ADVANCE(62);
       END_STATE();
     case 59:
-      ACCEPT_TOKEN(anon_sym_export);
+      if (lookahead == 'f') ADVANCE(63);
       END_STATE();
     case 60:
-      ACCEPT_TOKEN(anon_sym_import);
+      ACCEPT_TOKEN(anon_sym_export);
       END_STATE();
     case 61:
+      ACCEPT_TOKEN(anon_sym_import);
+      END_STATE();
+    case 62:
       ACCEPT_TOKEN(sym_retvrn);
+      END_STATE();
+    case 63:
+      ACCEPT_TOKEN(anon_sym_sizeof);
       END_STATE();
     default:
       return false;
@@ -2158,7 +2164,7 @@ static const uint16_t ts_parse_table[LARGE_STATE_COUNT][SYMBOL_COUNT] = {
     [anon_sym_AMP] = ACTIONS(1),
     [anon_sym_DOT_LBRACK] = ACTIONS(1),
     [anon_sym_DOT] = ACTIONS(1),
-    [anon_sym_size] = ACTIONS(1),
+    [anon_sym_sizeof] = ACTIONS(1),
     [anon_sym_DOT_DOT] = ACTIONS(1),
     [anon_sym_AMP_GT] = ACTIONS(1),
     [anon_sym_int] = ACTIONS(1),
@@ -9671,7 +9677,7 @@ static const uint16_t ts_small_parse_table[] = {
     ACTIONS(39), 1,
       anon_sym_SQUOTE,
     ACTIONS(485), 1,
-      anon_sym_size,
+      anon_sym_sizeof,
     STATE(57), 1,
       sym__field_name,
     ACTIONS(41), 2,
@@ -9695,7 +9701,7 @@ static const uint16_t ts_small_parse_table[] = {
     ACTIONS(201), 1,
       anon_sym_SQUOTE,
     ACTIONS(489), 1,
-      anon_sym_size,
+      anon_sym_sizeof,
     STATE(2), 1,
       sym__field_name,
     ACTIONS(183), 2,
