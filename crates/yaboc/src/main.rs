@@ -12,6 +12,7 @@ enum EmitKind {
     Deps,
     Lens,
     Mir,
+    MirGraph,
     Llvm,
     Object,
     SharedLib,
@@ -68,6 +69,7 @@ fn main() {
     match match args.emit {
         EmitKind::Hir => context.write_hir(outfile).map_err(|x| x.to_string()),
         EmitKind::Mir => context.write_mir(outfile).map_err(|x| x.to_string()),
+        EmitKind::MirGraph => context.write_mir_graphs(outfile).map_err(|x| x.to_string()),
         EmitKind::Deps => context.write_deps(outfile).map_err(|x| x.to_string()),
         EmitKind::Lens => context.write_lens(outfile).map_err(|x| x.to_string()),
         EmitKind::Llvm => context.write_llvm(outfile),

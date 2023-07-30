@@ -27,7 +27,7 @@ use yaboc_types::{Type, TypeId};
 
 use self::convert::ConvertCtx;
 
-pub use represent::print_all_mir;
+pub use represent::{print_all_mir, print_all_mir_graphs};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MirKind {

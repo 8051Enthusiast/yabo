@@ -14,7 +14,7 @@ use yaboc_cg_llvm::CodeGenCtx;
 use yaboc_database::YabocDatabase;
 use yaboc_hir::represent::HirGraph;
 use yaboc_layout::{InternedLayout, LayoutContext};
-use yaboc_mir::print_all_mir;
+use yaboc_mir::{print_all_mir, print_all_mir_graphs};
 const ERROR_FNS: &[fn(&YabocDatabase) -> Vec<Report>] = &[
     yaboc_ast::error::errors,
     yaboc_hir::error::errors,
@@ -75,6 +75,12 @@ impl Driver {
     pub fn write_mir(&self, outfile: &OsStr) -> Result<(), std::io::Error> {
         let mut out = std::fs::File::create(outfile)?;
         print_all_mir(&self.db, &mut out, true)?;
+        Ok(())
+    }
+
+    pub fn write_mir_graphs(&self, outfile: &OsStr) -> Result<(), std::io::Error> {
+        let mut out = std::fs::File::create(outfile)?;
+        print_all_mir_graphs(&self.db, &mut out)?;
         Ok(())
     }
 
