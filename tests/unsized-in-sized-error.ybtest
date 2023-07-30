@@ -9,6 +9,6 @@ def *b = [/./](4)
 
 # .size also requires a constant size
 def *c = {
-    let return = std.basenum(16).size
+    let return = std.basenum(16).sizeof
                  #~^ error[601] nonsized parser where sized parser is expected
 }

@@ -286,7 +286,7 @@ module.exports = grammar({
         seq(
           field('right', $._expression),
           '.',
-          field('op', 'size')
+          field('op', 'sizeof')
         )
       )
     ),

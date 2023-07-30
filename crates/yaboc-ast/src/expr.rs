@@ -666,7 +666,7 @@ impl<C> ValUnOp<C> {
             "!" => Not,
             "-" => Neg,
             "[" => Array,
-            "size" => Size,
+            "sizeof" => Size,
             otherwise => return Err(otherwise),
         })
     }

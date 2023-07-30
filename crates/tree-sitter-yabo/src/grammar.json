@@ -1769,7 +1769,7 @@
                 "name": "op",
                 "content": {
                   "type": "STRING",
-                  "value": "size"
+                  "value": "sizeof"
                 }
               }
             ]
