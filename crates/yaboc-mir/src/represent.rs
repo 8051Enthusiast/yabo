@@ -381,13 +381,14 @@ fn mir_graph<DB: Mirs, W: Write>(
     prefix: &str,
 ) -> std::io::Result<()> {
     let mir = db.mir(fun, MirKind::Call(RequirementSet::all())).unwrap();
-    write!(w, "subgraph cluster_{prefix} {{\n")?;
-    write!(w, "\tlabel=\"{prefix}\"\n")?;
+    writeln!(w, "subgraph cluster_{prefix} {{")?;
+    writeln!(w, "\tlabel=\"{prefix}\"")?;
+    let idx = |bbref: BBRef| bbref.as_index() + 1;
     for (bbref, bb) in mir.iter_bb() {
         write!(
             w,
             "\t{prefix}_bb{bb} [label=\"{{<start>bb{bb}",
-            bb = bbref.as_index()
+            bb = idx(bbref)
         )?;
         for ins in bb.ins.iter() {
             write!(w, "|")?;
@@ -396,41 +397,41 @@ fn mir_graph<DB: Mirs, W: Write>(
             }
             let ins_str = dbformat!(&(&mir, db), "{}", ins);
             let sanitized = ins_str
-                .replace("|", "\\|")
-                .replace("{", "\\{")
-                .replace("}", "\\}");
+                .replace('|', "\\|")
+                .replace('{', "\\{")
+                .replace('}', "\\}");
 
             write!(w, "{}", sanitized)?;
         }
-        write!(w, "}}\"];\n")?;
+        writeln!(w, "}}\"];")?;
     }
     for (bbref, bb) in mir.iter_bb() {
         for ins in bb.ins.iter() {
             let Some(flow) = ins.control_flow() else {
                 continue;
             };
-            write!(
+            writeln!(
                 w,
-                "\t{prefix}_bb{}:end -> {prefix}_bb{}:start [color=green];\n",
-                bbref.as_index(),
-                flow.next.as_index()
+                "\t{prefix}_bb{}:end -> {prefix}_bb{}:start [color=green];",
+                idx(bbref),
+                idx(flow.next),
             )?;
             if let Some(bt) = flow.backtrack {
-                write!(
+                writeln!(
                     w,
-                    "\t{prefix}_bb{}:end -> {prefix}_bb{}:start [color=red];\n",
-                    bbref.as_index(),
-                    bt.as_index(),
+                    "\t{prefix}_bb{}:end -> {prefix}_bb{}:start [color=red];",
+                    idx(bbref),
+                    idx(bt),
                 )?;
             }
         }
     }
-    write!(w, "}}\n")
+    writeln!(w, "}}")
 }
 
 pub fn print_all_mir_graphs<DB: Mirs, W: Write>(db: &DB, w: &mut W) -> std::io::Result<()> {
-    write!(w, "digraph mir {{\n")?;
-    write!(w, "node [shape=record];\n")?;
+    writeln!(w, "digraph mir {{")?;
+    writeln!(w, "node [shape=record];")?;
     for pd in db.all_parserdefs() {
         let pd_name = dbformat!(db, "{}", &pd.0).replace(|c: char| !c.is_ascii_alphanumeric(), "_");
         mir_graph(db, w, FunKind::ParserDef(pd), &pd_name)?;
@@ -440,5 +441,5 @@ pub fn print_all_mir_graphs<DB: Mirs, W: Write>(db: &DB, w: &mut W) -> std::io::
             mir_graph(db, w, FunKind::Block(*block), &block_name)?;
         }
     }
-    write!(w, "}}")
+    writeln!(w, "}}")
 }
