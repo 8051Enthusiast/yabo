@@ -656,6 +656,7 @@ pub enum ValUnOp<C> {
     Array,
     Wiggle(C, WiggleKind),
     Dot(FieldName, bool),
+    Size,
 }
 
 impl<C> ValUnOp<C> {
@@ -665,6 +666,7 @@ impl<C> ValUnOp<C> {
             "!" => Not,
             "-" => Neg,
             "[" => Array,
+            "size" => Size,
             otherwise => return Err(otherwise),
         })
     }
@@ -676,6 +678,7 @@ impl<C> ValUnOp<C> {
             Array => Array,
             Wiggle(expr, kind) => Wiggle(f(expr), *kind),
             Dot(atom, b) => Dot(*atom, *b),
+            Size => Size,
         }
     }
     pub fn try_map_expr<D, E>(&self, f: impl FnOnce(&C) -> Result<D, E>) -> Result<ValUnOp<D>, E> {
@@ -686,6 +689,7 @@ impl<C> ValUnOp<C> {
             Array => Array,
             Wiggle(expr, kind) => Wiggle(f(expr)?, *kind),
             Dot(atom, b) => Dot(*atom, *b),
+            Size => Size,
         })
     }
 }

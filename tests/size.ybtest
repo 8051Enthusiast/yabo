@@ -1,0 +1,23 @@
+====[ source code ]====
+def *u16l = {
+  lo: ~
+  hi: ~
+  let return = lo | hi << 8
+}
+
+export
+def *test = {
+  a: u16l
+  [~](8 - u16l.size)
+  b: u16l
+}
+
+====[ binary 1 ]====
+01 23 45 67 89 ab cd ef
+12 23
+
+====[ output 1 ]====
+{
+    "a": 8961,
+    "b": 8978
+}
