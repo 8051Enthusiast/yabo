@@ -586,6 +586,7 @@ pub enum ValBinOp {
     Compose,
     ParserApply,
     Else,
+    Then,
     Index,
 }
 
@@ -612,6 +613,7 @@ impl ValBinOp {
             "|>" => Compose,
             "*>" => ParserApply,
             "else" => Else,
+            "then" => Then,
             ".[" => Index,
             otherwise => return Err(otherwise),
         })
@@ -643,6 +645,7 @@ impl Display for ValBinOp {
                 ValBinOp::Compose => "|>",
                 ValBinOp::ParserApply => "*>",
                 ValBinOp::Else => "else",
+                ValBinOp::Then => "then",
                 ValBinOp::Index => ".[",
             }
         )

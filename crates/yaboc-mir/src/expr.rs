@@ -536,6 +536,11 @@ impl<'a> ConvertExpr<'a> {
                         self.f.set_bb(continue_bb);
                         place_ref
                     }
+                    ValBinOp::Then => {
+                        let _ = lrecurse(self, None)?;
+                        let place_ref = self.unwrap_or_stack(place, ty, origin);
+                        rrecurse(self, Some(place_ref))?
+                    }
                     ValBinOp::Compose | ValBinOp::Index => unreachable!(),
                 }
             }
