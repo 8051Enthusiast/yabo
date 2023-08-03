@@ -166,11 +166,22 @@ impl<Pd> SizeExpr<Pd> {
         self.terms.len() - 1
     }
 
-    pub fn static_arg_deps(&self, arg_count: usize) -> Vec<SmallBitVec> {
+    pub fn static_arg_deps<T: Clone + std::fmt::Debug>(
+        &self,
+        vals: &[Val<T>],
+        arg_count: usize,
+    ) -> Vec<SmallBitVec> {
         let mut arg_deps = vec![SmallBitVec::zeroes(arg_count + 1); self.terms.len()];
         for (i, term) in self.terms.iter().enumerate() {
-            for dep in term.ref_indices() {
-                arg_deps[i] = arg_deps[i].or(&arg_deps[*dep]);
+            if let Term::Apply([fun, arg]) = term {
+                arg_deps[i] = arg_deps[i].or(&arg_deps[*fun]);
+                if vals[*fun].uses_next_arg() {
+                    arg_deps[i] = arg_deps[i].or(&arg_deps[*arg]);
+                }
+            } else {
+                for dep in term.ref_indices() {
+                    arg_deps[i] = arg_deps[i].or(&arg_deps[*dep]);
+                }
             }
             match term {
                 Term::Arg(a) => arg_deps[i].set(arg_count - *a as usize - 1),
@@ -365,11 +376,15 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         ret
     }
 
-    fn poly_args_impl(&mut self, fun: Val<Γ::PolyCircuitId>) -> Vec<Parameter> {
+    fn poly_args_impl(&mut self, fun: Val<Γ::PolyCircuitId>) -> Vec<Option<Parameter>> {
         match fun {
             Val::PartialPolyApply(_, [fun, arg], ..) => {
                 let mut args = self.poly_args_impl(self.vals[fun].clone());
-                args.push(Parameter::Val(arg));
+                if self.vals[fun].uses_next_arg() {
+                    args.push(Some(Parameter::Val(arg)));
+                } else {
+                    args.push(None);
+                }
                 args
             }
             Val::Poly(rank, ..) => Vec::with_capacity(rank as usize),
@@ -377,7 +392,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         }
     }
 
-    fn poly_args(&mut self, fun: Val<Γ::PolyCircuitId>) -> Vec<Parameter> {
+    fn poly_args(&mut self, fun: Val<Γ::PolyCircuitId>) -> Vec<Option<Parameter>> {
         let mut args = self.poly_args_impl(fun.clone());
         let rank = match fun {
             Val::PartialPolyApply(rank, ..) => rank,
@@ -396,23 +411,24 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             arr
         });
         for i in self.args.len()..(self.args.len() + rank as usize) {
-            args.push(Parameter::Arg(i));
+            args.push(Some(Parameter::Arg(i)));
         }
         args
     }
 
-    fn eval_circuit(&mut self, circuit: &PolyCircuit, params: &[Parameter]) -> RandomArray {
+    fn eval_circuit(&mut self, circuit: &PolyCircuit, params: &[Option<Parameter>]) -> RandomArray {
         let mut poly_vals = vec![UNINIT; circuit.gates.len()];
         for (idx, gate) in circuit.gates.iter().enumerate() {
             let val = &mut poly_vals[idx];
             match gate {
                 PolyGate::Const(c) => val.array_from_const(*c),
                 PolyGate::Arg(a) => match params[*a as usize] {
-                    Parameter::Arg(a) => val.clone_from(&self.arg_poly_vals[a]),
-                    Parameter::Val(v) => {
+                    Some(Parameter::Arg(a)) => val.clone_from(&self.arg_poly_vals[a]),
+                    Some(Parameter::Val(v)) => {
                         self.eval_poly(v);
                         val.clone_from(&self.poly_vals[v])
                     }
+                    None => panic!("used arg that should not be used"),
                 },
                 PolyGate::Op(op) => {
                     let (prev, [val, ..]) = poly_vals.split_at_mut(idx) else {
@@ -684,7 +700,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         included_circuit: &PolyCircuit,
         new_gates: &mut Vec<PolyGate>,
         term_indices: &[usize],
-        args: &[Parameter],
+        args: &[Option<Parameter>],
     ) -> usize {
         let mut index = Vec::new();
         for gate in included_circuit.gates.iter() {
@@ -694,13 +710,14 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                     new_gates.push(PolyGate::Const(*c));
                 }
                 PolyGate::Arg(a) => match args[*a as usize] {
-                    Parameter::Arg(a) => {
+                    Some(Parameter::Arg(a)) => {
                         index.push(new_gates.len());
                         new_gates.push(PolyGate::Arg(a as u32));
                     }
-                    Parameter::Val(v) => {
+                    Some(Parameter::Val(v)) => {
                         index.push(term_indices[v]);
                     }
+                    None => panic!("using parameter that should not be used"),
                 },
                 PolyGate::Op(op) => {
                     index.push(new_gates.len());
@@ -732,8 +749,15 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 // method
                 included[i] = false;
             }
-            for dep in val.ref_indices() {
-                included[*dep] = true;
+            if let Val::PartialPolyApply(_, [fun, arg], ..) = val {
+                included[*fun] = true;
+                if self.vals[*fun].uses_next_arg() {
+                    included[*arg] = true;
+                }
+            } else {
+                for dep in val.ref_indices() {
+                    included[*dep] = true;
+                }
             }
         }
         let mut gates = Vec::new();
@@ -818,7 +842,10 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 Val::Poly(arg_count, circuit_id, deps)
             }
             Val::Static(0, _) => {
-                let deps = self.size_expr.static_arg_deps(self.args.len()).remove(root);
+                let deps = self
+                    .size_expr
+                    .static_arg_deps(&self.vals, self.args.len())
+                    .remove(root);
                 if deps[self.args.len()] {
                     Val::Dynamic
                 } else {

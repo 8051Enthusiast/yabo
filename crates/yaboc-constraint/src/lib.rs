@@ -187,8 +187,9 @@ fn arg_kinds(db: &(impl Constraints + ?Sized), pd: hir::ParserDefId) -> SResult<
 
 fn len_arg_deps(db: &dyn Constraints, pd: hir::ParserDefId) -> SResult<Arc<[SmallBitVec]>> {
     let terms = db.len_term(pd)?;
+    let vals = db.len_vals(pd);
     let arg_count = db.argnum(pd)?.unwrap_or_default();
-    Ok(terms.expr.static_arg_deps(arg_count).into())
+    Ok(terms.expr.static_arg_deps(&vals.vals, arg_count).into())
 }
 
 pub fn ssc_len_vals(db: &dyn Constraints, ssc: FunctionSscId) -> Arc<Vec<LenVals>> {
@@ -441,9 +442,9 @@ mod tests {
         let Val::Static(2, deps) = ctx.db.fun_len(stat) else {
             panic!("got unexpected {:?}", stat)
         };
-        assert!(deps[0]);
-        // currently not as fine-grained because that's a pain
-        // assert!(!deps[1]);
+        // note that the order of the deps is reversed
+        assert!(deps[1]);
+        assert!(!deps[0]);
     }
     #[test]
     fn dyn_recurse() {

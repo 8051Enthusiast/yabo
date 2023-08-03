@@ -9,7 +9,7 @@ pub fn len_dot<DB: Constraints + Sized>(db: &DB) -> SResult<String> {
         let vals = db.len_vals(pd);
         let prefix = dbformat!(db, "{}", &pd.0).replace(|c: char| !c.is_ascii_alphanumeric(), "_");
         let arg_count = db.argnum(pd)?.unwrap_or_default();
-        let deps = terms.expr.static_arg_deps(arg_count);
+        let deps = terms.expr.static_arg_deps(&vals.vals, arg_count);
         let graph = len_graph(
             &prefix,
             &terms.expr.terms,
