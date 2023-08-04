@@ -8,7 +8,6 @@ impl<T: std::fmt::Debug> std::fmt::Display for Term<T> {
             Term::Apply([fun, arg]) => write!(f, "apply [{}] [{}]", fun, arg),
             Term::Const(c) => write!(f, "const {}", c),
             Term::Opaque => write!(f, "opaque"),
-            Term::OpaqueScalar => write!(f, "opaque scalar"),
             Term::OpaqueUn(inner) => write!(f, "op [{}]", inner),
             Term::OpaqueBin([lhs, rhs]) => write!(f, "[{}] op [{}]", lhs, rhs),
             Term::Mul([lhs, rhs]) => write!(f, "[{}] * [{}]", lhs, rhs),

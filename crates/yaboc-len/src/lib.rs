@@ -118,7 +118,6 @@ pub enum Term<ParserRef> {
     Apply([usize; 2]),
     Const(i128),
     Opaque,
-    OpaqueScalar,
     OpaqueUn(usize),
     OpaqueBin([usize; 2]),
     Mul([usize; 2]),
@@ -134,12 +133,7 @@ pub enum Term<ParserRef> {
 impl<ParserRef> Term<ParserRef> {
     fn ref_indices(&self) -> &[usize] {
         match self {
-            Term::Pd(_)
-            | Term::Arg(_)
-            | Term::Const(_)
-            | Term::Opaque
-            | Term::OpaqueScalar
-            | Term::Arr => &[],
+            Term::Pd(_) | Term::Arg(_) | Term::Const(_) | Term::Opaque | Term::Arr => &[],
             Term::OpaqueUn(x) | Term::Neg(x) | Term::Copy(x) | Term::Size(x) => slice::from_ref(x),
             Term::OpaqueBin(x)
             | Term::Apply(x)
@@ -154,15 +148,20 @@ impl<ParserRef> Term<ParserRef> {
 #[derive(Default, PartialEq, Eq, Debug, Clone)]
 pub struct SizeExpr<Pd> {
     pub terms: Vec<Term<Pd>>,
+    pub definite: Vec<bool>,
 }
 
 impl<Pd> SizeExpr<Pd> {
     pub fn new() -> Self {
-        Self { terms: vec![] }
+        Self {
+            terms: vec![],
+            definite: vec![],
+        }
     }
 
-    pub fn push(&mut self, term: Term<Pd>) -> usize {
+    pub fn push(&mut self, term: Term<Pd>, definite: bool) -> usize {
         self.terms.push(term);
+        self.definite.push(definite);
         self.terms.len() - 1
     }
 
@@ -185,7 +184,7 @@ impl<Pd> SizeExpr<Pd> {
             }
             match term {
                 Term::Arg(a) => arg_deps[i].set(arg_count - *a as usize - 1),
-                Term::OpaqueScalar => arg_deps[i].set(arg_count),
+                Term::Opaque => arg_deps[i].set(arg_count),
                 _ => (),
             }
         }
@@ -532,7 +531,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         }
     }
 
-    fn opaque_op(&self, args: &[usize]) -> Val<Γ::PolyCircuitId> {
+    fn opaque_op(&self, args: &[usize], definite: bool) -> Val<Γ::PolyCircuitId> {
         #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
         enum State {
             Static,
@@ -554,7 +553,13 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         }
         match state {
             State::Static => Val::Static(0, SmallBitVec::default()),
-            State::Dynamic => Val::Dynamic,
+            State::Dynamic => {
+                if definite {
+                    Val::Static(0, SmallBitVec::default())
+                } else {
+                    Val::Dynamic
+                }
+            }
             State::Undefined => Val::Undefined,
         }
     }
@@ -661,35 +666,42 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
     fn eval(&mut self) {
         for term_idx in 0..self.size_expr.terms.len() {
             let term = self.size_expr.terms[term_idx];
-            let val = match &term {
-                Term::Pd(pd) => self.env.size_info(pd),
-                Term::Arg(a) => match self.args[*a as usize] {
+            let definite = self.size_expr.definite[term_idx];
+            let val = match (&term, definite) {
+                (Term::Pd(pd), _) => self.env.size_info(pd),
+                (Term::Arg(a), def) => match self.args[*a as usize] {
                     ArgKind::Const(rank) => Val::Arg(rank, *a),
-                    ArgKind::Dynamic => Val::Dynamic,
+                    ArgKind::Dynamic => {
+                        if def {
+                            Val::Static(0, SmallBitVec::default())
+                        } else {
+                            Val::Dynamic
+                        }
+                    }
                 },
-                Term::Apply([fun, arg]) => self.apply_fun(*fun, *arg),
-                Term::Const(c) => Val::Const(0, *c),
-                Term::Opaque => Val::Dynamic,
-                Term::OpaqueScalar => Val::Static(0, SmallBitVec::default()),
-                Term::OpaqueUn(arg) => self.opaque_op(&[*arg]),
-                Term::OpaqueBin([lhs, rhs]) => self.opaque_op(&[*lhs, *rhs]),
-                Term::Mul(ops) => self.poly_op(
+                (Term::Apply([fun, arg]), _) => self.apply_fun(*fun, *arg),
+                (Term::Const(c), _) => Val::Const(0, *c),
+                (Term::Opaque, true) => Val::Static(0, SmallBitVec::default()),
+                (Term::Opaque, false) => Val::Dynamic,
+                (Term::OpaqueUn(arg), def) => self.opaque_op(&[*arg], def),
+                (Term::OpaqueBin([lhs, rhs]), def) => self.opaque_op(&[*lhs, *rhs], def),
+                (Term::Mul(ops), _) => self.poly_op(
                     *ops,
                     |[lhs, rhs]| lhs.overflowing_mul(rhs),
                     PolyOp::Mul(*ops),
                 ),
-                Term::Add(ops) => self.poly_op(
+                (Term::Add(ops), _) => self.poly_op(
                     *ops,
                     |[lhs, rhs]| lhs.overflowing_add(rhs),
                     PolyOp::Add(*ops),
                 ),
-                Term::Neg(arg) => {
+                (Term::Neg(arg), _) => {
                     self.poly_op([*arg], |[x]| x.overflowing_neg(), PolyOp::Neg(*arg))
                 }
-                Term::Arr => Val::Poly(2, self.arr_circuit, SmallBitVec::ones(2)),
-                Term::Unify(ops) => self.unify(*ops, false),
-                Term::UnifyDyn(ops) => self.unify(*ops, true),
-                Term::Copy(val) | Term::Size(val) => self.vals[*val].clone(),
+                (Term::Arr, _) => Val::Poly(2, self.arr_circuit, SmallBitVec::ones(2)),
+                (Term::Unify(ops), _) => self.unify(*ops, false),
+                (Term::UnifyDyn(ops), _) => self.unify(*ops, true),
+                (Term::Copy(val) | Term::Size(val), _) => self.vals[*val].clone(),
             };
             self.vals.push(val);
         }
