@@ -754,19 +754,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         self.build_copy_invariant(arg_copy, arg);
 
-        let (_, len_offset) = self.arg_level_and_offset(layout, 0);
-        let len_ptr =
-            self.build_byte_gep(parser.ptr, self.const_size_t(len_offset as i64), "len_ptr");
-        let len = self.build_i64_load(len_ptr, "len");
-        let parser_len = if let MonoLayout::SlicePtr = result_layout.mono_layout().0 {
-            self.const_i64(1)
-        } else {
-            let inner_parser = self.build_array_parser_get(parser);
-            let status = self.call_len_fun(int_buf.ptr, inner_parser);
-            self.non_zero_early_return(llvm_fun, status);
-            self.build_i64_load(int_buf.ptr, "parser_len")
-        };
-        let full_len = self.builder.build_int_mul(len, parser_len, "full_len");
+        let status = self.call_len_fun(int_buf.ptr, parser.into());
+        self.non_zero_early_return(llvm_fun, status);
+        let full_len = self.build_i64_load(int_buf.ptr, "parser_len");
         let slice_len = self.call_array_len_fun(arg);
         let is_out_of_bounds = self.builder.build_int_compare(
             IntPredicate::ULT,
@@ -862,10 +852,20 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let fun = self.parser_len_fun_val(layout);
         self.add_entry_block(fun);
         let [return_ptr, fun_ptr] = get_fun_args(fun).map(|v| v.into_pointer_value());
-        let len_ptr = self.build_cast::<*const i64, _>(fun_ptr);
+        let parser = CgMonoValue::new(layout, fun_ptr);
+        let int_buf = self.build_alloca_int("int_buf");
+        let (_, len_offset) = self.arg_level_and_offset(layout, 0);
+        let len_ptr = self.build_byte_gep(fun_ptr, self.const_size_t(len_offset as i64), "len_ptr");
+        let len = self.build_i64_load(len_ptr, "len");
+
+        let inner_parser = self.build_array_parser_get(parser);
+        let status = self.call_len_fun(int_buf.ptr, inner_parser);
+        self.non_zero_early_return(fun, status);
+        let parser_len = self.build_i64_load(int_buf.ptr, "parser_len");
+
+        let full_len = self.builder.build_int_mul(len, parser_len, "full_len");
         let return_ptr = self.build_cast::<*mut i64, _>(return_ptr);
-        let len = self.builder.build_load(len_ptr, "len").into_int_value();
-        self.builder.build_store(return_ptr, len);
+        self.builder.build_store(return_ptr, full_len);
         self.builder
             .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)));
     }
