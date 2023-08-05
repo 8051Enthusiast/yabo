@@ -27,6 +27,7 @@ use yaboc_types::{PrimitiveType, Type, TypeId, TypeInterner};
 
 use self::prop::{PSize, SizeAlign, TargetSized, Zst};
 use self::represent::{LayoutHasher, LayoutPart, LayoutSymbol};
+pub use self::collect::TailInfo;
 
 #[derive(Clone, PartialEq, Eq, Default, Debug)]
 pub struct StructManifestation {
@@ -1071,10 +1072,10 @@ mod tests {
     use bumpalo::Bump;
     use yaboc_absint::AbsIntDatabase;
     use yaboc_ast::{import::Import, AstDatabase};
-    use yaboc_base::dbformat;
     use yaboc_base::{
         config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase, Context,
     };
+    use yaboc_base::{dbeprintln, dbformat};
     use yaboc_constraint::ConstraintDatabase;
     use yaboc_dependents::{DependentsDatabase, NeededBy};
     use yaboc_hir::{HirDatabase, Parser};
@@ -1208,5 +1209,40 @@ def [int] *> main = {
             ),
             "int"
         );
+    }
+    #[test]
+    fn tailsize() {
+        let ctx = Context::<LayoutTestDatabase>::mock(
+            r"
+export
+def *test = [[[~](2)](3)](5)
+            ",
+        );
+        let bump = Bump::new();
+        let intern = Interner::<InternedLayout>::new(&bump);
+        let layout_ctx = LayoutContext::new(intern);
+        let mut outlayer = AbsIntCtx::<ILayout>::new(&ctx.db, layout_ctx);
+        let test = ctx.parser("test");
+        let test_ty = ctx
+            .db
+            .intern_type(Type::Nominal(ctx.db.parser_args(test).unwrap().thunk));
+        let layouts = collected_layouts(&mut outlayer, &[test]).unwrap();
+        let canon = canon_layout(&mut outlayer, test_ty)
+            .unwrap()
+            .maybe_mono()
+            .unwrap();
+        let array_ty = ctx
+            .db
+            .intern_type(Type::Loop(ArrayKind::Each, ctx.db.int()));
+        let slice = outlayer
+            .dcx
+            .intern(Layout::Mono(MonoLayout::SlicePtr, array_ty));
+        dbeprintln!(&ctx.db, "layout: {} -> {}", &slice, &canon);
+        for ((from, to), sa) in layouts.tail_sa {
+            dbeprintln!(&ctx.db, "tail: {} -> {}", &from, &to);
+            eprintln!("{:?}", sa);
+        }
+        //let tailsize = layouts.tail_sa[&(slice, canon)].unwrap();
+        //assert_eq!(tailsize.size, 24);
     }
 }

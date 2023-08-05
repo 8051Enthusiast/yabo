@@ -9,7 +9,7 @@ use yaboc_hir_types::{TyHirs, NOBACKTRACK_BIT, VTABLE_BIT};
 use yaboc_layout::{
     collect::pd_val_req,
     prop::{PSize, SizeAlign},
-    ILayout, IMonoLayout, MonoLayout,
+    ILayout, IMonoLayout, MonoLayout, TailInfo,
 };
 
 use crate::{
@@ -50,7 +50,11 @@ impl<'comp, 'llvm> TypecastThunk<'comp, 'llvm> {
         let (arg_copy, fun_copy) = if let MonoLayout::Nominal(..) = layout.mono_layout().0 {
             let (from, layout) = layout.unapply_nominal(cg.layouts);
             let arg_copy = cg.build_alloca_value(from, "arg_copy");
-            let fun_copy = if let Some(sa) = cg.collected_layouts.tail_sa[&(from, layout)] {
+            let fun_copy = if let TailInfo {
+                has_tailsites: true,
+                sa,
+            } = cg.collected_layouts.tail_sa[&(from, layout)]
+            {
                 let sa_alloc = cg.build_sa_alloca(sa, Some(false), "fun_copy");
                 Some(CgMonoValue::new(layout, sa_alloc))
             } else {

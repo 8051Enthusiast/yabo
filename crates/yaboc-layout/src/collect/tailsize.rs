@@ -12,11 +12,27 @@ struct CallSiteVertex {
     index: usize,
     lowlink: usize,
     on_stack: bool,
-    sa: Option<SizeAlign>,
+    sa: SizeAlign,
+    has_tailsites: bool,
+}
+
+impl CallSiteVertex {
+    fn tail_info(&self) -> TailInfo {
+        TailInfo {
+            has_tailsites: self.has_tailsites,
+            sa: self.sa,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct CallSite<'comp>(pub ILayout<'comp>, pub IMonoLayout<'comp>);
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct TailInfo {
+    pub has_tailsites: bool,
+    pub sa: SizeAlign,
+}
 
 pub struct TailCollector<'comp, 'r> {
     ctx: &'r mut AbsLayoutCtx<'comp>,
@@ -35,6 +51,8 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
         }
     }
 
+    // go through the mir and find every tail callsite
+    // and call f on it
     fn for_each_tail_callsite(
         &mut self,
         site: CallSite<'comp>,
@@ -69,18 +87,22 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
     }
 
     fn calulate_tail_size(&mut self, site: CallSite<'comp>) -> Result<CallSiteVertex, LayoutError> {
+        let sa = site.1.inner().size_align_without_vtable(self.ctx)?;
         let mut current_vertex = CallSiteVertex {
             index: self.index,
             lowlink: self.index,
-            sa: None,
+            sa,
+            has_tailsites: false,
             on_stack: true,
         };
-        let sa = Some(site.1.inner().size_align_without_vtable(self.ctx)?);
         self.vertices.insert(site, current_vertex);
         self.index += 1;
         self.stack.push(site);
 
+        // we use tarjan's algorithm to find strongly connected components and
+        // get the maximum size of the tail call storage
         self.for_each_tail_callsite(site, |this, subsite| {
+            current_vertex.has_tailsites = true;
             let subsize = if let Some(&subsite_vertex) = this.vertices.get(&subsite) {
                 if subsite_vertex.on_stack {
                     current_vertex.lowlink = current_vertex.lowlink.min(subsite_vertex.index);
@@ -91,8 +113,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
                 current_vertex.lowlink = subsite_vertex.lowlink.min(current_vertex.index);
                 subsite_vertex.sa
             };
-            let subsize = union_msa(subsize, sa);
-            current_vertex.sa = union_msa(current_vertex.sa, subsize);
+            current_vertex.sa = current_vertex.sa.union(subsize);
             this.vertices.insert(site, current_vertex);
             Ok(())
         })?;
@@ -111,17 +132,10 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
         Ok(current_vertex)
     }
 
-    pub fn size(&mut self, site: CallSite<'comp>) -> Result<Option<SizeAlign>, LayoutError> {
+    pub fn size(&mut self, site: CallSite<'comp>) -> Result<TailInfo, LayoutError> {
         if let Some(&vertex) = self.vertices.get(&site) {
-            return Ok(vertex.sa);
+            return Ok(vertex.tail_info());
         }
-        Ok(self.calulate_tail_size(site)?.sa)
-    }
-}
-
-fn union_msa(msa1: Option<SizeAlign>, msa2: Option<SizeAlign>) -> Option<SizeAlign> {
-    match (msa1, msa2) {
-        (Some(sa1), Some(sa2)) => Some(sa1.union(sa2)),
-        (a, None) | (None, a) => a,
+        Ok(self.calulate_tail_size(site)?.tail_info())
     }
 }
