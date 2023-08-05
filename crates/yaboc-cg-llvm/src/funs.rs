@@ -66,10 +66,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         from: ILayout<'comp>,
         fun: CgMonoValue<'comp, 'llvm>,
     ) -> Option<CgMonoValue<'comp, 'llvm>> {
-        let Some(sa) = self.collected_layouts.tail_sa[&(from, fun.layout)] else {
+        let tail_info = self.collected_layouts.tail_sa[&(from, fun.layout)];
+        if !tail_info.has_tailsites {
             return None;
-        };
-        let fun_copy_ptr = self.build_sa_alloca(sa, Some(false), "fun_copy");
+        }
+        let fun_copy_ptr = self.build_sa_alloca(tail_info.sa, Some(false), "fun_copy");
         let fun_buf = CgMonoValue::new(fun.layout, fun_copy_ptr);
         self.build_copy_invariant(fun_buf.into(), fun.into());
         Some(fun_buf)

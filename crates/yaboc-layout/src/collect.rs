@@ -18,6 +18,7 @@ use crate::{
 };
 
 use self::tailsize::{CallSite, TailCollector};
+pub use self::tailsize::TailInfo;
 
 use super::{
     canon_layout, flat_layouts, prop::PSize, AbsLayoutCtx, ILayout, IMonoLayout, Layout,
@@ -51,7 +52,7 @@ pub struct LayoutCollection<'a> {
     pub lens: LayoutSet<'a>,
     pub parser_slots: CallSlotResult<'a, (ILayout<'a>, CallMeta)>,
     pub funcall_slots: CallSlotResult<'a, ILayout<'a>>,
-    pub tail_sa: FxHashMap<(ILayout<'a>, IMonoLayout<'a>), Option<SizeAlign>>,
+    pub tail_sa: FxHashMap<(ILayout<'a>, IMonoLayout<'a>), TailInfo>,
     pub max_sa: SizeAlign,
 }
 

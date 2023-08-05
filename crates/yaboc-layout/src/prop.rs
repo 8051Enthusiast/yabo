@@ -43,7 +43,7 @@ pub const TARGET_ZST_SA: SizeAlign = SizeAlign {
 
 pub struct Zst([u8; 0]);
 
-#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug, Hash)]
 pub struct SizeAlign {
     /// total size (not including potential alignment padding at the end)
     pub size: PSize,
