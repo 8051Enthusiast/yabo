@@ -669,10 +669,17 @@ astify! {
 
 impl From<ValDot> for MonadicExpr<AstValSpanned> {
     fn from(val: ValDot) -> Self {
+        let access_mode = if val.op.inner == "." {
+            FieldAccessMode::Normal
+        } else if val.op.inner == ".?" {
+            FieldAccessMode::Backtrack
+        } else {
+            panic!("unknown field access mode: {}", val.op.inner)
+        };
         Monadic {
             op: OpWithData {
                 data: val.op.span,
-                inner: ValUnOp::Dot(val.right.0, val.right.1),
+                inner: ValUnOp::Dot(val.right.0, val.right.1, access_mode),
             },
             inner: Box::new(val.left),
         }

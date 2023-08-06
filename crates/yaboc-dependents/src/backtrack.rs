@@ -24,7 +24,9 @@ fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<(bool, bo
                     (false, db.can_backtrack(b.0).unwrap_or(false))
                 }
                 ExprHead::Niladic(_) => (false, false),
-                ExprHead::Monadic(ValUnOp::Dot(_, q), (will, _)) => (will || q, true),
+                ExprHead::Monadic(ValUnOp::Dot(_, q, acc), (will, can)) => {
+                    (will || acc.can_backtrack(), can || q)
+                }
                 ExprHead::Monadic(ValUnOp::Wiggle(_, kind), (will, can)) if !is_parser => {
                     (will || kind == WiggleKind::If, can)
                 }

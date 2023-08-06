@@ -308,7 +308,7 @@ module.exports = grammar({
     ),
     val_dot: $ => prec.left(PREC.POSTFIX, seq(
       field('left', $._expression),
-      field('op', '.'),
+      field('op', choice('.', '.?')),
       field('right', $._atom),
     )),
     parserdef_ref: $ => prec.left(PREC.ARGS, seq(

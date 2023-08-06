@@ -994,7 +994,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                         inner.0
                     }
                 }
-                ValUnOp::Dot(a, _) => inner.0.access_field(ctx, a)?,
+                ValUnOp::Dot(a, ..) => inner.0.access_field(ctx, a)?,
             },
             ExprHead::Dyadic(op, [lhs, rhs]) => match op {
                 ValBinOp::ParserApply => rhs.0.apply_arg(ctx, lhs.0)?,

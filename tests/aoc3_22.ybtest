@@ -10,8 +10,8 @@ def *priority = {
 def *bitset(xs: std.list[*priority], n: int, bits: int): int = {
   | let _ = n if 0
     let return = bits
-  | let new_bits = 1 << xs.this | bits
-    return: bitset(xs.next, n - 1, new_bits)
+  | let new_bits = 1 << xs.?this | bits
+    return: bitset(xs.?next, n - 1, new_bits)
 }
 
 def *is_nonzero(n: int) = {

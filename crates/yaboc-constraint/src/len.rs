@@ -193,7 +193,7 @@ impl<'a> SizeTermBuilder<'a> {
                 ValUnOp::Wiggle(_, _) => Ok(inner),
                 ValUnOp::Size => Ok(self.push_term(Term::Size(inner), true, src)),
                 ValUnOp::Array => unreachable!(),
-                ValUnOp::Dot(_, _) => {
+                ValUnOp::Dot(..) => {
                     Ok(self.push_term(Term::OpaqueUn(inner), is_definite(self.db, *ty)?, src))
                 }
                 ValUnOp::Not => Ok(self.push_term(Term::OpaqueUn(inner), true, src)),
