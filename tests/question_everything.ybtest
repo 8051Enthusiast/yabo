@@ -1,0 +1,30 @@
+====[ source code ]====
+def *enum = {
+  | ~ if 0..9, let x: *int = ~ if 10..19
+  | +
+}
+
+export
+def *test = {
+  n: enum
+  | return: n.?x?
+  | let return = 0
+}
+
+====[ binary 1 ]====
+00 0a
+
+====[ output 1 ]====
+10
+
+====[ binary 2 ]====
+00 01
+
+====[ output 2 ]====
+0
+
+====[ binary 3 ]====
+10 0a
+
+====[ output 3 ]====
+0

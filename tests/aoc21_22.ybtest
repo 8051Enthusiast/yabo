@@ -18,15 +18,15 @@ def *line = {
 def *calculate_line(start: std.list[*line], x: std.list[*line], name: int): int = {
   | let current = x.this?
     std.assert?(current.name == name)
-    | let return = current.num?
-    | let res = current.res?
+    | let return = current.?num
+    | let res = current.?res
       left: calculate_line(start, start, res.left)
       right: calculate_line(start, start, res.right)
       | std.assert?(res.op == '*'), let return = left * right
       | std.assert?(res.op == '+'), let return = left + right
       | std.assert?(res.op == '-'), let return = left - right
       | std.assert?(res.op == '/'), let return = left / right
-  | return: calculate_line(start, x.next?, name)
+  | return: calculate_line(start, x.?next, name)
 }
 
 export

@@ -117,7 +117,8 @@ fn resolve_expr_modules(
                         }
                     }
                 }),
-                ExprHead::Monadic(ValUnOp::Dot(field, bt), PartialEval::Eval((m, _))) => {
+                // TODO(8051): throw an error or warning if the field access is fallible on a module
+                ExprHead::Monadic(ValUnOp::Dot(field, bt, _), PartialEval::Eval((m, _))) => {
                     match new_resolved_atom(m.0, field, bt, *span)? {
                         PartialEval::Uneval(k) => ExprHead::Niladic(k),
                         PartialEval::Eval(m) => return Ok(PartialEval::Eval(m)),

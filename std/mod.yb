@@ -53,7 +53,7 @@ def *list(element: *'r) = {
 
 # Returns the length of a given list.
 fun *len(xs: list) = {
-  | inner_len: len(xs.next?)
+  | inner_len: len(xs.?next)
     let return = inner_len + 1
   | let return = 0
 }
@@ -62,7 +62,7 @@ fun *len(xs: list) = {
 fun *skip(xs: list, n: int): list = {
   | let _ = n if 0
     let return = xs
-  | return: skip(xs.next?, n - 1)
+  | return: skip(xs.?next, n - 1)
 }
 
 # Parses an 8-bit little endian unsigned integer.

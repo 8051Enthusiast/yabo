@@ -422,7 +422,7 @@ impl<'a> ConvertExpr<'a> {
                             place_ref
                         }
                     }
-                    ValUnOp::Dot(field, bt) => {
+                    ValUnOp::Dot(field, bt, acc) => {
                         let inner_ldt = self.db.least_deref_type(inner_ty)?;
                         let block_ref = self.copy_if_different_levels(
                             inner_ldt,
@@ -432,13 +432,26 @@ impl<'a> ConvertExpr<'a> {
                             recurse,
                         )?;
                         let place_ref = self.unwrap_or_stack(place, ty, origin);
-                        let backtrack = if *bt {
+                        let field_target_place = if !*bt {
+                            self.f.new_remove_bt_stack_place(ty, origin)
+                        } else {
+                            place_ref
+                        };
+                        let backtrack = if acc.can_backtrack() {
                             self.retreat.backtrack
                         } else {
                             self.retreat.error
                         };
-                        self.f
-                            .field(block_ref, *field, place_ref, self.retreat.error, backtrack);
+                        self.f.field(
+                            block_ref,
+                            *field,
+                            field_target_place,
+                            self.retreat.error,
+                            backtrack,
+                        );
+                        if !*bt {
+                            self.copy(field_target_place, place_ref)
+                        }
                         place_ref
                     }
                 }

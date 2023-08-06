@@ -400,7 +400,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                             }
                             cont
                         }
-                        ValUnOp::Dot(name, _) => self.infctx.access_field(inner, *name)?,
+                        ValUnOp::Dot(name, _, _) => self.infctx.access_field(inner, *name)?,
                     },
                     ExprHead::Niladic(a) => match &a {
                         ResolvedAtom::Char(_) => self.infctx.char(),

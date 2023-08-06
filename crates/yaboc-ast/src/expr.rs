@@ -652,13 +652,34 @@ impl Display for ValBinOp {
     }
 }
 
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
+pub enum FieldAccessMode {
+    Normal,
+    Backtrack,
+}
+
+impl FieldAccessMode {
+    pub fn can_backtrack(self) -> bool {
+        matches!(self, FieldAccessMode::Backtrack)
+    }
+}
+
+impl Display for FieldAccessMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FieldAccessMode::Normal => write!(f, "."),
+            FieldAccessMode::Backtrack => write!(f, ".?"),
+        }
+    }
+}
+
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum ValUnOp<C> {
     Not,
     Neg,
     Array,
     Wiggle(C, WiggleKind),
-    Dot(FieldName, bool),
+    Dot(FieldName, bool, FieldAccessMode),
     Size,
 }
 
@@ -680,7 +701,7 @@ impl<C> ValUnOp<C> {
             Neg => Neg,
             Array => Array,
             Wiggle(expr, kind) => Wiggle(f(expr), *kind),
-            Dot(atom, b) => Dot(*atom, *b),
+            Dot(atom, b, acc) => Dot(*atom, *b, *acc),
             Size => Size,
         }
     }
@@ -691,7 +712,7 @@ impl<C> ValUnOp<C> {
             Neg => Neg,
             Array => Array,
             Wiggle(expr, kind) => Wiggle(f(expr)?, *kind),
-            Dot(atom, b) => Dot(*atom, *b),
+            Dot(atom, b, acc) => Dot(*atom, *b, *acc),
             Size => Size,
         })
     }
