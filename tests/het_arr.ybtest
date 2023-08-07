@@ -1,0 +1,27 @@
+====[ source code ]====
+def *u8l_biased(x: int) = {
+  a: ~, let return = a + x
+}
+def [int] *> u16l = {
+  lo: ~, hi: ~
+  let return = hi << 8 | lo
+}
+export
+def *test = {
+  tag: ~
+  arr1: [u8l_biased(1)](8), arr2: [~](8)
+  let arr = tag if 0 then arr1 else arr2
+  let return = arr *> [u16l](4)
+}
+
+====[ binary 1 ]====
+00 00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f
+
+====[ output 1 ]====
+[513, 1027, 1541, 2055]
+
+====[ binary 2 ]====
+01 00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f
+
+====[ output 2 ]====
+[2312, 2826, 3340, 3854]
