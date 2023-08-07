@@ -156,12 +156,7 @@ def [int] *> i64b = {
 }
 
 # Parses a newline
-def [int] *> newline = {
-  | return: ~ if 0x0a
-  | return: ~ if 0x0d
-    | _: ~ if 0xa
-    | +
-}
+def *newline = /\r\n?|\n/
 
 # Parses a specific byte or fails
 def [int] *> byteval(x: int) = {
