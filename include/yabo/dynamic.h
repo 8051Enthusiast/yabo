@@ -1,4 +1,8 @@
 #pragma once
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "vtable.h"
 #include <stddef.h>
 #include <stdlib.h>
@@ -102,3 +106,7 @@ static inline int64_t dyn_int(DynValue *integer) {
 static inline int32_t dyn_char(DynValue *chr) { return *(int32_t *)chr->data; }
 
 static inline int8_t dyn_bit(DynValue *bit) { return *(int8_t *)bit->data; }
+
+#ifdef __cplusplus
+}
+#endif

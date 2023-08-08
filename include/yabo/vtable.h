@@ -1,4 +1,8 @@
 #pragma once
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <sys/types.h>
 
@@ -64,3 +68,7 @@ struct ArrayVTable {
   int64_t (*skip_impl)(void *, uint64_t);
   int64_t (*span_impl)(void *, void *, uint64_t, void *);
 };
+
+#ifdef __cplusplus
+}
+#endif
