@@ -1,6 +1,7 @@
 from copy import copy
 import ctypes
 import threading
+from os import getenv
 from ctypes import (addressof, c_char_p, c_int64, c_int8, c_ubyte,
                     c_uint32, c_uint64, c_size_t, c_char, Structure,
                     CFUNCTYPE, POINTER, byref, c_void_p, pointer)
@@ -23,6 +24,18 @@ BACKTRACK = 3
 
 _voidptr = ctypes.c_void_p
 
+MASK_TEST_MODE: bool = False
+
+class MaskError(Exception):
+    def __init__(self, left: bytearray, right: bytearray):
+        self.left = left
+        self.right = right
+    
+    def __str__(self):
+        return f"MaskError: {self.left.hex()} != {self.right.hex()}"
+    
+    def __repr__(self):
+        return f"MaskError({self.left}, {self.right})"
 
 class BacktrackError(Exception):
     pass
@@ -33,6 +46,7 @@ class VTableHeader(Structure):
         'head',
         'deref_level',
         'typecast_impl',
+        'mask_impl',
         'size',
         'align',
     ]
@@ -40,6 +54,7 @@ class VTableHeader(Structure):
         ('head', c_int64),
         ('deref_level', c_size_t),
         ('typecast_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64)),
+        ('mask_impl', CFUNCTYPE(c_size_t, _voidptr)),
         ('size', c_size_t),
         ('align', c_size_t),
     ]
@@ -156,10 +171,17 @@ class Slice(Structure):
 class DynValue(Structure):
     def get_vtable(self):
         raise NotImplementedError
-
-    def data_ptr(self):
+    
+    def data_array(self):
         raise NotImplementedError
 
+    def data_ptr(self):
+        array_ptr = self.data_array()
+        return ctypes.cast(array_ptr, _voidptr)
+
+    def mask(self):
+        mask_impl = self.get_vtable().mask_impl
+        return mask_impl(self.data_ptr())
 
 def sized_dyn_value(size: int):
     class SizedDynValue(DynValue):
@@ -183,11 +205,10 @@ def sized_dyn_value(size: int):
         def get_vtable(self):
             return self.vtable.contents
 
-        def data_ptr(self):
+        def data_array(self):
             offset = type(self).data.offset
-            array_ptr = pointer(
-                (c_char * type(self).data.size).from_buffer(self, offset))
-            return ctypes.cast(array_ptr, _voidptr)
+            return pointer((c_char * type(self).data.size).from_buffer(self, offset))
+
     return SizedDynValue
 
 
@@ -211,14 +232,8 @@ class Parser:
 
     def parse(self, buf: bytearray):
         parse = self.impl
-        slice = Slice(buf)
-        ret = self._lib.ret_buf()
         nullptr = ctypes.c_void_p()
-        # the vtable pointer is stored at negative index 1, so we pass
-        # a pointer to the data field
-        status = parse(ret.data_ptr(), nullptr, YABO_ANY | YABO_VTABLE, byref(slice))
-        _check_status(status)
-        return _new_value(ret, buf, self._lib)
+        return self._lib.new_val(lambda ret: parse(ret, nullptr, YABO_ANY | YABO_VTABLE, byref(Slice(buf))))
 
 
 class YaboLib(ctypes.CDLL):
@@ -231,31 +246,48 @@ class YaboLib(ctypes.CDLL):
         impl = PARSER_TY.in_dll(self, name)
         return Parser(impl, self)
 
-    def ret_buf(self):
+    def _ret_buf(self):
         try:
             return self._loc.ret_buf
         except AttributeError:
             size = c_size_t.in_dll(self, "yabo_max_buf_size").value
             self._loc.ret_buf = sized_dyn_value(size)()
             return self._loc.ret_buf
+    
+    def new_val(self, f):
+        ret_buf = self._ret_buf()
+        status = f(ret_buf.data_ptr())
+        _check_status(status)
+        ret_val = _new_value(ret_buf, self)
+        if MASK_TEST_MODE:
+            # invert all bytes in the buffer so that we can
+            # test that the mask implementation properly
+            # deletes the padding bytes
+            for i in range(ret_buf.get_vtable().size):
+                ret_buf.data_array().contents[i] = ret_buf.data_array().contents[:][i] ^ 0xFF
+            status = f(ret_buf.data_ptr())
+            _check_status(status)
+            second_val = _new_value(ret_buf, self)
+            if isinstance(ret_val, YaboValue):
+                first_bytes = bytes(ret_val._val.data_array().contents[:ret_val._val.get_vtable().size])
+                second_bytes = bytes(second_val._val.data_array().contents[:second_val._val.get_vtable().size])
+                if first_bytes != second_bytes:
+                    raise MaskError(first_bytes, second_bytes)
+        return ret_val
+            
 
 class YaboValue:
     _val: DynValue
-    _buf: bytearray
     _lib: YaboLib
     _loc: threading.local
 
-    def __init__(self, val: DynValue, buf: bytearray, lib: YaboLib):
+    def __init__(self, val: DynValue, lib: YaboLib):
         self._val = val
-        self._buf = buf
         self._lib = lib
 
     def _typecast(self, typ: int):
         typecast = self._val.get_vtable().typecast_impl
-        ret = self._lib.ret_buf()
-        status = typecast(ret.data_ptr(), self._val.data_ptr(), typ)
-        _check_status(status)
-        return _new_value(ret, self._buf, self._lib)
+        return self._lib.new_val(lambda ret: typecast(ret, self._val.data_ptr(), typ))
 
     def __copy__(self):
         return self._typecast(self._val.get_vtable().deref_level | YABO_VTABLE)
@@ -271,8 +303,8 @@ class NominalValue(YaboValue):
 class BlockValue(YaboValue):
     _access_impl: dict
 
-    def __init__(self, val: DynValue, buf: bytearray, lib: YaboLib):
-        super().__init__(val, buf, lib)
+    def __init__(self, val: DynValue, lib: YaboLib):
+        super().__init__(val, lib)
         casted_vtable = ctypes.cast(
             pointer(self._val.get_vtable()), POINTER(BlockVTable))
         self._access_impl = {}
@@ -292,13 +324,12 @@ class BlockValue(YaboValue):
             access = self._access_impl[name]
         except KeyError:
             raise AttributeError(f'{name} is not a valid field')
-        ret = self._lib.ret_buf()
-        status = access(ret.data_ptr(), self._val.data_ptr(),
-                        YABO_ANY | YABO_VTABLE)
-        if status == BACKTRACK:
+        try:
+            return self._lib.new_val(lambda ret:
+                access(ret, self._val.data_ptr(), YABO_ANY | YABO_VTABLE)
+            )
+        except BacktrackError:
             return None
-        _check_status(status)
-        return _new_value(ret, self._buf, self._lib)
 
     def __getitem__(self, field: str):
         return self.__getattr__(field)
@@ -322,14 +353,12 @@ class ArrayValue(YaboValue):
         _check_status(status)
 
     def current_element(self):
-        ret = self._lib.ret_buf()
         array_vtable = ctypes.cast(
             pointer(self._val.get_vtable()), POINTER(ArrayVTable))
         current_element_impl = array_vtable.contents.current_element_impl
-        status = current_element_impl(ret.data_ptr(),
-                                      self._val.data_ptr(), YABO_ANY | YABO_VTABLE)
-        _check_status(status)
-        return _new_value(ret, self._buf, self._lib)
+        return self._lib.new_val(lambda ret:
+            current_element_impl(ret, self._val.data_ptr(), YABO_ANY | YABO_VTABLE)
+        )
 
     def __getitem__(self, index: int):
         if len(self) <= index:
@@ -364,7 +393,8 @@ class UnitValue(YaboValue):
     pass
 
 
-def _new_value(val: DynValue, buf: bytearray, lib: YaboLib):
+def _new_value(val: DynValue, lib: YaboLib):
+    val.mask()
     head = val.get_vtable().head
     if head not in [YABO_INTEGER, YABO_BIT, YABO_CHAR]:
         val = copy(val)
@@ -375,15 +405,15 @@ def _new_value(val: DynValue, buf: bytearray, lib: YaboLib):
     if head == YABO_CHAR:
         return chr(ctypes.cast(val.data_ptr(), POINTER(c_uint32)).contents.value)
     if head == YABO_LOOP:
-        return ArrayValue(val, buf, lib)
+        return ArrayValue(val, lib)
     if head == YABO_PARSER:
-        return ParserValue(val, buf, lib)
+        return ParserValue(val, lib)
     if head == YABO_FUN_ARGS:
-        return FunArgValue(val, buf, lib)
+        return FunArgValue(val, lib)
     if head == YABO_BLOCK:
-        return BlockValue(val, buf, lib)
+        return BlockValue(val, lib)
     if head == YABO_UNIT:
-        return UnitValue(val, buf, lib)
+        return UnitValue(val, lib)
     if head < 0:
-        return NominalValue(val, buf, lib)
+        return NominalValue(val, lib)
     raise Exception("Unknown type")

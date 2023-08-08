@@ -12,12 +12,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         part: LayoutPart,
         types: &[BasicMetadataTypeEnum<'llvm>],
+        ret_ty: BasicTypeEnum<'llvm>,
     ) -> FunctionValue<'llvm> {
         let sf_sym = self.sym(layout, part);
         if let Some(x) = self.module.get_function(&sf_sym) {
             return x;
         }
-        let sf_type = self.llvm.i64_type().fn_type(types, false);
+        let sf_type = ret_ty.fn_type(types, false);
         let fun = self
             .module
             .add_function(&sf_sym, sf_type, Some(Linkage::Internal));
@@ -38,11 +39,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             layout,
             part,
             &[self.any_ptr().into(), self.any_ptr().into()],
+            self.llvm.i64_type().into(),
         )
     }
 
     fn p_fun_val(&mut self, layout: IMonoLayout<'comp>, part: LayoutPart) -> FunctionValue<'llvm> {
-        self.fun_val(layout, part, &[self.any_ptr().into()])
+        self.fun_val(
+            layout,
+            part,
+            &[self.any_ptr().into()],
+            self.llvm.i64_type().into(),
+        )
     }
 
     fn ppi_fun_val(
@@ -58,6 +65,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 self.any_ptr().into(),
                 self.llvm.i64_type().into(),
             ],
+            self.llvm.i64_type().into(),
         )
     }
 
@@ -66,6 +74,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             layout,
             part,
             &[self.any_ptr().into(), self.llvm.i64_type().into()],
+            self.llvm.i64_type().into(),
         )
     }
 
@@ -83,6 +92,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 self.llvm.i64_type().into(),
                 self.any_ptr().into(),
             ],
+            self.llvm.i64_type().into(),
         )
     }
 
@@ -141,6 +151,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
     ) -> FunctionValue<'llvm> {
         self.pp_fun_val(layout, LayoutPart::Len)
+    }
+
+    pub(super) fn mask_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
+        // this function returns a usize instead of i64, so it's not a p_fun_val function
+        let size_t = self.llvm.ptr_sized_int_type(&self.target_data, None);
+        self.fun_val(
+            layout,
+            LayoutPart::Mask,
+            &[self.any_ptr().into()],
+            size_t.into(),
+        )
     }
 
     pub(super) fn parser_fun_val_wrapper(

@@ -14,6 +14,7 @@ import yabo
 
 TARGET_RELEASE = 'debug'
 BINARY_NAME = 'yaboc'
+yabo.MASK_TEST_MODE = True
 
 # test files are structured as follows:
 # ====[ source code ]====

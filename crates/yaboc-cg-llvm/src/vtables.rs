@@ -18,6 +18,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .typecast_fun_val(layout)
             .as_global_value()
             .as_pointer_value();
+        let mask = self
+            .mask_fun_val(layout)
+            .as_global_value()
+            .as_pointer_value();
         let size = self.const_size_t(size_align.size as i64);
         let align = self.const_size_t(size_align.align() as i64);
         self.llvm.const_struct(
@@ -25,6 +29,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 head_disc_val.into(),
                 deref_level.into(),
                 typecast.into(),
+                mask.into(),
                 size.into(),
                 align.into(),
             ],

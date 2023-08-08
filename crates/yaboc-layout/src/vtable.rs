@@ -1,12 +1,14 @@
 use crate::target_struct;
 
 pub type TypecastFun = fn(ret: *mut u8, from: *const u8, target_head: i64) -> i64;
+pub type MaskFun = fn(ret: *mut u8) -> usize;
 
 target_struct! {
     pub struct VTableHeader {
         pub head: i64,
         pub deref_level: usize,
         pub typecast_impl: TypecastFun,
+        pub mask_impl: MaskFun,
         pub size: usize,
         pub align: usize,
     }
@@ -97,28 +99,28 @@ mod tests {
         assert_eq!(
             VTableHeader::tsize(),
             SizeAlign {
-                size: 40,
+                size: 48,
                 align_mask: 0b111
             }
         );
         assert_eq!(
             BlockVTable::tsize(),
             SizeAlign {
-                size: 48,
+                size: 56,
                 align_mask: 0b111,
             }
         );
         assert_eq!(
             ParserVTable::tsize(),
             SizeAlign {
-                size: 48,
+                size: 56,
                 align_mask: 0b111,
             }
         );
         assert_eq!(
             ArrayVTable::tsize(),
             SizeAlign {
-                size: 80,
+                size: 88,
                 align_mask: 0b111,
             }
         );

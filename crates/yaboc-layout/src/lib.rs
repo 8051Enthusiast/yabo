@@ -35,6 +35,7 @@ pub struct StructManifestation {
     pub discriminant_mapping: Arc<FxHashMap<DefId, PSize>>,
     pub discriminant_offset: PSize,
     pub size: SizeAlign,
+    pub padding_mask: Vec<u8>,
 }
 
 #[salsa::query_group(LayoutDatabase)]
@@ -50,6 +51,10 @@ impl UnfinishedManifestation {
         self.0.size = self.0.size.cat(field_size);
         let offset = self.0.size.size - field_size.size;
         self.0.field_offsets.insert(id, offset);
+        self.0.padding_mask.resize(self.0.size.size as usize, 0);
+        for i in offset..self.0.size.size {
+            self.0.padding_mask[i as usize] = 0xff;
+        }
     }
     pub fn finalize(
         self,
@@ -68,6 +73,17 @@ impl UnfinishedManifestation {
         for offset in manifest.field_offsets.values_mut() {
             *offset += added_offset;
         }
+        let mut disc_padding = vec![0; added_offset as usize];
+        for i in 0..disc_sa.size {
+            disc_padding[i as usize] = 0xff;
+        }
+        if manifest.discriminant_mapping.len() % 8 != 0 {
+            let last_byte = manifest.discriminant_mapping.len() / 8;
+            let last_bit = manifest.discriminant_mapping.len() % 8;
+            disc_padding[last_byte] = !(0xff << last_bit);
+        }
+        disc_padding.append(&mut manifest.padding_mask);
+        manifest.padding_mask = disc_padding;
         manifest
     }
 }

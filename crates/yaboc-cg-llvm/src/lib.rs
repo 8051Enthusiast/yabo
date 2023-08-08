@@ -229,6 +229,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         <*const u8>::tsize().size
     }
 
+    fn layout_inner_offset(&self, layout: ILayout<'comp>) -> u64 {
+        if layout.is_multi() {
+            self.word_size()
+        } else {
+            0
+        }
+    }
+
     fn sa_type(&mut self, sa: SizeAlign) -> ArrayType<'llvm> {
         self.llvm.i8_type().array_type(sa.size as u32)
     }
