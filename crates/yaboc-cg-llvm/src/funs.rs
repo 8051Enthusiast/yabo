@@ -188,6 +188,184 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ThunkContext::new(self, thunk_info).build();
     }
 
+    fn create_mask_simple(&mut self, layout: IMonoLayout<'comp>) {
+        let fun = self.mask_fun_val(layout);
+        self.add_entry_block(fun);
+        let sa = layout.inner().size_align(self.layouts).unwrap();
+        self.builder
+            .build_return(Some(&self.const_size_t(sa.size as i64)));
+    }
+
+    fn create_mask_single(&mut self, layout: IMonoLayout<'comp>, inner: ILayout<'comp>) {
+        let fun = self.mask_fun_val(layout);
+        self.add_entry_block(fun);
+        let [arg] = get_fun_args(fun).map(|x| x.into_pointer_value());
+        let sa = layout
+            .inner()
+            .size_align_without_vtable(self.layouts)
+            .unwrap();
+        let offset = self.layout_inner_offset(inner);
+        let inner_ptr = self.build_byte_gep(arg, self.const_i64(offset as i64), "inner_ptr");
+        self.call_mask_fun(CgValue::new(inner, inner_ptr));
+        self.builder
+            .build_return(Some(&self.const_size_t(sa.size as i64)));
+    }
+
+    fn create_mask_pair(&mut self, layout: IMonoLayout<'comp>, inner: [ILayout<'comp>; 2]) {
+        let fun = self.mask_fun_val(layout);
+        self.add_entry_block(fun);
+        let [arg] = get_fun_args(fun).map(|x| x.into_pointer_value());
+        let sa = layout
+            .inner()
+            .size_align_without_vtable(self.layouts)
+            .unwrap();
+        let inner_sa = inner.map(|x| x.size_align(self.layouts).unwrap());
+        let padding_size = sa.size - (inner_sa[0].size + inner_sa[1].size);
+        let padding_size = self.const_i64(padding_size as i64);
+        let zero = self.llvm.i8_type().const_zero();
+        let padding_ptr =
+            self.build_byte_gep(arg, self.const_i64(inner_sa[0].size as i64), "padding");
+        self.builder
+            .build_memset(padding_ptr, 1, zero, padding_size)
+            .unwrap();
+        let offsets = [0, sa.size - inner_sa[1].size];
+        for (offset, inner) in offsets.iter().zip(inner.iter()) {
+            let inner_offset = offset + self.layout_inner_offset(*inner);
+            let inner_ptr = self.build_byte_gep(arg, self.const_i64(inner_offset as i64), "inner");
+            self.call_mask_fun(CgValue::new(*inner, inner_ptr));
+        }
+        self.builder
+            .build_return(Some(&self.const_size_t(sa.size as i64)));
+    }
+
+    fn create_mask_manifested(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+        mut layouts: impl FnMut(DefId) -> ILayout<'comp>,
+    ) {
+        let fun = self.mask_fun_val(layout);
+        self.add_entry_block(fun);
+        let [arg] = get_fun_args(fun).map(|x| x.into_pointer_value());
+        let manifestation = self.layouts.dcx.manifestation(layout.inner());
+        for (offset, mask) in manifestation.padding_mask.iter().enumerate() {
+            if let 0xff = *mask {
+                continue;
+            }
+            let offset_ptr = self.build_byte_gep(arg, self.const_i64(offset as i64), "offset");
+            if let 0 = *mask {
+                self.builder
+                    .build_store(offset_ptr, self.llvm.i8_type().const_zero());
+            } else {
+                let mask = self.llvm.i8_type().const_int(*mask as u64, false);
+                let old_value = self
+                    .builder
+                    .build_load(offset_ptr, "old_value")
+                    .into_int_value();
+                let new_value = self.builder.build_and(old_value, mask, "new_value");
+                self.builder.build_store(offset_ptr, new_value);
+            }
+        }
+        for (&id, &offset) in manifestation.field_offsets.iter() {
+            let inner = layouts(id);
+            let cont_bb = if let Some(bit_offset) = manifestation.discriminant_mapping.get(&id) {
+                let cont_bb = self.llvm.append_basic_block(fun, "cont");
+                let zero_bb = self.llvm.append_basic_block(fun, "zero");
+                let mask_bb = self.llvm.append_basic_block(fun, "mask");
+                let byte_offset = bit_offset / 8;
+                let inner_bit_offset = bit_offset % 8;
+                let disc_byte_ptr =
+                    self.build_byte_gep(arg, self.const_i64(byte_offset as i64), "disc_byte_ptr");
+                let disc_byte = self
+                    .builder
+                    .build_load(disc_byte_ptr, "disc_byte")
+                    .into_int_value();
+                let disc_bit = self.builder.build_and(
+                    disc_byte,
+                    self.llvm.i8_type().const_int(1 << inner_bit_offset, false),
+                    "disc_bit",
+                );
+                let is_nonzero = self.builder.build_int_compare(
+                    IntPredicate::NE,
+                    disc_bit,
+                    self.llvm.i8_type().const_zero(),
+                    "is_nonzero",
+                );
+                self.builder
+                    .build_conditional_branch(is_nonzero, cont_bb, zero_bb);
+                self.builder.position_at_end(zero_bb);
+                let val_ptr = self.build_byte_gep(arg, self.const_i64(offset as i64), "val_ptr");
+                let size = inner.size_align(self.layouts).unwrap().size;
+                let size = self.const_i64(size as i64);
+                let val = self.llvm.i8_type().const_zero();
+                self.builder.build_memset(val_ptr, 1, val, size).unwrap();
+                self.builder.build_unconditional_branch(cont_bb);
+                self.builder.position_at_end(mask_bb);
+                Some(cont_bb)
+            } else {
+                None
+            };
+            let inner_offset = offset + self.layout_inner_offset(inner);
+            let inner_ptr = self.build_byte_gep(arg, self.const_i64(inner_offset as i64), "inner");
+            self.call_mask_fun(CgValue::new(inner, inner_ptr));
+            if let Some(cont_bb) = cont_bb {
+                self.builder.build_unconditional_branch(cont_bb);
+                self.builder.position_at_end(cont_bb);
+            }
+        }
+        self.builder
+            .build_return(Some(&self.const_size_t(manifestation.size.size as i64)));
+    }
+
+    fn create_mask_funs(&mut self, layout: IMonoLayout<'comp>) {
+        match layout.mono_layout().0 {
+            MonoLayout::Primitive(_)
+            | MonoLayout::SlicePtr
+            | MonoLayout::Single
+            | MonoLayout::Nil
+            | MonoLayout::Regex(_, _)
+            | MonoLayout::ArrayParser(None) => self.create_mask_simple(layout),
+            MonoLayout::IfParser(inner, _, _) | MonoLayout::ArrayParser(Some((inner, None))) => {
+                self.create_mask_single(layout, *inner)
+            }
+            MonoLayout::ArrayParser(Some((first, Some(second))))
+            | MonoLayout::Array {
+                parser: first,
+                slice: second,
+            } => {
+                self.create_mask_pair(layout, [*first, *second]);
+            }
+            MonoLayout::BlockParser(_, cap, _, _) => {
+                self.create_mask_manifested(layout, |id| cap[&id])
+            }
+            MonoLayout::NominalParser(pd, args, _) => self.create_mask_manifested(layout, |id| {
+                let idx = self
+                    .compiler_database
+                    .db
+                    .parserdef_arg_index(*pd, id)
+                    .unwrap()
+                    .unwrap();
+                args[idx].0
+            }),
+            MonoLayout::Nominal(pd, from, args) => self.create_mask_manifested(layout, |id| {
+                let (inner, _) = self
+                    .compiler_database
+                    .db
+                    .parserdef_arg_index(*pd, id)
+                    .unwrap()
+                    .map(|idx| args[idx])
+                    .or(*from)
+                    .unwrap();
+                inner
+            }),
+            MonoLayout::Block(_, layouts) => self.create_mask_manifested(layout, |id| {
+                let field = id.unwrap_name(&self.compiler_database.db);
+                layouts[&FieldName::Ident(field)]
+            }),
+            MonoLayout::Tuple(_) => unreachable!(),
+        }
+    }
+
+
     fn create_pd_parse(
         &mut self,
         from: ILayout<'comp>,
@@ -962,7 +1140,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         .build();
     }
 
-    fn create_all_typecast_funs(&mut self) {
+    fn create_all_header_funs(&mut self) {
         let collected_layouts = self.collected_layouts.clone();
         for layout in [
             &collected_layouts.arrays,
@@ -975,7 +1153,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         .into_iter()
         .flatten()
         {
-            self.create_typecast(*layout)
+            self.create_typecast(*layout);
+            self.create_mask_funs(*layout);
         }
     }
 
@@ -1085,7 +1264,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub fn create_all_funs(&mut self) {
         let collected_layouts = self.collected_layouts.clone();
-        self.create_all_typecast_funs();
+        self.create_all_header_funs();
         for layout in collected_layouts.arrays.iter() {
             self.create_array_funs(*layout);
         }

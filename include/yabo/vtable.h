@@ -25,6 +25,7 @@ struct VTableHeader {
   int64_t head;
   size_t deref_level;
   int64_t (*typecast_impl)(void *, void *, uint64_t);
+  size_t (*mask_impl)(void *);
   size_t size;
   size_t align;
 };

@@ -280,6 +280,33 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.build_call_with_int_ret(len, &[arg.ptr.into()])
     }
 
+    pub(super) fn call_mask_fun(&mut self, arg: CgValue<'comp, 'llvm>) {
+        let len = match arg.layout.maybe_mono() {
+            Some(mono) => self.sym_callable(mono, LayoutPart::Mask),
+            None => self.vtable_callable::<vtable::VTableHeader>(
+                arg.ptr,
+                &[VTableHeaderFields::mask_impl as u64],
+            ),
+        };
+        let size = self.build_call_with_int_ret(len, &[arg.ptr.into()]);
+        // since we have a union of multiple types, we need to mask the leftover
+        // padding after the current inhabitant
+        if arg.layout.is_multi() {
+            let mask_offset = self.build_byte_gep(arg.ptr, size, "mask_offset");
+            let whole_size = arg
+                .layout
+                .size_align_without_vtable(self.layouts)
+                .unwrap()
+                .size;
+            let whole_size = self.const_size_t(whole_size as i64);
+            let mask_size = self.builder.build_int_sub(whole_size, size, "mask_size");
+            let zero = self.llvm.i8_type().const_int(0, false);
+            self.builder
+                .build_memset(mask_offset, 1, zero, mask_size)
+                .unwrap();
+        }
+    }
+
     pub(super) fn call_skip_fun(
         &mut self,
         arg: CgValue<'comp, 'llvm>,
