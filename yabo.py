@@ -292,6 +292,14 @@ class YaboValue:
     def __copy__(self):
         return self._typecast(self._val.get_vtable().deref_level | YABO_VTABLE)
 
+    def __eq__(self, other):
+        if not isinstance(other, YaboValue):
+            return False
+        return self._val.data_array().contents[:] == other._val.data_array().contents[:]
+    
+    def __hash__(self):
+        return hash(self._val.data_array().contents[:])
+
 
 class NominalValue(YaboValue):
     def deref(self):
