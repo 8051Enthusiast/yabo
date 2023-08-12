@@ -30,6 +30,9 @@ pub trait Files: salsa::Database {
     #[salsa::input]
     fn std(&self) -> SResult<FileId>;
 
+    #[salsa::input]
+    fn core(&self) -> SResult<FileId>;
+
     fn file_content(&self, id: FileId) -> Arc<String>;
 
     fn path(&self, id: FileId) -> Option<String>;
@@ -177,6 +180,44 @@ pub struct FileResolver<'collection> {
     relative_mods: FxHashMap<(PathBuf, Identifier), Option<FileId>>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum LibKind {
+    Std,
+    Core,
+}
+
+impl LibKind {
+    fn name(&self) -> &'static str {
+        match self {
+            LibKind::Std => "std",
+            LibKind::Core => "core",
+        }
+    }
+
+    fn env_var(&self) -> &'static str {
+        match self {
+            LibKind::Std => "YABO_STD_PATH",
+            LibKind::Core => "YABO_CORE_PATH",
+        }
+    }
+
+    fn set_db_path(&self, db: &mut (impl ?Sized + Files), path: SResult<FileId>) {
+        match self {
+            LibKind::Std => db.set_std(path),
+            LibKind::Core => db.set_core(path),
+        }
+    }
+}
+
+impl std::fmt::Display for LibKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LibKind::Std => write!(f, "standard"),
+            LibKind::Core => write!(f, "core"),
+        }
+    }
+}
+
 impl<'collection> FileResolver<'collection> {
     pub fn new(files: &'collection mut FileCollection) -> Self {
         FileResolver {
@@ -268,34 +309,38 @@ impl<'collection> FileResolver<'collection> {
     pub fn add_std(
         &mut self,
         db: &mut (impl Interner + Files + ?Sized),
+        kind: LibKind,
     ) -> Result<(), FileLoadError> {
-        let std_ident = db.intern_identifier(IdentifierName::new("std".into()));
+        let std_ident = db.intern_identifier(IdentifierName::new(kind.name().into()));
         if let Some(std) = self.absolute_mods.get(&std_ident) {
-            db.set_std(Ok(*std));
+            kind.set_db_path(db, Ok(*std));
             return Ok(());
         }
-        let std_env_path = std::env::var_os("YABO_STD_PATH");
+        let std_env_path =
+            std::env::var_os(kind.env_var()).or_else(|| std::env::var_os("YABO_LIB_PATH"));
         let err = FileLoadError::NoStdLib {
             source: (FileId::default(), Span::default()),
+            kind,
         };
         let std_dir = if let Some(std_env_path) = std_env_path {
             PathBuf::from(std_env_path)
         } else {
             let Some(mut yabo_dir) = data_dir() else {
-                db.set_std(Err(SilencedError::new()));
+                kind.set_db_path(db, Err(SilencedError::new()));
                 return Err(err);
             };
             yabo_dir.push("yabo");
+            yabo_dir.push("lib");
             yabo_dir
         };
-        let Some(std_dir) = self.file_path(&std_dir, "std") else {
-            db.set_std(Err(SilencedError::new()));
+        let Some(std_dir) = self.file_path(&std_dir, kind.name()) else {
+            kind.set_db_path(db, Err(SilencedError::new()));
             return Err(err);
         };
         // note that we can not really give a good span here, as the std is not really loaded by any one file
         let file = self.add_file(db, std_dir, FileId::default(), Span::default(), std_ident)?;
         self.absolute_mods.insert(std_ident, file);
-        db.set_std(Ok(file));
+        kind.set_db_path(db, Ok(file));
         Ok(())
     }
 
@@ -473,6 +518,7 @@ pub enum FileLoadError {
     },
     NoStdLib {
         source: (FileId, Span),
+        kind: LibKind,
     },
     Silenced,
 }
@@ -502,11 +548,11 @@ impl FileLoadError {
                 .with_code(151)
                 .with_label(Label::new(source.1).with_message("imported here")),
             ),
-            FileLoadError::NoStdLib { source } => Some(
+            FileLoadError::NoStdLib { source, kind } => Some(
                 Report::new(
                     DiagnosticKind::Error,
                     source.0,
-                    &dbformat!(db, "No standard library found"),
+                    &format!("No {} library found", kind),
                 )
                 .with_code(152),
             ),

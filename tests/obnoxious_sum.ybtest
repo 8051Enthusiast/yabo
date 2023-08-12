@@ -6,7 +6,7 @@ fun *apply_with_data(data: *'t, f: *'t('t), default: 't): 't = {
   | let return = default
 }
 
-fun *apply_with_byte(f: *int(int), default: int) = apply_with_data(std.u8l, f, default)
+fun *apply_with_byte(f: *int(int), default: int) = apply_with_data(u8l, f, default)
 
 fun *sum(acc: int, x: int): int = apply_with_byte(sum(acc + x), acc + x)
 

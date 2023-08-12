@@ -2,7 +2,7 @@
 import std
 
 def *sum(acc: int): int = {
-  | x: std.u16l if !eof, return: sum(acc + x)
+  | x: u16l if !eof, return: sum(acc + x)
   | let return = acc
 }
 

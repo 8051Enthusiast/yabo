@@ -1,0 +1,70 @@
+# Parses a single byte in the given base.
+# The base must be between 2 and 36.
+# For 0 <= i < 10, the digit is the corresponding ASCII digit.
+# For 10 <= i < 36, the digit is the corresponding ASCII letter from A to Z.
+# The result is the value of the digit.
+def *digit(base: int) = {
+  x: ~
+  | let value = x if 0x30..0x39 - 0x30
+  | let value = x if 0x41..0x5a - 0x41 + 10
+  | let value = x if 0x61..0x7a - 0x61 + 10
+  assert?(base > value)
+  let return = value
+}
+
+fun *number_acc(base: int, n: int): int = {
+  x: digit?(base) if !eof
+  let s = n * base + x
+  | return: number_acc?(base, s)
+  | let return = s
+}
+
+# Parses a number in the given base.
+def *basenum(base: int) = number_acc?(base, 0)
+
+# Returns the maxiumum of a and b.
+def *max(a: int, b: int) = {
+  | assert?(a > b)
+    let return = a
+  | let return = b
+}
+
+fun ['t] *> summap_acc(f: ['t] *> int, acc: int): int = {
+  | x: f?
+    return: summap_acc(f?, x + acc)
+  | let return = acc
+}
+
+# With f being a parser returning an int, returns the sum of all the ints
+# until the parser fails.
+fun ['t] *> summap(f: ['t] *> int) = summap_acc(f?, 0)
+
+# Returns a cons-list of the given parser contingent in memory.
+def *list(element: *'r) = {
+  | this: element?
+    next: list(element?)
+  | +
+}
+
+# Returns the length of a given list.
+fun *len(xs: list) = {
+  | inner_len: len(xs.?next)
+    let return = inner_len + 1
+  | let return = 0
+}
+
+# Skips the first n elements of a list xs.
+fun *skip(xs: list, n: int): list = {
+  | let _ = n if 0
+    let return = xs
+  | return: skip(xs.?next, n - 1)
+}
+
+# Parses a newline
+def *newline = /\r\n?|\n/
+
+# Parses a specific byte or fails
+def *byteval(x: int) = {
+  y: ~
+  assert?(x == y)
+}

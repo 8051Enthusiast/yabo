@@ -4,7 +4,7 @@ use fxhash::FxHashSet;
 use yaboc_base::{
     error::SilencedError,
     interner::{Identifier, IdentifierName},
-    source::{FileId, FileResolver},
+    source::{FileId, FileResolver, LibKind},
     Context,
 };
 
@@ -39,7 +39,10 @@ impl<DB: Asts + Default> Import for Context<DB> {
                 errors.extend(e.into_report(&self.db))
             }
         }
-        if let Err(e) = resolver.add_std(&mut self.db) {
+        if let Err(e) = resolver.add_std(&mut self.db, LibKind::Core) {
+            errors.extend(e.into_report(&self.db))
+        }
+        if let Err(e) = resolver.add_std(&mut self.db, LibKind::Std) {
             errors.extend(e.into_report(&self.db))
         }
         while let Some(f) = new_files.pop() {

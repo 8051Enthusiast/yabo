@@ -12,6 +12,14 @@ pub enum VarType {
     Value,
 }
 
+fn core_mod(db: &(impl Resolves + ?Sized)) -> SResult<hir::Module> {
+    let core = db.intern_hir_path(DefinitionPath::Module(db.core()?));
+    let HirNode::Module(module) = db.hir_node(core)? else {
+        panic!("Core is not a module");
+    };
+    Ok(module)
+}
+
 pub fn parserdef_ref(
     db: &(impl Resolves + ?Sized),
     loc: DefId,
@@ -25,7 +33,10 @@ pub fn parserdef_ref(
         current_module = import.lookup(db)?.mod_ref;
     }
     let final_name = name.last().unwrap();
-    Ok(current_module.lookup(db)?.defs.get(final_name).copied())
+    if let Some(parserdef) = current_module.lookup(db)?.defs.get(final_name).copied() {
+        return Ok(Some(parserdef));
+    }
+    Ok(core_mod(db)?.defs.get(final_name).copied())
 }
 
 pub enum Resolved {
@@ -38,6 +49,7 @@ pub fn resolve_var_ref(
     db: &(impl Resolves + ?Sized),
     loc: DefId,
     ident: FieldName,
+    use_core: bool,
 ) -> SResult<Resolved> {
     let mut current_id = loc;
     loop {
@@ -56,9 +68,16 @@ pub fn resolve_var_ref(
                 }
                 if let Some(import) = m.imports.get(&ident) {
                     return Ok(Resolved::Module(import.lookup(db)?.mod_ref));
-                } else {
-                    return Ok(Resolved::Unresolved);
+                } else if use_core {
+                    let core = core_mod(db)?;
+                    if let Some(s) = core.defs.get(&ident) {
+                        return Ok(Resolved::Value(s.id(), VarType::ParserDef));
+                    }
+                    // we intentionally do not check for imports here, this way the core
+                    // module can have imports for implementation without polluting the
+                    // global namespace
                 }
+                return Ok(Resolved::Unresolved);
             }
             HirNode::Context(ctx) => match ctx.vars.get(ident) {
                 Some(id) => return Ok(Resolved::Value(*id.inner(), VarType::Value)),
@@ -95,14 +114,14 @@ pub fn expr_idents(expr: &hir::ValExpression) -> Vec<FieldName> {
     ret
 }
 
-pub fn expr_parser_refs<'a>(
+fn expr_parser_refs<'a>(
     db: &'a (impl Resolves + ?Sized),
     expr: &hir::ValExpression,
     context: DefId,
 ) -> impl Iterator<Item = hir::ParserDefId> + 'a {
     expr_idents(expr)
         .into_iter()
-        .flat_map(move |ident| resolve_var_ref(db, context, ident).ok())
+        .flat_map(move |ident| resolve_var_ref(db, context, ident, false).ok())
         .flat_map(|resolved| match resolved {
             Resolved::Value(id, VarType::ParserDef) => Some(hir::ParserDefId(id)),
             _ => None,
