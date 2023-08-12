@@ -105,7 +105,7 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for ParserDefRef {
         if let Some(fr) = self.from.as_ref() {
             dbwrite!(f, db, "{} &> ", &W(fr))?;
         }
-        for (i, field) in self.name.iter().enumerate() {
+        for (i, field) in self.path.iter().enumerate() {
             if i > 0 {
                 dbwrite!(f, db, ".")?;
             }

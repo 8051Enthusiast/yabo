@@ -233,19 +233,30 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         span: IndirectSpan,
         id: hir::TExprId,
     ) -> Result<InfTypeId<'intern>, SpannedTypeError> {
+        if let [name] = &*pd.path {
+            let name = self.db.lookup_intern_identifier(name.atom);
+            // we don't want u8 to be a keyword, but the implementation is actually a fun and not
+            // a def, so we cannot refer to it by parserdef type (and it would
+            // result in an infinite loop anyway)
+            // in non-type contexts, we just refer to the fun u8, while in type contexts, we mean
+            // the primitive type u8
+            if name.name == "u8" {
+                return Ok(self.infctx.u8());
+            }
+        }
         let def = self
             .db
-            .parserdef_ref(self.loc.loc, pd.name.iter().map(|x| x.atom).collect())?
+            .parserdef_ref(self.loc.loc, pd.path.iter().map(|x| x.atom).collect())?
             .ok_or_else(|| {
                 SpannedTypeError::new(
-                    TypeError::UnknownParserdefName(pd.name.last().unwrap().atom),
+                    TypeError::UnknownParserdefName(pd.path.last().unwrap().atom),
                     span,
                 )
             })?;
         let parserdef = def.lookup(self.db)?;
         if !parserdef.thunky {
             return Err(SpannedTypeError::new(
-                TypeError::NonThunkReference(pd.name.last().unwrap().atom),
+                TypeError::NonThunkReference(pd.path.last().unwrap().atom),
                 span,
             ));
         }

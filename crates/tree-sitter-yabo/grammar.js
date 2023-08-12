@@ -353,7 +353,6 @@ module.exports = grammar({
       'int',
       'bit',
       'char',
-      'u8',
     ),
     single: $ => '~',
     nil: $ => '+',

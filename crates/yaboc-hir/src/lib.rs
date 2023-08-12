@@ -786,7 +786,7 @@ pub enum TypePrimitive {
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDefRef {
     pub from: Option<DataExpr<HirType, SpanIndex>>,
-    pub name: Vec<IndexSpanned<Identifier>>,
+    pub path: Vec<IndexSpanned<Identifier>>,
     pub args: Vec<DataExpr<HirType, SpanIndex>>,
 }
 

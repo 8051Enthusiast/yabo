@@ -176,7 +176,7 @@ fn convert_type_expression(
                         .collect();
                     ExprHead::Niladic(TypeAtom::ParserDef(Box::new(ParserDefRef {
                         from,
-                        name,
+                        path: name,
                         args,
                     })))
                 }
