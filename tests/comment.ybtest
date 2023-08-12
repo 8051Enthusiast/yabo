@@ -1,0 +1,24 @@
+====[ source code ]====
+export          # test
+def *test = {   # test
+  let x = 1 +   # test
+          2     # test
+  z: u32l       # test
+  |             # test
+    y: u32l     # test
+  |             # test
+    |           # test
+      let y = 3 # test
+    |           # test
+      let y = 4 # test
+}               # test
+
+====[ binary 1 ]====
+03 00 00 00 07 00 00 00
+
+====[ output 1 ]====
+{
+    "x": 3,
+    "z": 3,
+    "y": 7
+}
