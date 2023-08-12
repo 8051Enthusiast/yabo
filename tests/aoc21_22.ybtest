@@ -17,7 +17,7 @@ def *line = {
 
 def *calculate_line(start: std.list[*line], x: std.list[*line], name: int): int = {
   | let current = x.this?
-    std.assert?(current.name == name)
+    assert?(current.name == name)
     | let return = current.?num
     | let res = current.?res
       left: calculate_line(start, start, res.left)

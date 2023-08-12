@@ -68,8 +68,8 @@ fn resolve_expr_modules(
 ) -> Result<ReidxExpr<hir::HirVal, Resolved>, ResolveError> {
     let parent_block = db.hir_parent_block(expr_id.0)?;
 
-    let new_resolved_atom = |loc, name, bt, span| {
-        let (id, kind) = match refs::resolve_var_ref(db, loc, name, true)? {
+    let new_resolved_atom = |loc, name, bt, span, use_core| {
+        let (id, kind) = match refs::resolve_var_ref(db, loc, name, use_core)? {
             refs::Resolved::Value(id, kind) => (id, kind),
             refs::Resolved::Module(m) => return Ok(PartialEval::Eval(m)),
             refs::Resolved::Unresolved => {
@@ -111,7 +111,7 @@ fn resolve_expr_modules(
                     hir::ParserAtom::Regex(r, bt) => ResolvedAtom::Regex(r, bt),
                     hir::ParserAtom::Block(b) => ResolvedAtom::Block(b),
                     hir::ParserAtom::Atom(Atom::Field((f, bt))) => {
-                        match new_resolved_atom(expr_id.0, f, bt, *span)? {
+                        match new_resolved_atom(expr_id.0, f, bt, *span, true)? {
                             PartialEval::Uneval(k) => k,
                             PartialEval::Eval(m) => return Ok(PartialEval::Eval(m)),
                         }
@@ -119,7 +119,7 @@ fn resolve_expr_modules(
                 }),
                 // TODO(8051): throw an error or warning if the field access is fallible on a module
                 ExprHead::Monadic(ValUnOp::Dot(field, bt, _), PartialEval::Eval((m, _))) => {
-                    match new_resolved_atom(m.0, field, bt, *span)? {
+                    match new_resolved_atom(m.0, field, bt, *span, false)? {
                         PartialEval::Uneval(k) => ExprHead::Niladic(k),
                         PartialEval::Eval(m) => return Ok(PartialEval::Eval(m)),
                     }
