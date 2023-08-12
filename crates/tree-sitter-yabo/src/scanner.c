@@ -209,8 +209,8 @@ void tree_sitter_yabo_external_scanner_deserialize(void *payload, const char *bu
 
 bool tree_sitter_yabo_external_scanner_scan(void *payload, TSLexer *lexer, const bool *valid_symbols) {
     struct Scanner *scanner = (struct Scanner *)payload;
-//    fprintf(stderr, "valid symbols: INDENT %d, DEDENT %d, NEWLINE %d, LEXER_ERROR %d\n",
-//        valid_symbols[INDENT], valid_symbols[DEDENT], valid_symbols[NEWLINE], valid_symbols[LEXER_ERROR]);
+    //fprintf(stderr, "valid symbols: INDENT %d, DEDENT %d, NEWLINE %d, LEXER_ERROR %d\n",
+    //    valid_symbols[INDENT], valid_symbols[DEDENT], valid_symbols[NEWLINE], valid_symbols[LEXER_ERROR]);
     
     if (top_state(scanner) == REPEAT_DEDENT) {
         if (!valid_symbols[DEDENT]) {
@@ -225,17 +225,11 @@ bool tree_sitter_yabo_external_scanner_scan(void *payload, TSLexer *lexer, const
         }
     }
     bool has_newline = false;
-    while (iswspace(lexer->lookahead) || lexer->lookahead == '#') {
+    while (iswspace(lexer->lookahead)) {
         if (lexer->lookahead == '\n' || lexer->lookahead == '\r') {
             has_newline = true;
         }
-        if (lexer->lookahead == '#') {
-            while (lexer->lookahead != '\n' && lexer->lookahead != '\r') {
-                skip(lexer);
-            }
-        } else {
-            skip(lexer);
-        }
+        skip(lexer);
     }
     if ((valid_symbols[BLOCK_CLOSE] || valid_symbols[DEDENT]) && lexer->lookahead == '}') {
         State state = pop_state(scanner);
@@ -247,6 +241,18 @@ bool tree_sitter_yabo_external_scanner_scan(void *payload, TSLexer *lexer, const
         lexer->result_symbol = BLOCK_CLOSE;
         return true;
     }
+    // we ignore comments
+    if (lexer->lookahead == '#') {
+        // we can directly return that we have not recognized a token
+        // even when we have seen newlines, because there will always
+        // be a newline token after a comment and the parser will
+        // just parse the comment in the meanwhile, which will be
+        // ignored as it is in `extras`
+        return false;
+    }
+    // an opening brace might still indicate indent/dedent or might be after a newline
+    // so we need to emit our indent/dedent/newline tokens first and if we are finished
+    // with that, we can advance the lexer
     if (valid_symbols[INDENT] || valid_symbols[DEDENT] || valid_symbols[NEWLINE]) {
         uint32_t new_indent = lexer->get_column(lexer);
         if (valid_symbols[INDENT] || has_newline) {
@@ -261,7 +267,6 @@ bool tree_sitter_yabo_external_scanner_scan(void *payload, TSLexer *lexer, const
                 return true;
             }
             if (lexer->result_symbol == LEXER_ERROR) {
-                lexer->result_symbol = LEXER_ERROR;
                 return true;
             }
         }
