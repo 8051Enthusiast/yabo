@@ -853,10 +853,10 @@ fn thunky_sign(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<bool> {
 fn primitive_type(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<TypePrimitive> {
     let str = node_to_string(db, fd, c)?;
     Ok(match str.as_ref() {
-        "mem" => TypePrimitive::Mem,
         "int" => TypePrimitive::Int,
         "bit" => TypePrimitive::Bit,
         "char" => TypePrimitive::Char,
+        "u8" => TypePrimitive::U8,
         otherwise => panic!("Unknown type primitive: {otherwise}"),
     })
 }

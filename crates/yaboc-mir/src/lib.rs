@@ -991,7 +991,7 @@ mod tests {
     fn basic_mir() {
         let ctx = Context::<MirTestDatabase>::mock(
             r"
-def [int] *> main = {
+def *main = {
     | a: ~
       b: ~
       e: {

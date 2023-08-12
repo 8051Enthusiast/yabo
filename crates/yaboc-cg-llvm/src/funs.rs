@@ -365,7 +365,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
     }
 
-
     fn create_pd_parse(
         &mut self,
         from: ILayout<'comp>,
@@ -558,7 +557,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.terminate_tail_typecast(buf, ret)
     }
 
-    fn create_sliceptr_current_element(&mut self, layout: IMonoLayout<'comp>) {
+    fn create_u8_current_element(&mut self, layout: IMonoLayout<'comp>) {
         let fun = self.current_element_fun_val(layout);
         self.set_always_inline(fun);
         let entry = self.llvm.append_basic_block(fun, "entry");
@@ -584,6 +583,24 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let bitcasted_buf = self.build_cast::<*mut i64, _>(int_buf.ptr);
         self.builder.build_store(bitcasted_buf, int);
         self.terminate_tail_typecast(int_buf.into(), ret);
+    }
+
+    fn create_sliceptr_current_element(&mut self, layout: IMonoLayout<'comp>) {
+        let fun = self.current_element_fun_val(layout);
+        self.set_always_inline(fun);
+        let entry = self.llvm.append_basic_block(fun, "entry");
+        self.builder.position_at_end(entry);
+        let [return_ptr, from, target_head] = get_fun_args(fun);
+        let layout = self
+            .layouts
+            .dcx
+            .primitive(self.layouts.db, PrimitiveType::U8);
+        let ret = CgReturnValue::new(
+            target_head.into_int_value(),
+            return_ptr.into_pointer_value(),
+        );
+        let from = CgValue::new(layout, from.into_pointer_value());
+        self.terminate_tail_typecast(from, ret);
     }
 
     fn build_array_item_len_get(
@@ -1257,6 +1274,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
     }
 
+    fn create_primitive_funs(&mut self, layout: IMonoLayout<'comp>) {
+        if let MonoLayout::Primitive(PrimitiveType::U8) = layout.mono_layout().0 {
+            self.create_u8_current_element(layout);
+        }
+    }
+
     fn create_nominal_funs(&mut self, layout: IMonoLayout<'comp>) {
         self.create_pd_end(layout);
         self.create_pd_start(layout);
@@ -1282,6 +1305,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         for layout in collected_layouts.lens.iter() {
             self.create_len_fun(*layout);
+        }
+        for layout in collected_layouts.primitives.iter() {
+            self.create_primitive_funs(*layout);
         }
     }
 }

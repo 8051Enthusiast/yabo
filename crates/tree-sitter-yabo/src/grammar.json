@@ -2083,7 +2083,7 @@
         },
         {
           "type": "STRING",
-          "value": "mem"
+          "value": "u8"
         }
       ]
     },

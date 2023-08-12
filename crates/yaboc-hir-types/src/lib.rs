@@ -82,6 +82,7 @@ pub enum HeadDiscriminant {
     FunctionArgs = 0x600,
     Block = 0x700,
     Unit = 0x800,
+    U8 = 0x900,
 }
 
 pub const DISCRIMINANT_MASK: i64 = !0xff;
@@ -92,6 +93,7 @@ pub fn head_discriminant(db: &dyn TyHirs, ty: TypeId) -> i64 {
         Type::Primitive(PrimitiveType::Bit) => HeadDiscriminant::Bit as i64,
         Type::Primitive(PrimitiveType::Char) => HeadDiscriminant::Char as i64,
         Type::Primitive(PrimitiveType::Unit) => HeadDiscriminant::Unit as i64,
+        Type::Primitive(PrimitiveType::U8) => HeadDiscriminant::U8 as i64,
         Type::Loop(_, _) => HeadDiscriminant::Loop as i64,
         Type::ParserArg { .. } => HeadDiscriminant::Parser as i64,
         Type::FunctionArg(_, _) => HeadDiscriminant::FunctionArgs as i64,
@@ -179,8 +181,8 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                 self.resolve_type_expr_impl(expr, *inner, id)?
             }
             ExprHead::Monadic(TypeUnOp::ByteParser, inner) => {
-                let int = self.infctx.int();
-                let from = self.infctx.array(ArrayKind::Each, int);
+                let u8 = self.infctx.u8();
+                let from = self.infctx.array(ArrayKind::Each, u8);
                 let inner = match &expr.expr[*inner] {
                     ExprHead::Niladic(hir::TypeAtom::ParserDef(pd)) => {
                         self.resolve_type_expr_parserdef_ref(pd, Some(from), span, id)?
@@ -190,10 +192,10 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                 self.infctx.parser(inner, from)
             }
             ExprHead::Niladic(hir::TypeAtom::Primitive(p)) => match p {
-                hir::TypePrimitive::Mem => todo!(),
                 hir::TypePrimitive::Int => self.infctx.int(),
                 hir::TypePrimitive::Bit => self.infctx.bit(),
                 hir::TypePrimitive::Char => self.infctx.char(),
+                hir::TypePrimitive::U8 => self.infctx.u8(),
             },
             ExprHead::Niladic(hir::TypeAtom::ParserDef(pd)) => {
                 self.resolve_type_expr_parserdef_ref(pd, None, span, id)?

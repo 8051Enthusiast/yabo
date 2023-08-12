@@ -450,7 +450,7 @@ mod tests {
     fn dyn_recurse() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            fun [int] *> number_acc(base: int, n: int): int = {
+            fun *number_acc(base: int, n: int): int = {
               x: ~
               let s = n * base + x
               | return: number_acc?(base, s)

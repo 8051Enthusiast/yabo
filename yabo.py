@@ -14,6 +14,7 @@ YABO_PARSER = 0x500
 YABO_FUN_ARGS = 0x600
 YABO_BLOCK = 0x700
 YABO_UNIT = 0x800
+YABO_U8 = 0x900
 YABO_ANY = ((1 << 64) - 1) & ~0xff
 YABO_VTABLE = 1
 
@@ -400,6 +401,10 @@ class ParserValue(YaboValue):
 class UnitValue(YaboValue):
     pass
 
+class U8Value(YaboValue):
+    def deref(self):
+        return self._typecast(0 | YABO_VTABLE)
+
 
 def _new_value(val: DynValue, lib: YaboLib):
     val.mask()
@@ -422,6 +427,8 @@ def _new_value(val: DynValue, lib: YaboLib):
         return BlockValue(val, lib)
     if head == YABO_UNIT:
         return UnitValue(val, lib)
+    if head == YABO_U8:
+        return U8Value(val, lib)
     if head < 0:
         return NominalValue(val, lib)
     raise Exception("Unknown type")

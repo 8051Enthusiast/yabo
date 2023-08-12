@@ -1,5 +1,5 @@
 ====[ source code ]====
-export def [int] *> test = {
+export def *test = {
 	fst: ~
 	snd: ~
 }

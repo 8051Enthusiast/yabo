@@ -11,6 +11,7 @@ use yaboc_layout::{
     prop::{PSize, SizeAlign},
     ILayout, IMonoLayout, MonoLayout, TailInfo,
 };
+use yaboc_types::PrimitiveType;
 
 use crate::{
     get_fun_args, parser_values,
@@ -112,7 +113,6 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TypecastThunk<'comp, 'llvm> {
         if after_copy {
             return None;
         }
-        let arg_copy = self.arg_copy.unwrap();
         let previous_bb = cg.builder.get_insert_block();
         let fun = cg.current_function();
         let current_bb = cg.llvm.append_basic_block(fun, "tail");
@@ -124,16 +124,22 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TypecastThunk<'comp, 'llvm> {
         let thunk = CgMonoValue::new(self.layout, thunk_ptr);
         let ret = CgReturnValue::new(target_level, ret_ptr);
 
-        let (from, fun, slot) = cg.build_nominal_components(thunk, pd_val_req());
-        let fun = if let Some(fun_cpy) = self.fun_copy {
-            cg.build_copy_invariant(fun_cpy.into(), fun.into());
-            fun_cpy
+        let ret = if let MonoLayout::Primitive(PrimitiveType::U8) = thunk.layout.mono_layout().0 {
+            cg.call_current_element_fun(ret, thunk.into())
         } else {
-            fun
-        };
-        cg.build_copy_invariant(arg_copy, from);
+            let arg_copy = self.arg_copy.unwrap();
+            let (from, fun, slot) = cg.build_nominal_components(thunk, pd_val_req());
+            let fun = if let Some(fun_cpy) = self.fun_copy {
+                cg.build_copy_invariant(fun_cpy.into(), fun.into());
+                fun_cpy
+            } else {
+                fun
+            };
+            cg.build_copy_invariant(arg_copy, from);
 
-        let ret = cg.call_parser_fun_impl(ret, fun, arg_copy, slot, NeededBy::Val.into(), false);
+            cg.call_parser_fun_impl(ret, fun, arg_copy, slot, NeededBy::Val.into(), false)
+        };
+
         cg.builder.build_return(Some(&ret));
         if let Some(bb) = previous_bb {
             cg.builder.position_at_end(bb);

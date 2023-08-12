@@ -1,12 +1,12 @@
 ====[ source code ]====
-def [int] *> fib(a: int) = {
+def *fib(a: int) = {
   | let return = a if 0 or 1
   | x: fib(a - 2)
     y: fib(a - 1)
     let return = x + y
 }
 
-export def [int] *> test = {
+export def *test = {
     n: ~
     return: fib(n)
 }

@@ -131,8 +131,8 @@ mod tests {
     fn arg_types() {
         let ctx = Context::<HirTypesTestDatabase>::mock(
             r#"
-def [int] *> expr1 = {}
-def [[int] &> expr1] *> expr2 = {}
+def *expr1 = {}
+def [[u8] &> expr1] *> expr2 = {}
 def ['x] *> expr3 = {}
 def [[expr1] *> expr2] *> expr4 = {}
 def [expr3] *> expr5 = {}
@@ -147,11 +147,11 @@ def [expr3] *> expr5 = {}
                 .unwrap()
                 .to_db_string(&ctx.db)
         };
-        assert_eq!("[int]", arg_type("expr1"));
-        assert_eq!("[[int] &> file[_].expr1]", arg_type("expr2"));
+        assert_eq!("[u8]", arg_type("expr1"));
+        assert_eq!("[[u8] &> file[_].expr1]", arg_type("expr2"));
         assert_eq!("['0]", arg_type("expr3"));
         assert_eq!(
-            "[[[int] &> file[_].expr1] *> [[int] &> file[_].expr1] &> file[_].expr2]",
+            "[[[u8] &> file[_].expr1] *> [[u8] &> file[_].expr1] &> file[_].expr2]",
             arg_type("expr4")
         );
         assert_eq!("[['0] &> file[_].expr3]", arg_type("expr5"));

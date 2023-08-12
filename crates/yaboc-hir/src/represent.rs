@@ -128,10 +128,10 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for ParserDefRef {
 impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for TypePrimitive {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, _db: &DB) -> std::fmt::Result {
         match self {
-            TypePrimitive::Mem => write!(f, "<mem>"),
             TypePrimitive::Int => write!(f, "<int>"),
             TypePrimitive::Bit => write!(f, "<bit>"),
             TypePrimitive::Char => write!(f, "<char>"),
+            TypePrimitive::U8 => write!(f, "<u8>"),
         }
     }
 }

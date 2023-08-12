@@ -2222,10 +2222,6 @@
     "named": false
   },
   {
-    "type": "mem",
-    "named": false
-  },
-  {
     "type": "not_eof",
     "named": true
   },
@@ -2268,6 +2264,10 @@
   {
     "type": "type_var",
     "named": true
+  },
+  {
+    "type": "u8",
+    "named": false
   },
   {
     "type": "|",

@@ -669,6 +669,12 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                 }
             }
 
+            // a u8 can be dereferenced to an int
+            (Primitive(PrimitiveType::U8), _) => {
+                let int = self.int();
+                self.constrain(int, upper)
+            }
+
             (ParserArg { result, .. }, InferIfResult(_, infer_res, cont)) => {
                 self.constrain(lower, *cont)?;
                 self.constrain(*result, *infer_res)
@@ -711,6 +717,10 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         let bit = InferenceType::Primitive(PrimitiveType::Bit);
         self.intern_infty(bit)
     }
+    pub fn u8(&mut self) -> InfTypeId<'intern> {
+        let u8 = InferenceType::Primitive(PrimitiveType::U8);
+        self.intern_infty(u8)
+    }
     pub fn single(&mut self) -> InfTypeId<'intern> {
         let ty_var = self.var();
         let for_loop = self.intern_infty(InferenceType::Loop(ArrayKind::Each, ty_var));
@@ -729,9 +739,9 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         })
     }
     pub fn regex(&mut self) -> InfTypeId<'intern> {
-        let int = self.int();
-        let int_array = self.array(ArrayKind::Each, int);
-        self.parser(int_array, int_array)
+        let u8 = self.u8();
+        let u8_array = self.array(ArrayKind::Each, u8);
+        self.parser(u8_array, u8_array)
     }
     pub fn array_parser(&mut self) -> InfTypeId<'intern> {
         // the type of an array is ['t] *> ['r](['t] *> 'r, int)

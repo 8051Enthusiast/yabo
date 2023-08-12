@@ -171,7 +171,7 @@ int print_array(DynValue *val, int indent, Stack stack, FILE *out) {
   return 0;
 }
 
-int print_nominal(DynValue *val, int indent, Stack stack, FILE *out) {
+int print_indirect(DynValue *val, int indent, Stack stack, FILE *out) {
   DynValue *deref = stack.current;
   dyn_deref(deref, val);
   return print_recursive(indent, stack, out);
@@ -186,8 +186,8 @@ int print_recursive(int indent, Stack stack, FILE *out) {
   struct VTableHeader *vtable = val->vtable;
   int64_t head = vtable->head;
   Stack substack = bump(stack);
-  if (head < 0) {
-    status = print_nominal(val, indent, substack, out);
+  if (head < 0 || head == YABO_U8) {
+    status = print_indirect(val, indent, substack, out);
   } else {
     switch (head) {
     case YABO_INTEGER:
