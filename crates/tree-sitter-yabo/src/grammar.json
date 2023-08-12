@@ -22,7 +22,7 @@
         }
       ]
     },
-    "_comment": {
+    "comment": {
       "type": "TOKEN",
       "content": {
         "type": "SEQ",
@@ -303,7 +303,7 @@
       "members": [
         {
           "type": "SYMBOL",
-          "name": "_block_open"
+          "name": "block_open"
         },
         {
           "type": "CHOICE",
@@ -336,7 +336,7 @@
         },
         {
           "type": "SYMBOL",
-          "name": "_block_close"
+          "name": "block_close"
         }
       ]
     },
@@ -2207,7 +2207,7 @@
     },
     {
       "type": "SYMBOL",
-      "name": "_comment"
+      "name": "comment"
     }
   ],
   "conflicts": [],
@@ -2227,11 +2227,11 @@
     },
     {
       "type": "SYMBOL",
-      "name": "_block_open"
+      "name": "block_open"
     },
     {
       "type": "SYMBOL",
-      "name": "_block_close"
+      "name": "block_close"
     },
     {
       "type": "SYMBOL",

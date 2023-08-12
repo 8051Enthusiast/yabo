@@ -21,7 +21,7 @@ module.exports = grammar({
 
   extras: $ => [
     /\s/,
-    $._comment,
+    $.comment,
   ],
 
   word: $ => $.identifier,
@@ -30,8 +30,8 @@ module.exports = grammar({
     $._newline,
     $._indent,
     $._dedent,
-    $._block_open,
-    $._block_close,
+    $.block_open,
+    $.block_close,
     $._lexer_error,
     // unused
     $._notoken,
@@ -43,7 +43,7 @@ module.exports = grammar({
       $.parser_definition,
       $.import
     ),
-    _comment: $ => token(seq('#', /[^\n]*/)),
+    comment: $ => token(seq('#', /[^\n]*/)),
     parser_definition: $ => seq(
       optional(field('qualifier', 'export')),
       field('thunky', choice('def', 'fun')),
@@ -92,13 +92,13 @@ module.exports = grammar({
       field('right', $._type_expression)
     )),
     parser_block: $ => seq(
-      $._block_open,
+      $.block_open,
       optional(seq(
         $._indent,
         field('content', $.parser_sequence),
         $._dedent,
       )),
-      $._block_close,
+      $.block_close,
     ),
     parser_sequence: $ => seq(
       $._parser_sequence_element,
