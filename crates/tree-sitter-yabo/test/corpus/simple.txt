@@ -227,8 +227,6 @@ def *nonsense(x: int, y: int) = 1 + nonsense(3, 4)
 
 (source_file
   (parser_definition
-    from: (type_array
-      expr: (primitive_type))
     name: (identifier)
     argdefs: (arg_def_list
       args: (arg_definition
