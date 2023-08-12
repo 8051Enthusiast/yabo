@@ -69,7 +69,7 @@ fn resolve_expr_modules(
     let parent_block = db.hir_parent_block(expr_id.0)?;
 
     let new_resolved_atom = |loc, name, bt, span| {
-        let (id, kind) = match refs::resolve_var_ref(db, loc, name)? {
+        let (id, kind) = match refs::resolve_var_ref(db, loc, name, true)? {
             refs::Resolved::Value(id, kind) => (id, kind),
             refs::Resolved::Module(m) => return Ok(PartialEval::Eval(m)),
             refs::Resolved::Unresolved => {
@@ -151,12 +151,12 @@ pub fn resolve_expr_error(
     let sugar_spans = resolved.migrate_data(&expr.data);
     let zip_expr = resolved.into_expr().zip(sugar_spans);
     let compose = ExprHead::Niladic(ResolvedAtom::ParserDef(
-        db.std_item(hir::StdItem::Compose)?,
+        db.core_item(hir::CoreItem::Compose)?,
         true,
     ));
     let array = ExprHead::Niladic(ResolvedAtom::Array);
     let index = ExprHead::Niladic(ResolvedAtom::ParserDef(
-        db.std_item(hir::StdItem::Index)?,
+        db.core_item(hir::CoreItem::Index)?,
         true,
     ));
     let desugared = ZipExpr::new_from_unfold(Cont(zip_expr.root()), |id| {

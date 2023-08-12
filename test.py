@@ -78,7 +78,8 @@ class ErrorLocation:
 
 
 current_script_dir = os.path.dirname(os.path.realpath(__file__))
-std_path = os.path.join(current_script_dir, 'std', 'mod.yb')
+std_path = os.path.join(current_script_dir, 'lib', 'std.yb')
+core_path = os.path.join(current_script_dir, 'lib', 'core.yb')
 compiler_dir = os.path.join(current_script_dir, 'crates', 'yaboc')
 
 def build_compiler_binary():
@@ -128,6 +129,7 @@ class CompiledSource:
             with subprocess.Popen(
                 [compiler_path, "--output-json",
                  "--module", f"std={std_path}",
+                 "--module", f"core={core_path}",
                  sourcepath, self.compiled],
                 stderr=subprocess.PIPE
             ) as compiler:

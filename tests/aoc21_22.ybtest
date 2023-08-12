@@ -2,13 +2,13 @@
 import std
 
 def *op = {
-  left: std.u32l
+  left: u32l
   ~, op: ~, ~
-  right: std.u32l
+  right: u32l
 }
 
 def *line = {
-  name: std.u32l
+  name: u32l
   ~, ~
   | num: std.basenum?(10)
   | res: op
@@ -22,10 +22,10 @@ def *calculate_line(start: std.list[*line], x: std.list[*line], name: int): int 
     | let res = current.?res
       left: calculate_line(start, start, res.left)
       right: calculate_line(start, start, res.right)
-      | std.assert?(res.op == '*'), let return = left * right
-      | std.assert?(res.op == '+'), let return = left + right
-      | std.assert?(res.op == '-'), let return = left - right
-      | std.assert?(res.op == '/'), let return = left / right
+      | assert?(res.op == '*'), let return = left * right
+      | assert?(res.op == '+'), let return = left + right
+      | assert?(res.op == '-'), let return = left - right
+      | assert?(res.op == '/'), let return = left / right
   | return: calculate_line(start, x.?next, name)
 }
 

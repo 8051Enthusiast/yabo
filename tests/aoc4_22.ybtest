@@ -7,10 +7,10 @@ def *range = {
 
 def *is_subrange = {
   a: range?, ~, b: range, std.newline
-  | | std.assert?(a.start <= b.start)
-      std.assert?(a.end >= b.end)
-    | std.assert?(a.start >= b.start)
-      std.assert?(a.end <= b.end)
+  | | assert?(a.start <= b.start)
+      assert?(a.end >= b.end)
+    | assert?(a.start >= b.start)
+      assert?(a.end <= b.end)
     let return = 1
   | let return = 0
 }

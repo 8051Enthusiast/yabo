@@ -5,15 +5,15 @@ def *array(n: int) = [~](n)
 def *lengthed(parser: *'r) = {
     len: ~
     # just to make sure composition works
-    return: [~](len) |> array(len) |> [~](len) |> [~](len) |> parser
+    return: [~](len) |> array(len) |> [~](len) |> [u8](len) |> parser
 }
 
 export
 def *test = [~](24) |> {
-    a8: lengthed(std.u8l)
-    a16: lengthed(std.u16l)
-    a32: lengthed(std.u32l)
-    a64: lengthed(std.i64l)
+    a8: lengthed(u8l)
+    a16: lengthed(u16l)
+    a32: lengthed(u32l)
+    a64: lengthed(i64l)
 }
 
 ====[ binary 1 ]====
