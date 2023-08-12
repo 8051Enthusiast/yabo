@@ -1,11 +1,15 @@
 [
     "["
     "]"
+    (block_open)
+    (block_close)
     "("
     ")"
 ] @punctuation.bracket
 
 "," @punctuation.delimiter
+
+(comment) @comment.line
 
 [
     "bit"

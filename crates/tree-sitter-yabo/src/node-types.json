@@ -1080,6 +1080,20 @@
           }
         ]
       }
+    },
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "block_close",
+          "named": true
+        },
+        {
+          "type": "block_open",
+          "named": true
+        }
+      ]
     }
   },
   {
@@ -2178,8 +2192,20 @@
     "named": false
   },
   {
+    "type": "block_close",
+    "named": true
+  },
+  {
+    "type": "block_open",
+    "named": true
+  },
+  {
     "type": "char",
     "named": false
+  },
+  {
+    "type": "comment",
+    "named": true
   },
   {
     "type": "def",

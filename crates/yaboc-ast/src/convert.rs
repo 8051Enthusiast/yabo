@@ -75,6 +75,10 @@ fn check_error<'a>(_: &dyn Asts, fd: FileId, node: Node<'a>) -> ParseResult<Node
     }
 }
 
+const IGNORED_NAMES: &[&str] = &[
+    "block_open", "block_close", "comment"
+];
+
 fn iter_children<'a, F: FnMut(Node<'a>, TreeCursor<'a>) -> ParseResult<()>>(
     db: &dyn Asts,
     fd: FileId,
@@ -94,6 +98,12 @@ fn iter_children<'a, F: FnMut(Node<'a>, TreeCursor<'a>) -> ParseResult<()>>(
                     continue;
                 }
             };
+            if IGNORED_NAMES.contains(&node.kind()) {
+                if !c.goto_next_sibling() {
+                    break;
+                }
+                continue;
+            }
             let res = fun(node, c.clone());
             ret = combine_errors(ret, res, |a, _| a);
             if !c.goto_next_sibling() {
