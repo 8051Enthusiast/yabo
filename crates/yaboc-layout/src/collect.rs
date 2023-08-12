@@ -17,8 +17,8 @@ use crate::{
     prop::SizeAlign,
 };
 
-use self::tailsize::{CallSite, TailCollector};
 pub use self::tailsize::TailInfo;
+use self::tailsize::{CallSite, TailCollector};
 
 use super::{
     canon_layout, flat_layouts, prop::PSize, AbsLayoutCtx, ILayout, IMonoLayout, Layout,
@@ -570,6 +570,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             PrimitiveType::Bit,
             PrimitiveType::Char,
             PrimitiveType::Unit,
+            PrimitiveType::U8,
         ] {
             let primitive_type = self.ctx.db.intern_type(Type::Primitive(x));
             let layout = self

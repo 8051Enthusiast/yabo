@@ -777,11 +777,12 @@ pub enum TypeAtom {
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum TypePrimitive {
-    Mem,
     Int,
     Bit,
     Char,
+    U8,
 }
+
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDefRef {
     pub from: Option<DataExpr<HirType, SpanIndex>>,

@@ -198,9 +198,9 @@ class InputOutputPair:
     input: bytes
     output: str
 
-
+# replace the following `is` with isInstance
 def dictionarified_obj(obj):
-    while type(obj) is yabo.NominalValue:
+    while type(obj) is yabo.NominalValue or type(obj) is yabo.U8Value:
         obj = obj.deref()
     ty = type(obj)
     if ty is int or ty is str or ty is bool:

@@ -13,12 +13,7 @@ impl<'a, DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeId<'a> {
         match self.value() {
             InferenceType::Any => write!(f, "any"),
             InferenceType::Bot => write!(f, "bot"),
-            InferenceType::Primitive(p) => match p {
-                super::PrimitiveType::Bit => write!(f, "bit"),
-                super::PrimitiveType::Int => write!(f, "int"),
-                super::PrimitiveType::Char => write!(f, "char"),
-                super::PrimitiveType::Unit => write!(f, "unit"),
-            },
+            InferenceType::Primitive(p) => write!(f, "{}", &p),
             InferenceType::TypeVarRef(loc, index) => {
                 dbwrite!(f, db, "<Var Ref ({}, {})>", loc, index)
             }
@@ -79,6 +74,7 @@ impl<DB: TypeInterner + ?Sized> StableHash<DB> for PrimitiveType {
             PrimitiveType::Int => 1,
             PrimitiveType::Char => 2,
             PrimitiveType::Unit => 3,
+            PrimitiveType::U8 => 4,
         }
         .update_hash(state, db)
     }
@@ -150,13 +146,14 @@ impl<DB: TypeInterner + ?Sized> StableHash<DB> for TypeId {
     }
 }
 
-impl<DB: ?Sized> DatabasedDisplay<DB> for PrimitiveType {
-    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, _: &DB) -> std::fmt::Result {
+impl std::fmt::Display for PrimitiveType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PrimitiveType::Int => write!(f, "int"),
             PrimitiveType::Bit => write!(f, "bit"),
             PrimitiveType::Char => write!(f, "char"),
             PrimitiveType::Unit => write!(f, "unit"),
+            PrimitiveType::U8 => write!(f, "u8"),
         }
     }
 }

@@ -237,11 +237,11 @@ fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDef
         type_expression(f, ctx, from);
     } else {
         let span = ast.name.span;
-        // desugars to [int]
+        // desugars to [u8]
         let expr = Expression::new_niladic(OpWithData {
             inner: ast::TypeAtom::Array(Box::new(ast::TypeArray {
                 expr: Expression::new_niladic(OpWithData {
-                    inner: ast::TypeAtom::Primitive(ast::TypePrimitive::Int),
+                    inner: ast::TypeAtom::Primitive(ast::TypePrimitive::U8),
                     data: ast.span,
                 }),
                 span,
@@ -572,10 +572,10 @@ pub fn choice_indirection(
 impl From<ast::TypePrimitive> for TypePrimitive {
     fn from(p: ast::TypePrimitive) -> Self {
         match p {
-            ast::TypePrimitive::Mem => TypePrimitive::Mem,
             ast::TypePrimitive::Int => TypePrimitive::Int,
             ast::TypePrimitive::Bit => TypePrimitive::Bit,
             ast::TypePrimitive::Char => TypePrimitive::Char,
+            ast::TypePrimitive::U8 => TypePrimitive::U8,
         }
     }
 }

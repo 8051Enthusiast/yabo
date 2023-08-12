@@ -1,6 +1,6 @@
 ====[ source code ]====
 import std
-def *skip(skipper: *[int]) = {
+def *skip(skipper: *[u8]) = {
     skipper, return: /.*/
 }
 

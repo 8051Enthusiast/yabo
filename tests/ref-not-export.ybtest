@@ -1,7 +1,7 @@
 ====[ source code ]====
-def [int] *> thunk_returning_int = ~
-export def [int] *> test = {
-	let parser_with_invisible_thunk: [int] *> int = thunk_returning_int
+def *thunk_returning_int = ~
+export def *test = {
+	let parser_with_invisible_thunk: *int = thunk_returning_int
 	x: parser_with_invisible_thunk
 }
 

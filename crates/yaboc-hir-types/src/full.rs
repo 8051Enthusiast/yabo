@@ -221,25 +221,25 @@ def ['t] *> expr1 = {
     | let c: int = 1
   }
 }
-def [int] *> expr2 = {
+def *expr2 = {
   x: expr1
   let y: int = 3 + x.a
 }
-def [[int]] *> expr4 = {
+def [[u8]] *> expr4 = {
   x: ~ |> ~
-  let b: [int] *> int = ~
+  let b: *int = ~
   y: ~ |> b
   let a: int = x + y
 }
-def [int] *> expr5 = {
+def *expr5 = {
   x: expr2
   let b: expr2 = x
 }
-def [int] *> expr6 = {
-  let expr3: [int] *> expr5 = expr5
+def *expr6 = {
+  let expr3: *expr5 = expr5
   b: expr3
   inner: {
-    let expr3: [int] *> expr2 = expr2
+    let expr3: *expr2 = expr2
     b: expr3
   }
 }
@@ -267,26 +267,23 @@ def [int] *> expr6 = {
         assert_eq!(full_type("expr1", &["a"]), "'0");
         assert_eq!(full_type("expr1", &["b", "c"]), "int");
         assert_eq!(full_type("expr1", &["b", "d"]), "'0");
-        assert_eq!(full_type("expr2", &["x"]), "[int] &> file[_].expr1");
+        assert_eq!(full_type("expr2", &["x"]), "[u8] &> file[_].expr1");
         assert_eq!(full_type("expr2", &["y"]), "int");
         //assert_eq!(full_type("expr4", &["x"]), "int");
-        assert_eq!(full_type("expr4", &["b"]), "[int] *> int");
+        assert_eq!(full_type("expr4", &["b"]), "[u8] *> int");
         //assert_eq!(full_type("expr4", &["y"]), "int");
         assert_eq!(full_type("expr4", &["a"]), "int");
-        assert_eq!(full_type("expr5", &["x"]), "[int] &> file[_].expr2");
-        assert_eq!(full_type("expr5", &["b"]), "[int] &> file[_].expr2");
+        assert_eq!(full_type("expr5", &["x"]), "[u8] &> file[_].expr2");
+        assert_eq!(full_type("expr5", &["b"]), "[u8] &> file[_].expr2");
         assert_eq!(
             full_type("expr6", &["expr3"]),
-            "[int] *> [int] &> file[_].expr5"
+            "[u8] *> [u8] &> file[_].expr5"
         );
-        assert_eq!(full_type("expr6", &["b"]), "[int] &> file[_].expr5");
+        assert_eq!(full_type("expr6", &["b"]), "[u8] &> file[_].expr5");
         assert_eq!(
             full_type("expr6", &["inner", "expr3"]),
-            "[int] *> [int] &> file[_].expr2"
+            "[u8] *> [u8] &> file[_].expr2"
         );
-        assert_eq!(
-            full_type("expr6", &["inner", "b"]),
-            "[int] &> file[_].expr2"
-        );
+        assert_eq!(full_type("expr6", &["inner", "b"]), "[u8] &> file[_].expr2");
     }
 }

@@ -28,6 +28,7 @@ pub fn deref_type(db: &dyn TyHirs, ty: TypeId) -> SResult<Option<TypeId>> {
             let subst_deref_ty = db.substitute_typevar(deref_ty, nom.ty_args);
             Ok(Some(subst_deref_ty))
         }
+        Type::Primitive(PrimitiveType::U8) => Ok(Some(db.int())),
         _ => Ok(None),
     }
 }
@@ -66,6 +67,7 @@ impl Display for DerefLevel {
 pub fn deref_level(db: &dyn TyHirs, ty: TypeId) -> SResult<DerefLevel> {
     match db.lookup_intern_type(ty) {
         Type::ForAll(inner, _) => db.deref_level(inner),
+        Type::Primitive(PrimitiveType::U8) => Ok(DerefLevel::zero().inc()),
         Type::Nominal(nom) => {
             let id = match NominalId::from_nominal_head(&nom) {
                 NominalId::Def(id) => id,
@@ -318,7 +320,7 @@ mod tests {
             r#"
 def ['t] *> nil = {}
 def nil *> expr1 = {}
-def [int] *> single = ~
+def *single = ~
             "#,
         );
         let return_type = |name| {
@@ -337,13 +339,13 @@ def [int] *> single = ~
             return_type("expr1"),
             "<anonymous block ['0] &> file[_].nil &> file[_].expr1.1.0>"
         );
-        assert_eq!(return_type("single"), "int");
+        assert_eq!(return_type("single"), "u8");
     }
     #[test]
     fn block_with_return() {
         let ctx = Context::<HirTypesTestDatabase>::mock(
             r#"
-def [int] *> u16l = {
+def *u16l = {
     low: ~
     high: ~
     let return: int = low + high * 256

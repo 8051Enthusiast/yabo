@@ -1,5 +1,5 @@
 ====[ source code ]====
-export def [int] *> test = {
+export def *test = {
   tag: ~
   | let first: int = tag if 1
     let extra: int = 1

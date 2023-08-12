@@ -25,9 +25,9 @@ use yaboc_mir::Mirs;
 use yaboc_resolve::expr::{Resolved, ResolvedAtom};
 use yaboc_types::{PrimitiveType, Type, TypeId, TypeInterner};
 
+pub use self::collect::TailInfo;
 use self::prop::{PSize, SizeAlign, TargetSized, Zst};
 use self::represent::{LayoutHasher, LayoutPart, LayoutSymbol};
-pub use self::collect::TailInfo;
 
 #[derive(Clone, PartialEq, Eq, Default, Debug)]
 pub struct StructManifestation {
@@ -172,14 +172,16 @@ impl<'a> IMonoLayout<'a> {
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Option<ILayout<'a>>, SilencedError> {
-        Ok(if let MonoLayout::Nominal(_, _, _) = self.mono_layout().0 {
-            let res_ty = self.mono_layout().1;
-            Some(
-                ctx.eval_pd(self.inner(), res_ty)
-                    .ok_or_else(SilencedError::new)?,
-            )
-        } else {
-            None
+        Ok(match self.mono_layout().0 {
+            MonoLayout::Nominal(_, _, _) => {
+                let res_ty = self.mono_layout().1;
+                Some(
+                    ctx.eval_pd(self.inner(), res_ty)
+                        .ok_or_else(SilencedError::new)?,
+                )
+            }
+            MonoLayout::Primitive(PrimitiveType::U8) => Some(ctx.dcx.int(ctx.db)),
+            _ => None,
         })
     }
 
@@ -382,6 +384,13 @@ impl<'a> ILayout<'a> {
     ) -> Result<(ILayout<'a>, bool), LayoutError> {
         let mut changed = false;
         let res = self.try_map(ctx, |layout, ctx| {
+            if let MonoLayout::Primitive(PrimitiveType::U8) = layout.mono_layout().0 {
+                if level == DerefLevel::zero() {
+                    return Ok(ctx.dcx.int(ctx.db));
+                } else {
+                    return Ok(layout.0);
+                }
+            };
             let is_fun = if let MonoLayout::Nominal(pd, _, _) = layout.mono_layout().0 {
                 !pd.lookup(ctx.db)?.thunky
             } else {
@@ -432,11 +441,11 @@ impl<'a> ILayout<'a> {
     ) -> Result<ILayout<'a>, LayoutError> {
         self.try_map(ctx, |layout, ctx| match layout.mono_layout().0 {
             MonoLayout::SlicePtr => {
-                let int = PrimitiveType::Int;
-                let int_ty = ctx.db.intern_type(Type::Primitive(int));
+                let u8 = PrimitiveType::U8;
+                let u8_ty = ctx.db.intern_type(Type::Primitive(u8));
                 Ok(ctx
                     .dcx
-                    .intern(Layout::Mono(MonoLayout::Primitive(int), int_ty)))
+                    .intern(Layout::Mono(MonoLayout::Primitive(u8), u8_ty)))
             }
             MonoLayout::Array { parser, slice } => parser.apply_arg(ctx, *slice),
             // for calculating the length of a parser, the argument is an int, and the result
@@ -642,6 +651,7 @@ impl<'a> ILayout<'a> {
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Char), _) => char::tsize(),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int), _) => i64::tsize(),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Unit), _) => Zst::tsize(),
+            Layout::Mono(MonoLayout::Primitive(PrimitiveType::U8), _) => <&Zst>::tsize(),
             Layout::Mono(
                 MonoLayout::Single
                 | MonoLayout::Nil
@@ -777,7 +787,9 @@ pub fn canon_layout<'a, 'b>(
         Type::Loop(_, inner_ty) => {
             let inner_type = ctx.db.lookup_intern_type(inner_ty);
             match inner_type {
-                Type::Primitive(PrimitiveType::Int) => Ok(make_layout(ctx, MonoLayout::SlicePtr)),
+                Type::Primitive(PrimitiveType::Int | PrimitiveType::U8) => {
+                    Ok(make_layout(ctx, MonoLayout::SlicePtr))
+                }
                 _ => Err(LayoutError::LayoutError),
             }
         }
@@ -855,6 +867,15 @@ impl<'a> LayoutContext<'a> {
             MonoLayout::Primitive(PrimitiveType::Int),
             int_ty,
         ))
+    }
+
+    pub fn primitive(
+        &mut self,
+        db: &(impl TypeInterner + ?Sized),
+        prim: PrimitiveType,
+    ) -> ILayout<'a> {
+        let int_ty = db.intern_type(Type::Primitive(prim));
+        self.intern(Layout::Mono(MonoLayout::Primitive(prim), int_ty))
     }
 }
 
@@ -1130,14 +1151,14 @@ mod tests {
     fn layouts() {
         let ctx = Context::<LayoutTestDatabase>::mock(
             r"
-def [int] *> first = ~
-def [int] *> second = ~
-def [int] *> main = {
+def *first = ~
+def *second = ~
+def *main = {
     a: ~
     b: ~
     c: {
-      | let c: [int] *> first = first
-      | let c: [int] *> second = second?
+      | let c: *first = first
+      | let c: *second = second?
     }
     d: c.c
 }
@@ -1164,7 +1185,7 @@ def [int] *> main = {
                     ),
                     &ctx.db
                 ),
-                "main$54b43b3b86e9f014$parse_0_lb_worker"
+                "main$88082689c1307225$parse_0_lb_worker"
             );
         }
         let main_block = outlayer.pd_result()[&canon_2004]
@@ -1183,7 +1204,7 @@ def [int] *> main = {
                     ),
                     &ctx.db
                 ),
-                "block_6c872ebf06064930$260cc241e353548b$parse_0_vb"
+                "block_6c872ebf06064930$3b75767829875ed1$parse_0_vb"
             );
         }
         let field = |name| FieldName::Ident(ctx.id(name));
@@ -1193,7 +1214,7 @@ def [int] *> main = {
                 "{}",
                 &main_block.access_field(&mut outlayer, field("a")).unwrap(),
             ),
-            "int"
+            "u8"
         );
         assert_eq!(
             dbformat!(
@@ -1201,7 +1222,7 @@ def [int] *> main = {
                 "{}",
                 &main_block.access_field(&mut outlayer, field("b")).unwrap(),
             ),
-            "int"
+            "u8"
         );
         let out = dbformat!(
             &ctx.db,
@@ -1213,8 +1234,8 @@ def [int] *> main = {
                 .unwrap()
         );
         assert!(
-            ["nominal-parser?[[int] *> [int] &> file[_].second]() | nominal-parser[[int] *> [int] &> file[_].first]()",
-             "nominal-parser[[int] *> [int] &> file[_].first]() | nominal-parser?[[int] *> [int] &> file[_].second]()"]
+            ["nominal-parser?[[u8] *> [u8] &> file[_].second]() | nominal-parser[[u8] *> [u8] &> file[_].first]()",
+             "nominal-parser[[u8] *> [u8] &> file[_].first]() | nominal-parser?[[u8] *> [u8] &> file[_].second]()"]
             .contains(&out.as_str())
         );
         assert_eq!(
@@ -1223,7 +1244,7 @@ def [int] *> main = {
                 "{}",
                 &main_block.access_field(&mut outlayer, field("d")).unwrap(),
             ),
-            "int"
+            "u8"
         );
     }
     #[test]

@@ -8,7 +8,7 @@ def ['t] *> assert(big: bit) = {
 # For 0 <= i < 10, the digit is the corresponding ASCII digit.
 # For 10 <= i < 36, the digit is the corresponding ASCII letter from A to Z.
 # The result is the value of the digit.
-def [int] *> digit(base: int) = {
+def *digit(base: int) = {
   x: ~
   | let value = x if 0x30..0x39 - 0x30
   | let value = x if 0x41..0x5a - 0x41 + 10
@@ -17,7 +17,7 @@ def [int] *> digit(base: int) = {
   let return = value
 }
 
-fun [int] *> number_acc(base: int, n: int): int = {
+fun *number_acc(base: int, n: int): int = {
   x: digit?(base) if !eof
   let s = n * base + x
   | return: number_acc?(base, s)
@@ -25,7 +25,7 @@ fun [int] *> number_acc(base: int, n: int): int = {
 }
 
 # Parses a number in the given base.
-def [int] *> basenum(base: int) = number_acc?(base, 0)
+def *basenum(base: int) = number_acc?(base, 0)
 
 # Returns the maxiumum of a and b.
 def *max(a: int, b: int) = {
@@ -66,90 +66,90 @@ fun *skip(xs: list, n: int): list = {
 }
 
 # Parses an 8-bit little endian unsigned integer.
-def [int] *> u8l = ~
+def *u8l = ~
 
 # Parses an 8-bit big endian unsigned integer.
-def [int] *> u8b = ~
+def *u8b = ~
 
 # Parses an 8-bit little endian signed integer.
-def [int] *> i8l = {
+def *i8l = {
   x: ~
   | let return = x if 0x00..0x7f
   | let return = x - 0x100
 }
 
 # Parses an 8-bit big endian signed integer.
-def [int] *> i8b = {
+def *i8b = {
   x: ~
   | let return = x if 0x00..0x7f
   | let return = x - 0x100
 }
 
 # Parses a 16-bit little endian unsigned integer.
-def [int] *> u16l = {
+def *u16l = {
   lo: ~
   hi: ~
   let return = lo | hi << 8
 }
 
 # Parses a 16-bit big endian unsigned integer.
-def [int] *> u16b = {
+def *u16b = {
   hi: ~
   lo: ~
   let return = lo | hi << 8
 }
 
 # Parses a 16-bit little endian signed integer.
-def [int] *> i16l = {
+def *i16l = {
   lo: ~
   hi: i8l
   let return = lo | hi << 8
 }
 
 # Parses a 16-bit big endian signed integer.
-def [int] *> i16b = {
+def *i16b = {
   hi: i8b
   lo: ~
   let return = lo | hi << 8
 }
 
 # Parses a 32-bit little endian unsigned integer.
-def [int] *> u32l = {
+def *u32l = {
   lo: u16l
   hi: u16l
   let return = lo | hi << 16
 }
 
 # Parses a 32-bit big endian unsigned integer.
-def [int] *> u32b = {
+def *u32b = {
   hi: u16b
   lo: u16b
   let return = lo | hi << 16
 }
 
 # Parses a 32-bit little endian signed integer.
-def [int] *> i32l = {
+def *i32l = {
   lo: u16l
   hi: i16l
   let return = lo | hi << 16
 }
 
 # Parses a 32-bit big endian signed integer.
-def [int] *> i32b = {
+def *i32b = {
   hi: i16b
   lo: u16b
   let return = lo | hi << 16
 }
 
 # Parses a 64-bit little endian signed integer.
-def [int] *> i64l = {
+def *i64l = {
   lo: u32l
   hi: i32l
   let return = lo | hi << 32
 }
 
 # Parses a 64-bit big endian signed integer.
-def [int] *> i64b = {
+def *i64b = {
   hi: i32b
   lo: u32b
   let return = lo | hi << 32
@@ -159,7 +159,7 @@ def [int] *> i64b = {
 def *newline = /\r\n?|\n/
 
 # Parses a specific byte or fails
-def [int] *> byteval(x: int) = {
+def *byteval(x: int) = {
   y: ~
   assert?(x == y)
 }

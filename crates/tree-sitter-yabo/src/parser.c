@@ -66,7 +66,7 @@ enum {
   anon_sym_int = 47,
   anon_sym_bit = 48,
   anon_sym_char = 49,
-  anon_sym_mem = 50,
+  anon_sym_u8 = 50,
   sym_not_eof = 51,
   sym_type_var = 52,
   sym_question_mark = 53,
@@ -186,7 +186,7 @@ static const char * const ts_symbol_names[] = {
   [anon_sym_int] = "int",
   [anon_sym_bit] = "bit",
   [anon_sym_char] = "char",
-  [anon_sym_mem] = "mem",
+  [anon_sym_u8] = "u8",
   [sym_not_eof] = "not_eof",
   [sym_type_var] = "type_var",
   [sym_question_mark] = "question_mark",
@@ -306,7 +306,7 @@ static const TSSymbol ts_symbol_map[] = {
   [anon_sym_int] = anon_sym_int,
   [anon_sym_bit] = anon_sym_bit,
   [anon_sym_char] = anon_sym_char,
-  [anon_sym_mem] = anon_sym_mem,
+  [anon_sym_u8] = anon_sym_u8,
   [sym_not_eof] = sym_not_eof,
   [sym_type_var] = sym_type_var,
   [sym_question_mark] = sym_question_mark,
@@ -576,7 +576,7 @@ static const TSSymbolMetadata ts_symbol_metadata[] = {
     .visible = true,
     .named = false,
   },
-  [anon_sym_mem] = {
+  [anon_sym_u8] = {
     .visible = true,
     .named = false,
   },
@@ -1587,11 +1587,11 @@ static bool ts_lex_keywords(TSLexer *lexer, TSStateId state) {
       if (lookahead == 'f') ADVANCE(6);
       if (lookahead == 'i') ADVANCE(7);
       if (lookahead == 'l') ADVANCE(8);
-      if (lookahead == 'm') ADVANCE(9);
-      if (lookahead == 'o') ADVANCE(10);
-      if (lookahead == 'r') ADVANCE(11);
-      if (lookahead == 's') ADVANCE(12);
-      if (lookahead == 't') ADVANCE(13);
+      if (lookahead == 'o') ADVANCE(9);
+      if (lookahead == 'r') ADVANCE(10);
+      if (lookahead == 's') ADVANCE(11);
+      if (lookahead == 't') ADVANCE(12);
+      if (lookahead == 'u') ADVANCE(13);
       if (lookahead == '\t' ||
           lookahead == '\n' ||
           lookahead == '\r' ||
@@ -1626,20 +1626,20 @@ static bool ts_lex_keywords(TSLexer *lexer, TSStateId state) {
       if (lookahead == 'e') ADVANCE(25);
       END_STATE();
     case 9:
-      if (lookahead == 'e') ADVANCE(26);
+      if (lookahead == 'r') ADVANCE(26);
       END_STATE();
     case 10:
-      if (lookahead == 'r') ADVANCE(27);
+      if (lookahead == 'e') ADVANCE(27);
       END_STATE();
     case 11:
-      if (lookahead == 'e') ADVANCE(28);
+      if (lookahead == 'i') ADVANCE(28);
       END_STATE();
     case 12:
-      if (lookahead == 'i') ADVANCE(29);
+      if (lookahead == 'h') ADVANCE(29);
+      if (lookahead == 'r') ADVANCE(30);
       END_STATE();
     case 13:
-      if (lookahead == 'h') ADVANCE(30);
-      if (lookahead == 'r') ADVANCE(31);
+      if (lookahead == '8') ADVANCE(31);
       END_STATE();
     case 14:
       if (lookahead == 'd') ADVANCE(32);
@@ -1678,23 +1678,23 @@ static bool ts_lex_keywords(TSLexer *lexer, TSStateId state) {
       if (lookahead == 't') ADVANCE(42);
       END_STATE();
     case 26:
-      if (lookahead == 'm') ADVANCE(43);
-      END_STATE();
-    case 27:
       ACCEPT_TOKEN(anon_sym_or);
       END_STATE();
+    case 27:
+      if (lookahead == 't') ADVANCE(43);
+      END_STATE();
     case 28:
-      if (lookahead == 't') ADVANCE(44);
+      if (lookahead == 'z') ADVANCE(44);
       END_STATE();
     case 29:
-      if (lookahead == 'z') ADVANCE(45);
+      if (lookahead == 'e') ADVANCE(45);
       END_STATE();
     case 30:
-      if (lookahead == 'e') ADVANCE(46);
+      if (lookahead == 'u') ADVANCE(46);
+      if (lookahead == 'y') ADVANCE(47);
       END_STATE();
     case 31:
-      if (lookahead == 'u') ADVANCE(47);
-      if (lookahead == 'y') ADVANCE(48);
+      ACCEPT_TOKEN(anon_sym_u8);
       END_STATE();
     case 32:
       ACCEPT_TOKEN(anon_sym_and);
@@ -1703,25 +1703,25 @@ static bool ts_lex_keywords(TSLexer *lexer, TSStateId state) {
       ACCEPT_TOKEN(anon_sym_bit);
       END_STATE();
     case 34:
-      if (lookahead == 'r') ADVANCE(49);
+      if (lookahead == 'r') ADVANCE(48);
       END_STATE();
     case 35:
       ACCEPT_TOKEN(anon_sym_def);
       END_STATE();
     case 36:
-      if (lookahead == 'e') ADVANCE(50);
+      if (lookahead == 'e') ADVANCE(49);
       END_STATE();
     case 37:
-      if (lookahead == 'o') ADVANCE(51);
+      if (lookahead == 'o') ADVANCE(50);
       END_STATE();
     case 38:
-      if (lookahead == 's') ADVANCE(52);
+      if (lookahead == 's') ADVANCE(51);
       END_STATE();
     case 39:
       ACCEPT_TOKEN(anon_sym_fun);
       END_STATE();
     case 40:
-      if (lookahead == 'o') ADVANCE(53);
+      if (lookahead == 'o') ADVANCE(52);
       END_STATE();
     case 41:
       ACCEPT_TOKEN(anon_sym_int);
@@ -1730,75 +1730,72 @@ static bool ts_lex_keywords(TSLexer *lexer, TSStateId state) {
       ACCEPT_TOKEN(anon_sym_let);
       END_STATE();
     case 43:
-      ACCEPT_TOKEN(anon_sym_mem);
+      if (lookahead == 'u') ADVANCE(53);
       END_STATE();
     case 44:
-      if (lookahead == 'u') ADVANCE(54);
+      if (lookahead == 'e') ADVANCE(54);
       END_STATE();
     case 45:
-      if (lookahead == 'e') ADVANCE(55);
+      if (lookahead == 'n') ADVANCE(55);
       END_STATE();
     case 46:
-      if (lookahead == 'n') ADVANCE(56);
+      if (lookahead == 'e') ADVANCE(56);
       END_STATE();
     case 47:
-      if (lookahead == 'e') ADVANCE(57);
-      END_STATE();
-    case 48:
       ACCEPT_TOKEN(anon_sym_try);
       END_STATE();
-    case 49:
+    case 48:
       ACCEPT_TOKEN(anon_sym_char);
       END_STATE();
-    case 50:
+    case 49:
       ACCEPT_TOKEN(anon_sym_else);
       END_STATE();
+    case 50:
+      if (lookahead == 'r') ADVANCE(57);
+      END_STATE();
     case 51:
-      if (lookahead == 'r') ADVANCE(58);
+      if (lookahead == 'e') ADVANCE(58);
       END_STATE();
     case 52:
-      if (lookahead == 'e') ADVANCE(59);
+      if (lookahead == 'r') ADVANCE(59);
       END_STATE();
     case 53:
       if (lookahead == 'r') ADVANCE(60);
       END_STATE();
     case 54:
-      if (lookahead == 'r') ADVANCE(61);
+      if (lookahead == 'o') ADVANCE(61);
       END_STATE();
     case 55:
-      if (lookahead == 'o') ADVANCE(62);
-      END_STATE();
-    case 56:
       ACCEPT_TOKEN(anon_sym_then);
       END_STATE();
-    case 57:
+    case 56:
       ACCEPT_TOKEN(anon_sym_true);
       END_STATE();
-    case 58:
-      if (lookahead == 't') ADVANCE(63);
+    case 57:
+      if (lookahead == 't') ADVANCE(62);
       END_STATE();
-    case 59:
+    case 58:
       ACCEPT_TOKEN(anon_sym_false);
       END_STATE();
+    case 59:
+      if (lookahead == 't') ADVANCE(63);
+      END_STATE();
     case 60:
-      if (lookahead == 't') ADVANCE(64);
+      if (lookahead == 'n') ADVANCE(64);
       END_STATE();
     case 61:
-      if (lookahead == 'n') ADVANCE(65);
+      if (lookahead == 'f') ADVANCE(65);
       END_STATE();
     case 62:
-      if (lookahead == 'f') ADVANCE(66);
-      END_STATE();
-    case 63:
       ACCEPT_TOKEN(anon_sym_export);
       END_STATE();
-    case 64:
+    case 63:
       ACCEPT_TOKEN(anon_sym_import);
       END_STATE();
-    case 65:
+    case 64:
       ACCEPT_TOKEN(sym_retvrn);
       END_STATE();
-    case 66:
+    case 65:
       ACCEPT_TOKEN(anon_sym_sizeof);
       END_STATE();
     default:
@@ -2206,7 +2203,7 @@ static const uint16_t ts_parse_table[LARGE_STATE_COUNT][SYMBOL_COUNT] = {
     [anon_sym_int] = ACTIONS(1),
     [anon_sym_bit] = ACTIONS(1),
     [anon_sym_char] = ACTIONS(1),
-    [anon_sym_mem] = ACTIONS(1),
+    [anon_sym_u8] = ACTIONS(1),
     [sym_not_eof] = ACTIONS(1),
     [sym_question_mark] = ACTIONS(1),
     [sym_retvrn] = ACTIONS(1),
@@ -9463,7 +9460,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(222), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -9491,7 +9488,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(235), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -9519,7 +9516,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(238), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -9547,7 +9544,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(232), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -9575,7 +9572,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(237), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -9603,7 +9600,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(205), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -9631,7 +9628,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(243), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -9659,7 +9656,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(224), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -9687,7 +9684,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(231), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -9715,7 +9712,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(212), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -9743,7 +9740,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(234), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -9771,7 +9768,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(236), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -9799,7 +9796,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(223), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -9827,7 +9824,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(229), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -9855,7 +9852,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(207), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -9883,7 +9880,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(207), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -9911,7 +9908,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(241), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -9939,7 +9936,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(205), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -9967,7 +9964,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(207), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -9995,7 +9992,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(205), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -10023,7 +10020,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(216), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -10051,7 +10048,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(233), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -10079,7 +10076,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(230), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -10107,7 +10104,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(240), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -10135,7 +10132,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(239), 9,
       sym__type_expression,
       sym_binary_type_expression,
@@ -10163,7 +10160,7 @@ static const uint16_t ts_small_parse_table[] = {
       anon_sym_int,
       anon_sym_bit,
       anon_sym_char,
-      anon_sym_mem,
+      anon_sym_u8,
     STATE(219), 9,
       sym__type_expression,
       sym_binary_type_expression,

@@ -154,10 +154,10 @@ impl From<Atom> for ConstraintAtom {
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub enum TypePrimitive {
-    Mem,
     Int,
     Bit,
     Char,
+    U8,
 }
 
 impl From<ParserDefRef> for TypeAtom {

@@ -14,6 +14,8 @@ enum YaboHead {
   YABO_PARSER = 0x500,
   YABO_FUN_ARGS = 0x600,
   YABO_BLOCK = 0x700,
+  YABO_UNIT = 0x800,
+  YABO_U8 = 0x900,
   YABO_ANY = UINT64_MAX & ~0xff,
   YABO_VTABLE = 1,
 };

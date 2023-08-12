@@ -1,10 +1,10 @@
 ====[ source code ]====
-def [int] *> added(x: int) = {
+def *added(x: int) = {
 	y: ~
 	let return = x + y
 }
 
-export def [int] *> test = added(2857740885)
+export def *test = added(2857740885)
 
 ====[ binary 1 ]====
 55

@@ -1,34 +1,34 @@
 ====[ source code ]====
-def [int] *> u8l = {
+def *u8l = {
     return: ~
 }
 
-def [int] *> u16l = {
+def *u16l = {
 	lo: ~
 	hi: ~
 	let return: int = lo + 256 * hi
 }
 
-def [int] *> u32l = {
+def *u32l = {
 	lo: u16l
 	hi: u16l
 	let return: int = lo | hi << 16
 }
 
-def [int] *> u64l = {
+def *u64l = {
   lo: u32l
   hi: u32l
   let return: int = lo | hi << 32
 }
 
-def [int] *> header_magic = {
+def *header_magic = {
   n7f: ~
   e: ~
   l: ~
   f: ~
 }
 
-export def [int] *> test = {
+export def *test = {
   ei_magic: header_magic
   ei_class: u8l
   ei_data: u8l

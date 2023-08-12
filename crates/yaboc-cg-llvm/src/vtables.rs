@@ -68,6 +68,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_primitive_vtable(&mut self, layout: IMonoLayout<'comp>) {
         let vtable = self.create_vtable::<vtable::VTableHeader>(layout);
         let vtable_header = self.vtable_header(layout);
+        if let MonoLayout::Primitive(PrimitiveType::U8) = layout.mono_layout().0 {
+            // predeclare the current_element function so that we can call it
+            // but don't put it into a vtable since it's a primitive type
+            // and cannot be in a multilayout with other types having this function
+            let _ = self.current_element_fun_val(layout);
+        }
         vtable.set_initializer(&vtable_header);
     }
 

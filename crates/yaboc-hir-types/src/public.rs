@@ -236,17 +236,17 @@ def ['t] *> expr1 = {
       | let d: int = 1
     }
 }
-def [int] *> expr2 = {
+def *expr2 = {
     x: expr1
     | let y: int = 3
     | y: ~
 }
-def [int] *> expr3 = ~
-def [int] *> expr4 = {
+def *expr3 = ~
+def *expr4 = {
     | x: expr3
     | let x: int = 3
 }
-def [[int]] *> expr5 = {
+def [[u8]] *> expr5 = {
     x: ~ |> expr3
 }
             "#,
@@ -278,9 +278,9 @@ def [[int]] *> expr5 = {
         );
         assert_eq!("int", public_type("expr1", &["c", "d"]));
         assert_eq!("'0", public_type("expr1", &["c", "e"]));
-        assert_eq!("[int] &> file[_].expr1", public_type("expr2", &["x"]));
+        assert_eq!("[u8] &> file[_].expr1", public_type("expr2", &["x"]));
         assert_eq!("int", public_type("expr2", &["y"]));
         assert_eq!("int", public_type("expr4", &["x"]));
-        //assert_eq!("[int] &> file[_].expr3", public_type("expr5", &["x"]));
+        //assert_eq!("[u8] &> file[_].expr3", public_type("expr5", &["x"]));
     }
 }

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, hash::Hash, sync::Arc};
 
-use crate::{inference::NominalInfHead, TypeHead};
+use crate::{inference::NominalInfHead, PrimitiveType, TypeHead};
 use yaboc_base::interner::DefId;
 
 use super::{
@@ -87,10 +87,10 @@ impl Polarity for PositivePolarity {
         let other = rhs.value();
         let mut other_upset = HashMap::new();
         let mut next = |ty: &_| -> Result<_, TypeError> {
-            if let InferenceType::Nominal(nom) = ty {
-                Ok(ctx.ctx.deref(nom)?.map(|x| x.value()))
-            } else {
-                Ok(None)
+            match ty {
+                InferenceType::Nominal(nom) => Ok(ctx.ctx.deref(nom)?.map(|x| x.value())),
+                InferenceType::Primitive(PrimitiveType::U8) => Ok(Some(ctx.ctx.int().value())),
+                _ => Ok(None),
             }
         };
         let mut other_ty = other;
@@ -144,10 +144,10 @@ impl Polarity for NegativePolarity {
         let nomhead = TypeHead::try_from(nom).unwrap();
         let otherhead = TypeHead::try_from(other).unwrap();
         let mut next = |ty: &_| -> Result<Option<&InferenceType>, TypeError> {
-            if let InferenceType::Nominal(nom) = ty {
-                Ok(ctx.ctx.deref(nom)?.map(|x| x.value()))
-            } else {
-                Ok(None)
+            match ty {
+                InferenceType::Nominal(nom) => Ok(ctx.ctx.deref(nom)?.map(|x| x.value())),
+                InferenceType::Primitive(PrimitiveType::U8) => Ok(Some(ctx.ctx.int().value())),
+                _ => Ok(None),
             }
         };
         let mut nom_ty = nom;
@@ -321,8 +321,12 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                     internal: *internal1 && *internal2,
                 })
             }
-            (Nominal(NominalInfHead { .. }), _) => P::combine_nom(self, lhs, rhs)?.value().clone(),
-            (_, Nominal(NominalInfHead { .. })) => P::combine_nom(self, rhs, lhs)?.value().clone(),
+            (Nominal(NominalInfHead { .. }) | Primitive(PrimitiveType::U8), _) => {
+                P::combine_nom(self, lhs, rhs)?.value().clone()
+            }
+            (_, Nominal(NominalInfHead { .. }) | Primitive(PrimitiveType::U8)) => {
+                P::combine_nom(self, rhs, lhs)?.value().clone()
+            }
             _ => return Err(TypeError::HeadIncompatible(lhs.into(), rhs.into())),
         };
         let ret = self.ctx.intern_infty(res);
