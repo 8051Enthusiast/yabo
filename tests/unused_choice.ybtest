@@ -1,0 +1,14 @@
+====[ source code ]====
+export
+fun *test = {
+  | let y = 3
+  | +
+}
+
+====[ binary 1 ]====
+00
+
+====[ output 1 ]====
+{
+    "y": 3
+}

@@ -245,12 +245,18 @@ impl<'a> ConvertCtx<'a> {
         let parent_context = self
             .current_context
             .expect("end choice called without context");
-        let first_context_bb = match subcontexts.get(0) {
-            Some(x) => self.context_bb[x].0,
-            None => return,
-        };
-        self.w.f.branch(first_context_bb);
+        let first_subcontest = subcontexts[0];
         let cont = self.w.f.new_bb();
+        let branch_target = match self.context_bb.get(&first_subcontest) {
+            Some(&(first_context_bb, _)) => first_context_bb,
+            None => {
+                // the first context_bb was never referenced and contains nothing
+                // which means the control flow just passes through it without
+                // ever going to the other choices
+                cont
+            }
+        };
+        self.w.f.branch(branch_target);
         self.w.f.set_bb(cont);
         for context in subcontexts.iter() {
             self.terminate_context(*context, id, cont)
