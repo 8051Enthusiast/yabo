@@ -71,7 +71,6 @@ pub enum Type {
     Unknown,
     Primitive(PrimitiveType),
     TypeVarRef(DefId, u32),
-    ForAll(TypeId, Arc<Vec<TypeVar>>),
     Nominal(NominalTypeHead),
     Loop(ArrayKind, TypeId),
     ParserArg { result: TypeId, arg: TypeId },
@@ -82,7 +81,6 @@ pub fn type_contains_unknown(db: &dyn TypeInterner, id: TypeId) -> bool {
     match db.lookup_intern_type(id) {
         Type::Any | Type::Bot | Type::Primitive(_) | Type::TypeVarRef(_, _) => false,
         Type::Unknown => true,
-        Type::ForAll(inner, _) => db.type_contains_unknown(inner),
         Type::Nominal(NominalTypeHead {
             parse_arg,
             fun_args,
@@ -105,7 +103,6 @@ pub fn type_contains_typevar(db: &dyn TypeInterner, id: TypeId) -> bool {
     match db.lookup_intern_type(id) {
         Type::Any | Type::Bot | Type::Unknown | Type::Primitive(_) => false,
         Type::TypeVarRef(_, _) => true,
-        Type::ForAll(inner, _) => db.type_contains_typevar(inner),
         Type::Nominal(NominalTypeHead {
             parse_arg,
             fun_args,
@@ -259,7 +256,6 @@ pub fn substitute_typevar(
             );
             db.intern_type(Type::FunctionArg(result, args))
         }
-        Type::ForAll(inner, _) => inner,
         Type::Any | Type::Bot | Type::Unknown | Type::Primitive(_) => ty,
     }
 }

@@ -810,7 +810,7 @@ pub fn canon_layout<'a, 'b>(
             Ok(make_layout(ctx, MonoLayout::Nominal(def_id, from, args)))
         }
         Type::ParserArg { .. } | Type::FunctionArg(_, _) => Err(LayoutError::LayoutError),
-        Type::TypeVarRef(_, _) | Type::Any | Type::Bot | Type::Unknown | Type::ForAll(_, _) => {
+        Type::TypeVarRef(_, _) | Type::Any | Type::Bot | Type::Unknown => {
             Err(LayoutError::LayoutError)
         }
     }

@@ -12,13 +12,6 @@ use super::*;
 
 pub fn deref_type(db: &dyn TyHirs, ty: TypeId) -> SResult<Option<TypeId>> {
     match db.lookup_intern_type(ty) {
-        Type::ForAll(inner, vars) => {
-            let inner_deref = match db.deref_type(inner)? {
-                Some(t) => t,
-                None => return Ok(None),
-            };
-            Ok(Some(db.intern_type(Type::ForAll(inner_deref, vars))))
-        }
         Type::Nominal(nom) => {
             let id = match NominalId::from_nominal_head(&nom) {
                 NominalId::Def(id) => id,
@@ -66,7 +59,6 @@ impl Display for DerefLevel {
 
 pub fn deref_level(db: &dyn TyHirs, ty: TypeId) -> SResult<DerefLevel> {
     match db.lookup_intern_type(ty) {
-        Type::ForAll(inner, _) => db.deref_level(inner),
         Type::Primitive(PrimitiveType::U8) => Ok(DerefLevel::zero().inc()),
         Type::Nominal(nom) => {
             let id = match NominalId::from_nominal_head(&nom) {
@@ -166,10 +158,6 @@ pub fn parser_returns_ssc(
 
 fn check_for_typevar(db: &dyn TyHirs, ty: TypeId) -> Result<TypeId, TypeError> {
     match db.lookup_intern_type(ty) {
-        Type::ForAll(inner, _) => {
-            check_for_typevar(db, inner)?;
-            Ok(ty)
-        }
         Type::TypeVarRef(pd, idx) => {
             let hir::HirNode::ParserDef(pd) = db.hir_node(pd)? else {
                 panic!("typevarref points to non-parserdef")
@@ -185,10 +173,7 @@ fn find_cyclic_return_types(db: &dyn TyHirs, tys: &mut [Result<ParserDefType, Sp
     let mut targets: FxHashMap<DefId, Option<DefId>> = FxHashMap::default();
     for mty in tys.iter() {
         let Ok(pdty) = *mty else { continue };
-        let target = match match db.lookup_intern_type(pdty.deref) {
-            Type::ForAll(inner, _) => db.lookup_intern_type(inner),
-            otherwise => otherwise,
-        } {
+        let target = match db.lookup_intern_type(pdty.deref) {
             Type::Nominal(nom) => Some(nom.def),
             _ => None,
         };

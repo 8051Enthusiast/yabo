@@ -108,11 +108,6 @@ impl<DB: TypeInterner + ?Sized> StableHash<DB> for TypeId {
                 def.update_hash(state, db);
                 index.update_hash(state, db);
             }
-            Type::ForAll(inner, x) => {
-                state.update([5]);
-                x.len().update_hash(state, db);
-                sub_update(inner, state);
-            }
             Type::Nominal(NominalTypeHead {
                 kind, def, ty_args, ..
             }) => {
@@ -194,16 +189,6 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for TypeId {
             Type::Primitive(p) => p.db_fmt(f, db),
             Type::TypeVarRef(_, index) => {
                 dbwrite!(f, db, "'{}", &index)
-            }
-            Type::ForAll(inner, vars) => {
-                write!(f, "forall ")?;
-                for (i, arg) in vars.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    dbwrite!(f, db, "{}", arg)?;
-                }
-                dbwrite!(f, db, ". {}", &inner)
             }
             Type::Nominal(n) => {
                 if let NominalKind::Block = n.kind {
