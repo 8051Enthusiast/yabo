@@ -718,7 +718,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         translator.build();
 
-        if block.returns {
+        // if we have no return value, we do not need the thunk which is just for
+        // making sure the vtable pointer for the block return is properly returned
+        // which is actually counterproductive since we may not even have collected
+        // the block layout during collection
+        if block.returns || !req.contains(NeededBy::Val) {
             self.wrap_direct_call(impl_fun, llvm_fun, true);
             return llvm_fun;
         }
