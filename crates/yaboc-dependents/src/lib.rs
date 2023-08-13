@@ -202,7 +202,6 @@ fn val_refs(
             )))
             .collect()),
         hir::HirNode::TExpr(_) => Ok(FxHashSet::default()),
-        hir::HirNode::Array(_) => todo!(),
         hir::HirNode::ArgDef(_)
         | hir::HirNode::Module(_)
         | hir::HirNode::ParserDef(_)
@@ -317,8 +316,7 @@ fn bt_refs(db: &dyn Dependents, node: &hir::HirNode) -> SResult<FxHashSet<SubVal
         | hir::HirNode::Context(_)
         | hir::HirNode::ParserDef(_)
         | hir::HirNode::ChoiceIndirection(_)
-        | hir::HirNode::TExpr(_)
-        | hir::HirNode::Array(_) => {}
+        | hir::HirNode::TExpr(_) => {}
     }
     Ok(ret)
 }

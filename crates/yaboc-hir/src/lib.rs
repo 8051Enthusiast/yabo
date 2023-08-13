@@ -423,7 +423,6 @@ hir_node_enum! {
         Expr(ValExpression),
         TExpr(TypeExpression),
         Parse(ParseStatement),
-        Array(ParserArray),
         Block(Block),
         Import(Import),
         ArgDef(ArgDef),
@@ -440,7 +439,6 @@ hir_id_wrapper! {
     type ExprId = Expr(ValExpression);
     type TExprId = TExpr(TypeExpression);
     type ParseId = Parse(ParseStatement);
-    type ArrayId = Array(ParserArray);
     type BlockId = Block(Block);
     type ImportId = Import(Import);
     type ArgDefId = ArgDef(ArgDef);
@@ -804,21 +802,6 @@ pub enum ParserAtom {
 pub struct TypeArray {
     pub direction: ArrayKind,
     pub expr: DataExpr<HirType, SpanIndex>,
-}
-
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct ParserArray {
-    pub id: ArrayId,
-    pub direction: ArrayKind,
-    pub context: Option<ContextId>,
-    pub expr: ExprId,
-    pub enclosing_expr: ExprId,
-}
-
-impl ParserArray {
-    pub fn children(&self) -> Vec<DefId> {
-        vec![self.expr.0]
-    }
 }
 
 /// extension trait for Contexts to get a parser by name for testing
