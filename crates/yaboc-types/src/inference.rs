@@ -906,17 +906,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         }
         let ty = self.tr.db().lookup_intern_type(ty);
         let vars = TyVars { cur: args };
-        match &ty {
-            // we ignore the args here and replace with our own args
-            Type::ForAll(inner, _args) => {
-                if args.len() != _args.len() {
-                    panic!("Internal Compiler Error: forall args has different length from substituted args!");
-                }
-                let inner = self.tr.db().lookup_intern_type(*inner);
-                self.convert_type_into_inftype_internal(&inner, Some(&vars))
-            }
-            _ => self.convert_type_into_inftype_internal(&ty, Some(&vars)),
-        }
+        self.convert_type_into_inftype_internal(&ty, Some(&vars))
     }
     fn convert_type_into_inftype_internal(
         &mut self,
@@ -935,12 +925,6 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                 Some(x) => return x,
                 None => InferenceType::TypeVarRef(*loc, *index),
             },
-            Type::ForAll(inner, defvars) => {
-                let current = defvars.iter().map(|_| self.var()).collect::<Vec<_>>();
-                let new_stack = TyVars { cur: &current };
-                let inner = self.tr.db().lookup_intern_type(*inner);
-                return self.convert_type_into_inftype_internal(&inner, Some(&new_stack));
-            }
             Type::Nominal(NominalTypeHead {
                 kind,
                 def,

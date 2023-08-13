@@ -97,7 +97,6 @@ pub fn head_discriminant(db: &dyn TyHirs, ty: TypeId) -> i64 {
         Type::Loop(_, _) => HeadDiscriminant::Loop as i64,
         Type::ParserArg { .. } => HeadDiscriminant::Parser as i64,
         Type::FunctionArg(_, _) => HeadDiscriminant::FunctionArgs as i64,
-        Type::ForAll(inner, _) => db.head_discriminant(inner),
         Type::Nominal(NominalTypeHead {
             kind: NominalKind::Block,
             ..
