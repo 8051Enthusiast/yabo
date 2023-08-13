@@ -11,7 +11,6 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for HirNode {
             HirNode::Expr(e) => dbwrite!(f, db, "Expr({})", e),
             HirNode::TExpr(e) => dbwrite!(f, db, "TExpr({})", e),
             HirNode::Parse(_) => write!(f, "Parse"),
-            HirNode::Array(a) => write!(f, "Array({:?})", a.direction),
             HirNode::Block(_) => write!(f, "Block"),
             HirNode::Choice(_) => write!(f, "Choice"),
             HirNode::Import(_) => write!(f, "Import"),
@@ -264,9 +263,6 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                             (id.0, f, fs, dot::Style::Dotted),
                             (id.0, b, bs, dot::Style::Dotted),
                         ]
-                    }
-                    HirNode::Array(ParserArray { id, expr, .. }) => {
-                        vec![(id.0, expr.0, "expr".to_string(), dot::Style::Bold)]
                     }
                     HirNode::Block(Block {
                         id,

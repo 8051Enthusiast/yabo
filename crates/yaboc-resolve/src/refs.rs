@@ -137,14 +137,6 @@ pub fn find_parser_refs_within_mod(
         let (expr, context) = match node {
             HirNode::Let(l) => (l.expr.lookup(db)?, l.context.id()),
             HirNode::Parse(p) => (p.expr.lookup(db)?, p.parent_context.id()),
-            HirNode::Array(a) => {
-                // use context if it exists, else just use the module (since we are in a parser def)
-                let context = a
-                    .context
-                    .map(|x| Ok(x.id()))
-                    .unwrap_or_else(|| db.hir_parent_module(a.id.id()).map(|x| x.id()))?;
-                (a.expr.lookup(db)?, context)
-            }
             HirNode::ParserDef(p) => {
                 let context = db.hir_parent_module(p.id.id())?.id();
                 (p.to.lookup(db)?, context)
