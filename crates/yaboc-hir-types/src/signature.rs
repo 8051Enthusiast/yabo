@@ -2,6 +2,17 @@ use yaboc_base::{error::SilencedError, interner::DefId};
 
 use super::*;
 
+pub fn fun_arg_count(db: &dyn TyHirs, ty: TypeId) -> SResult<Option<u32>> {
+    let ldt_ty = db.least_deref_type(ty)?;
+    Ok(
+        if let Type::FunctionArg(_, args) = db.lookup_intern_type(ldt_ty) {
+            Some(args.len().try_into().unwrap())
+        } else {
+            None
+        },
+    )
+}
+
 pub fn parser_args(db: &dyn TyHirs, id: hir::ParserDefId) -> SResult<Signature> {
     parser_args_error(db, id).silence()
 }

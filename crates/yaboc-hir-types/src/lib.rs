@@ -46,7 +46,7 @@ use returns::{
     deref_level, deref_type, least_deref_type, parser_returns, parser_returns_ssc, ParserDefType,
 };
 pub use returns::{NOBACKTRACK_BIT, VTABLE_BIT};
-use signature::{get_signature, parser_args, parser_args_error};
+use signature::{fun_arg_count, get_signature, parser_args, parser_args_error};
 
 #[salsa::query_group(HirTypesDatabase)]
 pub trait TyHirs: Hirs + yaboc_types::TypeInterner + resolve::Resolves {
@@ -60,6 +60,7 @@ pub trait TyHirs: Hirs + yaboc_types::TypeInterner + resolve::Resolves {
     fn deref_type(&self, ty: TypeId) -> SResult<Option<TypeId>>;
     fn deref_level(&self, ty: TypeId) -> SResult<DerefLevel>;
     fn least_deref_type(&self, ty: TypeId) -> SResult<TypeId>;
+    fn fun_arg_count(&self, ty: TypeId) -> SResult<Option<u32>>;
     fn public_type(&self, loc: DefId) -> SResult<TypeId>;
     fn parser_type_at(&self, loc: DefId) -> SResult<TypeId>;
     fn parser_expr_at(&self, loc: hir::ExprId) -> SResult<Arc<ExprTypeData>>;
