@@ -423,7 +423,6 @@ hir_node_enum! {
         Expr(ValExpression),
         TExpr(TypeExpression),
         Parse(ParseStatement),
-        Array(ParserArray),
         Block(Block),
         Import(Import),
         ArgDef(ArgDef),
@@ -440,7 +439,6 @@ hir_id_wrapper! {
     type ExprId = Expr(ValExpression);
     type TExprId = TExpr(TypeExpression);
     type ParseId = Parse(ParseStatement);
-    type ArrayId = Array(ParserArray);
     type BlockId = Block(Block);
     type ImportId = Import(Import);
     type ArgDefId = ArgDef(ArgDef);
@@ -808,7 +806,7 @@ pub struct TypeArray {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserArray {
-    pub id: ArrayId,
+    pub id: (),
     pub direction: ArrayKind,
     pub context: Option<ContextId>,
     pub expr: ExprId,
