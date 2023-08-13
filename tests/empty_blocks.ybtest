@@ -1,0 +1,8 @@
+====[ source code ]====
+export
+fun *test = {{}}
+
+====[ text 1 ]====
+
+====[ output 1 ]====
+{}
