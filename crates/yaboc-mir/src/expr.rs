@@ -5,7 +5,9 @@ use std::{
 
 use super::Mirs;
 use fxhash::FxHashMap;
-use yaboc_ast::expr::{ConstraintBinOp, ConstraintUnOp, ValBinOp, ValUnOp, ValVarOp, WiggleKind};
+use yaboc_ast::expr::{
+    BtMarkKind, ConstraintBinOp, ConstraintUnOp, ValBinOp, ValUnOp, ValVarOp, WiggleKind,
+};
 use yaboc_base::{error::SResult, interner::DefId};
 use yaboc_dependents::{NeededBy, SubValue, SubValueKind};
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchKindData, IdxExpression, IndexExpr, ZipExpr};
@@ -141,19 +143,10 @@ impl<'a> ConvertExpr<'a> {
         ty: TypeId,
         place: Option<PlaceRef>,
         origin: PlaceOrigin,
-        remove_bt: bool,
     ) -> Option<PlaceRef> {
         let place_ref = self.val_place_at_def(var)?;
-        if self.f.fun.place(place_ref).ty == ty && place.is_none() && !remove_bt {
+        if self.f.fun.place(place_ref).ty == ty && place.is_none() {
             return Some(place_ref);
-        }
-        if let Some(place) = place {
-            if remove_bt {
-                let between_place = self.f.new_remove_bt_stack_place(ty, origin);
-                self.copy(place_ref, between_place);
-                self.copy(between_place, place);
-                return Some(place);
-            }
         }
         let new_place = self.unwrap_or_stack(place, ty, origin);
         self.copy(place_ref, new_place);
@@ -166,7 +159,6 @@ impl<'a> ConvertExpr<'a> {
         ty: TypeId,
         place: Option<PlaceRef>,
         origin: PlaceOrigin,
-        remove_bt: bool,
     ) -> SResult<PlaceRef> {
         let cap_ty = self.db.parser_type_at(captured)?;
         let place_ref = self.f.add_place(PlaceInfo {
@@ -174,16 +166,8 @@ impl<'a> ConvertExpr<'a> {
             ty: cap_ty,
             remove_bt: false,
         });
-        if self.db.deref_level(ty) == self.db.deref_level(cap_ty) && place.is_none() && !remove_bt {
+        if self.db.deref_level(ty) == self.db.deref_level(cap_ty) && place.is_none() {
             return Ok(place_ref);
-        }
-        if let Some(place) = place {
-            if remove_bt {
-                let between_place = self.f.new_remove_bt_stack_place(ty, origin);
-                self.copy(place_ref, between_place);
-                self.copy(between_place, place);
-                return Ok(place);
-            }
         }
         let new_place = self.unwrap_or_stack(place, ty, origin);
         self.copy(place_ref, new_place);
@@ -333,16 +317,14 @@ impl<'a> ConvertExpr<'a> {
         }
         Ok(match expr.expr.index_expr(idx) {
             ExprHead::Niladic(n) => match n {
-                ResolvedAtom::Val(val, backtracks) => self
-                    .load_var(*val, ty, place, origin, !*backtracks)
+                ResolvedAtom::Val(val) => self
+                    .load_var(*val, ty, place, origin)
                     .expect("Invalid refernce to variable"),
-                ResolvedAtom::Captured(cap, backtracks) => {
-                    self.load_captured(*cap, ty, place, origin, !*backtracks)?
-                }
+                ResolvedAtom::Captured(cap) => self.load_captured(*cap, ty, place, origin)?,
                 ResolvedAtom::Number(n) => self.load_int(*n, ty, place, origin),
                 ResolvedAtom::Char(c) => self.load_char(*c, ty, place, origin),
                 ResolvedAtom::Bool(b) => self.load_bool(*b, ty, place, origin),
-                ResolvedAtom::ParserDef(_, _)
+                ResolvedAtom::ParserDef(_)
                 | ResolvedAtom::Single
                 | ResolvedAtom::Nil
                 | ResolvedAtom::Array
@@ -422,7 +404,7 @@ impl<'a> ConvertExpr<'a> {
                             place_ref
                         }
                     }
-                    ValUnOp::Dot(field, bt, acc) => {
+                    ValUnOp::Dot(field, acc) => {
                         let inner_ldt = self.db.least_deref_type(inner_ty)?;
                         let block_ref = self.copy_if_different_levels(
                             inner_ldt,
@@ -432,27 +414,25 @@ impl<'a> ConvertExpr<'a> {
                             recurse,
                         )?;
                         let place_ref = self.unwrap_or_stack(place, ty, origin);
-                        let field_target_place = if !*bt {
-                            self.f.new_remove_bt_stack_place(ty, origin)
-                        } else {
-                            place_ref
-                        };
                         let backtrack = if acc.can_backtrack() {
                             self.retreat.backtrack
                         } else {
                             self.retreat.error
                         };
-                        self.f.field(
-                            block_ref,
-                            *field,
-                            field_target_place,
-                            self.retreat.error,
-                            backtrack,
-                        );
-                        if !*bt {
-                            self.copy(field_target_place, place_ref)
-                        }
+                        self.f
+                            .field(block_ref, *field, place_ref, self.retreat.error, backtrack);
                         place_ref
+                    }
+                    ValUnOp::BtMark(BtMarkKind::KeepBt) => recurse(self, place)?,
+                    ValUnOp::BtMark(BtMarkKind::RemoveBt) => {
+                        let remove_bt = self.new_remove_bt_stack_place(ty, origin);
+                        let val_without_bt = recurse(self, Some(remove_bt))?;
+                        if let Some(place) = place {
+                            self.copy(val_without_bt, place);
+                            place
+                        } else {
+                            val_without_bt
+                        }
                     }
                 }
             }
@@ -505,16 +485,19 @@ impl<'a> ConvertExpr<'a> {
                     }
                     ValBinOp::ParserApply => {
                         let left_ldt = self.db.least_deref_type(left_ty)?;
-                        let left = self
-                            .copy_if_different_levels(left_ldt, left_ty, None, lorigin, lrecurse)?;
-                        let right = rrecurse(self, None)?;
+                        let left_plc = self.new_stack_place(left_ldt, lorigin);
+                        let left_plc = lrecurse(self, Some(left_plc))?;
+                        let right_ldt = self.db.least_deref_type(right_ty)?;
+                        let right = self.copy_if_different_levels(
+                            right_ldt, right_ty, None, rorigin, rrecurse,
+                        )?;
                         let place_ref = self.unwrap_or_stack(place, ty, origin);
                         self.f.parse_call(
                             CallMeta {
                                 req: NeededBy::Val | NeededBy::Backtrack,
                                 tail: false,
                             },
-                            left,
+                            left_plc,
                             right,
                             Some(place_ref),
                             None,

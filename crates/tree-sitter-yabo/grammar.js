@@ -178,6 +178,7 @@ module.exports = grammar({
       $.unary_expression,
       $.fun_application,
       $.val_dot,
+      $.bt_mark,
       $.constraint_apply,
       $.parser_block,
       $.single,
@@ -283,13 +284,11 @@ module.exports = grammar({
           field('right', $._expression),
           ']'
         ))),
-      prec(PREC.POSTFIX,
-        seq(
-          field('right', $._expression),
-          '.',
-          field('op', 'sizeof')
-        )
-      )
+      prec(PREC.POSTFIX, seq(
+        field('right', $._expression),
+        '.',
+        field('op', 'sizeof')
+      ))
     ),
     _type_atom: $ => choice(
       $.primitive_type,
@@ -310,6 +309,10 @@ module.exports = grammar({
       field('left', $._expression),
       field('op', choice('.', '.?')),
       field('right', $._atom),
+    )),
+    bt_mark: $ => prec.left(PREC.POSTFIX, seq(
+      field('left', $._expression),
+      field('op', choice('!', '?')),
     )),
     parserdef_ref: $ => prec.left(PREC.ARGS, seq(
       optional(
@@ -340,7 +343,7 @@ module.exports = grammar({
       ),
     )),
     _atom: $ => choice(
-      $.bt_name,
+      $._field_name,
       $._literal,
     ),
     _literal: $ => choice(
@@ -358,13 +361,6 @@ module.exports = grammar({
     nil: $ => '+',
     not_eof: $ => '!eof',
     type_var: $ => /\'[A-Za-z_][A-Za-z_0-9]*/,
-    bt_name: $ => seq(
-      field('name', $._field_name),
-      optional(
-        field('backtrack', $.question_mark),
-      )
-    ),
-    question_mark: $ => '?',
     _field_name: $ => choice(
       $.identifier,
       $.retvrn,

@@ -106,7 +106,7 @@ pub fn resolve_var_ref(
 pub fn expr_idents(expr: &hir::ValExpression) -> Vec<FieldName> {
     let mut ret = Vec::new();
     for part in expr.expr.expr.take_ref().iter_parts() {
-        let ExprHead::Niladic(hir::ParserAtom::Atom(Atom::Field((ident, _)))) = part else {
+        let ExprHead::Niladic(hir::ParserAtom::Atom(Atom::Field(ident))) = part else {
             continue;
         };
         ret.push(ident);

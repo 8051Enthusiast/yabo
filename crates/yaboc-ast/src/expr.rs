@@ -2,7 +2,6 @@ use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
 use yaboc_base::interner::FieldName;
-use yaboc_base::source::Span;
 
 pub trait ExpressionKind: Clone + Hash + Eq + Debug {
     type NiladicOp: Clone + Hash + Eq + Debug;
@@ -544,22 +543,9 @@ impl<'a, K: ExpressionKind> Iterator for ExprIter<'a, K> {
     }
 }
 
-#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct BtName {
-    pub name: FieldName,
-    pub backtrack: Option<()>,
-    pub span: Span,
-}
-
-impl From<BtName> for (FieldName, bool) {
-    fn from(val: BtName) -> Self {
-        (val.name, val.backtrack.is_some())
-    }
-}
-
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum Atom {
-    Field((FieldName, bool)),
+    Field(FieldName),
     Number(i64),
     Char(u32),
     Bool(bool),
@@ -673,14 +659,21 @@ impl Display for FieldAccessMode {
     }
 }
 
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
+pub enum BtMarkKind {
+    KeepBt,
+    RemoveBt,
+}
+
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum ValUnOp<C> {
     Not,
     Neg,
     Array,
     Wiggle(C, WiggleKind),
-    Dot(FieldName, bool, FieldAccessMode),
+    Dot(FieldName, FieldAccessMode),
     Size,
+    BtMark(BtMarkKind),
 }
 
 impl<C> ValUnOp<C> {
@@ -701,8 +694,9 @@ impl<C> ValUnOp<C> {
             Neg => Neg,
             Array => Array,
             Wiggle(expr, kind) => Wiggle(f(expr), *kind),
-            Dot(atom, b, acc) => Dot(*atom, *b, *acc),
+            Dot(atom, acc) => Dot(*atom, *acc),
             Size => Size,
+            BtMark(kind) => BtMark(*kind),
         }
     }
     pub fn try_map_expr<D, E>(&self, f: impl FnOnce(&C) -> Result<D, E>) -> Result<ValUnOp<D>, E> {
@@ -712,8 +706,9 @@ impl<C> ValUnOp<C> {
             Neg => Neg,
             Array => Array,
             Wiggle(expr, kind) => Wiggle(f(expr)?, *kind),
-            Dot(atom, b, acc) => Dot(*atom, *b, *acc),
+            Dot(atom, acc) => Dot(*atom, *acc),
             Size => Size,
+            BtMark(kind) => BtMark(*kind),
         })
     }
 }

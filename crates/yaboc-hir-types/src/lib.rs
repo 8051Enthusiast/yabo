@@ -339,7 +339,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                     self.infctx.constrain(ty, bool)
                 }
                 ConstraintAtom::Atom(Atom::Field(name)) => {
-                    self.infctx.access_field(ty, name.0).map(|_| ())
+                    self.infctx.access_field(ty, name).map(|_| ())
                 }
                 ConstraintAtom::NotEof => Ok(()),
             },
@@ -413,7 +413,10 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                             }
                             cont
                         }
-                        ValUnOp::Dot(name, _, _) => self.infctx.access_field(inner, *name)?,
+                        // TODO: we should make a variable that enforces dereference level 0 here
+                        // so that backtracking can be toggled
+                        ValUnOp::BtMark(_) => inner,
+                        ValUnOp::Dot(name, _) => self.infctx.access_field(inner, *name)?,
                     },
                     ExprHead::Niladic(a) => match &a {
                         ResolvedAtom::Char(_) => self.infctx.char(),
@@ -424,8 +427,8 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         ResolvedAtom::Array => self.infctx.array_parser(),
                         ResolvedAtom::Regex(..) => self.infctx.regex(),
                         ResolvedAtom::Block(b) => self.infer_block(*b)?,
-                        ResolvedAtom::ParserDef(pd, _) => self.infctx.parserdef(pd.0)?,
-                        ResolvedAtom::Val(v, _) | ResolvedAtom::Captured(v, _) => {
+                        ResolvedAtom::ParserDef(pd) => self.infctx.parserdef(pd.0)?,
+                        ResolvedAtom::Val(v) | ResolvedAtom::Captured(v) => {
                             self.infctx.lookup(*v)?
                         }
                     },

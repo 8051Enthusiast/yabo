@@ -48,11 +48,8 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for ValExpression {
             CloseMonadic(expr::ValUnOp::Wiggle(right, kind)) => {
                 dbwrite!(f, db, " {} {}", kind, right)
             }
-            CloseMonadic(expr::ValUnOp::Dot(a, false, acc)) => {
+            CloseMonadic(expr::ValUnOp::Dot(a, acc)) => {
                 dbwrite!(f, db, "{acc}{}", a)
-            }
-            CloseMonadic(expr::ValUnOp::Dot(a, true, acc)) => {
-                dbwrite!(f, db, "{acc}{}?", a)
             }
             InterDyadic(op) => write!(f, " {} ", op),
             InterVariadic(_, 0) => write!(f, "("),

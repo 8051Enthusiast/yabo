@@ -16,15 +16,15 @@ def [u8] *> complex = {
         name: (identifier)))
     name: (identifier)
     to: (parser_block
+      (block_open)
       content: (parser_sequence
         (parse_statement
 	       name: (identifier)
-	       parser: (bt_name
-          name: (identifier)))
+	       parser: (identifier))
         (parse_statement
 	       name: (identifier)
-	       parser: (bt_name
-          name: (identifier)))))))
+	       parser: (identifier)))
+      (block_close))))
 
 =============
 Choice Parser
@@ -45,23 +45,22 @@ def [u8] *> choice = {
         name: (identifier)))
     name: (identifier)
     to: (parser_block
+      (block_open)
       content: (parser_sequence
         (parser_choice
           content: (parser_sequence
             (parse_statement
               parser: (unary_expression
-                right: (bt_name
-                  name: (identifier))))
+                right: (identifier)))
             (parse_statement
               name: (retvrn)
-              parser: (bt_name
-                name: (identifier)))))
+              parser: (identifier))))
         (parser_choice
           content: (parser_sequence
             (parse_statement
                 name: (retvrn)
-                parser: (bt_name
-                  name: (identifier)))))))))
+                parser: (identifier)))))
+        (block_close))))
 
 
 =============
@@ -82,16 +81,17 @@ def [u8] *> seven = {
         name: (identifier)))
     name: (identifier)
     to: (parser_block
+      (block_open)
       content: (parser_sequence
         (parse_statement
   	      name: (identifier)
-        	parser: (bt_name
-            name: (identifier)))
+        	parser: (identifier))
         (let_statement
         	name: (retvrn)
         	ty: (parserdef_ref
             name: (identifier))
-        	expr: (number_literal))))))
+        	expr: (number_literal)))
+      (block_close))))
 
 =============
 Nested Blocks
@@ -116,6 +116,7 @@ def [u8] *> nested = {
         (identifier)))
     (identifier)
     (parser_block
+      (block_open)
       (parser_sequence
         (parse_statement
           (identifier)
@@ -123,6 +124,7 @@ def [u8] *> nested = {
         (parse_statement
           (retvrn)
           (parser_block
+            (block_open)
             (parser_sequence
               (parser_choice
                 (parser_sequence
@@ -143,7 +145,9 @@ def [u8] *> nested = {
                 (retvrn)
                 (parserdef_ref
                   (identifier))
-                (bt_name (identifier))))))))))
+                (identifier)))
+              (block_close))))
+        (block_close))))
 
 =============
 Three Choices
@@ -165,6 +169,7 @@ def [u8] *> three = {
         (identifier)))
     (identifier)
     (parser_block
+      (block_open)
       (parser_sequence
         (parser_choice
           (parser_sequence
@@ -173,7 +178,7 @@ def [u8] *> three = {
                 (number_literal)))
             (parse_statement
               (retvrn)
-              (bt_name (identifier)))))
+              (identifier))))
         (parser_choice
           (parser_sequence
             (parse_statement
@@ -181,12 +186,13 @@ def [u8] *> three = {
                 (number_literal)))
             (parse_statement
               (retvrn)
-              (bt_name (identifier)))))
+              (identifier))))
         (parser_choice
           (parser_sequence
             (parse_statement
               (retvrn)
-              (bt_name (identifier)))))))))
+              (identifier)))))
+        (block_close))))
 
 
 =======
@@ -203,18 +209,22 @@ def [u8] *> test = {
 ---
 
 (source_file
+  (comment)
   (parser_definition
     (type_array
       (parserdef_ref
         (identifier)))
     (identifier)
     (parser_block
+      (block_open)
+      (comment)
       (parser_sequence
         (parse_statement
           (identifier)
-          (bt_name
-            (identifier)
-            (question_mark)))))))
+          (bt_mark
+            (identifier))))
+      (comment)
+      (block_close))))
 
 
 ====
@@ -238,7 +248,6 @@ def *nonsense(x: int, y: int) = 1 + nonsense(3, 4)
     to: (binary_expression
       left: (number_literal)
       right: (fun_application
-        applicant: (bt_name
-          name: (identifier)) 
+        applicant: (identifier)
         args: (number_literal)
         args: (number_literal)))))

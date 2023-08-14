@@ -165,11 +165,11 @@ impl<'a> SizeTermBuilder<'a> {
             .map(|(idx, ty)| (Origin::Expr(expr_id, idx), ty));
         mapped.try_fold(|(head, (src, ty))| match head {
             ExprHead::Niladic(n) => match n {
-                ResolvedAtom::Val(id, _) | ResolvedAtom::Captured(id, _) => {
+                ResolvedAtom::Val(id) | ResolvedAtom::Captured(id) => {
                     let referencing = self.vals[&SubValue::new_val(id)];
                     Ok(self.push_term(Term::Copy(referencing), is_definite(self.db, *ty)?, src))
                 }
-                ResolvedAtom::ParserDef(pd, _) => {
+                ResolvedAtom::ParserDef(pd) => {
                     Ok(self.push_term(Term::Pd(pd), is_definite(self.db, *ty)?, src))
                 }
                 ResolvedAtom::Regex(r, _) => {
@@ -190,7 +190,7 @@ impl<'a> SizeTermBuilder<'a> {
             },
             ExprHead::Monadic(m, inner) => match m {
                 ValUnOp::Neg => Ok(self.push_term(Term::Neg(inner), true, src)),
-                ValUnOp::Wiggle(_, _) => Ok(inner),
+                ValUnOp::Wiggle(_, _) | ValUnOp::BtMark(_) => Ok(inner),
                 ValUnOp::Size => Ok(self.push_term(Term::Size(inner), true, src)),
                 ValUnOp::Array => unreachable!(),
                 ValUnOp::Dot(..) => {

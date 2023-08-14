@@ -76,7 +76,7 @@
     ".["
     ".?"
     ":"
-    (question_mark)
+    "?"
     "!"
     "~"
 ] @operator
@@ -92,8 +92,7 @@
     name: (identifier) @type)
 
 (val_dot
-    right: (bt_name
-        name: (identifier) @variable.other.member))
+    right: (identifier) @variable.other.member)
 
 (parser_definition
     name: (identifier) @function)

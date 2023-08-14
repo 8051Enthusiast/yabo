@@ -1,4 +1,4 @@
-use yaboc_ast::expr::{ValBinOp, ValUnOp, WiggleKind};
+use yaboc_ast::expr::{BtMarkKind, ValBinOp, ValUnOp, WiggleKind};
 use yaboc_base::{error::SResult, interner::DefId};
 use yaboc_expr::{ExprHead, Expression, FetchExpr, TakeRef};
 use yaboc_hir::{ExprId, HirNode};
@@ -16,16 +16,14 @@ fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<(bool, bo
             let is_parser = matches!(ty, Type::ParserArg { .. });
             Ok(match head {
                 ExprHead::Niladic(
-                    ResolvedAtom::Val(_, q)
-                    | ResolvedAtom::Captured(_, q)
-                    | ResolvedAtom::ParserDef(_, q),
-                ) => (false, q),
+                    ResolvedAtom::Val(_) | ResolvedAtom::Captured(_) | ResolvedAtom::ParserDef(_),
+                ) => (false, false),
                 ExprHead::Niladic(ResolvedAtom::Block(b)) => {
                     (false, db.can_backtrack(b.0).unwrap_or(false))
                 }
                 ExprHead::Niladic(_) => (false, false),
-                ExprHead::Monadic(ValUnOp::Dot(_, q, acc), (will, can)) => {
-                    (will || acc.can_backtrack(), can || q)
+                ExprHead::Monadic(ValUnOp::Dot(_, acc), (will, can)) => {
+                    (will || acc.can_backtrack(), can)
                 }
                 ExprHead::Monadic(ValUnOp::Wiggle(_, kind), (will, can)) if !is_parser => {
                     (will || kind == WiggleKind::If, can)
@@ -33,6 +31,7 @@ fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<(bool, bo
                 ExprHead::Monadic(ValUnOp::Wiggle(_, kind), (will, can)) if is_parser => {
                     (will, can || kind == WiggleKind::If)
                 }
+                ExprHead::Monadic(ValUnOp::BtMark(BtMarkKind::KeepBt), (will, _)) => (will, true),
                 ExprHead::Monadic(_, (will, _)) => (will, false),
                 ExprHead::Dyadic(ValBinOp::ParserApply, [(will_left, _), (will_right, can)]) => {
                     (will_left || will_right || can, true)
