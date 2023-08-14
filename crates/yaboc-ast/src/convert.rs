@@ -75,9 +75,7 @@ fn check_error<'a>(_: &dyn Asts, fd: FileId, node: Node<'a>) -> ParseResult<Node
     }
 }
 
-const IGNORED_NAMES: &[&str] = &[
-    "block_open", "block_close", "comment"
-];
+const IGNORED_NAMES: &[&str] = &["block_open", "block_close", "comment"];
 
 fn iter_children<'a, F: FnMut(Node<'a>, TreeCursor<'a>) -> ParseResult<()>>(
     db: &dyn Asts,
@@ -537,15 +535,9 @@ astify! {
 }
 
 astify! {
-    struct bt_name = BtName {
-        name: field_name[!],
-        backtrack: question_mark[?],
-    };
-}
-
-astify! {
     enum atom = Atom {
-        Field(bt_name),
+        Field(identifier),
+        Field(retvrn),
         Number(number_literal),
         Number(char_literal),
         Bool(bool_literal),
@@ -559,6 +551,7 @@ astify! {
         Monadic(unary_expression),
         Monadic(constraint_apply),
         Monadic(val_dot),
+        Monadic(bt_mark),
         Niladic(with_span_data(parser_block)),
         Niladic(with_span_data(single)),
         Niladic(with_span_data(nil)),
@@ -663,8 +656,8 @@ impl From<TypeConstraint> for MonadicExpr<AstTypeSpanned> {
 
 struct ValDot {
     left: ValExpression,
-    op: Spanned<String>,
-    right: (FieldName, bool),
+    op: String,
+    right: Spanned<FieldName>,
     #[allow(dead_code)]
     span: Span,
 }
@@ -672,24 +665,50 @@ struct ValDot {
 astify! {
     struct val_dot = ValDot {
         left: expression(val_expression)[!],
-        op: spanned(node_to_string)[!],
-        right: into(bt_name)[!],
+        op: node_to_string[!],
+        right: spanned(field_name)[!],
     };
 }
 
 impl From<ValDot> for MonadicExpr<AstValSpanned> {
     fn from(val: ValDot) -> Self {
-        let access_mode = if val.op.inner == "." {
+        let access_mode = if val.op == "." {
             FieldAccessMode::Normal
-        } else if val.op.inner == ".?" {
+        } else if val.op == ".?" {
             FieldAccessMode::Backtrack
         } else {
-            panic!("unknown field access mode: {}", val.op.inner)
+            panic!("unknown field access mode: {}", val.op)
         };
         Monadic {
             op: OpWithData {
+                data: val.right.span,
+                inner: ValUnOp::Dot(val.right.inner, access_mode),
+            },
+            inner: Box::new(val.left),
+        }
+    }
+}
+
+struct BtMark {
+    left: ValExpression,
+    op: Spanned<BtMarkKind>,
+    #[allow(dead_code)]
+    span: Span,
+}
+
+astify! {
+    struct bt_mark = BtMark {
+        left: expression(val_expression)[!],
+        op: spanned(bt_mark_kind)[!],
+    };
+}
+
+impl From<BtMark> for MonadicExpr<AstValSpanned> {
+    fn from(val: BtMark) -> Self {
+        Monadic {
+            op: OpWithData {
                 data: val.op.span,
-                inner: ValUnOp::Dot(val.right.0, val.right.1, access_mode),
+                inner: ValUnOp::BtMark(val.op.inner),
             },
             inner: Box::new(val.left),
         }
@@ -730,8 +749,17 @@ fn not_eof(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ConstraintAtom
     Ok(ConstraintAtom::NotEof)
 }
 
-fn question_mark(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<()> {
-    Ok(())
+fn retvrn(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<FieldName> {
+    Ok(FieldName::Return)
+}
+
+fn bt_mark_kind(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<BtMarkKind> {
+    let str = node_to_string(db, fd, c)?;
+    match &*str {
+        "!" => Ok(BtMarkKind::RemoveBt),
+        "?" => Ok(BtMarkKind::KeepBt),
+        _ => panic!("unknown backtrack mark kind: {str}"),
+    }
 }
 
 fn identifier(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Identifier> {

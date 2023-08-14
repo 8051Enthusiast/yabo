@@ -132,7 +132,7 @@ pub fn add_term_val_refs<DB: Dependents + ?Sized>(
                 }
             })
             .for_each(add_val),
-        ExprHead::Niladic(ResolvedAtom::Val(v, _)) => add_val(*v),
+        ExprHead::Niladic(ResolvedAtom::Val(v)) => add_val(*v),
         _ => {}
     }
 }

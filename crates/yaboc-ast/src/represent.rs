@@ -16,14 +16,8 @@ impl<DB: Asts + ?Sized> StableHash<DB> for ArrayKind {
 impl<DB: Asts + ?Sized> DatabasedDisplay<DB> for Atom {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
-            Atom::Field((FieldName::Ident(id), bt)) => {
-                dbwrite!(f, db, "{}", id)?;
-                if *bt {
-                    write!(f, "?")?;
-                }
-                Ok(())
-            }
-            Atom::Field((FieldName::Return, _)) => write!(f, "return"),
+            Atom::Field(FieldName::Ident(id)) => dbwrite!(f, db, "{}", id),
+            Atom::Field(FieldName::Return) => write!(f, "return"),
             Atom::Number(a) => write!(f, "{a}"),
             Atom::Char(a) => write!(f, "'{a}'"),
             Atom::Bool(a) => write!(f, "{a}"),

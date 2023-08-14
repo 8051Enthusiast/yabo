@@ -12,7 +12,7 @@ use fxhash::FxHashMap;
 
 use hir::HirConstraintId;
 use yaboc_absint::{AbsInt, AbsIntCtx, AbstractDomain, Arg};
-use yaboc_ast::expr::{ValBinOp, ValUnOp, ValVarOp, WiggleKind};
+use yaboc_ast::expr::{BtMarkKind, ValBinOp, ValUnOp, ValVarOp, WiggleKind};
 use yaboc_ast::ArrayKind;
 use yaboc_base::dbpanic;
 use yaboc_base::error::{IsSilenced, SResult, SilencedError};
@@ -608,9 +608,9 @@ impl<'a> ILayout<'a> {
     fn with_backtrack_status(
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
-        backtracks: bool,
+        backtracks: BtMarkKind,
     ) -> ILayout<'a> {
-        if backtracks {
+        if backtracks == BtMarkKind::KeepBt {
             return self;
         }
         self.map(ctx, |layout, ctx| layout.remove_backtracking(ctx).inner())
@@ -974,13 +974,13 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ResolvedAtom::Char(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Char)),
                 ResolvedAtom::Number(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Int)),
                 ResolvedAtom::Bool(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Bit)),
-                ResolvedAtom::Val(id, bt) => ctx.var_by_id(id)?.with_backtrack_status(ctx, bt),
+                ResolvedAtom::Val(id) => ctx.var_by_id(id)?,
                 ResolvedAtom::Single => make_layout(MonoLayout::Single),
                 ResolvedAtom::Nil => make_layout(MonoLayout::Nil),
                 ResolvedAtom::Array => make_layout(MonoLayout::ArrayParser(None)),
                 ResolvedAtom::Regex(r, bt) => make_layout(MonoLayout::Regex(r, bt)),
-                ResolvedAtom::ParserDef(pd, bt) => {
-                    make_layout(MonoLayout::NominalParser(pd, Vec::new(), bt))
+                ResolvedAtom::ParserDef(pd) => {
+                    make_layout(MonoLayout::NominalParser(pd, Vec::new(), true))
                 }
                 ResolvedAtom::Block(block_id) => {
                     let mut captures = BTreeMap::new();
@@ -1003,15 +1003,12 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                     ));
                     res
                 }
-                ResolvedAtom::Captured(capture, bt) => {
-                    let capture_value = ctx
-                        .active_block()
-                        .and_then(|s| s.get_captured(ctx, capture).transpose())
-                        .unwrap_or_else(|| {
-                            Ok(ctx.active_pd().get_arg(ctx, Arg::Named(capture)).unwrap())
-                        })?;
-                    capture_value.with_backtrack_status(ctx, bt)
-                }
+                ResolvedAtom::Captured(capture) => ctx
+                    .active_block()
+                    .and_then(|s| s.get_captured(ctx, capture).transpose())
+                    .unwrap_or_else(|| {
+                        Ok(ctx.active_pd().get_arg(ctx, Arg::Named(capture)).unwrap())
+                    })?,
             },
             ExprHead::Monadic(op, inner) => match op {
                 ValUnOp::Not | ValUnOp::Neg | ValUnOp::Size => {
@@ -1032,6 +1029,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                     }
                 }
                 ValUnOp::Dot(a, ..) => inner.0.access_field(ctx, a)?,
+                ValUnOp::BtMark(bt) => inner.0.with_backtrack_status(ctx, bt),
             },
             ExprHead::Dyadic(op, [lhs, rhs]) => match op {
                 ValBinOp::ParserApply => rhs.0.apply_arg(ctx, lhs.0)?,
@@ -1157,7 +1155,7 @@ def *main = {
     a: ~
     b: ~
     c: {
-      | let c: *first = first
+      | let c: *first = first!
       | let c: *second = second?
     }
     d: c.c

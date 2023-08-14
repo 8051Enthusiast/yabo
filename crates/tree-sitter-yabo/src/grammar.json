@@ -739,6 +739,10 @@
         },
         {
           "type": "SYMBOL",
+          "name": "bt_mark"
+        },
+        {
+          "type": "SYMBOL",
           "name": "constraint_apply"
         },
         {
@@ -1911,6 +1915,40 @@
         ]
       }
     },
+    "bt_mark": {
+      "type": "PREC_LEFT",
+      "value": 14,
+      "content": {
+        "type": "SEQ",
+        "members": [
+          {
+            "type": "FIELD",
+            "name": "left",
+            "content": {
+              "type": "SYMBOL",
+              "name": "_expression"
+            }
+          },
+          {
+            "type": "FIELD",
+            "name": "op",
+            "content": {
+              "type": "CHOICE",
+              "members": [
+                {
+                  "type": "STRING",
+                  "value": "!"
+                },
+                {
+                  "type": "STRING",
+                  "value": "?"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
     "parserdef_ref": {
       "type": "PREC_LEFT",
       "value": 15,
@@ -2037,7 +2075,7 @@
       "members": [
         {
           "type": "SYMBOL",
-          "name": "bt_name"
+          "name": "_field_name"
         },
         {
           "type": "SYMBOL",
@@ -2098,39 +2136,6 @@
     "type_var": {
       "type": "PATTERN",
       "value": "\\'[A-Za-z_][A-Za-z_0-9]*"
-    },
-    "bt_name": {
-      "type": "SEQ",
-      "members": [
-        {
-          "type": "FIELD",
-          "name": "name",
-          "content": {
-            "type": "SYMBOL",
-            "name": "_field_name"
-          }
-        },
-        {
-          "type": "CHOICE",
-          "members": [
-            {
-              "type": "FIELD",
-              "name": "backtrack",
-              "content": {
-                "type": "SYMBOL",
-                "name": "question_mark"
-              }
-            },
-            {
-              "type": "BLANK"
-            }
-          ]
-        }
-      ]
-    },
-    "question_mark": {
-      "type": "STRING",
-      "value": "?"
     },
     "_field_name": {
       "type": "CHOICE",

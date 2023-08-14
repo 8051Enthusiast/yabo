@@ -17,9 +17,9 @@ use super::{ResolveError, Resolves};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ResolvedAtom {
-    Val(DefId, bool),
-    Captured(DefId, bool),
-    ParserDef(hir::ParserDefId, bool),
+    Val(DefId),
+    Captured(DefId),
+    ParserDef(hir::ParserDefId),
     Regex(Regex, bool),
     Number(i64),
     Char(u32),
@@ -68,7 +68,7 @@ fn resolve_expr_modules(
 ) -> Result<ReidxExpr<hir::HirVal, Resolved>, ResolveError> {
     let parent_block = db.hir_parent_block(expr_id.0)?;
 
-    let new_resolved_atom = |loc, name, bt, span, use_core| {
+    let new_resolved_atom = |loc, name, span, use_core| {
         let (id, kind) = match refs::resolve_var_ref(db, loc, name, use_core)? {
             refs::Resolved::Value(id, kind) => (id, kind),
             refs::Resolved::Module(m) => return Ok(PartialEval::Eval(m)),
@@ -77,16 +77,16 @@ fn resolve_expr_modules(
             }
         };
         Ok(PartialEval::Uneval(match kind {
-            refs::VarType::ParserDef => ResolvedAtom::ParserDef(hir::ParserDefId(id), bt),
+            refs::VarType::ParserDef => ResolvedAtom::ParserDef(hir::ParserDefId(id)),
             refs::VarType::Value => {
                 let is_captured = parent_block
                     .map(|x| !x.0.is_ancestor_of(db, id))
                     .unwrap_or(false);
                 let is_arg = db.hir_node(id)?.is_kind(hir::HirNodeKind::ArgDef.into());
                 if is_captured || is_arg {
-                    ResolvedAtom::Captured(id, bt)
+                    ResolvedAtom::Captured(id)
                 } else {
-                    ResolvedAtom::Val(id, bt)
+                    ResolvedAtom::Val(id)
                 }
             }
         }))
@@ -110,16 +110,16 @@ fn resolve_expr_modules(
                     hir::ParserAtom::Array => ResolvedAtom::Array,
                     hir::ParserAtom::Regex(r, bt) => ResolvedAtom::Regex(r, bt),
                     hir::ParserAtom::Block(b) => ResolvedAtom::Block(b),
-                    hir::ParserAtom::Atom(Atom::Field((f, bt))) => {
-                        match new_resolved_atom(expr_id.0, f, bt, *span, true)? {
+                    hir::ParserAtom::Atom(Atom::Field(f)) => {
+                        match new_resolved_atom(expr_id.0, f, *span, true)? {
                             PartialEval::Uneval(k) => k,
                             PartialEval::Eval(m) => return Ok(PartialEval::Eval(m)),
                         }
                     }
                 }),
                 // TODO(8051): throw an error or warning if the field access is fallible on a module
-                ExprHead::Monadic(ValUnOp::Dot(field, bt, _), PartialEval::Eval((m, _))) => {
-                    match new_resolved_atom(m.0, field, bt, *span, false)? {
+                ExprHead::Monadic(ValUnOp::Dot(field, _), PartialEval::Eval((m, _))) => {
+                    match new_resolved_atom(m.0, field, *span, false)? {
                         PartialEval::Uneval(k) => ExprHead::Niladic(k),
                         PartialEval::Eval(m) => return Ok(PartialEval::Eval(m)),
                     }
@@ -152,13 +152,9 @@ pub fn resolve_expr_error(
     let zip_expr = resolved.into_expr().zip(sugar_spans);
     let compose = ExprHead::Niladic(ResolvedAtom::ParserDef(
         db.core_item(hir::CoreItem::Compose)?,
-        true,
     ));
     let array = ExprHead::Niladic(ResolvedAtom::Array);
-    let index = ExprHead::Niladic(ResolvedAtom::ParserDef(
-        db.core_item(hir::CoreItem::Index)?,
-        true,
-    ));
+    let index = ExprHead::Niladic(ResolvedAtom::ParserDef(db.core_item(hir::CoreItem::Index)?));
     let desugared = ZipExpr::new_from_unfold(Cont(zip_expr.root()), |id| {
         let id = match id {
             Cont(id) => id,
