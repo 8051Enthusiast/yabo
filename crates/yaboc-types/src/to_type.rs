@@ -261,12 +261,14 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                 FunctionArgs {
                     result: result1,
                     args: args1,
+                    partial: partial1,
                 },
                 FunctionArgs {
                     result: result2,
                     args: args2,
+                    partial: partial2,
                 },
-            ) if args1.len() == args2.len() => {
+            ) if args1.len() == args2.len() && *partial1 == *partial2 => {
                 let result = self.combine::<P>(*result1, *result2)?;
                 let args_vec: Vec<_> = args1
                     .iter()
@@ -274,7 +276,11 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                     .map(|(arg1, arg2)| self.combine::<P::Opposite>(*arg1, *arg2))
                     .collect::<Result<_, _>>()?;
                 let args = self.ctx.slice_interner.intern_slice(&args_vec);
-                FunctionArgs { result, args }
+                FunctionArgs {
+                    result,
+                    args,
+                    partial: *partial1,
+                }
             }
             (
                 Nominal(NominalInfHead {
@@ -426,7 +432,11 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                 result: self.convert_to_type_internal(*result)?,
                 arg: self.convert_to_type_internal(*arg)?,
             },
-            InferenceType::FunctionArgs { result, args } => {
+            InferenceType::FunctionArgs {
+                result,
+                args,
+                partial: _,
+            } => {
                 let args = args
                     .iter()
                     .map(|&x| self.convert_to_type_internal(x))

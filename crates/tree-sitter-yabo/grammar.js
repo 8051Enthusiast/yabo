@@ -194,8 +194,12 @@ module.exports = grammar({
           ',',
           field('args', $._expression),
         )),
+        optional(field('partial', $.partial_indicator))
       )),
       ')'
+    ),
+    partial_indicator: $ => seq(
+      ',', '..'
     ),
     arg_definition: $ => seq(
       field('name', $.identifier),

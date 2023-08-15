@@ -940,6 +940,16 @@
             "named": true
           }
         ]
+      },
+      "partial": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "partial_indicator",
+            "named": true
+          }
+        ]
       }
     }
   },
@@ -1590,6 +1600,11 @@
         ]
       }
     }
+  },
+  {
+    "type": "partial_indicator",
+    "named": true,
+    "fields": {}
   },
   {
     "type": "primitive_type",

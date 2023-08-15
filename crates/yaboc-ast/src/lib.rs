@@ -344,6 +344,7 @@ pub struct ParserDefRef {
 pub struct FunApplication {
     pub applicant: ValExpression,
     pub args: Vec<ValExpression>,
+    pub partial: Option<()>,
     pub span: Span,
 }
 
@@ -351,10 +352,15 @@ impl From<FunApplication> for Variadic<OpWithData<ValVarOp, Span>, Box<ValExpres
     fn from(app: FunApplication) -> Self {
         let mut inner = vec![Box::new(app.applicant)];
         inner.extend(app.args.into_iter().map(Box::new));
+        let application = if app.partial.is_some() {
+            ValVarOp::PartialApply
+        } else {
+            ValVarOp::Call
+        };
         Variadic {
             op: OpWithData {
                 data: app.span,
-                inner: ValVarOp::Call,
+                inner: application,
             },
             inner,
         }

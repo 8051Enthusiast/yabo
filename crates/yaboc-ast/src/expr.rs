@@ -736,6 +736,7 @@ impl Display for WiggleKind {
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum ValVarOp {
     Call,
+    PartialApply,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]

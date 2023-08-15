@@ -820,6 +820,22 @@
                       }
                     ]
                   }
+                },
+                {
+                  "type": "CHOICE",
+                  "members": [
+                    {
+                      "type": "FIELD",
+                      "name": "partial",
+                      "content": {
+                        "type": "SYMBOL",
+                        "name": "partial_indicator"
+                      }
+                    },
+                    {
+                      "type": "BLANK"
+                    }
+                  ]
                 }
               ]
             },
@@ -831,6 +847,19 @@
         {
           "type": "STRING",
           "value": ")"
+        }
+      ]
+    },
+    "partial_indicator": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": ","
+        },
+        {
+          "type": "STRING",
+          "value": ".."
         }
       ]
     },

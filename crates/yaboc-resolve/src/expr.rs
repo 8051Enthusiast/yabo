@@ -185,7 +185,7 @@ pub fn resolve_expr_error(
             ExprHead::Monadic(ValUnOp::Array, inner) => {
                 return (
                     ExprHead::Variadic(
-                        ValVarOp::Call,
+                        ValVarOp::PartialApply,
                         SmallVec::from_slice(&[Array(*span), Cont(*inner)]),
                     ),
                     *span,

@@ -13,7 +13,7 @@ export def *test = {
   tag: ~
   | let _ = tag if 0
     m: ~
-    let p = affine_byte(m)
+    let p = affine_byte(m, ..)
   | let p = linear_byte
   a: ~
   s: p(a)

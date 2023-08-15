@@ -229,7 +229,7 @@ impl<'a> SizeTermBuilder<'a> {
                     src,
                 )),
             },
-            ExprHead::Variadic(ValVarOp::Call, args) => {
+            ExprHead::Variadic(ValVarOp::Call | ValVarOp::PartialApply, args) => {
                 let f = args[0];
                 let mut ret = f;
                 for arg in args[1..].iter() {
