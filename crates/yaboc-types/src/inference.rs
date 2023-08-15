@@ -29,6 +29,7 @@ pub enum InferenceType<'intern> {
     FunctionArgs {
         result: InfTypeId<'intern>,
         args: InfSlice<'intern>,
+        partial: Application,
     },
     InferField(FieldName, InfTypeId<'intern>),
     InferIfResult(
@@ -83,6 +84,12 @@ impl ChildLocation {
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub enum Application {
+    Partial,
+    Full,
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum InfTypeHead {
     Any,
     Bot,
@@ -91,7 +98,7 @@ pub enum InfTypeHead {
     Nominal(DefId),
     Loop(ArrayKind),
     ParserArg,
-    FunctionArgs(usize),
+    FunctionArgs(usize, Application),
     Unknown,
     InferField(FieldName),
     InferIfResult(bool),
@@ -108,11 +115,22 @@ impl<'intern> From<InfTypeId<'intern>> for InfTypeHead {
             InferenceType::Nominal(head) => InfTypeHead::Nominal(head.def),
             InferenceType::Loop(kind, _) => InfTypeHead::Loop(*kind),
             InferenceType::ParserArg { .. } => InfTypeHead::ParserArg,
-            InferenceType::FunctionArgs { args, .. } => InfTypeHead::FunctionArgs(args.len()),
+            InferenceType::FunctionArgs { args, partial, .. } => {
+                InfTypeHead::FunctionArgs(args.len(), *partial)
+            }
             InferenceType::Unknown => InfTypeHead::Unknown,
             InferenceType::InferField(name, _) => InfTypeHead::InferField(*name),
             InferenceType::InferIfResult(a, ..) => InfTypeHead::InferIfResult(a.is_some()),
             InferenceType::Var(var) => InfTypeHead::Var(*var),
+        }
+    }
+}
+
+impl InfTypeHead {
+    fn matches_with(&self, upper: &Self) -> bool {
+        match (self, upper) {
+            (InfTypeHead::Loop(a), InfTypeHead::Loop(b)) => a <= b,
+            (other, wise) => other == wise,
         }
     }
 }
@@ -132,7 +150,11 @@ impl<'intern> InfTypeId<'intern> {
                 let arg = f(interner, *arg, ChildLocation::ParserArg)?;
                 Ok(interner.intern_infty(InferenceType::ParserArg { result, arg }))
             }
-            InferenceType::FunctionArgs { result, args } => {
+            InferenceType::FunctionArgs {
+                result,
+                args,
+                partial,
+            } => {
                 let fun_args = args
                     .iter()
                     .enumerate()
@@ -140,7 +162,11 @@ impl<'intern> InfTypeId<'intern> {
                     .collect::<Result<Vec<_>, _>>()?;
                 let args = interner.intern_infty_slice(&fun_args);
                 let result = f(interner, *result, ChildLocation::FunResult)?;
-                Ok(interner.intern_infty(InferenceType::FunctionArgs { result, args }))
+                Ok(interner.intern_infty(InferenceType::FunctionArgs {
+                    result,
+                    args,
+                    partial: *partial,
+                }))
             }
             InferenceType::Loop(kind, body) => {
                 let body = f(interner, *body, ChildLocation::LoopBody)?;
@@ -216,10 +242,11 @@ impl<'intern> InfTypeId<'intern> {
                 call_f(*arg, *other_arg, ChildLocation::ParserArg)?;
             }
             (
-                InferenceType::FunctionArgs { result, args },
+                InferenceType::FunctionArgs { result, args, .. },
                 InferenceType::FunctionArgs {
                     result: other_result,
                     args: other_args,
+                    ..
                 },
             ) => {
                 for (index, (arg, other_arg)) in args.iter().zip(other_args.iter()).enumerate() {
@@ -525,7 +552,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                 .map(|arg| self.convert_type_into_inftype_with_args(*arg, &vars))
                 .collect::<Vec<_>>();
             let fun_args_slice = self.intern_infty_slice(&fun_args);
-            ret = self.function(ret, fun_args_slice);
+            ret = self.function(ret, fun_args_slice, Application::Full);
         }
         if self.trace {
             dbeprintln!(
@@ -557,11 +584,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
             );
         }
         let [lower_head, upper_head] = [lower, upper].map(InfTypeHead::from);
-        if if let [InfTypeHead::Loop(f), InfTypeHead::Loop(g)] = [lower_head, upper_head] {
-            f <= g
-        } else {
-            lower_head == upper_head
-        } {
+        if lower_head.matches_with(&upper_head) {
             let res = lower.try_for_each_child_pair(upper, |l, u, loc| {
                 if loc.opposite_polarity() {
                     self.constrain(u, l)
@@ -641,18 +664,25 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                 self.constrain(lower, if_result_with_lower)
             }
 
-            (FunctionArgs { result, args }, FunctionArgs { args: args2, .. })
-                if args.len() > args2.len() =>
-            {
+            (
+                FunctionArgs { result, args, .. },
+                FunctionArgs {
+                    args: args2,
+                    partial: Application::Partial,
+                    ..
+                },
+            ) if args.len() >= args2.len() => {
                 let inner_args = self.intern_infty_slice(&args[args2.len()..]);
                 let inner_ty = self.intern_infty(FunctionArgs {
                     result: *result,
                     args: inner_args,
+                    partial: Application::Full,
                 });
                 let outer_args = self.intern_infty_slice(&args[..args2.len()]);
                 let outer_ty = self.intern_infty(FunctionArgs {
                     result: inner_ty,
                     args: outer_args,
+                    partial: Application::Partial,
                 });
                 self.constrain(outer_ty, upper)
             }
@@ -754,7 +784,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         let parser_arg = self.parser(to, from_for_array);
         let returned_parser = self.parser(to_array, from_array);
         let args = self.intern_infty_slice(&[parser_arg, int]);
-        self.function(returned_parser, args)
+        self.function(returned_parser, args, Application::Full)
     }
     pub fn type_var(&mut self, id: DefId, index: u32) -> InfTypeId<'intern> {
         let inftype = InferenceType::TypeVarRef(id, index);
@@ -771,8 +801,13 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         &mut self,
         result: InfTypeId<'intern>,
         args: InfSlice<'intern>,
+        partial: Application,
     ) -> InfTypeId<'intern> {
-        self.intern_infty(InferenceType::FunctionArgs { result, args })
+        self.intern_infty(InferenceType::FunctionArgs {
+            result,
+            args,
+            partial,
+        })
     }
     pub fn array(&mut self, kind: ArrayKind, inner: InfTypeId<'intern>) -> InfTypeId<'intern> {
         self.intern_infty(InferenceType::Loop(kind, inner))
@@ -844,11 +879,13 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         &mut self,
         function: InfTypeId<'intern>,
         args: &[InfTypeId<'intern>],
+        partial: Application,
     ) -> Result<InfTypeId<'intern>, TypeError> {
         let var = self.var();
         let new_function = InferenceType::FunctionArgs {
             args: self.slice_interner.intern_slice(args),
             result: var,
+            partial,
         };
         let new_function = self.intern_infty(new_function);
         self.constrain(function, new_function)?;
@@ -964,7 +1001,11 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                 let result = recurse(*function);
                 let args_vec = args.iter().copied().map(recurse).collect::<Vec<_>>();
                 let args = self.slice_interner.intern_slice(&args_vec);
-                InferenceType::FunctionArgs { result, args }
+                InferenceType::FunctionArgs {
+                    result,
+                    args,
+                    partial: Application::Full,
+                }
             }
         };
         self.intern_infty(ret)

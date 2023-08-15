@@ -2,7 +2,10 @@ use sha2::Digest;
 use yaboc_ast::ArrayKind;
 use yaboc_base::{databased_display::DatabasedDisplay, hash::StableHash, interner::FieldName};
 
-use crate::{inference::InfTypeHead, NominalTypeHead, Type, TypeId};
+use crate::{
+    inference::{Application, InfTypeHead},
+    NominalTypeHead, Type, TypeId,
+};
 
 use super::{inference::InferenceType, InfTypeId, NominalKind, PrimitiveType, TypeInterner};
 
@@ -37,13 +40,20 @@ impl<'a, DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeId<'a> {
             InferenceType::ParserArg { result, arg } => {
                 dbwrite!(f, db, "{} *> {}", arg, result)
             }
-            InferenceType::FunctionArgs { result, args } => {
+            InferenceType::FunctionArgs {
+                result,
+                args,
+                partial,
+            } => {
                 dbwrite!(f, db, "{}(", result)?;
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
                     dbwrite!(f, db, "{}", arg)?;
+                }
+                if *partial == Application::Partial {
+                    write!(f, ", ..")?;
                 }
                 write!(f, ")")
             }
@@ -166,7 +176,12 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeHead {
             }
             InfTypeHead::Loop(ArrayKind::Each) => write!(f, "array"),
             InfTypeHead::ParserArg => write!(f, "a parser"),
-            InfTypeHead::FunctionArgs(arg) => write!(f, "a function with {arg} arguments"),
+            InfTypeHead::FunctionArgs(arg, Application::Full) => {
+                write!(f, "a function with {arg} arguments")
+            }
+            InfTypeHead::FunctionArgs(arg, Application::Partial) => {
+                write!(f, "a function with at least {arg} arguments")
+            }
             InfTypeHead::Unknown => write!(f, "unknon"),
             InfTypeHead::InferField(name) => match name {
                 FieldName::Return => write!(f, "field return"),

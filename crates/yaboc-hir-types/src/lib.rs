@@ -27,6 +27,7 @@ use yaboc_hir::{
     self as hir, walk::ChildIter, ExprId, HirIdWrapper, HirNodeKind, ParseStatement, ParserDefRef,
 };
 use yaboc_resolve::{self as resolve, expr::ResolvedAtom};
+use yaboc_types::inference::Application;
 use yaboc_types::{
     inference::{
         InfTypeId, InfTypeInterner, InferenceContext, InferenceType, NominalInfHead, TypeResolver,
@@ -220,8 +221,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                 }
                 let args = self.infctx.intern_infty_slice(&inner_ty[1..]);
                 let result = inner_ty[0];
-                self.infctx
-                    .intern_infty(InferenceType::FunctionArgs { result, args })
+                self.infctx.function(result, args, Application::Full)
             }
         };
         Ok(ret)
@@ -435,7 +435,15 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                     ExprHead::Variadic(ValVarOp::Call, inner) => self.infctx.function_apply(
                         *inner[0],
                         &inner[1..].iter().copied().copied().collect::<Vec<_>>(),
+                        Application::Full,
                     )?,
+                    ExprHead::Variadic(ValVarOp::PartialApply, inner) => {
+                        self.infctx.function_apply(
+                            *inner[0],
+                            &inner[1..].iter().copied().copied().collect::<Vec<_>>(),
+                            Application::Partial,
+                        )?
+                    }
                 })
             })
             .map_err(|x| SpannedTypeError::new(x, span))?;

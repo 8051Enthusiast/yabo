@@ -588,6 +588,7 @@ astify! {
     struct fun_application = FunApplication {
         applicant: expression(val_expression)[!],
         args: expression(val_expression)[*],
+        partial: partial_indicator[?],
     };
 }
 
@@ -751,6 +752,10 @@ fn not_eof(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ConstraintAtom
 
 fn retvrn(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<FieldName> {
     Ok(FieldName::Return)
+}
+
+fn partial_indicator(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<()> {
+    Ok(())
 }
 
 fn bt_mark_kind(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<BtMarkKind> {

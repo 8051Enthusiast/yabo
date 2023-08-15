@@ -1053,7 +1053,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 | ValBinOp::Modulo
                 | ValBinOp::Mul => make_layout(MonoLayout::Primitive(PrimitiveType::Int)),
             },
-            ExprHead::Variadic(ValVarOp::Call, inner) => inner[0]
+            ExprHead::Variadic(ValVarOp::Call | ValVarOp::PartialApply, inner) => inner[0]
                 .0
                 .apply_fun(ctx, inner[1..].iter().copied().copied())?,
         })
