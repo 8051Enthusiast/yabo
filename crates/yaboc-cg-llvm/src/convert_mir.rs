@@ -624,7 +624,9 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::SetDiscriminant(block, field, val) => {
                 self.set_discriminant(block, field, val)
             }
-            MirInstr::Copy(to, from, ctrl) => self.copy(to, from, ctrl),
+            MirInstr::Copy(to, from, ctrl) | MirInstr::EvalFun(to, from, ctrl) => {
+                self.copy(to, from, ctrl)
+            }
             MirInstr::ApplyArgs(ret, fun, args, first_index, ctrl) => {
                 self.apply_args(ret, fun, &args, first_index, ctrl)
             }

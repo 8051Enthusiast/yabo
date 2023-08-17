@@ -172,6 +172,9 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
             MirInstr::Copy(target, origin, cont) => {
                 dbwrite!(f, db, "{} = copy {}, {}", target, origin, cont)
             }
+            MirInstr::EvalFun(target, fun, cont) => {
+                dbwrite!(f, db, "{} = eval_fun {}, {}", target, fun, cont)
+            }
             MirInstr::ApplyArgs(target, origin, args, arg_start, cont) => {
                 dbwrite!(f, db, "{} = apply_args {}, (", target, origin)?;
                 for (i, arg) in args.iter().enumerate() {

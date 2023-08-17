@@ -12,7 +12,7 @@ use fxhash::FxHashMap;
 
 use hir::HirConstraintId;
 use yaboc_absint::{AbsInt, AbsIntCtx, AbstractDomain, Arg};
-use yaboc_ast::expr::{BtMarkKind, ValBinOp, ValUnOp, ValVarOp, WiggleKind};
+use yaboc_ast::expr::{BtMarkKind, WiggleKind};
 use yaboc_ast::ArrayKind;
 use yaboc_base::dbpanic;
 use yaboc_base::error::{IsSilenced, SResult, SilencedError};
@@ -22,7 +22,7 @@ use yaboc_expr::ExprHead;
 use yaboc_hir::{self as hir, HirIdWrapper};
 use yaboc_hir_types::{DerefLevel, NominalId};
 use yaboc_mir::Mirs;
-use yaboc_resolve::expr::{Resolved, ResolvedAtom};
+use yaboc_resolve::expr::{Resolved, ResolvedAtom, ValBinOp, ValUnOp, ValVarOp};
 use yaboc_types::{PrimitiveType, Type, TypeId, TypeInterner};
 
 pub use self::collect::TailInfo;
@@ -1014,7 +1014,6 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ValUnOp::Not | ValUnOp::Neg | ValUnOp::Size => {
                     make_layout(MonoLayout::Primitive(PrimitiveType::Int))
                 }
-                ValUnOp::Array => unreachable!(),
                 ValUnOp::Wiggle(cid, kind) => {
                     let ldt_parser_ty = ctx.db.least_deref_type(inner.1)?;
                     let parser_type = ctx.db.lookup_intern_type(ldt_parser_ty);
@@ -1030,10 +1029,10 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 }
                 ValUnOp::Dot(a, ..) => inner.0.access_field(ctx, a)?,
                 ValUnOp::BtMark(bt) => inner.0.with_backtrack_status(ctx, bt),
+                ValUnOp::EvalFun => inner.0,
             },
             ExprHead::Dyadic(op, [lhs, rhs]) => match op {
                 ValBinOp::ParserApply => rhs.0.apply_arg(ctx, lhs.0)?,
-                ValBinOp::Compose | ValBinOp::Index => unreachable!(),
                 ValBinOp::Else => lhs.0.join(ctx, rhs.0)?.0,
                 ValBinOp::Then => rhs.0,
                 ValBinOp::LesserEq
@@ -1053,7 +1052,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 | ValBinOp::Modulo
                 | ValBinOp::Mul => make_layout(MonoLayout::Primitive(PrimitiveType::Int)),
             },
-            ExprHead::Variadic(ValVarOp::Call | ValVarOp::PartialApply, inner) => inner[0]
+            ExprHead::Variadic(ValVarOp::PartialApply, inner) => inner[0]
                 .0
                 .apply_fun(ctx, inner[1..].iter().copied().copied())?,
         })

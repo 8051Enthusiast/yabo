@@ -5,15 +5,13 @@ use std::{
 
 use super::Mirs;
 use fxhash::FxHashMap;
-use yaboc_ast::expr::{
-    BtMarkKind, ConstraintBinOp, ConstraintUnOp, ValBinOp, ValUnOp, ValVarOp, WiggleKind,
-};
+use yaboc_ast::expr::{BtMarkKind, ConstraintBinOp, ConstraintUnOp, WiggleKind};
 use yaboc_base::{error::SResult, interner::DefId};
 use yaboc_dependents::{NeededBy, SubValue, SubValueKind};
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchKindData, IdxExpression, IndexExpr, ZipExpr};
 use yaboc_hir::{BlockId, ExprId, HirConstraint};
 use yaboc_hir_types::FullTypeId;
-use yaboc_resolve::expr::{Resolved, ResolvedAtom};
+use yaboc_resolve::expr::{Resolved, ResolvedAtom, ValBinOp, ValUnOp, ValVarOp};
 use yaboc_types::{PrimitiveType, Type, TypeId};
 
 use crate::{
@@ -353,7 +351,6 @@ impl<'a> ConvertExpr<'a> {
                         self.f.int_un_op(place_ref, op, inner);
                         place_ref
                     }
-                    ValUnOp::Array => unreachable!(),
                     ValUnOp::Size => {
                         let inner_ldt = self.db.least_deref_type(inner_ty)?;
                         let inner = self.copy_if_different_levels(
@@ -433,6 +430,19 @@ impl<'a> ConvertExpr<'a> {
                         } else {
                             val_without_bt
                         }
+                    }
+                    ValUnOp::EvalFun => {
+                        let inner_ldt = self.db.least_deref_type(inner_ty)?;
+                        let fun_ref = self.copy_if_different_levels(
+                            inner_ldt,
+                            inner_ty,
+                            None,
+                            inner_origin,
+                            recurse,
+                        )?;
+                        let place_ref = self.unwrap_or_stack(place, ty, origin);
+                        self.f.eval_fun(fun_ref, place_ref, self.retreat);
+                        place_ref
                     }
                 }
             }
@@ -537,10 +547,9 @@ impl<'a> ConvertExpr<'a> {
                         let place_ref = self.unwrap_or_stack(place, ty, origin);
                         rrecurse(self, Some(place_ref))?
                     }
-                    ValBinOp::Compose | ValBinOp::Index => unreachable!(),
                 }
             }
-            ExprHead::Variadic(ValVarOp::Call | ValVarOp::PartialApply, inner) => {
+            ExprHead::Variadic(ValVarOp::PartialApply, inner) => {
                 let (fun_idx, &fun_ty) = expr.data.index_expr(inner[0]);
                 let fun_ldt = self.db.least_deref_type(fun_ty)?;
                 let fun_origin = PlaceOrigin::Expr(expr_id, fun_idx);

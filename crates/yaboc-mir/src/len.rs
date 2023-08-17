@@ -1,7 +1,6 @@
 use std::{rc::Rc, sync::Arc};
 
 use fxhash::{FxHashMap, FxHashSet};
-use yaboc_ast::expr::ValVarOp;
 use yaboc_base::{
     error::{SResult, Silencable},
     interner::DefId,
@@ -17,6 +16,7 @@ use yaboc_hir::{
 use yaboc_hir_types::FullTypeId;
 use yaboc_len::Val;
 use yaboc_resolve::expr::Resolved;
+use yaboc_resolve::expr::ValVarOp;
 use yaboc_types::{Type, TypeId};
 
 use crate::{
@@ -49,7 +49,7 @@ impl<'a> LenMirCtx<'a> {
             if !used[idx] {
                 continue;
             }
-            if let ExprHead::Variadic(ValVarOp::Call, args) = term {
+            if let ExprHead::Variadic(ValVarOp::PartialApply, args) = term {
                 let call_site = Origin::Expr(expr_id, ExprIdx::new_from_usize(idx));
                 let call_deps = self.vals.call_sites[&call_site].clone();
                 used[args[0].as_usize()] = true;

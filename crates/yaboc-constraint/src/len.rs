@@ -3,7 +3,6 @@ use std::sync::Arc;
 use super::Constraints;
 use fxhash::FxHashMap;
 use hir::HirIdWrapper;
-use yaboc_ast::expr::{ValBinOp, ValUnOp, ValVarOp};
 use yaboc_base::{
     error::{SResult, Silencable, SilencedError},
     interner::DefId,
@@ -14,6 +13,7 @@ use yaboc_hir as hir;
 use yaboc_hir_types::FullTypeId;
 use yaboc_len::{SizeExpr, Term};
 use yaboc_resolve::expr::{Resolved, ResolvedAtom};
+use yaboc_resolve::expr::{ValBinOp, ValUnOp, ValVarOp};
 use yaboc_types::{NominalKind, NominalTypeHead, Type, TypeId};
 
 pub struct SizeTermBuilder<'a> {
@@ -190,9 +190,8 @@ impl<'a> SizeTermBuilder<'a> {
             },
             ExprHead::Monadic(m, inner) => match m {
                 ValUnOp::Neg => Ok(self.push_term(Term::Neg(inner), true, src)),
-                ValUnOp::Wiggle(_, _) | ValUnOp::BtMark(_) => Ok(inner),
+                ValUnOp::Wiggle(_, _) | ValUnOp::BtMark(_) | ValUnOp::EvalFun => Ok(inner),
                 ValUnOp::Size => Ok(self.push_term(Term::Size(inner), true, src)),
-                ValUnOp::Array => unreachable!(),
                 ValUnOp::Dot(..) => {
                     Ok(self.push_term(Term::OpaqueUn(inner), is_definite(self.db, *ty)?, src))
                 }
@@ -209,7 +208,6 @@ impl<'a> SizeTermBuilder<'a> {
                     Ok(self.push_term(Term::Unify([lhs, rhs]), is_definite(self.db, *ty)?, src))
                 }
                 ValBinOp::Then => Ok(rhs),
-                ValBinOp::Compose | ValBinOp::Index => unreachable!(),
                 ValBinOp::And
                 | ValBinOp::Xor
                 | ValBinOp::Or
@@ -229,7 +227,7 @@ impl<'a> SizeTermBuilder<'a> {
                     src,
                 )),
             },
-            ExprHead::Variadic(ValVarOp::Call | ValVarOp::PartialApply, args) => {
+            ExprHead::Variadic(ValVarOp::PartialApply, args) => {
                 let f = args[0];
                 let mut ret = f;
                 for arg in args[1..].iter() {

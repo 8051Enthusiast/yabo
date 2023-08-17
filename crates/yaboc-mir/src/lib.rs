@@ -10,7 +10,7 @@ use fxhash::FxHashMap;
 
 use len::LenMirCtx;
 pub use strictness::Strictness;
-use yaboc_ast::expr::{ValBinOp, ValUnOp, WiggleKind};
+use yaboc_ast::expr::WiggleKind;
 use yaboc_ast::ConstraintAtom;
 use yaboc_base::dbpanic;
 use yaboc_base::{
@@ -23,6 +23,7 @@ use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
 use yaboc_hir::{Block, BlockId, ExprId, HirConstraintId, HirIdWrapper, ParserDefId};
 use yaboc_hir_types::FullTypeId;
 use yaboc_resolve::expr::{Resolved, ResolvedAtom};
+use yaboc_resolve::expr::{ValBinOp, ValUnOp};
 use yaboc_types::{Type, TypeId};
 
 use self::convert::ConvertCtx;
@@ -136,8 +137,6 @@ impl TryFrom<&ValBinOp> for IntBinOp {
             | ValBinOp::Greater
             | ValBinOp::Uneq
             | ValBinOp::Equals
-            | ValBinOp::Compose
-            | ValBinOp::Index
             | ValBinOp::ParserApply
             | ValBinOp::Else
             | ValBinOp::Then => return Err(()),
@@ -166,8 +165,6 @@ impl TryFrom<&ValBinOp> for Comp {
             | ValBinOp::Div
             | ValBinOp::Modulo
             | ValBinOp::Mul
-            | ValBinOp::Compose
-            | ValBinOp::Index
             | ValBinOp::ParserApply
             | ValBinOp::Else
             | ValBinOp::Then => return Err(()),
@@ -262,6 +259,7 @@ pub enum MirInstr {
     SetDiscriminant(PlaceRef, FieldName, bool),
     ApplyArgs(PlaceRef, PlaceRef, Vec<PlaceRef>, u64, ControlFlow),
     Copy(PlaceRef, PlaceRef, ControlFlow),
+    EvalFun(PlaceRef, PlaceRef, ControlFlow),
     ParseCall(
         Option<PlaceRef>,
         Option<PlaceRef>,
@@ -289,6 +287,7 @@ impl MirInstr {
                 | MirInstr::LenCall(..)
                 | MirInstr::ApplyArgs(..)
                 | MirInstr::Copy(..)
+                | MirInstr::EvalFun(..)
         )
     }
     pub fn control_flow(&self) -> Option<ControlFlow> {
@@ -304,7 +303,8 @@ impl MirInstr {
             | MirInstr::ParseCall(_, _, _, _, _, Some(control_flow))
             | MirInstr::LenCall(_, _, control_flow)
             | MirInstr::ApplyArgs(_, _, _, _, control_flow)
-            | MirInstr::Copy(_, _, control_flow) => Some(*control_flow),
+            | MirInstr::Copy(_, _, control_flow)
+            | MirInstr::EvalFun(_, _, control_flow) => Some(*control_flow),
             _ => None,
         }
     }
@@ -335,6 +335,9 @@ impl MirInstr {
             }
             MirInstr::Copy(ret, val, control_flow) => {
                 MirInstr::Copy(*ret, *val, control_flow.map_bb(f))
+            }
+            MirInstr::EvalFun(ret, val, control_flow) => {
+                MirInstr::EvalFun(*ret, *val, control_flow.map_bb(f))
             }
             _ => {
                 assert!(self.control_flow().is_none());
@@ -868,6 +871,18 @@ impl FunctionWriter {
                 args,
                 first_arg_index,
                 ControlFlow::new_with_error(new_block, error),
+            ));
+        self.set_bb(new_block);
+    }
+
+    pub fn eval_fun(&mut self, fun: PlaceRef, ret: PlaceRef, exc: ExceptionRetreat) {
+        let new_block = self.new_bb();
+        self.fun
+            .bb_mut(self.current_bb)
+            .append_ins(MirInstr::EvalFun(
+                ret,
+                fun,
+                ControlFlow::new_with_exc(new_block, exc),
             ));
         self.set_bb(new_block);
     }

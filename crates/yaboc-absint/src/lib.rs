@@ -3,7 +3,6 @@ mod represent;
 use std::{num::NonZeroU64, sync::Arc};
 
 use hir::{BlockId, Hirs};
-use yaboc_ast::expr;
 use yaboc_base::{
     dbpanic,
     error::{IsSilenced, Silencable},
@@ -15,7 +14,7 @@ use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, ShapedData, TakeRef};
 use yaboc_hir as hir;
 use yaboc_hir::HirIdWrapper;
 use yaboc_hir_types::{FullTypeId, NominalId, TyHirs};
-use yaboc_resolve::expr::Resolved;
+use yaboc_resolve::expr::{self, Resolved};
 use yaboc_types::{Type, TypeId, TypeInterner};
 
 use fxhash::{FxHashMap, FxHashSet};
