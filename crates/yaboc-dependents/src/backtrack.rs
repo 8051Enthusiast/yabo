@@ -33,7 +33,7 @@ fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<(bool, bo
                     (will, can || kind == WiggleKind::If)
                 }
                 ExprHead::Monadic(ValUnOp::BtMark(BtMarkKind::KeepBt), (will, _)) => (will, true),
-                ExprHead::Monadic(ValUnOp::EvalFun, (will, can)) => (will, can),
+                ExprHead::Monadic(ValUnOp::EvalFun, (will, can)) => (will || can, false),
                 ExprHead::Monadic(_, (will, _)) => (will, false),
                 ExprHead::Dyadic(ValBinOp::ParserApply, [(will_left, _), (will_right, can)]) => {
                     (will_left || will_right || can, false)

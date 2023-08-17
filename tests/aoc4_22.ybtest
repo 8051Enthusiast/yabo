@@ -2,15 +2,15 @@
 import std
 
 def *range = {
-  start: std.basenum?(10), ~, end: std.basenum(10)
+  start: std.basenum(10)?, ~, end: std.basenum(10)
 }
 
 def *is_subrange = {
   a: range?, ~, b: range, std.newline
-  | | assert?(a.start <= b.start)
-      assert?(a.end >= b.end)
-    | assert?(a.start >= b.start)
-      assert?(a.end <= b.end)
+  | | assert(a.start <= b.start)?
+      assert(a.end >= b.end)?
+    | assert(a.start >= b.start)?
+      assert(a.end <= b.end)?
     let return = 1
   | let return = 0
 }

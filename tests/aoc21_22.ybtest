@@ -10,22 +10,22 @@ def *op = {
 def *line = {
   name: u32l
   ~, ~
-  | num: std.basenum?(10)
+  | num: std.basenum(10)?
   | res: op
   std.newline?
 }
 
 def *calculate_line(start: std.list[*line], x: std.list[*line], name: int): int = {
-  | let current = x.this?
-    assert?(current.name == name)
+  | let current = x.?this
+    assert(current.name == name)?
     | let return = current.?num
     | let res = current.?res
       left: calculate_line(start, start, res.left)
       right: calculate_line(start, start, res.right)
-      | assert?(res.op == '*'), let return = left * right
-      | assert?(res.op == '+'), let return = left + right
-      | assert?(res.op == '-'), let return = left - right
-      | assert?(res.op == '/'), let return = left / right
+      | assert(res.op == '*')?, let return = left * right
+      | assert(res.op == '+')?, let return = left + right
+      | assert(res.op == '-')?, let return = left - right
+      | assert(res.op == '/')?, let return = left / right
   | return: calculate_line(start, x.?next, name)
 }
 

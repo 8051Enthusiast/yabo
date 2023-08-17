@@ -13,11 +13,11 @@ def *uniqc(bitset: int) = {
 
 def *repeat_fold(f: *'t('t), start: 't, n: int): int = {
   | let return = n if 0
-  | next: f?(start)
-    return: repeat_fold?(f?, next, n - 1)
+  | next: f(start)?
+    return: repeat_fold(f?, next, n - 1)?
 }
 
-def *marker = repeat_fold?(uniqc?, 0, 4)
+def *marker = repeat_fold(uniqc?, 0, 4)?
 
 export def *test = find(marker?, 4)
 
