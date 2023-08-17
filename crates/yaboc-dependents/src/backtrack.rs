@@ -36,10 +36,13 @@ fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<(bool, bo
                 ExprHead::Monadic(ValUnOp::EvalFun, (will, can)) => (will, can),
                 ExprHead::Monadic(_, (will, _)) => (will, false),
                 ExprHead::Dyadic(ValBinOp::ParserApply, [(will_left, _), (will_right, can)]) => {
-                    (will_left || will_right || can, true)
+                    (will_left || will_right || can, false)
                 }
                 ExprHead::Dyadic(ValBinOp::Else, [(_, can_left), (will, can_right)]) => {
                     (will, can_left || can_right)
+                }
+                ExprHead::Dyadic(ValBinOp::Then, [(will_left, _), (will_right, can)]) => {
+                    (will_left || will_right, can)
                 }
                 ExprHead::Dyadic(_, [(will_left, _), (will_right, _)]) => {
                     (will_left || will_right, false)
