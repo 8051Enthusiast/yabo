@@ -354,6 +354,7 @@ pub enum LayoutPart {
     SetArg(PSize),
     Len,
     Mask,
+    EvalFun,
 }
 
 impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
@@ -391,6 +392,7 @@ impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
             LayoutPart::SetArg(idx) => write!(f, "set_arg_{idx}"),
             LayoutPart::Len => write!(f, "len"),
             LayoutPart::Mask => write!(f, "mask"),
+            LayoutPart::EvalFun => write!(f, "eval_fun"),
         }
     }
 }

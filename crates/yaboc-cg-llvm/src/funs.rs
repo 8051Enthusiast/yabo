@@ -10,7 +10,7 @@ use yaboc_mir::{FunKind, MirKind};
 
 use crate::{
     convert_regex::RegexTranslator,
-    convert_thunk::{BlockThunk, CreateArgsThunk, TypecastThunk, ValThunk},
+    convert_thunk::{BlockThunk, TransmuteCopyThunk, TypecastThunk, ValThunk},
     defs::TAILCC,
 };
 
@@ -1120,7 +1120,24 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
     }
 
-    fn create_create_fun_args(
+    fn create_eval_fun_fun(&mut self, layout: IMonoLayout<'comp>) {
+        let target_layout = layout
+            .inner()
+            .eval_fun(self.layouts)
+            .unwrap()
+            .maybe_mono()
+            .unwrap();
+        let f = self.eval_fun_fun_val(layout);
+        self.add_entry_block(f);
+        let create_args_thunk = TransmuteCopyThunk {
+            from: layout,
+            to: target_layout,
+            f,
+        };
+        ThunkContext::new(self, create_args_thunk).build();
+    }
+
+    fn create_create_fun_args_fun(
         &mut self,
         layout: IMonoLayout<'comp>,
         args: ILayout<'comp>,
@@ -1150,12 +1167,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 &layout.inner()
             );
         };
+        let f = self.function_create_args_fun_val(layout, slot);
+        self.add_entry_block(f);
         ThunkContext::new(
             self,
-            CreateArgsThunk {
+            TransmuteCopyThunk {
                 from: layout,
                 to: return_layout,
-                slot,
+                f,
             },
         )
         .build();
@@ -1217,6 +1236,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_funcalls(&mut self, layout: IMonoLayout<'comp>) {
+        let Type::FunctionArg(_, args) = self.layouts.db.lookup_intern_type(layout.mono_layout().1)
+        else {
+            panic!("attempting to create funcalls of non-function layout")
+        };
+        if args.is_empty() {
+            self.create_eval_fun_fun(layout)
+        }
         let collected_layouts = self.collected_layouts.clone();
         for (slot, args) in collected_layouts
             .funcall_slots
@@ -1226,7 +1252,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .unwrap_or_default()
             .iter()
         {
-            self.create_create_fun_args(layout, *args, *slot);
+            self.create_create_fun_args_fun(layout, *args, *slot);
         }
     }
 

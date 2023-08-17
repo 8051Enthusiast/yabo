@@ -1,4 +1,4 @@
-use yaboc_layout::vtable::{BlockFieldFun, CreateArgFun, LenFun};
+use yaboc_layout::vtable::{BlockFieldFun, CreateArgFun, EvalFunFun, LenFun};
 
 use super::*;
 
@@ -245,6 +245,24 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 }
             })
             .collect();
+        let ty = self
+            .compiler_database
+            .db
+            .lookup_intern_type(layout.mono_layout().1);
+        let is_full = if let Type::FunctionArg(_, args) = ty {
+            args.is_empty()
+        } else {
+            panic!("expected function type")
+        };
+        let eval_fun_impl = if is_full {
+            self.eval_fun_fun_val(layout)
+                .as_global_value()
+                .as_pointer_value()
+        } else {
+            EvalFunFun::codegen_ty(self)
+                .into_pointer_type()
+                .const_null()
+        };
         let vtable_array = CreateArgFun::codegen_ty(self)
             .into_pointer_type()
             .const_array(&vtable_impls);
@@ -252,6 +270,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             &[
                 arg_impl_array.into(),
                 vtable_header.into(),
+                eval_fun_impl.into(),
                 vtable_array.into(),
             ],
             false,

@@ -142,36 +142,28 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         dbeprintln!(self.ctx.db, "[collection] registered block {}", &mono);
                     }
                 }
-                MonoLayout::NominalParser(pd, args, bt) => {
-                    let argnum = self.ctx.db.argnum(*pd).unwrap().unwrap_or(0);
-                    if args.len() == argnum {
+                MonoLayout::NominalParser(_, _, _)
+                | MonoLayout::ArrayParser(Some((_, Some(_)))) => {
+                    let ty = self.ctx.db.lookup_intern_type(mono.mono_layout().1);
+                    if let Type::ParserArg { .. } = ty {
                         if self.parsers.insert(mono) && TRACE_COLLECTION {
                             dbeprintln!(self.ctx.db, "[collection] registered parser {}", &mono);
                         }
-                        if *bt {
-                            let nbt = mono.remove_backtracking(self.ctx);
-                            if self.parsers.insert(nbt) && TRACE_COLLECTION {
-                                dbeprintln!(self.ctx.db, "[collection] registered parser {}", &nbt);
-                            }
+                        let nbt = mono.remove_backtracking(self.ctx);
+                        if self.parsers.insert(nbt) && TRACE_COLLECTION {
+                            dbeprintln!(self.ctx.db, "[collection] registered parser {}", &nbt);
                         }
                     } else {
                         if self.functions.insert(mono) && TRACE_COLLECTION {
                             dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
                         }
-                        if *bt {
-                            let nbt = mono.remove_backtracking(self.ctx);
-                            if self.functions.insert(nbt) && TRACE_COLLECTION {
-                                dbeprintln!(
-                                    self.ctx.db,
-                                    "[collection] registered function {}",
-                                    &nbt
-                                );
-                            }
+                        let nbt = mono.remove_backtracking(self.ctx);
+                        if self.functions.insert(nbt) && TRACE_COLLECTION {
+                            dbeprintln!(self.ctx.db, "[collection] registered function {}", &nbt);
                         }
                     }
                 }
                 MonoLayout::BlockParser(..)
-                | MonoLayout::ArrayParser(Some((_, Some(_))))
                 | MonoLayout::Single
                 | MonoLayout::Nil
                 | MonoLayout::IfParser(..)

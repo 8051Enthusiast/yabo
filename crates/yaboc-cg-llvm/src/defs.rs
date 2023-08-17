@@ -199,6 +199,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret
     }
 
+    pub(super) fn eval_fun_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
+        let ret = self.ppi_fun_val(layout, LayoutPart::EvalFun);
+        ret
+    }
+
     pub(super) fn arg_level_and_offset(
         &mut self,
         layout: IMonoLayout<'comp>,
