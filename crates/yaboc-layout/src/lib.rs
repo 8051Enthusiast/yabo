@@ -516,9 +516,9 @@ impl<'a> ILayout<'a> {
                 panic!("Attempting to apply function to non-function type")
             };
             match layout.mono_layout().0 {
-                MonoLayout::NominalParser(pd, present_args, backtracks) => {
+                MonoLayout::NominalParser(pd, present_args, _) => {
                     Ok(ctx.dcx.intern(Layout::Mono(
-                        MonoLayout::NominalParser(*pd, present_args.clone(), *backtracks),
+                        MonoLayout::NominalParser(*pd, present_args.clone(), true),
                         result_type,
                     )))
                 }
