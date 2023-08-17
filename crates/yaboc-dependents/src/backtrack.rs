@@ -1,9 +1,10 @@
-use yaboc_ast::expr::{BtMarkKind, ValBinOp, ValUnOp, WiggleKind};
+use yaboc_ast::expr::{WiggleKind, BtMarkKind};
 use yaboc_base::{error::SResult, interner::DefId};
 use yaboc_expr::{ExprHead, Expression, FetchExpr, TakeRef};
 use yaboc_hir::{ExprId, HirNode};
 use yaboc_hir_types::FullTypeId;
 use yaboc_resolve::expr::{Resolved, ResolvedAtom};
+use yaboc_resolve::expr::{ValBinOp, ValUnOp};
 use yaboc_types::Type;
 
 use crate::Dependents;
@@ -32,6 +33,7 @@ fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<(bool, bo
                     (will, can || kind == WiggleKind::If)
                 }
                 ExprHead::Monadic(ValUnOp::BtMark(BtMarkKind::KeepBt), (will, _)) => (will, true),
+                ExprHead::Monadic(ValUnOp::EvalFun, (will, can)) => (will, can),
                 ExprHead::Monadic(_, (will, _)) => (will, false),
                 ExprHead::Dyadic(ValBinOp::ParserApply, [(will_left, _), (will_right, can)]) => {
                     (will_left || will_right || can, true)
@@ -39,7 +41,6 @@ fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<(bool, bo
                 ExprHead::Dyadic(ValBinOp::Else, [(_, can_left), (will, can_right)]) => {
                     (will, can_left || can_right)
                 }
-                ExprHead::Dyadic(ValBinOp::Compose, ..) => unreachable!(),
                 ExprHead::Dyadic(_, [(will_left, _), (will_right, _)]) => {
                     (will_left || will_right, false)
                 }

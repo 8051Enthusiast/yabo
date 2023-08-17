@@ -12,7 +12,7 @@ use fxhash::FxHashMap;
 
 use hir::HirConstraint;
 use resolve::expr::Resolved;
-use yaboc_ast::expr::{self, Atom, TypeBinOp, TypeUnOp, ValBinOp, ValUnOp, ValVarOp};
+use yaboc_ast::expr::{self, Atom, TypeBinOp, TypeUnOp};
 use yaboc_ast::{ArrayKind, ConstraintAtom};
 use yaboc_base::{
     error::{IsSilenced, SResult, Silencable, SilencedError},
@@ -26,7 +26,10 @@ use yaboc_expr::{
 use yaboc_hir::{
     self as hir, walk::ChildIter, ExprId, HirIdWrapper, HirNodeKind, ParseStatement, ParserDefRef,
 };
-use yaboc_resolve::{self as resolve, expr::ResolvedAtom};
+use yaboc_resolve::{
+    self as resolve,
+    expr::{ResolvedAtom, ValBinOp, ValUnOp, ValVarOp},
+};
 use yaboc_types::inference::Application;
 use yaboc_types::{
     inference::{
@@ -390,7 +393,6 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         }
                         Else => self.infctx.one_of(&[left, right])?,
                         Then => right,
-                        Compose | Index => unreachable!(),
                         ParserApply => self.infctx.parser_apply(right, left)?,
                     },
                     ExprHead::Monadic(op, &inner) => match &op {
@@ -403,7 +405,6 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                             self.infctx.check_parser(inner)?;
                             self.infctx.int()
                         }
-                        ValUnOp::Array => unreachable!(),
                         ValUnOp::Wiggle(c, _) => {
                             let (inner, cont) = self.infctx.if_checked(inner)?;
                             let expr = self.db.lookup_intern_hir_constraint(*c);
@@ -417,6 +418,9 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         // so that backtracking can be toggled
                         ValUnOp::BtMark(_) => inner,
                         ValUnOp::Dot(name, _) => self.infctx.access_field(inner, *name)?,
+                        ValUnOp::EvalFun => {
+                            self.infctx.function_apply(inner, &[], Application::Full)?
+                        }
                     },
                     ExprHead::Niladic(a) => match &a {
                         ResolvedAtom::Char(_) => self.infctx.char(),
@@ -432,11 +436,6 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                             self.infctx.lookup(*v)?
                         }
                     },
-                    ExprHead::Variadic(ValVarOp::Call, inner) => self.infctx.function_apply(
-                        *inner[0],
-                        &inner[1..].iter().copied().copied().collect::<Vec<_>>(),
-                        Application::Full,
-                    )?,
                     ExprHead::Variadic(ValVarOp::PartialApply, inner) => {
                         self.infctx.function_apply(
                             *inner[0],

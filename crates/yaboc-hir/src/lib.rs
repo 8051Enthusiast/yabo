@@ -65,16 +65,28 @@ pub trait Hirs: yaboc_ast::Asts {
     fn argnum(&self, pd: ParserDefId) -> SResult<Option<usize>>;
     fn parserdef_arg(&self, pd: ParserDefId, name: Identifier) -> SResult<Option<ArgDefId>>;
     fn parserdef_arg_index(&self, pd: ParserDefId, id: DefId) -> SResult<Option<usize>>;
-    fn core_item(&self, item: CoreItem) -> SResult<ParserDefId>;
+    fn core_items(&self) -> SResult<CoreItems>;
     #[salsa::interned]
     fn intern_hir_constraint(&self, c: HirConstraintExpressionRoot) -> HirConstraintId;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(u8)]
 pub enum CoreItem {
     Compose,
     Index,
 }
+
+impl CoreItem {
+    fn name(self) -> &'static str {
+        match self {
+            CoreItem::Compose => "compose",
+            CoreItem::Index => "index",
+        }
+    }
+}
+
+const CORE_ITEM_LIST: &[CoreItem] = &[CoreItem::Compose, CoreItem::Index];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct HirConstraintId(InternId);
@@ -334,20 +346,36 @@ fn parserdef_arg_index(db: &dyn Hirs, pd: ParserDefId, id: DefId) -> SResult<Opt
     Ok(index)
 }
 
-fn core_item(db: &dyn Hirs, item: CoreItem) -> SResult<ParserDefId> {
-    let name = match item {
-        CoreItem::Compose => "compose",
-        CoreItem::Index => "index",
-    };
-    let compose = db.intern_identifier(IdentifierName { name: name.into() });
-    let compose_item = db.intern_hir_path(DefinitionPath::Path(
-        PathComponent::Named(FieldName::Ident(compose)),
-        db.intern_hir_path(DefinitionPath::Module(db.core()?)),
-    ));
-    let HirNode::ParserDef(compose_pd) = db.hir_node(compose_item)? else {
-        panic!("compose is not a parser def");
-    };
-    Ok(compose_pd.id)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoreItems {
+    items: Arc<Vec<ParserDefId>>,
+}
+
+impl std::ops::Index<CoreItem> for CoreItems {
+    type Output = ParserDefId;
+
+    fn index(&self, index: CoreItem) -> &Self::Output {
+        &self.items[index as u8 as usize]
+    }
+}
+
+fn core_items(db: &dyn Hirs) -> SResult<CoreItems> {
+    let mut items = Vec::new();
+    for item in CORE_ITEM_LIST.iter() {
+        let name = item.name();
+        let name = db.intern_identifier(IdentifierName { name: name.into() });
+        let core_item = db.intern_hir_path(DefinitionPath::Path(
+            PathComponent::Named(FieldName::Ident(name)),
+            db.intern_hir_path(DefinitionPath::Module(db.core()?)),
+        ));
+        let HirNode::ParserDef(core_pd) = db.hir_node(core_item)? else {
+            panic!("core item is not a parser def");
+        };
+        items.push(core_pd.id);
+    }
+    Ok(CoreItems {
+        items: Arc::new(items),
+    })
 }
 
 macro_rules! hir_id_wrapper {
