@@ -505,6 +505,34 @@ impl<'a> ILayout<'a> {
             })
     }
 
+    pub fn eval_fun(
+        self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+    ) -> Result<ILayout<'a>, LayoutError> {
+        self.try_map(ctx, |layout, ctx| {
+            let Type::FunctionArg(result_type, _) =
+                ctx.db.lookup_intern_type(layout.mono_layout().1)
+            else {
+                panic!("Attempting to apply function to non-function type")
+            };
+            match layout.mono_layout().0 {
+                MonoLayout::NominalParser(pd, present_args, backtracks) => {
+                    Ok(ctx.dcx.intern(Layout::Mono(
+                        MonoLayout::NominalParser(*pd, present_args.clone(), *backtracks),
+                        result_type,
+                    )))
+                }
+                MonoLayout::ArrayParser(Some((parser, Some(int)))) => {
+                    Ok(ctx.dcx.intern(Layout::Mono(
+                        MonoLayout::ArrayParser(Some((*parser, Some(*int)))),
+                        result_type,
+                    )))
+                }
+                _ => panic!("Attempting to apply function to non-function layout"),
+            }
+        })
+    }
+
     pub fn apply_fun(
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
@@ -520,9 +548,6 @@ impl<'a> ILayout<'a> {
                 .zip(args.clone())
                 .map(|(ty, (arg, _))| arg.typecast(ctx, *ty).map(|x| (x.0, *ty)))
                 .collect::<Result<Vec<_>, _>>()?;
-            if typecast_args.is_empty() {
-                return Ok(layout.inner());
-            }
             match layout.mono_layout().0 {
                 MonoLayout::NominalParser(pd, present_args, backtracks) => {
                     let present_args = present_args
@@ -531,14 +556,10 @@ impl<'a> ILayout<'a> {
                         .copied()
                         .collect();
                     let layout = MonoLayout::NominalParser(*pd, present_args, *backtracks);
-                    let ty = if arg_types.len() == typecast_args.len() {
-                        result_type
-                    } else {
-                        ctx.db.intern_type(Type::FunctionArg(
-                            result_type,
-                            Arc::new(arg_types[typecast_args.len()..].to_vec()),
-                        ))
-                    };
+                    let ty = ctx.db.intern_type(Type::FunctionArg(
+                        result_type,
+                        Arc::new(arg_types[typecast_args.len()..].to_vec()),
+                    ));
                     let res = ctx.dcx.intern(Layout::Mono(layout, ty));
                     Ok(res)
                 }
@@ -547,7 +568,9 @@ impl<'a> ILayout<'a> {
                     assert_eq!(typecast_args.len(), 1);
                     let (arg, _) = typecast_args[0];
                     let layout = MonoLayout::ArrayParser(Some((*inner_parser, Some(arg))));
-                    let ty = result_type;
+                    let ty = ctx
+                        .db
+                        .intern_type(Type::FunctionArg(result_type, Arc::default()));
                     let res = ctx.dcx.intern(Layout::Mono(layout, ty));
                     Ok(res)
                 }
@@ -1029,7 +1052,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 }
                 ValUnOp::Dot(a, ..) => inner.0.access_field(ctx, a)?,
                 ValUnOp::BtMark(bt) => inner.0.with_backtrack_status(ctx, bt),
-                ValUnOp::EvalFun => inner.0,
+                ValUnOp::EvalFun => inner.0.eval_fun(ctx)?,
             },
             ExprHead::Dyadic(op, [lhs, rhs]) => match op {
                 ValBinOp::ParserApply => rhs.0.apply_arg(ctx, lhs.0)?,

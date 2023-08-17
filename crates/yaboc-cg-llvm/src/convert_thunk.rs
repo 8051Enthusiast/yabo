@@ -148,20 +148,18 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TypecastThunk<'comp, 'llvm> {
     }
 }
 
-pub struct CreateArgsThunk<'comp> {
+pub struct TransmuteCopyThunk<'comp, 'llvm> {
     pub from: IMonoLayout<'comp>,
     pub to: IMonoLayout<'comp>,
-    pub slot: PSize,
+    pub f: FunctionValue<'llvm>,
 }
 
-impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for CreateArgsThunk<'comp> {
+impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TransmuteCopyThunk<'comp, 'llvm> {
     fn alloc_size(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> SizeAlign {
         self.to.inner().size_align(cg.layouts).unwrap()
     }
-    fn function(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
-        let f = cg.function_create_args_fun_val(self.from, self.slot);
-        cg.add_entry_block(f);
-        f
+    fn function(&self, _: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
+        self.f
     }
     fn build_copy_region_ptr(
         &self,
@@ -488,8 +486,10 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
 
     fn build_vtable_any_ptr(&mut self) -> PointerValue<'llvm> {
         let bt_ptr = self.cg.build_get_vtable_tag(self.target_layout);
-        if let MonoLayout::NominalParser(..) = self.target_layout.mono_layout().0 {
-        } else {
+        if !matches!(
+            self.target_layout.mono_layout().0,
+            MonoLayout::NominalParser(..)
+        ) {
             return bt_ptr;
         }
         let nbt_target_layout = self.target_layout.remove_backtracking(self.cg.layouts);

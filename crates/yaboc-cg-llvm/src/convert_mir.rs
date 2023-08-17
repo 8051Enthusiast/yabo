@@ -207,6 +207,17 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         self.controlflow_case(ret, ctrl)
     }
 
+    fn eval_fun(&mut self, to: PlaceRef, from: PlaceRef, ctrl: ControlFlow) {
+        let to = self.return_val(to);
+        let from = self.place_val(from);
+        if let Layout::None = from.layout.layout.1 {
+            self.cg.builder.build_unreachable();
+            return;
+        }
+        let ret = self.cg.call_eval_fun_fun(to, from);
+        self.controlflow_case(ret, ctrl)
+    }
+
     fn unwrap_block_id(&mut self, layout: ILayout<'comp>) -> BlockId {
         match layout
             .maybe_mono()
@@ -624,9 +635,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::SetDiscriminant(block, field, val) => {
                 self.set_discriminant(block, field, val)
             }
-            MirInstr::Copy(to, from, ctrl) | MirInstr::EvalFun(to, from, ctrl) => {
-                self.copy(to, from, ctrl)
-            }
+            MirInstr::EvalFun(to, from, ctrl) => self.eval_fun(to, from, ctrl),
+            MirInstr::Copy(to, from, ctrl) => self.copy(to, from, ctrl),
             MirInstr::ApplyArgs(ret, fun, args, first_index, ctrl) => {
                 self.apply_args(ret, fun, &args, first_index, ctrl)
             }

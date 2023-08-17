@@ -280,6 +280,21 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.build_call_with_int_ret(len, &[arg.ptr.into()])
     }
 
+    pub(super) fn call_eval_fun_fun(
+        &mut self,
+        ret: CgReturnValue<'llvm>,
+        arg: CgValue<'comp, 'llvm>,
+    ) -> IntValue<'llvm> {
+        let eval_fun = match arg.layout.maybe_mono() {
+            Some(mono) => self.sym_callable(mono, LayoutPart::EvalFun),
+            None => self.vtable_callable::<vtable::FunctionVTable>(
+                arg.ptr,
+                &[FunctionVTableFields::eval_fun_impl as u64],
+            ),
+        };
+        self.build_call_with_int_ret(eval_fun, &[ret.ptr.into(), arg.ptr.into(), ret.head.into()])
+    }
+
     pub(super) fn call_mask_fun(&mut self, arg: CgValue<'comp, 'llvm>) {
         let len = match arg.layout.maybe_mono() {
             Some(mono) => self.sym_callable(mono, LayoutPart::Mask),

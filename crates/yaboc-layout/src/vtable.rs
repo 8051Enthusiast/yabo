@@ -62,11 +62,13 @@ target_struct! {
 }
 
 pub type CreateArgFun = fn(ret: *mut u8, from: *const u8, target_head: i64) -> i64;
+pub type EvalFunFun = fn(ret: *mut u8, fun: *const u8, target_head: i64) -> i64;
 
 target_struct! {
     pub struct FunctionVTable {
         pub set_arg_info: [ArgDescriptor; 0],
         pub head: VTableHeader,
+        pub eval_fun_impl: Option<EvalFunFun>,
         pub apply_table: [CreateArgFun; 0],
     }
 }
