@@ -148,15 +148,22 @@ impl<'a> IMonoLayout<'a> {
         self.0
     }
 
-    pub fn int_single(ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> IMonoLayout<'a> {
-        let int = ctx.db.intern_type(Type::Primitive(PrimitiveType::Int));
-        let for_int = ctx.db.intern_type(Type::Loop(ArrayKind::Each, int));
+    pub fn u8_single(ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> IMonoLayout<'a> {
+        let u8 = ctx.db.intern_type(Type::Primitive(PrimitiveType::U8));
+        let for_u8 = ctx.db.intern_type(Type::Loop(ArrayKind::Each, u8));
         let parser_ty = ctx.db.intern_type(Type::ParserArg {
-            result: int,
-            arg: for_int,
+            result: u8,
+            arg: for_u8,
         });
         let single = ctx.dcx.intern(Layout::Mono(MonoLayout::Single, parser_ty));
-        single.into_iter().next().unwrap()
+        single.maybe_mono().unwrap()
+    }
+
+    pub fn u8_array(ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> IMonoLayout<'a> {
+        let u8 = ctx.db.intern_type(Type::Primitive(PrimitiveType::U8));
+        let for_u8 = ctx.db.intern_type(Type::Loop(ArrayKind::Each, u8));
+        let array = ctx.dcx.intern(Layout::Mono(MonoLayout::SlicePtr, for_u8));
+        array.maybe_mono().unwrap()
     }
 
     pub fn symbol<DB: Layouts + ?Sized>(
@@ -516,12 +523,10 @@ impl<'a> ILayout<'a> {
                 panic!("Attempting to apply function to non-function type")
             };
             match layout.mono_layout().0 {
-                MonoLayout::NominalParser(pd, present_args, _) => {
-                    Ok(ctx.dcx.intern(Layout::Mono(
-                        MonoLayout::NominalParser(*pd, present_args.clone(), true),
-                        result_type,
-                    )))
-                }
+                MonoLayout::NominalParser(pd, present_args, _) => Ok(ctx.dcx.intern(Layout::Mono(
+                    MonoLayout::NominalParser(*pd, present_args.clone(), true),
+                    result_type,
+                ))),
                 MonoLayout::ArrayParser(Some((parser, Some(int)))) => {
                     Ok(ctx.dcx.intern(Layout::Mono(
                         MonoLayout::ArrayParser(Some((*parser, Some(*int)))),
@@ -900,6 +905,10 @@ impl<'a> LayoutContext<'a> {
         let int_ty = db.intern_type(Type::Primitive(prim));
         self.intern(Layout::Mono(MonoLayout::Primitive(prim), int_ty))
     }
+
+    pub fn layout_hash(&mut self, db: &(impl Layouts + ?Sized), layout: ILayout<'a>) -> [u8; 8] {
+        self.hashes.hash(layout, db)[..8].try_into().unwrap()
+    }
 }
 
 impl<'a> AbstractDomain<'a> for ILayout<'a> {
@@ -1194,18 +1203,20 @@ def *main = {
             .intern_type(Type::Nominal(ctx.db.parser_args(main).unwrap().thunk));
         collected_layouts(&mut outlayer, &[main]).unwrap();
         let canon_2004 = canon_layout(&mut outlayer, main_ty).unwrap();
+        let from = IMonoLayout::u8_array(&mut outlayer);
+        let hash = outlayer.dcx.layout_hash(&ctx.db, from.inner());
         for lay in &canon_2004 {
             assert_eq!(
                 lay.symbol(
                     &mut outlayer,
                     LayoutPart::Parse(
-                        0,
                         NeededBy::Len | NeededBy::Backtrack,
                         represent::ParserFunKind::Worker,
+                        hash
                     ),
                     &ctx.db
                 ),
-                "main$88082689c1307225$parse_0_lb_worker"
+                "main$88082689c1307225$parse_278b484a9faf573c_lb_worker"
             );
         }
         let main_block = outlayer.pd_result()[&canon_2004]
@@ -1218,13 +1229,13 @@ def *main = {
                 lay.symbol(
                     &mut outlayer,
                     LayoutPart::Parse(
-                        0,
                         NeededBy::Val | NeededBy::Backtrack,
                         represent::ParserFunKind::Wrapper,
+                        hash
                     ),
                     &ctx.db
                 ),
-                "block_6c872ebf06064930$3b75767829875ed1$parse_0_vb"
+                "block_6c872ebf06064930$3b75767829875ed1$parse_278b484a9faf573c_vb"
             );
         }
         let field = |name| FieldName::Ident(ctx.id(name));

@@ -7,9 +7,7 @@ use inkwell::{
 use yaboc_dependents::{NeededBy, RequirementSet};
 use yaboc_hir_types::{TyHirs, NOBACKTRACK_BIT, VTABLE_BIT};
 use yaboc_layout::{
-    collect::pd_val_req,
-    prop::{PSize, SizeAlign},
-    ILayout, IMonoLayout, MonoLayout, TailInfo,
+    collect::pd_val_req, prop::SizeAlign, ILayout, IMonoLayout, MonoLayout, TailInfo,
 };
 use yaboc_types::PrimitiveType;
 
@@ -128,7 +126,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TypecastThunk<'comp, 'llvm> {
             cg.call_current_element_fun(ret, thunk.into())
         } else {
             let arg_copy = self.arg_copy.unwrap();
-            let (from, fun, slot) = cg.build_nominal_components(thunk, pd_val_req());
+            let (from, fun, _) = cg.build_nominal_components(thunk, pd_val_req());
             let fun = if let Some(fun_cpy) = self.fun_copy {
                 cg.build_copy_invariant(fun_cpy.into(), fun.into());
                 fun_cpy
@@ -137,7 +135,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TypecastThunk<'comp, 'llvm> {
             };
             cg.build_copy_invariant(arg_copy, from);
 
-            cg.call_parser_fun_impl(ret, fun, arg_copy, slot, NeededBy::Val.into(), false)
+            cg.call_parser_fun_impl(ret, fun, arg_copy, NeededBy::Val.into(), false)
         };
 
         cg.builder.build_return(Some(&ret));
@@ -195,7 +193,6 @@ pub struct ValThunk<'comp> {
     from: ILayout<'comp>,
     fun: IMonoLayout<'comp>,
     thunk: IMonoLayout<'comp>,
-    slot: PSize,
     req: RequirementSet,
 }
 
@@ -204,14 +201,12 @@ impl<'comp> ValThunk<'comp> {
         from: ILayout<'comp>,
         fun: IMonoLayout<'comp>,
         thunk: IMonoLayout<'comp>,
-        slot: PSize,
         req: RequirementSet,
     ) -> Self {
         Self {
             from,
             fun,
             thunk,
-            slot,
             req,
         }
     }
@@ -226,7 +221,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for ValThunk<'comp> {
     }
 
     fn function(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
-        let f = cg.parser_fun_val_tail(self.fun, self.slot, self.req);
+        let f = cg.parser_fun_val_tail(self.fun, self.from, self.req);
         cg.add_entry_block(f);
         f
     }
@@ -278,7 +273,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for ValThunk<'comp> {
 
         let (ret, fun, arg) = parser_values(fun, self.fun, self.from);
 
-        let ret = cg.call_parser_fun_impl(ret, fun, arg, self.slot, req, true);
+        let ret = cg.call_parser_fun_impl(ret, fun, arg, req, true);
         cg.builder.build_return(Some(&ret));
         if let Some(bb) = previous_bb {
             cg.builder.position_at_end(bb);
@@ -296,7 +291,6 @@ pub struct BlockThunk<'comp> {
     pub fun: IMonoLayout<'comp>,
     pub result: IMonoLayout<'comp>,
     pub req: RequirementSet,
-    pub slot: PSize,
 }
 
 impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for BlockThunk<'comp> {
@@ -305,7 +299,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for BlockThunk<'comp> {
     }
 
     fn function(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
-        let f = cg.parser_fun_val_tail(self.fun, self.slot, self.req);
+        let f = cg.parser_fun_val_tail(self.fun, self.from, self.req);
         cg.add_entry_block(f);
         f
     }
@@ -334,7 +328,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for BlockThunk<'comp> {
         let (ret_val, fun_val, arg_val) = parser_values(fun, self.fun, self.from);
         let ret_val = ret_val.with_ptr(return_ptr);
 
-        let ret = cg.call_parser_fun_impl(ret_val, fun_val, arg_val, self.slot, self.req, true);
+        let ret = cg.call_parser_fun_impl(ret_val, fun_val, arg_val, self.req, true);
         cg.builder.build_return(Some(&ret));
         if let Some(bb) = previous_bb {
             cg.builder.position_at_end(bb);

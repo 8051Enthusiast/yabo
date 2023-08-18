@@ -1,3 +1,4 @@
+use fxhash::FxHashSet;
 use yaboc_base::low_effort_interner::Uniq;
 use yaboc_constraint::Constraints;
 use yaboc_dependents::NeededBy;
@@ -80,11 +81,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        slot: PSize,
         req: RequirementSet,
         inner: FunctionValue<'llvm>,
     ) -> FunctionValue<'llvm> {
-        let wrapper = self.parser_fun_val_wrapper(layout, slot, req);
+        let wrapper = self.parser_fun_val_wrapper(layout, from, req);
         let (ret, fun_arg, from) = parser_values(wrapper, layout, from);
         self.add_entry_block(wrapper);
         let Some(val) = self.setup_tail_fun_copy(from.layout, fun_arg) else {
@@ -180,9 +180,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_typecast(&mut self, layout: IMonoLayout<'comp>) {
         if let MonoLayout::Nominal(..) = layout.mono_layout().0 {
             let (from, fun) = layout.unapply_nominal(self.layouts);
-            let slot = self.collected_layouts.parser_slots.layout_vtable_offsets
-                [&((from, pd_val_req()), fun.inner())];
-            self.create_pd_parse_impl(from, fun, slot, pd_val_req().req);
+            self.create_pd_parse_impl(from, fun, pd_val_req().req);
         }
         let thunk_info = TypecastThunk::new(self, layout);
         ThunkContext::new(self, thunk_info).build();
@@ -369,10 +367,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        slot: PSize,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        let impl_fun = self.create_pd_parse_impl(from, layout, slot, req);
+        let impl_fun = self.create_pd_parse_impl(from, layout, req);
 
         let MonoLayout::NominalParser(pd, args, _) = layout.mono_layout().0 else {
             panic!("create_pd_parse has to be called with a nominal parser layout");
@@ -389,12 +386,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
         if !req.contains(NeededBy::Val) || !thunky {
             // just call impl_fun and return
-            let llvm_fun = self.parser_fun_val_tail(layout, slot, req);
+            let llvm_fun = self.parser_fun_val_tail(layout, from, req);
             return self.wrap_direct_call(impl_fun, llvm_fun, true);
         }
 
         if !(req & !NeededBy::Val).is_empty() {
-            self.create_pd_parse_impl(from, layout, slot, req & !NeededBy::Val);
+            self.create_pd_parse_impl(from, layout, req & !NeededBy::Val);
         }
 
         let result = self
@@ -416,7 +413,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .unwrap()
             .maybe_mono()
             .unwrap();
-        let val_thunk_info = ValThunk::new(from, layout, return_layout, slot, req);
+        let val_thunk_info = ValThunk::new(from, layout, return_layout, req);
         ThunkContext::new(self, val_thunk_info).build()
     }
 
@@ -424,13 +421,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        slot: PSize,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        let sym = self.sym(layout, LayoutPart::Parse(slot, req, ParserFunKind::Worker));
+        let part = self.parser_layout_part(from, req, ParserFunKind::Worker);
+        let sym = self.sym(layout, part);
         let llvm_fun = match self.module.get_function(&sym) {
             Some(f) => return f,
-            None => self.parser_impl_fun_val(layout, slot, req),
+            None => self.parser_impl_fun_val(layout, from, req),
         };
         let mir_fun = Rc::new(self.mir_pd_fun(from, layout, req));
         let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
@@ -513,8 +510,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_sliceptr_len(&mut self, layout: IMonoLayout<'comp>) {
         let fun = self.array_len_fun_val(layout);
         self.set_always_inline(fun);
-        let entry = self.llvm.append_basic_block(fun, "entry");
-        self.builder.position_at_end(entry);
+        self.add_entry_block(fun);
         let [arg] = get_fun_args(fun).map(|x| x.into_pointer_value());
         let [arg_start, arg_end] = self.get_slice_ptrs(arg);
         let len = self.builder.build_ptr_diff(arg_end, arg_start, "len");
@@ -524,8 +520,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_sliceptr_skip(&mut self, layout: IMonoLayout<'comp>) {
         let fun = self.skip_fun_val(layout);
         self.set_always_inline(fun);
-        let entry = self.llvm.append_basic_block(fun, "entry");
-        self.builder.position_at_end(entry);
+        self.add_entry_block(fun);
         let [arg, len] = get_fun_args(fun);
         let len = len.into_int_value();
         let arg = arg.into_pointer_value();
@@ -560,8 +555,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_u8_current_element(&mut self, layout: IMonoLayout<'comp>) {
         let fun = self.current_element_fun_val(layout);
         self.set_always_inline(fun);
-        let entry = self.llvm.append_basic_block(fun, "entry");
-        self.builder.position_at_end(entry);
+        self.add_entry_block(fun);
         let int_buf = self.build_alloca_int("int_buf");
         let [return_ptr, from, target_head] = get_fun_args(fun);
         let from = self.build_cast::<*const *const u8, _>(from);
@@ -588,8 +582,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_sliceptr_current_element(&mut self, layout: IMonoLayout<'comp>) {
         let fun = self.current_element_fun_val(layout);
         self.set_always_inline(fun);
-        let entry = self.llvm.append_basic_block(fun, "entry");
-        self.builder.position_at_end(entry);
+        self.add_entry_block(fun);
         let [return_ptr, from, target_head] = get_fun_args(fun);
         let layout = self
             .layouts
@@ -700,16 +693,15 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        slot: PSize,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
         let MonoLayout::BlockParser(block, _, _, _) = layout.mono_layout().0 else {
             panic!("Expected block parser layout")
         };
         let block = block.lookup(&self.compiler_database.db).unwrap();
-        let llvm_fun = self.parser_fun_val_tail(layout, slot, req);
+        let llvm_fun = self.parser_fun_val_tail(layout, from, req);
         let mir_fun = Rc::new(self.mir_block_fun(from, layout, req));
-        let impl_fun = self.parser_impl_fun_val(layout, slot, req);
+        let impl_fun = self.parser_impl_fun_val(layout, from, req);
 
         let (ret, fun, arg) = parser_values(impl_fun, layout, from);
         let mut translator = MirTranslator::new(self, mir_fun, impl_fun, fun, arg);
@@ -738,7 +730,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             from,
             fun: layout,
             result: mono_layout,
-            slot,
             req,
         };
 
@@ -749,10 +740,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        slot: PSize,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        let llvm_fun = self.parser_fun_val_tail(layout, slot, req);
+        let llvm_fun = self.parser_fun_val_tail(layout, from, req);
         let mir_fun = Rc::new(self.mir_if_fun(from, layout, req));
         let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
         let mut trans = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg);
@@ -767,10 +757,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        slot: PSize,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        let llvm_fun = self.parser_fun_val_tail(layout, slot, req);
+        let llvm_fun = self.parser_fun_val_tail(layout, from, req);
         self.set_always_inline(llvm_fun);
         self.add_entry_block(llvm_fun);
         let (ret, _, arg) = parser_values(llvm_fun, layout, from);
@@ -806,10 +795,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        slot: PSize,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        let llvm_fun = self.parser_fun_val_tail(layout, slot, req);
+        let llvm_fun = self.parser_fun_val_tail(layout, from, req);
         self.add_entry_block(llvm_fun);
         self.set_always_inline(llvm_fun);
         let (ret, _, _) = parser_values(llvm_fun, layout, from);
@@ -829,12 +817,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn create_error_parse(
         &mut self,
-        _: ILayout<'comp>,
+        from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        slot: PSize,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        let llvm_fun = self.parser_fun_val_tail(layout, slot, req);
+        let llvm_fun = self.parser_fun_val_tail(layout, from, req);
         self.add_entry_block(llvm_fun);
         self.set_always_inline(llvm_fun);
         self.builder
@@ -846,15 +833,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        slot: PSize,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
         let MonoLayout::Regex(regex, bt) = layout.mono_layout().0 else {
             panic!("called build_regex_parse on non-regex")
         };
         let regex_str = self.compiler_database.db.lookup_intern_regex(*regex);
-        let regex_impl = self.create_regex_parse_impl(from, layout, &regex_str, slot, req);
-        let llvm_fun = self.parser_fun_val_tail(layout, slot, req);
+        let regex_impl = self.create_regex_parse_impl(from, layout, &regex_str, req);
+        let llvm_fun = self.parser_fun_val_tail(layout, from, req);
         self.add_entry_block(llvm_fun);
         let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
         let ret_copy = if !req.contains(NeededBy::Val) {
@@ -906,13 +892,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
         regex: &str,
-        slot: PSize,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        let sym = self.sym(layout, LayoutPart::Parse(slot, req, ParserFunKind::Worker));
+        let part = self.parser_layout_part(from, req, ParserFunKind::Worker);
+        let sym = self.sym(layout, part);
         let llvm_fun = match self.module.get_function(&sym) {
             Some(f) => return f,
-            None => self.parser_impl_fun_val(layout, slot, req),
+            None => self.parser_impl_fun_val(layout, from, req),
         };
         let dfa = regex_automata::dense::Builder::new()
             .anchored(true)
@@ -931,7 +917,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        slot: PSize,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
         let result_layout = layout
@@ -940,7 +925,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .unwrap()
             .maybe_mono()
             .unwrap();
-        let llvm_fun = self.parser_fun_val_tail(layout, slot, req);
+        let llvm_fun = self.parser_fun_val_tail(layout, from, req);
         self.add_entry_block(llvm_fun);
         let (ret_val, parser, mut arg) = parser_values(llvm_fun, layout, from);
         let arg_copy = self.build_alloca_value(from, "arg_copy");
@@ -996,8 +981,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn create_field_access(&mut self, layout: IMonoLayout<'comp>, field: DefId, name: Identifier) {
         let fun = self.access_field_fun_val(layout, name);
-        let entry = self.llvm.append_basic_block(fun, "entry");
-        self.builder.position_at_end(entry);
+        self.add_entry_block(fun);
         let [return_ptr, block, target_head] = get_fun_args(fun);
         let block = CgMonoValue::new(layout, block.into_pointer_value());
         let return_val = CgReturnValue::new(
@@ -1200,14 +1184,18 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn create_parser_funs(&mut self, layout: IMonoLayout<'comp>) {
         let collected_layouts = self.collected_layouts.clone();
-        for (slot, &(from, req)) in collected_layouts
+        let mut visited = FxHashSet::default();
+        for &(from, meta) in collected_layouts
             .parser_slots
             .occupied_entries
             .get(&layout)
             .cloned()
             .unwrap_or_default()
-            .iter()
+            .values()
         {
+            if !visited.insert((from, meta.req)) {
+                continue;
+            }
             let mut create_fun = match layout.mono_layout().0 {
                 MonoLayout::Single => Self::create_single_parse,
                 MonoLayout::Nil => Self::create_nil_parse,
@@ -1230,8 +1218,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             {
                 create_fun = Self::create_error_parse
             }
-            let fun = create_fun(self, from, layout, *slot, req.req);
-            self.create_wrapper_parse(from, layout, *slot, req.req, fun);
+            let fun = create_fun(self, from, layout, meta.req);
+            self.create_wrapper_parse(from, layout, meta.req, fun);
         }
     }
 

@@ -238,7 +238,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     }
                 }
                 MonoLayout::Regex(..) => {
-                    let single = IMonoLayout::int_single(self.ctx);
+                    let single = IMonoLayout::u8_single(self.ctx);
                     self.register_layouts(single.inner());
                     self.parses.add_call(
                         (arg, CallMeta::new(RequirementSet::all(), false)),

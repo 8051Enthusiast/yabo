@@ -330,7 +330,7 @@ impl<'a> LayoutHasher<'a> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ParserFunKind {
     Wrapper,
     TailWrapper,
@@ -339,7 +339,7 @@ pub enum ParserFunKind {
 
 #[derive(Clone, Copy)]
 pub enum LayoutPart {
-    Parse(PSize, RequirementSet, ParserFunKind),
+    Parse(RequirementSet, ParserFunKind, [u8; TRUNCATION_LENGTH]),
     Field(Identifier),
     VTable,
     Start,
@@ -360,8 +360,8 @@ pub enum LayoutPart {
 impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
-            LayoutPart::Parse(p, reqs, kind) => {
-                write!(f, "parse_{p}_")?;
+            LayoutPart::Parse(reqs, kind, from) => {
+                write!(f, "parse_{}_", &truncated_hex(&from[..]))?;
                 if reqs.contains(NeededBy::Val) {
                     write!(f, "v")?;
                 }

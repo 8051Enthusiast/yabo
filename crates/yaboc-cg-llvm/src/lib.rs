@@ -167,6 +167,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn add_entry_block(&mut self, fun: FunctionValue<'llvm>) -> BasicBlock<'llvm> {
+        if fun.count_basic_blocks() > 0 {
+            panic!("function {:?} already has basic blocks", fun.get_name())
+        }
         let entry = self.llvm.append_basic_block(fun, "entry");
         self.builder.position_at_end(entry);
         entry
@@ -343,21 +346,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         from: CgValue<'comp, 'llvm>,
         call_kind: CallMeta,
     ) -> IntValue<'llvm> {
-        let Some(&slot) = self
-            .collected_layouts
-            .parser_slots
-            .layout_vtable_offsets
-            .get(&((from.layout, call_kind), fun.layout))
-        else {
-            dbpanic!(
-                self.layouts.db,
-                "Could not find parser slot for {} *> {}, {}",
-                &from.layout,
-                &fun.layout,
-                &call_kind,
-            );
-        };
-        self.call_parser_fun_wrapper(ret, fun, from, slot, call_kind.req)
+        self.call_parser_fun_wrapper(ret, fun, from, call_kind.req)
     }
 
     fn build_i64_load(&mut self, ptr: PointerValue<'llvm>, name: &str) -> IntValue<'llvm> {
@@ -549,12 +538,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .unwrap();
     }
 
-    fn create_pd_export(&mut self, pd: ParserDefId, layout: IMonoLayout<'comp>, slot: PSize) {
+    fn create_pd_export(
+        &mut self,
+        pd: ParserDefId,
+        layout: IMonoLayout<'comp>,
+        from: ILayout<'comp>,
+    ) {
         let name = match self.compiler_database.db.def_name(pd.0).unwrap() {
             FieldName::Return => unreachable!(),
             FieldName::Ident(d) => self.compiler_database.db.lookup_intern_identifier(d).name,
         };
-        let val = self.parser_impl_struct_val(layout, slot, root_req(), true);
+        let val = self.parser_impl_struct_val(layout, from, root_req());
         let global_ty = ParserFun::codegen_ty(self);
         let global = self.module.add_global(global_ty, None, &name);
         global.set_initializer(&val);
@@ -564,9 +558,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub fn create_pd_exports(&mut self) {
         let collected_layouts = self.collected_layouts.clone();
-        for (layout, slot) in collected_layouts.root.iter() {
+        let from = IMonoLayout::u8_array(self.layouts);
+        for (layout, _) in collected_layouts.root.iter() {
             if let MonoLayout::NominalParser(pd, _, _) = layout.mono_layout().0 {
-                self.create_pd_export(*pd, *layout, *slot);
+                self.create_pd_export(*pd, *layout, from.inner());
             }
         }
     }

@@ -103,16 +103,29 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret: CgReturnValue<'llvm>,
         fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
-        slot: u64,
         req: RequirementSet,
         fun_kind: ParserFunKind,
     ) -> IntValue<'llvm> {
         let parser = match fun.layout.maybe_mono() {
-            Some(mono) => self.sym_callable(mono, LayoutPart::Parse(slot, req, fun_kind)),
-            None => self.vtable_callable::<vtable::ParserVTable>(
-                fun.ptr,
-                &[ParserVTableFields::apply_table as u64, slot],
-            ),
+            Some(mono) => {
+                let part = self.parser_layout_part(arg.layout, req, fun_kind);
+                self.sym_callable(mono, part)
+            }
+            None => {
+                if ParserFunKind::Worker == fun_kind {
+                    panic!("worker function must be monomorphized")
+                }
+                let meta = CallMeta {
+                    req,
+                    tail: fun_kind == ParserFunKind::TailWrapper,
+                };
+                let slot = self.collected_layouts.parser_slots.layout_vtable_offsets
+                    [&((arg.layout, meta), fun.layout)];
+                self.vtable_callable::<vtable::ParserVTable>(
+                    fun.ptr,
+                    &[ParserVTableFields::apply_table as u64, slot],
+                )
+            }
         };
         self.build_call_with_int_ret(
             parser,
@@ -130,14 +143,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret: CgReturnValue<'llvm>,
         fun: CgMonoValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
-        slot: u64,
         call_kind: RequirementSet,
         tail: bool,
     ) -> IntValue<'llvm> {
-        let parser = self.sym_callable(
-            fun.layout,
-            LayoutPart::Parse(slot, call_kind, ParserFunKind::Worker),
-        );
+        let part = self.parser_layout_part(arg.layout, call_kind, ParserFunKind::Worker);
+        let parser = self.sym_callable(fun.layout, part);
         let call_ret = self.builder.build_call(
             parser,
             &[
@@ -163,10 +173,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret: CgReturnValue<'llvm>,
         fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
-        slot: u64,
         call_kind: RequirementSet,
     ) -> IntValue<'llvm> {
-        self.call_parser_fun(ret, fun, arg, slot, call_kind, ParserFunKind::Wrapper)
+        self.call_parser_fun(ret, fun, arg, call_kind, ParserFunKind::Wrapper)
     }
 
     pub(super) fn call_parser_fun_tail(
@@ -174,19 +183,27 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret: CgReturnValue<'llvm>,
         fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
-        slot: u64,
         call_kind: RequirementSet,
         parent_fun: Option<CgValue<'comp, 'llvm>>,
     ) -> IntValue<'llvm> {
         let parser = match fun.layout.maybe_mono() {
-            Some(mono) => self.sym_callable(
-                mono,
-                LayoutPart::Parse(slot, call_kind, ParserFunKind::TailWrapper),
-            ),
-            None => self.vtable_callable::<vtable::ParserVTable>(
-                fun.ptr,
-                &[ParserVTableFields::apply_table as u64, slot],
-            ),
+            Some(mono) => {
+                let part =
+                    self.parser_layout_part(arg.layout, call_kind, ParserFunKind::TailWrapper);
+                self.sym_callable(mono, part)
+            }
+            None => {
+                let meta = CallMeta {
+                    req: call_kind,
+                    tail: true,
+                };
+                let slot = self.collected_layouts.parser_slots.layout_vtable_offsets
+                    [&((arg.layout, meta), fun.layout)];
+                self.vtable_callable::<vtable::ParserVTable>(
+                    fun.ptr,
+                    &[ParserVTableFields::apply_table as u64, slot],
+                )
+            }
         };
         let sa = fun.layout.size_align_without_vtable(self.layouts).unwrap();
         let size = self.const_i64(sa.size as i64);

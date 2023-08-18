@@ -189,12 +189,15 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let vtable_impls: Vec<_> = (0..=max)
             .map(|slot| {
                 let is_non_null = slots.contains_key(&slot);
-                let req = slots
-                    .get(&slot)
-                    .copied()
-                    .map(|(_, req)| req)
-                    .unwrap_or_default();
-                self.parser_impl_struct_val(layout, slot, req, is_non_null)
+                if let Some((from, req)) = slots.get(&slot).copied() {
+                    if is_non_null {
+                        self.parser_impl_struct_val(layout, from, req)
+                    } else {
+                        ParserFun::codegen_ty(self).into_pointer_type().const_null()
+                    }
+                } else {
+                    ParserFun::codegen_ty(self).into_pointer_type().const_null()
+                }
             })
             .collect();
         let len_impl = if self.collected_layouts.lens.contains(&layout) {
