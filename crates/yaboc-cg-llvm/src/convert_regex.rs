@@ -44,19 +44,16 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
             .compiler_database
             .db
             .intern_type(Type::Primitive(PrimitiveType::Int));
-        let single = IMonoLayout::int_single(cg.layouts);
+        let single = IMonoLayout::u8_single(cg.layouts);
         let info = CallMeta::new(RequirementSet::all(), false);
-        let slot = cg.collected_layouts.parser_slots.layout_vtable_offsets
-            [&((from, info), single.inner())];
-        let parser_fun = cg.parser_fun_val_tail(single, slot, info.req);
+        let parser_fun = cg.parser_fun_val_tail(single, from, info.req);
 
         let int_layout = cg.layouts.dcx.intern(yaboc_layout::Layout::Mono(
             MonoLayout::Primitive(PrimitiveType::Int),
             int,
         ));
 
-        let entry = cg.llvm.append_basic_block(llvm_fun, "entry");
-        cg.builder.position_at_end(entry);
+        cg.add_entry_block(llvm_fun);
         let next_byte = cg.build_alloca_value(int_layout, "next_byte");
         let tmp_ret = cg.build_alloca_value(from, "tmp_ret");
         let greedy_info = if greedy {

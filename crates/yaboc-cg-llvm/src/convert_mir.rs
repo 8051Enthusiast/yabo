@@ -11,7 +11,7 @@ use mir::{CallMeta, ControlFlow, Place, Strictness};
 use yaboc_absint::AbstractDomain;
 use yaboc_ast::expr::Atom;
 use yaboc_ast::ConstraintAtom;
-use yaboc_base::{dbpanic, interner::FieldName};
+use yaboc_base::interner::FieldName;
 use yaboc_hir::BlockId;
 use yaboc_hir_types::{NominalId, NOBACKTRACK_BIT, VTABLE_BIT};
 use yaboc_layout::{mir_subst::FunctionSubstitute, ILayout, Layout, MonoLayout};
@@ -44,8 +44,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         fun: CgMonoValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
     ) -> Self {
-        let entry = cg.llvm.append_basic_block(llvm_fun, "entry");
-        cg.builder.position_at_end(entry);
+        cg.add_entry_block(llvm_fun);
         let mut stack = Vec::new();
         for (idx, layout) in mir_fun.stack_layouts.iter().enumerate() {
             stack.push(cg.build_layout_alloca(*layout, &format!("stack_{idx}")));
@@ -417,33 +416,13 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     ) {
         let fun_val = self.place_val(fun);
         let arg_val = self.place_val(arg);
-        let slot = match self
-            .cg
-            .collected_layouts
-            .parser_slots
-            .layout_vtable_offsets
-            .get(&((arg_val.layout, call_kind), fun_val.layout))
-        {
-            Some(slot) => *slot,
-            None => {
-                // TODO(8051): should be turned into an llvm unreachable in the future,
-                // but for now this is a panic to catch more errors
-                dbpanic!(
-                    &self.cg.compiler_database.db,
-                    "call slot not available: ({}, {}) *> {}",
-                    &arg_val.layout,
-                    &call_kind,
-                    &fun_val.layout
-                )
-            }
-        };
         let ret_val = ret
             .map(|r| self.return_val(r))
             .unwrap_or_else(|| self.cg.undef_ret());
         if let Some(ctrl) = ctrl {
-            let ret =
-                self.cg
-                    .call_parser_fun_wrapper(ret_val, fun_val, arg_val, slot, call_kind.req);
+            let ret = self
+                .cg
+                .call_parser_fun_wrapper(ret_val, fun_val, arg_val, call_kind.req);
             self.controlflow_case(ret, ctrl)
         } else {
             let parent_fun = if self.mir_fun.f.place(fun).place == Place::Captures {
@@ -453,14 +432,9 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             } else {
                 Some(self.fun.into())
             };
-            let ret = self.cg.call_parser_fun_tail(
-                ret_val,
-                fun_val,
-                arg_val,
-                slot,
-                call_kind.req,
-                parent_fun,
-            );
+            let ret =
+                self.cg
+                    .call_parser_fun_tail(ret_val, fun_val, arg_val, call_kind.req, parent_fun);
             self.cg.builder.build_return(Some(&ret));
         }
     }

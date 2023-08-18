@@ -164,26 +164,35 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         )
     }
 
+    pub(super) fn parser_layout_part(
+        &mut self,
+        from: ILayout<'comp>,
+        req: RequirementSet,
+        kind: ParserFunKind,
+    ) -> LayoutPart {
+        let hash = self.layouts.dcx.layout_hash(self.layouts.db, from);
+        LayoutPart::Parse(req, kind, hash)
+    }
+
     pub(super) fn parser_fun_val_wrapper(
         &mut self,
         layout: IMonoLayout<'comp>,
-        slot: PSize,
+        from: ILayout<'comp>,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        let ret = self.ppip_fun_val(layout, LayoutPart::Parse(slot, req, ParserFunKind::Wrapper));
+        let part = self.parser_layout_part(from, req, ParserFunKind::Wrapper);
+        let ret = self.ppip_fun_val(layout, part);
         ret
     }
 
     pub(super) fn parser_fun_val_tail(
         &mut self,
         layout: IMonoLayout<'comp>,
-        slot: PSize,
+        from: ILayout<'comp>,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        let ret = self.ppip_fun_val(
-            layout,
-            LayoutPart::Parse(slot, req, ParserFunKind::TailWrapper),
-        );
+        let part = self.parser_layout_part(from, req, ParserFunKind::TailWrapper);
+        let ret = self.ppip_fun_val(layout, part);
         ret.set_call_conventions(TAILCC);
         ret
     }
@@ -191,10 +200,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub(super) fn parser_impl_fun_val(
         &mut self,
         layout: IMonoLayout<'comp>,
-        slot: PSize,
+        from: ILayout<'comp>,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        let ret = self.ppip_fun_val(layout, LayoutPart::Parse(slot, req, ParserFunKind::Worker));
+        let part = self.parser_layout_part(from, req, ParserFunKind::Worker);
+        let ret = self.ppip_fun_val(layout, part);
         ret.set_call_conventions(TAILCC);
         ret
     }
@@ -270,18 +280,15 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub(super) fn parser_impl_struct_val(
         &mut self,
         layout: IMonoLayout<'comp>,
-        slot: PSize,
+        from: ILayout<'comp>,
         info: CallMeta,
-        is_non_null: bool,
     ) -> PointerValue<'llvm> {
-        if !is_non_null {
-            ParserFun::codegen_ty(self).into_pointer_type().const_null()
-        } else if info.tail {
-            self.parser_fun_val_tail(layout, slot, info.req)
+        if info.tail {
+            self.parser_fun_val_tail(layout, from, info.req)
                 .as_global_value()
                 .as_pointer_value()
         } else {
-            self.parser_fun_val_wrapper(layout, slot, info.req)
+            self.parser_fun_val_wrapper(layout, from, info.req)
                 .as_global_value()
                 .as_pointer_value()
         }
