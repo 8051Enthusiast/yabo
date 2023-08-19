@@ -596,6 +596,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.terminate_tail_typecast(from, ret);
     }
 
+    fn create_sliceptr_inner_array(&mut self, layout: IMonoLayout<'comp>) {
+        let fun = self.inner_array_fun_val(layout);
+        self.add_entry_block(fun);
+        let ret = self.const_i64(ReturnStatus::Backtrack as i64);
+        self.builder.build_return(Some(&ret));
+    }
+
     fn build_array_item_len_get(
         &mut self,
         array: CgMonoValue<'comp, 'llvm>,
@@ -687,6 +694,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let buf_slice_ret = self.build_return_value(buf_slice);
         self.call_span_fun(buf_slice_ret, start_slice, end_slice);
         self.terminate_tail_typecast(bufsl.into(), ret);
+    }
+
+    fn create_array_inner_array(&mut self, layout: IMonoLayout<'comp>) {
+        let fun = self.inner_array_fun_val(layout);
+        self.add_entry_block(fun);
+        let [ret, from, head] = get_fun_args(fun);
+        let ret = CgReturnValue::new(head.into_int_value(), ret.into_pointer_value());
+        let array = CgMonoValue::new(layout, from.into_pointer_value());
+        let slice = self.build_array_slice_get(array);
+        let ret = self.call_typecast_fun(ret, slice);
+        self.builder.build_return(Some(&ret));
     }
 
     fn create_block_parse(
@@ -1280,6 +1298,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 self.create_sliceptr_len(layout);
                 self.create_sliceptr_skip(layout);
                 self.create_sliceptr_span(layout);
+                self.create_sliceptr_inner_array(layout);
             }
             MonoLayout::Array { .. } => {
                 self.create_array_current_element(layout);
@@ -1287,6 +1306,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 self.create_array_len(layout);
                 self.create_array_skip(layout);
                 self.create_array_span(layout);
+                self.create_array_inner_array(layout);
             }
             _ => panic!("attempting to create array funs of non-array layout"),
         }

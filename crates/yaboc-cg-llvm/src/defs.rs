@@ -111,6 +111,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.ppip_fun_val(layout, LayoutPart::Span)
     }
 
+    pub(super) fn inner_array_fun_val(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+    ) -> FunctionValue<'llvm> {
+        self.ppi_fun_val(layout, LayoutPart::InnerArray)
+    }
+
     pub(super) fn start_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
         self.pp_fun_val(layout, LayoutPart::Start)
     }

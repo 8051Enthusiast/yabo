@@ -143,6 +143,7 @@ class ArrayVTable(Structure):
         'array_len_impl',
         'skip_impl',
         'span_impl',
+        'inner_array_impl',
     ]
     _fields_ = [
         ('head', VTableHeader),
@@ -151,6 +152,7 @@ class ArrayVTable(Structure):
         ('array_len_impl', CFUNCTYPE(c_int64, _voidptr)),
         ('skip_impl', CFUNCTYPE(c_int64, _voidptr, c_uint64)),
         ('span_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_uint64, _voidptr)),
+        ('inner_array_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64)),
     ]
 
 class Slice(Structure):
@@ -378,6 +380,14 @@ class ArrayValue(YaboValue):
     
     def as_list(self):
         return [self[i] for i in range(len(self))]
+
+    def inner_array(self):
+        array_vtable = ctypes.cast(
+            pointer(self._val.get_vtable()), POINTER(ArrayVTable))
+        inner_array_impl = array_vtable.contents.inner_array_impl
+        return self._lib.new_val(lambda ret:
+            inner_array_impl(ret, self._val.data_ptr(), YABO_ANY | YABO_VTABLE)
+        )
     
 
 
