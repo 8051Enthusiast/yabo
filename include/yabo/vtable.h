@@ -69,6 +69,7 @@ struct ArrayVTable {
   int64_t (*array_len_impl)(void *);
   int64_t (*skip_impl)(void *, uint64_t);
   int64_t (*span_impl)(void *, void *, uint64_t, void *);
+  int64_t (*inner_array_impl)(void *, void *, uint64_t);
 };
 
 #ifdef __cplusplus

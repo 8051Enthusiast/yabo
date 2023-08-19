@@ -85,6 +85,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let array_len = self.array_len_fun_val(layout);
         let skip = self.skip_fun_val(layout);
         let span = self.span_fun_val(layout);
+        let inner_array = self.inner_array_fun_val(layout);
         let vtable_val = self.llvm.const_struct(
             &[
                 vtable_header.into(),
@@ -93,6 +94,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 array_len.as_global_value().as_pointer_value().into(),
                 skip.as_global_value().as_pointer_value().into(),
                 span.as_global_value().as_pointer_value().into(),
+                inner_array.as_global_value().as_pointer_value().into(),
             ],
             false,
         );
