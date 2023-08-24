@@ -124,7 +124,7 @@ mod tests {
         assert_eq!(
             ArrayVTable::tsize(),
             SizeAlign {
-                size: 88,
+                size: 96,
                 align_mask: 0b111,
             }
         );
