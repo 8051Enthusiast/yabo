@@ -11,3 +11,4 @@ a.out
 *.ll
 /tools/print/yaboprint
 /compile_flags.txt
+build-*
