@@ -13,7 +13,7 @@ use yaboc_ast::expr::Atom;
 use yaboc_ast::ConstraintAtom;
 use yaboc_base::interner::FieldName;
 use yaboc_hir::BlockId;
-use yaboc_hir_types::{NominalId, NOBACKTRACK_BIT, VTABLE_BIT};
+use yaboc_hir_types::{NominalId, NOBACKTRACK_BIT, VTABLE_BIT, TyHirs};
 use yaboc_layout::{mir_subst::FunctionSubstitute, ILayout, Layout, MonoLayout};
 use yaboc_mir::{
     self as mir, BBRef, Comp, IntBinOp, IntUnOp, MirInstr, PlaceRef, ReturnStatus, Val,
@@ -387,7 +387,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             FieldName::Ident(ident) => ident,
         };
         let ty = self.mir_fun.f.place(place).ty;
-        let block = match self.cg.compiler_database.db.lookup_intern_type(ty) {
+        let ldt_ty = self.cg.compiler_database.db.least_deref_type(ty).unwrap();
+        let block = match self.cg.compiler_database.db.lookup_intern_type(ldt_ty) {
             Type::Nominal(nom) => NominalId::from_nominal_head(&nom).unwrap_block(),
             _ => panic!("field called on non-block"),
         };

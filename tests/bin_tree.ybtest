@@ -1,0 +1,47 @@
+====[ source code ]====
+fun *binary_tree(inner: *'t) = {
+  | tag: u8 if 0
+  | tag: u8
+    val: u32l
+    len: u32l
+    left: [~](len) |> inner
+    right: inner
+}
+
+export
+fun *test = {
+  tree: binary_tree(test)
+  let return = (tree.?val + tree.?left + tree.?right) else 0
+}
+
+====[ binary 1 ]====
+01  05 00 00 00  01 00 00 00 
+    00
+    01  06 00 00 00  01 00 00 00
+        00
+        00
+
+====[ output 1 ]====
+11
+
+====[ binary 2 ]====
+00
+
+====[ output 2 ]====
+0
+
+====[ binary 3 ]====
+01  20 00 00 00 0b 00 00 00
+    01  06 00 00 00  01 00 00 00
+        00
+        00
+    01  06 00 00 00  0b 00 00 00
+        01  08 00 00 00  01 00 00 00
+            00
+            00
+        01  09 00 00 00  01 00 00 00
+            00
+            00
+
+====[ output 3 ]====
+61
