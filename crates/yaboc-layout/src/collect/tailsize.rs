@@ -110,7 +110,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
                 subsite_vertex.sa
             } else {
                 let subsite_vertex = this.calulate_tail_size(subsite)?;
-                current_vertex.lowlink = subsite_vertex.lowlink.min(current_vertex.index);
+                current_vertex.lowlink = current_vertex.lowlink.min(subsite_vertex.lowlink);
                 subsite_vertex.sa
             };
             current_vertex.sa = current_vertex.sa.union(subsize);
