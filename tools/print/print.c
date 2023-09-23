@@ -33,9 +33,9 @@ Stack init_stack(size_t max_dyn_size) {
 void free_stack(Stack stack) { free(stack.current); }
 
 Stack bump(Stack stack) {
-  size_t size = stack.current->vtable->size;
-  size_t aligned_size = (size + sizeof(DynValue) + _Alignof(DynValue) - 1) &
-                        ~(_Alignof(DynValue) - 1);
+  size_t size = dyn_val_size(stack.current);
+  size_t aligned_size =
+      (size + _Alignof(DynValue) - 1) & ~(_Alignof(DynValue) - 1);
   if (stack.limit - (char *)stack.current < aligned_size) {
     fprintf(stderr, "Value stack overflow\n");
     exit(1);

@@ -24,6 +24,13 @@ static inline int64_t dyn_invalidate(DynValue *val, int64_t status) {
   return status;
 }
 
+static inline size_t dyn_val_size(DynValue *val) {
+  if (!val->vtable) {
+    return sizeof(int64_t) + sizeof(struct VTableHeader *);
+  }
+  return val->vtable->size + sizeof(struct VTableHeader *);
+}
+
 static inline int64_t dyn_parse_bytes(DynValue *ret, struct Slice bytes,
                                       ParseFun parser) {
   int64_t status = parser(ret->data, NULL, YABO_ANY | YABO_VTABLE, &bytes);
@@ -48,7 +55,7 @@ static inline int64_t dyn_deref(DynValue *ret, DynValue *val) {
 }
 
 static inline void dyn_copy(DynValue *ret, DynValue *val) {
-  size_t size = val->vtable->size;
+  size_t size = dyn_val_size(val);
   memcpy(ret, val, size + sizeof(struct VTableHeader *));
 }
 
