@@ -103,7 +103,9 @@ impl<DB: Dependents + ?Sized> DatabasedDisplay<DB> for DependencyGraph {
 
 pub fn dependency_dot(db: &impl Dependents) -> SResult<String> {
     let mut ret = String::new();
-    ret.push_str("digraph dependencies {\n");
+    ret.push_str(r##"digraph dependencies {
+        graph [ style="filled,rounded", color="#cccccc", fillcolor="#f0f0f0" ]
+    "##);
     let pds = db.all_parserdefs();
     for pd in pds {
         let blocks = db.all_parserdef_blocks(pd);
