@@ -1,0 +1,275 @@
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <random>
+
+#include <qthread.h>
+#include <qvariant.h>
+#include <vector>
+
+#include "filerequester.hpp"
+#include "request.hpp"
+#include "yabo.hpp"
+#include "yabo/vtable.h"
+#include "yabotreemodel.hpp"
+
+Executor::Executor(std::filesystem::path path, std::vector<uint8_t> &&file)
+    : file(std::move(file)) {
+  // we need to create a tmpfile copy of the library pointed to by
+  // `path` which we then dlopen
+  // this is because dlopen does not work well if the file changes, and
+  // global symbols would get deduplicated which is also a bad idea
+  try {
+    auto tmp_root = std::filesystem::temp_directory_path();
+    // note: this is essentially tmpnam, but we are cool and totally
+    // allowed to do this
+    // (an attacker can just mess with the file after it was created and
+    // before we dlopen it anyway, and we can only dlopen through
+    // a file path)
+    auto random_num = std::random_device()();
+    tmp_file = tmp_root / std::format("yabo_{:x}.so", random_num);
+
+    std::filesystem::copy_file(
+        path, tmp_file, std::filesystem::copy_options::overwrite_existing);
+  } catch (std::filesystem::filesystem_error &e) {
+    auto err = std::format("Could not create temporary file: {}", e.what());
+    throw ExecutorError(err);
+  }
+
+  lib = dlopen(tmp_file.c_str(), RTLD_LAZY);
+  if (!lib) {
+    auto err =
+        std::format("Could not open file {}; {}", path.string(), dlerror());
+    throw ExecutorError(err);
+  }
+
+  auto size = reinterpret_cast<size_t *>(dlsym(lib, "yabo_max_buf_size"));
+  if (!size) {
+    auto err = std::format("File does not contain yabo_ma_buf_size symbol: {}. "
+                           "Is the file in the right format?",
+                           dlerror());
+    throw ExecutorError(err);
+  }
+  vals = YaboValCache(YaboValStorage(*size));
+}
+
+Executor::~Executor() {
+  dlclose(lib);
+  std::filesystem::remove(tmp_file);
+}
+
+std::optional<Response> Executor::execute_request(Request req) {
+  switch (req.metadata.kind) {
+  case MessageType::FIELDS: {
+    std::vector<std::pair<std::string, YaboVal>> ret{};
+    auto vtable = reinterpret_cast<BlockVTable *>(req.val->vtable);
+    for (size_t i = 0; i < vtable->fields->number_fields; i++) {
+      auto name = vtable->fields->fields[i];
+      auto field_val = vals.access_field(req.val, name);
+      if (field_val.has_value()) {
+        ret.push_back(std::pair(name, field_val.value()));
+      }
+    }
+    return Response(req.metadata, std::move(ret));
+  }
+  case MessageType::ARRAY_ELEMENTS: {
+    std::vector<std::pair<std::string, YaboVal>> ret{};
+    auto len = vals.array_len(req.val);
+    for (size_t i = 0; i < len; i++) {
+      auto idx_val = vals.index(req.val, i);
+      if (idx_val.has_value()) {
+        ret.push_back(std::pair(std::to_string(i), idx_val.value()));
+      } else {
+        return {};
+      }
+    }
+    return Response(req.metadata, std::move(ret));
+  }
+  case MessageType::PARSE:
+  case MessageType::ERROR: {
+    // parse requests come in via the execute_parser slot
+    return {};
+  }
+  }
+  return {};
+}
+std::optional<Response> Executor::execute_parser(Meta meta,
+                                                 char const *func_name) {
+  auto parser_ptr = reinterpret_cast<ParseFun const *>(dlsym(lib, func_name));
+  if (!parser_ptr) {
+    return {};
+  }
+  auto parser = *parser_ptr;
+  auto ret = vals.parse(parser, file);
+  if (ret.has_value()) {
+    return Response(meta, ret.value());
+  }
+  return {};
+}
+
+FileRequester::FileRequester(std::filesystem::path path,
+                             std::vector<uint8_t> &&file) {
+  Executor *executor;
+  try {
+    executor = new Executor(path, std::move(file));
+  } catch (ExecutorError &e) {
+    error_msg = e.what();
+    executor_thread.quit();
+    return;
+  }
+  executor->moveToThread(&executor_thread);
+  arborist = std::make_unique<Arborist>();
+  connect(&executor_thread, &QThread::finished, executor,
+          &QObject::deleteLater);
+  connect(executor, &Executor::response, this,
+          &FileRequester::process_response);
+  connect(this, &FileRequester::request, executor,
+          &Executor::execute_request_slot);
+  connect(this, &FileRequester::parse_request, executor,
+          &Executor::execute_parser_slot);
+  executor_thread.start();
+}
+
+void FileRequester::process_response(Response resp) {
+  switch (resp.metadata.kind) {
+  case MessageType::ARRAY_ELEMENTS:
+  case MessageType::FIELDS: {
+    auto tree_model = static_cast<YaboTreeModel *>(resp.metadata.user_data);
+    auto &vals = std::get<YaboValVec>(resp.data);
+    if (vals.empty()) {
+      arborist->get_node(resp.metadata.idx).state = TreeNodeState::LOADED;
+      break;
+    }
+    tree_model->begin_insert_rows(resp.metadata.idx, 0, vals.size() - 1);
+    for (size_t i = 0; i < vals.size(); i++) {
+      auto branch = ParentBranch{resp.metadata.idx, (int)i};
+      auto tree_node = TreeNode{branch, TreeNodeState::LOADED_NO_CHIlDREN, 0,
+                                std::move(vals[i].first), vals[i].second};
+      auto idx = arborist->add_node(tree_node);
+    }
+    arborist->get_node(resp.metadata.idx).n_children = vals.size();
+    arborist->get_node(resp.metadata.idx).state = TreeNodeState::LOADED;
+    tree_model->end_insert_rows();
+    break;
+  }
+  case MessageType::ERROR:
+    arborist->get_node(resp.metadata.idx).state = TreeNodeState::ERROR;
+    break;
+  case MessageType::PARSE:
+    auto val = std::get<YaboVal>(resp.data);
+    arborist->set_val(resp.metadata.idx, val);
+    auto tree_model = static_cast<YaboTreeModel *>(resp.metadata.user_data);
+    tree_model->data_changed(resp.metadata.idx);
+    break;
+  };
+}
+
+QVariant FileRequester::data(TreeIndex idx) {
+  auto state = arborist->get_node(idx).state;
+  if (state == TreeNodeState::LOADING) {
+    return QString();
+  }
+  if (state == TreeNodeState::ERROR) {
+    return QString("Error");
+  }
+
+  auto val = arborist->get_node(idx).val;
+  if (!val.has_value()) {
+    return QString();
+  }
+
+  switch (val->kind()) {
+  case YaboValKind::YABOERROR: {
+    auto err = val->access_error();
+    if (err == BACKTRACK) {
+      return QVariant("Backtrack");
+    } else if (err == EOS) {
+      return QVariant("EOS");
+    } else {
+      return QVariant("Exception");
+    }
+  }
+  case YaboValKind::YABOINTEGER:
+    return QVariant::fromValue(val->access_int());
+  case YaboValKind::YABOBIT:
+    return QVariant::fromValue((bool)val->access_bool());
+  case YaboValKind::YABOCHAR:
+    return QVariant::fromValue(val->access_char());
+  case YaboValKind::YABONOM:
+  case YaboValKind::YABOU8:
+    return QVariant("nominal");
+  case YaboValKind::YABOPARSER:
+    return QVariant("parser");
+  case YaboValKind::YABOFUNARGS:
+    return QVariant("function");
+  case YaboValKind::YABOUNIT:
+    return QVariant("unit");
+  case YaboValKind::YABOARRAY:
+    return QVariant("");
+  case YaboValKind::YABOBLOCK:
+    return QVariant("");
+  }
+}
+YaboTreeModel *FileRequester::create_tree_model(QString parser_name) {
+  auto sparser_name = parser_name.toStdString();
+  if (parser_root.contains(sparser_name)) {
+    return new YaboTreeModel(*this, std::move(sparser_name),
+                             parser_root[sparser_name]);
+  }
+  auto node = TreeNode{
+      ParentBranch{INVALID_PARENT, 0}, TreeNodeState::LOADING, 0, "(root)", {}};
+  auto idx = arborist->add_node(node);
+  parser_root.insert({sparser_name, idx});
+  auto tree_model = new YaboTreeModel(*this, std::move(sparser_name), idx);
+  emit parse_request(Meta{idx, MessageType::PARSE, tree_model}, sparser_name);
+  return tree_model;
+}
+
+bool FileRequester::can_fetch_children(TreeIndex idx) {
+  auto node = arborist->get_node(idx);
+  return node.state == TreeNodeState::LOADED_NO_CHIlDREN &&
+         node.val.has_value() &&
+         (node.val->kind() == YaboValKind::YABOARRAY ||
+          node.val->kind() == YaboValKind::YABOBLOCK);
+}
+
+void FileRequester::fetch_children(TreeIndex idx, YaboTreeModel *tree_model) {
+  auto &node = arborist->get_node(idx);
+  if (node.state == TreeNodeState::LOADED_NO_CHIlDREN && node.val.has_value()) {
+    auto val = node.val.value();
+    MessageType message_type;
+    switch (val.kind()) {
+    case YaboValKind::YABOARRAY:
+      message_type = MessageType::ARRAY_ELEMENTS;
+      break;
+    case YaboValKind::YABOBLOCK:
+      message_type = MessageType::FIELDS;
+      break;
+    default:
+      return;
+    }
+    node.state = TreeNodeState::LOADING_CHILDREN;
+    emit request(Request{Meta{idx, message_type, tree_model}, val});
+  }
+}
+
+FileRequester *
+FileRequesterFactory::create_file_requester(QString parser_lib_path,
+                                            QString file_path) {
+  std::filesystem::path p = parser_lib_path.toStdString();
+  std::vector<uint8_t> file;
+  try {
+    std::ifstream f(file_path.toStdString(), std::ios::binary);
+    auto file_size = std::filesystem::file_size(file_path.toStdString());
+    file.resize(file_size);
+    f.read((char *)file.data(), file_size);
+  } catch (std::system_error &e) {
+    auto msg = std::format("Could not open file {}: {}",
+                           file_path.toStdString(), e.what());
+    auto req = new FileRequester(QString::fromStdString(msg));
+    return req;
+  }
+
+  auto req = new FileRequester(p, std::move(file));
+  return req;
+}

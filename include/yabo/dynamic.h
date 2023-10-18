@@ -24,7 +24,7 @@ static inline int64_t dyn_invalidate(DynValue *val, int64_t status) {
   return status;
 }
 
-static inline size_t dyn_val_size(DynValue *val) {
+static inline size_t dyn_val_size(const DynValue *val) {
   if (!val->vtable) {
     return sizeof(int64_t) + sizeof(struct VTableHeader *);
   }
@@ -40,7 +40,7 @@ static inline int64_t dyn_parse_bytes(DynValue *ret, struct Slice bytes,
   return status;
 }
 
-static inline int64_t dyn_deref(DynValue *ret, DynValue *val) {
+static inline int64_t dyn_deref(DynValue *ret, const DynValue *val) {
   struct NominalVTable *vtable = (struct NominalVTable *)val->vtable;
   uint64_t level = vtable->head.deref_level;
   if (level > 0) {
@@ -54,16 +54,16 @@ static inline int64_t dyn_deref(DynValue *ret, DynValue *val) {
   return status;
 }
 
-static inline void dyn_copy(DynValue *ret, DynValue *val) {
+static inline void dyn_copy(DynValue *ret, const DynValue *val) {
   size_t size = dyn_val_size(val);
-  memcpy(ret, val, size + sizeof(struct VTableHeader *));
+  memcpy(ret, val, size);
 }
 
-static inline int64_t dyn_access_field(DynValue *ret, DynValue *block,
-                                       char *name) {
+static inline int64_t dyn_access_field(DynValue *ret, const DynValue *block,
+                                       const char *name) {
   struct BlockVTable *vtable = (struct BlockVTable *)block->vtable;
   char **start = vtable->fields->fields;
-  int64_t (*access_impl)(void *, void *, uint64_t) = NULL;
+  int64_t (*access_impl)(void *, const void *, uint64_t) = NULL;
   for (size_t i = 0; i < vtable->fields->number_fields; i++) {
     char *current_name = start[i];
     if (!strcmp(current_name, name)) {
@@ -91,7 +91,7 @@ static inline int64_t dyn_array_single_forward(DynValue *array) {
 }
 
 static inline int64_t dyn_array_current_element(DynValue *ret,
-                                                DynValue *array) {
+                                                const DynValue *array) {
   struct ArrayVTable *vtable = (struct ArrayVTable *)array->vtable;
   uint64_t status = vtable->current_element_impl(ret->data, array->data,
                                                  YABO_ANY | YABO_VTABLE);
@@ -101,18 +101,18 @@ static inline int64_t dyn_array_current_element(DynValue *ret,
   return status;
 }
 
-static inline int64_t dyn_array_len(DynValue *array) {
+static inline int64_t dyn_array_len(const DynValue *array) {
   struct ArrayVTable *vtable = (struct ArrayVTable *)array->vtable;
   return vtable->array_len_impl(array->data);
 }
 
-static inline int64_t dyn_int(DynValue *integer) {
+static inline int64_t dyn_int(const DynValue *integer) {
   return *(int64_t *)integer->data;
 }
 
-static inline int32_t dyn_char(DynValue *chr) { return *(int32_t *)chr->data; }
+static inline int32_t dyn_char(const DynValue *chr) { return *(int32_t *)chr->data; }
 
-static inline int8_t dyn_bit(DynValue *bit) { return *(int8_t *)bit->data; }
+static inline int8_t dyn_bit(const DynValue *bit) { return *(int8_t *)bit->data; }
 
 #ifdef __cplusplus
 }
