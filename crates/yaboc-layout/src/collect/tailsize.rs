@@ -86,7 +86,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
         Ok(())
     }
 
-    fn calulate_tail_size(&mut self, site: CallSite<'comp>) -> Result<CallSiteVertex, LayoutError> {
+    fn calculate_tail_size(&mut self, site: CallSite<'comp>) -> Result<CallSiteVertex, LayoutError> {
         let sa = site.1.inner().size_align_without_vtable(self.ctx)?;
         let mut current_vertex = CallSiteVertex {
             index: self.index,
@@ -109,7 +109,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
                 }
                 subsite_vertex.sa
             } else {
-                let subsite_vertex = this.calulate_tail_size(subsite)?;
+                let subsite_vertex = this.calculate_tail_size(subsite)?;
                 current_vertex.lowlink = current_vertex.lowlink.min(subsite_vertex.lowlink);
                 subsite_vertex.sa
             };
@@ -136,6 +136,6 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
         if let Some(&vertex) = self.vertices.get(&site) {
             return Ok(vertex.tail_info());
         }
-        Ok(self.calulate_tail_size(site)?.tail_info())
+        Ok(self.calculate_tail_size(site)?.tail_info())
     }
 }
