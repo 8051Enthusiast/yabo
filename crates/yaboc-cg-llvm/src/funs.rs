@@ -1292,24 +1292,25 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn create_array_funs(&mut self, layout: IMonoLayout<'comp>) {
         match layout.mono_layout().0 {
-            MonoLayout::SlicePtr => {
-                self.create_sliceptr_current_element(layout);
-                self.create_sliceptr_single_forward(layout);
-                self.create_sliceptr_len(layout);
-                self.create_sliceptr_skip(layout);
-                self.create_sliceptr_span(layout);
-                self.create_sliceptr_inner_array(layout);
-            }
-            MonoLayout::Array { .. } => {
-                self.create_array_current_element(layout);
-                self.create_array_single_forward(layout);
-                self.create_array_len(layout);
-                self.create_array_skip(layout);
-                self.create_array_span(layout);
-                self.create_array_inner_array(layout);
-            }
+            MonoLayout::SlicePtr => [
+                Self::create_sliceptr_current_element,
+                Self::create_sliceptr_single_forward,
+                Self::create_sliceptr_len,
+                Self::create_sliceptr_skip,
+                Self::create_sliceptr_span,
+                Self::create_sliceptr_inner_array,
+            ],
+            MonoLayout::Array { .. } => [
+                Self::create_array_current_element,
+                Self::create_array_single_forward,
+                Self::create_array_len,
+                Self::create_array_skip,
+                Self::create_array_span,
+                Self::create_array_inner_array,
+            ],
             _ => panic!("attempting to create array funs of non-array layout"),
         }
+        .map(|create| create(self, layout));
     }
 
     fn create_primitive_funs(&mut self, layout: IMonoLayout<'comp>) {
