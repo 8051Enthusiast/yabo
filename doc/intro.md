@@ -435,7 +435,7 @@ The following works as well:
 def *const_sized2(f: *'t, g: *'r) = {
   | f, f, g
   | f, g, f
-  | g, [f](2)
+  | g, f, f
 }
 ```
 (Of course, these parsers are useless as they will always take the first branch.)
