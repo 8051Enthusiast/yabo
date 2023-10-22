@@ -1,7 +1,6 @@
 #include "mainwindow.hpp"
 #include "parserview.hpp"
 #include "./ui_mainwindow.h"
-#include "yabotreemodel.hpp"
 #include "filerequester.hpp"
 
 #include <QFileDialog>
@@ -21,14 +20,18 @@ MainWindow::~MainWindow()
 void MainWindow::on_parserFileButton_clicked()
 {
     auto fileName = QFileDialog::getOpenFileName(this, "Open Parser File...");
-    ui->parserFileEdit->setText(fileName);
+    if (fileName != "") {
+        ui->parserFileEdit->setText(fileName);
+    }
 }
 
 
 void MainWindow::on_intputFileButton_clicked()
 {
     auto fileName = QFileDialog::getOpenFileName(this, "Open Input File...");
-    ui->inputFileEdit->setText(fileName);
+    if (fileName != "") {
+        ui->inputFileEdit->setText(fileName);
+    }
 }
 
 
