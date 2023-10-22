@@ -56,7 +56,7 @@ signals:
   void response(Response resp);
 
 private:
-  YaboValCache vals;
+  YaboValCreator vals;
   void *lib;
   std::filesystem::path tmp_file;
   std::vector<uint8_t> file;

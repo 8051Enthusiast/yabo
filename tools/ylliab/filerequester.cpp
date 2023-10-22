@@ -50,7 +50,7 @@ Executor::Executor(std::filesystem::path path, std::vector<uint8_t> &&file)
                            dlerror());
     throw ExecutorError(err);
   }
-  vals = YaboValCache(YaboValStorage(*size));
+  vals = YaboValCreator(YaboValStorage(*size));
 }
 
 Executor::~Executor() {
