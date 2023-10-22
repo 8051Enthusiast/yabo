@@ -2,13 +2,11 @@
 #include "request.hpp"
 #include <QAbstractItemModel>
 #include <qabstractitemmodel.h>
-#include <qqmlintegration.h>
 
 class FileRequester;
 
 class YaboTreeModel : public QAbstractItemModel {
   Q_OBJECT
-  QML_ANONYMOUS
 public:
   YaboTreeModel(FileRequester &file_requester, std::string &&parser_name,
                 TreeIndex root_id);
@@ -23,6 +21,7 @@ public:
 
   QVariant data(const QModelIndex &index,
                 int role = Qt::DisplayRole) const override;
+  QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
 
   bool hasChildren(const QModelIndex &parent = QModelIndex()) const override;
   bool canFetchMore(const QModelIndex &parent) const override;

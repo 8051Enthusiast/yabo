@@ -5,9 +5,7 @@
 #include <system_error>
 
 #include <QObject>
-#include <qqmlintegration.h>
 #include <qthread.h>
-#include <qtmetamacros.h>
 #include <qvariant.h>
 
 #include <dlfcn.h>
@@ -45,8 +43,9 @@ public slots:
       emit response(Response(req.metadata));
     }
   }
-  void execute_parser_slot(Meta meta, std::string func_name) {
-    auto resp = execute_parser(meta, func_name.c_str());
+  void execute_parser_slot(Meta meta, QString func_name) {
+    auto s = func_name.toStdString();
+    auto resp = execute_parser(meta, s.c_str());
     if (resp.has_value()) {
       emit response(std::move(resp.value()));
     } else {
@@ -133,13 +132,12 @@ class YaboTreeModel;
 // communicates with Executor and maintains the tree structure
 class FileRequester : public QObject {
   Q_OBJECT
-  QML_ELEMENT
 public:
   FileRequester(std::filesystem::path path, std::vector<uint8_t> &&file);
   FileRequester(QString error_msg) : error_msg(error_msg) {}
   ~FileRequester() {
-    executor_thread.quit();
-    executor_thread.wait();
+    executor_thread->quit();
+    executor_thread->wait();
   }
   bool has_children(TreeIndex idx) const {
     auto val = arborist->get_node(idx).val;
@@ -169,7 +167,7 @@ public:
   bool can_fetch_children(TreeIndex idx);
   void fetch_children(TreeIndex idx, YaboTreeModel *tree_model);
 
-  Q_INVOKABLE YaboTreeModel *create_tree_model(QString parser_name);
+  std::unique_ptr<YaboTreeModel> create_tree_model(QString parser_name);
 
   Q_INVOKABLE QString error_message() const { return error_msg; }
 
@@ -178,10 +176,10 @@ public slots:
 
 signals:
   void request(Request req);
-  void parse_request(Meta meta, std::string func_name);
+  void parse_request(Meta meta, QString func_name);
 
 private:
-  QThread executor_thread;
+  std::unique_ptr<QThread> executor_thread;
   std::unique_ptr<Arborist> arborist;
   std::unordered_map<std::string, TreeIndex> parser_root;
   // for qml to handle errors
@@ -191,10 +189,8 @@ private:
 // class for qml to create FileRequester
 class FileRequesterFactory : public QObject {
   Q_OBJECT
-  QML_ELEMENT
-  QML_SINGLETON
 public:
   FileRequesterFactory() = default;
-  Q_INVOKABLE FileRequester *create_file_requester(QString parser_lib_path,
+  std::unique_ptr<FileRequester> create_file_requester(QString parser_lib_path,
                                                    QString file_path);
 };

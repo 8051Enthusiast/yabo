@@ -1,16 +1,16 @@
-#include <QGuiApplication>
-#include <QQmlApplicationEngine>
+#include "mainwindow.hpp"
+#include "request.hpp"
+
+#include <QApplication>
+#include <QMetaType>
 
 int main(int argc, char *argv[])
 {
-    QGuiApplication app(argc, argv);
-
-    QQmlApplicationEngine engine;
-    const QUrl url(u"qrc:/ylliab/Main.qml"_qs);
-    QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed,
-        &app, []() { QCoreApplication::exit(-1); },
-        Qt::QueuedConnection);
-    engine.load(url);
-
-    return app.exec();
+    QApplication a(argc, argv);
+    qRegisterMetaType<Meta>();
+    qRegisterMetaType<Request>();
+    qRegisterMetaType<Response>();
+    MainWindow w;
+    w.show();
+    return a.exec();
 }

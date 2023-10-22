@@ -2,6 +2,8 @@
 #include "filerequester.hpp"
 #include "request.hpp"
 
+#include <QDebug>
+
 enum Column {
   FIELD = 0,
   VALUE = 1,
@@ -54,24 +56,43 @@ int YaboTreeModel::columnCount(const QModelIndex &parent) const {
 }
 
 QVariant YaboTreeModel::data(const QModelIndex &index, int role) const {
+  if (role != Qt::DisplayRole) {
+    return QVariant();
+  }
   if (!index.isValid())
-    return QString();
+    return QVariant();
 
-  if (index.column() == Column::VALUE && role == Qt::DisplayRole) {
+  if (index.column() == Column::VALUE) {
     return file_requester.data(to_tree_index(index));
   }
-  if (index.column() == Column::FIELD && role == Qt::DisplayRole) {
+  if (index.column() == Column::FIELD) {
     return QString::fromStdString(
         file_requester.field_name(to_tree_index(index)));
   }
-  if (index.column() == Column::DEBUG && role == Qt::DisplayRole) {
+  if (index.column() == Column::DEBUG) {
     auto model_index_str = QString::number(index.internalId(), 16) + " " +
                            QString::number(index.row()) + " " +
                            QString::number(index.column()) + " | " +
                            QString::number(to_tree_index(index).idx, 16);
     return model_index_str;
   }
-  return QString();
+  return QVariant();
+}
+
+QVariant YaboTreeModel::headerData(int section, Qt::Orientation orientation, int role) const {
+  if (orientation != Qt::Orientation::Horizontal || role != Qt::DisplayRole) {
+    return QVariant();
+  }
+  switch (section) {
+  case 0:
+    return "Field Name";
+  case 1:
+    return "Data";
+  case 2:
+    return "Debug";
+  default:
+    return QVariant();
+  }
 }
 
 bool YaboTreeModel::hasChildren(const QModelIndex &parent) const {

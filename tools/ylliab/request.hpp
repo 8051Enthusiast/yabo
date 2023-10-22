@@ -26,11 +26,16 @@ struct Meta {
   void *user_data;
 };
 
+Q_DECLARE_METATYPE(Meta)
+
 struct Request {
   Request(Meta meta, YaboVal value) : metadata(meta), val(value) {}
+  Request() : metadata(Meta{INVALID_PARENT, MessageType::ERROR, nullptr}), val(YaboVal(nullptr)) {}
   Meta metadata;
   YaboVal val;
 };
+
+Q_DECLARE_METATYPE(Request)
 
 typedef std::vector<std::pair<std::string, YaboVal>> YaboValVec;
 
@@ -44,3 +49,5 @@ struct Response {
   Meta metadata;
   std::variant<YaboValVec, YaboVal> data;
 };
+
+Q_DECLARE_METATYPE(Response)
