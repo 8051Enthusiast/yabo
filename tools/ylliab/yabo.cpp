@@ -89,7 +89,7 @@ YaboVal YaboValStorage::with_span_and_return_buf(
   return with_return_buf([=](uint8_t *ret) { return f(tmp_val, ret); });
 }
 
-std::optional<YaboVal> YaboValCache::access_field(YaboVal val,
+std::optional<YaboVal> YaboValCreator::access_field(YaboVal val,
                                                   const char *name) {
   if (val.is_exceptional() || val->vtable->head != YABO_BLOCK) {
     return {};
@@ -116,13 +116,9 @@ std::optional<YaboVal> YaboValCache::access_field(YaboVal val,
   return ret;
 }
 
-std::optional<YaboVal> YaboValCache::deref(YaboVal val) {
+std::optional<YaboVal> YaboValCreator::deref(YaboVal val) {
   if (val.is_exceptional() || val->vtable->deref_level < 256) {
     return {};
-  }
-
-  if (deref_cache.contains(val)) {
-    return deref_cache.at(val);
   }
 
   auto target_level = val->vtable->deref_level - 256;
@@ -132,7 +128,7 @@ std::optional<YaboVal> YaboValCache::deref(YaboVal val) {
   });
 }
 
-int64_t YaboValCache::array_len(YaboVal val) {
+int64_t YaboValCreator::array_len(YaboVal val) {
   if (val.is_exceptional() || val->vtable->head != YABO_LOOP) {
     return 0;
   }
@@ -141,7 +137,7 @@ int64_t YaboValCache::array_len(YaboVal val) {
   return vtable->array_len_impl(val->data);
 }
 
-std::optional<YaboVal> YaboValCache::index(YaboVal val, size_t idx) {
+std::optional<YaboVal> YaboValCreator::index(YaboVal val, size_t idx) {
   if (val.is_exceptional() || val->vtable->head != YABO_LOOP) {
     return {};
   }
@@ -156,7 +152,7 @@ std::optional<YaboVal> YaboValCache::index(YaboVal val, size_t idx) {
   });
 }
 
-std::optional<YaboVal> YaboValCache::parse(ParseFun parser,
+std::optional<YaboVal> YaboValCreator::parse(ParseFun parser,
                                            std::span<uint8_t> buf) {
   return storage.with_span_and_return_buf(buf, [=](void *addr, uint8_t *ret) {
     return parser(ret, nullptr, DEFAULT_LEVEL | YABO_VTABLE, addr);

@@ -39,7 +39,9 @@ struct YaboVal {
 
   inline int8_t access_bool() const noexcept { return *(int8_t *)val->data; }
 
-  inline uint64_t access_error() const noexcept { return *(uint64_t *)val->data; }
+  inline uint64_t access_error() const noexcept {
+    return *(uint64_t *)val->data;
+  }
 
   inline bool is_exceptional() const noexcept { return !val->vtable; }
 
@@ -128,11 +130,10 @@ template <> struct std::hash<YaboVal> {
   }
 };
 
-class YaboValCache {
+class YaboValCreator {
 public:
-  YaboValCache(YaboValStorage &&store)
-      : storage(std::move(store)), deref_cache({}) {}
-  YaboValCache() = default;
+  YaboValCreator(YaboValStorage &&store) : storage(std::move(store)) {}
+  YaboValCreator() = default;
   std::optional<YaboVal> access_field(YaboVal val, const char *name);
   std::optional<YaboVal> deref(YaboVal val);
   int64_t array_len(YaboVal val);
@@ -141,5 +142,4 @@ public:
 
 private:
   YaboValStorage storage;
-  std::unordered_map<YaboVal, YaboVal> deref_cache;
 };
