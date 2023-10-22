@@ -109,25 +109,20 @@ std::optional<Response> Executor::execute_parser(Meta meta,
 
 FileRequester::FileRequester(std::filesystem::path path,
                              std::vector<uint8_t> &&file) {
+  executor_thread = std::make_unique<QThread>();
   Executor *executor;
-  try {
-    executor = new Executor(path, std::move(file));
-  } catch (ExecutorError &e) {
-    error_msg = e.what();
-    executor_thread.quit();
-    return;
-  }
-  executor->moveToThread(&executor_thread);
+  executor = new Executor(path, std::move(file));
+  executor->moveToThread(executor_thread.get());
   arborist = std::make_unique<Arborist>();
-  connect(&executor_thread, &QThread::finished, executor,
-          &QObject::deleteLater);
-  connect(executor, &Executor::response, this,
-          &FileRequester::process_response);
-  connect(this, &FileRequester::request, executor,
-          &Executor::execute_request_slot);
-  connect(this, &FileRequester::parse_request, executor,
-          &Executor::execute_parser_slot);
-  executor_thread.start();
+  assert(connect(executor_thread.get(), &QThread::finished, executor,
+                 &QObject::deleteLater));
+  assert(connect(executor, &Executor::response, this,
+                 &FileRequester::process_response));
+  assert(connect(this, &FileRequester::request, executor,
+                 &Executor::execute_request_slot));
+  assert(connect(this, &FileRequester::parse_request, executor,
+                 &Executor::execute_parser_slot));
+  executor_thread->start();
 }
 
 void FileRequester::process_response(Response resp) {
@@ -145,7 +140,7 @@ void FileRequester::process_response(Response resp) {
       auto branch = ParentBranch{resp.metadata.idx, (int)i};
       auto tree_node = TreeNode{branch, TreeNodeState::LOADED_NO_CHIlDREN, 0,
                                 std::move(vals[i].first), vals[i].second};
-      auto idx = arborist->add_node(tree_node);
+      arborist->add_node(tree_node);
     }
     arborist->get_node(resp.metadata.idx).n_children = vals.size();
     arborist->get_node(resp.metadata.idx).state = TreeNodeState::LOADED;
@@ -210,18 +205,19 @@ QVariant FileRequester::data(TreeIndex idx) {
     return QVariant("");
   }
 }
-YaboTreeModel *FileRequester::create_tree_model(QString parser_name) {
+std::unique_ptr<YaboTreeModel> FileRequester::create_tree_model(QString parser_name) {
   auto sparser_name = parser_name.toStdString();
   if (parser_root.contains(sparser_name)) {
-    return new YaboTreeModel(*this, std::move(sparser_name),
+    return std::make_unique<YaboTreeModel>(*this, std::move(sparser_name),
                              parser_root[sparser_name]);
   }
   auto node = TreeNode{
       ParentBranch{INVALID_PARENT, 0}, TreeNodeState::LOADING, 0, "(root)", {}};
   auto idx = arborist->add_node(node);
   parser_root.insert({sparser_name, idx});
-  auto tree_model = new YaboTreeModel(*this, std::move(sparser_name), idx);
-  emit parse_request(Meta{idx, MessageType::PARSE, tree_model}, sparser_name);
+  auto tree_model = std::make_unique<YaboTreeModel>(*this, std::move(sparser_name), idx);
+  // note: this is not safe if we allow changing tree models as the pointer might get invalidated
+  emit parse_request(Meta{idx, MessageType::PARSE, tree_model.get()}, parser_name);
   return tree_model;
 }
 
@@ -253,7 +249,7 @@ void FileRequester::fetch_children(TreeIndex idx, YaboTreeModel *tree_model) {
   }
 }
 
-FileRequester *
+std::unique_ptr<FileRequester>
 FileRequesterFactory::create_file_requester(QString parser_lib_path,
                                             QString file_path) {
   std::filesystem::path p = parser_lib_path.toStdString();
@@ -263,13 +259,17 @@ FileRequesterFactory::create_file_requester(QString parser_lib_path,
     auto file_size = std::filesystem::file_size(file_path.toStdString());
     file.resize(file_size);
     f.read((char *)file.data(), file_size);
+    auto req = std::make_unique<FileRequester>(p, std::move(file));
+    return req;
   } catch (std::system_error &e) {
     auto msg = std::format("Could not open file {}: {}",
                            file_path.toStdString(), e.what());
-    auto req = new FileRequester(QString::fromStdString(msg));
+    auto req = std::make_unique<FileRequester>(QString::fromStdString(msg));
+    return req;
+  } catch (ExecutorError &e) {
+    auto msg = std::format("Could not open file {}: {}",
+                           file_path.toStdString(), e.what());
+    auto req = std::make_unique<FileRequester>(QString::fromStdString(msg));
     return req;
   }
-
-  auto req = new FileRequester(p, std::move(file));
-  return req;
 }
