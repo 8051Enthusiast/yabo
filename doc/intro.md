@@ -59,7 +59,7 @@ The case for parsing `snd` works similarly, and the whole block combines the par
 ```
 
 In yabo, we notate a parser type like `[u8] -> (type, [u8])` as `[u8] *> type`.
-`*type` is a short form for `[*u8] *> type`, because bytes are what we are parsing most of the time.
+`*type` is a short form for `[u8] *> type`, because bytes are what we are parsing most of the time.
 
 It is important to recognize that blocks `{...}` are expressions that produce parsers.
 For example, these examples are possible as well:
@@ -195,7 +195,7 @@ Here is an overview of the types:
 | `int`        | signed 64-bit integer                                              |
 | `bit`        | single bit (boolean)                                               | 
 | `u8`         | byte in memory                                                     |
-| `'t`         | generic type (can have any identifire)                             |
+| `'t`         | generic type (can have any identifier)                             |
 | `['t]`       | array of `t`                                                       |
 | `'t *> 'r`   | parser that takes a `'t` and returns an `'r` (advancing `'t`)      |
 | `*'t`        | desugars to `[u8] *> 't`                                           |
