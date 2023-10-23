@@ -1,3 +1,7 @@
+"""
+Python bindings to the dynamic interface of the yabo language.
+"""
+
 from copy import copy
 import ctypes
 import threading
@@ -5,6 +9,7 @@ from os import getenv
 from ctypes import (addressof, c_char_p, c_int64, c_int8, c_ubyte,
                     c_uint32, c_uint64, c_size_t, c_char, Structure,
                     CFUNCTYPE, POINTER, byref, c_void_p, pointer)
+
 
 YABO_INTEGER = 0x100
 YABO_BIT = 0x200
@@ -109,11 +114,13 @@ class BlockVTable(Structure):
 class NominalVTable(Structure):
     __slots__ = [
         'head',
+        'name',
         'start_impl',
         'end_impl',
     ]
     _fields_ = [
         ('head', VTableHeader),
+        ('name', c_char_p),
         ('start_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr)),
         ('end_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr)),
     ]
