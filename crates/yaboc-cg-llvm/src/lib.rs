@@ -357,7 +357,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn module_string(&mut self, s: &str) -> PointerValue<'llvm> {
         let sym_name = format!("s${s}");
         if let Some(sym) = self.module.get_global(&sym_name) {
-            return sym.as_pointer_value();
+            return sym
+                .as_pointer_value()
+                .const_cast(self.llvm.i8_type().ptr_type(AddressSpace::default()));
         }
         let cstr = self.llvm.const_string(s.as_bytes(), true);
         let global_value = self.module.add_global(cstr.get_type(), None, &sym_name);

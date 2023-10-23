@@ -104,11 +104,18 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_nominal_vtable(&mut self, layout: IMonoLayout<'comp>) {
         let vtable = self.create_vtable::<vtable::NominalVTable>(layout);
         let vtable_header = self.vtable_header(layout);
+        let MonoLayout::Nominal(pd, _, _) = layout.mono_layout().0 else {
+            panic!("attempting to create nominal vtable of non-nominal layout")
+        };
+        let ident = pd.0.unwrap_name(&self.compiler_database.db);
+        let name = self.compiler_database.db.lookup_intern_identifier(ident).name;
+        let llvm_name = self.module_string(&name);
         let start = self.start_fun_val(layout);
         let end = self.end_fun_val(layout);
         let vtable_val = self.llvm.const_struct(
             &[
                 vtable_header.into(),
+                llvm_name.into(),
                 start.as_global_value().as_pointer_value().into(),
                 end.as_global_value().as_pointer_value().into(),
             ],

@@ -49,7 +49,8 @@ struct BlockVTable {
 
 struct NominalVTable {
   struct VTableHeader head;
-  int64_t (*start_impl)(void *, void *);
+  const char *name;
+  int64_t (*start_impl)(void *, const void *);
   int64_t (*end_impl)(void *, void *);
 };
 

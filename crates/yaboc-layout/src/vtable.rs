@@ -37,6 +37,7 @@ pub type EndFun = fn(ret: *mut u8, nom: *const u8) -> i64;
 target_struct! {
     pub struct NominalVTable {
         pub head: VTableHeader,
+        pub name: *const u8,
         pub start_impl: StartFun,
         pub end_impl: EndFun,
     }
