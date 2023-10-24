@@ -124,17 +124,30 @@ std::optional<Response> Executor::execute_parser(Meta meta,
   return {};
 }
 
+Executor::DerefInfo Executor::deref(YaboVal val) {
+  auto it = deref_cache.find(val);
+  if (it != deref_cache.end()) {
+    return it->second;
+  }
+  auto ret = vals.deref(val);
+  std::optional<FileSpan> span;
+  if (ret.has_value()) {
+    span = vals.extent(val);
+  }
+  auto info = DerefInfo{ret, span};
+  deref_cache.insert({val, info});
+  return info;
+}
+
 SpannedVal Executor::normalize(YaboVal val, FileSpan parent_span) {
   while (true) {
-    auto ret = vals.deref(val);
-    if (!ret.has_value()) {
+    auto deref_info = deref(val);
+    if (!deref_info.val.has_value()) {
       break;
     }
-    // get the span before val is updated
-    auto span = vals.extent(val);
-    val = ret.value();
-    if (span.has_value()) {
-      parent_span = span.value();
+    val = deref_info.val.value();
+    if (deref_info.span.has_value()) {
+      parent_span = deref_info.span.value();
     }
   }
   return SpannedVal{val, parent_span};

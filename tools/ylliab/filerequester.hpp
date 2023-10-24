@@ -60,6 +60,12 @@ private:
   std::optional<Response> get_fields(Request &req);
   std::optional<Response> get_array_members(Request &req);
   SpannedVal normalize(YaboVal val, FileSpan parent_span);
+  struct DerefInfo {
+    std::optional<YaboVal> val;
+    std::optional<FileSpan> span;
+  };
+  std::unordered_map<YaboVal, DerefInfo> deref_cache;
+  DerefInfo deref(YaboVal val);
   YaboValCreator vals;
   void *lib;
   std::filesystem::path tmp_file;
