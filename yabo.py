@@ -44,7 +44,11 @@ class MaskError(Exception):
         return f"MaskError({self.left}, {self.right})"
 
 class BacktrackError(Exception):
-    pass
+    def __str__(self):
+        return "BacktrackError"
+    
+    def __repr__(self):
+        return "BacktrackError()"    
 
 
 class VTableHeader(Structure):
