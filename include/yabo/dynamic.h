@@ -9,8 +9,8 @@ extern "C" {
 #include <string.h>
 
 struct Slice {
-  void *start;
-  void *end;
+  const uint8_t *start;
+  const uint8_t *end;
 };
 
 typedef struct {

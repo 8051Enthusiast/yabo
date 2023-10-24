@@ -9,6 +9,7 @@
 #include <qvariant.h>
 
 #include <dlfcn.h>
+#include <unordered_set>
 
 #include "request.hpp"
 #include "yabo.hpp"
@@ -56,6 +57,9 @@ signals:
   void response(Response resp);
 
 private:
+  std::optional<Response> get_fields(Request &req);
+  std::optional<Response> get_array_members(Request &req);
+  SpannedVal normalize(YaboVal val, FileSpan parent_span);
   YaboValCreator vals;
   void *lib;
   std::filesystem::path tmp_file;
@@ -91,7 +95,7 @@ struct TreeNode {
   TreeNodeState state;
   size_t n_children;
   std::string field_name;
-  std::optional<YaboVal> val;
+  std::optional<SpannedVal> val;
 };
 
 // turns a graph into a tree/forest
@@ -108,7 +112,7 @@ public:
 
   TreeNode &get_node(TreeIndex idx) { return tree[idx.idx]; }
 
-  void set_val(TreeIndex idx, YaboVal val) {
+  void set_val(TreeIndex idx, SpannedVal val) {
     tree[idx.idx].val = val;
     if (val.kind() == YaboValKind::YABOARRAY ||
         val.kind() == YaboValKind::YABOBLOCK) {
@@ -147,7 +151,8 @@ public:
     return val->kind() == YaboValKind::YABOARRAY ||
            val->kind() == YaboValKind::YABOBLOCK;
   }
-  QVariant data(TreeIndex idx);
+  QVariant data(TreeIndex idx) const;
+  FileSpan span(TreeIndex idx) const;
   TreeIndex index(TreeIndex parent, int row) const {
     return arborist->get_child(parent, row);
   }
@@ -169,7 +174,8 @@ public:
 
   std::unique_ptr<YaboTreeModel> create_tree_model(QString parser_name);
 
-  Q_INVOKABLE QString error_message() const { return error_msg; }
+  QString error_message() const { return error_msg; }
+  const uint8_t *file_base_addr() const noexcept { return file_base; }
 
 public slots:
   void process_response(Response resp);
@@ -182,6 +188,7 @@ private:
   std::unique_ptr<QThread> executor_thread;
   std::unique_ptr<Arborist> arborist;
   std::unordered_map<std::string, TreeIndex> parser_root;
+  const uint8_t *file_base;
   // for qml to handle errors
   QString error_msg;
 };
@@ -192,5 +199,5 @@ class FileRequesterFactory : public QObject {
 public:
   FileRequesterFactory() = default;
   std::unique_ptr<FileRequester> create_file_requester(QString parser_lib_path,
-                                                   QString file_path);
+                                                       QString file_path);
 };
