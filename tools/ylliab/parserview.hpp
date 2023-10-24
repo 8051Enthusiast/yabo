@@ -1,6 +1,4 @@
-#ifndef PARSERVIEW_H
-#define PARSERVIEW_H
-
+#pragma once
 #include <QWidget>
 #include "filerequester.hpp"
 
@@ -22,5 +20,3 @@ private:
     std::unique_ptr<FileRequester> fileRequester;
     std::unique_ptr<YaboTreeModel> treeModel;
 };
-
-#endif // PARSERVIEW_H
