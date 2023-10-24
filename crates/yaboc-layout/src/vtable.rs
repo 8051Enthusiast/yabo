@@ -31,8 +31,8 @@ target_struct! {
     }
 }
 
-pub type StartFun = fn(ret: *mut u8, nom: *const u8) -> i64;
-pub type EndFun = fn(ret: *mut u8, nom: *const u8) -> i64;
+pub type StartFun = fn(ret: *mut u8, nom: *const u8, target_head: i64) -> i64;
+pub type EndFun = fn(ret: *mut u8, nom: *const u8, target_head: i64) -> i64;
 
 target_struct! {
     pub struct NominalVTable {

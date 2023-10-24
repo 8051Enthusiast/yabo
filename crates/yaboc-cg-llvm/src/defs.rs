@@ -119,11 +119,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     pub(super) fn start_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
-        self.pp_fun_val(layout, LayoutPart::Start)
+        self.ppi_fun_val(layout, LayoutPart::Start)
     }
 
     pub(super) fn end_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
-        self.pp_fun_val(layout, LayoutPart::End)
+        self.ppi_fun_val(layout, LayoutPart::End)
     }
 
     pub(super) fn current_element_fun_val(

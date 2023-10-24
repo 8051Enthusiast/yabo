@@ -441,14 +441,15 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_pd_end(&mut self, layout: IMonoLayout<'comp>) {
         let llvm_fun = self.end_fun_val(layout);
         self.add_entry_block(llvm_fun);
-        let [ret, arg] = get_fun_args(llvm_fun).map(|x| x.into_pointer_value());
-        let arg = CgMonoValue::new(layout, arg);
-        let start_copy = self.start_fun_val(layout);
-        self.builder
-            .build_call(start_copy, &[ret.into(), arg.ptr.into()], "");
-        let (from, fun, _) = self.build_nominal_components(arg, pd_len_req());
+        let [ret, nom, head] = get_fun_args(llvm_fun);
+        let [ret, nom] = [ret, nom].map(|x| x.into_pointer_value());
+        let ret = CgReturnValue::new(head.into_int_value(), ret);    
+        let nom = CgMonoValue::new(layout, nom);
+        // this should never fail, as arrays are not deref
+        self.call_start_fun(ret, nom.into());
+        let (from, fun) = self.build_nominal_components(nom);
         let no_ret = self.undef_ret();
-        let from_ret = from.with_ptr(ret);
+        let from_ret = from.with_ptr(ret.ptr);
         let ret = self.build_parser_call(no_ret, fun.into(), from_ret, pd_len_req());
         self.builder.build_return(Some(&ret));
     }
@@ -456,21 +457,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_pd_start(&mut self, layout: IMonoLayout<'comp>) {
         let fun = self.start_fun_val(layout);
         self.add_entry_block(fun);
-        let [to, from] = get_fun_args(fun).map(|x| x.into_pointer_value());
-        let (from_layout, _) = layout.unapply_nominal(self.layouts);
-        let sa = from_layout
-            .size_align(self.layouts)
-            .expect("Could not get size/alignment of layout");
-        let size = self
-            .llvm
-            .ptr_sized_int_type(&self.target_data, None)
-            .const_int(sa.size, false);
-        let align = sa.align();
-        self.builder
-            .build_memcpy(to, align as u32, from, align as u32, size)
-            .unwrap();
-        self.builder
-            .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)));
+        let [to, nom, head] = get_fun_args(fun);
+        let [to, nom] = [to, nom].map(|x| x.into_pointer_value());
+        let head = head.into_int_value();
+        let ret = CgReturnValue::new(head, to);
+        let nom = CgMonoValue::new(layout, nom);
+        let (from, _) = self.build_nominal_components(nom);
+        self.terminate_tail_typecast(from, ret)
     }
 
     fn get_slice_ptrs(&mut self, arg: PointerValue<'llvm>) -> [PointerValue<'llvm>; 2] {
