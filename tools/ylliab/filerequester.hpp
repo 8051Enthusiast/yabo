@@ -146,8 +146,8 @@ public:
   FileRequester(std::filesystem::path path, std::vector<uint8_t> &&file);
   FileRequester(QString error_msg) : error_msg(error_msg) {}
   ~FileRequester() {
-    executor_thread->quit();
-    executor_thread->wait();
+    executor_thread.quit();
+    executor_thread.wait();
   }
   bool has_children(TreeIndex idx) const {
     auto val = arborist->get_node(idx).val;
@@ -191,7 +191,7 @@ signals:
   void parse_request(Meta meta, QString func_name);
 
 private:
-  std::unique_ptr<QThread> executor_thread;
+  QThread executor_thread;
   std::unique_ptr<Arborist> arborist;
   std::unordered_map<std::string, TreeIndex> parser_root;
   const uint8_t *file_base;

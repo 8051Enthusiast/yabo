@@ -40,6 +40,7 @@ Executor::Executor(std::filesystem::path path, std::vector<uint8_t> &&file)
   if (!lib) {
     auto err =
         std::format("Could not open file {}; {}", path.string(), dlerror());
+    std::filesystem::remove(tmp_file);
     throw ExecutorError(err);
   }
 
@@ -48,6 +49,8 @@ Executor::Executor(std::filesystem::path path, std::vector<uint8_t> &&file)
     auto err = std::format("File does not contain yabo_ma_buf_size symbol: {}. "
                            "Is the file in the right format?",
                            dlerror());
+    dlclose(lib);
+    std::filesystem::remove(tmp_file);
     throw ExecutorError(err);
   }
   vals = YaboValCreator(YaboValStorage(*size));
@@ -155,13 +158,12 @@ SpannedVal Executor::normalize(YaboVal val, FileSpan parent_span) {
 
 FileRequester::FileRequester(std::filesystem::path path,
                              std::vector<uint8_t> &&file) {
-  executor_thread = std::make_unique<QThread>();
   Executor *executor;
   file_base = file.data();
   executor = new Executor(path, std::move(file));
-  executor->moveToThread(executor_thread.get());
+  executor->moveToThread(&executor_thread);
   arborist = std::make_unique<Arborist>();
-  assert(connect(executor_thread.get(), &QThread::finished, executor,
+  assert(connect(&executor_thread, &QThread::finished, executor,
                  &QObject::deleteLater));
   assert(connect(executor, &Executor::response, this,
                  &FileRequester::process_response));
@@ -169,7 +171,7 @@ FileRequester::FileRequester(std::filesystem::path path,
                  &Executor::execute_request_slot));
   assert(connect(this, &FileRequester::parse_request, executor,
                  &Executor::execute_parser_slot));
-  executor_thread->start();
+  executor_thread.start();
 }
 
 void FileRequester::process_response(Response resp) {
