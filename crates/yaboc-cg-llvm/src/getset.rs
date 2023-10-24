@@ -1,4 +1,4 @@
-use yaboc_layout::represent::ParserFunKind;
+use yaboc_layout::{represent::ParserFunKind, vtable::NominalVTableFields};
 use yaboc_types::TypeId;
 
 use crate::{defs::TAILCC, val::CgReturnValue};
@@ -376,6 +376,24 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 end.ptr.into(),
             ],
         )
+    }
+
+    pub(super) fn call_start_fun(
+        &mut self,
+        ret: CgReturnValue<'llvm>,
+        nom: CgValue<'comp, 'llvm>,
+    ) {
+        let start = match nom.layout.maybe_mono() {
+            Some(mono) => self.sym_callable(mono, LayoutPart::Start),
+            None => self.vtable_callable::<vtable::NominalVTable>(
+                nom.ptr,
+                &[NominalVTableFields::start_impl as u64],
+            ),
+        };
+        self.build_call_with_int_ret(
+            start,
+            &[ret.ptr.into(), nom.ptr.into(), ret.head.into()],
+        );
     }
 
     pub(super) fn deref_level(&mut self, ty: TypeId) -> IntValue<'llvm> {

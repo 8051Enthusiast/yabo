@@ -121,8 +121,8 @@ class NominalVTable(Structure):
     _fields_ = [
         ('head', VTableHeader),
         ('name', c_char_p),
-        ('start_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr)),
-        ('end_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr)),
+        ('start_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64)),
+        ('end_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64)),
     ]
 
 

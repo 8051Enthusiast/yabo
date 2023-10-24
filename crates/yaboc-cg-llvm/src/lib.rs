@@ -504,8 +504,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn build_nominal_components(
         &mut self,
         val: CgMonoValue<'comp, 'llvm>,
-        req: CallMeta,
-    ) -> (CgValue<'comp, 'llvm>, CgMonoValue<'comp, 'llvm>, u64) {
+    ) -> (CgValue<'comp, 'llvm>, CgMonoValue<'comp, 'llvm>) {
         let MonoLayout::Nominal(pd, _, args) = val.layout.mono_layout().0 else {
             panic!("build_nominal_components has to be called with a nominal parser layout");
         };
@@ -514,9 +513,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let layout_sa = val.layout.inner().size_align(self.layouts).unwrap();
         let (from_layout, parser) = val.layout.unapply_nominal(self.layouts);
         let from_val = self.build_field_gep(parserdef.from.0, val.into(), from_layout);
-        let slot = self.collected_layouts.parser_slots.layout_vtable_offsets
-            [&((from_layout, req), parser.inner())];
-
         let arg_ptr = if !args.is_empty() {
             let mut from_sa = from_layout.size_align(self.layouts).unwrap();
             from_sa.align_mask |= layout_sa.align_mask;
@@ -526,7 +522,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.any_ptr().get_undef()
         };
         let arg = CgMonoValue::new(parser, arg_ptr);
-        (from_val, arg, slot)
+        (from_val, arg)
     }
 
     fn build_copy_invariant(&mut self, dest: CgValue<'comp, 'llvm>, src: CgValue<'comp, 'llvm>) {
