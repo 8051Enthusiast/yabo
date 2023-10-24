@@ -120,7 +120,7 @@ int print_block(DynValue *val, int indent, Stack stack, FILE *out) {
   int status;
   if (fputs("{\n", out) == EOF)
     return EOF;
-  int64_t (**access_impl)(void *, void *, uint64_t) = vtable->access_impl;
+  int64_t (**access_impl)(void *, const void *, uint64_t) = vtable->access_impl;
   while (field_desc != field_end) {
     DynValue *sub_value = (DynValue *)stack.current;
     int64_t return_val =
@@ -236,12 +236,12 @@ struct Slice map_file(char *filename) {
     perror("could not mmap file");
     return (struct Slice){0};
   }
-  void *file = mmap(NULL, (size_t)length, PROT_READ, MAP_SHARED, fd, 0);
+  const void *file = mmap(NULL, (size_t)length, PROT_READ, MAP_SHARED, fd, 0);
   if (file == MAP_FAILED) {
     perror("could not mmap file");
     return (struct Slice){0};
   }
-  return (struct Slice){file, (char *)file + length};
+  return (struct Slice){(const uint8_t*)file, (const uint8_t*)file + length};
 }
 
 int main(int argc, char **argv) {

@@ -24,6 +24,13 @@ enum class YaboValKind : int64_t {
   YABOERROR = -2,
 };
 
+typedef std::span<const uint8_t> FileSpan;
+
+static inline bool span_contains(FileSpan outer, FileSpan inner) noexcept {
+  return outer.data() <= inner.data() &&
+         outer.data() + outer.size() >= inner.data() + inner.size();
+}
+
 // interned yabo value, can be compared by pointer comparison
 struct YaboVal {
   // is not null
@@ -39,6 +46,10 @@ struct YaboVal {
 
   inline int8_t access_bool() const noexcept { return *(int8_t *)val->data; }
 
+  inline const uint8_t *access_u8() const noexcept {
+    return *(const uint8_t **)val->data;
+  }
+
   inline uint64_t access_error() const noexcept {
     return *(uint64_t *)val->data;
   }
@@ -50,14 +61,18 @@ struct YaboVal {
   }
 };
 
+struct SpannedVal : public YaboVal {
+  FileSpan span;
+};
+
 struct YaboValBytes {
-  YaboValBytes(std::span<uint8_t> byte_span) noexcept : bytes(byte_span){};
+  YaboValBytes(FileSpan byte_span) noexcept : bytes(byte_span){};
 
   YaboValBytes(const DynValue *x) noexcept {
     bytes = std::span((uint8_t *)x, dyn_val_size((DynValue *)x));
   }
 
-  std::span<uint8_t> bytes;
+  FileSpan bytes;
 
   bool operator==(const YaboValBytes &rhs) const noexcept {
     if (bytes.size() != rhs.bytes.size()) {
@@ -86,17 +101,21 @@ public:
   YaboVal with_return_buf(std::function<uint64_t(uint8_t *ret)>);
   YaboVal with_address_and_return_buf(
       YaboVal addr, std::function<uint64_t(DynValue *addr, uint8_t *ret)>);
-  YaboVal
-  with_span_and_return_buf(std::span<uint8_t> span,
+  SpannedVal
+  with_span_and_return_buf(FileSpan span,
                            std::function<uint64_t(void *addr, uint8_t *ret)>);
+  // all functions take at most 3 value arguments, so this should be enough for
+  // most cases
+  template <typename T>
+  T tmp_buf_o_plenty(
+      std::function<T(DynValue *tmp1, DynValue *tmp2, DynValue *tmp3)> f) {
+    auto t1 = next_val_ptr();
+    auto t2 = tmp();
+    auto t3 = tmp2();
+    return f(t1, t2, t3);
+  }
 
 private:
-  struct Slice {
-    Slice(std::span<uint8_t> s) : start(s.data()), end(s.data() + s.size()) {}
-    uint8_t *start;
-    uint8_t *end;
-  };
-
   inline size_t fresh_storage_size() const {
     auto current_len = old_storage.size();
     return std::max(2 * (max_size + alignof(max_align_t)),
@@ -108,6 +127,7 @@ private:
   }
 
   inline DynValue *tmp() const { return (DynValue *)tmp_storage.get(); }
+  inline DynValue *tmp2() const { return (DynValue *)tmp_storage2.get(); }
 
   DynValue *next_val_ptr();
   void expand_storage();
@@ -117,6 +137,8 @@ private:
   std::unique_ptr<uint8_t[]> fresh_storage;
   // provides storage for one temporary value that gets thrown away later
   std::unique_ptr<uint8_t[]> tmp_storage;
+  // tmp storage 2: electric boogaloo
+  std::unique_ptr<uint8_t[]> tmp_storage2;
   std::vector<std::unique_ptr<uint8_t[]>> old_storage;
 
   std::unordered_map<YaboValBytes, YaboVal> interner;
@@ -138,7 +160,8 @@ public:
   std::optional<YaboVal> deref(YaboVal val);
   int64_t array_len(YaboVal val);
   std::optional<YaboVal> index(YaboVal val, size_t idx);
-  std::optional<YaboVal> parse(ParseFun parser, std::span<uint8_t> buf);
+  std::optional<SpannedVal> parse(ParseFun parser, FileSpan buf);
+  std::optional<FileSpan> extent(YaboVal val);
 
 private:
   YaboValStorage storage;

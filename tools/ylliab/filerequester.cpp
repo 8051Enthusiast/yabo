@@ -58,41 +58,57 @@ Executor::~Executor() {
   std::filesystem::remove(tmp_file);
 }
 
+std::optional<Response> Executor::get_fields(Request &req) {
+  std::vector<std::pair<std::string, SpannedVal>> ret;
+  auto vtable = reinterpret_cast<BlockVTable *>(req.val.val->vtable);
+  for (size_t i = 0; i < vtable->fields->number_fields; i++) {
+    auto name = vtable->fields->fields[i];
+    auto field_val = vals.access_field(req.val, name);
+    if (field_val.has_value()) {
+      auto new_val = normalize(field_val.value(), req.val.span);
+      ret.push_back(std::pair(name, new_val));
+    }
+  }
+  return Response(req.metadata, std::move(ret));
+}
+
+std::optional<Response> Executor::get_array_members(Request &req) {
+  std::vector<std::pair<std::string, SpannedVal>> ret;
+  auto len = vals.array_len(req.val);
+  for (size_t i = 0; i < len; i++) {
+    auto idx_val = vals.index(req.val, i);
+    if (idx_val.has_value()) {
+      auto new_val = normalize(idx_val.value(), req.val.span);
+      ret.push_back(std::pair(std::to_string(i), new_val));
+    } else {
+      return {};
+    }
+  }
+  return Response(req.metadata, std::move(ret));
+}
+
 std::optional<Response> Executor::execute_request(Request req) {
   switch (req.metadata.kind) {
   case MessageType::FIELDS: {
-    std::vector<std::pair<std::string, YaboVal>> ret{};
-    auto vtable = reinterpret_cast<BlockVTable *>(req.val->vtable);
-    for (size_t i = 0; i < vtable->fields->number_fields; i++) {
-      auto name = vtable->fields->fields[i];
-      auto field_val = vals.access_field(req.val, name);
-      if (field_val.has_value()) {
-        ret.push_back(std::pair(name, field_val.value()));
-      }
-    }
-    return Response(req.metadata, std::move(ret));
+    return get_fields(req);
   }
   case MessageType::ARRAY_ELEMENTS: {
-    std::vector<std::pair<std::string, YaboVal>> ret{};
-    auto len = vals.array_len(req.val);
-    for (size_t i = 0; i < len; i++) {
-      auto idx_val = vals.index(req.val, i);
-      if (idx_val.has_value()) {
-        ret.push_back(std::pair(std::to_string(i), idx_val.value()));
-      } else {
-        return {};
-      }
-    }
-    return Response(req.metadata, std::move(ret));
+    return get_array_members(req);
+  }
+  case MessageType::DEREF: {
+    auto normalized = normalize(req.val, req.val.span);
+    return Response(req.metadata, normalized);
   }
   case MessageType::PARSE:
   case MessageType::ERROR: {
     // parse requests come in via the execute_parser slot
     return {};
   }
+  default:
+    return {};
   }
-  return {};
 }
+
 std::optional<Response> Executor::execute_parser(Meta meta,
                                                  char const *func_name) {
   auto parser_ptr = reinterpret_cast<ParseFun const *>(dlsym(lib, func_name));
@@ -102,15 +118,33 @@ std::optional<Response> Executor::execute_parser(Meta meta,
   auto parser = *parser_ptr;
   auto ret = vals.parse(parser, file);
   if (ret.has_value()) {
-    return Response(meta, ret.value());
+    auto normalized = normalize(ret.value(), ret->span);
+    return Response(meta, normalized);
   }
   return {};
+}
+
+SpannedVal Executor::normalize(YaboVal val, FileSpan parent_span) {
+  while (true) {
+    auto ret = vals.deref(val);
+    if (!ret.has_value()) {
+      break;
+    }
+    // get the span before val is updated
+    auto span = vals.extent(val);
+    val = ret.value();
+    if (span.has_value()) {
+      parent_span = span.value();
+    }
+  }
+  return SpannedVal{val, parent_span};
 }
 
 FileRequester::FileRequester(std::filesystem::path path,
                              std::vector<uint8_t> &&file) {
   executor_thread = std::make_unique<QThread>();
   Executor *executor;
+  file_base = file.data();
   executor = new Executor(path, std::move(file));
   executor->moveToThread(executor_thread.get());
   arborist = std::make_unique<Arborist>();
@@ -151,7 +185,8 @@ void FileRequester::process_response(Response resp) {
     arborist->get_node(resp.metadata.idx).state = TreeNodeState::ERROR;
     break;
   case MessageType::PARSE:
-    auto val = std::get<YaboVal>(resp.data);
+  case MessageType::DEREF:
+    auto val = std::get<SpannedVal>(resp.data);
     arborist->set_val(resp.metadata.idx, val);
     auto tree_model = static_cast<YaboTreeModel *>(resp.metadata.user_data);
     tree_model->data_changed(resp.metadata.idx);
@@ -159,7 +194,7 @@ void FileRequester::process_response(Response resp) {
   };
 }
 
-QVariant FileRequester::data(TreeIndex idx) {
+QVariant FileRequester::data(TreeIndex idx) const {
   auto state = arborist->get_node(idx).state;
   if (state == TreeNodeState::LOADING) {
     return QString();
@@ -173,9 +208,11 @@ QVariant FileRequester::data(TreeIndex idx) {
     return QString();
   }
 
-  switch (val->kind()) {
+  auto inner_val = val.value();
+
+  switch (inner_val.kind()) {
   case YaboValKind::YABOERROR: {
-    auto err = val->access_error();
+    auto err = inner_val.access_error();
     if (err == BACKTRACK) {
       return QVariant("Backtrack");
     } else if (err == EOS) {
@@ -185,11 +222,11 @@ QVariant FileRequester::data(TreeIndex idx) {
     }
   }
   case YaboValKind::YABOINTEGER:
-    return QVariant::fromValue(val->access_int());
+    return QVariant::fromValue(inner_val.access_int());
   case YaboValKind::YABOBIT:
-    return QVariant::fromValue((bool)val->access_bool());
+    return QVariant::fromValue((bool)inner_val.access_bool());
   case YaboValKind::YABOCHAR:
-    return QVariant::fromValue(val->access_char());
+    return QVariant::fromValue(inner_val.access_char());
   case YaboValKind::YABONOM:
   case YaboValKind::YABOU8:
     return QVariant("nominal");
@@ -203,21 +240,47 @@ QVariant FileRequester::data(TreeIndex idx) {
     return QVariant("");
   case YaboValKind::YABOBLOCK:
     return QVariant("");
+  default:
+    return QVariant();
   }
 }
-std::unique_ptr<YaboTreeModel> FileRequester::create_tree_model(QString parser_name) {
+
+FileSpan FileRequester::span(TreeIndex idx) const {
+  auto &node = arborist->get_node(idx);
+  auto val = node.val;
+  if (!val.has_value()) {
+    return FileSpan();
+  }
+  auto inner_val = val.value();
+  auto parent = node.idx.parent;
+  if (parent == INVALID_PARENT) {
+    return inner_val.span;
+  }
+  auto parent_span = arborist->get_node(parent).val.value().span;
+  if (parent_span.data() == inner_val.span.data() &&
+      parent_span.size() == inner_val.span.size()) {
+    return FileSpan();
+  }
+  return inner_val.span;
+}
+
+std::unique_ptr<YaboTreeModel>
+FileRequester::create_tree_model(QString parser_name) {
   auto sparser_name = parser_name.toStdString();
   if (parser_root.contains(sparser_name)) {
     return std::make_unique<YaboTreeModel>(*this, std::move(sparser_name),
-                             parser_root[sparser_name]);
+                                           parser_root[sparser_name]);
   }
   auto node = TreeNode{
       ParentBranch{INVALID_PARENT, 0}, TreeNodeState::LOADING, 0, "(root)", {}};
   auto idx = arborist->add_node(node);
   parser_root.insert({sparser_name, idx});
-  auto tree_model = std::make_unique<YaboTreeModel>(*this, std::move(sparser_name), idx);
-  // note: this is not safe if we allow changing tree models as the pointer might get invalidated
-  emit parse_request(Meta{idx, MessageType::PARSE, tree_model.get()}, parser_name);
+  auto tree_model =
+      std::make_unique<YaboTreeModel>(*this, std::move(sparser_name), idx);
+  // note: this is not safe if we allow changing tree models as the pointer
+  // might get invalidated
+  emit parse_request(Meta{idx, MessageType::PARSE, tree_model.get()},
+                     parser_name);
   return tree_model;
 }
 

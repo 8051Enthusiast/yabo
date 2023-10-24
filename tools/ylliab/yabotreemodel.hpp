@@ -39,5 +39,5 @@ private:
   std::string parser_name;
   TreeIndex root_id;
   bool inserting_rows = false;
-  constexpr static int NUM_COLUMNS = 2;
+  constexpr static int NUM_COLUMNS = 3;
 };
