@@ -34,13 +34,21 @@ public:
   TreeIndex get_root() const noexcept { return root_id; }
   void set_root(TreeIndex new_root);
 
+  void handle_doubleclick(const QModelIndex &index);
+
+  void undo();
+  void redo();
+
 private:
   TreeIndex to_tree_index(const QModelIndex &index) const;
   QModelIndex to_qindex(TreeIndex idx, int column) const;
+  QVariant color(const QModelIndex &index) const;
 
   FileRequester &file_requester;
   std::string parser_name;
   TreeIndex root_id;
   bool inserting_rows = false;
+  std::vector<TreeIndex> undo_stack;
+  size_t undo_stack_idx = 0;
   constexpr static int NUM_COLUMNS = 3;
 };

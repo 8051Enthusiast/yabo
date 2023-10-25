@@ -1,6 +1,7 @@
 #include "yabotreemodel.hpp"
 #include "filerequester.hpp"
 #include "request.hpp"
+#include <qcolor.h>
 
 enum Column {
   FIELD = 0,
@@ -12,7 +13,7 @@ enum Column {
 YaboTreeModel::YaboTreeModel(FileRequester &file_requester,
                              std::string &&parser_name, TreeIndex root_id)
     : QAbstractItemModel(&file_requester), file_requester(file_requester),
-      parser_name(parser_name), root_id(root_id) {}
+      parser_name(parser_name), root_id(root_id), undo_stack(1, root_id) {}
 QModelIndex YaboTreeModel::index(int row, int column,
                                  const QModelIndex &parent) const {
   TreeIndex new_index;
@@ -54,8 +55,18 @@ int YaboTreeModel::columnCount(const QModelIndex &parent) const {
   return NUM_COLUMNS;
 }
 
+QVariant YaboTreeModel::color(const QModelIndex &index) const {
+  if (index.column() != Column::VALUE) {
+    return QVariant();
+  }
+  return file_requester.color(to_tree_index(index));
+}
+
 QVariant YaboTreeModel::data(const QModelIndex &index, int role) const {
   if (role != Qt::DisplayRole) {
+    if (role == Qt::BackgroundRole) {
+      return color(index);
+    }
     return QVariant();
   }
   if (!index.isValid())
@@ -173,7 +184,38 @@ void YaboTreeModel::end_insert_rows() {
 }
 
 void YaboTreeModel::set_root(TreeIndex new_root) {
+  if (root_id == new_root) {
+    return;
+  }
   beginResetModel();
   root_id = new_root;
+  undo_stack.erase(undo_stack.begin() + undo_stack_idx + 1, undo_stack.end());
+  undo_stack.push_back(root_id);
+  undo_stack_idx++;
   endResetModel();
+}
+
+void YaboTreeModel::redo() {
+  if (undo_stack_idx + 1 >= undo_stack.size()) {
+    return;
+  }
+  beginResetModel();
+  root_id = undo_stack[++undo_stack_idx];
+  endResetModel();
+}
+
+void YaboTreeModel::undo() {
+  if (undo_stack_idx == 0) {
+    return;
+  }
+  beginResetModel();
+  root_id = undo_stack[--undo_stack_idx];
+  endResetModel();
+}
+
+void YaboTreeModel::handle_doubleclick(const QModelIndex &index) {
+  if (index.column() != Column::VALUE) {
+    return;
+  }
+  file_requester.set_bubble(to_tree_index(index));
 }

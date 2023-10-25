@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <qcolor.h>
 #include <qglobal.h>
 #include <random>
 
@@ -144,15 +145,23 @@ Executor::DerefInfo Executor::deref(YaboVal val) {
 }
 
 SpannedVal Executor::normalize(YaboVal val, FileSpan parent_span) {
+  std::optional<SpannedVal> first_outside;
   while (true) {
     auto deref_info = deref(val);
     if (!deref_info.val.has_value()) {
       break;
     }
-    val = deref_info.val.value();
     if (deref_info.span.has_value()) {
+      if (!span_contains(parent_span, deref_info.span.value())) {
+        first_outside = SpannedVal{val, deref_info.span.value()};
+      }
       parent_span = deref_info.span.value();
     }
+    val = deref_info.val.value();
+  }
+  if (first_outside.has_value() && (val.kind() == YaboValKind::YABOARRAY ||
+                                    val.kind() == YaboValKind::YABOBLOCK)) {
+    return first_outside.value();
   }
   return SpannedVal{val, parent_span};
 }
@@ -204,6 +213,8 @@ void FileRequester::set_value(TreeIndex idx, SpannedVal val) {
       arborist->add_node(ParentBranch{INVALID_PARENT, root_count++}, "");
   auto req = Request{
       Meta{new_nominal_bubble, MessageType::DEREF, new_nominal_bubble}, val};
+  nominal_bubbles.insert({val, new_nominal_bubble});
+  emit request(req);
 }
 
 void FileRequester::process_response(Response resp) {
@@ -284,7 +295,7 @@ QVariant FileRequester::data(TreeIndex idx) const {
   case YaboValKind::YABOU8: {
     // we special-case u8 to print hex
     uint8_t byte = *inner_val.access_u8();
-    return QString::asprintf("%02x", byte);
+    return QString::asprintf("0x%02x", byte);
   }
   case YaboValKind::YABOPARSER:
     return QVariant("parser");
@@ -358,6 +369,13 @@ void FileRequester::fetch_children(TreeIndex idx, TreeIndex root) {
     emit request(Request{Meta{idx, message_type, root}, val});
   }
 }
+QColor FileRequester::color(TreeIndex idx) const {
+  auto &node = arborist->get_node(idx);
+  if (node.val.has_value() && node.val->kind() == YaboValKind::YABONOM) {
+    return QColor(220, 220, 240);
+  }
+  return QColor(255, 255, 255);
+}
 
 void FileRequester::set_parser(QString name) {
   auto parser_name = name.toStdString();
@@ -373,6 +391,17 @@ void FileRequester::set_parser(QString name) {
   emit parse_request(Meta{idx, MessageType::PARSE, idx}, name);
 }
 
+void FileRequester::set_bubble(TreeIndex idx) {
+  auto &node = arborist->get_node(idx);
+  if (!node.val.has_value()) {
+    return;
+  }
+  if (node.val->kind() != YaboValKind::YABONOM) {
+    return;
+  }
+  auto root = nominal_bubbles.at(node.val.value());
+  tree_model->set_root(root);
+}
 std::unique_ptr<FileRequester> FileRequesterFactory::create_file_requester(
     QString parser_lib_path, QString file_path, QString parser_name) {
   std::filesystem::path p = parser_lib_path.toStdString();

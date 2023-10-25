@@ -173,12 +173,14 @@ public:
   }
   bool can_fetch_children(TreeIndex idx);
   void fetch_children(TreeIndex idx, TreeIndex root);
+  QColor color(TreeIndex idx) const;
 
   QString error_message() const { return error_msg; }
   const uint8_t *file_base_addr() const noexcept { return file_base; }
 
   YaboTreeModel &get_tree_model() { return *tree_model; }
   void set_parser(QString name);
+  void set_bubble(TreeIndex idx);
 
 public slots:
   void process_response(Response resp);

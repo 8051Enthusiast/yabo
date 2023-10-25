@@ -125,7 +125,8 @@ std::optional<YaboVal> YaboValCreator::access_field(YaboVal val,
 }
 
 std::optional<YaboVal> YaboValCreator::deref(YaboVal val) {
-  if (val.is_exceptional() || val->vtable->deref_level < 256) {
+  if (val.is_exceptional() || val->vtable->deref_level < 256 ||
+      val->vtable->head >= 0) {
     return {};
   }
 
