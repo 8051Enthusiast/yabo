@@ -109,12 +109,7 @@ class Arborist {
 public:
   Arborist() = default;
 
-  TreeIndex add_node(TreeNode node) {
-    tree.push_back(node);
-    auto idx = TreeIndex{tree.size() - 1};
-    interner.insert({node.idx, idx});
-    return idx;
-  }
+  TreeIndex add_node(ParentBranch idx, std::string &&field_name);
 
   TreeNode &get_node(TreeIndex idx) { return tree[idx.idx]; }
 
@@ -143,7 +138,8 @@ class YaboTreeModel;
 class FileRequester : public QObject {
   Q_OBJECT
 public:
-  FileRequester(std::filesystem::path path, std::vector<uint8_t> &&file);
+  FileRequester(std::filesystem::path path, std::vector<uint8_t> &&file,
+                QString parser_name);
   FileRequester(QString error_msg) : error_msg(error_msg) {}
   ~FileRequester() {
     executor_thread.quit();
@@ -176,12 +172,12 @@ public:
     return arborist->get_node(idx).field_name;
   }
   bool can_fetch_children(TreeIndex idx);
-  void fetch_children(TreeIndex idx, YaboTreeModel *tree_model);
-
-  std::unique_ptr<YaboTreeModel> create_tree_model(QString parser_name);
+  void fetch_children(TreeIndex idx, TreeIndex root);
 
   QString error_message() const { return error_msg; }
   const uint8_t *file_base_addr() const noexcept { return file_base; }
+
+  YaboTreeModel &get_tree_model() { return *tree_model; }
 
 public slots:
   void process_response(Response resp);
@@ -191,9 +187,14 @@ signals:
   void parse_request(Meta meta, QString func_name);
 
 private:
+  void create_tree_model(QString parser_name);
+  void set_value(TreeIndex idx, SpannedVal val);
   QThread executor_thread;
   std::unique_ptr<Arborist> arborist;
   std::unordered_map<std::string, TreeIndex> parser_root;
+  std::unordered_map<YaboVal, TreeIndex> nominal_bubbles;
+  int root_count = 0;
+  std::unique_ptr<YaboTreeModel> tree_model;
   const uint8_t *file_base;
   // for qml to handle errors
   QString error_msg;
@@ -205,5 +206,6 @@ class FileRequesterFactory : public QObject {
 public:
   FileRequesterFactory() = default;
   std::unique_ptr<FileRequester> create_file_requester(QString parser_lib_path,
-                                                       QString file_path);
+                                                       QString file_path,
+                                                       QString parser_name);
 };

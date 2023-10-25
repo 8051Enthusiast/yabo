@@ -70,8 +70,8 @@ QVariant YaboTreeModel::data(const QModelIndex &index, int role) const {
       return QVariant();
     }
     auto relative_addr_start = span.data() - file_requester.file_base_addr();
-    auto addr_str = "0x" + QString::number(relative_addr_start, 16) + "+" +
-                    QString::number(span.size());
+    auto addr_str =
+        QString::asprintf("0x%08zx [%zd]", relative_addr_start, span.size());
     return addr_str;
   }
   case Column::DEBUG: {
@@ -126,7 +126,7 @@ void YaboTreeModel::fetchMore(const QModelIndex &parent) {
   if (!parent.isValid())
     return;
 
-  file_requester.fetch_children(to_tree_index(parent), this);
+  file_requester.fetch_children(to_tree_index(parent), root_id);
 }
 
 QModelIndex YaboTreeModel::to_qindex(TreeIndex idx, int column) const {

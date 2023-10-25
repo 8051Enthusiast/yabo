@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <qglobal.h>
 #include <random>
 
 #include <qthread.h>
@@ -156,8 +157,17 @@ SpannedVal Executor::normalize(YaboVal val, FileSpan parent_span) {
   return SpannedVal{val, parent_span};
 }
 
+TreeIndex Arborist::add_node(ParentBranch parent, std::string &&field_name) {
+  auto node =
+      TreeNode{parent, TreeNodeState::LOADING, 0, std::move(field_name), {}};
+  tree.push_back(node);
+  auto idx = TreeIndex{tree.size() - 1};
+  interner.insert({node.idx, idx});
+  return idx;
+}
+
 FileRequester::FileRequester(std::filesystem::path path,
-                             std::vector<uint8_t> &&file) {
+                             std::vector<uint8_t> &&file, QString parser_name) {
   Executor *executor;
   file_base = file.data();
   executor = new Executor(path, std::move(file));
@@ -172,28 +182,52 @@ FileRequester::FileRequester(std::filesystem::path path,
   assert(connect(this, &FileRequester::parse_request, executor,
                  &Executor::execute_parser_slot));
   executor_thread.start();
+  create_tree_model(parser_name);
+}
+
+void FileRequester::set_value(TreeIndex idx, SpannedVal val) {
+  auto &node = arborist->get_node(idx);
+  node.val = val;
+  if (val.kind() == YaboValKind::YABOARRAY ||
+      val.kind() == YaboValKind::YABOBLOCK) {
+    node.state = TreeNodeState::LOADED_NO_CHIlDREN;
+  } else {
+    node.state = TreeNodeState::LOADED;
+  }
+  if (val.kind() != YaboValKind::YABONOM) {
+    return;
+  }
+  if (nominal_bubbles.contains(val)) {
+    return;
+  }
+  auto new_nominal_bubble =
+      arborist->add_node(ParentBranch{INVALID_PARENT, root_count++}, "");
+  auto req = Request{
+      Meta{new_nominal_bubble, MessageType::DEREF, new_nominal_bubble}, val};
 }
 
 void FileRequester::process_response(Response resp) {
   switch (resp.metadata.kind) {
   case MessageType::ARRAY_ELEMENTS:
   case MessageType::FIELDS: {
-    auto tree_model = static_cast<YaboTreeModel *>(resp.metadata.user_data);
     auto &vals = std::get<YaboValVec>(resp.data);
     if (vals.empty()) {
       arborist->get_node(resp.metadata.idx).state = TreeNodeState::LOADED;
       break;
     }
-    tree_model->begin_insert_rows(resp.metadata.idx, 0, vals.size() - 1);
+    if (resp.metadata.root == tree_model->get_root()) {
+      tree_model->begin_insert_rows(resp.metadata.idx, 0, vals.size() - 1);
+    }
     for (size_t i = 0; i < vals.size(); i++) {
       auto branch = ParentBranch{resp.metadata.idx, (int)i};
-      auto tree_node = TreeNode{branch, TreeNodeState::LOADED_NO_CHIlDREN, 0,
-                                std::move(vals[i].first), vals[i].second};
-      arborist->add_node(tree_node);
+      auto tree_idx = arborist->add_node(branch, std::move(vals[i].first));
+      set_value(tree_idx, vals[i].second);
     }
     arborist->get_node(resp.metadata.idx).n_children = vals.size();
     arborist->get_node(resp.metadata.idx).state = TreeNodeState::LOADED;
-    tree_model->end_insert_rows();
+    if (resp.metadata.root == tree_model->get_root()) {
+      tree_model->end_insert_rows();
+    }
     break;
   }
   case MessageType::ERROR:
@@ -202,9 +236,10 @@ void FileRequester::process_response(Response resp) {
   case MessageType::PARSE:
   case MessageType::DEREF:
     auto val = std::get<SpannedVal>(resp.data);
-    arborist->set_val(resp.metadata.idx, val);
-    auto tree_model = static_cast<YaboTreeModel *>(resp.metadata.user_data);
-    tree_model->data_changed(resp.metadata.idx);
+    set_value(resp.metadata.idx, val);
+    if (resp.metadata.root == tree_model->get_root()) {
+      tree_model->data_changed(resp.metadata.idx);
+    }
     break;
   };
 }
@@ -212,7 +247,7 @@ void FileRequester::process_response(Response resp) {
 QVariant FileRequester::data(TreeIndex idx) const {
   auto state = arborist->get_node(idx).state;
   if (state == TreeNodeState::LOADING) {
-    return QString();
+    return QString("Loading...");
   }
   if (state == TreeNodeState::ERROR) {
     return QString("Error");
@@ -231,7 +266,7 @@ QVariant FileRequester::data(TreeIndex idx) const {
     if (err == BACKTRACK) {
       return QVariant("Backtrack");
     } else if (err == EOS) {
-      return QVariant("EOS");
+      return QVariant("EOF");
     } else {
       return QVariant("Exception");
     }
@@ -242,9 +277,15 @@ QVariant FileRequester::data(TreeIndex idx) const {
     return QVariant::fromValue((bool)inner_val.access_bool());
   case YaboValKind::YABOCHAR:
     return QVariant::fromValue(inner_val.access_char());
-  case YaboValKind::YABONOM:
-  case YaboValKind::YABOU8:
-    return QVariant("nominal");
+  case YaboValKind::YABONOM: {
+    auto name = reinterpret_cast<NominalVTable *>(inner_val->vtable)->name;
+    return QString::fromUtf8(name);
+  }
+  case YaboValKind::YABOU8: {
+    // we special-case u8 to print hex
+    uint8_t byte = *inner_val.access_u8();
+    return QString::asprintf("%02x", byte);
+  }
   case YaboValKind::YABOPARSER:
     return QVariant("parser");
   case YaboValKind::YABOFUNARGS:
@@ -279,24 +320,15 @@ FileSpan FileRequester::span(TreeIndex idx) const {
   return inner_val.span;
 }
 
-std::unique_ptr<YaboTreeModel>
-FileRequester::create_tree_model(QString parser_name) {
+void FileRequester::create_tree_model(QString parser_name) {
+  assert(!tree_model);
   auto sparser_name = parser_name.toStdString();
-  if (parser_root.contains(sparser_name)) {
-    return std::make_unique<YaboTreeModel>(*this, std::move(sparser_name),
-                                           parser_root[sparser_name]);
-  }
-  auto node = TreeNode{
-      ParentBranch{INVALID_PARENT, 0}, TreeNodeState::LOADING, 0, "(root)", {}};
-  auto idx = arborist->add_node(node);
+  auto idx = arborist->add_node(ParentBranch{INVALID_PARENT, root_count++},
+                                parser_name.toStdString());
   parser_root.insert({sparser_name, idx});
-  auto tree_model =
+  tree_model =
       std::make_unique<YaboTreeModel>(*this, std::move(sparser_name), idx);
-  // note: this is not safe if we allow changing tree models as the pointer
-  // might get invalidated
-  emit parse_request(Meta{idx, MessageType::PARSE, tree_model.get()},
-                     parser_name);
-  return tree_model;
+  emit parse_request(Meta{idx, MessageType::PARSE, idx}, parser_name);
 }
 
 bool FileRequester::can_fetch_children(TreeIndex idx) {
@@ -307,7 +339,7 @@ bool FileRequester::can_fetch_children(TreeIndex idx) {
           node.val->kind() == YaboValKind::YABOBLOCK);
 }
 
-void FileRequester::fetch_children(TreeIndex idx, YaboTreeModel *tree_model) {
+void FileRequester::fetch_children(TreeIndex idx, TreeIndex root) {
   auto &node = arborist->get_node(idx);
   if (node.state == TreeNodeState::LOADED_NO_CHIlDREN && node.val.has_value()) {
     auto val = node.val.value();
@@ -323,13 +355,12 @@ void FileRequester::fetch_children(TreeIndex idx, YaboTreeModel *tree_model) {
       return;
     }
     node.state = TreeNodeState::LOADING_CHILDREN;
-    emit request(Request{Meta{idx, message_type, tree_model}, val});
+    emit request(Request{Meta{idx, message_type, root}, val});
   }
 }
 
-std::unique_ptr<FileRequester>
-FileRequesterFactory::create_file_requester(QString parser_lib_path,
-                                            QString file_path) {
+std::unique_ptr<FileRequester> FileRequesterFactory::create_file_requester(
+    QString parser_lib_path, QString file_path, QString parser_name) {
   std::filesystem::path p = parser_lib_path.toStdString();
   std::vector<uint8_t> file;
   try {
@@ -337,7 +368,7 @@ FileRequesterFactory::create_file_requester(QString parser_lib_path,
     auto file_size = std::filesystem::file_size(file_path.toStdString());
     file.resize(file_size);
     f.read((char *)file.data(), file_size);
-    auto req = std::make_unique<FileRequester>(p, std::move(file));
+    auto req = std::make_unique<FileRequester>(p, std::move(file), parser_name);
     return req;
   } catch (std::system_error &e) {
     auto msg = std::format("Could not open file {}: {}",
