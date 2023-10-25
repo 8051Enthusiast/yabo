@@ -31,6 +31,8 @@ public:
   void begin_insert_rows(TreeIndex parent, int first, int last);
   void end_insert_rows();
 
+  TreeIndex get_root() const noexcept { return root_id; }
+
 private:
   TreeIndex to_tree_index(const QModelIndex &index) const;
   QModelIndex to_qindex(TreeIndex idx, int column) const;

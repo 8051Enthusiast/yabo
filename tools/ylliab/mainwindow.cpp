@@ -56,14 +56,13 @@ void MainWindow::on_createTabBox_accepted()
         return;
     }
     auto factory = FileRequesterFactory();
-    auto fileRequester = factory.create_file_requester(ui->parserFileEdit->text(), ui->inputFileEdit->text());
+    auto fileRequester = factory.create_file_requester(ui->parserFileEdit->text(), ui->inputFileEdit->text(), ui->parserNameEdit->text());
     auto error = fileRequester->error_message();
     if (error != "") {
         showDialog(error);
         return;
     }
     auto view = new ParserView(nullptr, std::move(fileRequester));
-    view->setParserName(ui->parserNameEdit->text());
     auto name = ui->inputFileEdit->text();
     ui->tabWidget->addTab(view, name);
     auto newTabIndex = ui->tabWidget->count() - 1;

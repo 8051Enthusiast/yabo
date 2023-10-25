@@ -4,18 +4,14 @@
 ParserView::ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req) :
     QWidget(parent),
     ui(new Ui::ParserView),
-    fileRequester(std::move(req))
+    fileRequester(std::move(req)),
+    treeModel(fileRequester->get_tree_model())
 {
     ui->setupUi(this);
+    ui->treeView->setModel(&treeModel);
 }
 
 ParserView::~ParserView()
 {
     delete ui;
-}
-
-void ParserView::setParserName(QString parserName) {
-    auto model = fileRequester->create_tree_model(parserName);
-    ui->treeView->setModel(model.get());
-    treeModel = std::move(model);
 }

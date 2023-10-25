@@ -18,5 +18,5 @@ public:
 private:
     Ui::ParserView *ui;
     std::unique_ptr<FileRequester> fileRequester;
-    std::unique_ptr<YaboTreeModel> treeModel;
+    YaboTreeModel &treeModel;
 };
