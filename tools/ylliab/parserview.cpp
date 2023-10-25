@@ -21,3 +21,21 @@ void ParserView::on_lineEdit_returnPressed()
     fileRequester->set_parser(ui->lineEdit->text());
 }
 
+
+void ParserView::on_treeView_doubleClicked(const QModelIndex &index)
+{
+    treeModel.handle_doubleclick(index);
+}
+
+
+void ParserView::on_undoButton_clicked()
+{
+    treeModel.undo();
+}
+
+
+void ParserView::on_redoButton_clicked()
+{
+    treeModel.redo();
+}
+

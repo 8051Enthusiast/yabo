@@ -18,6 +18,12 @@ public:
 private slots:
     void on_lineEdit_returnPressed();
 
+    void on_treeView_doubleClicked(const QModelIndex &index);
+
+    void on_undoButton_clicked();
+
+    void on_redoButton_clicked();
+
 private:
     Ui::ParserView *ui;
     std::unique_ptr<FileRequester> fileRequester;
