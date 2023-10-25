@@ -1,4 +1,5 @@
 # fields of the FAT32 header
+export
 def *fat32_header = {
   jmp_boot: [u8](3)
   oem_name: [u8](8)

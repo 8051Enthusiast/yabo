@@ -15,3 +15,9 @@ ParserView::~ParserView()
 {
     delete ui;
 }
+
+void ParserView::on_lineEdit_returnPressed()
+{
+    fileRequester->set_parser(ui->lineEdit->text());
+}
+

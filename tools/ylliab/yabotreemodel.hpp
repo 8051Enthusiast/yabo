@@ -32,6 +32,7 @@ public:
   void end_insert_rows();
 
   TreeIndex get_root() const noexcept { return root_id; }
+  void set_root(TreeIndex new_root);
 
 private:
   TreeIndex to_tree_index(const QModelIndex &index) const;

@@ -15,6 +15,9 @@ public:
     ~ParserView();
     void setParserName(QString fileRequester);
 
+private slots:
+    void on_lineEdit_returnPressed();
+
 private:
     Ui::ParserView *ui;
     std::unique_ptr<FileRequester> fileRequester;
