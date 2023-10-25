@@ -178,6 +178,7 @@ public:
   const uint8_t *file_base_addr() const noexcept { return file_base; }
 
   YaboTreeModel &get_tree_model() { return *tree_model; }
+  void set_parser(QString name);
 
 public slots:
   void process_response(Response resp);

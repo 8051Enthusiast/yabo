@@ -359,6 +359,20 @@ void FileRequester::fetch_children(TreeIndex idx, TreeIndex root) {
   }
 }
 
+void FileRequester::set_parser(QString name) {
+  auto parser_name = name.toStdString();
+  auto it = parser_root.find(parser_name);
+  if (it != parser_root.end()) {
+    tree_model->set_root(it->second);
+    return;
+  }
+  auto idx = arborist->add_node(ParentBranch{INVALID_PARENT, root_count++},
+                                name.toStdString());
+  parser_root.insert({parser_name, idx});
+  tree_model->set_root(idx);
+  emit parse_request(Meta{idx, MessageType::PARSE, idx}, name);
+}
+
 std::unique_ptr<FileRequester> FileRequesterFactory::create_file_requester(
     QString parser_lib_path, QString file_path, QString parser_name) {
   std::filesystem::path p = parser_lib_path.toStdString();

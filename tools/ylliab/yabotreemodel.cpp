@@ -33,6 +33,9 @@ QModelIndex YaboTreeModel::parent(const QModelIndex &index) const {
   if (parent == INVALID_PARENT) {
     return QModelIndex();
   }
+  if (parent == root_id) {
+    return createIndex(0, 0, INVALID_PARENT.idx);
+  }
   auto parent_parent = file_requester.parent_index(parent);
   auto parent_row = file_requester.parent_row(parent);
   auto ret = createIndex(parent_row, 0, parent_parent.idx);
@@ -167,4 +170,10 @@ void YaboTreeModel::end_insert_rows() {
     endInsertRows();
   }
   inserting_rows = false;
+}
+
+void YaboTreeModel::set_root(TreeIndex new_root) {
+  beginResetModel();
+  root_id = new_root;
+  endResetModel();
 }
