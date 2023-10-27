@@ -159,8 +159,11 @@ void GraphNodeItem::paint(QPainter *painter,
                           const QStyleOptionGraphicsItem *option,
                           QWidget *widget) {
   auto rect = boundingRect();
-  // draw a rectangle around the text with background
-  painter->setPen(Qt::black);
+  if (selected) {
+    painter->setPen(Qt::red);
+  } else {
+    painter->setPen(Qt::black);
+  }
   painter->setBrush(Qt::white);
   painter->drawRect(rect);
   QGraphicsSimpleTextItem::paint(painter, option, widget);
@@ -177,6 +180,7 @@ void GraphScene::update_positions(PositionsUpdate update) {
     auto node = new GraphNodeItem(nullptr, name, *this, idx);
     nodes.push_back(node);
     node->setCenterPos(update.x[i], update.y[i]);
+    node->setSelected(selected == idx);
     addItem(node);
   }
   for (auto [line, edge] : edges) {
@@ -193,6 +197,15 @@ void GraphScene::update_positions(PositionsUpdate update) {
     line->setZValue(-1);
     edges.push_back({line, edge});
     addItem(line);
+  }
+}
+void GraphScene::select_node(Node idx) {
+  if (nodes.size() > selected.idx) {
+    nodes[selected.idx]->setSelected(false);
+  }
+  selected = idx;
+  if (nodes.size() > idx.idx) {
+    nodes[idx.idx]->setSelected(true);
   }
 }
 

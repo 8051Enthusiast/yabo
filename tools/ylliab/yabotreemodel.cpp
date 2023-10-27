@@ -193,6 +193,7 @@ void YaboTreeModel::set_root(RootIndex new_root) {
   undo_stack.push_back(root_id);
   undo_stack_idx++;
   endResetModel();
+  emit file_requester.root_changed(root_id);
 }
 
 void YaboTreeModel::redo() {
@@ -202,6 +203,7 @@ void YaboTreeModel::redo() {
   beginResetModel();
   root_id = undo_stack[++undo_stack_idx];
   endResetModel();
+  emit file_requester.root_changed(root_id);
 }
 
 void YaboTreeModel::undo() {
@@ -211,6 +213,7 @@ void YaboTreeModel::undo() {
   beginResetModel();
   root_id = undo_stack[--undo_stack_idx];
   endResetModel();
+  emit file_requester.root_changed(root_id);
 }
 
 void YaboTreeModel::handle_doubleclick(const QModelIndex &index) {
