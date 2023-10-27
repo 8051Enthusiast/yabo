@@ -131,6 +131,9 @@ void Graph::apply_force() {
       fx[i] = fy[i] = 0;
       continue;
     }
+    // prevent explosion
+    fx[i] = std::max(-max_force, std::min(max_force, fx[i]));
+    fy[i] = std::max(-max_force, std::min(max_force, fy[i]));
     x[i] += fx[i];
     y[i] += fy[i];
     fx[i] = fy[i] = 0;

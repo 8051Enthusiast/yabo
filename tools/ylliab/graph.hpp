@@ -105,6 +105,7 @@ private:
   QTimer *timer;
   static constexpr float scale_factor = 100.0;
   static constexpr float repulse_const = 100.0;
+  static constexpr float max_force = 10.0;
   static constexpr float spring_const = 0.05;
 };
 
