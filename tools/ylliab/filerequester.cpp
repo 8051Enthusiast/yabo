@@ -224,6 +224,7 @@ void FileRequester::set_value(TreeIndex idx, SpannedVal val, RootIndex root) {
   }
   auto empty = QString("");
   auto new_nominal_bubble = arborist->add_root_node(root_count++, empty);
+  root_causes.push_back(val);
   auto req = Request{
       Meta{new_nominal_bubble, MessageType::DEREF, new_nominal_bubble}, val};
   nominal_bubbles.insert({val, new_nominal_bubble});
@@ -355,6 +356,7 @@ FileSpan FileRequester::span(TreeIndex idx) const {
 void FileRequester::create_tree_model(QString parser_name) {
   assert(!tree_model);
   auto idx = arborist->add_root_node(root_count++, parser_name);
+  root_causes.push_back(parser_name);
   parser_root.insert({parser_name, idx});
   tree_model = std::make_unique<YaboTreeModel>(*this, parser_name, idx);
   graph_update.new_components.push_back(Node{idx});
@@ -393,7 +395,8 @@ void FileRequester::fetch_children(TreeIndex idx, RootIndex root) {
 QColor FileRequester::color(TreeIndex idx) const {
   auto &node = arborist->get_node(idx);
   if (node.val.has_value() && node.val->kind() == YaboValKind::YABONOM) {
-    return QColor(220, 220, 240);
+    auto bubble = nominal_bubbles.at(node.val.value());
+    return node_color(bubble);
   }
   return QColor(255, 255, 255);
 }
@@ -405,6 +408,7 @@ void FileRequester::set_parser(QString name) {
     return;
   }
   auto idx = arborist->add_root_node(root_count++, name);
+  root_causes.push_back(name);
   parser_root.insert({name, idx});
   tree_model->set_root(idx);
   graph_update.new_components.push_back(Node{idx});
@@ -468,7 +472,26 @@ std::unique_ptr<FileRequester> FileRequesterFactory::create_file_requester(
 }
 
 QString FileRequester::node_name(Node idx) const {
-  auto tree_index = arborist->get_child(INVALID_PARENT, idx.idx);
-  auto &node = arborist->get_node(tree_index);
-  return node.field_name;
+  auto cause = root_causes.at(idx.idx);
+  if (std::holds_alternative<QString>(cause)) {
+    return std::get<QString>(cause);
+  }
+  auto val = std::get<YaboVal>(cause);
+  auto name = reinterpret_cast<NominalVTable *>(val->vtable)->name;
+  return QString::fromUtf8(name);
+}
+
+QColor FileRequester::node_color(Node idx) const {
+  size_t hash;
+  auto cause = root_causes.at(idx.idx);
+  if (std::holds_alternative<QString>(cause)) {
+    hash = std::hash<QString>()(std::get<QString>(cause));
+  } else {
+    auto val = std::get<YaboVal>(cause);
+    hash = std::hash<YaboVal>()(val);
+  }
+  hash *= 11400714819323198485ull;
+  hash ^= hash >> 32;
+  auto hue = hash % 360;
+  return QColor::fromHsl(hue, 200, 230);
 }

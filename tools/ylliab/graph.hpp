@@ -109,18 +109,20 @@ private:
   static constexpr float spring_const = 0.05;
 };
 
-class NodeNameProvider {
+class NodeInfoProvider {
 public:
   virtual QString node_name(Node idx) const = 0;
+  virtual QColor node_color(Node idx) const = 0;
 };
 
 class GraphScene;
 
 class GraphNodeItem : public QGraphicsSimpleTextItem {
 public:
-  GraphNodeItem(QGraphicsItem *parent, QString &text, GraphScene &scene,
-                Node idx)
-      : QGraphicsSimpleTextItem(text, parent), scene(scene), idx(idx) {
+  GraphNodeItem(QGraphicsItem *parent, NodeInfoProvider &provider,
+                GraphScene &scene, Node idx)
+      : QGraphicsSimpleTextItem(provider.node_name(idx), parent), scene(scene),
+        idx(idx), color(provider.node_color(idx)) {
     // make clickable
     setAcceptHoverEvents(true);
   }
@@ -142,14 +144,15 @@ protected:
 private:
   Node idx;
   GraphScene &scene;
+  QColor color;
   bool selected = false;
 };
 
 class GraphScene : public QGraphicsScene {
   Q_OBJECT
 public:
-  GraphScene(QObject *parent, NodeNameProvider &name_provider, Graph &graph)
-      : QGraphicsScene(parent), name_provider(name_provider),
+  GraphScene(QObject *parent, NodeInfoProvider &info_provider, Graph &graph)
+      : QGraphicsScene(parent), info_provider(info_provider),
         selected(Node{0}) {
     QObject::connect(&graph, &Graph::positions_update, this,
                      &GraphScene::update_positions);
@@ -162,7 +165,7 @@ signals:
   void node_double_clicked(Node node);
 
 private:
-  NodeNameProvider &name_provider;
+  NodeInfoProvider &info_provider;
   std::vector<GraphNodeItem *> nodes;
   std::vector<std::pair<QGraphicsLineItem *, Edge>> edges;
   Node selected;
