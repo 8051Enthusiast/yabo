@@ -9,7 +9,7 @@ class YaboTreeModel : public QAbstractItemModel {
   Q_OBJECT
 public:
   YaboTreeModel(FileRequester &file_requester, std::string &&parser_name,
-                TreeIndex root_id);
+                RootIndex root_id);
 
   // AbstractItemModel interface
   QModelIndex index(int row, int column,
@@ -21,7 +21,8 @@ public:
 
   QVariant data(const QModelIndex &index,
                 int role = Qt::DisplayRole) const override;
-  QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
+  QVariant headerData(int section, Qt::Orientation orientation,
+                      int role = Qt::DisplayRole) const override;
 
   bool hasChildren(const QModelIndex &parent = QModelIndex()) const override;
   bool canFetchMore(const QModelIndex &parent) const override;
@@ -31,8 +32,8 @@ public:
   void begin_insert_rows(TreeIndex parent, int first, int last);
   void end_insert_rows();
 
-  TreeIndex get_root() const noexcept { return root_id; }
-  void set_root(TreeIndex new_root);
+  RootIndex get_root() const noexcept { return root_id; }
+  void set_root(RootIndex new_root);
 
   void handle_doubleclick(const QModelIndex &index);
 
@@ -46,9 +47,9 @@ private:
 
   FileRequester &file_requester;
   std::string parser_name;
-  TreeIndex root_id;
+  RootIndex root_id;
   bool inserting_rows = false;
-  std::vector<TreeIndex> undo_stack;
+  std::vector<RootIndex> undo_stack;
   size_t undo_stack_idx = 0;
   constexpr static int NUM_COLUMNS = 3;
 };

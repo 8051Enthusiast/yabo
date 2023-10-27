@@ -11,6 +11,7 @@
 #include <dlfcn.h>
 #include <unordered_set>
 
+#include "graph.hpp"
 #include "request.hpp"
 #include "yabo.hpp"
 #include "yabotreemodel.hpp"
@@ -78,7 +79,7 @@ struct ParentBranch {
   }
 
   TreeIndex parent;
-  int row;
+  size_t row;
 };
 
 // we need to hash TreeIndex for the cache
@@ -110,6 +111,7 @@ public:
   Arborist() = default;
 
   TreeIndex add_node(ParentBranch idx, std::string &&field_name);
+  RootIndex add_root_node(size_t root_count, std::string &&field_name);
 
   TreeNode &get_node(TreeIndex idx) { return tree[idx.idx]; }
 
@@ -123,7 +125,7 @@ public:
     }
   }
 
-  TreeIndex get_child(TreeIndex parent, int row) const {
+  TreeIndex get_child(TreeIndex parent, size_t row) const {
     return interner.at(ParentBranch{parent, row});
   }
 
@@ -135,7 +137,7 @@ private:
 class YaboTreeModel;
 
 // communicates with Executor and maintains the tree structure
-class FileRequester : public QObject {
+class FileRequester : public QObject, public NodeNameProvider {
   Q_OBJECT
 public:
   FileRequester(std::filesystem::path path, std::vector<uint8_t> &&file,
@@ -172,7 +174,7 @@ public:
     return arborist->get_node(idx).field_name;
   }
   bool can_fetch_children(TreeIndex idx);
-  void fetch_children(TreeIndex idx, TreeIndex root);
+  void fetch_children(TreeIndex idx, RootIndex root);
   QColor color(TreeIndex idx) const;
 
   QString error_message() const { return error_msg; }
@@ -181,6 +183,7 @@ public:
   YaboTreeModel &get_tree_model() { return *tree_model; }
   void set_parser(QString name);
   void set_bubble(TreeIndex idx);
+  QString node_name(Node idx) const override;
 
 public slots:
   void process_response(Response resp);
@@ -188,15 +191,17 @@ public slots:
 signals:
   void request(Request req);
   void parse_request(Meta meta, QString func_name);
+  void update_graph(GraphUpdate update);
 
 private:
   void create_tree_model(QString parser_name);
-  void set_value(TreeIndex idx, SpannedVal val);
+  void set_value(TreeIndex idx, SpannedVal val, RootIndex root);
   QThread executor_thread;
   std::unique_ptr<Arborist> arborist;
-  std::unordered_map<std::string, TreeIndex> parser_root;
-  std::unordered_map<YaboVal, TreeIndex> nominal_bubbles;
-  int root_count = 0;
+  std::unordered_map<std::string, RootIndex> parser_root;
+  std::unordered_map<YaboVal, RootIndex> nominal_bubbles;
+  size_t root_count = 0;
+  GraphUpdate graph_update;
   std::unique_ptr<YaboTreeModel> tree_model;
   const uint8_t *file_base;
   // for qml to handle errors

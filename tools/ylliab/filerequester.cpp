@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "filerequester.hpp"
+#include "graph.hpp"
 #include "request.hpp"
 #include "yabo.hpp"
 #include "yabo/vtable.h"
@@ -102,7 +103,8 @@ std::optional<Response> Executor::execute_request(Request req) {
   }
   case MessageType::DEREF: {
     auto normalized = normalize(req.val, req.val.span);
-    return Response(req.metadata, normalized);
+    auto name = reinterpret_cast<NominalVTable *>(req.val->vtable)->name;
+    return Response(req.metadata, {name, normalized});
   }
   case MessageType::PARSE:
   case MessageType::ERROR: {
@@ -124,7 +126,7 @@ std::optional<Response> Executor::execute_parser(Meta meta,
   auto ret = vals.parse(parser, file);
   if (ret.has_value()) {
     auto normalized = normalize(ret.value(), ret->span);
-    return Response(meta, normalized);
+    return Response(meta, {func_name, normalized});
   }
   return {};
 }
@@ -175,6 +177,12 @@ TreeIndex Arborist::add_node(ParentBranch parent, std::string &&field_name) {
   return idx;
 }
 
+RootIndex Arborist::add_root_node(size_t root_count, std::string &&field_name) {
+  auto index =
+      add_node(ParentBranch{INVALID_PARENT, root_count}, std::move(field_name));
+  return RootIndex(index, root_count);
+}
+
 FileRequester::FileRequester(std::filesystem::path path,
                              std::vector<uint8_t> &&file, QString parser_name) {
   Executor *executor;
@@ -182,19 +190,19 @@ FileRequester::FileRequester(std::filesystem::path path,
   executor = new Executor(path, std::move(file));
   executor->moveToThread(&executor_thread);
   arborist = std::make_unique<Arborist>();
-  assert(connect(&executor_thread, &QThread::finished, executor,
-                 &QObject::deleteLater));
-  assert(connect(executor, &Executor::response, this,
-                 &FileRequester::process_response));
-  assert(connect(this, &FileRequester::request, executor,
-                 &Executor::execute_request_slot));
-  assert(connect(this, &FileRequester::parse_request, executor,
-                 &Executor::execute_parser_slot));
+  connect(&executor_thread, &QThread::finished, executor,
+          &QObject::deleteLater);
+  connect(executor, &Executor::response, this,
+          &FileRequester::process_response);
+  connect(this, &FileRequester::request, executor,
+          &Executor::execute_request_slot);
+  connect(this, &FileRequester::parse_request, executor,
+          &Executor::execute_parser_slot);
   executor_thread.start();
   create_tree_model(parser_name);
 }
 
-void FileRequester::set_value(TreeIndex idx, SpannedVal val) {
+void FileRequester::set_value(TreeIndex idx, SpannedVal val, RootIndex root) {
   auto &node = arborist->get_node(idx);
   node.val = val;
   if (val.kind() == YaboValKind::YABOARRAY ||
@@ -207,13 +215,16 @@ void FileRequester::set_value(TreeIndex idx, SpannedVal val) {
     return;
   }
   if (nominal_bubbles.contains(val)) {
+    auto end = nominal_bubbles.at(val);
+    graph_update.new_components.push_back(Edge{root, end});
     return;
   }
-  auto new_nominal_bubble =
-      arborist->add_node(ParentBranch{INVALID_PARENT, root_count++}, "");
+  auto new_nominal_bubble = arborist->add_root_node(root_count++, "");
   auto req = Request{
       Meta{new_nominal_bubble, MessageType::DEREF, new_nominal_bubble}, val};
   nominal_bubbles.insert({val, new_nominal_bubble});
+  graph_update.new_components.push_back(
+      EdgeWithNewNode{root, Node{new_nominal_bubble}});
   emit request(req);
 }
 
@@ -230,9 +241,9 @@ void FileRequester::process_response(Response resp) {
       tree_model->begin_insert_rows(resp.metadata.idx, 0, vals.size() - 1);
     }
     for (size_t i = 0; i < vals.size(); i++) {
-      auto branch = ParentBranch{resp.metadata.idx, (int)i};
+      auto branch = ParentBranch{resp.metadata.idx, i};
       auto tree_idx = arborist->add_node(branch, std::move(vals[i].first));
-      set_value(tree_idx, vals[i].second);
+      set_value(tree_idx, vals[i].second, resp.metadata.root);
     }
     arborist->get_node(resp.metadata.idx).n_children = vals.size();
     arborist->get_node(resp.metadata.idx).state = TreeNodeState::LOADED;
@@ -246,13 +257,19 @@ void FileRequester::process_response(Response resp) {
     break;
   case MessageType::PARSE:
   case MessageType::DEREF:
-    auto val = std::get<SpannedVal>(resp.data);
-    set_value(resp.metadata.idx, val);
+    auto [name, val] = std::get<NamedYaboVal>(resp.data);
+    set_value(resp.metadata.idx, val, resp.metadata.root);
+    auto &node = arborist->get_node(resp.metadata.idx);
+    node.field_name = std::move(name);
     if (resp.metadata.root == tree_model->get_root()) {
       tree_model->data_changed(resp.metadata.idx);
     }
     break;
   };
+  if (!graph_update.new_components.empty()) {
+    emit update_graph(std::move(graph_update));
+    graph_update.new_components = {};
+  }
 }
 
 QVariant FileRequester::data(TreeIndex idx) const {
@@ -334,11 +351,13 @@ FileSpan FileRequester::span(TreeIndex idx) const {
 void FileRequester::create_tree_model(QString parser_name) {
   assert(!tree_model);
   auto sparser_name = parser_name.toStdString();
-  auto idx = arborist->add_node(ParentBranch{INVALID_PARENT, root_count++},
-                                parser_name.toStdString());
+  auto idx = arborist->add_root_node(root_count++, parser_name.toStdString());
   parser_root.insert({sparser_name, idx});
   tree_model =
       std::make_unique<YaboTreeModel>(*this, std::move(sparser_name), idx);
+  graph_update.new_components.push_back(Node{idx});
+  emit update_graph(std::move(graph_update));
+  graph_update.new_components = {};
   emit parse_request(Meta{idx, MessageType::PARSE, idx}, parser_name);
 }
 
@@ -350,7 +369,7 @@ bool FileRequester::can_fetch_children(TreeIndex idx) {
           node.val->kind() == YaboValKind::YABOBLOCK);
 }
 
-void FileRequester::fetch_children(TreeIndex idx, TreeIndex root) {
+void FileRequester::fetch_children(TreeIndex idx, RootIndex root) {
   auto &node = arborist->get_node(idx);
   if (node.state == TreeNodeState::LOADED_NO_CHIlDREN && node.val.has_value()) {
     auto val = node.val.value();
@@ -384,10 +403,12 @@ void FileRequester::set_parser(QString name) {
     tree_model->set_root(it->second);
     return;
   }
-  auto idx = arborist->add_node(ParentBranch{INVALID_PARENT, root_count++},
-                                name.toStdString());
+  auto idx = arborist->add_root_node(root_count++, name.toStdString());
   parser_root.insert({parser_name, idx});
   tree_model->set_root(idx);
+  graph_update.new_components.push_back(Node{idx});
+  emit update_graph(std::move(graph_update));
+  graph_update.new_components = {};
   emit parse_request(Meta{idx, MessageType::PARSE, idx}, name);
 }
 
@@ -424,4 +445,10 @@ std::unique_ptr<FileRequester> FileRequesterFactory::create_file_requester(
     auto req = std::make_unique<FileRequester>(QString::fromStdString(msg));
     return req;
   }
+}
+
+QString FileRequester::node_name(Node idx) const {
+  auto tree_index = arborist->get_child(INVALID_PARENT, idx.idx);
+  auto &node = arborist->get_node(tree_index);
+  return QString::fromStdString(node.field_name);
 }

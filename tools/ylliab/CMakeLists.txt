@@ -15,13 +15,14 @@ find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
 
 set(PROJECT_SOURCES
-        main.cpp
-        mainwindow.cpp mainwindow.hpp mainwindow.ui
-        parserview.hpp parserview.cpp parserview.ui
-        yabo.hpp yabo.cpp
-        yabotreemodel.hpp yabotreemodel.cpp
         request.hpp
+        yabo.hpp yabo.cpp
+        graph.hpp graph.cpp
         filerequester.hpp filerequester.cpp
+        yabotreemodel.hpp yabotreemodel.cpp
+        parserview.hpp parserview.cpp parserview.ui
+        mainwindow.cpp mainwindow.hpp mainwindow.ui
+        main.cpp
 )
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)

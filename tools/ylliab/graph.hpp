@@ -1,0 +1,146 @@
+#pragma once
+#include "request.hpp"
+
+#include <complex>
+#include <unordered_set>
+
+#include <QGraphicsItem>
+#include <QGraphicsScene>
+#include <QObject>
+#include <QTimer>
+#include <qcolor.h>
+#include <qwindowdefs.h>
+
+using complex = std::complex<float>;
+
+struct Node {
+  Node(RootIndex idx) : idx(idx.root_idx) {}
+  Node(size_t idx) : idx(idx) {}
+  bool operator==(const Node &other) const noexcept = default;
+  size_t idx;
+};
+
+struct Edge {
+  bool operator==(const Edge &other) const noexcept {
+    return (start.idx == other.start.idx && end.idx == other.end.idx) ||
+           (start.idx == other.end.idx && end.idx == other.start.idx);
+  }
+  Node start;
+  Node end;
+};
+
+template <> struct std::hash<Edge> {
+  std::size_t operator()(const Edge &k) const noexcept {
+    auto start = k.start.idx * (size_t)11400714819323198485u;
+    auto end = k.end.idx * (size_t)11400714819323198485u;
+    return 17 * (start ^ end) + (start + end) + 9 * start * end;
+  }
+};
+
+struct EdgeWithNewNode {
+  Node start;
+  Node end;
+};
+
+typedef std::variant<Node, Edge, EdgeWithNewNode> GraphComponent;
+
+struct GraphUpdate {
+  GraphUpdate() : new_components() {}
+  std::vector<GraphComponent> new_components;
+};
+
+Q_DECLARE_METATYPE(GraphUpdate)
+
+struct PositionsUpdate {
+  std::vector<float> x;
+  std::vector<float> y;
+  std::vector<Edge> new_edges;
+};
+
+Q_DECLARE_METATYPE(PositionsUpdate)
+
+class Graph : public QObject {
+  Q_OBJECT
+public:
+  Graph(Node root, QObject *parent = nullptr)
+      : QObject(parent), outdegree(1, 0), center(0) {
+    add_node(root);
+    timer = new QTimer(this);
+    timer->setInterval(200);
+    connect(timer, &QTimer::timeout, this, &Graph::step);
+    timer->start();
+  }
+public slots:
+  void update_graph(GraphUpdate update);
+private slots:
+  void step();
+signals:
+  void positions_update(PositionsUpdate update);
+
+private:
+  void repeal_all();
+  void attract_edges();
+  void apply_force();
+  void update_center();
+  void add_graph_component(GraphComponent component);
+  void add_edge(Edge);
+  void add_node(Node, complex pos);
+  void add_node(Node node) { add_node(node, 0); }
+  void add_edge_with_new_node(EdgeWithNewNode);
+  complex node_pos(Node idx) const { return {x[idx.idx], y[idx.idx]}; }
+  complex node_force(Node idx) const { return {fx[idx.idx], fy[idx.idx]}; }
+  void set_node_force(Node idx, complex force) {
+    fx[idx.idx] = force.real();
+    fy[idx.idx] = force.imag();
+  }
+  std::vector<unsigned int> outdegree;
+  std::unordered_set<Edge> edges;
+  std::vector<Edge> new_edges;
+  std::vector<float> x;
+  std::vector<float> y;
+  std::vector<float> fx;
+  std::vector<float> fy;
+  complex center;
+  QTimer *timer;
+  static constexpr float scale_factor = 100.0;
+  static constexpr float repulse_const = 100.0;
+  static constexpr float spring_const = 0.05;
+};
+
+class NodeNameProvider {
+public:
+  virtual QString node_name(Node idx) const = 0;
+};
+
+class GraphNodeItem : public QGraphicsSimpleTextItem {
+public:
+  GraphNodeItem(QGraphicsItem *parent, QString &text)
+      : QGraphicsSimpleTextItem(text, parent) {
+    // make clickable
+    setAcceptHoverEvents(true);
+  }
+  void paint(QPainter *painter, const QStyleOptionGraphicsItem *option,
+             QWidget *widget = nullptr) override;
+  QRectF boundingRect() const override {
+    return QGraphicsSimpleTextItem::boundingRect().adjusted(-5, -2, 5, 2);
+  }
+  void setCenterPos(QPointF pos) { setPos(pos - boundingRect().center()); }
+  void setCenterPos(float x, float y) { setCenterPos({x, y}); }
+};
+
+class GraphScene : public QGraphicsScene {
+  Q_OBJECT
+public:
+  GraphScene(QObject *parent, NodeNameProvider &name_provider, Graph &graph)
+      : QGraphicsScene(parent), name_provider(name_provider) {
+    QObject::connect(&graph, &Graph::positions_update, this,
+                     &GraphScene::update_positions);
+  }
+public slots:
+  void update_positions(PositionsUpdate update);
+
+private:
+  NodeNameProvider &name_provider;
+  std::vector<GraphNodeItem *> nodes;
+  std::vector<std::pair<QGraphicsLineItem *, Edge>> edges;
+};

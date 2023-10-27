@@ -9,6 +9,10 @@
 struct TreeIndex {
   size_t idx;
   bool operator==(const TreeIndex &other) const noexcept = default;
+  TreeIndex operator++() noexcept {
+    idx++;
+    return *this;
+  }
 };
 
 template <> struct std::hash<TreeIndex> {
@@ -18,6 +22,12 @@ template <> struct std::hash<TreeIndex> {
 };
 
 constexpr TreeIndex INVALID_PARENT = TreeIndex{(size_t)-1};
+
+struct RootIndex : public TreeIndex {
+  RootIndex(TreeIndex idx, size_t root_idx)
+      : TreeIndex(idx), root_idx(root_idx) {}
+  size_t root_idx;
+};
 
 enum class MessageType {
   FIELDS,
@@ -29,12 +39,13 @@ enum class MessageType {
 
 struct Meta {
   Meta()
-      : idx(INVALID_PARENT), kind(MessageType::ERROR), root(INVALID_PARENT) {}
-  Meta(TreeIndex idx, MessageType kind, TreeIndex root)
+      : idx(INVALID_PARENT), kind(MessageType::ERROR),
+        root(RootIndex(TreeIndex{INVALID_PARENT}, (size_t)-1)) {}
+  Meta(TreeIndex idx, MessageType kind, RootIndex root)
       : idx(idx), kind(kind), root(root) {}
   TreeIndex idx;
   MessageType kind;
-  TreeIndex root;
+  RootIndex root;
 };
 
 Q_DECLARE_METATYPE(Meta)
@@ -48,17 +59,19 @@ struct Request {
 
 Q_DECLARE_METATYPE(Request)
 
-typedef std::vector<std::pair<std::string, SpannedVal>> YaboValVec;
+using NamedYaboVal = std::pair<std::string, SpannedVal>;
+using YaboValVec = std::vector<NamedYaboVal>;
 
 struct Response {
   Response() : metadata(Meta()) {}
   Response(Meta meta, YaboValVec &&vals)
       : metadata(meta), data(std::move(vals)) {}
-  Response(Meta meta, SpannedVal val) : metadata(meta), data(val) {}
+  Response(Meta meta, NamedYaboVal &&val)
+      : metadata(meta), data(std::move(val)) {}
   // emit an error
   Response(Meta meta) : metadata(meta) { metadata.kind = MessageType::ERROR; }
   Meta metadata;
-  std::variant<YaboValVec, SpannedVal> data;
+  std::variant<YaboValVec, NamedYaboVal> data;
 };
 
 Q_DECLARE_METATYPE(Response)
