@@ -11,7 +11,7 @@ enum Column {
 };
 
 YaboTreeModel::YaboTreeModel(FileRequester &file_requester,
-                             std::string &&parser_name, TreeIndex root_id)
+                             std::string &&parser_name, RootIndex root_id)
     : QAbstractItemModel(&file_requester), file_requester(file_requester),
       parser_name(parser_name), root_id(root_id), undo_stack(1, root_id) {}
 QModelIndex YaboTreeModel::index(int row, int column,
@@ -183,7 +183,7 @@ void YaboTreeModel::end_insert_rows() {
   inserting_rows = false;
 }
 
-void YaboTreeModel::set_root(TreeIndex new_root) {
+void YaboTreeModel::set_root(RootIndex new_root) {
   if (root_id == new_root) {
     return;
   }
