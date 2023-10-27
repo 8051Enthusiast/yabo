@@ -184,7 +184,9 @@ RootIndex Arborist::add_root_node(size_t root_count, std::string &&field_name) {
 }
 
 FileRequester::FileRequester(std::filesystem::path path,
-                             std::vector<uint8_t> &&file, QString parser_name) {
+                             std::vector<uint8_t> &&file, QString parser_name,
+                             bool recursive_fetch)
+    : recursive_fetch(recursive_fetch) {
   Executor *executor;
   file_base = file.data();
   executor = new Executor(path, std::move(file));
@@ -208,6 +210,9 @@ void FileRequester::set_value(TreeIndex idx, SpannedVal val, RootIndex root) {
   if (val.kind() == YaboValKind::YABOARRAY ||
       val.kind() == YaboValKind::YABOBLOCK) {
     node.state = TreeNodeState::LOADED_NO_CHIlDREN;
+    if (recursive_fetch && root == tree_model->get_root()) {
+      fetch_children(idx, root);
+    }
   } else {
     node.state = TreeNodeState::LOADED;
   }
@@ -412,6 +417,11 @@ void FileRequester::set_parser(QString name) {
   emit parse_request(Meta{idx, MessageType::PARSE, idx}, name);
 }
 
+RootIndex FileRequester::root_idx(Node node) {
+  auto idx = arborist->get_child(INVALID_PARENT, node.idx);
+  return RootIndex(idx, node.idx);
+}
+
 void FileRequester::set_bubble(TreeIndex idx) {
   auto &node = arborist->get_node(idx);
   if (!node.val.has_value()) {
@@ -422,9 +432,22 @@ void FileRequester::set_bubble(TreeIndex idx) {
   }
   auto root = nominal_bubbles.at(node.val.value());
   tree_model->set_root(root);
+  if (recursive_fetch) {
+    fetch_children(root, root);
+  }
 }
+
+void FileRequester::change_root(Node node) {
+  auto root = root_idx(node);
+  tree_model->set_root(root);
+  if (recursive_fetch) {
+    fetch_children(root, root);
+  }
+}
+
 std::unique_ptr<FileRequester> FileRequesterFactory::create_file_requester(
-    QString parser_lib_path, QString file_path, QString parser_name) {
+    QString parser_lib_path, QString file_path, QString parser_name,
+    bool recursive_fetch) {
   std::filesystem::path p = parser_lib_path.toStdString();
   std::vector<uint8_t> file;
   try {
@@ -432,7 +455,8 @@ std::unique_ptr<FileRequester> FileRequesterFactory::create_file_requester(
     auto file_size = std::filesystem::file_size(file_path.toStdString());
     file.resize(file_size);
     f.read((char *)file.data(), file_size);
-    auto req = std::make_unique<FileRequester>(p, std::move(file), parser_name);
+    auto req = std::make_unique<FileRequester>(p, std::move(file), parser_name,
+                                               recursive_fetch);
     return req;
   } catch (std::system_error &e) {
     auto msg = std::format("Could not open file {}: {}",

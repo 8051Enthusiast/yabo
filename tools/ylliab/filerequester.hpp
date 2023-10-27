@@ -141,7 +141,7 @@ class FileRequester : public QObject, public NodeNameProvider {
   Q_OBJECT
 public:
   FileRequester(std::filesystem::path path, std::vector<uint8_t> &&file,
-                QString parser_name);
+                QString parser_name, bool recursive_fetch = true);
   FileRequester(QString error_msg) : error_msg(error_msg) {}
   ~FileRequester() {
     executor_thread.quit();
@@ -187,6 +187,7 @@ public:
 
 public slots:
   void process_response(Response resp);
+  void change_root(Node node);
 
 signals:
   void request(Request req);
@@ -196,6 +197,7 @@ signals:
 private:
   void create_tree_model(QString parser_name);
   void set_value(TreeIndex idx, SpannedVal val, RootIndex root);
+  RootIndex root_idx(Node node);
   QThread executor_thread;
   std::unique_ptr<Arborist> arborist;
   std::unordered_map<std::string, RootIndex> parser_root;
@@ -204,6 +206,7 @@ private:
   GraphUpdate graph_update;
   std::unique_ptr<YaboTreeModel> tree_model;
   const uint8_t *file_base;
+  bool recursive_fetch;
   // for qml to handle errors
   QString error_msg;
 };
@@ -215,5 +218,6 @@ public:
   FileRequesterFactory() = default;
   std::unique_ptr<FileRequester> create_file_requester(QString parser_lib_path,
                                                        QString file_path,
-                                                       QString parser_name);
+                                                       QString parser_name,
+                                                       bool recursive_fetch);
 };

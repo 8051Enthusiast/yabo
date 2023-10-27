@@ -68,11 +68,28 @@
          </layout>
         </item>
         <item>
-         <widget class="QLineEdit" name="parserNameEdit">
-          <property name="placeholderText">
-           <string>Parser Name</string>
-          </property>
-         </widget>
+         <layout class="QHBoxLayout" name="horizontalLayout_2">
+          <item>
+           <widget class="QLineEdit" name="parserNameEdit">
+            <property name="placeholderText">
+             <string>Parser Name</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="fetchEager">
+            <property name="text">
+             <string>Fetch Eagerly</string>
+            </property>
+            <property name="checked">
+             <bool>true</bool>
+            </property>
+            <property name="tristate">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </item>
         <item>
          <widget class="QDialogButtonBox" name="createTabBox">
