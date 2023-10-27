@@ -130,6 +130,10 @@ public:
   }
   void setCenterPos(QPointF pos) { setPos(pos - boundingRect().center()); }
   void setCenterPos(float x, float y) { setCenterPos({x, y}); }
+  void setSelected(bool selected) {
+    this->selected = selected;
+    update();
+  }
 
 protected:
   void mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event) override;
@@ -137,18 +141,21 @@ protected:
 private:
   Node idx;
   GraphScene &scene;
+  bool selected = false;
 };
 
 class GraphScene : public QGraphicsScene {
   Q_OBJECT
 public:
   GraphScene(QObject *parent, NodeNameProvider &name_provider, Graph &graph)
-      : QGraphicsScene(parent), name_provider(name_provider) {
+      : QGraphicsScene(parent), name_provider(name_provider),
+        selected(Node{0}) {
     QObject::connect(&graph, &Graph::positions_update, this,
                      &GraphScene::update_positions);
   }
 public slots:
   void update_positions(PositionsUpdate update);
+  void select_node(Node idx);
 
 signals:
   void node_double_clicked(Node node);
@@ -157,4 +164,5 @@ private:
   NodeNameProvider &name_provider;
   std::vector<GraphNodeItem *> nodes;
   std::vector<std::pair<QGraphicsLineItem *, Edge>> edges;
+  Node selected;
 };

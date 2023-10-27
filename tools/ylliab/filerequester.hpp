@@ -193,6 +193,7 @@ signals:
   void request(Request req);
   void parse_request(Meta meta, QString func_name);
   void update_graph(GraphUpdate update);
+  void root_changed(Node node);
 
 private:
   void create_tree_model(QString parser_name);

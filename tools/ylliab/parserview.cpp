@@ -17,6 +17,8 @@ ParserView::ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req)
           &Graph::update_graph, Qt::QueuedConnection);
   connect(scene.get(), &GraphScene::node_double_clicked, fileRequester.get(),
           &FileRequester::change_root);
+  connect(fileRequester.get(), &FileRequester::root_changed, scene.get(),
+          &GraphScene::select_node);
   ui->graphicsView->setScene(scene.get());
   graph_thread.start();
 }
