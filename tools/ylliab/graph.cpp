@@ -167,7 +167,7 @@ void GraphNodeItem::paint(QPainter *painter,
   } else {
     painter->setPen(Qt::black);
   }
-  painter->setBrush(Qt::white);
+  painter->setBrush(color);
   painter->drawRect(rect);
   QGraphicsSimpleTextItem::paint(painter, option, widget);
 }
@@ -179,8 +179,9 @@ void GraphScene::update_positions(PositionsUpdate update) {
   }
   for (size_t i = nodes.size(); i < update.x.size(); i++) {
     auto idx = Node{i};
-    auto name = name_provider.node_name(idx);
-    auto node = new GraphNodeItem(nullptr, name, *this, idx);
+    auto name = info_provider.node_name(idx);
+    auto color = info_provider.node_color(idx);
+    auto node = new GraphNodeItem(nullptr, info_provider, *this, idx);
     nodes.push_back(node);
     node->setCenterPos(update.x[i], update.y[i]);
     node->setSelected(selected == idx);

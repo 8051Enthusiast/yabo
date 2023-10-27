@@ -137,7 +137,7 @@ private:
 class YaboTreeModel;
 
 // communicates with Executor and maintains the tree structure
-class FileRequester : public QObject, public NodeNameProvider {
+class FileRequester : public QObject, public NodeInfoProvider {
   Q_OBJECT
 public:
   FileRequester(std::filesystem::path path, std::vector<uint8_t> &&file,
@@ -184,6 +184,7 @@ public:
   void set_parser(QString name);
   void set_bubble(TreeIndex idx);
   QString node_name(Node idx) const override;
+  QColor node_color(Node idx) const override;
 
 public slots:
   void process_response(Response resp);
@@ -207,6 +208,8 @@ private:
   GraphUpdate graph_update;
   std::unique_ptr<YaboTreeModel> tree_model;
   const uint8_t *file_base;
+  using RootCause = std::variant<QString, YaboVal>;
+  std::vector<RootCause> root_causes;
   bool recursive_fetch;
   // for qml to handle errors
   QString error_msg;
