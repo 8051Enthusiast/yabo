@@ -15,6 +15,7 @@ public:
   explicit ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req);
   ~ParserView();
   void setParserName(QString fileRequester);
+  void keyPressEvent(QKeyEvent *event) override;
 
 private slots:
   void on_lineEdit_returnPressed();
