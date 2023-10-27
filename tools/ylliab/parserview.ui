@@ -86,6 +86,9 @@
        <property name="dragMode">
         <enum>QGraphicsView::ScrollHandDrag</enum>
        </property>
+       <property name="viewportUpdateMode">
+        <enum>QGraphicsView::FullViewportUpdate</enum>
+       </property>
       </widget>
      </item>
     </layout>

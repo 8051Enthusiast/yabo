@@ -59,7 +59,7 @@ struct Request {
 
 Q_DECLARE_METATYPE(Request)
 
-using NamedYaboVal = std::pair<std::string, SpannedVal>;
+using NamedYaboVal = std::pair<QString, SpannedVal>;
 using YaboValVec = std::vector<NamedYaboVal>;
 
 struct Response {

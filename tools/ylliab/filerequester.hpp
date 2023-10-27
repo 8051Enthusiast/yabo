@@ -18,7 +18,7 @@
 
 struct ExecutorError : public std::exception {
   ExecutorError(std::string msg) : message(msg) {}
-  const char *what() { return message.c_str(); }
+  std::string what() { return message; }
   std::string message;
 };
 
@@ -101,7 +101,7 @@ struct TreeNode {
   ParentBranch idx;
   TreeNodeState state;
   size_t n_children;
-  std::string field_name;
+  QString field_name;
   std::optional<SpannedVal> val;
 };
 
@@ -110,8 +110,8 @@ class Arborist {
 public:
   Arborist() = default;
 
-  TreeIndex add_node(ParentBranch idx, std::string &&field_name);
-  RootIndex add_root_node(size_t root_count, std::string &&field_name);
+  TreeIndex add_node(ParentBranch idx, QString &field_name);
+  RootIndex add_root_node(size_t root_count, QString &field_name);
 
   TreeNode &get_node(TreeIndex idx) { return tree[idx.idx]; }
 
@@ -170,7 +170,7 @@ public:
     return arborist->get_node(idx).n_children;
   }
 
-  std::string &field_name(TreeIndex idx) const {
+  QString field_name(TreeIndex idx) const {
     return arborist->get_node(idx).field_name;
   }
   bool can_fetch_children(TreeIndex idx);
@@ -201,7 +201,7 @@ private:
   RootIndex root_idx(Node node);
   QThread executor_thread;
   std::unique_ptr<Arborist> arborist;
-  std::unordered_map<std::string, RootIndex> parser_root;
+  std::unordered_map<QString, RootIndex> parser_root;
   std::unordered_map<YaboVal, RootIndex> nominal_bubbles;
   size_t root_count = 0;
   GraphUpdate graph_update;

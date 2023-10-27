@@ -11,7 +11,7 @@ enum Column {
 };
 
 YaboTreeModel::YaboTreeModel(FileRequester &file_requester,
-                             std::string &&parser_name, RootIndex root_id)
+                             QString &parser_name, RootIndex root_id)
     : QAbstractItemModel(&file_requester), file_requester(file_requester),
       parser_name(parser_name), root_id(root_id), undo_stack(1, root_id) {}
 QModelIndex YaboTreeModel::index(int row, int column,
@@ -76,8 +76,7 @@ QVariant YaboTreeModel::data(const QModelIndex &index, int role) const {
   case Column::VALUE:
     return file_requester.data(to_tree_index(index));
   case Column::FIELD:
-    return QString::fromStdString(
-        file_requester.field_name(to_tree_index(index)));
+    return file_requester.field_name(to_tree_index(index));
   case Column::ADDR: {
     auto span = file_requester.span(to_tree_index(index));
     if (!span.data()) {
