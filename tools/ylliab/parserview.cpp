@@ -1,5 +1,6 @@
 #include "parserview.hpp"
 #include "ui_parserview.h"
+#include "yabotreemodel.hpp"
 
 #include <QObject>
 
@@ -14,6 +15,8 @@ ParserView::ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req)
   connect(&graph_thread, &QThread::finished, graph, &QObject::deleteLater);
   connect(fileRequester.get(), &FileRequester::update_graph, graph,
           &Graph::update_graph, Qt::QueuedConnection);
+  connect(scene.get(), &GraphScene::node_double_clicked, fileRequester.get(),
+          &FileRequester::change_root);
   ui->graphicsView->setScene(scene.get());
   graph_thread.start();
 }

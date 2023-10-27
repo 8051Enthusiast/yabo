@@ -172,8 +172,9 @@ void GraphScene::update_positions(PositionsUpdate update) {
     node->setCenterPos(update.x[i], update.y[i]);
   }
   for (size_t i = nodes.size(); i < update.x.size(); i++) {
-    auto name = name_provider.node_name(Node{i});
-    auto node = new GraphNodeItem(nullptr, name);
+    auto idx = Node{i};
+    auto name = name_provider.node_name(idx);
+    auto node = new GraphNodeItem(nullptr, name, *this, idx);
     nodes.push_back(node);
     node->setCenterPos(update.x[i], update.y[i]);
     addItem(node);
@@ -193,4 +194,8 @@ void GraphScene::update_positions(PositionsUpdate update) {
     edges.push_back({line, edge});
     addItem(line);
   }
+}
+
+void GraphNodeItem::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event) {
+  emit scene.node_double_clicked(idx);
 }

@@ -2,6 +2,7 @@
 #include "request.hpp"
 
 #include <complex>
+#include <qgraphicsscene.h>
 #include <unordered_set>
 
 #include <QGraphicsItem>
@@ -112,10 +113,13 @@ public:
   virtual QString node_name(Node idx) const = 0;
 };
 
+class GraphScene;
+
 class GraphNodeItem : public QGraphicsSimpleTextItem {
 public:
-  GraphNodeItem(QGraphicsItem *parent, QString &text)
-      : QGraphicsSimpleTextItem(text, parent) {
+  GraphNodeItem(QGraphicsItem *parent, QString &text, GraphScene &scene,
+                Node idx)
+      : QGraphicsSimpleTextItem(text, parent), scene(scene), idx(idx) {
     // make clickable
     setAcceptHoverEvents(true);
   }
@@ -126,6 +130,13 @@ public:
   }
   void setCenterPos(QPointF pos) { setPos(pos - boundingRect().center()); }
   void setCenterPos(float x, float y) { setCenterPos({x, y}); }
+
+protected:
+  void mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event) override;
+
+private:
+  Node idx;
+  GraphScene &scene;
 };
 
 class GraphScene : public QGraphicsScene {
@@ -138,6 +149,9 @@ public:
   }
 public slots:
   void update_positions(PositionsUpdate update);
+
+signals:
+  void node_double_clicked(Node node);
 
 private:
   NodeNameProvider &name_provider;
