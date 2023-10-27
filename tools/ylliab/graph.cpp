@@ -144,7 +144,7 @@ void Graph::update_center() {
 }
 
 void Graph::step() {
-  for (int i = 0; i < 20; i++) {
+  for (int i = 0; i < 10; i++) {
     repeal_all();
     attract_edges();
     apply_force();

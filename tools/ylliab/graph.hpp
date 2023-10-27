@@ -67,7 +67,7 @@ public:
       : QObject(parent), outdegree(1, 0), center(0) {
     add_node(root);
     timer = new QTimer(this);
-    timer->setInterval(200);
+    timer->setInterval(100);
     connect(timer, &QTimer::timeout, this, &Graph::step);
     timer->start();
   }
