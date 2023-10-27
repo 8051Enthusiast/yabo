@@ -3,6 +3,7 @@
 #include "yabotreemodel.hpp"
 
 #include <QObject>
+#include <QOpenGLWidget>
 
 ParserView::ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req)
     : QWidget(parent), ui(new Ui::ParserView), fileRequester(std::move(req)),
@@ -20,6 +21,8 @@ ParserView::ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req)
   connect(fileRequester.get(), &FileRequester::root_changed, scene.get(),
           &GraphScene::select_node);
   ui->graphicsView->setScene(scene.get());
+  QOpenGLWidget *glWidget = new QOpenGLWidget();
+  ui->graphicsView->setViewport(glWidget);
   graph_thread.start();
 }
 

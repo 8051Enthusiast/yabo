@@ -8,7 +8,7 @@ class FileRequester;
 class YaboTreeModel : public QAbstractItemModel {
   Q_OBJECT
 public:
-  YaboTreeModel(FileRequester &file_requester, std::string &&parser_name,
+  YaboTreeModel(FileRequester &file_requester, QString &parser_name,
                 RootIndex root_id);
 
   // AbstractItemModel interface
@@ -46,7 +46,7 @@ private:
   QVariant color(const QModelIndex &index) const;
 
   FileRequester &file_requester;
-  std::string parser_name;
+  QString parser_name;
   RootIndex root_id;
   bool inserting_rows = false;
   std::vector<RootIndex> undo_stack;
