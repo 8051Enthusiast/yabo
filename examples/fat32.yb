@@ -83,6 +83,8 @@ def *dir_entry(blocks: [[u8]], fat: [fat_entry], sec_size: int) = [u8](32) |> {
   | empty: u8 if 0 or 0xE5
   | long: long_entry?
   | short: short_entry
+    | assert(short.name.[0] == 0x2E)?
+      let hidden = 1
     | assert(short.attr & 0x10 != 0)?
       let subdir = blocks.[short.cluster - 2] *>
         dir_entries(blocks, fat, sec_size, short.cluster)
