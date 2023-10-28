@@ -12,7 +12,6 @@ ParserView::ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req)
     : QWidget(parent), ui(new Ui::ParserView), fileRequester(std::move(req)),
       treeModel(fileRequester->get_tree_model()) {
   ui->setupUi(this);
-  setFocusPolicy(Qt::StrongFocus);
   ui->treeView->setModel(&treeModel);
   auto graph = new Graph(Node{treeModel.get_root()});
   graph->moveToThread(&graph_thread);
@@ -28,7 +27,6 @@ ParserView::ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req)
   QOpenGLWidget *glWidget = new QOpenGLWidget();
   ui->graphicsView->setViewport(glWidget);
   graph_thread.start();
-  grabKeyboard();
 }
 
 ParserView::~ParserView() {
