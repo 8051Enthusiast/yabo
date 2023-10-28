@@ -1,0 +1,29 @@
+# a node of the xor linked list
+# prev_address is the address of the previous node
+# (0 if not existent), and cur_address is the address
+# of this node itself
+def *xor_linked_list(prev_addr: int, cur_addr: int) = {
+  # this branch results in no fields if current address is zero
+  | assert(cur_addr == 0)?
+  # otherwise we have a valid address
+  # xor_addr is the value prev_addr ^ next_addr
+  | xor_addr: u16l
+    val: u16l
+    # we have prev_addr ^ (prev_addr ^ next_addr)
+    #      = (prev_addr ^ prev_addr) ^ next_addr
+    #      =            0            ^ next_addr = next_addr
+    let next_addr = prev_addr ^ xor_addr
+    # uses the next address for the next node
+    let next = xor_linked_list(cur_addr, next_addr) at next_addr
+    # note that the previous node has the next/prev swapped
+    # from what it was originally
+    let prev = xor_linked_list(cur_addr, prev_addr) at prev_addr
+}
+
+# the start of the xor linked list, given by a single 16-bit pointer
+export
+fun *xor_linked_list_head = {
+  addr: u16l
+  let next = xor_linked_list(0, addr) at addr
+}
+
