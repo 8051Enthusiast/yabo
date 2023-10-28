@@ -242,6 +242,7 @@ module.exports = grammar({
         ['else', PREC.ELSE],
         ['*>', PREC.PARSE],
         ['|>', PREC.PARSE],
+        ['at', PREC.PARSE],
         ['+', PREC.ADD],
         ['-', PREC.ADD],
         ['*', PREC.MULTIPLY],

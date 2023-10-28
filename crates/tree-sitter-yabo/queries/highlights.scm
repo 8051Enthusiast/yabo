@@ -37,6 +37,7 @@
 [
     "or"
     "and"
+    "at"
 ] @keyword.operator
 
 [

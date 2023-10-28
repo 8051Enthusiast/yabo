@@ -444,6 +444,19 @@ impl<'a> ConvertExpr<'a> {
                         self.f.eval_fun(fun_ref, place_ref, self.retreat);
                         place_ref
                     }
+                    ValUnOp::GetAddr => {
+                        let inner_ldt = self.db.least_deref_type(inner_ty)?;
+                        let inner = self.copy_if_different_levels(
+                            inner_ldt,
+                            inner_ty,
+                            None,
+                            inner_origin,
+                            recurse,
+                        )?;
+                        let place_ref = self.unwrap_or_stack(place, ty, origin);
+                        self.f.get_addr(inner, place_ref, self.retreat);
+                        place_ref
+                    }
                 }
             }
             ExprHead::Dyadic(op, [left, right]) => {

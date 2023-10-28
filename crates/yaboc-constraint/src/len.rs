@@ -196,6 +196,7 @@ impl<'a> SizeTermBuilder<'a> {
                     Ok(self.push_term(Term::OpaqueUn(inner), is_definite(self.db, *ty)?, src))
                 }
                 ValUnOp::Not => Ok(self.push_term(Term::OpaqueUn(inner), true, src)),
+                ValUnOp::GetAddr => Ok(self.push_term(Term::OpaqueUn(inner), true, src)),
             },
             ExprHead::Dyadic(d, [lhs, rhs]) => match d {
                 ValBinOp::Mul => Ok(self.push_term(Term::Mul([lhs, rhs]), true, src)),

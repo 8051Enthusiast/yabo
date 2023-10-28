@@ -88,7 +88,7 @@ int print_int(DynValue *val, int indent, Stack stack, FILE *out) {
 
 int print_bit(DynValue *val, int indent, Stack stack, FILE *out) {
   int8_t bit = dyn_bit(val);
-  char *text;
+  const char *text;
   if (bit) {
     text = "true";
   } else {
@@ -241,12 +241,16 @@ struct Slice map_file(char *filename) {
     perror("could not mmap file");
     return (struct Slice){0};
   }
-  return (struct Slice){(const uint8_t*)file, (const uint8_t*)file + length};
+  return (struct Slice){(const uint8_t *)file, (const uint8_t *)file + length};
 }
 
 int main(int argc, char **argv) {
   if (argc != 4) {
     fprintf(stderr, "usage: %s SOFILE PARSERNAME FILE\n", argv[0]);
+    exit(1);
+  }
+  struct Slice file = map_file(argv[3]);
+  if (!file.start) {
     exit(1);
   }
   void *lib = dlopen(argv[1], RTLD_NOW);
@@ -259,13 +263,14 @@ int main(int argc, char **argv) {
     perror("could not find yabo_max_buf_size (is this a yabo library?)");
     exit(1);
   }
+  struct Slice *yabo_global_address =
+      (struct Slice *)dlsym(lib, "yabo_global_address");
+  if (yabo_global_address) {
+    *yabo_global_address = file;
+  }
   ParseFun *parser = (ParseFun *)dlsym(lib, argv[2]);
   if (!parser) {
     perror("could not find parser");
-    exit(1);
-  }
-  struct Slice file = map_file(argv[3]);
-  if (!file.start) {
     exit(1);
   }
   Stack stack = init_stack(*max_dyn_size_ptr);

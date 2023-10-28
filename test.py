@@ -422,9 +422,9 @@ class TestFile:
             print(output)
             return 0
         with compiled_source as compiled:
-            lib = yabo.YaboLib(compiled)
             for (test_name, pair) in self.cases.items():
                 buf = bytearray(pair.input)
+                lib = yabo.YaboLib(compiled, buf)
                 try:
                     obj = lib.parser('test').parse(buf)
                 except Exception as e:

@@ -257,6 +257,7 @@ pub enum MirInstr {
     Comp(PlaceRef, Comp, PlaceRef, PlaceRef),
     StoreVal(PlaceRef, Val),
     SetDiscriminant(PlaceRef, FieldName, bool),
+    GetAddr(PlaceRef, PlaceRef, ControlFlow),
     ApplyArgs(PlaceRef, PlaceRef, Vec<PlaceRef>, u64, ControlFlow),
     Copy(PlaceRef, PlaceRef, ControlFlow),
     EvalFun(PlaceRef, PlaceRef, ControlFlow),
@@ -285,6 +286,7 @@ impl MirInstr {
                 | MirInstr::Field(..)
                 | MirInstr::ParseCall(..)
                 | MirInstr::LenCall(..)
+                | MirInstr::GetAddr(..)
                 | MirInstr::ApplyArgs(..)
                 | MirInstr::Copy(..)
                 | MirInstr::EvalFun(..)
@@ -302,6 +304,7 @@ impl MirInstr {
             | MirInstr::Field(_, _, _, control_flow)
             | MirInstr::ParseCall(_, _, _, _, _, Some(control_flow))
             | MirInstr::LenCall(_, _, control_flow)
+            | MirInstr::GetAddr(_, _, control_flow)
             | MirInstr::ApplyArgs(_, _, _, _, control_flow)
             | MirInstr::Copy(_, _, control_flow)
             | MirInstr::EvalFun(_, _, control_flow) => Some(*control_flow),
@@ -329,6 +332,9 @@ impl MirInstr {
             }
             MirInstr::LenCall(ret, val, control_flow) => {
                 MirInstr::LenCall(*ret, *val, control_flow.map_bb(f))
+            }
+            MirInstr::GetAddr(ret, val, control_flow) => {
+                MirInstr::GetAddr(*ret, *val, control_flow.map_bb(f))
             }
             MirInstr::ApplyArgs(ret, val, args, offset, control_flow) => {
                 MirInstr::ApplyArgs(*ret, *val, args.clone(), *offset, control_flow.map_bb(f))
@@ -900,6 +906,18 @@ impl FunctionWriter {
                     error: None,
                     eof: None,
                 },
+            ));
+        self.set_bb(new_block);
+    }
+
+    pub fn get_addr(&mut self, addr: PlaceRef, ret: PlaceRef, exc: ExceptionRetreat) {
+        let new_block = self.new_bb();
+        self.fun
+            .bb_mut(self.current_bb)
+            .append_ins(MirInstr::GetAddr(
+                ret,
+                addr,
+                ControlFlow::new_with_exc(new_block, exc),
             ));
         self.set_bb(new_block);
     }

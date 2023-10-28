@@ -1,0 +1,18 @@
+====[ source code ]====
+export
+fun *test = {
+  addr: u8
+  let return = u8 at addr
+}
+
+====[ binary 1 ]====
+01 02
+
+====[ output 1 ]====
+2
+
+====[ binary 2 ]====
+00
+
+====[ output 2 ]====
+0
