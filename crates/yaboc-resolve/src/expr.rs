@@ -80,6 +80,7 @@ impl TryFrom<expr::ValBinOp> for ValBinOp {
             expr::ValBinOp::Then => Ok(ValBinOp::Then),
             expr::ValBinOp::Index => Err(expr::ValBinOp::Index),
             expr::ValBinOp::Compose => Err(expr::ValBinOp::Compose),
+            expr::ValBinOp::At => Err(expr::ValBinOp::At),
         }
     }
 }
@@ -93,6 +94,7 @@ pub enum ValUnOp<C> {
     Size,
     BtMark(BtMarkKind),
     EvalFun,
+    GetAddr,
 }
 
 impl<C> TryFrom<expr::ValUnOp<C>> for ValUnOp<C> {
@@ -279,6 +281,15 @@ pub fn resolve_expr_error(
                         ),
                     )
                 }),
+            ),
+            (Cont(_), ExprHead::Dyadic(expr::ValBinOp::At, [lhs, _])) => ExprHead::Dyadic(
+                ValBinOp::ParserApply,
+                [
+                    D(id, |_, [_, rhs]| {
+                        ExprHead::Monadic(ValUnOp::GetAddr, Cont(rhs))
+                    }),
+                    Cont(*lhs),
+                ],
             ),
             (Cont(_), ExprHead::Dyadic(expr::ValBinOp::Index, [lhs, _])) => ExprHead::Dyadic(
                 ValBinOp::ParserApply,

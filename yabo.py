@@ -9,6 +9,8 @@ from os import getenv
 from ctypes import (addressof, c_char_p, c_int64, c_int8, c_ubyte,
                     c_uint32, c_uint64, c_size_t, c_char, Structure,
                     CFUNCTYPE, POINTER, byref, c_void_p, pointer)
+import tempfile
+from shutil import copyfileobj
 
 
 YABO_INTEGER = 0x100
@@ -22,6 +24,8 @@ YABO_UNIT = 0x800
 YABO_U8 = 0x900
 YABO_ANY = ((1 << 64) - 1) & ~0xff
 YABO_VTABLE = 1
+
+YABO_GLOBAL_ADDRESS_NAME = "yabo_global_address"
 
 OK = 0
 ERROR = 1
@@ -252,8 +256,30 @@ class Parser:
 
 class YaboLib(ctypes.CDLL):
     _loc: threading.local
-    def __init__(self, name: str):
-        super().__init__(name)
+    def __init__(self, path: str, global_address: bytearray | None = None):
+        # we need to copy the library to a temporary path because
+        # loading the same library twice will deduplicates globals
+        # and cause a mess if it is overwritten
+        with tempfile.NamedTemporaryFile() as tmp_file:
+            with open(path, 'rb') as f:
+                copyfileobj(f, tmp_file)
+            super().__init__(tmp_file.name)
+        if not global_address:
+            try:
+                getattr(self, YABO_GLOBAL_ADDRESS_NAME)
+                raise Exception("yabo lib requires a global address, probably because it uses the `at` operator")
+            except AttributeError:
+                pass
+        else:
+            slice_addr = Slice(global_address)
+            try:
+                global_address = Slice.in_dll(self, YABO_GLOBAL_ADDRESS_NAME)
+                global_address.start = slice_addr.start
+                global_address.end = slice_addr.end
+            except ValueError:
+                # if an unneeded global address is provided, we can just
+                # ignore it
+                pass
         self._loc = threading.local()
 
     def parser(self, name: str) -> Parser:

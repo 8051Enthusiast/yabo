@@ -574,6 +574,7 @@ pub enum ValBinOp {
     Else,
     Then,
     Index,
+    At,
 }
 
 impl ValBinOp {
@@ -601,6 +602,7 @@ impl ValBinOp {
             "else" => Else,
             "then" => Then,
             ".[" => Index,
+            "at" => At,
             otherwise => return Err(otherwise),
         })
     }
@@ -633,6 +635,7 @@ impl Display for ValBinOp {
                 ValBinOp::Else => "else",
                 ValBinOp::Then => "then",
                 ValBinOp::Index => ".[",
+                ValBinOp::At => "at",
             }
         )
     }

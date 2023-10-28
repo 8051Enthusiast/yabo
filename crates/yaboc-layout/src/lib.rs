@@ -1062,6 +1062,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ValUnOp::Dot(a, ..) => inner.0.access_field(ctx, a)?,
                 ValUnOp::BtMark(bt) => inner.0.with_backtrack_status(ctx, bt),
                 ValUnOp::EvalFun => inner.0.eval_fun(ctx)?,
+                ValUnOp::GetAddr => IMonoLayout::u8_array(ctx).inner(),
             },
             ExprHead::Dyadic(op, [lhs, rhs]) => match op {
                 ValBinOp::ParserApply => rhs.0.apply_arg(ctx, lhs.0)?,

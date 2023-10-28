@@ -13,7 +13,7 @@ use yaboc_ast::expr::Atom;
 use yaboc_ast::ConstraintAtom;
 use yaboc_base::interner::FieldName;
 use yaboc_hir::BlockId;
-use yaboc_hir_types::{NominalId, NOBACKTRACK_BIT, VTABLE_BIT, TyHirs};
+use yaboc_hir_types::{NominalId, TyHirs, NOBACKTRACK_BIT, VTABLE_BIT};
 use yaboc_layout::{mir_subst::FunctionSubstitute, ILayout, Layout, MonoLayout};
 use yaboc_mir::{
     self as mir, BBRef, Comp, IntBinOp, IntUnOp, MirInstr, PlaceRef, ReturnStatus, Val,
@@ -595,6 +595,29 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         self.cg.builder.build_store(ret_ptr, value);
     }
 
+    fn get_addr(&mut self, ret: PlaceRef, addr: PlaceRef, ctrl: ControlFlow) {
+        let ret_val = self.place_val(ret);
+        let global_array = self.cg.yabo_global_address();
+        self.cg.build_copy_invariant(ret_val, global_array.into());
+        let addr_ptr = self.place_ptr(addr);
+        let addr_val = self.cg.build_i64_load(addr_ptr, "get_addr");
+        let len = self.cg.call_array_len_fun(ret_val);
+        // this is unsigned compare because negative numbers also need to error
+        let cmp =
+            self.cg
+                .builder
+                .build_int_compare(IntPredicate::ULT, addr_val, len, "get_addr_cmp");
+        let next = self
+            .cg
+            .llvm
+            .append_basic_block(self.llvm_fun, "get_addr_next");
+        let err = self.bb(ctrl.error.unwrap());
+        self.cg.builder.build_conditional_branch(cmp, next, err);
+        self.cg.builder.position_at_end(next);
+        let status = self.cg.call_skip_fun(ret_val, addr_val);
+        self.controlflow_case(status, ctrl)
+    }
+
     fn mir_ins(&mut self, ins: MirInstr) {
         match ins {
             MirInstr::IntBin(ret, op, left, right) => self.int_bin(ret, op, left, right),
@@ -612,6 +635,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             }
             MirInstr::EvalFun(to, from, ctrl) => self.eval_fun(to, from, ctrl),
             MirInstr::Copy(to, from, ctrl) => self.copy(to, from, ctrl),
+            MirInstr::GetAddr(ret, place, ctrl) => self.get_addr(ret, place, ctrl),
             MirInstr::ApplyArgs(ret, fun, args, first_index, ctrl) => {
                 self.apply_args(ret, fun, &args, first_index, ctrl)
             }

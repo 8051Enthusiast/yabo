@@ -484,3 +484,28 @@ def *first_byte = {
   let return = array.[0]
 }
 ```
+
+The `at` Operator
+-----------------
+
+The `at` operator allows parsing at a specific location in the input specified via an integer address:
+```
+fun *u8ptr(parser: *'t) = {
+  addr: u8
+  let return = parser at addr
+}
+
+export
+def *linked_list = {
+  | u8 if 0
+  | next: u8ptr(linked_list)?
+  val: u8
+}
+```
+Here in this example, we define a linked list with byte addresses and byte values.
+The `u8 if 0` makes sure that we do not have a `next` field if the address is 0, and otherwise we parse an `u8ptr(linked_list)`.
+If we look closer at the `u8ptr` parser, we see how the `at` operator is used - it takes an address to the right side and a parser to the left side and returns the parsed value at the address.
+
+The `at` operator evaluates eagerly, but since `linked_list` is defined via `def` and not `fun`, the `linked_list` parser is a thunk and `parser at addr` only returns the thunk, which consists of just the address.
+
+If the address is out of range, the `at` operator returns an error.

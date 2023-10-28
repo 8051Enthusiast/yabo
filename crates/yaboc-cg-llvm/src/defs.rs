@@ -5,6 +5,7 @@ use super::*;
 
 // llvm id for the tailcc calling convention
 pub const TAILCC: u32 = 18;
+pub const YABO_GLOBAL_ADDRESS: &str = "yabo_global_address";
 
 impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn fun_val(
@@ -309,5 +310,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let f = self.ppi_fun_val(layout, LayoutPart::CreateArgs(slot));
         self.set_always_inline(f);
         f
+    }
+
+    pub(super) fn yabo_global_address(&mut self) -> CgMonoValue<'comp, 'llvm> {
+        let ptr = if let Some(x) = self.module.get_global(YABO_GLOBAL_ADDRESS) {
+            x.as_pointer_value()
+        } else {
+            let llvm_ty = <[*const u8; 2]>::codegen_ty(self);
+            let global = self.module.add_global(llvm_ty, None, YABO_GLOBAL_ADDRESS);
+            global.set_initializer(&llvm_ty.const_zero());
+            global.as_pointer_value()
+        };
+        let u8_ptr = ptr.const_cast(self.any_ptr());
+        let layout = IMonoLayout::u8_array(self.layouts);
+        CgMonoValue::new(layout, u8_ptr)
     }
 }

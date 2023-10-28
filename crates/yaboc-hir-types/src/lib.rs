@@ -421,6 +421,12 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         ValUnOp::EvalFun => {
                             self.infctx.function_apply(inner, &[], Application::Full)?
                         }
+                        ValUnOp::GetAddr => {
+                            let int = self.infctx.int();
+                            self.infctx.constrain(inner, int)?;
+                            let u8 = self.infctx.u8();
+                            self.infctx.array(ArrayKind::Each, u8)
+                        }
                     },
                     ExprHead::Niladic(a) => match &a {
                         ResolvedAtom::Char(_) => self.infctx.char(),

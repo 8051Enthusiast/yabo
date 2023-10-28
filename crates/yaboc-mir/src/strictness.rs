@@ -215,6 +215,7 @@ impl<'a> StrictnessCtx<'a> {
             | MirInstr::IntUn(ret, _, _)
             | MirInstr::Comp(ret, _, _, _)
             | MirInstr::StoreVal(ret, _)
+            | MirInstr::GetAddr(ret, _, _)
             | MirInstr::ApplyArgs(ret, _, _, _, _)
             | MirInstr::Copy(ret, _, _)
             | MirInstr::LenCall(ret, _, _)
@@ -252,6 +253,7 @@ impl<'a> StrictnessCtx<'a> {
             }
             MirInstr::IntUn(_, _, a)
             | MirInstr::AssertVal(a, _, _)
+            | MirInstr::GetAddr(_, a, _)
             | MirInstr::LenCall(_, a, _)
             | MirInstr::EvalFun(_, a, _)
             | MirInstr::Field(_, a, _, _) => {

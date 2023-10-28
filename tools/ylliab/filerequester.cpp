@@ -16,8 +16,8 @@
 #include "yabo/vtable.h"
 #include "yabotreemodel.hpp"
 
-Executor::Executor(std::filesystem::path path, std::vector<uint8_t> &&file)
-    : file(std::move(file)) {
+Executor::Executor(std::filesystem::path path, std::vector<uint8_t> &&file_vec)
+    : file(std::move(file_vec)) {
   // we need to create a tmpfile copy of the library pointed to by
   // `path` which we then dlopen
   // this is because dlopen does not work well if the file changes, and
@@ -55,6 +55,12 @@ Executor::Executor(std::filesystem::path path, std::vector<uint8_t> &&file)
     dlclose(lib);
     std::filesystem::remove(tmp_file);
     throw ExecutorError(err);
+  }
+  auto global_address =
+      reinterpret_cast<Slice *>(dlsym(lib, "yabo_global_address"));
+  if (global_address) {
+    global_address->start = file.data();
+    global_address->end = file.data() + file.size();
   }
   vals = YaboValCreator(YaboValStorage(*size));
 }

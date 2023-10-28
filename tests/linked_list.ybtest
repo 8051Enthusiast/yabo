@@ -1,0 +1,32 @@
+====[ source code ]====
+fun *u8ptr(t: *'t) = {
+  addr: u8 if 0x01..0xff
+  let return = t at addr
+}
+
+export
+def *test = {
+  | u8 if 0
+  | next: u8ptr(test)?
+  val: u8
+}
+
+====[ binary 1 ]====
+02 00 04 01 06 02 01 03
+
+====[ output 1 ]====
+{
+    "val": 0,
+    "next": {
+        "val": 1,
+        "next": {
+            "val": 2,
+            "next": {
+                "val": 3,
+                "next": {
+                    "val": 4
+                }
+            }
+        }
+    }
+}
