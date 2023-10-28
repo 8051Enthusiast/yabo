@@ -149,6 +149,10 @@ Executor::DerefInfo Executor::deref(YaboVal val) {
 SpannedVal Executor::normalize(YaboVal val, FileSpan parent_span) {
   std::optional<SpannedVal> first_outside;
   while (true) {
+    if (val.kind() == YaboValKind::YABOU8) {
+      const uint8_t *start = val.access_u8();
+      return SpannedVal{val, FileSpan(start, 1)};
+    }
     auto deref_info = deref(val);
     if (!deref_info.val.has_value()) {
       break;
