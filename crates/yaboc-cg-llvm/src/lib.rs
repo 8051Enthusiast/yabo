@@ -536,6 +536,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .unwrap();
     }
 
+    fn build_vtable_store(&mut self, dest: PointerValue<'llvm>, vtable: PointerValue<'llvm>) {
+        let vtable_offset = self.any_ptr().size_of().const_neg();
+        let before_ptr = self.build_byte_gep(dest, vtable_offset, "vtable_ptr_skip");
+        let ret_vtable_ptr = self.build_cast::<*mut *const u8, _>(before_ptr);
+        self.builder.build_store(ret_vtable_ptr, vtable);
+    }
+
     fn create_pd_export(
         &mut self,
         pd: ParserDefId,

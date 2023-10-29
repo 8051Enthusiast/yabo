@@ -13,6 +13,7 @@ pub use strictness::Strictness;
 use yaboc_ast::expr::WiggleKind;
 use yaboc_ast::ConstraintAtom;
 use yaboc_base::dbpanic;
+use yaboc_base::interner::Regex;
 use yaboc_base::{
     error::{SResult, Silencable},
     interner::{DefId, FieldName},
@@ -173,10 +174,20 @@ impl TryFrom<&ValBinOp> for Comp {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum ZstVal {
+    Nil,
+    Single,
+    Array,
+    Regex(Regex),
+    ParserDef(ParserDefId),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Val {
     Char(u32),
     Int(i64),
     Bool(bool),
+    Parser(ZstVal),
     Undefined,
 }
 
@@ -830,6 +841,10 @@ impl FunctionWriter {
 
     pub fn load_bool(&mut self, b: bool, place: PlaceRef) {
         self.append_ins(MirInstr::StoreVal(place, Val::Bool(b)));
+    }
+
+    pub fn load_zst(&mut self, val: ZstVal, place: PlaceRef) {
+        self.append_ins(MirInstr::StoreVal(place, Val::Parser(val)));
     }
 
     pub fn load_undef(&mut self, place: PlaceRef) {

@@ -466,12 +466,7 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
             .build_conditional_branch(has_vtable, write_vtable_ptr, otherwise);
         self.cg.builder.position_at_end(write_vtable_ptr);
         let vtable_pointer = self.build_vtable_any_ptr();
-        let vtable_offset = self.cg.any_ptr().size_of().const_neg();
-        let before_ptr = self
-            .cg
-            .build_byte_gep(self.ret.ptr, vtable_offset, "vtable_ptr_skip");
-        let ret_vtable_ptr = self.cg.build_cast::<*mut *const u8, _>(before_ptr);
-        self.cg.builder.build_store(ret_vtable_ptr, vtable_pointer);
+        self.cg.build_vtable_store(self.ret.ptr, vtable_pointer);
         copy_phi.add_incoming(&[(&self.ret.ptr, write_vtable_ptr)]);
         self.cg.builder.build_unconditional_branch(copy_bb);
     }

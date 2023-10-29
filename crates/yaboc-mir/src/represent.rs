@@ -3,7 +3,7 @@ use std::{fmt::Display, io::Write};
 use yaboc_base::{databased_display::DatabasedDisplay, dbformat, dbwrite};
 use yaboc_dependents::RequirementSet;
 
-use crate::{strictness::Strictness, CallMeta, ControlFlow, FunKind, InsRef, MirKind};
+use crate::{strictness::Strictness, CallMeta, ControlFlow, FunKind, InsRef, MirKind, ZstVal};
 
 use super::{
     BBRef, Comp, ExceptionRetreat, Function, IntBinOp, IntUnOp, MirInstr, Mirs, Place, PlaceOrigin,
@@ -91,12 +91,25 @@ impl Display for Comp {
     }
 }
 
-impl Display for Val {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<DB: Mirs + ?Sized> DatabasedDisplay<DB> for ZstVal {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
+        match self {
+            ZstVal::Nil => write!(f, "+"),
+            ZstVal::Single => write!(f, "~"),
+            ZstVal::Array => write!(f, "[]"),
+            ZstVal::Regex(regex) => dbwrite!(f, db, "/{}/", regex),
+            ZstVal::ParserDef(pd) => dbwrite!(f, db, "parserdef {}", &pd.0),
+        }
+    }
+}
+
+impl<DB: Mirs + ?Sized> DatabasedDisplay<DB> for Val {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
             Val::Char(c) => write!(f, "'{}'", char::try_from(*c).unwrap()),
             Val::Int(i) => write!(f, "{i}"),
             Val::Bool(b) => write!(f, "{b}"),
+            Val::Parser(parser) => dbwrite!(f, db, "parser {}", parser),
             Val::Undefined => write!(f, "undefined"),
         }
     }
@@ -131,7 +144,8 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
                 dbwrite!(f, db, "{} = {} {}, {}", target, op, left, right)
             }
             MirInstr::StoreVal(target, val) => {
-                dbwrite!(f, db, "{} = load {}", target, val)
+                dbwrite!(f, db, "{} = load ", target)?;
+                dbwrite!(f, db.1, "{}", val)
             }
             MirInstr::ParseCall(ret, retlen, kind, arg, fun, retreat) => {
                 if let Some(ret) = ret {
