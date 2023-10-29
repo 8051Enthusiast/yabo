@@ -16,7 +16,7 @@ use yaboc_types::{PrimitiveType, Type, TypeId};
 
 use crate::{
     BBRef, CallMeta, Comp, ExceptionRetreat, FunctionWriter, IntBinOp, IntUnOp, Place, PlaceInfo,
-    PlaceOrigin, PlaceRef,
+    PlaceOrigin, PlaceRef, ZstVal,
 };
 
 // anyone wanna play some type tetris?
@@ -208,6 +208,27 @@ impl<'a> ConvertExpr<'a> {
         place_ref
     }
 
+    fn load_zst(
+        &mut self,
+        val: ZstVal,
+        ty: TypeId,
+        place: Option<PlaceRef>,
+        origin: PlaceOrigin,
+    ) -> PlaceRef {
+        // loading a zst requires keeping the mono layout information
+        // in order to get the vtable, which may be lost if it is
+        // loaded directly into a multi-layout so we make a stack place
+        // which is guaranteed to be mono
+        let stack_place = self.new_stack_place(ty, origin);
+        self.f.load_zst(val, stack_place);
+        if let Some(place) = place {
+            self.copy(stack_place, place);
+            place
+        } else {
+            stack_place
+        }
+    }
+
     fn load_undef(&mut self, ty: TypeId, place: Option<PlaceRef>, origin: PlaceOrigin) -> PlaceRef {
         let place_ref = self.unwrap_or_stack(place, ty, origin);
         self.f.load_undef(place_ref);
@@ -322,11 +343,15 @@ impl<'a> ConvertExpr<'a> {
                 ResolvedAtom::Number(n) => self.load_int(*n, ty, place, origin),
                 ResolvedAtom::Char(c) => self.load_char(*c, ty, place, origin),
                 ResolvedAtom::Bool(b) => self.load_bool(*b, ty, place, origin),
-                ResolvedAtom::ParserDef(_)
-                | ResolvedAtom::Single
-                | ResolvedAtom::Nil
-                | ResolvedAtom::Array
-                | ResolvedAtom::Regex(..) => self.unwrap_or_stack(place, ty, origin),
+                ResolvedAtom::ParserDef(pd) => {
+                    self.load_zst(ZstVal::ParserDef(*pd), ty, place, origin)
+                }
+                ResolvedAtom::Single => self.load_zst(ZstVal::Single, ty, place, origin),
+                ResolvedAtom::Nil => self.load_zst(ZstVal::Nil, ty, place, origin),
+                ResolvedAtom::Array => self.load_zst(ZstVal::Array, ty, place, origin),
+                ResolvedAtom::Regex(regex, _) => {
+                    self.load_zst(ZstVal::Regex(*regex), ty, place, origin)
+                }
                 ResolvedAtom::Block(block) => {
                     self.create_block_parser(*block, ty, place, origin)?
                 }

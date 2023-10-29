@@ -446,7 +446,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             Val::Char(c) => self.cg.llvm.i32_type().const_int(c as u64, false),
             Val::Int(i) => self.cg.const_i64(i),
             Val::Bool(b) => self.cg.llvm.i8_type().const_int(b as u64, false),
-            Val::Undefined => return,
+            Val::Parser(_) | Val::Undefined => return,
         };
         let casted_ret_ptr = self
             .cg
