@@ -349,7 +349,7 @@ impl<'a> ConvertExpr<'a> {
                 ResolvedAtom::Single => self.load_zst(ZstVal::Single, ty, place, origin),
                 ResolvedAtom::Nil => self.load_zst(ZstVal::Nil, ty, place, origin),
                 ResolvedAtom::Array => self.load_zst(ZstVal::Array, ty, place, origin),
-                ResolvedAtom::Regex(regex, _) => {
+                ResolvedAtom::Regex(regex) => {
                     self.load_zst(ZstVal::Regex(*regex), ty, place, origin)
                 }
                 ResolvedAtom::Block(block) => {

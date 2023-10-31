@@ -1270,7 +1270,7 @@ static bool ts_lex(TSLexer *lexer, TSStateId state) {
           lookahead == ' ') SKIP(4)
       END_STATE();
     case 5:
-      if (lookahead == '/') ADVANCE(74);
+      if (lookahead == '/') ADVANCE(73);
       if (lookahead == '\\') ADVANCE(16);
       if (lookahead != 0 &&
           lookahead != '\n') ADVANCE(5);
@@ -1583,10 +1583,6 @@ static bool ts_lex(TSLexer *lexer, TSStateId state) {
       END_STATE();
     case 73:
       ACCEPT_TOKEN(sym_regex_literal);
-      END_STATE();
-    case 74:
-      ACCEPT_TOKEN(sym_regex_literal);
-      if (lookahead == '?') ADVANCE(73);
       END_STATE();
     default:
       return false;

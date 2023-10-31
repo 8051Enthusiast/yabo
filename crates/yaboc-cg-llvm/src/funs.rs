@@ -876,7 +876,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 arg_copy.ptr.into(),
             ],
         );
-        let ret = if *bt {
+        let ret = if !bt {
             let is_bt = self.builder.build_int_compare(
                 IntPredicate::EQ,
                 ret,

@@ -20,7 +20,7 @@ pub enum ResolvedAtom {
     Val(DefId),
     Captured(DefId),
     ParserDef(hir::ParserDefId),
-    Regex(Regex, bool),
+    Regex(Regex),
     Number(i64),
     Char(u32),
     Bool(bool),
@@ -218,7 +218,7 @@ fn resolve_expr_modules(
                     hir::ParserAtom::Single => ResolvedAtom::Single,
                     hir::ParserAtom::Nil => ResolvedAtom::Nil,
                     hir::ParserAtom::Array => ResolvedAtom::Array,
-                    hir::ParserAtom::Regex(r, bt) => ResolvedAtom::Regex(r, bt),
+                    hir::ParserAtom::Regex(r) => ResolvedAtom::Regex(r),
                     hir::ParserAtom::Block(b) => ResolvedAtom::Block(b),
                     hir::ParserAtom::Atom(Atom::Field(f)) => {
                         match new_resolved_atom(expr_id.0, f, *span, true)? {

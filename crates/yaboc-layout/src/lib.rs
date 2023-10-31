@@ -1010,7 +1010,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ResolvedAtom::Single => make_layout(MonoLayout::Single),
                 ResolvedAtom::Nil => make_layout(MonoLayout::Nil),
                 ResolvedAtom::Array => make_layout(MonoLayout::ArrayParser(None)),
-                ResolvedAtom::Regex(r, bt) => make_layout(MonoLayout::Regex(r, bt)),
+                ResolvedAtom::Regex(r) => make_layout(MonoLayout::Regex(r, true)),
                 ResolvedAtom::ParserDef(pd) => {
                     make_layout(MonoLayout::NominalParser(pd, Vec::new(), true))
                 }
