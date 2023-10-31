@@ -44,6 +44,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.module
                 .add_global(vtable_type, Some(AddressSpace::default()), &vtable_sym);
         vtable.set_linkage(Linkage::Internal);
+        vtable.set_constant(true);
         vtable
     }
 

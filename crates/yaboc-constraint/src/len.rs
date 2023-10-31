@@ -172,7 +172,7 @@ impl<'a> SizeTermBuilder<'a> {
                 ResolvedAtom::ParserDef(pd) => {
                     Ok(self.push_term(Term::Pd(pd), is_definite(self.db, *ty)?, src))
                 }
-                ResolvedAtom::Regex(r, _) => {
+                ResolvedAtom::Regex(r) => {
                     let len = self.db.regex_len(r).map_err(|_| SilencedError::new())?;
                     if let Some(len) = len {
                         Ok(self.push_term(Term::Const(len), false, src))

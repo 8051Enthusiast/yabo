@@ -1,4 +1,4 @@
-use yaboc_ast::expr::{WiggleKind, BtMarkKind};
+use yaboc_ast::expr::{BtMarkKind, WiggleKind};
 use yaboc_base::{error::SResult, interner::DefId};
 use yaboc_expr::{ExprHead, Expression, FetchExpr, TakeRef};
 use yaboc_hir::{ExprId, HirNode};
@@ -22,6 +22,7 @@ fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<(bool, bo
                 ExprHead::Niladic(ResolvedAtom::Block(b)) => {
                     (false, db.can_backtrack(b.0).unwrap_or(false))
                 }
+                ExprHead::Niladic(ResolvedAtom::Regex(_)) => (false, true),
                 ExprHead::Niladic(_) => (false, false),
                 ExprHead::Monadic(ValUnOp::Dot(_, acc), (will, can)) => {
                     (will || acc.can_backtrack(), can)

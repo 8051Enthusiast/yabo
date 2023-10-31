@@ -116,7 +116,7 @@ fn val_expression(
                 ast::ParserAtom::Single => ParserAtom::Single,
                 ast::ParserAtom::Nil => ParserAtom::Nil,
                 ast::ParserAtom::Array => ParserAtom::Array,
-                ast::ParserAtom::Regex(re, bt) => ParserAtom::Regex(*re, *bt),
+                ast::ParserAtom::Regex(re) => ParserAtom::Regex(*re),
                 ast::ParserAtom::Block(b) => {
                     let nid = BlockId(new_id());
                     block(b, ctx, nid, parent_context, id);

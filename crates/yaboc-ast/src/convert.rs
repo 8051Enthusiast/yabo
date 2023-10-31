@@ -842,12 +842,8 @@ fn bool_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<bool> {
 
 fn regex_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<ParserAtom> {
     let node = spanned(node_to_string)(db, fd, c)?;
-    let (has_questionmark, str) = if let Some(without_questionmark) = node.inner.strip_suffix('?') {
-        (true, without_questionmark)
-    } else {
-        (false, node.inner.as_str())
-    };
-    let without_slashes = str
+    let without_slashes = node
+        .inner
         .strip_prefix('/')
         .and_then(|s| s.strip_suffix('/'))
         .ok_or_else(|| vec![GenericParseError { loc: node.span }])?;
@@ -872,7 +868,7 @@ fn regex_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Parser
         return Err(vec![GenericParseError { loc: node.span }]);
     }
     let regex = db.intern_regex(unescaped_slashes);
-    Ok(ParserAtom::Regex(regex, has_questionmark))
+    Ok(ParserAtom::Regex(regex))
 }
 
 fn node_to_string(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<String> {
