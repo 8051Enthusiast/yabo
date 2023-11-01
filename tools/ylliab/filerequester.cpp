@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <vector>
 
+#include "color.hpp"
 #include "filerequester.hpp"
 #include "graph.hpp"
 #include "request.hpp"
@@ -503,8 +504,5 @@ QColor FileRequester::node_color(Node idx) const {
     auto val = std::get<YaboVal>(cause);
     hash = std::hash<YaboVal>()(val);
   }
-  hash *= 11400714819323198485ull;
-  hash ^= hash >> 32;
-  auto hue = hash % 360;
-  return QColor::fromHsl(hue, 200, 230);
+  return random_color(hash);
 }
