@@ -16,7 +16,7 @@ struct Color {
   float &operator[](size_t i) { return component[i]; }
 };
 
-Color lin_srgb_to_srgb(Color srgb) {
+static Color lin_srgb_to_srgb(Color srgb) {
   Color rgb;
   for (size_t i = 0; i < 3; i++) {
     // our linear srgb has range 0..100, but conversion needs 0..1
@@ -34,7 +34,7 @@ Color lin_srgb_to_srgb(Color srgb) {
 constexpr float xyz_to_srgb_matrix[3][3] = {{3.2406, -1.5372, -0.4986},
                                             {-0.9689, 1.8758, 0.0415},
                                             {0.0557, -0.2040, 1.0570}};
-Color xyz_to_lin_srgb(Color xyz) {
+static Color xyz_to_lin_srgb(Color xyz) {
   Color srgb = {0, 0, 0};
   for (size_t i = 0; i < 3; i++) {
     for (size_t j = 0; j < 3; ++j) {
@@ -49,7 +49,7 @@ constexpr float x_n = 95.0489;
 constexpr float y_n = 100.0;
 constexpr float z_n = 108.884;
 
-Color cielab_to_xyz(Color lab) {
+static Color cielab_to_xyz(Color lab) {
   Color xyz;
   float fy = (lab[0] + 16.0) / 116.0;
   float fx = fy + lab[1] / 500.0;
@@ -63,7 +63,7 @@ Color cielab_to_xyz(Color lab) {
 }
 
 // check whether our color falls within the srgb gamut
-bool in_100_range(Color srgb) {
+static bool in_100_range(Color srgb) {
   for (auto comp : srgb.component) {
     if (comp < 0 || comp > 100) {
       return false;
