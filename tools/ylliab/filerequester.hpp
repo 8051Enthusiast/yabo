@@ -11,6 +11,7 @@
 #include <dlfcn.h>
 #include <unordered_set>
 
+#include "filecontent.hpp"
 #include "graph.hpp"
 #include "request.hpp"
 #include "yabo.hpp"
@@ -25,7 +26,7 @@ struct ExecutorError : public std::exception {
 class Executor : public QObject {
   Q_OBJECT
 public:
-  Executor(std::filesystem::path path, std::vector<uint8_t> &&file);
+  Executor(std::filesystem::path path, FileRef file);
   ~Executor();
   // we need to delete the copy constructor and assignment operator because
   // we don't want to copy the library
@@ -70,7 +71,7 @@ private:
   YaboValCreator vals;
   void *lib;
   std::filesystem::path tmp_file;
-  std::vector<uint8_t> file;
+  FileRef file;
 };
 
 struct ParentBranch {
@@ -140,8 +141,8 @@ class YaboTreeModel;
 class FileRequester : public QObject, public NodeInfoProvider {
   Q_OBJECT
 public:
-  FileRequester(std::filesystem::path path, std::vector<uint8_t> &&file,
-                QString parser_name, bool recursive_fetch = true);
+  FileRequester(std::filesystem::path path, FileRef file, QString parser_name,
+                bool recursive_fetch = true);
   FileRequester(QString error_msg) : error_msg(error_msg) {}
   ~FileRequester() {
     executor_thread.quit();

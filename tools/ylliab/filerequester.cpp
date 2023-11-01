@@ -7,6 +7,7 @@
 
 #include <qthread.h>
 #include <qvariant.h>
+#include <stdexcept>
 #include <vector>
 
 #include "filerequester.hpp"
@@ -16,8 +17,8 @@
 #include "yabo/vtable.h"
 #include "yabotreemodel.hpp"
 
-Executor::Executor(std::filesystem::path path, std::vector<uint8_t> &&file_vec)
-    : file(std::move(file_vec)) {
+Executor::Executor(std::filesystem::path path, FileRef file_content)
+    : file(file_content) {
   // we need to create a tmpfile copy of the library pointed to by
   // `path` which we then dlopen
   // this is because dlopen does not work well if the file changes, and
@@ -59,8 +60,9 @@ Executor::Executor(std::filesystem::path path, std::vector<uint8_t> &&file_vec)
   auto global_address =
       reinterpret_cast<Slice *>(dlsym(lib, "yabo_global_address"));
   if (global_address) {
-    global_address->start = file.data();
-    global_address->end = file.data() + file.size();
+    auto span = file->span();
+    global_address->start = span.data();
+    global_address->end = span.data() + span.size();
   }
   vals = YaboValCreator(YaboValStorage(*size));
 }
@@ -129,7 +131,7 @@ std::optional<Response> Executor::execute_parser(Meta meta,
     return {};
   }
   auto parser = *parser_ptr;
-  auto ret = vals.parse(parser, file);
+  auto ret = vals.parse(parser, file->span());
   if (ret.has_value()) {
     auto normalized = normalize(ret.value(), ret->span);
     return Response(meta, {func_name, normalized});
@@ -191,12 +193,11 @@ RootIndex Arborist::add_root_node(size_t root_count, QString &field_name) {
   return RootIndex(index, root_count);
 }
 
-FileRequester::FileRequester(std::filesystem::path path,
-                             std::vector<uint8_t> &&file, QString parser_name,
-                             bool recursive_fetch)
+FileRequester::FileRequester(std::filesystem::path path, FileRef file,
+                             QString parser_name, bool recursive_fetch)
     : recursive_fetch(recursive_fetch) {
   Executor *executor;
-  file_base = file.data();
+  file_base = file->span().data();
   executor = new Executor(path, std::move(file));
   executor->moveToThread(&executor_thread);
   arborist = std::make_unique<Arborist>();
@@ -461,14 +462,16 @@ std::unique_ptr<FileRequester> FileRequesterFactory::create_file_requester(
   std::filesystem::path p = parser_lib_path.toStdString();
   std::vector<uint8_t> file;
   try {
-    std::ifstream f(file_path.toStdString(), std::ios::binary);
-    auto file_size = std::filesystem::file_size(file_path.toStdString());
-    file.resize(file_size);
-    f.read((char *)file.data(), file_size);
-    auto req = std::make_unique<FileRequester>(p, std::move(file), parser_name,
-                                               recursive_fetch);
+    FileRef file = std::make_shared<FileContent>(file_path.toStdString());
+    auto req =
+        std::make_unique<FileRequester>(p, file, parser_name, recursive_fetch);
     return req;
   } catch (std::system_error &e) {
+    auto msg = std::format("Could not open file {}: {}",
+                           file_path.toStdString(), e.what());
+    auto req = std::make_unique<FileRequester>(QString::fromStdString(msg));
+    return req;
+  } catch (std::runtime_error &e) {
     auto msg = std::format("Could not open file {}: {}",
                            file_path.toStdString(), e.what());
     auto req = std::make_unique<FileRequester>(QString::fromStdString(msg));

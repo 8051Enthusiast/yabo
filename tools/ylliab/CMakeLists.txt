@@ -16,6 +16,7 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
 
 set(PROJECT_SOURCES
         request.hpp
+        filecontent.hpp filecontent.cpp
         yabo.hpp yabo.cpp
         graph.hpp graph.cpp
         filerequester.hpp filerequester.cpp
