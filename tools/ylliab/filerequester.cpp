@@ -16,7 +16,6 @@
 #include "request.hpp"
 #include "yabo.hpp"
 #include "yabo/vtable.h"
-#include "yabotreemodel.hpp"
 
 Executor::Executor(std::filesystem::path path, FileRef file_content)
     : file(file_content) {
@@ -210,7 +209,7 @@ FileRequester::FileRequester(std::filesystem::path path, FileRef file,
           &Executor::execute_request_slot);
   connect(this, &FileRequester::parse_request, executor,
           &Executor::execute_parser_slot);
-  create_tree_model(parser_name);
+  init_root(parser_name);
 }
 
 void FileRequester::set_value(TreeIndex idx, SpannedVal val, RootIndex root) {
@@ -219,13 +218,13 @@ void FileRequester::set_value(TreeIndex idx, SpannedVal val, RootIndex root) {
   if (val.kind() == YaboValKind::YABOARRAY ||
       val.kind() == YaboValKind::YABOBLOCK) {
     node.state = TreeNodeState::LOADED_NO_CHIlDREN;
-    if (recursive_fetch && root == tree_model->get_root()) {
+    if (recursive_fetch && root == current_root) {
       fetch_children(idx, root);
     }
   } else {
     node.state = TreeNodeState::LOADED;
   }
-  if (idx == root && val.span.data()) {
+  if (idx == root.tree_index && val.span.data()) {
     auto node = Node{root};
     size_t start = val.span.data() - file->span().data();
     size_t end = start + val.span.size();
@@ -242,8 +241,9 @@ void FileRequester::set_value(TreeIndex idx, SpannedVal val, RootIndex root) {
   auto empty = QString("");
   auto new_nominal_bubble = arborist->add_root_node(root_count++, empty);
   root_causes.push_back({val, generate_new_node_color(val)});
-  auto req = Request{
-      Meta{new_nominal_bubble, MessageType::DEREF, new_nominal_bubble}, val};
+  auto req = Request{Meta{new_nominal_bubble.tree_index, MessageType::DEREF,
+                          new_nominal_bubble},
+                     val};
   nominal_bubbles.insert({val, new_nominal_bubble});
   graph_update.new_components.push_back(
       EdgeWithNewNode{root, Node{new_nominal_bubble}});
@@ -259,9 +259,8 @@ void FileRequester::process_response(Response resp) {
       arborist->get_node(resp.metadata.idx).state = TreeNodeState::LOADED;
       break;
     }
-    if (resp.metadata.root == tree_model->get_root()) {
-      tree_model->begin_insert_rows(resp.metadata.idx, 0, vals.size() - 1);
-    }
+    emit tree_begin_insert_rows(resp.metadata.idx, 0, vals.size() - 1,
+                                resp.metadata.root);
     for (size_t i = 0; i < vals.size(); i++) {
       auto branch = ParentBranch{resp.metadata.idx, i};
       auto tree_idx = arborist->add_node(branch, vals[i].first);
@@ -269,9 +268,7 @@ void FileRequester::process_response(Response resp) {
     }
     arborist->get_node(resp.metadata.idx).n_children = vals.size();
     arborist->get_node(resp.metadata.idx).state = TreeNodeState::LOADED;
-    if (resp.metadata.root == tree_model->get_root()) {
-      tree_model->end_insert_rows();
-    }
+    emit tree_end_insert_rows(resp.metadata.root);
     break;
   }
   case MessageType::ERROR:
@@ -283,9 +280,7 @@ void FileRequester::process_response(Response resp) {
     set_value(resp.metadata.idx, val, resp.metadata.root);
     auto &node = arborist->get_node(resp.metadata.idx);
     node.field_name = std::move(name);
-    if (resp.metadata.root == tree_model->get_root()) {
-      tree_model->data_changed(resp.metadata.idx);
-    }
+    emit tree_data_changed(resp.metadata.idx, resp.metadata.root);
     break;
   };
   if (!graph_update.new_components.empty()) {
@@ -370,16 +365,15 @@ FileSpan FileRequester::span(TreeIndex idx) const {
   return inner_val.span;
 }
 
-void FileRequester::create_tree_model(QString parser_name) {
-  assert(!tree_model);
+void FileRequester::init_root(QString parser_name) {
   auto idx = arborist->add_root_node(root_count++, parser_name);
   root_causes.push_back({parser_name, generate_new_node_color(parser_name)});
   parser_root.insert({parser_name, idx});
-  tree_model = std::make_unique<YaboTreeModel>(*this, parser_name, idx);
   graph_update.new_components.push_back(Node{idx});
   emit update_graph(std::move(graph_update));
   graph_update.new_components = {};
-  emit parse_request(Meta{idx, MessageType::PARSE, idx}, parser_name);
+  emit parse_request(Meta{idx.tree_index, MessageType::PARSE, idx},
+                     parser_name);
 }
 
 bool FileRequester::can_fetch_children(TreeIndex idx) {
@@ -422,17 +416,17 @@ QColor FileRequester::color(TreeIndex idx) const {
 void FileRequester::set_parser(QString name) {
   auto it = parser_root.find(name);
   if (it != parser_root.end()) {
-    tree_model->set_root(it->second);
+    change_root(it->second);
     return;
   }
   auto idx = arborist->add_root_node(root_count++, name);
   root_causes.push_back({name, generate_new_node_color(name)});
   parser_root.insert({name, idx});
-  tree_model->set_root(idx);
   graph_update.new_components.push_back(Node{idx});
   emit update_graph(std::move(graph_update));
   graph_update.new_components = {};
-  emit parse_request(Meta{idx, MessageType::PARSE, idx}, name);
+  emit parse_request(Meta{idx.tree_index, MessageType::PARSE, idx}, name);
+  change_root(idx);
 }
 
 RootIndex FileRequester::root_idx(Node node) {
@@ -449,17 +443,19 @@ void FileRequester::set_bubble(TreeIndex idx) {
     return;
   }
   auto root = nominal_bubbles.at(node.val.value());
-  tree_model->set_root(root);
-  if (recursive_fetch) {
-    fetch_children(root, root);
-  }
+  change_root(root);
 }
 
-void FileRequester::change_root(Node node) {
-  auto root = root_idx(node);
-  tree_model->set_root(root);
+void FileRequester::change_root(Node node) { change_root(root_idx(node)); }
+
+void FileRequester::change_root(RootIndex root) {
+  if (root == current_root) {
+    return;
+  }
+  current_root = root;
+  emit root_changed(Node(root));
   if (recursive_fetch) {
-    fetch_children(root, root);
+    fetch_children(root.tree_index, root);
   }
 }
 

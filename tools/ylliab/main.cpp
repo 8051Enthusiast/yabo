@@ -10,6 +10,8 @@ int main(int argc, char *argv[]) {
   qRegisterMetaType<Meta>();
   qRegisterMetaType<Request>();
   qRegisterMetaType<Response>();
+  qRegisterMetaType<TreeIndex>();
+  qRegisterMetaType<RootIndex>();
   qRegisterMetaType<NodeRange>();
   qRegisterMetaType<GraphUpdate>();
   qRegisterMetaType<PositionsUpdate>();

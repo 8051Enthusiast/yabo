@@ -214,5 +214,5 @@ void GraphScene::select_node(Node idx) {
 }
 
 void GraphNodeItem::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event) {
-  emit scene.node_double_clicked(idx);
+  scene.node_double_clicked(idx);
 }

@@ -10,10 +10,18 @@ enum Column {
   DEBUG = 3,
 };
 
-YaboTreeModel::YaboTreeModel(FileRequester &file_requester,
-                             QString &parser_name, RootIndex root_id)
-    : QAbstractItemModel(&file_requester), file_requester(file_requester),
-      parser_name(parser_name), root_id(root_id), undo_stack(1, root_id) {}
+YaboTreeModel::YaboTreeModel(FileRequester *file_requester)
+    : QAbstractItemModel(file_requester), file_requester(file_requester),
+      root_id(file_requester->get_current_root()), undo_stack(1, root_id) {
+  connect(file_requester, &FileRequester::tree_data_changed, this,
+          &YaboTreeModel::data_changed);
+  connect(file_requester, &FileRequester::tree_begin_insert_rows, this,
+          &YaboTreeModel::begin_insert_rows);
+  connect(file_requester, &FileRequester::tree_end_insert_rows, this,
+          &YaboTreeModel::end_insert_rows);
+  connect(file_requester, &FileRequester::root_changed, this,
+          &YaboTreeModel::change_root);
+}
 QModelIndex YaboTreeModel::index(int row, int column,
                                  const QModelIndex &parent) const {
   TreeIndex new_index;
@@ -21,7 +29,7 @@ QModelIndex YaboTreeModel::index(int row, int column,
     new_index = INVALID_PARENT;
   } else if (parent.internalId() == INVALID_PARENT.idx) {
     assert(parent.row() == 0);
-    new_index = root_id;
+    new_index = root_id.tree_index;
   } else {
     new_index = to_tree_index(parent);
   }
@@ -34,11 +42,11 @@ QModelIndex YaboTreeModel::parent(const QModelIndex &index) const {
   if (parent == INVALID_PARENT) {
     return QModelIndex();
   }
-  if (parent == root_id) {
+  if (parent == root_id.tree_index) {
     return createIndex(0, 0, INVALID_PARENT.idx);
   }
-  auto parent_parent = file_requester.parent_index(parent);
-  auto parent_row = file_requester.parent_row(parent);
+  auto parent_parent = file_requester->parent_index(parent);
+  auto parent_row = file_requester->parent_row(parent);
   auto ret = createIndex(parent_row, 0, parent_parent.idx);
   return ret;
 }
@@ -47,7 +55,7 @@ int YaboTreeModel::rowCount(const QModelIndex &parent) const {
   if (!parent.isValid())
     return 1;
 
-  auto count = file_requester.child_rows(to_tree_index(parent));
+  auto count = file_requester->child_rows(to_tree_index(parent));
   return count;
 }
 
@@ -59,7 +67,7 @@ QVariant YaboTreeModel::color(const QModelIndex &index) const {
   if (index.column() != Column::VALUE) {
     return QVariant();
   }
-  return file_requester.color(to_tree_index(index));
+  return file_requester->color(to_tree_index(index));
 }
 
 QVariant YaboTreeModel::data(const QModelIndex &index, int role) const {
@@ -74,15 +82,15 @@ QVariant YaboTreeModel::data(const QModelIndex &index, int role) const {
 
   switch (index.column()) {
   case Column::VALUE:
-    return file_requester.data(to_tree_index(index));
+    return file_requester->data(to_tree_index(index));
   case Column::FIELD:
-    return file_requester.field_name(to_tree_index(index));
+    return file_requester->field_name(to_tree_index(index));
   case Column::ADDR: {
-    auto span = file_requester.span(to_tree_index(index));
+    auto span = file_requester->span(to_tree_index(index));
     if (!span.data()) {
       return QVariant();
     }
-    auto relative_addr_start = span.data() - file_requester.file_base_addr();
+    auto relative_addr_start = span.data() - file_requester->file_base_addr();
     auto addr_str =
         QString::asprintf("0x%08zx [%zd]", relative_addr_start, span.size());
     return addr_str;
@@ -123,7 +131,7 @@ bool YaboTreeModel::hasChildren(const QModelIndex &parent) const {
   if (!parent.isValid())
     return true;
 
-  auto ret = file_requester.has_children(to_tree_index(parent));
+  auto ret = file_requester->has_children(to_tree_index(parent));
   return ret;
 }
 
@@ -131,7 +139,7 @@ bool YaboTreeModel::canFetchMore(const QModelIndex &parent) const {
   if (!parent.isValid())
     return false;
 
-  auto ret = file_requester.can_fetch_children(to_tree_index(parent));
+  auto ret = file_requester->can_fetch_children(to_tree_index(parent));
   return ret;
 }
 
@@ -139,23 +147,26 @@ void YaboTreeModel::fetchMore(const QModelIndex &parent) {
   if (!parent.isValid())
     return;
 
-  file_requester.fetch_children(to_tree_index(parent), root_id);
+  file_requester->fetch_children(to_tree_index(parent), root_id);
 }
 
 QModelIndex YaboTreeModel::to_qindex(TreeIndex idx, int column) const {
   if (idx == INVALID_PARENT) {
     return QModelIndex();
   }
-  auto parent = file_requester.parent_index(idx);
+  auto parent = file_requester->parent_index(idx);
   if (parent == INVALID_PARENT) {
     return createIndex(0, column, INVALID_PARENT.idx);
   }
-  auto row = file_requester.parent_row(idx);
+  auto row = file_requester->parent_row(idx);
   auto ret = createIndex(row, column, parent.idx);
   return ret;
 }
 
-void YaboTreeModel::data_changed(TreeIndex idx) {
+void YaboTreeModel::data_changed(TreeIndex idx, RootIndex root) {
+  if (root != root_id) {
+    return;
+  }
   auto qidx_start = to_qindex(idx, 0);
   auto qidx_end = to_qindex(idx, NUM_COLUMNS - 1);
   emit dataChanged(qidx_start, qidx_end);
@@ -163,19 +174,26 @@ void YaboTreeModel::data_changed(TreeIndex idx) {
 
 TreeIndex YaboTreeModel::to_tree_index(const QModelIndex &index) const {
   if (index.internalId() == INVALID_PARENT.idx) {
-    return root_id;
+    return root_id.tree_index;
   }
 
-  return file_requester.index(TreeIndex{index.internalId()}, index.row());
+  return file_requester->index(TreeIndex{index.internalId()}, index.row());
 }
 
-void YaboTreeModel::begin_insert_rows(TreeIndex parent, int first, int last) {
+void YaboTreeModel::begin_insert_rows(TreeIndex parent, int first, int last,
+                                      RootIndex root) {
+  if (root != root_id) {
+    return;
+  }
   inserting_rows = true;
   auto idx = to_qindex(parent, 0);
   beginInsertRows(idx, first, last);
 }
 
-void YaboTreeModel::end_insert_rows() {
+void YaboTreeModel::end_insert_rows(RootIndex root) {
+  if (root != root_id) {
+    return;
+  }
   if (inserting_rows) {
     endInsertRows();
   }
@@ -192,7 +210,6 @@ void YaboTreeModel::set_root(RootIndex new_root) {
   undo_stack.push_back(root_id);
   undo_stack_idx++;
   endResetModel();
-  emit file_requester.root_changed(root_id);
 }
 
 void YaboTreeModel::redo() {
@@ -202,7 +219,7 @@ void YaboTreeModel::redo() {
   beginResetModel();
   root_id = undo_stack[++undo_stack_idx];
   endResetModel();
-  emit file_requester.root_changed(root_id);
+  emit file_requester->root_changed(root_id);
 }
 
 void YaboTreeModel::undo() {
@@ -212,12 +229,17 @@ void YaboTreeModel::undo() {
   beginResetModel();
   root_id = undo_stack[--undo_stack_idx];
   endResetModel();
-  emit file_requester.root_changed(root_id);
+  emit file_requester->root_changed(root_id);
 }
 
 void YaboTreeModel::handle_doubleclick(const QModelIndex &index) {
   if (index.column() != Column::VALUE) {
     return;
   }
-  file_requester.set_bubble(to_tree_index(index));
+  file_requester->set_bubble(to_tree_index(index));
+}
+
+void YaboTreeModel::change_root(Node idx) {
+  auto root = file_requester->root_idx(idx);
+  set_root(root);
 }
