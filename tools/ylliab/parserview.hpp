@@ -27,7 +27,9 @@ private slots:
 
   void on_redoButton_clicked();
 
-private:
+  void on_tableView_doubleClicked(const QModelIndex &index);
+
+  private:
   Ui::ParserView *ui;
   std::unique_ptr<FileRequester> fileRequester;
   std::unique_ptr<GraphScene> scene;

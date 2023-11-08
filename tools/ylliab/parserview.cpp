@@ -74,3 +74,7 @@ void ParserView::keyPressEvent(QKeyEvent *event) {
     ui->treeView->expandAll();
   }
 }
+
+void ParserView::on_tableView_doubleClicked(const QModelIndex &index) {
+  hexModel->handle_doubleclick(index);
+}
