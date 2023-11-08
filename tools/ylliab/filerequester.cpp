@@ -210,7 +210,6 @@ FileRequester::FileRequester(std::filesystem::path path, FileRef file,
           &Executor::execute_request_slot);
   connect(this, &FileRequester::parse_request, executor,
           &Executor::execute_parser_slot);
-  executor_thread.start();
   create_tree_model(parser_name);
 }
 
