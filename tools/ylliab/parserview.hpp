@@ -1,6 +1,7 @@
 #pragma once
 #include "filerequester.hpp"
 #include "graph.hpp"
+#include "hex.hpp"
 
 #include <QWidget>
 
@@ -30,6 +31,8 @@ private:
   Ui::ParserView *ui;
   std::unique_ptr<FileRequester> fileRequester;
   std::unique_ptr<GraphScene> scene;
-  YaboTreeModel &treeModel;
+  std::unique_ptr<YaboTreeModel> treeModel;
+  std::unique_ptr<HexTableModel> hexModel;
+  std::unique_ptr<HexCell> hexCell;
   QThread graph_thread;
 };

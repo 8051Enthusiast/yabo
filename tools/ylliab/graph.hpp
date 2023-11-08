@@ -144,12 +144,10 @@ public:
     QObject::connect(&graph, &Graph::positions_update, this,
                      &GraphScene::update_positions);
   }
+  void node_double_clicked(Node node) { info_provider.change_root(node); }
 public slots:
   void update_positions(PositionsUpdate update);
   void select_node(Node idx);
-
-signals:
-  void node_double_clicked(Node node);
 
 private:
   NodeInfoProvider &info_provider;

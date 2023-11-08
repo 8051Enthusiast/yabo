@@ -15,6 +15,8 @@ struct TreeIndex {
   }
 };
 
+Q_DECLARE_METATYPE(TreeIndex)
+
 template <> struct std::hash<TreeIndex> {
   std::size_t operator()(const TreeIndex &k) const noexcept {
     return std::hash<size_t>()(k.idx);
@@ -23,11 +25,16 @@ template <> struct std::hash<TreeIndex> {
 
 constexpr TreeIndex INVALID_PARENT = TreeIndex{(size_t)-1};
 
-struct RootIndex : public TreeIndex {
+struct RootIndex {
+  RootIndex() = default;
   RootIndex(TreeIndex idx, size_t root_idx)
-      : TreeIndex(idx), root_idx(root_idx) {}
+      : tree_index(idx), root_idx(root_idx) {}
+  bool operator==(const RootIndex &other) const noexcept = default;
+  TreeIndex tree_index;
   size_t root_idx;
 };
+
+Q_DECLARE_METATYPE(RootIndex)
 
 enum class MessageType {
   FIELDS,

@@ -3,27 +3,27 @@
 #include "ui_parserview.h"
 #include "yabotreemodel.hpp"
 
+#include <QHeaderView>
 #include <QKeyEvent>
 #include <QObject>
 #include <QOpenGLWidget>
 
-#include <QHeaderView>
 #include <iostream>
 
 ParserView::ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req)
-    : QWidget(parent), ui(new Ui::ParserView), fileRequester(std::move(req)),
-      treeModel(fileRequester->get_tree_model()) {
+    : QWidget(parent), ui(new Ui::ParserView), fileRequester(std::move(req)) {
   ui->setupUi(this);
-  ui->treeView->setModel(&treeModel);
+  treeModel = std::make_unique<YaboTreeModel>(fileRequester.get());
+  ui->treeView->setModel(treeModel.get());
   auto file = fileRequester->file_ref();
-  auto hex_model = new HexTableModel(file, fileRequester.get());
-  ui->tableView->setModel(hex_model);
+  hexModel = std::make_unique<HexTableModel>(file, fileRequester.get());
+  ui->tableView->setModel(hexModel.get());
   QFont hexfont("Monospace");
   hexfont.setStyleHint(QFont::TypeWriter);
   hexfont.setPointSize(12);
   ui->tableView->setFont(hexfont);
-  auto delegate = new HexCell(hexfont);
-  auto size = delegate->get_cell_size();
+  hexCell = std::make_unique<HexCell>(hexfont);
+  auto size = hexCell->get_cell_size();
   auto vert_header = ui->tableView->verticalHeader();
   vert_header->setMinimumSectionSize(size.height());
   vert_header->setSectionResizeMode(QHeaderView::Fixed);
@@ -32,18 +32,16 @@ ParserView::ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req)
   horiz_header->setMinimumSectionSize(size.width());
   horiz_header->setSectionResizeMode(QHeaderView::Fixed);
   horiz_header->setDefaultSectionSize(size.width());
-  ui->tableView->setItemDelegate(delegate);
-  auto graph = new Graph(Node{treeModel.get_root()});
+  ui->tableView->setItemDelegate(hexCell.get());
+  auto graph = new Graph(Node{fileRequester->get_current_root()});
   graph->moveToThread(&graph_thread);
   scene = std::make_unique<GraphScene>(this, *fileRequester, *graph);
   connect(&graph_thread, &QThread::finished, graph, &QObject::deleteLater);
   connect(fileRequester.get(), &FileRequester::update_graph, graph,
           &Graph::update_graph, Qt::QueuedConnection);
-  connect(scene.get(), &GraphScene::node_double_clicked, fileRequester.get(),
-          &FileRequester::change_root);
   connect(fileRequester.get(), &FileRequester::root_changed, scene.get(),
           &GraphScene::select_node);
-  connect(fileRequester.get(), &FileRequester::new_node, hex_model,
+  connect(fileRequester.get(), &FileRequester::new_node, hexModel.get(),
           &HexTableModel::add_range);
   ui->graphicsView->setScene(scene.get());
   QOpenGLWidget *glWidget = new QOpenGLWidget();
@@ -63,12 +61,12 @@ void ParserView::on_lineEdit_returnPressed() {
 }
 
 void ParserView::on_treeView_doubleClicked(const QModelIndex &index) {
-  treeModel.handle_doubleclick(index);
+  treeModel->handle_doubleclick(index);
 }
 
-void ParserView::on_undoButton_clicked() { treeModel.undo(); }
+void ParserView::on_undoButton_clicked() { treeModel->undo(); }
 
-void ParserView::on_redoButton_clicked() { treeModel.redo(); }
+void ParserView::on_redoButton_clicked() { treeModel->redo(); }
 
 void ParserView::keyPressEvent(QKeyEvent *event) {
   if ((event->modifiers() & Qt::ControlModifier) && event->key() == 'A' &&

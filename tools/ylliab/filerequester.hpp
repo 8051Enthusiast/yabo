@@ -15,7 +15,6 @@
 #include "graph.hpp"
 #include "request.hpp"
 #include "yabo.hpp"
-#include "yabotreemodel.hpp"
 
 struct ExecutorError : public std::exception {
   ExecutorError(std::string msg) : message(msg) {}
@@ -182,17 +181,19 @@ public:
   FileRef file_ref() const noexcept { return file; }
   const uint8_t *file_base_addr() const noexcept { return file->span().data(); }
 
-  YaboTreeModel &get_tree_model() { return *tree_model; }
   void set_parser(QString name);
   void set_bubble(TreeIndex idx);
   QString node_name(Node idx) const override;
   QColor node_color(Node idx) const override;
 
   void start_executor_thread() { executor_thread.start(); }
+  void change_root(RootIndex node);
+  void change_root(Node node) override;
+  RootIndex root_idx(Node node);
+  RootIndex get_current_root() const { return current_root; }
 
 public slots:
   void process_response(Response resp);
-  void change_root(Node node);
 
 signals:
   void request(Request req);
@@ -200,21 +201,24 @@ signals:
   void update_graph(GraphUpdate update);
   void root_changed(Node node);
   void new_node(NodeRange node);
+  void tree_data_changed(TreeIndex idx, RootIndex root);
+  void tree_begin_insert_rows(TreeIndex parent, int first, int last,
+                              RootIndex root);
+  void tree_end_insert_rows(RootIndex root);
 
 private:
   QColor generate_new_node_color(YaboVal val) const;
   QColor generate_new_node_color(QString val) const;
-  void create_tree_model(QString parser_name);
+  void init_root(QString parser_name);
   void set_value(TreeIndex idx, SpannedVal val, RootIndex root);
-  RootIndex root_idx(Node node);
 
   QThread executor_thread;
   std::unique_ptr<Arborist> arborist;
   std::unordered_map<QString, RootIndex> parser_root;
   std::unordered_map<YaboVal, RootIndex> nominal_bubbles;
   size_t root_count = 0;
+  RootIndex current_root = RootIndex(TreeIndex(0), 0);
   GraphUpdate graph_update;
-  std::unique_ptr<YaboTreeModel> tree_model;
   FileRef file;
   struct RootCause {
     std::variant<QString, YaboVal> cause;
