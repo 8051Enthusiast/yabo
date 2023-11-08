@@ -42,6 +42,17 @@ void HexTableModel::add_range(NodeRange range) {
                    createIndex(end_row, columns - 1));
 }
 
+void HexTableModel::handle_doubleclick(const QModelIndex &index) {
+  auto row = index.row();
+  auto col = index.column();
+  auto offset = row * columns + col;
+  auto node = ranges.get(offset);
+  if (!node) {
+    return;
+  }
+  node_info->change_root(node->node);
+}
+
 void HexCell::paint(QPainter *painter, const QStyleOptionViewItem &option,
                     const QModelIndex &index) const {
   auto data = index.data().toString();
