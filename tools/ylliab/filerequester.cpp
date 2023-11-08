@@ -198,8 +198,8 @@ FileRequester::FileRequester(std::filesystem::path path, FileRef file,
                              QString parser_name, bool recursive_fetch)
     : recursive_fetch(recursive_fetch) {
   Executor *executor;
-  file_base = file->span().data();
-  executor = new Executor(path, std::move(file));
+  this->file = file;
+  executor = new Executor(path, file);
   executor->moveToThread(&executor_thread);
   arborist = std::make_unique<Arborist>();
   connect(&executor_thread, &QThread::finished, executor,
@@ -225,6 +225,12 @@ void FileRequester::set_value(TreeIndex idx, SpannedVal val, RootIndex root) {
     }
   } else {
     node.state = TreeNodeState::LOADED;
+  }
+  if (idx == root && val.span.data()) {
+    auto node = Node{root};
+    size_t start = val.span.data() - file->span().data();
+    size_t end = start + val.span.size();
+    emit new_node({start, end, node});
   }
   if (val.kind() != YaboValKind::YABONOM) {
     return;
