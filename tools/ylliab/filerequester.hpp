@@ -202,6 +202,8 @@ signals:
   void new_node(NodeRange node);
 
 private:
+  QColor generate_new_node_color(YaboVal val) const;
+  QColor generate_new_node_color(QString val) const;
   void create_tree_model(QString parser_name);
   void set_value(TreeIndex idx, SpannedVal val, RootIndex root);
   RootIndex root_idx(Node node);
@@ -214,7 +216,10 @@ private:
   GraphUpdate graph_update;
   std::unique_ptr<YaboTreeModel> tree_model;
   FileRef file;
-  using RootCause = std::variant<QString, YaboVal>;
+  struct RootCause {
+    std::variant<QString, YaboVal> cause;
+    QColor color;
+  };
   std::vector<RootCause> root_causes;
   bool recursive_fetch;
   // for qml to handle errors
