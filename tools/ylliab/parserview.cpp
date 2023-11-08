@@ -49,6 +49,7 @@ ParserView::ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req)
   QOpenGLWidget *glWidget = new QOpenGLWidget();
   ui->graphicsView->setViewport(glWidget);
   graph_thread.start();
+  fileRequester->start_executor_thread();
 }
 
 ParserView::~ParserView() {

@@ -188,6 +188,8 @@ public:
   QString node_name(Node idx) const override;
   QColor node_color(Node idx) const override;
 
+  void start_executor_thread() { executor_thread.start(); }
+
 public slots:
   void process_response(Response resp);
   void change_root(Node node);
