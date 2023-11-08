@@ -15,8 +15,11 @@ find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
 
 set(PROJECT_SOURCES
-        color.hpp color.cpp
         request.hpp
+        node.hpp
+        color.hpp color.cpp
+        rangemap.hpp rangemap.cpp
+        hex.hpp hex.cpp
         filecontent.hpp filecontent.cpp
         yabo.hpp yabo.cpp
         graph.hpp graph.cpp

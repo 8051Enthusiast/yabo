@@ -179,7 +179,8 @@ public:
   QColor color(TreeIndex idx) const;
 
   QString error_message() const { return error_msg; }
-  const uint8_t *file_base_addr() const noexcept { return file_base; }
+  FileRef file_ref() const noexcept { return file; }
+  const uint8_t *file_base_addr() const noexcept { return file->span().data(); }
 
   YaboTreeModel &get_tree_model() { return *tree_model; }
   void set_parser(QString name);
@@ -196,11 +197,13 @@ signals:
   void parse_request(Meta meta, QString func_name);
   void update_graph(GraphUpdate update);
   void root_changed(Node node);
+  void new_node(NodeRange node);
 
 private:
   void create_tree_model(QString parser_name);
   void set_value(TreeIndex idx, SpannedVal val, RootIndex root);
   RootIndex root_idx(Node node);
+
   QThread executor_thread;
   std::unique_ptr<Arborist> arborist;
   std::unordered_map<QString, RootIndex> parser_root;
@@ -208,7 +211,7 @@ private:
   size_t root_count = 0;
   GraphUpdate graph_update;
   std::unique_ptr<YaboTreeModel> tree_model;
-  const uint8_t *file_base;
+  FileRef file;
   using RootCause = std::variant<QString, YaboVal>;
   std::vector<RootCause> root_causes;
   bool recursive_fetch;

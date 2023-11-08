@@ -1,5 +1,5 @@
 #pragma once
-#include "request.hpp"
+#include "node.hpp"
 
 #include <complex>
 #include <qgraphicsscene.h>
@@ -13,13 +13,6 @@
 #include <qwindowdefs.h>
 
 using complex = std::complex<float>;
-
-struct Node {
-  Node(RootIndex idx) : idx(idx.root_idx) {}
-  Node(size_t idx) : idx(idx) {}
-  bool operator==(const Node &other) const noexcept = default;
-  size_t idx;
-};
 
 struct Edge {
   bool operator==(const Edge &other) const noexcept {
@@ -107,12 +100,6 @@ private:
   static constexpr float repulse_const = 100.0;
   static constexpr float max_force = 10.0;
   static constexpr float spring_const = 0.05;
-};
-
-class NodeInfoProvider {
-public:
-  virtual QString node_name(Node idx) const = 0;
-  virtual QColor node_color(Node idx) const = 0;
 };
 
 class GraphScene;
