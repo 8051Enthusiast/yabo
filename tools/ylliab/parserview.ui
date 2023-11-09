@@ -85,6 +85,9 @@
        </item>
        <item>
         <widget class="QTableView" name="tableView">
+         <property name="verticalScrollBarPolicy">
+          <enum>Qt::ScrollBarAlwaysOn</enum>
+         </property>
          <property name="alternatingRowColors">
           <bool>true</bool>
          </property>

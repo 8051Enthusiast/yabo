@@ -1,6 +1,9 @@
 #include "hex.hpp"
 #include <QPainter>
+#include <QPixmap>
+#include <qimage.h>
 #include <qnamespace.h>
+#include <vector>
 
 QVariant HexTableModel::data(const QModelIndex &index, int role) const {
   auto row = index.row();
@@ -40,6 +43,7 @@ void HexTableModel::add_range(NodeRange range) {
   size_t end_row = (range.end - 1) / columns;
   emit dataChanged(createIndex(start_row, 0),
                    createIndex(end_row, columns - 1));
+  emit updated_minimap();
 }
 
 void HexTableModel::handle_doubleclick(const QModelIndex &index) {
@@ -51,6 +55,30 @@ void HexTableModel::handle_doubleclick(const QModelIndex &index) {
     return;
   }
   node_info->change_root(node->node);
+}
+
+QPixmap HexTableModel::node_minimap(int len) const {
+  QImage image(1, len + 2, QImage::Format_RGB32);
+  auto default_color = QColor(Qt::white).rgb();
+  image.setPixel(0, 0, default_color);
+  image.setPixel(0, len + 1, default_color);
+  auto size = file->span().size();
+  for (size_t i = 0; i < len; i++) {
+    auto min_offset = (size_t)(((double)size * i) / len);
+    auto max_offset = (size_t)(((double)size * (i + 1)) / len);
+    auto node = ranges.get_next(min_offset);
+    if (!node) {
+      image.setPixel(0, i + 1, default_color);
+      continue;
+    }
+    if (node->start > max_offset) {
+      image.setPixel(0, i + 1, default_color);
+      continue;
+    }
+    auto node_color = node_info->node_color(node->node);
+    image.setPixel(0, i + 1, node_color.rgb());
+  }
+  return QPixmap::fromImage(image);
 }
 
 void HexCell::paint(QPainter *painter, const QStyleOptionViewItem &option,

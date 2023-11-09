@@ -5,6 +5,7 @@
 #include <QAbstractItemDelegate>
 #include <QAbstractTableModel>
 #include <QColor>
+#include <QPixmap>
 
 class HexTableModel : public QAbstractTableModel {
   Q_OBJECT
@@ -23,6 +24,11 @@ public:
                       int role = Qt::DisplayRole) const override;
   
   void handle_doubleclick(const QModelIndex &index);
+
+  QPixmap node_minimap(int len) const;
+
+signals:
+  void updated_minimap();
 
 public slots:
   void add_range(NodeRange range);
