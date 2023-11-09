@@ -2,7 +2,6 @@
 #include "hex.hpp"
 #include "ui_parserview.h"
 #include "yabotreemodel.hpp"
-#include "colorscrollbar.hpp"
 
 #include <QHeaderView>
 #include <QKeyEvent>
@@ -19,22 +18,6 @@ ParserView::ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req)
   auto file = fileRequester->file_ref();
   hexModel = std::make_unique<HexTableModel>(file, fileRequester.get());
   ui->tableView->setModel(hexModel.get());
-  ui->tableView->setVerticalScrollBar(new ColorScrollBar(hexModel.get()));
-  QFont hexfont("Monospace");
-  hexfont.setStyleHint(QFont::TypeWriter);
-  hexfont.setPointSize(12);
-  ui->tableView->setFont(hexfont);
-  hexCell = std::make_unique<HexCell>(hexfont);
-  auto size = hexCell->get_cell_size();
-  auto vert_header = ui->tableView->verticalHeader();
-  vert_header->setMinimumSectionSize(size.height());
-  vert_header->setSectionResizeMode(QHeaderView::Fixed);
-  vert_header->setDefaultSectionSize(size.height());
-  auto horiz_header = ui->tableView->horizontalHeader();
-  horiz_header->setMinimumSectionSize(size.width());
-  horiz_header->setSectionResizeMode(QHeaderView::Fixed);
-  horiz_header->setDefaultSectionSize(size.width());
-  ui->tableView->setItemDelegate(hexCell.get());
   auto graph = new Graph(Node{fileRequester->get_current_root()});
   graph->moveToThread(&graph_thread);
   scene = std::make_unique<GraphScene>(this, *fileRequester, *graph);
