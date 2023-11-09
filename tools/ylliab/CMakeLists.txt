@@ -23,6 +23,7 @@ set(PROJECT_SOURCES
         filecontent.hpp filecontent.cpp
         yabo.hpp yabo.cpp
         graph.hpp graph.cpp
+        colorscrollbar.hpp colorscrollbar.cpp
         filerequester.hpp filerequester.cpp
         yabotreemodel.hpp yabotreemodel.cpp
         parserview.hpp parserview.cpp parserview.ui

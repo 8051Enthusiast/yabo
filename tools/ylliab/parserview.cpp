@@ -2,6 +2,7 @@
 #include "hex.hpp"
 #include "ui_parserview.h"
 #include "yabotreemodel.hpp"
+#include "colorscrollbar.hpp"
 
 #include <QHeaderView>
 #include <QKeyEvent>
@@ -18,6 +19,7 @@ ParserView::ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req)
   auto file = fileRequester->file_ref();
   hexModel = std::make_unique<HexTableModel>(file, fileRequester.get());
   ui->tableView->setModel(hexModel.get());
+  ui->tableView->setVerticalScrollBar(new ColorScrollBar(hexModel.get()));
   QFont hexfont("Monospace");
   hexfont.setStyleHint(QFont::TypeWriter);
   hexfont.setPointSize(12);
