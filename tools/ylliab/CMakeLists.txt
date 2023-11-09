@@ -24,6 +24,7 @@ set(PROJECT_SOURCES
         yabo.hpp yabo.cpp
         graph.hpp graph.cpp
         colorscrollbar.hpp colorscrollbar.cpp
+        hexview.hpp hexview.cpp
         filerequester.hpp filerequester.cpp
         yabotreemodel.hpp yabotreemodel.cpp
         parserview.hpp parserview.cpp parserview.ui
@@ -55,6 +56,7 @@ else()
 endif()
 
 include_directories("../../include")
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_libraries(ylliab PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
