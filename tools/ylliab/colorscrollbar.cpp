@@ -14,16 +14,13 @@ ColorScrollBar::ColorScrollBar(HexTableModel *model, QWidget *parent)
 // the highest position is one pixel below the top, the lowest is one pixel
 // above the bottom
 int ColorScrollBar::marker_offset() const {
+  assert(this->minimum() == 0);
   auto max = this->maximum();
-  auto min = this->minimum();
   auto val = this->value();
   auto size = this->size();
-  auto range = (double)max - (double)min + 1;
-  if (range == 0) {
-    return 1;
-  }
-  auto offset = (double)(val - min) * (double)(size.height() - 2) / range;
-  return (int)(offset + 1);
+  auto addr = model->row_addr(val);
+  auto offset = model->addr_pixel_offset(addr, size.height() - 2);
+  return offset + 1;
 }
 
 void ColorScrollBar::minimap_change() {
@@ -35,18 +32,11 @@ void ColorScrollBar::minimap_change() {
 int ColorScrollBar::offset_value(int offset) const {
   auto min_pos = 1;
   auto max_pos = this->size().height() - 1;
-  if (min_pos >= max_pos) {
-    return this->minimum();
-  }
-  double clamped_offset = std::clamp(offset, min_pos, max_pos);
-  if (clamped_offset == max_pos) {
-    return this->maximum();
-  }
-  auto max = this->maximum();
-  auto min = this->minimum();
-  double range = max - min + 1;
-  double value = (clamped_offset - min_pos) * range / (max_pos - min_pos);
-  return (int)value + min;
+  auto clamped_offset = std::clamp(offset, min_pos, max_pos);
+  auto offset_range = max_pos - min_pos;
+  auto [addr, _] = model->pixel_offset_addr_range(clamped_offset - min_pos, offset_range);
+  auto row = model->addr_row(addr);
+  return row;
 }
 
 void ColorScrollBar::refresh_minimap() {
