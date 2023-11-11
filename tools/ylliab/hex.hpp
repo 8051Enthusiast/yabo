@@ -22,10 +22,16 @@ public:
                 int role = Qt::DisplayRole) const override;
   QVariant headerData(int section, Qt::Orientation orientation,
                       int role = Qt::DisplayRole) const override;
-  
+
   void handle_doubleclick(const QModelIndex &index);
 
   QPixmap node_minimap(int len) const;
+
+  int addr_row(size_t address) const;
+  size_t row_addr(int row) const;
+
+  std::pair<size_t, size_t> pixel_offset_addr_range(int offset, int max) const;
+  int addr_pixel_offset(size_t addr, int max) const;
 
 signals:
   void updated_minimap();

@@ -46,6 +46,31 @@ void HexTableModel::add_range(NodeRange range) {
   emit updated_minimap();
 }
 
+int HexTableModel::addr_row(size_t address) const {
+  return address / columns;
+}
+
+size_t HexTableModel::row_addr(int row) const {
+  return (size_t)row * columns;
+}
+
+std::pair<size_t, size_t> HexTableModel::pixel_offset_addr_range(int offset,
+                                                          int max) const {
+  auto size = file->span().size();
+  auto start_ratio = (double)offset / max;
+  auto end_ratio = (double)(offset + 1) / max;
+  auto start = (size_t)(size * start_ratio);
+  auto end = (size_t)(size * end_ratio);
+  return {start, end};
+}
+
+int HexTableModel::addr_pixel_offset(size_t addr, int max) const {
+  auto size = file->span().size();
+  auto ratio = (double)addr / size;
+  auto offset = (int)(ratio * max);
+  return offset;
+}
+
 void HexTableModel::handle_doubleclick(const QModelIndex &index) {
   auto row = index.row();
   auto col = index.column();
@@ -62,10 +87,8 @@ QPixmap HexTableModel::node_minimap(int len) const {
   auto default_color = QColor(Qt::white).rgb();
   image.setPixel(0, 0, default_color);
   image.setPixel(0, len + 1, default_color);
-  auto size = file->span().size();
   for (size_t i = 0; i < len; i++) {
-    auto min_offset = (size_t)(((double)size * i) / len);
-    auto max_offset = (size_t)(((double)size * (i + 1)) / len);
+    auto [min_offset, max_offset] = pixel_offset_addr_range(i, len);
     auto node = ranges.get_next(min_offset);
     if (!node) {
       image.setPixel(0, i + 1, default_color);
