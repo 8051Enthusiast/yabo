@@ -10,7 +10,11 @@ public:
   HexTableView(QWidget *parent = nullptr);
   void setModel(HexTableModel *model);
 
+public slots:
+  void goto_addr(size_t addr);
+  void goto_node(Node node);
+
 private:
-  std::unique_ptr<HexTableModel> hexModel;
+  HexTableModel *hexModel;
   std::unique_ptr<HexCell> hexCell;
 };

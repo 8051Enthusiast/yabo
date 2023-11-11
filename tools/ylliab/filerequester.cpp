@@ -429,7 +429,7 @@ void FileRequester::set_parser(QString name) {
   change_root(idx);
 }
 
-RootIndex FileRequester::root_idx(Node node) {
+RootIndex FileRequester::root_idx(Node node) const {
   auto idx = arborist->get_child(INVALID_PARENT, node.idx);
   return RootIndex(idx, node.idx);
 }
@@ -499,6 +499,21 @@ QString FileRequester::node_name(Node idx) const {
 
 QColor FileRequester::node_color(Node idx) const {
   return root_causes.at(idx.idx).color;
+}
+
+std::optional<std::pair<size_t, size_t>> FileRequester::node_range(Node idx) const {
+  auto ridx = root_idx(idx);
+  auto val = arborist->get_node(ridx.tree_index).val;
+  if (!val) {
+    return {};
+  }
+  auto span = val->span;
+  if (!span.data()) {
+    return {};
+  }
+  auto start = span.data() - file->span().data();
+  auto end = start + span.size();
+  return std::make_pair(start, end);
 }
 
 QColor FileRequester::generate_new_node_color(YaboVal val) const {

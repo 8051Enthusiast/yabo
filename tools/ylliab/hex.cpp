@@ -46,6 +46,14 @@ void HexTableModel::add_range(NodeRange range) {
   emit updated_minimap();
 }
 
+std::optional<size_t> HexTableModel::node_addr(Node node) const {
+  auto range = node_info->node_range(node);
+  if (!range) {
+    return {};
+  }
+  return range->first;
+}
+
 int HexTableModel::addr_row(size_t address) const {
   return address / columns;
 }

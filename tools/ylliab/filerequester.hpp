@@ -185,11 +185,12 @@ public:
   void set_bubble(TreeIndex idx);
   QString node_name(Node idx) const override;
   QColor node_color(Node idx) const override;
+  std::optional<std::pair<size_t, size_t>> node_range(Node idx) const override;
 
   void start_executor_thread() { executor_thread.start(); }
   void change_root(RootIndex node);
   void change_root(Node node) override;
-  RootIndex root_idx(Node node);
+  RootIndex root_idx(Node node) const;
   RootIndex get_current_root() const { return current_root; }
 
 public slots:

@@ -27,6 +27,8 @@ public:
 
   QPixmap node_minimap(int len) const;
 
+  std::optional<size_t> node_addr(Node node) const;
+
   int addr_row(size_t address) const;
   size_t row_addr(int row) const;
 

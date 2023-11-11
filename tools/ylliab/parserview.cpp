@@ -26,6 +26,8 @@ ParserView::ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req)
           &Graph::update_graph, Qt::QueuedConnection);
   connect(fileRequester.get(), &FileRequester::root_changed, scene.get(),
           &GraphScene::select_node);
+  connect(fileRequester.get(), &FileRequester::root_changed, ui->tableView,
+          &HexTableView::goto_node);
   connect(fileRequester.get(), &FileRequester::new_node, hexModel.get(),
           &HexTableModel::add_range);
   ui->graphicsView->setScene(scene.get());

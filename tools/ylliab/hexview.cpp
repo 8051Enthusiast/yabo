@@ -5,6 +5,7 @@
 
 #include <QHeaderView>
 #include <QTableView>
+#include <QAbstractItemView>
 
 HexTableView::HexTableView(QWidget *parent) : QTableView(parent) {
   QFont hexfont("Monospace");
@@ -16,6 +17,7 @@ HexTableView::HexTableView(QWidget *parent) : QTableView(parent) {
 }
 
 void HexTableView::setModel(HexTableModel *model) {
+  hexModel = model;
   QTableView::setModel(model);
   setVerticalScrollBar(new ColorScrollBar(model));
   auto size = hexCell->get_cell_size();
@@ -27,4 +29,15 @@ void HexTableView::setModel(HexTableModel *model) {
   horiz_header->setMinimumSectionSize(size.width());
   horiz_header->setSectionResizeMode(QHeaderView::Fixed);
   horiz_header->setDefaultSectionSize(size.width());
+}
+
+void HexTableView::goto_addr(size_t addr) {
+  auto row = hexModel->addr_row(addr);
+  auto index = hexModel->index(row, 0);
+  scrollTo(index, QAbstractItemView::PositionAtTop);
+}
+
+void HexTableView::goto_node(Node node) {
+  auto addr = hexModel->node_addr(node);  
+  goto_addr(*addr);
 }
