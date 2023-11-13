@@ -1,0 +1,66 @@
+# parser for gpt (GUID partition table)
+
+# logical block address (a logical block is assumed to be 512 here)
+def *lba = i64l
+
+def *guid = [~](16)
+
+def *partition(blocks: int) = [~](blocks * 512)
+
+# flags, including those for windows
+def *flags = {
+  val: i64l
+  # whether the partition is required for booting
+  let required_partition = val & 1 != 0
+  # whether the partition should be hidden from the os
+  let no_block_io_protocol = val >> 1 & 1 != 0
+  # whether the partition is bootable in legacy bios
+  let legacy_bios_bootable = val >> 2 & 1 != 0
+  # whether the partition is read-only (for windows)
+  let win_read_only = val >> 60 & 1 != 0
+  # whether the partition is shadow copy (for windows)
+  let win_shadow_copy = val >> 61 & 1 != 0
+  # whether the partition is hidden (for windows)
+  let win_hidden = val >> 62 & 1 != 0
+  # whether the partition has no drive letter (for windows)
+  let win_no_drive_letter = val >> 63 & 1 != 0
+}
+
+def *partition_entry = {
+  # an all-zero partition type guid means empty
+  | partition_type: /\x00{16}/
+  | partition_type: guid
+    partition_guid: guid
+    first_lba: lba
+    # inclusive
+    last_lba: lba
+    let part = partition(last_lba - first_lba + 1) at (first_lba * 512)
+    partition_flags: flags
+    # name encoded in utf-16le
+    name: [u16l](36)
+}
+
+def *partition_table(size: int, count: int) = [[~](size) |> partition_entry](count)
+
+export def *gpt = {
+  # protective mbr
+  mbr: [~](512)
+  signature: /EFI PART/
+  # should be version 1.0
+  version: [u16l](2)
+  header_size: u32l
+  # crc32 of the header with this field set to 0
+  checksum: u32l
+  # should be 0
+  reserved: u32l
+  current_lba: lba
+  backup_lba: lba
+  first_usable: lba
+  last_usable: lba
+  disk_guid: guid
+  table_start: lba
+  table_entry_count: u32l
+  table_entry_size: u32l
+  let table = partition_table(table_entry_size, table_entry_count) at (table_start * 512)
+  partition_entry_checksum: u32l
+}
