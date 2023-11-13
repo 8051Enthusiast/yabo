@@ -17,26 +17,15 @@ int ColorScrollBar::marker_offset() const {
   assert(this->minimum() == 0);
   auto max = this->maximum();
   auto val = this->value();
+  auto val_row = model->global_row(val);
   auto size = this->size();
-  auto addr = model->row_addr(val);
-  auto offset = model->addr_pixel_offset(addr, size.height() - 2);
+  auto offset = model->row_pixel_offset(val_row, size.height() - 2);
   return offset + 1;
 }
 
 void ColorScrollBar::minimap_change() {
   minimap_updated = true;
   this->update();
-}
-
-// converts the position of the mouse to a value for the scrollbar
-int ColorScrollBar::offset_value(int offset) const {
-  auto min_pos = 1;
-  auto max_pos = this->size().height() - 1;
-  auto clamped_offset = std::clamp(offset, min_pos, max_pos);
-  auto offset_range = max_pos - min_pos;
-  auto [addr, _] = model->pixel_offset_addr_range(clamped_offset - min_pos, offset_range);
-  auto row = model->addr_row(addr);
-  return row;
 }
 
 void ColorScrollBar::refresh_minimap() {
@@ -61,13 +50,25 @@ void ColorScrollBar::paintEvent(QPaintEvent *event) {
 
 // directly move to the position where the mouse is at
 void ColorScrollBar::mousePressEvent(QMouseEvent *event) {
-  auto offset = event->pos().y();
-  auto value = offset_value(offset);
-  this->setValue(value);
+  auto offset = event->pos().y() - 1;
+  set_val(offset);
 }
 
 void ColorScrollBar::mouseMoveEvent(QMouseEvent *event) {
-  auto offset = event->pos().y();
-  auto value = offset_value(offset);
-  this->setValue(value);
+  auto offset = event->pos().y() - 1;
+  set_val(offset);
+}
+void ColorScrollBar::set_val(int offset) {
+  auto min_pos = 1;
+  auto max_pos = this->size().height() - 1;
+  auto clamped_offset = std::clamp(offset, min_pos, max_pos);
+  auto offset_range = max_pos - min_pos;
+  auto [row, _] =
+      model->pixel_offset_global_row_range(clamped_offset - min_pos, offset_range);
+  if (model->row_is_in_range(row)) {
+    auto local_row = model->local_row(row);
+    this->setValue(local_row);
+    return;
+  }
+  emit big_jump(model->row_addr(row));
 }
