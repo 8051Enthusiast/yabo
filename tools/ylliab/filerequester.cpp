@@ -5,6 +5,7 @@
 #include <qglobal.h>
 #include <random>
 
+#include <algorithm>
 #include <qthread.h>
 #include <qvariant.h>
 #include <stdexcept>
@@ -88,8 +89,10 @@ std::optional<Response> Executor::get_fields(Request &req) {
 
 std::optional<Response> Executor::get_array_members(Request &req) {
   std::vector<NamedYaboVal> ret;
-  auto len = vals.array_len(req.val);
-  for (size_t i = 0; i < len; i++) {
+  uint64_t len = vals.array_len(req.val);
+  uint64_t start = req.array_start_index;
+  auto end = std::min(start + array_fetch_size, len);
+  for (size_t i = start; i < end; i++) {
     auto idx_val = vals.index(req.val, i);
     if (idx_val.has_value()) {
       auto new_val = normalize(idx_val.value(), req.val.span);
@@ -215,9 +218,10 @@ FileRequester::FileRequester(std::filesystem::path path, FileRef file,
 void FileRequester::set_value(TreeIndex idx, SpannedVal val, RootIndex root) {
   auto &node = arborist->get_node(idx);
   node.val = val;
+  node.n_children = 0;
   if (val.kind() == YaboValKind::YABOARRAY ||
       val.kind() == YaboValKind::YABOBLOCK) {
-    node.state = TreeNodeState::LOADED_NO_CHIlDREN;
+    node.state = TreeNodeState::LOADED_INCOMPLETE_CHIlDREN;
     if (recursive_fetch && root == current_root) {
       fetch_children(idx, root);
     }
@@ -259,15 +263,23 @@ void FileRequester::process_response(Response resp) {
       arborist->get_node(resp.metadata.idx).state = TreeNodeState::LOADED;
       break;
     }
-    emit tree_begin_insert_rows(resp.metadata.idx, 0, vals.size() - 1,
-                                resp.metadata.root);
+    auto start = arborist->get_node(resp.metadata.idx).n_children;
+    emit tree_begin_insert_rows(resp.metadata.idx, start,
+                                start + vals.size() - 1, resp.metadata.root);
     for (size_t i = 0; i < vals.size(); i++) {
-      auto branch = ParentBranch{resp.metadata.idx, i};
+      auto branch = ParentBranch{resp.metadata.idx, i + start};
       auto tree_idx = arborist->add_node(branch, vals[i].first);
       set_value(tree_idx, vals[i].second, resp.metadata.root);
     }
-    arborist->get_node(resp.metadata.idx).n_children = vals.size();
-    arborist->get_node(resp.metadata.idx).state = TreeNodeState::LOADED;
+    auto &node = arborist->get_node(resp.metadata.idx);
+    node.n_children += vals.size();
+    if (vals.size() == array_fetch_size &&
+        resp.metadata.kind == MessageType::ARRAY_ELEMENTS) {
+      node.state =
+          TreeNodeState::LOADED_INCOMPLETE_CHIlDREN;
+    } else {
+      node.state = TreeNodeState::LOADED;
+    }
     emit tree_end_insert_rows(resp.metadata.root);
     break;
   }
@@ -378,7 +390,8 @@ void FileRequester::init_root(QString parser_name) {
 
 bool FileRequester::can_fetch_children(TreeIndex idx) {
   auto node = arborist->get_node(idx);
-  return node.state == TreeNodeState::LOADED_NO_CHIlDREN &&
+  return (node.state == TreeNodeState::LOADED_INCOMPLETE_CHIlDREN ||
+          node.state == TreeNodeState::LOADING_CHILDREN) &&
          node.val.has_value() &&
          (node.val->kind() == YaboValKind::YABOARRAY ||
           node.val->kind() == YaboValKind::YABOBLOCK);
@@ -386,22 +399,25 @@ bool FileRequester::can_fetch_children(TreeIndex idx) {
 
 void FileRequester::fetch_children(TreeIndex idx, RootIndex root) {
   auto &node = arborist->get_node(idx);
-  if (node.state == TreeNodeState::LOADED_NO_CHIlDREN && node.val.has_value()) {
-    auto val = node.val.value();
-    MessageType message_type;
-    switch (val.kind()) {
-    case YaboValKind::YABOARRAY:
-      message_type = MessageType::ARRAY_ELEMENTS;
-      break;
-    case YaboValKind::YABOBLOCK:
-      message_type = MessageType::FIELDS;
-      break;
-    default:
-      return;
-    }
-    node.state = TreeNodeState::LOADING_CHILDREN;
-    emit request(Request{Meta{idx, message_type, root}, val});
+  if (node.state != TreeNodeState::LOADED_INCOMPLETE_CHIlDREN ||
+      !node.val.has_value()) {
+    return;
   }
+  auto val = node.val.value();
+  auto start = node.n_children;
+  MessageType message_type;
+  switch (val.kind()) {
+  case YaboValKind::YABOARRAY:
+    message_type = MessageType::ARRAY_ELEMENTS;
+    break;
+  case YaboValKind::YABOBLOCK:
+    message_type = MessageType::FIELDS;
+    break;
+  default:
+    return;
+  }
+  node.state = TreeNodeState::LOADING_CHILDREN;
+  emit request(Request{Meta{idx, message_type, root}, val, start});
 }
 
 QColor FileRequester::color(TreeIndex idx) const {
@@ -501,7 +517,8 @@ QColor FileRequester::node_color(Node idx) const {
   return root_causes.at(idx.idx).color;
 }
 
-std::optional<std::pair<size_t, size_t>> FileRequester::node_range(Node idx) const {
+std::optional<std::pair<size_t, size_t>>
+FileRequester::node_range(Node idx) const {
   auto ridx = root_idx(idx);
   auto val = arborist->get_node(ridx.tree_index).val;
   if (!val) {

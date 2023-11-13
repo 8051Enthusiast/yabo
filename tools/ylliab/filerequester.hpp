@@ -22,6 +22,8 @@ struct ExecutorError : public std::exception {
   std::string message;
 };
 
+constexpr size_t array_fetch_size = 4096;
+
 class Executor : public QObject {
   Q_OBJECT
 public:
@@ -91,7 +93,7 @@ template <> struct std::hash<ParentBranch> {
 
 enum class TreeNodeState {
   LOADING,
-  LOADED_NO_CHIlDREN,
+  LOADED_INCOMPLETE_CHIlDREN,
   LOADING_CHILDREN,
   LOADED,
   ERROR,
@@ -119,7 +121,7 @@ public:
     tree[idx.idx].val = val;
     if (val.kind() == YaboValKind::YABOARRAY ||
         val.kind() == YaboValKind::YABOBLOCK) {
-      tree[idx.idx].state = TreeNodeState::LOADED_NO_CHIlDREN;
+      tree[idx.idx].state = TreeNodeState::LOADED_INCOMPLETE_CHIlDREN;
     } else {
       tree[idx.idx].state = TreeNodeState::LOADED;
     }
