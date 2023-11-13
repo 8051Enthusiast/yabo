@@ -8,7 +8,7 @@
 QVariant HexTableModel::data(const QModelIndex &index, int role) const {
   auto row = index.row();
   auto col = index.column();
-  auto offset = row * columns + col;
+  auto offset = row_addr(global_row(row)) + col;
   if (role == Qt::DisplayRole) {
     if (offset >= file->span().size()) {
       return QVariant();
@@ -31,7 +31,8 @@ QVariant HexTableModel::headerData(int section, Qt::Orientation orientation,
     return QColor(Qt::lightGray);
   }
   if (role == Qt::DisplayRole && orientation == Qt::Vertical) {
-    return QString("0x%1").arg(section * columns, 8, 16, QChar('0'));
+    return QString("0x%1").arg(row_addr(global_row(section)), 16, 16,
+                               QChar('0'));
   } else {
     return QVariant();
   }
@@ -39,8 +40,8 @@ QVariant HexTableModel::headerData(int section, Qt::Orientation orientation,
 
 void HexTableModel::add_range(NodeRange range) {
   ranges.insert(range);
-  size_t start_row = range.start / columns;
-  size_t end_row = (range.end - 1) / columns;
+  auto start_row = local_row(addr_row(range.start));
+  auto end_row = local_row(addr_row(range.end - 1));
   emit dataChanged(createIndex(start_row, 0),
                    createIndex(end_row, columns - 1));
   emit updated_minimap();
@@ -54,35 +55,67 @@ std::optional<size_t> HexTableModel::node_addr(Node node) const {
   return range->first;
 }
 
-int HexTableModel::addr_row(size_t address) const {
-  return address / columns;
+GlobalRow HexTableModel::addr_row(size_t address) const {
+  return GlobalRow{address / columns};
 }
 
-size_t HexTableModel::row_addr(int row) const {
-  return (size_t)row * columns;
+size_t HexTableModel::row_addr(GlobalRow row) const {
+  return row.row * columns;
 }
 
-std::pair<size_t, size_t> HexTableModel::pixel_offset_addr_range(int offset,
-                                                          int max) const {
-  auto size = file->span().size();
-  auto start_ratio = (double)offset / max;
-  auto end_ratio = (double)(offset + 1) / max;
-  auto start = (size_t)(size * start_ratio);
-  auto end = (size_t)(size * end_ratio);
-  return {start, end};
+std::pair<GlobalRow, GlobalRow>
+HexTableModel::pixel_offset_global_row_range(int offset, int max) const {
+  uint64_t size = global_row_count();
+  auto start = size * offset / max;
+  auto end = size * (offset + 1) / max;
+  return {GlobalRow{start}, GlobalRow{end}};
 }
 
-int HexTableModel::addr_pixel_offset(size_t addr, int max) const {
-  auto size = file->span().size();
-  auto ratio = (double)addr / size;
-  auto offset = (int)(ratio * max);
+int HexTableModel::row_pixel_offset(GlobalRow row, int max) const {
+  uint64_t size = global_row_count();
+  auto roundup_margin = std::min((uint64_t)max, size) - 1;
+  auto multiple = (uint64_t)max * row.row + roundup_margin;
+  auto offset = multiple / size;
   return offset;
+}
+
+bool HexTableModel::row_is_in_range(GlobalRow row) const {
+  uint64_t start = 0;
+  if (model_offset != 0) {
+    start = (uint64_t)model_offset + min_view_offset;
+  }
+
+  uint64_t end = global_row_count();
+  if (end - model_offset > max_view_size) {
+    end = (uint64_t)model_offset + max_view_offset;
+  }
+
+  return start <= row.row && row.row < end;
+}
+
+void HexTableModel::put_row_in_range(GlobalRow row) {
+  if (row_is_in_range(row)) {
+    return;
+  }
+
+  uint64_t new_model_offset;
+  if ((uint64_t)row.row < max_view_size / 2) {
+    new_model_offset = 0;
+  } else if (row.row >= global_row_count() - max_view_size / 2) {
+    new_model_offset = global_row_count() - max_view_size;
+  } else {
+    new_model_offset = row.row - max_view_size / 2;
+  }
+
+  beginResetModel();
+  model_offset = new_model_offset;
+  endResetModel();
 }
 
 void HexTableModel::handle_doubleclick(const QModelIndex &index) {
   auto row = index.row();
   auto col = index.column();
-  auto offset = row * columns + col;
+  auto offset = row_addr(global_row(row)) + col;
   auto node = ranges.get(offset);
   if (!node) {
     return;
@@ -91,12 +124,15 @@ void HexTableModel::handle_doubleclick(const QModelIndex &index) {
 }
 
 QPixmap HexTableModel::node_minimap(int len) const {
-  QImage image(1, len + 2, QImage::Format_RGB32);
+  auto inner_len = len - 2;
+  QImage image(1, len, QImage::Format_RGB32);
   auto default_color = QColor(Qt::white).rgb();
   image.setPixel(0, 0, default_color);
-  image.setPixel(0, len + 1, default_color);
-  for (size_t i = 0; i < len; i++) {
-    auto [min_offset, max_offset] = pixel_offset_addr_range(i, len);
+  image.setPixel(0, len - 1, default_color);
+  for (size_t i = 0; i < inner_len; i++) {
+    auto [min_row, max_row] = pixel_offset_global_row_range(i, inner_len);
+    auto min_offset = row_addr(min_row);
+    auto max_offset = row_addr(max_row) + columns - 1;
     auto node = ranges.get_next(min_offset);
     if (!node) {
       image.setPixel(0, i + 1, default_color);
@@ -137,4 +173,25 @@ HexCell::HexCell(QFont font) : font(font) {
   cell_size = metrics.size(0, "00");
   cell_size.setHeight(cell_size.height() + 6);
   cell_size.setWidth(cell_size.width() + 10);
+  header_size = metrics.size(0, "0x0000000000000000");
+  header_size.setHeight(header_size.height() + 6);
+  header_size.setWidth(header_size.width() + 10);
+}
+int HexTableModel::rowCount(const QModelIndex &parent) const {
+  auto file_rows = global_row_count();
+  return (int)std::min(file_rows, max_view_size);
+}
+int HexTableModel::local_row(GlobalRow row) const {
+  auto relative = (int64_t)row.row - (int64_t)model_offset;
+  if (relative < 0) {
+    return 0;
+  }
+  auto row_count = rowCount();
+  if (relative >= row_count) {
+    return row_count - 1;
+  }
+  return (int)relative;
+}
+GlobalRow HexTableModel::global_row(int row) const {
+  return GlobalRow{row + model_offset};
 }

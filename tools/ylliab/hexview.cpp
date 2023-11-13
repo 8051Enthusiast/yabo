@@ -18,23 +18,29 @@ HexTableView::HexTableView(QWidget *parent) : QTableView(parent) {
 
 void HexTableView::setModel(HexTableModel *model) {
   hexModel = model;
-  QTableView::setModel(model);
-  setVerticalScrollBar(new ColorScrollBar(model));
   auto size = hexCell->get_cell_size();
   auto vert_header = verticalHeader();
   vert_header->setMinimumSectionSize(size.height());
   vert_header->setSectionResizeMode(QHeaderView::Fixed);
   vert_header->setDefaultSectionSize(size.height());
+  vert_header->setFixedWidth(hexCell->get_header_size().width());
   auto horiz_header = horizontalHeader();
   horiz_header->setMinimumSectionSize(size.width());
   horiz_header->setSectionResizeMode(QHeaderView::Fixed);
   horiz_header->setDefaultSectionSize(size.width());
+  QTableView::setModel(model);
+  auto scroll_bar = new ColorScrollBar(model);
+  connect(scroll_bar, &ColorScrollBar::big_jump, this, &HexTableView::goto_addr);
+  setVerticalScrollBar(scroll_bar);
 }
 
 void HexTableView::goto_addr(size_t addr) {
   auto row = hexModel->addr_row(addr);
-  auto index = hexModel->index(row, 0);
+  hexModel->put_row_in_range(row);
+  auto local_row = hexModel->local_row(row);
+  auto index = hexModel->index(local_row, 0);
   scrollTo(index, QAbstractItemView::PositionAtTop);
+  verticalScrollBar()->update();
 }
 
 void HexTableView::goto_node(Node node) {
