@@ -2,8 +2,6 @@ cmake_minimum_required(VERSION 3.5)
 
 project(ylliab VERSION 0.1 LANGUAGES CXX)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address")
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
