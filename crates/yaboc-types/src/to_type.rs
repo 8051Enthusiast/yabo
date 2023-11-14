@@ -247,6 +247,9 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
             | (other, InferField(..) | InferIfResult(..)) => other.clone(),
             (id, other) | (other, id) if id == &P::ID_TYPE => other.clone(),
             (Primitive(p), Primitive(q)) if p == q => Primitive(*p),
+            (TypeVarRef(def, idx), TypeVarRef(def2, idx2)) if def == def2 && idx == idx2 => {
+                TypeVarRef(*def, *idx)
+            }
             (Loop(kind1, inner1), Loop(kind2, inner2)) => {
                 let kind = P::combine(*kind1, *kind2);
                 let inner = self.combine::<P>(*inner1, *inner2)?;
