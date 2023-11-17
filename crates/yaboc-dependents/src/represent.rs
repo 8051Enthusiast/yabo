@@ -3,7 +3,7 @@ use std::fmt::{Display, Write};
 use fxhash::FxHashMap;
 use yaboc_base::{databased_display::DatabasedDisplay, dbformat, dbwrite, error::SResult};
 
-use crate::{DependencyGraph, RequirementMatrix, SubValueKind};
+use crate::{DependencyGraph, RequirementMatrix, SubValueKind, DepType};
 
 use super::{Dependents, SubValue};
 
@@ -77,7 +77,7 @@ impl<DB: Dependents + ?Sized> DatabasedDisplay<DB> for DependencyGraph {
             writeln!(f, "\t}}")?;
         }
         for edge in self.graph.edge_indices() {
-            let dotted = !*self.graph.edge_weight(edge).unwrap();
+            let dotted = *self.graph.edge_weight(edge).unwrap() == DepType::Control;
             let (from, to) = self.graph.edge_endpoints(edge).unwrap();
             let from = self.graph[from];
             let to = self.graph[to];

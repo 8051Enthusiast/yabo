@@ -141,11 +141,11 @@ fn val_refs(
     db: &dyn Dependents,
     node: &hir::HirNode,
     parent_block: hir::BlockId,
-) -> SResult<FxHashSet<(SubValue, bool)>> {
+) -> SResult<FxHashSet<(SubValue, DepType)>> {
     match node {
         hir::HirNode::Let(l) => {
             let mut ret = FxHashSet::default();
-            ret.insert((SubValue::new_val(l.expr.0), true));
+            ret.insert((SubValue::new_val(l.expr.0), DepType::Data));
             Ok(ret)
         }
         hir::HirNode::Expr(expr) => {
@@ -153,16 +153,16 @@ fn val_refs(
             let rexpr = Resolved::fetch_expr(db, expr.id)?;
             for term in rexpr.take_ref().iter_parts() {
                 add_term_val_refs(db, Some(parent_block), &term, |v| {
-                    ret.insert((SubValue::new_val(v), true));
+                    ret.insert((SubValue::new_val(v), DepType::Data));
                 });
             }
             Ok(ret)
         }
         hir::HirNode::Parse(p) => {
             let mut ret = FxHashSet::default();
-            ret.insert((SubValue::new_val(p.expr.0), true));
-            ret.insert((SubValue::new_front(p.id.id()), true));
-            ret.insert((SubValue::new_back(p.id.id()), false));
+            ret.insert((SubValue::new_val(p.expr.0), DepType::Data));
+            ret.insert((SubValue::new_front(p.id.id()), DepType::Data));
+            ret.insert((SubValue::new_back(p.id.id()), DepType::Control));
             Ok(ret)
         }
         hir::HirNode::Block(block) => Ok(block
@@ -170,24 +170,29 @@ fn val_refs(
             .lookup(db)?
             .vars
             .iter()
-            .map(|(_, id)| (SubValue::new_val(*id.inner()), true))
+            .map(|(_, id)| (SubValue::new_val(*id.inner()), DepType::Data))
             .collect()),
         hir::HirNode::Choice(choice) => {
             let mut ret = FxHashSet::default();
             for (i, ctx) in choice.subcontexts.iter().enumerate() {
                 let is_last = i == choice.subcontexts.len() - 1;
+                let dep_type = if is_last {
+                    DepType::Control
+                } else {
+                    DepType::Data
+                };
                 let context = ctx.lookup(db)?;
                 add_ctx_bt(&context, db, |v| {
-                    ret.insert((v, !is_last));
+                    ret.insert((v, dep_type));
                 })?;
                 ret.extend(
                     context
                         .children
                         .into_iter()
-                        .map(|c| (SubValue::new_val(c), false)),
+                        .map(|c| (SubValue::new_val(c), DepType::Control)),
                 );
                 if let Some((_, end)) = context.endpoints {
-                    ret.insert((SubValue::new_back(end), false));
+                    ret.insert((SubValue::new_back(end), DepType::Control));
                 }
             }
             Ok(ret)
@@ -195,10 +200,10 @@ fn val_refs(
         hir::HirNode::ChoiceIndirection(ind) => Ok(ind
             .choices
             .iter()
-            .map(|(_, id)| (SubValue::new_val(*id), true))
+            .map(|(_, id)| (SubValue::new_val(*id), DepType::Data))
             .chain(std::iter::once((
                 SubValue::new_val(ind.target_choice.id()),
-                true,
+                DepType::Data,
             )))
             .collect()),
         hir::HirNode::TExpr(_) => Ok(FxHashSet::default()),
@@ -338,10 +343,16 @@ fn node_subvalue_kinds(node: &hir::HirNode) -> &'static [SubValueKind] {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum DepType {
+    Data,
+    Control,
+}
+
 pub struct DependencyGraph {
     block: hir::BlockId,
     val_map: FxHashMap<SubValue, NodeIndex>,
-    graph: Graph<SubValue, bool>,
+    graph: Graph<SubValue, DepType>,
 }
 
 impl DependencyGraph {
@@ -379,14 +390,14 @@ impl DependencyGraph {
         &mut self,
         db: &dyn Dependents,
         from: SubValue,
-        to: impl IntoIterator<Item = (SubValue, bool)>,
+        to: impl IntoIterator<Item = (SubValue, DepType)>,
     ) {
         let from_idx = self.val_map[&from];
-        for (sub_value, is_data) in to {
+        for (sub_value, dep_type) in to {
             let to_idx = *self.val_map.get(&sub_value).unwrap_or_else(|| {
                 dbpanic!(db, "subvalue {} not found", &sub_value);
             });
-            self.graph.add_edge(from_idx, to_idx, is_data);
+            self.graph.add_edge(from_idx, to_idx, dep_type);
         }
     }
 
@@ -400,19 +411,21 @@ impl DependencyGraph {
                 SubValueKind::Front => self.add_edges(
                     db,
                     sub_value,
-                    between_parser_refs(db, &hir_node, self.block)?.map(|x| (x, true)),
+                    between_parser_refs(db, &hir_node, self.block)?.map(|x| (x, DepType::Data)),
                 ),
                 SubValueKind::Back => self.add_edges(
                     db,
                     sub_value,
                     inner_parser_refs(db, &hir_node)?
                         .into_iter()
-                        .map(|x| (x, true)),
+                        .map(|x| (x, DepType::Data)),
                 ),
                 SubValueKind::Bt => self.add_edges(
                     db,
                     sub_value,
-                    bt_refs(db, &hir_node)?.into_iter().map(|x| (x, true)),
+                    bt_refs(db, &hir_node)?
+                        .into_iter()
+                        .map(|x| (x, DepType::Data)),
                 ),
             };
         }
@@ -430,7 +443,7 @@ impl DependencyGraph {
                 continue;
             }
             for edge in self.graph.edges(self.val_map[&sub_value]) {
-                if *edge.weight() {
+                if *edge.weight() == DepType::Data {
                     stack.push(self.graph[edge.target()]);
                 }
             }
@@ -438,8 +451,9 @@ impl DependencyGraph {
         visited
     }
 
-    fn id_is_tail(&self, id: DefId, existing: &FxHashSet<DefId>) -> Result<bool, SilencedError> {
-        // this is art, don't touch
+    // check whether anything references id that would cause it
+    // not to be in tail position
+    fn id_is_tail(&self, id: DefId, parents: &FxHashSet<DefId>) -> Result<bool, SilencedError> {
         for kind in SubValueKind::all() {
             let subvalue = SubValue::new(kind, id);
             let Some(&idx) = self.val_map.get(&subvalue) else {
@@ -448,24 +462,67 @@ impl DependencyGraph {
             for nidx in self.graph.neighbors_directed(idx, Direction::Incoming) {
                 let neighbor_val = self.graph[nidx];
                 let edge_idx = self.graph.find_edge(nidx, idx).unwrap();
-                let true = self.graph.edge_weight(edge_idx).unwrap() else {
+                if *self.graph.edge_weight(edge_idx).unwrap() == DepType::Control {
+                    // control dependencies are irrelevant for tail calls
                     continue;
-                };
-                let false = existing.contains(&neighbor_val.id) else {
+                }
+                if parents.contains(&neighbor_val.id) {
+                    // dependency comes from a parent return place and can
+                    // be skipped
                     continue;
-                };
-                let false = neighbor_val.id == self.block.0 else {
+                }
+                if neighbor_val.id == id {
+                    // ignore references from the same node
                     continue;
-                };
-                let false = neighbor_val.id == id else {
+                }
+                if subvalue.kind == SubValueKind::Back && neighbor_val.kind == SubValueKind::Back {
+                    // we already make sure that tail parser places are in the back, so
+                    // the Back subvalue of the parent is already the return Back subvalue
                     continue;
-                };
-                let SubValueKind::Back = subvalue.kind else {
-                    return Ok(false);
-                };
-                let SubValueKind::Back = neighbor_val.kind else {
-                    return Ok(false);
-                };
+                }
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    // check whether any choice indirections depend on the current choice
+    // which means the choice cannot be in tail position
+    fn choice_is_tail(
+        &self,
+        db: &(impl Dependents + ?Sized),
+        choice: hir::StructChoice,
+    ) -> Result<bool, SilencedError> {
+        let ctx = choice.parent_context.lookup(db)?;
+        for child in ctx.children.iter().filter_map(|x| db.hir_node(*x).ok()) {
+            let hir::HirNode::ChoiceIndirection(c) = child else {
+                continue;
+            };
+            if c.target_choice != choice.id {
+                continue;
+            }
+            let id_val = SubValue::new_val(c.id.0);
+            for neigh in self
+                .graph
+                .neighbors_directed(self.val_map[&id_val], Direction::Incoming)
+            {
+                let subval = self.graph[neigh];
+                if subval.id == self.block.0 {
+                    continue;
+                }
+                let edge = self.graph.find_edge(neigh, self.val_map[&id_val]).unwrap();
+                // control edges shouldn't be considered
+                if self.graph[edge] == DepType::Control {
+                    continue;
+                }
+                // choice indirections can only depend on their children
+                // and the choice indirection that lays over the current
+                // choice indirection must already be in tail position
+                let node = db.hir_node(subval.id)?;
+                if node.is_kind(hir::HirNodeKind::ChoiceIndirection.into()) {
+                    continue;
+                }
+                return Ok(false);
             }
         }
         Ok(true)
@@ -477,55 +534,30 @@ impl DependencyGraph {
         if !block.returns {
             return Ok(ret);
         }
+        ret.insert(block.id.0);
         let root_ctx = block.root_context.lookup(db)?;
         let mut return_id_stack = vec![*root_ctx.vars.set[&FieldName::Return].inner()];
-        'outer: while let Some(id) = return_id_stack.pop() {
-            let true = self.id_is_tail(id, &ret)? else {
+        while let Some(id) = return_id_stack.pop() {
+            if !self.id_is_tail(id, &ret)? {
                 continue;
             };
 
             ret.insert(id);
 
-            let hir::HirNode::ChoiceIndirection(c) = db.hir_node(id)? else {
+            let hir::HirNode::ChoiceIndirection(chind) = db.hir_node(id)? else {
                 continue;
             };
-            let choice = c.target_choice.lookup(db)?;
-            if let Some([_, back]) = choice.endpoints {
-                let ParserPredecessor::ChildOf(_) = back else {
-                    continue;
-                };
-            }
-            let ctx = choice.parent_context.lookup(db)?;
-            for child in ctx.children.iter().map(|x| db.hir_node(*x)) {
-                let child = child?;
-                let hir::HirNode::ChoiceIndirection(c) = child else {
-                    continue;
-                };
-                if c.target_choice != choice.id {
-                    continue;
-                }
-                let id_val = SubValue::new_val(c.id.0);
-                for neigh in self
-                    .graph
-                    .neighbors_directed(self.val_map[&id_val], Direction::Incoming)
-                {
-                    let subval = self.graph[neigh];
-                    let node = db.hir_node(subval.id)?;
-                    let edge = self.graph.find_edge(neigh, self.val_map[&id_val]).unwrap();
-                    // control edges shouldn't be considered
-                    if !self.graph[edge] {
-                        continue;
-                    }
-                    //
-                    if !node.is_kind(hir::HirNodeKind::ChoiceIndirection.into())
-                        && subval.id != self.block.0
-                    {
-                        continue 'outer;
-                    }
-                }
+            let choice = chind.target_choice.lookup(db)?;
+
+            if let Some([_, ParserPredecessor::After(_)]) = choice.endpoints {
+                continue;
             }
 
-            return_id_stack.extend(c.choices.iter().map(|x| x.1));
+            if !self.choice_is_tail(db, choice)? {
+                continue;
+            }
+
+            return_id_stack.extend(chind.choices.iter().map(|x| x.1));
         }
         Ok(ret)
     }
@@ -546,7 +578,7 @@ impl DependencyGraph {
 
         let mut edgeless = BTreeSet::default();
 
-        let get_prio = |graph: &Graph<SubValue, bool>, idx: NodeIndex<u32>| {
+        let get_prio = |graph: &Graph<SubValue, DepType>, idx: NodeIndex<u32>| {
             let subvalue = graph[idx];
             let tail = tails.contains(&subvalue.id);
             let backtrack = db.can_backtrack(subvalue.id).unwrap_or_default();
