@@ -38,9 +38,8 @@ impl<'a, Arg: std::hash::Hash + Eq + Copy> CallInfo<'a, Arg> {
             let mut layout_map = pog.layout_map();
             let mut sorted_vecs = pog.get_sets();
             for (index, set) in sorted_vecs.drain() {
-                let parser_layouts = match layout_map.remove(&index) {
-                    Some(x) => x,
-                    None => continue,
+                let Some(parser_layouts) = layout_map.remove(&index) else {
+                    continue;
                 };
                 id_info.insert(vecs.len(), (arg_layout, parser_layouts));
                 vecs.push((set, vecs.len()));
@@ -59,9 +58,8 @@ impl<'a, Arg: std::hash::Hash + Eq + Copy> CallInfo<'a, Arg> {
         let mut layout_vtable_offsets: FxHashMap<(Arg, ILayout<'a>), PSize> = FxHashMap::default();
         for (index, slot) in slot_sets.into_iter().enumerate() {
             for id in slot.contained_ids {
-                let (arg, parsers) = match id_info.remove(&id) {
-                    Some(x) => x,
-                    None => continue,
+                let Some((arg, parsers)) = id_info.remove(&id) else {
+                    continue;
                 };
                 for parser in parsers {
                     layout_vtable_offsets.insert((arg, parser), index as PSize);

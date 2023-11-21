@@ -52,7 +52,7 @@ fn int(db: &dyn TypeInterner) -> TypeId {
 fn type_hash(db: &dyn TypeInterner, id: TypeId) -> [u8; 32] {
     let mut hasher = sha2::Sha256::new();
     id.update_hash(&mut hasher, db);
-    hasher.finalize().try_into().unwrap()
+    hasher.finalize().into()
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]

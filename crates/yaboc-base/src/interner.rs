@@ -273,7 +273,7 @@ fn def_name(db: &dyn Interner, defid: DefId) -> Option<FieldName> {
 fn def_hash(db: &dyn Interner, defid: DefId) -> [u8; 32] {
     let mut hasher = Sha256::new();
     defid.update_hash(&mut hasher, db);
-    hasher.finalize().try_into().unwrap()
+    hasher.finalize().into()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]

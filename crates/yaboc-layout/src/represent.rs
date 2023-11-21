@@ -159,7 +159,7 @@ impl<'a> LayoutHasher<'a> {
         }
         let mut hasher = sha2::Sha256::new();
         self.hash_layout(&mut hasher, layout, db);
-        let res = hasher.finalize().try_into().unwrap();
+        let res = hasher.finalize().into();
         self.map.insert(layout, res);
         res
     }
