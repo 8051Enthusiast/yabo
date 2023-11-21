@@ -12,7 +12,7 @@ use yaboc_base::{
 
 use crate::ILayout;
 
-use super::{flat_layouts, prop::PSize, IMonoLayout, Layout, Layouts, MonoLayout};
+use super::{prop::PSize, IMonoLayout, Layout, Layouts, MonoLayout};
 use yaboc_absint::AbsInt;
 
 impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
@@ -179,7 +179,7 @@ impl<'a> LayoutHasher<'a> {
             Layout::Multi(ml) => {
                 state.update([2]);
                 ml.layouts.len().update_hash(state, db);
-                for layout in flat_layouts(&layout) {
+                for layout in &layout {
                     state.update(db.type_hash(layout.mono_layout().1));
                     self.hash_mono(state, layout.mono_layout().0, db);
                 }

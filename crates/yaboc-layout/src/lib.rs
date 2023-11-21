@@ -269,22 +269,6 @@ impl<'a> IMonoLayout<'a> {
     }
 }
 
-pub fn flat_layouts<'a, 'l>(
-    layout: &'l ILayout<'a>,
-) -> impl ExactSizeIterator<Item = IMonoLayout<'a>> + Clone + 'l {
-    match &layout.layout.1 {
-        Layout::Mono(_, _) => std::slice::from_ref(layout),
-        Layout::Multi(l) => l.layouts.as_slice(),
-        Layout::None => &[],
-    }
-    .iter()
-    .map(|l| match l.layout.1 {
-        Layout::Mono(_, _) => IMonoLayout(*l),
-        Layout::Multi(_) => panic!("MultiLayout inside MultiLayout not supported"),
-        Layout::None => panic!("Empty layout inside MultiLayout not supported"),
-    })
-}
-
 impl<'a, 'l> IntoIterator for &'l ILayout<'a> {
     type Item = IMonoLayout<'a>;
     type IntoIter =
@@ -361,8 +345,7 @@ impl<'a> ILayout<'a> {
         ) -> Result<ILayout<'a>, LayoutError>,
     ) -> Result<ILayout<'a>, LayoutError> {
         let mut acc = BTreeSet::new();
-        let layouts = flat_layouts(&self);
-        for layout in layouts {
+        for layout in &self {
             let result_layout = f(layout, ctx)?;
             match &result_layout.layout.1 {
                 Layout::Mono(_, _) => {

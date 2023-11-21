@@ -20,8 +20,7 @@ pub use self::tailsize::TailInfo;
 use self::tailsize::{CallSite, TailCollector};
 
 use super::{
-    canon_layout, flat_layouts, prop::PSize, AbsLayoutCtx, ILayout, IMonoLayout, Layout,
-    LayoutError, MonoLayout,
+    canon_layout, prop::PSize, AbsLayoutCtx, ILayout, IMonoLayout, Layout, LayoutError, MonoLayout,
 };
 
 type LayoutSet<'a> = FxHashSet<IMonoLayout<'a>>;
@@ -524,7 +523,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     parser_ty,
                 ));
                 self.register_layouts(parser_layout);
-                for mono in flat_layouts(&parser_layout) {
+                for mono in &parser_layout {
                     self.root.push((from_layout, mono));
                 }
                 self.register_parse(from_layout, parser_layout, root_req());
