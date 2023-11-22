@@ -45,7 +45,6 @@ void RangeMap::insert(size_t start, size_t end, Node value) {
     if (current->start < start) {
       auto new_entry = RangeMap::MapEntry(start, current->start, {value});
       ranges.insert({start, new_entry});
-      start = current->start;
     }
     if (end < current->end) {
       // our range ends earlier than the current range in the map
