@@ -15,7 +15,6 @@ ColorScrollBar::ColorScrollBar(HexTableModel *model, QWidget *parent)
 // above the bottom
 int ColorScrollBar::marker_offset() const {
   assert(this->minimum() == 0);
-  auto max = this->maximum();
   auto val = this->value();
   auto val_row = model->global_row(val);
   auto size = this->size();
