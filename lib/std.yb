@@ -23,11 +23,10 @@ fun *number_acc(base: int, n: int): int = {
 def *basenum(base: int) = number_acc?(base, 0)
 
 # Returns the maxiumum of a and b.
-def *max(a: int, b: int) = {
-  | assert?(a > b)
-    let return = a
-  | let return = b
-}
+fun max(a: int, b: int) = when?(a > b) then a else b
+
+# Returns the minimum of a and b.
+fun min(a: int, b: int) = when?(a < b) then a else b
 
 fun ['t] *> summap_acc(f: ['t] *> int, acc: int): int = {
   | x: f?
@@ -47,18 +46,10 @@ def *list(element: *'r) = {
 }
 
 # Returns the length of a given list.
-fun *len(xs: list) = {
-  | inner_len: len(xs.?next)
-    let return = inner_len + 1
-  | let return = 0
-}
+fun len(xs: list): int = (len(xs.?next) + 1) else 0
 
 # Skips the first n elements of a list xs.
-fun *skip(xs: list, n: int): list = {
-  | let _ = n if 0
-    let return = xs
-  | return: skip(xs.?next, n - 1)
-}
+fun skip(xs: list, n: int): list = n if 0 then xs else skip(xs.?next, n - 1)
 
 # Parses a newline
 def *newline = /\r\n?|\n/

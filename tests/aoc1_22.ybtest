@@ -10,8 +10,7 @@ def *sublistsum = std.summap({
 def *listmax(min: int): int = {
   std.newline?
   sum: sublistsum
-  m: std.max(min, sum)
-  | return: listmax(m)?
+  | return: listmax(std.max(min, sum))?
   | let return = min
 }
 
