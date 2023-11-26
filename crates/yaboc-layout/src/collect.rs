@@ -31,6 +31,9 @@ pub fn pd_len_req() -> CallMeta {
 pub fn pd_val_req() -> CallMeta {
     CallMeta::new(NeededBy::Val.into(), false)
 }
+pub fn pd_fun_req() -> RequirementSet {
+    NeededBy::Val | NeededBy::Backtrack
+}
 pub fn root_req() -> CallMeta {
     CallMeta::new(NeededBy::Val | NeededBy::Len | NeededBy::Backtrack, false)
 }
@@ -76,6 +79,7 @@ const TRACE_COLLECTION: bool = false;
 #[derive(Debug)]
 pub enum UnprocessedCall<'a> {
     NominalParser(ILayout<'a>, IMonoLayout<'a>, MirKind),
+    NominalEvalFun(IMonoLayout<'a>),
     Block(ILayout<'a>, IMonoLayout<'a>, MirKind),
     IfParser(ILayout<'a>, IMonoLayout<'a>, MirKind),
 }
@@ -101,6 +105,35 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         }
     }
 
+    fn register_function(&mut self, mono: IMonoLayout<'a>, ty: &Type) {
+        let needs_eval =
+            if let (MonoLayout::NominalParser(pd, args, _), Type::FunctionArg(_, ty_args)) =
+                (mono.mono_layout().0, ty)
+            {
+                let parserdef = pd.lookup(self.ctx.db).unwrap();
+                ty_args.len() == args.len() && parserdef.from.is_none()
+            } else {
+                false
+            };
+        if self.functions.insert(mono) {
+            if TRACE_COLLECTION {
+                dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
+            }
+            if needs_eval {
+                self.unprocessed.push(UnprocessedCall::NominalEvalFun(mono));
+            }
+        }
+        let nbt = mono.remove_backtracking(self.ctx);
+        if self.functions.insert(nbt) {
+            if TRACE_COLLECTION {
+                dbeprintln!(self.ctx.db, "[collection] registered function {}", &nbt);
+            }
+            if needs_eval {
+                self.unprocessed.push(UnprocessedCall::NominalEvalFun(nbt));
+            }
+        }
+    }
+
     fn register_layouts(&mut self, layout: ILayout<'a>) {
         for mono in &layout {
             if let Ok(sa) = mono.inner().size_align_without_vtable(self.ctx) {
@@ -121,8 +154,9 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     self.register_parse(*slice, *parser, pd_val_req());
                     self.register_len(*parser);
                 }
-                MonoLayout::Nominal(_, _, _) => {
-                    if self.nominals.insert(mono) {
+                MonoLayout::Nominal(pd, _, _) => {
+                    let parserdef = pd.lookup(self.ctx.db).unwrap();
+                    if parserdef.thunky && self.nominals.insert(mono) {
                         if TRACE_COLLECTION {
                             dbeprintln!(self.ctx.db, "[collection] registered nominal {}", &mono);
                         }
@@ -152,13 +186,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                             dbeprintln!(self.ctx.db, "[collection] registered parser {}", &nbt);
                         }
                     } else {
-                        if self.functions.insert(mono) && TRACE_COLLECTION {
-                            dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
-                        }
-                        let nbt = mono.remove_backtracking(self.ctx);
-                        if self.functions.insert(nbt) && TRACE_COLLECTION {
-                            dbeprintln!(self.ctx.db, "[collection] registered function {}", &nbt);
-                        }
+                        self.register_function(mono, &ty);
                     }
                 }
                 MonoLayout::BlockParser(..)
@@ -370,7 +398,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         &mut self,
         arg: ILayout<'a>,
         parser: IMonoLayout<'a>,
-        mut info: MirKind,
+        info: MirKind,
     ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
@@ -385,8 +413,8 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             panic!("unexpected non-block-parser layout");
         };
         if !*bt {
-            if let MirKind::Call(req) = info {
-                info = MirKind::Call(req & !NeededBy::Backtrack);
+            if let MirKind::Call(mut req) = info {
+                req &= !NeededBy::Backtrack;
             }
         };
         parser.inner().apply_arg(self.ctx, arg)?;
@@ -400,7 +428,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         &mut self,
         arg: ILayout<'a>,
         parser: IMonoLayout<'a>,
-        mut info: MirKind,
+        info: MirKind,
     ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
@@ -418,8 +446,8 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             panic!("unexpected non-parserarg type");
         };
         if !*bt {
-            if let MirKind::Call(req) = info {
-                info = MirKind::Call(req & !NeededBy::Backtrack);
+            if let MirKind::Call(mut req) = info {
+                req &= !NeededBy::Backtrack;
             }
         }
         let parserdef = pd.lookup(self.ctx.db).unwrap();
@@ -431,12 +459,18 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             args.insert(Arg::Named(id.0), *arg);
         }
         let thunk = IMonoLayout::make_thunk(*pd, thunk_ty, &args, self.ctx).unwrap();
+        // it may happen that the thunk does not actually exist as a value
+        // anywhere in the program because it always gets immediately evaluated,
+        // but we need to register it anyway because it is needed for codegen
         if info != MirKind::Len && parserdef.thunky {
             self.register_layouts(thunk.inner());
         }
         // instantiate info for thunk
         thunk.deref(self.ctx)?;
         let (arg_layout, parser_layout) = thunk.unapply_nominal(self.ctx);
+        // for each parse, it is possible that the value is not actually
+        // needed and just a thunk is returned, which means we also need
+        // to collect the parse that does not return the value
         let val_info = if let MirKind::Call(req) = info {
             if req.contains(NeededBy::Val) {
                 Some(MirKind::Call(req & !NeededBy::Val))
@@ -459,6 +493,35 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         Ok(())
     }
 
+    fn collect_nominal_eval_fun(&mut self, fun: IMonoLayout<'a>) -> Result<(), LayoutError> {
+        if TRACE_COLLECTION {
+            dbeprintln!(
+                self.ctx.db,
+                "[collection] processing nominal eval fun {}",
+                &fun
+            );
+        }
+        let (MonoLayout::NominalParser(pd, _, bt), _) = fun.mono_layout() else {
+            panic!("unexpected non-nominal-parser layout");
+        };
+        let mut req = pd_fun_req();
+        if !*bt {
+            req &= !NeededBy::Backtrack;
+        }
+        let thunk = fun.inner().eval_fun(self.ctx)?.maybe_mono().unwrap();
+        thunk.deref(self.ctx)?;
+        let arg_layout = ILayout::bottom(&mut self.ctx.dcx);
+        let fsub = function_substitute(
+            yaboc_mir::FunKind::ParserDef(*pd),
+            MirKind::Call(req),
+            arg_layout,
+            thunk,
+            self.ctx,
+        )?;
+        self.collect_mir(&fsub)?;
+        Ok(())
+    }
+
     fn proc_list(&mut self) -> Result<(), LayoutError> {
         while let Some(mono) = self.unprocessed.pop() {
             match mono {
@@ -468,6 +531,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 UnprocessedCall::NominalParser(arg, parser, info) => {
                     self.collect_nominal_parse(arg, parser, info)?
                 }
+                UnprocessedCall::NominalEvalFun(fun) => self.collect_nominal_eval_fun(fun)?,
                 UnprocessedCall::IfParser(from, parser, info) => {
                     if TRACE_COLLECTION {
                         dbeprintln!(

@@ -505,19 +505,27 @@ impl<'a> ILayout<'a> {
             else {
                 panic!("Attempting to apply function to non-function type")
             };
-            match layout.mono_layout().0 {
-                MonoLayout::NominalParser(pd, present_args, _) => Ok(ctx.dcx.intern(Layout::Mono(
-                    MonoLayout::NominalParser(*pd, present_args.clone(), true),
-                    result_type,
-                ))),
+            let (pd, present_args) = match layout.mono_layout().0 {
+                MonoLayout::NominalParser(pd, present_args, _) => (pd, present_args),
                 MonoLayout::ArrayParser(Some((parser, Some(int)))) => {
-                    Ok(ctx.dcx.intern(Layout::Mono(
+                    return Ok(ctx.dcx.intern(Layout::Mono(
                         MonoLayout::ArrayParser(Some((*parser, Some(*int)))),
                         result_type,
                     )))
                 }
                 _ => panic!("Attempting to apply function to non-function layout"),
+            };
+            let parserdef = pd.lookup(ctx.db)?;
+            if parserdef.from.is_some() {
+                return Ok(ctx.dcx.intern(Layout::Mono(
+                    MonoLayout::NominalParser(*pd, present_args.clone(), true),
+                    result_type,
+                )));
             }
+            Ok(ctx.dcx.intern(Layout::Mono(
+                MonoLayout::Nominal(*pd, None, present_args.clone()),
+                result_type,
+            )))
         })
     }
 
@@ -773,7 +781,7 @@ impl<'a> ILayout<'a> {
         let parserdef = id.lookup(ctx.db)?;
         if let Some((from, _)) = from {
             let sa = from.size_align(ctx)?;
-            manifest.add_field(parserdef.from.0, sa);
+            manifest.add_field(parserdef.from.unwrap().0, sa);
         }
         let arg_ids = id.lookup(ctx.db)?.args.unwrap_or_default();
         for ((arg, _), id) in args.iter().zip(arg_ids.iter()) {

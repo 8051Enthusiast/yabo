@@ -3,7 +3,7 @@ use yaboc_base::low_effort_interner::Uniq;
 use yaboc_constraint::Constraints;
 use yaboc_dependents::NeededBy;
 use yaboc_layout::{
-    collect::{pd_len_req, pd_val_req},
+    collect::{pd_fun_req, pd_len_req, pd_val_req},
     mir_subst::function_substitute,
     represent::ParserFunKind,
 };
@@ -104,7 +104,26 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         wrapper
     }
 
-    fn mir_pd_fun(
+    fn mir_pd_fun(&mut self, layout: IMonoLayout<'comp>) -> FunctionSubstitute<'comp> {
+        let MonoLayout::NominalParser(pd, _, _) = layout.mono_layout().0 else {
+            panic!("mir_pd_len_fun has to be called with a nominal parser layout");
+        };
+        let req = pd_fun_req();
+        let mir = self
+            .compiler_database
+            .db
+            .mir(FunKind::ParserDef(*pd), MirKind::Call(req))
+            .unwrap();
+        let strictness = self
+            .compiler_database
+            .db
+            .strictness(FunKind::ParserDef(*pd), MirKind::Call(req))
+            .unwrap();
+        let from = ILayout::bottom(&mut self.layouts.dcx);
+        FunctionSubstitute::new_from_pd(mir, &strictness, from, layout, *pd, self.layouts).unwrap()
+    }
+
+    fn mir_pd_parser(
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
@@ -413,7 +432,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .unwrap()
             .maybe_mono()
             .unwrap();
-        let val_thunk_info = ValThunk::new(from, layout, return_layout, req);
+        let val_thunk_info = ValThunk::new(Some(from), layout, return_layout, req);
         ThunkContext::new(self, val_thunk_info).build()
     }
 
@@ -429,7 +448,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             Some(f) => return f,
             None => self.parser_impl_fun_val(layout, from, req),
         };
-        let mir_fun = Rc::new(self.mir_pd_fun(from, layout, req));
+        let mir_fun = Rc::new(self.mir_pd_parser(from, layout, req));
         let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
         let mut translator = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg);
         if req.contains(NeededBy::Val) {
@@ -443,7 +462,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.add_entry_block(llvm_fun);
         let [ret, nom, head] = get_fun_args(llvm_fun);
         let [ret, nom] = [ret, nom].map(|x| x.into_pointer_value());
-        let ret = CgReturnValue::new(head.into_int_value(), ret);    
+        let ret = CgReturnValue::new(head.into_int_value(), ret);
         let nom = CgMonoValue::new(layout, nom);
         // this should never fail, as arrays are not deref
         self.call_start_fun(ret, nom.into());
@@ -1115,14 +1134,24 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
     }
 
-    fn create_eval_fun_fun(&mut self, layout: IMonoLayout<'comp>) {
+    fn create_eval_fun_fun_impl(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
+        let llvm_fun = self.eval_fun_fun_val(layout);
+        let arg = self.undef_val();
+        let mir_fun = Rc::new(self.mir_pd_fun(layout));
+        let (ret, fun) = eval_fun_values(llvm_fun, layout);
+        let mut translator = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg);
+        translator = translator.with_ret_val(ret);
+        translator.build()
+    }
+
+    fn create_eval_fun_fun_copy(&mut self, layout: IMonoLayout<'comp>) {
         let target_layout = layout
             .inner()
             .eval_fun(self.layouts)
             .unwrap()
             .maybe_mono()
             .unwrap();
-        let f = self.eval_fun_fun_val(layout);
+        let f = self.eval_fun_fun_val_wrapper(layout);
         self.add_entry_block(f);
         let create_args_thunk = TransmuteCopyThunk {
             from: layout,
@@ -1130,6 +1159,26 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             f,
         };
         ThunkContext::new(self, create_args_thunk).build();
+    }
+
+    fn create_eval_fun_fun(&mut self, layout: IMonoLayout<'comp>) {
+        match layout.mono_layout().0 {
+            MonoLayout::ArrayParser(_) => return self.create_eval_fun_fun_copy(layout),
+            MonoLayout::NominalParser(pd, ..) => {
+                let pd = pd.lookup(&self.compiler_database.db).unwrap();
+                if pd.from.is_some() {
+                    return self.create_eval_fun_fun_copy(layout);
+                }
+            }
+            _ => dbpanic!(
+                &self.compiler_database.db,
+                "called create_eval_fun_fun on non-parser {}",
+                &layout.inner()
+            ),
+        };
+        let impl_fun = self.create_eval_fun_fun_impl(layout);
+        let llvm_fun = self.eval_fun_fun_val_wrapper(layout);
+        self.wrap_direct_call(impl_fun, llvm_fun, true);
     }
 
     fn create_create_fun_args_fun(

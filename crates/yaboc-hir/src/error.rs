@@ -36,7 +36,6 @@ fn conversion_report(error: HirConversionError) -> Option<Report> {
             )
             .with_label(Label::new(first).with_message("the previous appearnce of the field")),
         ),
-        HirConversionError::Silenced => None,
         HirConversionError::DuplicateArg { place, .. } => Some(
             Report::new(DiagnosticKind::Error, place.file, "Duplicate argument name")
                 .with_code(202)
@@ -53,5 +52,28 @@ fn conversion_report(error: HirConversionError) -> Option<Report> {
                 Label::new(span).with_message("all conjunctions must be either !eof or not"),
             ),
         ),
+        HirConversionError::NakedDef { span }  => Some(
+            Report::new(
+                DiagnosticKind::Error,
+                span.file,
+                "Naked definition",
+            )
+            .with_code(204)
+            .with_label(
+                Label::new(span).with_message("definitions must have function arguments or be a parser"),
+            ),
+        ),
+        HirConversionError::NonParserDef { span } => Some(
+            Report::new(
+                DiagnosticKind::Error,
+                span.file,
+                "Non-parser definition",
+            )
+            .with_code(205)
+            .with_label(
+                Label::new(span).with_message("a definition must either be declared with `fun` or be a parser"),
+            ),
+        ),
+        HirConversionError::Silenced => None,
     }
 }

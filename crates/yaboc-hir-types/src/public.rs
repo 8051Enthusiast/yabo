@@ -130,8 +130,11 @@ impl<'a, 'intern> TypingContext<'a, 'intern, PublicResolver<'a, 'intern>> {
         &mut self,
         parserdef: &hir::ParserDef,
     ) -> Result<Option<InfTypeId<'intern>>, SpannedTypeError> {
-        let ty_expr = parserdef.from.lookup(self.db)?.expr;
-        let from = self.resolve_type_expr(ty_expr.take_ref(), parserdef.from)?;
+        let Some(from_expr) = parserdef.from else {
+            return Ok(None);
+        };
+        let ty_expr = from_expr.lookup(self.db)?.expr;
+        let from = self.resolve_type_expr(ty_expr.take_ref(), from_expr)?;
         Ok(Some(from))
     }
 }

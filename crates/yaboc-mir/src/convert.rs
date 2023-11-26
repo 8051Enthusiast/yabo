@@ -344,7 +344,7 @@ impl<'a> ConvertCtx<'a> {
         Ok(())
     }
 
-    pub fn parserdef(&mut self, pd: &hir::ParserDef) -> SResult<()> {
+    pub fn parserdef_parse(&mut self, pd: &hir::ParserDef) -> SResult<()> {
         if !self.processed_parse_sites.insert(pd.id.0) {
             return Ok(());
         }
@@ -376,6 +376,13 @@ impl<'a> ConvertCtx<'a> {
         self.w
             .f
             .tail_parse_call(info, addr, ldt_parser_fun, ret, retlen);
+        Ok(())
+    }
+    
+    pub fn parserdef_eval_fun(&mut self, pd: &hir::ParserDef) -> SResult<()> {
+        let expr = self.w.val_place_at_def(pd.to.0).unwrap();
+        let ret = self.w.f.fun.ret().unwrap();
+        self.w.copy(expr, ret);
         Ok(())
     }
 

@@ -268,7 +268,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             panic!("expected function type")
         };
         let eval_fun_impl = if is_full {
-            self.eval_fun_fun_val(layout)
+            self.eval_fun_fun_val_wrapper(layout)
                 .as_global_value()
                 .as_pointer_value()
         } else {

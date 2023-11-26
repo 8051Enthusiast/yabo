@@ -213,7 +213,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             self.cg.builder.build_unreachable();
             return;
         }
-        let ret = self.cg.call_eval_fun_fun(to, from);
+        let ret = self.cg.call_eval_fun_fun_wrapper(to, from);
         self.controlflow_case(ret, ctrl)
     }
 

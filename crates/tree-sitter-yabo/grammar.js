@@ -15,6 +15,7 @@ const PREC = {
   ARGS: 15,
   PARSERTYPE: 16,
   PARSERDEF: 17,
+  BYTE_SLICE: 18,
 };
 module.exports = grammar({
   name: 'yabo',
@@ -48,12 +49,14 @@ module.exports = grammar({
       optional(field('qualifier', 'export')),
       field('thunky', choice('def', 'fun')),
       prec(PREC.PARSERDEF, seq(
-        choice(
-          seq(
-            field('from', $._type_expression),
-            '*>',
+        optional(
+          choice(
+            seq(
+              field('from', $._type_expression),
+              '*>',
+            ),
+            field('from', $.byte_slice),
           ),
-          '*',
         ),
         field('name', $.identifier),
         optional(field('argdefs', $.arg_def_list)),
@@ -362,6 +365,7 @@ module.exports = grammar({
       'bit',
       'char',
     ),
+    byte_slice: $ => prec(PREC.BYTE_SLICE, '*'),
     single: $ => '~',
     nil: $ => '+',
     not_eof: $ => '!eof',

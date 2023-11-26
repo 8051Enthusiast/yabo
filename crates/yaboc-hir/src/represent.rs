@@ -364,10 +364,10 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                         ret_ty,
                         ..
                     }) => {
-                        let mut v = vec![
-                            (id.0, from.0, "from".to_string(), dot::Style::Bold),
-                            (id.0, to.0, "to".to_string(), dot::Style::Bold),
-                        ];
+                        let mut v = vec![(id.0, to.0, "to".to_string(), dot::Style::Bold)];
+                        if let Some(from) = from {
+                            v.push((id.0, from.0, "from".to_string(), dot::Style::Bold))
+                        }
                         if let Some(args) = args {
                             v.extend(
                                 args.iter().enumerate().map(|(i, p)| {

@@ -355,7 +355,7 @@ pub enum LayoutPart {
     SetArg(PSize),
     Len,
     Mask,
-    EvalFun,
+    EvalFun(ParserFunKind),
 }
 
 impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
@@ -394,7 +394,15 @@ impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
             LayoutPart::SetArg(idx) => write!(f, "set_arg_{idx}"),
             LayoutPart::Len => write!(f, "len"),
             LayoutPart::Mask => write!(f, "mask"),
-            LayoutPart::EvalFun => write!(f, "eval_fun"),
+            LayoutPart::EvalFun(kind) => {
+                write!(f, "eval_fun")?;
+                match kind {
+                    ParserFunKind::Wrapper => {}
+                    ParserFunKind::TailWrapper => write!(f, "_tail")?,
+                    ParserFunKind::Worker => write!(f, "_worker")?,
+                }
+                Ok(())
+            }
         }
     }
 }

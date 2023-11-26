@@ -117,7 +117,7 @@ pub type AbstractData<Dom> = ShapedData<Vec<(Dom, TypeId)>, Resolved>;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PdEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
     pub returned: Dom,
-    pub from: Dom,
+    pub from: Option<Dom>,
     pub expr_vals: Option<AbstractData<Dom>>,
     pub typesubst: Arc<Vec<TypeId>>,
 }
@@ -255,13 +255,25 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         &mut self,
         val: Dom,
         parserdef: &hir::ParserDef,
-        from_ty: TypeId,
+        from_ty: Option<TypeId>,
     ) -> Result<PdEvaluated<Dom>, Dom::Err> {
-        let from = val.get_arg(self, Arg::From)?;
         let expr = Resolved::expr_with_data::<FullTypeId>(self.db, parserdef.to)?;
         let result_type = self.subst_type(self.db.parser_returns(parserdef.id)?.deref);
-        let (ret_val, expr_vals) =
-            self.eval_expr_with_ambience(expr.take_ref(), (from.clone(), from_ty), result_type)?;
+        let ((ret_val, expr_vals), from) = if let Some(from_ty) = from_ty {
+            let from = val.get_arg(self, Arg::From)?;
+            (
+                self.eval_expr_with_ambience(
+                    expr.take_ref(),
+                    (from.clone(), from_ty),
+                    result_type,
+                )?,
+                Some(from),
+            )
+        } else {
+            let res = self.eval_expr(expr.take_ref())?;
+            let root = res.root_data().clone().0;
+            ((root, res), None)
+        };
         let ret = PdEvaluated {
             returned: ret_val,
             from,
@@ -276,7 +288,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         pd: Dom,
         mut ret: Option<Dom>,
         parserdef: &hir::ParserDef,
-        from_ty: TypeId,
+        from_ty: Option<TypeId>,
     ) -> Option<Dom> {
         loop {
             let old_ret = ret?;
@@ -307,6 +319,13 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                 return Some(pd.as_ref()?.returned.clone());
             }
         }
+        let parserdef = match self.db.lookup_intern_type(ty) {
+            Type::Nominal(nomhead) => match NominalId::from_nominal_head(&nomhead) {
+                NominalId::Def(parserdef) => parserdef.lookup(self.db).ok()?,
+                NominalId::Block(_) => panic!("called eval_pd with non-pd type"),
+            },
+            _ => panic!("called eval_pd with non-pd type"),
+        };
         if let Some(&depth) = self.active_calls.get(&pd) {
             if self.call_needs_fixpoint.is_empty() {
                 // we can only increment the epoch if we are not
@@ -323,7 +342,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                 EpochVal::new(
                     Some(PdEvaluated {
                         returned: bottom.clone(),
-                        from: bottom.clone(),
+                        from: parserdef.from.is_some().then(|| bottom.clone()),
                         expr_vals: None,
                         typesubst: new_type_substitutions,
                     }),
@@ -337,17 +356,10 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         let old_pd = std::mem::replace(&mut self.current_pd, pd.clone());
         let old_type_substitutions =
             std::mem::replace(&mut self.type_substitutions, new_type_substitutions);
-        let parserdef = match self.db.lookup_intern_type(ty) {
-            Type::Nominal(nomhead) => match NominalId::from_nominal_head(&nomhead) {
-                NominalId::Def(parserdef) => parserdef.lookup(self.db).ok()?,
-                NominalId::Block(_) => panic!("called eval_pd with non-pd type"),
-            },
-            _ => panic!("called eval_pd with non-pd type"),
-        };
-        let unsub_from_ty = self.db.parser_args(parserdef.id).ok()?.from.unwrap();
-        let from_ty = self
-            .db
-            .substitute_typevar(unsub_from_ty, self.type_substitutions.clone());
+        let from_ty = self.db.parser_args(parserdef.id).ok()?.from.map(|from_ty| {
+            self.db
+                .substitute_typevar(from_ty, self.type_substitutions.clone())
+        });
         // to make sure
         self.call_needs_fixpoint.remove(&self.depth);
         let old_active_block = self.active_block.take();

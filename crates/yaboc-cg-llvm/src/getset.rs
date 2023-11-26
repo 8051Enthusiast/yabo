@@ -301,15 +301,32 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         ret: CgReturnValue<'llvm>,
         arg: CgValue<'comp, 'llvm>,
+        kind: ParserFunKind,
     ) -> IntValue<'llvm> {
         let eval_fun = match arg.layout.maybe_mono() {
-            Some(mono) => self.sym_callable(mono, LayoutPart::EvalFun),
+            Some(mono) => self.sym_callable(mono, LayoutPart::EvalFun(kind)),
             None => self.vtable_callable::<vtable::FunctionVTable>(
                 arg.ptr,
                 &[FunctionVTableFields::eval_fun_impl as u64],
             ),
         };
         self.build_call_with_int_ret(eval_fun, &[ret.ptr.into(), arg.ptr.into(), ret.head.into()])
+    }
+
+    pub(super) fn call_eval_fun_fun_wrapper(
+        &mut self,
+        ret: CgReturnValue<'llvm>,
+        arg: CgValue<'comp, 'llvm>,
+    ) -> IntValue<'llvm> {
+        self.call_eval_fun_fun(ret, arg, ParserFunKind::Wrapper)
+    }
+
+    pub(super) fn call_eval_fun_fun_impl(
+        &mut self,
+        ret: CgReturnValue<'llvm>,
+        arg: CgValue<'comp, 'llvm>,
+    ) -> IntValue<'llvm> {
+        self.call_eval_fun_fun(ret, arg, ParserFunKind::Worker)
     }
 
     pub(super) fn call_mask_fun(&mut self, arg: CgValue<'comp, 'llvm>) {
@@ -378,11 +395,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         )
     }
 
-    pub(super) fn call_start_fun(
-        &mut self,
-        ret: CgReturnValue<'llvm>,
-        nom: CgValue<'comp, 'llvm>,
-    ) {
+    pub(super) fn call_start_fun(&mut self, ret: CgReturnValue<'llvm>, nom: CgValue<'comp, 'llvm>) {
         let start = match nom.layout.maybe_mono() {
             Some(mono) => self.sym_callable(mono, LayoutPart::Start),
             None => self.vtable_callable::<vtable::NominalVTable>(
@@ -390,10 +403,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 &[NominalVTableFields::start_impl as u64],
             ),
         };
-        self.build_call_with_int_ret(
-            start,
-            &[ret.ptr.into(), nom.ptr.into(), ret.head.into()],
-        );
+        self.build_call_with_int_ret(start, &[ret.ptr.into(), nom.ptr.into(), ret.head.into()]);
     }
 
     pub(super) fn deref_level(&mut self, ty: TypeId) -> IntValue<'llvm> {
