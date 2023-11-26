@@ -6,7 +6,7 @@ use fxhash::FxHashSet;
 use yaboc_expr::{DataExpr, ExprHead};
 
 use super::*;
-use yaboc_ast::{self as ast, expr::OpWithData, TopLevelStatement};
+use yaboc_ast::{self as ast, TopLevelStatement};
 use yaboc_base::{error::Silencable, error_type};
 
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -21,6 +21,12 @@ pub enum HirConversionError {
         place: Span,
     },
     EofInconsistentConjunction {
+        span: Span,
+    },
+    NakedDef {
+        span: Span,
+    },
+    NonParserDef {
         span: Span,
     },
     Silenced,
@@ -231,24 +237,20 @@ fn arg_def(ast: &ast::ArgDefinition, ctx: &HirConversionCtx, id: ArgDefId) {
 }
 
 fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDefId) {
+    if ast.from.is_none() && ast.argdefs.is_none() {
+        ctx.add_errors(Some(HirConversionError::NakedDef {
+            span: ast.name.span,
+        }));
+    }
+    if ast.from.is_none() && ast.thunky {
+        ctx.add_errors(Some(HirConversionError::NonParserDef {
+            span: ast.name.span,
+        }));
+    }
     let from = TExprId(id.child(ctx.db, PathComponent::Unnamed(0)));
     let to = ExprId(id.child(ctx.db, PathComponent::Unnamed(1)));
     if let Some(f) = &ast.from {
         type_expression(f, ctx, from);
-    } else {
-        let span = ast.name.span;
-        // desugars to [u8]
-        let expr = Expression::new_niladic(OpWithData {
-            inner: ast::TypeAtom::Array(Box::new(ast::TypeArray {
-                expr: Expression::new_niladic(OpWithData {
-                    inner: ast::TypeAtom::Primitive(ast::TypePrimitive::U8),
-                    data: ast.span,
-                }),
-                span,
-            })),
-            data: ast.span,
-        });
-        type_expression(&expr, ctx, from);
     }
     let ret_ty = if let Some(f) = &ast.ret_ty {
         let ret_ty = TExprId(id.child(ctx.db, PathComponent::Unnamed(2)));
@@ -287,7 +289,7 @@ fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDef
         qualifier,
         id,
         thunky,
-        from,
+        from: ast.from.is_some().then_some(from),
         args,
         to,
         ret_ty,

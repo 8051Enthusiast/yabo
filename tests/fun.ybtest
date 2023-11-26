@@ -1,0 +1,13 @@
+====[ source code ]====
+fun inc(n: int) = n + 1
+
+export def *test = {
+  a: ~
+  let return = inc(a)
+}
+
+====[ binary 1 ]====
+01
+
+====[ output 1 ]====
+2

@@ -30,8 +30,6 @@ pub fn parser_args_error(
     let arg_resolver = ArgResolver::new(db);
     let bump = Bump::new();
     let mut tcx = TypingContext::new(db, arg_resolver, loc, &bump, false);
-    let from_expr = pd.from.lookup(db)?;
-    let from_infty = tcx.resolve_type_expr(from_expr.expr.take_ref(), pd.from)?;
     let mut arg_inftys = pd
         .args
         .as_ref()
@@ -47,15 +45,23 @@ pub fn parser_args_error(
         })
         .transpose()?
         .unwrap_or_default();
-    arg_inftys.push(from_infty);
+    if let Some(from) = pd.from {
+        let from_expr = from.lookup(db)?;
+        let from_infty = tcx.resolve_type_expr(from_expr.expr.take_ref(), from)?;
+        arg_inftys.push(from_infty);
+    }
     // i don't think an error can happen here, but i'm not sure
     let (mut args, count) = tcx
         .infctx
         .to_types_with_vars(&arg_inftys, tcx.loc.vars.defs.len() as u32, id.0)
-        .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(pd.from.0)))?;
+        .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(pd.id.0)))?;
     tcx.loc.vars.fill_anon_vars(db, count);
     let ty_args = tcx.loc.vars.var_types(db, id);
-    let from_ty = args.pop().unwrap();
+    let from_ty = if pd.from.is_some() {
+        Some(args.pop().unwrap())
+    } else {
+        None
+    };
     let args = if pd.args.is_some() {
         Some(Arc::new(args))
     } else {
@@ -69,13 +75,13 @@ pub fn parser_args_error(
     let thunk = NominalTypeHead {
         kind,
         def: id.0,
-        parse_arg: Some(from_ty),
+        parse_arg: from_ty,
         fun_args: args.clone().unwrap_or_default(),
         ty_args: Arc::new(ty_args),
     };
     Ok(Signature {
         ty_args: Arc::new(tcx.loc.vars.defs),
-        from: Some(from_ty),
+        from: from_ty,
         args,
         thunk,
         thunky: pd.thunky,

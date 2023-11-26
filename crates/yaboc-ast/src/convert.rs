@@ -581,6 +581,7 @@ astify! {
         Niladic(with_span_data(parserdef_ref)),
         Niladic(with_span_data(type_array)),
         Niladic(with_span_data(type_var)),
+        Niladic(with_span_data(byte_slice)),
     };
 }
 
@@ -732,6 +733,19 @@ fn quali(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Qualifier> {
     } else {
         panic!("unknown qualifier '{str}'");
     }
+}
+
+fn byte_slice(_: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<TypeAtom> {
+    let span = span_from_node(fd, &c.node());
+    let byte_expr = OpWithData {
+        inner: TypeAtom::Primitive(TypePrimitive::U8),
+        data: span,
+    };
+    let array = TypeArray {
+        expr: TypeExpression::new_niladic(byte_expr),
+        span,
+    };
+    Ok(TypeAtom::Array(Box::new(array)))
 }
 
 fn single(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ParserAtom> {

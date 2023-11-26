@@ -217,8 +217,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret
     }
 
+    pub(super) fn eval_fun_fun_val_wrapper(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+    ) -> FunctionValue<'llvm> {
+        let ret = self.ppi_fun_val(layout, LayoutPart::EvalFun(ParserFunKind::Wrapper));
+        ret
+    }
+
     pub(super) fn eval_fun_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
-        let ret = self.ppi_fun_val(layout, LayoutPart::EvalFun);
+        let ret = self.ppi_fun_val(layout, LayoutPart::EvalFun(ParserFunKind::Worker));
         ret
     }
 

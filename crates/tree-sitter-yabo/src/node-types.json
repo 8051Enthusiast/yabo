@@ -645,6 +645,11 @@
     }
   },
   {
+    "type": "byte_slice",
+    "named": true,
+    "fields": {}
+  },
+  {
     "type": "char_literal",
     "named": true,
     "fields": {}
@@ -1286,6 +1291,10 @@
           },
           {
             "type": "binary_type_expression",
+            "named": true
+          },
+          {
+            "type": "byte_slice",
             "named": true
           },
           {

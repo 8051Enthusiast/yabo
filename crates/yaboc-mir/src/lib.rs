@@ -985,7 +985,11 @@ fn mir_pd(db: &dyn Mirs, pd: ParserDefId, requirements: RequirementSet) -> SResu
     let parserdef = pd.lookup(db)?;
     let mut ctx = ConvertCtx::new_parserdef_builder(db, pd, requirements)?;
     ctx.add_sub_value(SubValue::new_val(parserdef.to.0))?;
-    ctx.parserdef(&parserdef)?;
+    if parserdef.from.is_some() {
+        ctx.parserdef_parse(&parserdef)?;
+    } else {
+        ctx.parserdef_eval_fun(&parserdef)?;
+    }
     Ok(ctx.finish_fun())
 }
 

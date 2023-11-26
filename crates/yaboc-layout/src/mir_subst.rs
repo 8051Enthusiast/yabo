@@ -85,7 +85,15 @@ impl<'a> FunctionSubstitute<'a> {
         let MonoLayout::NominalParser(..) = fun.mono_layout().0 else {
             panic!("non-nominal-parser as argument")
         };
-        let lookup_layout = fun.inner().apply_arg(ctx, from)?;
+        let is_parser = matches!(
+            ctx.db.lookup_intern_type(fun.mono_layout().1),
+            Type::ParserArg { .. }
+        );
+        let lookup_layout = if is_parser {
+            fun.inner().apply_arg(ctx, from)?
+        } else {
+            fun.inner().eval_fun(ctx)?
+        };
         let evaluated = ctx.pd_result()[&lookup_layout]
             .val()
             .as_ref()

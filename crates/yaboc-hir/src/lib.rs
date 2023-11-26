@@ -660,7 +660,7 @@ pub struct ParserDef {
     pub id: ParserDefId,
     pub qualifier: Qualifier,
     pub thunky: bool,
-    pub from: TExprId,
+    pub from: Option<TExprId>,
     pub args: Option<Vec<ArgDefId>>,
     pub to: ExprId,
     pub ret_ty: Option<TExprId>,
@@ -668,7 +668,8 @@ pub struct ParserDef {
 
 impl ParserDef {
     pub fn children(&self) -> Vec<DefId> {
-        let mut child = vec![self.from.0, self.to.0];
+        let mut child: Vec<DefId> = self.from.into_iter().map(|x| x.0).collect();
+        child.push(self.to.0);
         if let Some(args) = &self.args {
             child.extend(args.iter().map(|x| x.0));
         }

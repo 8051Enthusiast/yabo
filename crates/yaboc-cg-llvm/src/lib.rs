@@ -255,6 +255,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         CgReturnValue::new(head, undef_ptr)
     }
 
+    fn undef_val(&mut self) -> CgValue<'comp, 'llvm> {
+        let undef_ptr = self.any_ptr().get_undef();
+        let layout = ILayout::bottom(&mut self.layouts.dcx);
+        CgValue::new(layout, undef_ptr)
+    }
+
     fn build_sa_alloca(
         &mut self,
         sa: SizeAlign,
@@ -512,7 +518,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let parserdef = pd.lookup(&self.compiler_database.db).unwrap();
         let layout_sa = val.layout.inner().size_align(self.layouts).unwrap();
         let (from_layout, parser) = val.layout.unapply_nominal(self.layouts);
-        let from_val = self.build_field_gep(parserdef.from.0, val.into(), from_layout);
+        let from_val = self.build_field_gep(parserdef.from.unwrap().0, val.into(), from_layout);
         let arg_ptr = if !args.is_empty() {
             let mut from_sa = from_layout.size_align(self.layouts).unwrap();
             from_sa.align_mask |= layout_sa.align_mask;
@@ -628,6 +634,25 @@ fn parser_values<'comp, 'llvm>(
     let fun = CgMonoValue::new(fun_layout, fun);
     let arg = CgValue::new(arg_layout, from);
     (ret, fun, arg)
+}
+
+fn eval_fun_args(fun: FunctionValue) -> (PointerValue, PointerValue, IntValue) {
+    let [ret, fun, head] = get_fun_args(fun);
+    (
+        ret.into_pointer_value(),
+        fun.into_pointer_value(),
+        head.into_int_value(),
+    )
+}
+
+fn eval_fun_values<'comp, 'llvm>(
+    fun: FunctionValue<'llvm>,
+    fun_layout: IMonoLayout<'comp>,
+) -> (CgReturnValue<'llvm>, CgMonoValue<'comp, 'llvm>) {
+    let (ret, fun, head) = eval_fun_args(fun);
+    let ret = CgReturnValue::new(head, ret);
+    let fun = CgMonoValue::new(fun_layout, fun);
+    (ret, fun)
 }
 
 impl<'llvm, 'comp> CodegenTypeContext for CodeGenCtx<'llvm, 'comp> {
