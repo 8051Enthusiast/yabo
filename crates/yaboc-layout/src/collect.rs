@@ -508,14 +508,12 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         if !*bt {
             req &= !NeededBy::Backtrack;
         }
-        let thunk = fun.inner().eval_fun(self.ctx)?.maybe_mono().unwrap();
-        thunk.deref(self.ctx)?;
         let arg_layout = ILayout::bottom(&mut self.ctx.dcx);
         let fsub = function_substitute(
             yaboc_mir::FunKind::ParserDef(*pd),
             MirKind::Call(req),
             arg_layout,
-            thunk,
+            fun,
             self.ctx,
         )?;
         self.collect_mir(&fsub)?;
