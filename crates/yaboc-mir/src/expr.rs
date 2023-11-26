@@ -609,21 +609,30 @@ impl<'a> ConvertExpr<'a> {
                     .iter()
                     .map(|inner| self.convert_expr_impl(expr_id, expr, *inner, None, fun_dep))
                     .collect::<Result<Vec<_>, _>>()?;
-                // fun_arg_num: 6           (available arguments)
-                // inner_results.len(): 4   (given arguments)
-                // _________________________
-                // | 5 | 4 | 3 | 2 | 1 | 0 | <- index for set_arg functions (which lowers to vtable->set_arg_info[-1 - index])
-                // |[0]|[1]|[2]|[3]|___|___| <- inner_results ([i])
-                // \_______________/\______/
-                //    applied args  unapplied
-                let first_arg_index = fun_arg_num as u64 - 1;
-                self.f.apply_args(
-                    fun_place,
-                    inner_results,
-                    place_ref,
-                    first_arg_index,
-                    self.retreat.error,
-                );
+                if inner_results.is_empty() {
+                    // no arguments given, so the input type must be the same
+                    // as the output type (remember that evaluation is done separately,
+                    // so we are just applying zero arguments here)
+                    // we also need to do this because in the case of a function like `fun test() = 1`,
+                    // the `first_arg_index` below would end up negative which is not valid
+                    self.copy(fun_place, place_ref);
+                } else {
+                    // fun_arg_num: 6           (available arguments)
+                    // inner_results.len(): 4   (given arguments)
+                    // _________________________
+                    // | 5 | 4 | 3 | 2 | 1 | 0 | <- index for set_arg functions (which lowers to vtable->set_arg_info[-1 - index])
+                    // |[0]|[1]|[2]|[3]|___|___| <- inner_results ([i])
+                    // \_______________/\______/
+                    //    applied args  unapplied
+                    let first_arg_index = fun_arg_num as u64 - 1;
+                    self.f.apply_args(
+                        fun_place,
+                        inner_results,
+                        place_ref,
+                        first_arg_index,
+                        self.retreat.error,
+                    );
+                }
                 place_ref
             }
         })
