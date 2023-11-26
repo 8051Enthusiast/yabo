@@ -11,7 +11,7 @@ use mir::{CallMeta, ControlFlow, Place, Strictness};
 use yaboc_absint::AbstractDomain;
 use yaboc_ast::expr::Atom;
 use yaboc_ast::ConstraintAtom;
-use yaboc_base::interner::FieldName;
+use yaboc_base::{dbpanic, interner::FieldName};
 use yaboc_hir::BlockId;
 use yaboc_hir_types::{NominalId, TyHirs, NOBACKTRACK_BIT, VTABLE_BIT};
 use yaboc_layout::{mir_subst::FunctionSubstitute, ILayout, Layout, MonoLayout};
@@ -548,13 +548,21 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             .dcx
             .intern(Layout::Mono(MonoLayout::Tuple(arg_layout), any_ty));
         let fun = self.place_val(fun);
-        let slot = *self
+        let Some(slot) = self
             .cg
             .collected_layouts
             .funcall_slots
             .layout_vtable_offsets
             .get(&(arg_layout_tuple, fun.layout))
-            .expect("apply_args slot not available");
+            .copied()
+        else {
+            dbpanic!(
+                &self.cg.compiler_database.db,
+                "cannot find funcall slot for {} with args {}",
+                &fun.layout,
+                &arg_layout_tuple
+            );
+        };
         let ret_val = self.return_val(ret);
         self.cg.call_fun_create(ret_val, fun, slot);
         for (i, arg) in args.iter().enumerate() {

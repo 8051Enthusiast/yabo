@@ -105,16 +105,13 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         }
     }
 
-    fn register_function(&mut self, mono: IMonoLayout<'a>, ty: &Type) {
-        let needs_eval =
-            if let (MonoLayout::NominalParser(pd, args, _), Type::FunctionArg(_, ty_args)) =
-                (mono.mono_layout().0, ty)
-            {
-                let parserdef = pd.lookup(self.ctx.db).unwrap();
-                ty_args.len() == args.len() && parserdef.from.is_none()
-            } else {
-                false
-            };
+    fn register_function(&mut self, mono: IMonoLayout<'a>) {
+        let needs_eval = if let MonoLayout::NominalParser(pd, args, _) = mono.mono_layout().0 {
+            let parserdef = pd.lookup(self.ctx.db).unwrap();
+            args.len() == parserdef.args.map(|x| x.len()).unwrap_or(0) && parserdef.from.is_none()
+        } else {
+            false
+        };
         if self.functions.insert(mono) {
             if TRACE_COLLECTION {
                 dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
@@ -186,7 +183,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                             dbeprintln!(self.ctx.db, "[collection] registered parser {}", &nbt);
                         }
                     } else {
-                        self.register_function(mono, &ty);
+                        self.register_function(mono);
                     }
                 }
                 MonoLayout::BlockParser(..)
@@ -319,6 +316,14 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             .ctx
             .dcx
             .intern(Layout::Mono(MonoLayout::Tuple(casted_args), any_ty));
+        if TRACE_COLLECTION {
+            dbeprintln!(
+                self.ctx.db,
+                "[collection] registered funcall {}({})",
+                &fun,
+                &arg_tuple
+            );
+        }
         self.funcalls.add_call(arg_tuple, fun);
         Ok(())
     }

@@ -1,7 +1,15 @@
 # Backtracks if the argument is false.
-def ['t] *> assert(big: bit) = {
+fun ['t] *> assert(big: bit) = {
   let _ = big if true
 }
+
+# Fails if the argument is false.
+# Useful for writing if-statement-like expressions.
+# Example:
+# ```
+# fun fib(n: int) = when?(n < 2) then n else (fib(n - 1) + fib(n - 2))
+# ```
+fun when(big: bit) = big if true
 
 # =============== inttypes ===============
 
