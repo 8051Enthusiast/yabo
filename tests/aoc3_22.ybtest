@@ -7,17 +7,11 @@ def *priority = {
   | let return = x if 0x41..0x5a - 0x40 + 26
 }
 
-def *bitset(xs: std.list[*priority], n: int, bits: int): int = {
-  | let _ = n if 0
-    let return = bits
-  | let new_bits = 1 << xs.?this | bits
-    return: bitset(xs.?next, n - 1, new_bits)
-}
+fun bitset(xs: std.list[*priority], n: int, bits: int): int = n if 0 then bits else (
+  bitset(xs.?next, n - 1, bits | 1 << xs.?this)
+)
 
-def *is_nonzero(n: int) = {
-  | let return = n if 0
-  | let return = 1
-}
+fun is_nonzero(n: int) = n if 0 else 1
 
 def *bit_index(n: int) = {
   let n5 = (n | n >> 32) & 0xffffffff
@@ -25,21 +19,21 @@ def *bit_index(n: int) = {
   let n3 = (n4 | n4 >> 8) & 0xff
   let n2 = (n3 | n3 >> 4) & 0xf
   let n1 = (n2 | n2 >> 2) & 0x3
-  bit5: is_nonzero(n & 0x7fffffff00000000)
-  bit4: is_nonzero(n & 0xffff0000)
-  bit3: is_nonzero(n4 & 0xff00)
-  bit2: is_nonzero(n3 & 0xf0)
-  bit1: is_nonzero(n2 & 0xc)
-  bit0: is_nonzero(n1 & 0x2)
+  let bit5 = is_nonzero(n & 0x7fffffff00000000)
+  let bit4 = is_nonzero(n & 0xffff0000)
+  let bit3 = is_nonzero(n4 & 0xff00)
+  let bit2 = is_nonzero(n3 & 0xf0)
+  let bit1 = is_nonzero(n2 & 0xc)
+  let bit0 = is_nonzero(n1 & 0x2)
   let return = bit5 << 5 | bit4 << 4 | bit3 << 3 | bit2 << 2 | bit1 << 1 | bit0
 }
 
 export def *test = {
   line: std.list(priority?)
-  line_len: std.len(line)
-  second_half: std.skip(line, line_len / 2)
-  first_set: bitset(line, line_len / 2, 0)
-  second_set: bitset(second_half, line_len / 2, 0)
+  let line_len = std.len(line)
+  let second_half = std.skip(line, line_len / 2)
+  let first_set = bitset(line, line_len / 2, 0)
+  let second_set = bitset(second_half, line_len / 2, 0)
   let intersection = first_set & second_set
   return: bit_index(intersection)
 }
