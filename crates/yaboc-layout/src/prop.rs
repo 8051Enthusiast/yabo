@@ -43,6 +43,14 @@ pub const TARGET_ZST_SA: SizeAlign = SizeAlign {
 
 pub struct Zst([u8; 0]);
 
+const fn max(a: PSize, b: PSize) -> PSize {
+    if a > b {
+        a
+    } else {
+        b
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug, Hash)]
 pub struct SizeAlign {
     /// total size (not including potential alignment padding at the end)
@@ -64,27 +72,15 @@ impl SizeAlign {
     }
     pub const fn cat(self, other: Self) -> Self {
         let other_start = (other.align_mask + self.size) & !other.align_mask;
-        let align_mask = if self.align_mask > other.align_mask {
-            self.align_mask
-        } else {
-            other.align_mask
-        };
+        let align_mask = max(self.align_mask, other.align_mask);
         SizeAlign {
             size: other_start + other.size,
             align_mask,
         }
     }
     pub const fn union(self, other: Self) -> Self {
-        let size = if self.size > other.size {
-            self.size
-        } else {
-            other.size
-        };
-        let align_mask = if self.align_mask > other.align_mask {
-            self.align_mask
-        } else {
-            other.align_mask
-        };
+        let size = max(self.size, other.size);
+        let align_mask = max(self.align_mask, other.align_mask);
         SizeAlign { size, align_mask }
     }
     pub const fn array(self, len: PSize) -> Self {
