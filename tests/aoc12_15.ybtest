@@ -3,12 +3,12 @@ import std
 fun *ws = /[\n\r \t]*/!
 fun *string = /"(\\"|[^"])*"/
 fun *element: int = {ws, return: value?, ws}
-fun *member(inner: *int): int = {
+fun *member(inner: *'t): 't = {
   ws, string?, ws, /:/, return: inner?
 }
 fun *members(acc: int, red: bit): int = {
-  | first: member({ws, /"red"/, ws, let return = 0})?
-    let now_red = true
+  | member({ws, /"red"/, ws})?
+    let now_red = true, let first = 0
   | first: member(element)?
     let now_red = red
   let sum = acc + first
