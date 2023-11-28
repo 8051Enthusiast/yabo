@@ -650,11 +650,6 @@
     "fields": {}
   },
   {
-    "type": "char_literal",
-    "named": true,
-    "fields": {}
-  },
-  {
     "type": "constraint_apply",
     "named": true,
     "fields": {
@@ -2280,10 +2275,6 @@
     "named": false
   },
   {
-    "type": "'",
-    "named": false
-  },
-  {
     "type": "(",
     "named": false
   },
@@ -2406,6 +2397,10 @@
   {
     "type": "char",
     "named": false
+  },
+  {
+    "type": "char_literal",
+    "named": true
   },
   {
     "type": "comment",

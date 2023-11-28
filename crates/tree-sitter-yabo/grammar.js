@@ -377,13 +377,13 @@ module.exports = grammar({
     retvrn: $ => 'return',
     identifier: $ => /[A-Za-z_][A-Za-z_0-9]*/,
     number_literal: $ => /-?([0-9]+|0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+)/,
-    char_literal: $ => seq(
+    char_literal: $ => token(seq(
       '\'',
       choice(
         token.immediate(/[^\n']/)
       ),
       '\'',
-    ),
+    )),
     bool_literal: $ => choice(
       'true',
       'false',
