@@ -182,28 +182,24 @@ pub struct FileResolver<'collection> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum LibKind {
-    Std,
     Core,
 }
 
 impl LibKind {
     fn name(&self) -> &'static str {
         match self {
-            LibKind::Std => "std",
             LibKind::Core => "core",
         }
     }
 
     fn env_var(&self) -> &'static str {
         match self {
-            LibKind::Std => "YABO_STD_PATH",
             LibKind::Core => "YABO_CORE_PATH",
         }
     }
 
     fn set_db_path(&self, db: &mut (impl ?Sized + Files), path: SResult<FileId>) {
         match self {
-            LibKind::Std => db.set_std(path),
             LibKind::Core => db.set_core(path),
         }
     }
@@ -212,7 +208,6 @@ impl LibKind {
 impl std::fmt::Display for LibKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LibKind::Std => write!(f, "standard"),
             LibKind::Core => write!(f, "core"),
         }
     }
