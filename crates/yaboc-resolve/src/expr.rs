@@ -27,7 +27,7 @@ pub enum ResolvedAtom {
     Single,
     Nil,
     Array,
-    Block(hir::BlockId),
+    Block(hir::BlockId, hir::BlockKind),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -219,7 +219,7 @@ fn resolve_expr_modules(
                     hir::ParserAtom::Nil => ResolvedAtom::Nil,
                     hir::ParserAtom::Array => ResolvedAtom::Array,
                     hir::ParserAtom::Regex(r) => ResolvedAtom::Regex(r),
-                    hir::ParserAtom::Block(b) => ResolvedAtom::Block(b),
+                    hir::ParserAtom::Block(b, kind) => ResolvedAtom::Block(b, kind),
                     hir::ParserAtom::Atom(Atom::Field(f)) => {
                         match new_resolved_atom(expr_id.0, f, *span, true)? {
                             PartialEval::Uneval(k) => k,
@@ -251,6 +251,7 @@ pub fn resolve_expr_error(
     enum Continue {
         Cont(Idx),
         Item(Idx, hir::CoreItem),
+        Block(Idx, hir::BlockId, hir::BlockKind),
         M(Idx, fn(Idx, Idx) -> ExprHead<Resolved, Continue>),
         D(Idx, fn(Idx, [Idx; 2]) -> ExprHead<Resolved, Continue>),
         V(Idx, fn(Idx, &[Idx]) -> ExprHead<Resolved, Continue>),
@@ -263,10 +264,11 @@ pub fn resolve_expr_error(
     let zip_expr = resolved.into_expr().zip(sugar_spans);
     let core_items = db.core_items()?;
     let desugared = ZipExpr::new_from_unfold(Cont(zip_expr.root()), |cont| {
-        let (Cont(id) | Item(id, _) | M(id, _) | D(id, _) | V(id, _)) = cont;
+        let (Cont(id) | Item(id, _) | M(id, _) | D(id, _) | V(id, _) | Block(id, ..)) = cont;
         let (head, span) = zip_expr.index_expr(id);
         let desugared = match (cont, head) {
             (Item(_, item), _) => ExprHead::Niladic(ResolvedAtom::ParserDef(core_items[item])),
+            (Block(_, id, kind), _) => ExprHead::Niladic(ResolvedAtom::Block(id, kind)),
             (M(_, f), ExprHead::Monadic(_, inner)) => f(id, *inner),
             (D(_, f), ExprHead::Dyadic(_, [lhs, rhs])) => f(id, [*lhs, *rhs]),
             (V(_, f), ExprHead::Variadic(_, inner)) => f(id, inner),
@@ -328,6 +330,9 @@ pub fn resolve_expr_error(
                     )
                 }),
             ),
+            (Cont(id), ExprHead::Niladic(ResolvedAtom::Block(b, hir::BlockKind::Fun))) => {
+                ExprHead::Monadic(ValUnOp::EvalFun, Block(id, *b, hir::BlockKind::Fun))
+            }
             (Cont(_), otherwise) => otherwise
                 .clone()
                 .map_op(

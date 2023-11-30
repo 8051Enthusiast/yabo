@@ -279,6 +279,7 @@ impl<'a> ConvertCtx<'a> {
     fn call_expr(&mut self, call_loc: DefId, expr: ExprId, call_info: CallMeta) -> SResult<()> {
         let parser_fun = self.w.val_place_at_def(expr.0).unwrap();
         let parser_ty = self.w.f.fun.place(parser_fun).ty;
+        let arg_place = self.w.f.fun.arg().unwrap();
         let ldt_parser = self.db.least_deref_type(parser_ty)?;
         let ldt_parser_fun = self.w.copy_if_different_levels(
             ldt_parser,
@@ -297,7 +298,7 @@ impl<'a> ConvertCtx<'a> {
         } else {
             None
         };
-        let ty = self.w.f.fun.place(self.w.f.fun.arg()).ty;
+        let ty = self.w.f.fun.place(arg_place).ty;
         let retlen = if call_info.req.contains(NeededBy::Len) {
             if call_info.tail {
                 self.w.f.fun.retlen()
@@ -308,12 +309,12 @@ impl<'a> ConvertCtx<'a> {
             None
         };
         if call_info.tail {
-            if addr != self.w.f.fun.arg() {
-                self.w.copy(addr, self.w.f.fun.arg());
+            if addr != arg_place {
+                self.w.copy(addr, arg_place);
             }
             self.w.f.tail_parse_call(
                 call_info,
-                self.w.f.fun.arg(),
+                arg_place,
                 ldt_parser_fun,
                 ret,
                 self.w.f.fun.retlen(),
@@ -378,7 +379,7 @@ impl<'a> ConvertCtx<'a> {
             .tail_parse_call(info, addr, ldt_parser_fun, ret, retlen);
         Ok(())
     }
-    
+
     pub fn parserdef_eval_fun(&mut self, pd: &hir::ParserDef) -> SResult<()> {
         let expr = self.w.val_place_at_def(pd.to.0).unwrap();
         let ret = self.w.f.fun.ret().unwrap();
@@ -396,9 +397,10 @@ impl<'a> ConvertCtx<'a> {
             None
         };
         let tmp_place = self.w.f.new_stack_place(ldt_ret.unwrap(), PlaceOrigin::Ret);
-        let arg_ty = self.w.f.fun.place(self.w.f.fun.arg()).ty;
+        let arg_place = self.w.f.fun.arg().unwrap();
+        let arg_ty = self.w.f.fun.place(arg_place).ty;
         let arg_tmp_place = self.w.f.new_stack_place(arg_ty, PlaceOrigin::Arg);
-        let retlen = self.req.contains(NeededBy::Len).then(|| self.w.f.fun.arg());
+        let retlen = self.req.contains(NeededBy::Len).then_some(arg_place);
         let fun_place = self.w.f.fun.cap();
         let fun_ty = self.w.f.fun.place(fun_place).ty;
         let inner_fun_place = self.w.f.add_place(PlaceInfo {
@@ -408,7 +410,7 @@ impl<'a> ConvertCtx<'a> {
         });
 
         // the following parse call might mutate the argument, therefore we make a copy
-        self.w.copy(self.w.f.fun.arg(), arg_tmp_place);
+        self.w.copy(arg_place, arg_tmp_place);
 
         let mut first_call_req = self.req | NeededBy::Val;
         let mut retreat = self.w.retreat;
@@ -422,7 +424,7 @@ impl<'a> ConvertCtx<'a> {
                 req: first_call_req,
                 tail: false,
             },
-            self.w.f.fun.arg(),
+            arg_place,
             inner_fun_place,
             Some(tmp_place),
             retlen,
@@ -460,7 +462,7 @@ impl<'a> ConvertCtx<'a> {
                 let parent_choice = self.context_data[&c].parent_choice;
                 match parent_choice {
                     Some(x) => self.w.front_place_at_def(x.0).unwrap(),
-                    None => self.w.f.fun.arg(),
+                    None => self.w.f.fun.arg().unwrap(),
                 }
             }
             ParserPredecessor::After(p) => self.w.back_place_at_def(p).unwrap(),
@@ -532,7 +534,7 @@ impl<'a> ConvertCtx<'a> {
                 let last_place_back = self.context_data[&b.root_context]
                     .ends
                     .map(|x| self.w.back_place_at_def(x.1).unwrap())
-                    .unwrap_or_else(|| self.w.f.fun.arg());
+                    .unwrap_or_else(|| self.w.f.fun.arg().unwrap());
                 let current_place = self.w.back_place_at_def(b.id.0).unwrap();
                 self.w.copy(last_place_back, current_place);
             }
@@ -554,7 +556,7 @@ impl<'a> ConvertCtx<'a> {
         order: &BlockSerialization,
         f: &mut FunctionWriter,
     ) -> SResult<FxHashMap<SubValue, PlaceRef>> {
-        let ambient_type = f.fun.place(f.fun.arg()).ty;
+        let ambient_type = f.fun.arg().map(|pl| f.fun.place(pl).ty);
         let mut places: FxHashMap<SubValue, PlaceRef> = Default::default();
         let root_context = block.root_context.lookup(db)?;
         let returned_vals = if requirements.contains(NeededBy::Val) {
@@ -586,7 +588,7 @@ impl<'a> ConvertCtx<'a> {
                 let place = Place::Stack(f.new_stack_ref(PlaceOrigin::Ambient(block.id, val.id)));
                 let place_ref = f.add_place(PlaceInfo {
                     place,
-                    ty: ambient_type,
+                    ty: ambient_type.unwrap(),
                     remove_bt: false,
                 });
                 places.insert(val, place_ref);
@@ -682,7 +684,9 @@ impl<'a> ConvertCtx<'a> {
             remove_bt: false,
         });
         places.insert(SubValue::new_val(pd.to.0), expr_place_ref);
-        places.insert(SubValue::new_front(id.0), f.fun.arg());
+        if let Some(arg) = f.fun.arg() {
+            places.insert(SubValue::new_front(id.0), arg);
+        }
         if let Some(ret) = f.fun.ret() {
             places.insert(SubValue::new_val(id.0), ret);
         }
@@ -741,7 +745,7 @@ impl<'a> ConvertCtx<'a> {
         let Type::ParserArg { result, arg } = db.lookup_intern_type(ty) else {
             panic!("Expected ParserArg, got {ty:?}")
         };
-        let mut f = FunctionWriter::new(ty, arg, result, requirements | NeededBy::Val);
+        let mut f = FunctionWriter::new(ty, Some(arg), result, requirements | NeededBy::Val);
         let mut top_level_retreat = f.make_top_level_retreat();
         if !requirements.contains(NeededBy::Backtrack) || is_try {
             top_level_retreat.backtrack = top_level_retreat.error;

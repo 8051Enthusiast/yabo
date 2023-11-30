@@ -1,0 +1,36 @@
+====[ source code ]====
+fun fact(n: int) = {:
+  | let return = n if 0 then 1
+  | let return = fact(n - 1) * n
+:}
+
+export
+fun *test = {
+  n: ~
+  let return = fact(n)
+}
+
+
+====[ binary 1 ]====
+00
+
+====[ output 1 ]====
+1
+
+====[ binary 2 ]====
+01
+
+====[ output 2 ]====
+1
+
+====[ binary 3 ]====
+08
+
+====[ output 3 ]====
+40320
+
+====[ binary 4 ]====
+10
+
+====[ output 4 ]====
+20922789888000

@@ -471,6 +471,7 @@ pub struct Function {
     place: Vec<PlaceInfo>,
     stack: Vec<PlaceOrigin>,
     success_returns: Vec<BBRef>,
+    arg: Option<PlaceRef>,
     ret: Option<PlaceRef>,
     retlen: Option<PlaceRef>,
 }
@@ -483,7 +484,6 @@ const fn const_ref(r: u32) -> PlaceRef {
 }
 
 const CAP_REF: PlaceRef = const_ref(1);
-const ARG_REF: PlaceRef = const_ref(2);
 
 impl Function {
     pub fn bb(&self, bb: BBRef) -> &BasicBlock {
@@ -506,8 +506,8 @@ impl Function {
         CAP_REF
     }
 
-    pub fn arg(&self) -> PlaceRef {
-        ARG_REF
+    pub fn arg(&self) -> Option<PlaceRef> {
+        self.arg
     }
 
     pub fn ret(&self) -> Option<PlaceRef> {
@@ -626,12 +626,18 @@ pub struct FunctionWriter {
 }
 
 impl FunctionWriter {
-    pub fn new(fun_ty: TypeId, arg_ty: TypeId, ret_ty: TypeId, req: RequirementSet) -> Self {
+    pub fn new(
+        fun_ty: TypeId,
+        arg_ty: Option<TypeId>,
+        ret_ty: TypeId,
+        req: RequirementSet,
+    ) -> Self {
         let fun = Function {
             bb: vec![Default::default()],
             place: Default::default(),
             stack: Default::default(),
             success_returns: Default::default(),
+            arg: None,
             ret: None,
             retlen: None,
         };
@@ -645,11 +651,14 @@ impl FunctionWriter {
             ty: fun_ty,
             remove_bt: false,
         });
-        builder.add_place(PlaceInfo {
-            place: Place::Arg,
-            ty: arg_ty,
-            remove_bt: false,
-        });
+        if let Some(arg_ty) = arg_ty {
+            let arg = builder.add_place(PlaceInfo {
+                place: Place::Arg,
+                ty: arg_ty,
+                remove_bt: false,
+            });
+            builder.fun.arg = Some(arg);
+        }
         if req.contains(NeededBy::Val) {
             let ret = builder.add_place(PlaceInfo {
                 place: Place::Return,
@@ -661,7 +670,7 @@ impl FunctionWriter {
         if req.contains(NeededBy::Len) {
             let retlen = builder.add_place(PlaceInfo {
                 place: Place::ReturnLen,
-                ty: arg_ty,
+                ty: arg_ty.unwrap(),
                 remove_bt: false,
             });
             builder.fun.retlen = Some(retlen);
@@ -675,11 +684,16 @@ impl FunctionWriter {
             .take_ref()
             .iter_parts()
             .find_map(|(x, ty)| match &x {
-                ExprHead::Niladic(ResolvedAtom::Block(b)) if *b == id => Some(*ty),
+                ExprHead::Niladic(ResolvedAtom::Block(b, _)) if *b == id => Some(*ty),
                 _ => None,
             })
             .expect("could not find block within enclosing expression");
-        let Type::ParserArg { result, arg } = db.lookup_intern_type(block_ty) else {
+        let ty = db.lookup_intern_type(block_ty);
+        let (result, arg) = if let Type::ParserArg { result, arg } = ty {
+            (result, Some(arg))
+        } else if let Type::FunctionArg(result, _) = ty {
+            (result, None)
+        } else {
             dbpanic!(db, "should have been a parser type, was {}", &block_ty)
         };
         let f = FunctionWriter::new(block_ty, arg, result, req);
@@ -688,13 +702,17 @@ impl FunctionWriter {
 
     pub fn new_pd(db: &dyn Mirs, id: ParserDefId, req: RequirementSet) -> SResult<Self> {
         let sig = db.parser_args(id)?;
-        let from = sig.from.unwrap_or_else(|| db.intern_type(Type::Any));
+        let from = sig.from;
         let thunk = db.intern_type(Type::Nominal(sig.thunk));
         let ret_ty = db.parser_returns(id)?.deref;
-        let fun_ty = db.intern_type(Type::ParserArg {
-            result: thunk,
-            arg: from,
-        });
+        let fun_ty = if let Some(from) = from {
+            db.intern_type(Type::ParserArg {
+                result: thunk,
+                arg: from,
+            })
+        } else {
+            db.intern_type(Type::FunctionArg(thunk, Default::default()))
+        };
         let arg_ty = from;
         let f = FunctionWriter::new(fun_ty, arg_ty, ret_ty, req);
         Ok(f)

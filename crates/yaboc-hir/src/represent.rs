@@ -74,7 +74,7 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for ParserAtom {
             ParserAtom::Nil => dbwrite!(f, db, "+"),
             ParserAtom::Array => dbwrite!(f, db, "[]"),
             ParserAtom::Regex(r) => dbwrite!(f, db, "/{}/", r),
-            ParserAtom::Block(id) => dbwrite!(f, db, "block({})", &id.0.unwrap_unnamed_id(db)),
+            ParserAtom::Block(id, _) => dbwrite!(f, db, "block({})", &id.0.unwrap_unnamed_id(db)),
         }
     }
 }

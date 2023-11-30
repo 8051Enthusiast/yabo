@@ -33,6 +33,8 @@ module.exports = grammar({
     $._dedent,
     $.block_open,
     $.block_close,
+    $.parser_block_open,
+    $.parser_block_close,
     $._lexer_error,
     // unused
     $._notoken,
@@ -94,14 +96,23 @@ module.exports = grammar({
       field('op', '*'),
       field('right', $._type_expression)
     )),
-    parser_block: $ => seq(
+    block: $ => seq(
       $.block_open,
       optional(seq(
         $._indent,
         field('content', $.parser_sequence),
         $._dedent,
       )),
-      $.block_close,
+      $.block_close
+    ),
+    parser_block: $ => seq(
+      $.parser_block_open,
+      optional(seq(
+        $._indent,
+        field('content', $.parser_sequence),
+        $._dedent,
+      )),
+      $.parser_block_close,
     ),
     parser_sequence: $ => seq(
       $._parser_sequence_element,
@@ -184,6 +195,7 @@ module.exports = grammar({
       $.bt_mark,
       $.constraint_apply,
       $.parser_block,
+      $.block,
       $.single,
       $.nil,
       seq('(', $._expression, ')'),

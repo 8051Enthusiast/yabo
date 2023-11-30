@@ -10,8 +10,8 @@ use yaboc_layout::{prop::SizeAlign, ILayout, IMonoLayout, MonoLayout, TailInfo};
 use yaboc_types::PrimitiveType;
 
 use crate::{
-    get_fun_args, parser_values,
-    val::{CgMonoValue, CgReturnValue, CgValue}, eval_fun_values,
+    eval_fun_values, get_fun_args, parser_values,
+    val::{CgMonoValue, CgReturnValue, CgValue},
 };
 
 use super::CodeGenCtx;
@@ -295,7 +295,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for ValThunk<'comp> {
 }
 
 pub struct BlockThunk<'comp> {
-    pub from: ILayout<'comp>,
+    pub from: Option<ILayout<'comp>>,
     pub fun: IMonoLayout<'comp>,
     pub result: IMonoLayout<'comp>,
     pub req: RequirementSet,
@@ -307,7 +307,11 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for BlockThunk<'comp> {
     }
 
     fn function(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
-        let f = cg.parser_fun_val_tail(self.fun, self.from, self.req);
+        let f = if let Some(from) = self.from {
+            cg.parser_fun_val_tail(self.fun, from, self.req)
+        } else {
+            cg.eval_fun_fun_val_wrapper(self.fun)
+        };
         cg.add_entry_block(f);
         f
     }
@@ -333,10 +337,15 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for BlockThunk<'comp> {
         let fun = cg.current_function();
         let current_bb = cg.llvm.append_basic_block(fun, "tail");
         cg.builder.position_at_end(current_bb);
-        let (ret_val, fun_val, arg_val) = parser_values(fun, self.fun, self.from);
-        let ret_val = ret_val.with_ptr(return_ptr);
-
-        let ret = cg.call_parser_fun_impl(ret_val, fun_val, arg_val, self.req, true);
+        let ret = if let Some(from) = self.from {
+            let (ret_val, fun_val, arg_val) = parser_values(fun, self.fun, from);
+            let ret_val = ret_val.with_ptr(return_ptr);
+            cg.call_parser_fun_impl(ret_val, fun_val, arg_val, self.req, true)
+        } else {
+            let (ret_val, fun_val) = eval_fun_values(fun, self.fun);
+            let ret_val = ret_val.with_ptr(return_ptr);
+            cg.call_eval_fun_fun_impl(ret_val, fun_val.into())
+        };
         cg.builder.build_return(Some(&ret));
         if let Some(bb) = previous_bb {
             cg.builder.position_at_end(bb);

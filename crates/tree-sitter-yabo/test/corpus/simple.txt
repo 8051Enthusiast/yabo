@@ -16,7 +16,7 @@ def [u8] *> complex = {
         name: (identifier)))
     name: (identifier)
     to: (parser_block
-      (block_open)
+      (parser_block_open)
       content: (parser_sequence
         (parse_statement
 	       name: (identifier)
@@ -24,7 +24,7 @@ def [u8] *> complex = {
         (parse_statement
 	       name: (identifier)
 	       parser: (identifier)))
-      (block_close))))
+      (parser_block_close))))
 
 =============
 Choice Parser
@@ -45,7 +45,7 @@ def [u8] *> choice = {
         name: (identifier)))
     name: (identifier)
     to: (parser_block
-      (block_open)
+      (parser_block_open)
       content: (parser_sequence
         (parser_choice
           content: (parser_sequence
@@ -60,7 +60,7 @@ def [u8] *> choice = {
             (parse_statement
                 name: (retvrn)
                 parser: (identifier)))))
-        (block_close))))
+        (parser_block_close))))
 
 
 =============
@@ -81,7 +81,7 @@ def [u8] *> seven = {
         name: (identifier)))
     name: (identifier)
     to: (parser_block
-      (block_open)
+      (parser_block_open)
       content: (parser_sequence
         (parse_statement
   	      name: (identifier)
@@ -91,7 +91,7 @@ def [u8] *> seven = {
         	ty: (parserdef_ref
             name: (identifier))
         	expr: (number_literal)))
-      (block_close))))
+      (parser_block_close))))
 
 =============
 Nested Blocks
@@ -116,7 +116,7 @@ def [u8] *> nested = {
         (identifier)))
     (identifier)
     (parser_block
-      (block_open)
+      (parser_block_open)
       (parser_sequence
         (parse_statement
           (identifier)
@@ -124,7 +124,7 @@ def [u8] *> nested = {
         (parse_statement
           (retvrn)
           (parser_block
-            (block_open)
+            (parser_block_open)
             (parser_sequence
               (parser_choice
                 (parser_sequence
@@ -146,8 +146,8 @@ def [u8] *> nested = {
                 (parserdef_ref
                   (identifier))
                 (identifier)))
-              (block_close))))
-        (block_close))))
+              (parser_block_close))))
+        (parser_block_close))))
 
 =============
 Three Choices
@@ -169,7 +169,7 @@ def [u8] *> three = {
         (identifier)))
     (identifier)
     (parser_block
-      (block_open)
+      (parser_block_open)
       (parser_sequence
         (parser_choice
           (parser_sequence
@@ -192,7 +192,7 @@ def [u8] *> three = {
             (parse_statement
               (retvrn)
               (identifier)))))
-        (block_close))))
+        (parser_block_close))))
 
 
 =======
@@ -216,7 +216,7 @@ def [u8] *> test = {
         (identifier)))
     (identifier)
     (parser_block
-      (block_open)
+      (parser_block_open)
       (comment)
       (parser_sequence
         (parse_statement
@@ -224,7 +224,7 @@ def [u8] *> test = {
           (bt_mark
             (identifier))))
       (comment)
-      (block_close))))
+      (parser_block_close))))
 
 
 ====

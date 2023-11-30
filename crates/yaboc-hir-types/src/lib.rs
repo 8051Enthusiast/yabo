@@ -10,7 +10,7 @@ use std::{collections::BTreeMap, fmt::Debug, hash::Hash, rc::Rc, sync::Arc};
 use bumpalo::Bump;
 use fxhash::FxHashMap;
 
-use hir::HirConstraint;
+use hir::{BlockKind, HirConstraint};
 use resolve::expr::Resolved;
 use yaboc_ast::expr::{self, Atom, TypeBinOp, TypeUnOp};
 use yaboc_ast::{ArrayKind, ConstraintAtom};
@@ -350,19 +350,29 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         })
     }
 
-    fn infer_block(&mut self, b: hir::BlockId) -> Result<InfTypeId<'intern>, TypeError> {
+    fn infer_block(
+        &mut self,
+        b: hir::BlockId,
+        kind: BlockKind,
+    ) -> Result<InfTypeId<'intern>, TypeError> {
         let block = b.lookup(self.db)?;
         Ok(if block.returns {
-            let from = self.infctx.var();
             let to_id = block.root_context.0.child_field(self.db, FieldName::Return);
-            let to = self.inftypes[&to_id];
-            self.infctx.parser(to, from)
+            let result = self.inftypes[&to_id];
+            match kind {
+                BlockKind::Parser => {
+                    let arg = self.infctx.var();
+                    self.infctx.parser(result, arg)
+                }
+                BlockKind::Fun => self.infctx.zero_arg_function(result),
+            }
         } else {
             let pd = self.db.hir_parent_parserdef(b.0)?;
             let ty_vars = (0..self.loc.vars.defs.len() as u32)
                 .map(|i| self.infctx.intern_infty(InferenceType::TypeVarRef(pd.0, i)))
                 .collect::<Vec<_>>();
-            self.infctx.block_call(b.0, &ty_vars)?
+            self.infctx
+                .block(b.0, kind == BlockKind::Parser, &ty_vars)?
         })
     }
     pub fn val_expression_type(
@@ -436,7 +446,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         ResolvedAtom::Nil => self.infctx.nil(),
                         ResolvedAtom::Array => self.infctx.array_parser(),
                         ResolvedAtom::Regex(..) => self.infctx.regex(),
-                        ResolvedAtom::Block(b) => self.infer_block(*b)?,
+                        ResolvedAtom::Block(b, kind) => self.infer_block(*b, *kind)?,
                         ResolvedAtom::ParserDef(pd) => self.infctx.parserdef(pd.0)?,
                         ResolvedAtom::Val(v) | ResolvedAtom::Captured(v) => {
                             self.infctx.lookup(*v)?
@@ -608,14 +618,18 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
             .zip(inf_expression.as_ref())
             .iter_parts()
         {
-            let ExprHead::Niladic(ResolvedAtom::Block(block_id)) = &part else {
+            let ExprHead::Niladic(ResolvedAtom::Block(block_id, _)) = &part else {
                 continue;
             };
-            let spanned = |e| SpannedTypeError::new(e, IndirectSpan::new(expr.id.0, *span));
-            let ambient = self.infctx.reuse_parser_arg(*ty).map_err(spanned)?;
             let block = block_id.lookup(self.db)?;
+            let spanned = |e| SpannedTypeError::new(e, IndirectSpan::new(expr.id.0, *span));
+            let ambient = if block.kind == BlockKind::Parser {
+                Some(self.infctx.reuse_parser_arg(*ty).map_err(spanned)?)
+            } else {
+                None
+            };
             if block.returns || self.recurse_blocks {
-                self.with_ambient_type(Some(ambient), |ctx| ctx.type_block(&block))?;
+                self.with_ambient_type(ambient, |ctx| ctx.type_block(&block))?;
             }
         }
         Ok(ret)

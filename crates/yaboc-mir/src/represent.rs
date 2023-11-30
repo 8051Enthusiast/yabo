@@ -1,7 +1,8 @@
 use std::{fmt::Display, io::Write};
 
 use yaboc_base::{databased_display::DatabasedDisplay, dbformat, dbwrite};
-use yaboc_dependents::RequirementSet;
+use yaboc_dependents::{RequirementSet, NeededBy};
+use yaboc_hir::HirIdWrapper;
 
 use crate::{strictness::Strictness, CallMeta, ControlFlow, FunKind, InsRef, MirKind, ZstVal};
 
@@ -325,20 +326,31 @@ pub fn print_all_mir<DB: Mirs, W: Write>(
             "---\nmir parserdef {}:\n",
             &db.def_name(pd.0).unwrap()
         )?;
+        let Ok(parserdef) = pd.lookup(db) else {
+            continue;
+        };
+        let req = if parserdef.from.is_some() {
+            RequirementSet::all()
+        } else {
+            RequirementSet::all() & !NeededBy::Len
+        };
         let fun = db
-            .mir(FunKind::ParserDef(pd), MirKind::Call(RequirementSet::all()))
+            .mir(FunKind::ParserDef(pd), MirKind::Call(req))
             .map_err(convert_error_ignore)?;
         dbwrite!(w, db, "{}", &fun)?;
         if include_strictness {
             writeln!(w, "--strictness:")?;
             let strictness = db
-                .strictness(FunKind::ParserDef(pd), MirKind::Call(RequirementSet::all()))
+                .strictness(FunKind::ParserDef(pd), MirKind::Call(req))
                 .map_err(convert_error_ignore)?;
             for ((place, _), strictness) in fun.iter_places().zip(strictness.iter()) {
                 dbwrite!(w, &(&fun, db), "{}: {}\n", &place, &strictness)?;
             }
         }
 
+        if parserdef.from.is_none() {
+            continue;
+        }
         dbwrite!(
             w,
             db,

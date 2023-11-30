@@ -99,7 +99,7 @@ fn ambient_type_impl(db: &dyn TyHirs, loc: hir::ParseId) -> Result<TypeId, TypeE
         .take_ref()
         .iter_parts()
         .find_map(|(head, (_, ty))| match head {
-            ExprHead::Niladic(ResolvedAtom::Block(b)) if b == block.id => Some(*ty),
+            ExprHead::Niladic(ResolvedAtom::Block(b, _)) if b == block.id => Some(*ty),
             _ => None,
         })
         .ok_or_else(SilencedError::new)?;

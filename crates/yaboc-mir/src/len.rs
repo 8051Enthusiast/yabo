@@ -411,7 +411,7 @@ impl<'a> LenMirCtx<'a> {
         let Type::ParserArg { result, arg } = db.lookup_intern_type(ty) else {
             panic!("Expected ParserArg, got {ty:?}")
         };
-        let mut f = FunctionWriter::new(ty, arg, result, NeededBy::Val.into());
+        let mut f = FunctionWriter::new(ty, Some(arg), result, NeededBy::Val.into());
         let top_level_retreat = f.make_top_level_retreat();
         let inner_fun_place = f.add_place(PlaceInfo {
             place: Place::Front(f.fun.cap()),

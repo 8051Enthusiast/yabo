@@ -74,6 +74,17 @@ fn conversion_report(error: HirConversionError) -> Option<Report> {
                 Label::new(span).with_message("a definition must either be declared with `fun` or be a parser"),
             ),
         ),
+        HirConversionError::ParseInNonParserBlock { span } => Some(
+            Report::new(
+                DiagnosticKind::Error,
+                span.file,
+                "Parse in non-parser block",
+            )
+            .with_code(206)
+            .with_label(
+                Label::new(span).with_message("only parser blocks (`{...}`) can contain parse statements"),
+            ),
+        ),
         HirConversionError::Silenced => None,
     }
 }
