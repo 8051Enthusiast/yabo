@@ -809,6 +809,10 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
             partial,
         })
     }
+    pub fn zero_arg_function(&mut self, result: InfTypeId<'intern>) -> InfTypeId<'intern> {
+        let args = self.slice_interner.intern_slice(&[]);
+        self.function(result, args, Application::Full)
+    }
     pub fn array(&mut self, kind: ArrayKind, inner: InfTypeId<'intern>) -> InfTypeId<'intern> {
         self.intern_infty(InferenceType::Loop(kind, inner))
     }
@@ -828,22 +832,27 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         let parser = self.parser(result, arg);
         self.constrain(ty, parser)
     }
-    pub fn block_call(
+    pub fn block(
         &mut self,
         id: DefId,
+        is_parser: bool,
         ty_args: &[InfTypeId<'intern>],
     ) -> Result<InfTypeId<'intern>, TypeError> {
-        let arg = self.var();
+        let arg = is_parser.then(|| self.var());
         let nominal = NominalInfHead {
             kind: NominalKind::Block,
             def: id,
-            parse_arg: Some(arg),
+            parse_arg: arg,
             fun_args: self.slice_interner.intern_slice(&[]),
             ty_args: self.slice_interner.intern_slice(ty_args),
             internal: true,
         };
         let result = self.intern_infty(InferenceType::Nominal(nominal));
-        Ok(self.parser(result, arg))
+        if let Some(arg) = arg {
+            Ok(self.parser(result, arg))
+        } else {
+            Ok(self.zero_arg_function(result))
+        }
     }
     pub fn one_of(
         &mut self,

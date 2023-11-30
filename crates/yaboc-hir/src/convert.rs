@@ -29,6 +29,9 @@ pub enum HirConversionError {
     NonParserDef {
         span: Span,
     },
+    ParseInNonParserBlock {
+        span: Span,
+    },
     Silenced,
 }
 
@@ -126,7 +129,12 @@ fn val_expression(
                 ast::ParserAtom::Block(b) => {
                     let nid = BlockId(new_id());
                     block(b, ctx, nid, parent_context, id);
-                    ParserAtom::Block(nid)
+                    let kind = if b.is_parser {
+                        BlockKind::Parser
+                    } else {
+                        BlockKind::Fun
+                    };
+                    ParserAtom::Block(nid, kind)
                 }
             }),
             ExpressionHead::Monadic(m) => ExprHead::Monadic(
@@ -314,9 +322,14 @@ fn block(
         parent_context: None,
         block_id: id,
     };
+    let kind = if ast.is_parser {
+        BlockKind::Parser
+    } else {
+        BlockKind::Fun
+    };
     let returns = match &ast.content {
         Some(c) => {
-            let (vars, _) = struct_context(c, ctx, context_id, &parents);
+            let (vars, _) = struct_context(c, ctx, context_id, &parents, kind);
             vars.get(FieldName::Return).is_some()
         }
         None => {
@@ -330,6 +343,7 @@ fn block(
         super_context,
         enclosing_expr,
         returns,
+        kind,
     };
     ctx.insert(id.0, HirNode::Block(block), vec![ast.span]);
 }
@@ -340,6 +354,7 @@ fn struct_choice(
     id: ChoiceId,
     pred: ParserPredecessor,
     parents: &ParentInfo,
+    kind: BlockKind,
 ) -> (VariableSet<Vec<(u32, DefId, Span)>>, bool) {
     let children = &ast.content;
     let parents = ParentInfo {
@@ -353,7 +368,8 @@ fn struct_choice(
     for (idx, child) in children.iter().enumerate() {
         let subcontext_id = ContextId(id.child(ctx.db, PathComponent::Unnamed(idx as u32)));
         subcontexts.push(subcontext_id);
-        let (new_vars, non_zero_len_context) = struct_context(child, ctx, subcontext_id, &parents);
+        let (new_vars, non_zero_len_context) =
+            struct_context(child, ctx, subcontext_id, &parents, kind);
         has_non_zero_len |= non_zero_len_context;
         varset = varset
             .map(|x: VariableSet<()>| x.merge_sum(&new_vars))
@@ -411,6 +427,7 @@ fn struct_context(
     ctx: &HirConversionCtx,
     id: ContextId,
     parents: &ParentInfo,
+    kind: BlockKind,
 ) -> (VariableSet<(DefId, Span)>, bool) {
     let children = &ast.content;
     let mut children_id = BTreeSet::new();
@@ -456,7 +473,8 @@ fn struct_context(
         let new_set = match child {
             ast::ParserSequenceElement::Choice(c) => {
                 let sub_id = ChoiceId(new_id(None));
-                let (choice_indirect, nonzero_len) = struct_choice(c, ctx, sub_id, pred, &parents);
+                let (choice_indirect, nonzero_len) =
+                    struct_choice(c, ctx, sub_id, pred, &parents, kind);
                 if nonzero_len {
                     update_pred(&mut pred, sub_id.0);
                 }
@@ -466,15 +484,22 @@ fn struct_context(
                     (chin_id.0, b[0].2)
                 })
             }
-            ast::ParserSequenceElement::Statement(x) => {
-                let sub_id = new_id(x.field());
-                match x.as_ref() {
-                    ast::Statement::Parse(p) => {
-                        parse_statement(p, ctx, ParseId(sub_id), update_pred(&mut pred, sub_id), id)
+            ast::ParserSequenceElement::Statement(x) => match x.as_ref() {
+                ast::Statement::Parse(p) => {
+                    if kind == BlockKind::Fun {
+                        ctx.add_errors(Some(HirConversionError::ParseInNonParserBlock {
+                            span: p.span,
+                        }));
+                        continue;
                     }
-                    ast::Statement::Let(l) => let_statement(l, ctx, LetId(sub_id), id),
+                    let sub_id = new_id(x.field());
+                    parse_statement(p, ctx, ParseId(sub_id), update_pred(&mut pred, sub_id), id)
                 }
-            }
+                ast::Statement::Let(l) => {
+                    let sub_id = new_id(x.field());
+                    let_statement(l, ctx, LetId(sub_id), id)
+                }
+            },
         };
         let (result_set, duplicate) = varset.merge_product(&new_set);
         duplicate_field.extend(duplicate.into_iter().map(|(name, duplicate, first)| {

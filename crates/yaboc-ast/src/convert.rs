@@ -493,8 +493,44 @@ astify! {
     };
 }
 
+struct ParserBlock {
+    content: Option<ParserSequence>,
+    span: Span,
+}
+
+impl From<ParserBlock> for ParserAtom {
+    fn from(value: ParserBlock) -> Self {
+        ParserAtom::Block(Block {
+            content: value.content,
+            is_parser: true,
+            span: value.span,
+        })
+    }
+}
+
 astify! {
-    struct parser_block = Block {
+    struct parser_block = ParserBlock {
+        content: parser_sequence[?],
+    };
+}
+
+struct FBlock {
+    content: Option<ParserSequence>,
+    span: Span,
+}
+
+impl From<FBlock> for ParserAtom {
+    fn from(value: FBlock) -> Self {
+        ParserAtom::Block(Block {
+            content: value.content,
+            is_parser: false,
+            span: value.span,
+        })
+    }
+}
+
+astify! {
+    struct block = FBlock {
         content: parser_sequence[?],
     };
 }
@@ -553,6 +589,7 @@ astify! {
         Monadic(val_dot),
         Monadic(bt_mark),
         Niladic(with_span_data(parser_block)),
+        Niladic(with_span_data(block)),
         Niladic(with_span_data(single)),
         Niladic(with_span_data(nil)),
         Niladic(with_span_data(array)),

@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use super::Constraints;
 use fxhash::FxHashMap;
-use hir::HirIdWrapper;
+use hir::{BlockKind, HirIdWrapper};
 use yaboc_base::{
     error::{SResult, Silencable, SilencedError},
-    interner::DefId,
+    interner::{DefId, FieldName},
 };
 use yaboc_dependents::{BlockSerialization, SubValue, SubValueKind};
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
@@ -102,8 +102,18 @@ impl<'a> SizeTermBuilder<'a> {
                 (hir::HirNode::Block(_), SubValueKind::Front) => {
                     self.push_term(Term::Const(0), true, loc)
                 }
-                (hir::HirNode::Block(_), SubValueKind::Val) => {
-                    self.push_term(Term::Opaque, true, loc)
+                (hir::HirNode::Block(b), SubValueKind::Val) => {
+                    let val = if b.returns {
+                        let ctx = b.root_context.lookup(self.db)?;
+                        let ret = *ctx.vars.get(FieldName::Return).unwrap().inner();
+                        self.vals[&SubValue::new_val(ret)]
+                    } else {
+                        self.push_term(Term::Opaque, true, loc)
+                    };
+                    if b.kind == BlockKind::Fun {
+                        whole_result = Some(val);
+                    }
+                    val
                 }
                 (hir::HirNode::Block(b), SubValueKind::Back) => {
                     let x = if let Some((_, last)) = b.root_context.lookup(self.db)?.endpoints {
@@ -186,7 +196,7 @@ impl<'a> SizeTermBuilder<'a> {
                 ResolvedAtom::Single => Ok(self.push_term(Term::Const(1), false, src)),
                 ResolvedAtom::Nil => Ok(self.push_term(Term::Const(0), false, src)),
                 ResolvedAtom::Array => Ok(self.push_term(Term::Arr, false, src)),
-                ResolvedAtom::Block(bid) => self.create_block(bid),
+                ResolvedAtom::Block(bid, _) => self.create_block(bid),
             },
             ExprHead::Monadic(m, inner) => match m {
                 ValUnOp::Neg => Ok(self.push_term(Term::Neg(inner), true, src)),

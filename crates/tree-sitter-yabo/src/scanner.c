@@ -11,6 +11,8 @@ enum TokenType {
     DEDENT,
     BLOCK_OPEN,
     BLOCK_CLOSE,
+    PARSER_BLOCK_OPEN,
+    PARSER_BLOCK_CLOSE,
     LEXER_ERROR,
     NOTOKEN,
 };
@@ -231,18 +233,15 @@ bool tree_sitter_yabo_external_scanner_scan(void *payload, TSLexer *lexer, const
         }
         skip(lexer);
     }
-    if ((valid_symbols[BLOCK_CLOSE] || valid_symbols[DEDENT]) && lexer->lookahead == '}') {
-        State state = pop_state(scanner);
-        if (state == NEW_INDENT) {
-            lexer->result_symbol = DEDENT;
-            return true;
-        }
-        lexer->advance(lexer, false);
-        lexer->result_symbol = BLOCK_CLOSE;
-        return true;
-    }
+    bool whitespace_sensitive = valid_symbols[INDENT] | valid_symbols[DEDENT] | valid_symbols[NEWLINE];
+    // we are now beyond the whitespace and save the current indent level in case we need to
+    // look ahead
+    uint32_t new_indent;
+    int32_t lookahead = lexer->lookahead;
+    lexer->mark_end(lexer);
+
     // we ignore comments
-    if (lexer->lookahead == '#') {
+    if (lookahead == '#') {
         // we can directly return that we have not recognized a token
         // even when we have seen newlines, because there will always
         // be a newline token after a comment and the parser will
@@ -250,31 +249,59 @@ bool tree_sitter_yabo_external_scanner_scan(void *payload, TSLexer *lexer, const
         // ignored as it is in `extras`
         return false;
     }
+    if (whitespace_sensitive || has_newline) {
+        new_indent = lexer->get_column(lexer);
+    }
+    bool is_closing = false;
+    if ((valid_symbols[PARSER_BLOCK_CLOSE] | valid_symbols[DEDENT]) && lookahead == '}') {
+        is_closing = true;
+        lexer->result_symbol = PARSER_BLOCK_CLOSE;
+    }
+    if ((valid_symbols[BLOCK_CLOSE] | valid_symbols[DEDENT]) && lookahead == ':') {
+        lexer->advance(lexer, false);
+        if (lexer->lookahead == '}') {
+            is_closing = true;
+            lexer->result_symbol = BLOCK_CLOSE;
+        }
+    }
+    if (is_closing) {
+        State state = pop_state(scanner);
+        if (state == NEW_INDENT) {
+            lexer->result_symbol = DEDENT;
+            return true;
+        }
+        lexer->advance(lexer, false);
+        lexer->mark_end(lexer);
+        return true;
+    }
     // an opening brace might still indicate indent/dedent or might be after a newline
     // so we need to emit our indent/dedent/newline tokens first and if we are finished
     // with that, we can advance the lexer
-    if (valid_symbols[INDENT] || valid_symbols[DEDENT] || valid_symbols[NEWLINE]) {
-        uint32_t new_indent = lexer->get_column(lexer);
-        if (valid_symbols[INDENT] || has_newline) {
-            lexer->result_symbol = set_indent(scanner, new_indent);
-            if (lexer->result_symbol == INDENT && valid_symbols[INDENT]) {
-                return true;
-            }
-            if (lexer->result_symbol == NEWLINE && valid_symbols[NEWLINE]) {
-                return true;
-            }
-            if (lexer->result_symbol == DEDENT) {
-                return true;
-            }
-            if (lexer->result_symbol == LEXER_ERROR) {
-                return true;
-            }
+    if (whitespace_sensitive || has_newline) {
+        lexer->result_symbol = set_indent(scanner, new_indent);
+        if (lexer->result_symbol == INDENT && valid_symbols[INDENT]) {
+            return true;
+        }
+        if (lexer->result_symbol == NEWLINE && valid_symbols[NEWLINE]) {
+            return true;
+        }
+        if (lexer->result_symbol == DEDENT) {
+            return true;
+        }
+        if (lexer->result_symbol == LEXER_ERROR) {
+            return true;
         }
     }
-    if (valid_symbols[BLOCK_OPEN] && lexer->lookahead == '{') {
+    if ((valid_symbols[PARSER_BLOCK_OPEN] | valid_symbols[BLOCK_OPEN]) && lookahead == '{') {
         add_simple_state(scanner, BRACE);
         lexer->advance(lexer, false);
-        lexer->result_symbol = BLOCK_OPEN;
+        if (lexer->lookahead == ':') {
+            lexer->advance(lexer, false);
+            lexer->result_symbol = BLOCK_OPEN;
+        } else {
+            lexer->result_symbol = PARSER_BLOCK_OPEN;
+        }
+        lexer->mark_end(lexer);
         return true;
     }
     return false;

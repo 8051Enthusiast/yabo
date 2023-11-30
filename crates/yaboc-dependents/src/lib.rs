@@ -8,6 +8,7 @@ use std::{
 };
 
 use enumflags2::{bitflags, BitFlags};
+use hir::{Block, BlockKind};
 use yaboc_base::{
     dbpanic,
     error::{SResult, SilencedError},
@@ -120,7 +121,7 @@ pub fn add_term_val_refs<DB: Dependents + ?Sized>(
     mut add_val: impl FnMut(DefId),
 ) {
     match term {
-        ExprHead::Niladic(ResolvedAtom::Block(b)) => db
+        ExprHead::Niladic(ResolvedAtom::Block(b, _)) => db
             .captures(*b)
             .iter()
             .copied()
@@ -331,6 +332,10 @@ fn node_subvalue_kinds(node: &hir::HirNode) -> &'static [SubValueKind] {
         hir::HirNode::Choice(c) if c.endpoints.is_none() => {
             &[SubValueKind::Val, SubValueKind::Bt][..]
         }
+        hir::HirNode::Block(Block {
+            kind: BlockKind::Fun,
+            ..
+        }) => &[SubValueKind::Val, SubValueKind::Bt][..],
         hir::HirNode::Parse(_) | hir::HirNode::Block(_) | hir::HirNode::Choice(_) => &[
             SubValueKind::Front,
             SubValueKind::Back,
@@ -350,7 +355,7 @@ pub enum DepType {
 }
 
 pub struct DependencyGraph {
-    block: hir::BlockId,
+    block: Block,
     val_map: FxHashMap<SubValue, NodeIndex>,
     graph: Graph<SubValue, DepType>,
 }
@@ -358,7 +363,7 @@ pub struct DependencyGraph {
 impl DependencyGraph {
     pub fn new(db: &dyn Dependents, block: hir::BlockId) -> SResult<Self> {
         let mut ret = Self {
-            block,
+            block: block.lookup(db)?,
             val_map: FxHashMap::default(),
             graph: Graph::new(),
         };
@@ -368,12 +373,12 @@ impl DependencyGraph {
     }
 
     fn init_nodes(&mut self, db: &dyn Dependents) -> SResult<()> {
-        for hir_node in hir::walk::ChildIter::new(self.block.lookup(db)?.root_context.0, db)
+        for hir_node in hir::walk::ChildIter::new(self.block.root_context.0, db)
             .without_kinds(hir::HirNodeKind::Block)
-            .chain(std::iter::once(db.hir_node(self.block.id())?))
+            .chain(std::iter::once(db.hir_node(self.block.id.0)?))
         {
             match hir_node {
-                hir::HirNode::Block(b) if b.id != self.block => continue,
+                hir::HirNode::Block(b) if b.id != self.block.id => continue,
                 _ => {}
             }
             let kinds = node_subvalue_kinds(&hir_node);
@@ -406,12 +411,12 @@ impl DependencyGraph {
             let hir_node = db.hir_node(sub_value.id)?;
             match sub_value.kind {
                 SubValueKind::Val => {
-                    self.add_edges(db, sub_value, val_refs(db, &hir_node, self.block)?)
+                    self.add_edges(db, sub_value, val_refs(db, &hir_node, self.block.id)?)
                 }
                 SubValueKind::Front => self.add_edges(
                     db,
                     sub_value,
-                    between_parser_refs(db, &hir_node, self.block)?.map(|x| (x, DepType::Data)),
+                    between_parser_refs(db, &hir_node, self.block.id)?.map(|x| (x, DepType::Data)),
                 ),
                 SubValueKind::Back => self.add_edges(
                     db,
@@ -507,7 +512,7 @@ impl DependencyGraph {
                 .neighbors_directed(self.val_map[&id_val], Direction::Incoming)
             {
                 let subval = self.graph[neigh];
-                if subval.id == self.block.0 {
+                if subval.id == self.block.id.0 {
                     continue;
                 }
                 let edge = self.graph.find_edge(neigh, self.val_map[&id_val]).unwrap();
@@ -529,13 +534,12 @@ impl DependencyGraph {
     }
 
     pub fn tail_returns(&self, db: &(impl Dependents + ?Sized)) -> SResult<FxHashSet<DefId>> {
-        let block = self.block.lookup(db)?;
         let mut ret = FxHashSet::default();
-        if !block.returns {
+        if !self.block.returns {
             return Ok(ret);
         }
-        ret.insert(block.id.0);
-        let root_ctx = block.root_context.lookup(db)?;
+        ret.insert(self.block.id.0);
+        let root_ctx = self.block.root_context.lookup(db)?;
         let mut return_id_stack = vec![*root_ctx.vars.set[&FieldName::Return].inner()];
         while let Some(id) = return_id_stack.pop() {
             if !self.id_is_tail(id, &ret)? {
@@ -563,9 +567,13 @@ impl DependencyGraph {
     }
 
     pub fn reachables(&self) -> [FxHashSet<SubValue>; 3] {
-        let reachable_val = self.find_reachable(&[SubValue::new_val(self.block.id())]);
-        let reachable_back = self.find_reachable(&[SubValue::new_back(self.block.id())]);
-        let reachable_bt = self.find_reachable(&[SubValue::new_bt(self.block.id())]);
+        let reachable_val = self.find_reachable(&[SubValue::new_val(self.block.id.0)]);
+        let reachable_back = if self.block.kind == BlockKind::Parser {
+            self.find_reachable(&[SubValue::new_back(self.block.id.0)])
+        } else {
+            FxHashSet::default()
+        };
+        let reachable_bt = self.find_reachable(&[SubValue::new_bt(self.block.id.0)]);
         [reachable_val, reachable_back, reachable_bt]
     }
 

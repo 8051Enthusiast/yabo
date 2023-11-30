@@ -149,6 +149,10 @@ macro_rules! error_type {
             pub(in $p) fn use_error(self) -> $typ {
                 self.inner
             }
+
+            pub fn has_errors(&self) -> bool {
+                !self.inner.is_empty()
+            }
         }
 
         impl $crate::error::Silencable for $name {

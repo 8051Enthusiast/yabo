@@ -235,7 +235,7 @@ impl<'a> ConvertExpr<'a> {
         place_ref
     }
 
-    fn create_block_parser(
+    fn init_block_captures(
         &mut self,
         block: BlockId,
         ty: TypeId,
@@ -352,8 +352,8 @@ impl<'a> ConvertExpr<'a> {
                 ResolvedAtom::Regex(regex) => {
                     self.load_zst(ZstVal::Regex(*regex), ty, place, origin)
                 }
-                ResolvedAtom::Block(block) => {
-                    self.create_block_parser(*block, ty, place, origin)?
+                ResolvedAtom::Block(block, _) => {
+                    self.init_block_captures(*block, ty, place, origin)?
                 }
             },
             ExprHead::Monadic(op, inner) => {

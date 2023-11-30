@@ -466,7 +466,13 @@ impl<'a> ILayout<'a> {
                         Ok(ret)
                     }
                     MonoLayout::BlockParser(block_id, _, subst, _) => ctx
-                        .eval_block(*block_id, self, from, result_type, arg_type, subst.clone())
+                        .eval_block(
+                            *block_id,
+                            self,
+                            Some((from, arg_type)),
+                            result_type,
+                            subst.clone(),
+                        )
                         .ok_or_else(|| SilencedError::new().into()),
                     MonoLayout::Single => from.array_primitive(ctx),
                     MonoLayout::Nil => Ok(ctx.dcx.intern(Layout::Mono(
@@ -507,6 +513,11 @@ impl<'a> ILayout<'a> {
             };
             let (pd, present_args) = match layout.mono_layout().0 {
                 MonoLayout::NominalParser(pd, present_args, _) => (pd, present_args),
+                MonoLayout::BlockParser(block_id, _, subst, _) => {
+                    return ctx
+                        .eval_block(*block_id, self, None, result_type, subst.clone())
+                        .ok_or_else(|| SilencedError::new().into())
+                }
                 MonoLayout::ArrayParser(Some((parser, Some(int)))) => {
                     return Ok(ctx.dcx.intern(Layout::Mono(
                         MonoLayout::ArrayParser(Some((*parser, Some(*int)))),
@@ -1005,7 +1016,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ResolvedAtom::ParserDef(pd) => {
                     make_layout(MonoLayout::NominalParser(pd, Vec::new(), true))
                 }
-                ResolvedAtom::Block(block_id) => {
+                ResolvedAtom::Block(block_id, _) => {
                     let mut captures = BTreeMap::new();
                     let capture_ids = ctx.db.captures(block_id);
                     for capture in capture_ids.iter() {

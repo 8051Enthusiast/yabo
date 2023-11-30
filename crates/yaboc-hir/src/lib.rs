@@ -687,6 +687,12 @@ struct ParentInfo {
     block_id: BlockId,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BlockKind {
+    Parser,
+    Fun,
+}
+
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Block {
     pub id: BlockId,
@@ -694,6 +700,7 @@ pub struct Block {
     pub super_context: Option<ContextId>,
     pub enclosing_expr: ExprId,
     pub returns: bool,
+    pub kind: BlockKind,
 }
 
 impl Block {
@@ -824,7 +831,7 @@ pub enum ParserAtom {
     Nil,
     Array,
     Regex(Regex),
-    Block(BlockId),
+    Block(BlockId, BlockKind),
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]

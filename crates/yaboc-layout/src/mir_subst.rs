@@ -22,7 +22,7 @@ impl<'a> FunctionSubstitute<'a> {
     pub fn new_from_block(
         f: Function,
         strictness: &[Strictness],
-        from: ILayout<'a>,
+        from: Option<ILayout<'a>>,
         block: IMonoLayout<'a>,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
@@ -77,7 +77,7 @@ impl<'a> FunctionSubstitute<'a> {
     pub fn new_from_pd(
         f: Function,
         strictness: &[Strictness],
-        from: ILayout<'a>,
+        from: Option<ILayout<'a>>,
         fun: IMonoLayout<'a>,
         pd: ParserDefId,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
@@ -85,11 +85,7 @@ impl<'a> FunctionSubstitute<'a> {
         let MonoLayout::NominalParser(..) = fun.mono_layout().0 else {
             panic!("non-nominal-parser as argument")
         };
-        let is_parser = matches!(
-            ctx.db.lookup_intern_type(fun.mono_layout().1),
-            Type::ParserArg { .. }
-        );
-        let lookup_layout = if is_parser {
+        let lookup_layout = if let Some(from) = from {
             fun.inner().apply_arg(ctx, from)?
         } else {
             fun.inner().eval_fun(ctx)?
@@ -138,7 +134,7 @@ impl<'a> FunctionSubstitute<'a> {
         let vals = FxHashMap::default();
         let sub_info = SubInfo {
             fun: fun.inner(),
-            arg: from,
+            arg: Some(from),
             ret: result,
             expr: exprs,
             int: ctx.dcx.int(ctx.db),
@@ -174,7 +170,7 @@ impl<'a> FunctionSubstitute<'a> {
 pub fn function_substitute<'a>(
     fun_info: FunKind,
     req: MirKind,
-    from: ILayout<'a>,
+    from: Option<ILayout<'a>>,
     fun: IMonoLayout<'a>,
     ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
 ) -> Result<FunctionSubstitute<'a>, LayoutError> {
@@ -185,14 +181,16 @@ pub fn function_substitute<'a>(
         FunKind::ParserDef(pd) => {
             FunctionSubstitute::new_from_pd(mir, &strictness, from, fun, pd, ctx)
         }
-        FunKind::If(_, _, _) => FunctionSubstitute::new_from_if(mir, &strictness, from, fun, ctx),
+        FunKind::If(_, _, _) => {
+            FunctionSubstitute::new_from_if(mir, &strictness, from.unwrap(), fun, ctx)
+        }
     }
 }
 
 #[derive(Debug)]
 struct SubInfo<T> {
     fun: T,
-    arg: T,
+    arg: Option<T>,
     ret: T,
     int: T,
     expr: FxHashMap<ExprId, ShapedData<Vec<(T, TypeId)>, Resolved>>,
@@ -205,11 +203,11 @@ impl<'intern> SubInfo<ILayout<'intern>> {
         f.iter_stack()
             .map(|(_, place_origin)| match place_origin {
                 PlaceOrigin::Node(id) => self.vals[&id],
-                PlaceOrigin::Ambient(_, _) => self.arg,
+                PlaceOrigin::Ambient(_, _) => self.arg.expect("used arg in non-parser"),
                 PlaceOrigin::Expr(e, idx) => self.expr[&e].index_expr(idx).0,
                 PlaceOrigin::PolyLen => self.int,
                 PlaceOrigin::Ret => self.ret,
-                PlaceOrigin::Arg => self.arg,
+                PlaceOrigin::Arg => self.arg.expect("used arg in non-parser"),
             })
             .collect()
     }
@@ -225,7 +223,7 @@ impl<'intern> SubInfo<ILayout<'intern>> {
         for (p, place_info) in f.iter_places() {
             let layout = match place_info.place {
                 Place::Captures => self.fun,
-                Place::Arg | Place::ReturnLen => self.arg,
+                Place::Arg | Place::ReturnLen => self.arg.expect("used arg in non-parser"),
                 Place::Return => self.ret,
                 Place::Stack(idx) => stack_layouts[idx.as_index()],
                 Place::Field(place, field) => {

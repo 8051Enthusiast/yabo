@@ -126,7 +126,7 @@ pub struct PdEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
 pub struct BlockEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
     pub id: BlockId,
     pub expr_vals: FxHashMap<hir::ExprId, AbstractData<Dom>>,
-    pub from: Dom,
+    pub from: Option<Dom>,
     pub vals: FxHashMap<DefId, Dom>,
     pub returned: Dom,
     pub typesubst: Arc<Vec<TypeId>>,
@@ -151,7 +151,7 @@ pub struct AbsIntCtx<'a, Dom: AbstractDomain<'a>> {
 
     block_vars: FxHashMap<DefId, Dom>,
     block_expr_vals: FxHashMap<hir::ExprId, AbstractData<Dom>>,
-    block_result: FxHashMap<(Dom, Dom), EpochVal<Option<BlockEvaluated<Dom>>>>,
+    block_result: FxHashMap<(Option<Dom>, Dom), EpochVal<Option<BlockEvaluated<Dom>>>>,
     active_block: Option<Dom>,
 
     errors: Vec<(Dom, Dom::Err)>,
@@ -182,7 +182,9 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         &self.pd_result
     }
 
-    pub fn block_result(&self) -> &FxHashMap<(Dom, Dom), EpochVal<Option<BlockEvaluated<Dom>>>> {
+    pub fn block_result(
+        &self,
+    ) -> &FxHashMap<(Option<Dom>, Dom), EpochVal<Option<BlockEvaluated<Dom>>>> {
         &self.block_result
     }
 
@@ -413,9 +415,8 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
     fn eval_block_impl(
         &mut self,
         block_id: hir::BlockId,
-        from: Dom,
+        from: Option<(Dom, TypeId)>,
         result_type: TypeId,
-        arg_type: TypeId,
     ) -> Result<Dom, Dom::Err> {
         let block = block_id.lookup(self.db)?;
         let order = self.db.block_serialization(block_id).silence()?.eval_order;
@@ -448,6 +449,8 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                 }
                 hir::HirNode::Parse(statement) => {
                     let expr = Resolved::expr_with_data::<FullTypeId>(self.db, statement.expr)?;
+                    let (from, arg_type) =
+                        from.clone().expect("parse statement in non-parse block");
                     let (res, res_expr) = self.eval_expr_with_ambience(
                         expr.take_ref(),
                         (from.clone(), arg_type),
@@ -496,23 +499,24 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         &mut self,
         block_id: hir::BlockId,
         block: Dom,
-        from: Dom,
+        from: Option<(Dom, TypeId)>,
         result_type: TypeId,
-        arg_type: TypeId,
         typesubst: Arc<Vec<TypeId>>,
     ) -> Option<Dom> {
-        if let Some(val) = self.block_result.get(&(block.clone(), from.clone())) {
-            if let Some(block_info) = val.val_with_epoch(self.cache_epoch) {
-                return block_info.as_ref().map(|x| x.returned.clone());
-            }
-        }
+        let from_copy = || from.as_ref().map(|(x, _)| x.clone());
+        // FIXME: caching is currently broken and i'm too tired for this
+        //if let Some(val) = self.block_result.get(&(from_copy(), block.clone())) {
+        //    if let Some(block_info) = val.val_with_epoch(self.cache_epoch) {
+        //        return block_info.as_ref().map(|x| x.returned.clone());
+        //    }
+        //}
         let mut old_block_vars = std::mem::take(&mut self.block_vars);
         let mut old_block_expr = std::mem::take(&mut self.block_expr_vals);
         let old_block = std::mem::replace(&mut self.active_block, Some(block.clone()));
         let old_type_substitutions =
             std::mem::replace(&mut self.type_substitutions, typesubst.clone());
 
-        let res = self.eval_block_impl(block_id, from.clone(), result_type, arg_type);
+        let res = self.eval_block_impl(block_id, from.clone(), result_type);
         let res = self.strip_error(res);
 
         self.type_substitutions = old_type_substitutions;
@@ -523,13 +527,15 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         let evaluated = res.clone().map(|returned| BlockEvaluated {
             id: block_id,
             expr_vals: old_block_expr,
-            from: from.clone(),
+            from: from_copy(),
             vals: old_block_vars,
             returned,
             typesubst,
         });
-        self.block_result
-            .insert((from, block), EpochVal::new(evaluated, self.cache_epoch));
+        self.block_result.insert(
+            (from_copy(), block),
+            EpochVal::new(evaluated, self.cache_epoch),
+        );
 
         res
     }

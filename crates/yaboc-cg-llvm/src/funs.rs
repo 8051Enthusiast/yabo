@@ -3,7 +3,7 @@ use yaboc_base::low_effort_interner::Uniq;
 use yaboc_constraint::Constraints;
 use yaboc_dependents::NeededBy;
 use yaboc_layout::{
-    collect::{pd_fun_req, pd_len_req, pd_val_req},
+    collect::{fun_req, pd_len_req, pd_val_req},
     mir_subst::function_substitute,
     represent::ParserFunKind,
 };
@@ -108,19 +108,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let MonoLayout::NominalParser(pd, _, _) = layout.mono_layout().0 else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
-        let req = pd_fun_req();
-        let mir = self
-            .compiler_database
-            .db
-            .mir(FunKind::ParserDef(*pd), MirKind::Call(req))
-            .unwrap();
-        let strictness = self
-            .compiler_database
-            .db
-            .strictness(FunKind::ParserDef(*pd), MirKind::Call(req))
-            .unwrap();
-        let from = ILayout::bottom(&mut self.layouts.dcx);
-        FunctionSubstitute::new_from_pd(mir, &strictness, from, layout, *pd, self.layouts).unwrap()
+        let kind = FunKind::ParserDef(*pd);
+        let req = MirKind::Call(fun_req());
+        let mir = self.compiler_database.db.mir(kind, req).unwrap();
+        let strictness = self.compiler_database.db.strictness(kind, req).unwrap();
+        FunctionSubstitute::new_from_pd(mir, &strictness, None, layout, *pd, self.layouts).unwrap()
     }
 
     fn mir_pd_parser(
@@ -135,41 +127,30 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         if !*bt {
             req &= !NeededBy::Backtrack;
         }
-        let mir = self
-            .compiler_database
-            .db
-            .mir(FunKind::ParserDef(*pd), MirKind::Call(req))
-            .unwrap();
-        let strictness = self
-            .compiler_database
-            .db
-            .strictness(FunKind::ParserDef(*pd), MirKind::Call(req))
-            .unwrap();
-        FunctionSubstitute::new_from_pd(mir, &strictness, from, layout, *pd, self.layouts).unwrap()
+        let kind = FunKind::ParserDef(*pd);
+        let req = MirKind::Call(req);
+        let mir = self.compiler_database.db.mir(kind, req).unwrap();
+        let strictness = self.compiler_database.db.strictness(kind, req).unwrap();
+        FunctionSubstitute::new_from_pd(mir, &strictness, Some(from), layout, *pd, self.layouts)
+            .unwrap()
     }
 
-    fn mir_block_fun(
+    fn mir_block(
         &mut self,
-        from: ILayout<'comp>,
+        from: Option<ILayout<'comp>>,
         layout: IMonoLayout<'comp>,
         mut req: RequirementSet,
     ) -> FunctionSubstitute<'comp> {
         let MonoLayout::BlockParser(bd, _, _, bt) = layout.mono_layout().0 else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
-        if !bt {
+        if from.is_some() && !bt {
             req &= !NeededBy::Backtrack;
         }
-        let mir = self
-            .compiler_database
-            .db
-            .mir(FunKind::Block(*bd), MirKind::Call(req))
-            .unwrap();
-        let strictness = self
-            .compiler_database
-            .db
-            .strictness(FunKind::Block(*bd), MirKind::Call(req))
-            .unwrap();
+        let req = MirKind::Call(req);
+        let kind = FunKind::Block(*bd);
+        let mir = self.compiler_database.db.mir(kind, req).unwrap();
+        let strictness = self.compiler_database.db.strictness(kind, req).unwrap();
         FunctionSubstitute::new_from_block(mir, &strictness, from, layout, self.layouts).unwrap()
     }
 
@@ -182,17 +163,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let (MonoLayout::IfParser(_, cid, wiggle), ty) = layout.mono_layout() else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
-        let funkind = FunKind::If(*cid, ty, *wiggle);
-        let mir = self
-            .compiler_database
-            .db
-            .mir(funkind, MirKind::Call(req))
-            .unwrap();
-        let strictness = self
-            .compiler_database
-            .db
-            .strictness(funkind, MirKind::Call(req))
-            .unwrap();
+        let kind = FunKind::If(*cid, ty, *wiggle);
+        let req = MirKind::Call(req);
+        let mir = self.compiler_database.db.mir(kind, req).unwrap();
+        let strictness = self.compiler_database.db.strictness(kind, req).unwrap();
         FunctionSubstitute::new_from_if(mir, &strictness, from, layout, self.layouts).unwrap()
     }
 
@@ -730,7 +704,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         };
         let block = block.lookup(&self.compiler_database.db).unwrap();
         let llvm_fun = self.parser_fun_val_tail(layout, from, req);
-        let mir_fun = Rc::new(self.mir_block_fun(from, layout, req));
+        let mir_fun = Rc::new(self.mir_block(Some(from), layout, req));
         let impl_fun = self.parser_impl_fun_val(layout, from, req);
 
         let (ret, fun, arg) = parser_values(impl_fun, layout, from);
@@ -749,7 +723,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             return llvm_fun;
         }
 
-        let return_layout = self.layouts.block_result()[&(from, layout.inner())]
+        let return_layout = self.layouts.block_result()[&(Some(from), layout.inner())]
             .val()
             .as_ref()
             .unwrap()
@@ -757,7 +731,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let mono_layout = return_layout.maybe_mono().unwrap();
 
         let block_data = BlockThunk {
-            from,
+            from: Some(from),
             fun: layout,
             result: mono_layout,
             req,
@@ -1104,8 +1078,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 &layout.inner()
             ),
         };
-        let mir =
-            function_substitute(fun_kind, MirKind::Len, int_layout, layout, self.layouts).unwrap();
+        let mir = function_substitute(
+            fun_kind,
+            MirKind::Len,
+            Some(int_layout),
+            layout,
+            self.layouts,
+        )
+        .unwrap();
         MirTranslator::new(self, Rc::new(mir), fun, fun_value, int_value)
             .with_ret_val(ret_value)
             .build();
@@ -1134,7 +1114,45 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
     }
 
-    fn create_eval_fun_fun_impl(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
+    fn create_eval_block(&mut self, layout: IMonoLayout<'comp>) {
+        let MonoLayout::BlockParser(block, _, _, _) = layout.mono_layout().0 else {
+            panic!("Expected block parser layout")
+        };
+        let block = block.lookup(&self.compiler_database.db).unwrap();
+        let mir_fun = Rc::new(self.mir_block(None, layout, fun_req()));
+        let impl_fun = self.eval_fun_fun_val(layout);
+
+        let (ret, fun) = eval_fun_values(impl_fun, layout);
+        let undef = self.undef_val();
+        let mut translator = MirTranslator::new(self, mir_fun, impl_fun, fun, undef);
+        translator = translator.with_ret_val(ret);
+        translator.build();
+
+        // if the block function does not return itself, we do not need to write the block vtable
+        if block.returns {
+            let llvm_fun = self.eval_fun_fun_val_wrapper(layout);
+            self.wrap_direct_call(impl_fun, llvm_fun, true);
+            return;
+        }
+
+        let return_layout = self.layouts.block_result()[&(None, layout.inner())]
+            .val()
+            .as_ref()
+            .unwrap()
+            .returned;
+        let mono_layout = return_layout.maybe_mono().unwrap();
+
+        let block_data = BlockThunk {
+            from: None,
+            fun: layout,
+            result: mono_layout,
+            req: fun_req(),
+        };
+
+        ThunkContext::new(self, block_data).build();
+    }
+
+    fn create_eval_pd_fun_fun_impl(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
         let llvm_fun = self.eval_fun_fun_val(layout);
         let arg = self.undef_val();
         let mir_fun = Rc::new(self.mir_pd_fun(layout));
@@ -1162,21 +1180,22 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_eval_fun_fun(&mut self, layout: IMonoLayout<'comp>) {
-        match layout.mono_layout().0 {
+        let impl_fun = match layout.mono_layout().0 {
             MonoLayout::ArrayParser(_) => return self.create_eval_fun_fun_copy(layout),
             MonoLayout::NominalParser(pd, ..) => {
                 let pd = pd.lookup(&self.compiler_database.db).unwrap();
                 if pd.from.is_some() {
                     return self.create_eval_fun_fun_copy(layout);
                 }
+                self.create_eval_pd_fun_fun_impl(layout)
             }
+            MonoLayout::BlockParser(..) => return self.create_eval_block(layout),
             _ => dbpanic!(
                 &self.compiler_database.db,
                 "called create_eval_fun_fun on non-parser {}",
                 &layout.inner()
             ),
         };
-        let impl_fun = self.create_eval_fun_fun_impl(layout);
         let llvm_fun = self.eval_fun_fun_val_wrapper(layout);
         self.wrap_direct_call(impl_fun, llvm_fun, true);
     }

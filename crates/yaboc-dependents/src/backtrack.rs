@@ -19,7 +19,7 @@ fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<(bool, bo
                 ExprHead::Niladic(
                     ResolvedAtom::Val(_) | ResolvedAtom::Captured(_) | ResolvedAtom::ParserDef(_),
                 ) => (false, false),
-                ExprHead::Niladic(ResolvedAtom::Block(b)) => {
+                ExprHead::Niladic(ResolvedAtom::Block(b, _)) => {
                     (false, db.can_backtrack(b.0).unwrap_or(false))
                 }
                 ExprHead::Niladic(ResolvedAtom::Regex(_)) => (false, true),

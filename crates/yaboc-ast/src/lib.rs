@@ -297,6 +297,7 @@ pub struct LetStatement {
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Block {
     pub content: Option<ParserSequence>,
+    pub is_parser: bool,
     pub span: Span,
 }
 

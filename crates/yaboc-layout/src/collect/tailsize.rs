@@ -66,7 +66,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
         let fsub = function_substitute(
             fun_kind,
             MirKind::Call(RequirementSet::all()),
-            site.0,
+            Some(site.0),
             site.1,
             self.ctx,
         )?;
@@ -86,7 +86,10 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
         Ok(())
     }
 
-    fn calculate_tail_size(&mut self, site: CallSite<'comp>) -> Result<CallSiteVertex, LayoutError> {
+    fn calculate_tail_size(
+        &mut self,
+        site: CallSite<'comp>,
+    ) -> Result<CallSiteVertex, LayoutError> {
         let sa = site.1.inner().size_align_without_vtable(self.ctx)?;
         let mut current_vertex = CallSiteVertex {
             index: self.index,
