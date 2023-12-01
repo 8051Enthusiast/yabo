@@ -1,0 +1,96 @@
+====[ source code ]====
+import math
+import text
+
+export
+fun *test = {
+  a: text.num?, /, /, b: text.num?
+  let abs_a = math.abs(a)
+  let abs_b = math.abs(b)
+  let sign_a = math.sign(a)
+  let sign_b = math.sign(b)
+  let max = math.max(a, b)
+  let min = math.min(a, b)
+  let gcd = math.gcd(a, b)
+  let lcm = math.lcm(a, b)
+}
+
+====[ text 1 ]====
+1, 2
+====[ output 1 ]====
+{
+    "a": 1,
+    "b": 2,
+    "abs_a": 1,
+    "abs_b": 2,
+    "sign_a": 1,
+    "sign_b": 1,
+    "max": 2,
+    "min": 1,
+    "gcd": 1,
+    "lcm": 2
+}
+
+====[ text 2 ]====
+-1, 2
+====[ output 2 ]====
+{
+    "a": -1,
+    "b": 2,
+    "abs_a": 1,
+    "abs_b": 2,
+    "sign_a": -1,
+    "sign_b": 1,
+    "max": 2,
+    "min": -1,
+    "gcd": 1,
+    "lcm": 2
+}
+
+====[ text 3 ]====
+-1, -2
+====[ output 3 ]====
+{
+    "a": -1,
+    "b": -2,
+    "abs_a": 1,
+    "abs_b": 2,
+    "sign_a": -1,
+    "sign_b": -1,
+    "max": -1,
+    "min": -2,
+    "gcd": 1,
+    "lcm": 2
+}
+
+====[ text 4 ]====
+0, -10
+====[ output 4 ]====
+{
+    "a": 0,
+    "b": -10,
+    "abs_a": 0,
+    "abs_b": 10,
+    "sign_a": 0,
+    "sign_b": -1,
+    "max": 0,
+    "min": -10,
+    "gcd": 10,
+    "lcm": 0
+}
+
+====[ text 5 ]====
+-10, 25
+====[ output 5 ]====
+{
+    "a": -10,
+    "b": 25,
+    "abs_a": 10,
+    "abs_b": 25,
+    "sign_a": -1,
+    "sign_b": 1,
+    "max": 25,
+    "min": -10,
+    "gcd": 5,
+    "lcm": 50
+}
