@@ -109,7 +109,7 @@ def *i64b = {
 # =============== desugar ===============
 
 fun ['a] *> compose(a: ['a] *> ['b], b: ['b] *> 'c) = {
-  x: a, let return = x *> b
+  x: a?, let return = x *> b?
 }
 
 fun ['a] *> index(idx: int): 'a = {
