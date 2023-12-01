@@ -587,7 +587,7 @@ impl<'a> ConvertExpr<'a> {
                     }
                 }
             }
-            ExprHead::Variadic(ValVarOp::PartialApply, inner) => {
+            ExprHead::Variadic(ValVarOp::PartialApply(_), inner) => {
                 let (fun_idx, &fun_ty) = expr.data.index_expr(inner[0]);
                 let fun_ldt = self.db.least_deref_type(fun_ty)?;
                 let fun_origin = PlaceOrigin::Expr(expr_id, fun_idx);

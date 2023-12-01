@@ -49,7 +49,7 @@ impl<'a> LenMirCtx<'a> {
             if !used[idx] {
                 continue;
             }
-            if let ExprHead::Variadic(ValVarOp::PartialApply, args) = term {
+            if let ExprHead::Variadic(ValVarOp::PartialApply(_), args) = term {
                 let call_site = Origin::Expr(expr_id, ExprIdx::new_from_usize(idx));
                 let call_deps = self.vals.call_sites[&call_site].clone();
                 used[args[0].as_usize()] = true;

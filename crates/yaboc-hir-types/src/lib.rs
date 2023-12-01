@@ -452,7 +452,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                             self.infctx.lookup(*v)?
                         }
                     },
-                    ExprHead::Variadic(ValVarOp::PartialApply, inner) => {
+                    ExprHead::Variadic(ValVarOp::PartialApply(_), inner) => {
                         self.infctx.function_apply(
                             *inner[0],
                             &inner[1..].iter().copied().copied().collect::<Vec<_>>(),
