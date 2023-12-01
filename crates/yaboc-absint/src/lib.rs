@@ -53,6 +53,8 @@ pub struct EpochVal<T> {
     epoch: Epoch,
 }
 
+pub type MaybeEpoch<T> = EpochVal<Option<T>>;
+
 impl<T> EpochVal<T> {
     fn new(val: T, epoch: Epoch) -> Self {
         Self { val, epoch }
@@ -132,6 +134,8 @@ pub struct BlockEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
     pub typesubst: Arc<Vec<TypeId>>,
 }
 
+type CallSite<Dom> = (Option<Dom>, Dom);
+
 pub struct AbsIntCtx<'a, Dom: AbstractDomain<'a>> {
     pub db: &'a Dom::DB,
     pub dcx: Dom::DomainContext,
@@ -147,11 +151,11 @@ pub struct AbsIntCtx<'a, Dom: AbstractDomain<'a>> {
     depth: usize,
     call_needs_fixpoint: FxHashSet<usize>,
     active_calls: FxHashMap<Dom, usize>,
-    pd_result: FxHashMap<Dom, EpochVal<Option<PdEvaluated<Dom>>>>,
+    pd_result: FxHashMap<Dom, MaybeEpoch<PdEvaluated<Dom>>>,
 
     block_vars: FxHashMap<DefId, Dom>,
     block_expr_vals: FxHashMap<hir::ExprId, AbstractData<Dom>>,
-    block_result: FxHashMap<(Option<Dom>, Dom), EpochVal<Option<BlockEvaluated<Dom>>>>,
+    block_result: FxHashMap<CallSite<Dom>, MaybeEpoch<BlockEvaluated<Dom>>>,
     active_block: Option<Dom>,
 
     errors: Vec<(Dom, Dom::Err)>,
@@ -178,13 +182,13 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         }
     }
 
-    pub fn pd_result(&self) -> &FxHashMap<Dom, EpochVal<Option<PdEvaluated<Dom>>>> {
+    pub fn pd_result(&self) -> &FxHashMap<Dom, MaybeEpoch<PdEvaluated<Dom>>> {
         &self.pd_result
     }
 
     pub fn block_result(
         &self,
-    ) -> &FxHashMap<(Option<Dom>, Dom), EpochVal<Option<BlockEvaluated<Dom>>>> {
+    ) -> &FxHashMap<CallSite<Dom>, MaybeEpoch<BlockEvaluated<Dom>>> {
         &self.block_result
     }
 
