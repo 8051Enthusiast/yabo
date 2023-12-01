@@ -406,7 +406,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         &mut self,
         arg: ILayout<'a>,
         parser: IMonoLayout<'a>,
-        info: MirKind,
+        mut info: MirKind,
     ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
@@ -421,8 +421,8 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             panic!("unexpected non-block-parser layout");
         };
         if !*bt {
-            if let MirKind::Call(mut req) = info {
-                req &= !NeededBy::Backtrack;
+            if let MirKind::Call(req) = &mut info {
+                *req &= !NeededBy::Backtrack;
             }
         };
         parser.inner().apply_arg(self.ctx, arg)?;
@@ -465,7 +465,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         &mut self,
         arg: ILayout<'a>,
         parser: IMonoLayout<'a>,
-        info: MirKind,
+        mut info: MirKind,
     ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
@@ -483,8 +483,8 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             panic!("unexpected non-parserarg type");
         };
         if !*bt {
-            if let MirKind::Call(mut req) = info {
-                req &= !NeededBy::Backtrack;
+            if let MirKind::Call(req) = &mut info {
+                *req &= !NeededBy::Backtrack;
             }
         }
         let parserdef = pd.lookup(self.ctx.db).unwrap();
