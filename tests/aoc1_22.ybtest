@@ -1,16 +1,18 @@
 
 ====[ source code ]====
-import std
+import text
+import aoc
+import math
 
-def *sublistsum = std.summap({
-  return: std.basenum(10)?
-  std.newline?
+def *sublistsum = aoc.summap({
+  return: text.num?
+  text.newline?
 })
 
 def *listmax(min: int): int = {
-  std.newline?
+  text.newline?
   sum: sublistsum
-  | return: listmax(std.max(min, sum))?
+  | return: listmax(math.max(min, sum))?
   | let return = min
 }
 

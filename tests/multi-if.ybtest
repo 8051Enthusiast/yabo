@@ -1,5 +1,4 @@
 ====[ source code ]====
-import std
 def *u32b_or_16b(n: int) = {
   | let _ = n if 0
     let return = u32b

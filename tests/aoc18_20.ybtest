@@ -1,5 +1,6 @@
 ====[ source code ]====
-import std
+import aoc
+import text
 
 fun *reduce_impl(init: 't, cont: *'t('t)): 't = {
   | next: cont(init)?
@@ -13,7 +14,7 @@ fun *reduce(init: *'t, cont: *'t('t)): 't = {
 }
 
 fun *atom: int = {
-  | return: std.basenum(10)?
+  | return: text.num?
   | /\(/, return: expr, /\)/
 }
 
@@ -27,8 +28,8 @@ fun *expr_cont(lhs: int): int = {
 fun *expr: int = reduce(atom, expr_cont)?
 
 export
-fun *test = std.summap({
-  return: expr?, std.newline?
+fun *test = aoc.summap({
+  return: expr?, text.newline?
 })
 
 ====[ text 1 ]====

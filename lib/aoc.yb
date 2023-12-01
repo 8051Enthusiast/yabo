@@ -1,0 +1,9 @@
+fun ['t] *> summap_acc(f: ['t] *> int, acc: int): int = {
+  | x: f?
+    return: summap_acc(f?, x + acc)
+  | let return = acc
+}
+
+# With f being a parser returning an int, returns the sum of all the ints
+# until the parser fails.
+fun ['t] *> summap(f: ['t] *> int) = summap_acc(f?, 0)

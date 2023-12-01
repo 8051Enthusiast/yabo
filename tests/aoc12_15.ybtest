@@ -1,5 +1,6 @@
 ====[ source code ]====
-import std
+import text
+
 fun *ws = /[\n\r \t]*/!
 fun *string = /"(\\"|[^"])*"/
 fun *element: int = {ws, return: value?, ws}
@@ -36,7 +37,7 @@ fun *array: int = {
 fun *number: int = {
   | /-/, let sign = -1
   | let sign = 1
-  num: std.basenum(10)?
+  num: text.num?
   let return = sign * num
 }
 fun *value: int = {

@@ -178,6 +178,7 @@ pub struct FileResolver<'collection> {
     paths: FxHashMap<PathBuf, Option<FileId>>,
     absolute_mods: FxHashMap<Identifier, FileId>,
     relative_mods: FxHashMap<(PathBuf, Identifier), Option<FileId>>,
+    lib_path: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -215,12 +216,27 @@ impl std::fmt::Display for LibKind {
 
 impl<'collection> FileResolver<'collection> {
     pub fn new(files: &'collection mut FileCollection) -> Self {
-        FileResolver {
+        let mut res = FileResolver {
             files,
             paths: FxHashMap::default(),
             absolute_mods: FxHashMap::default(),
             relative_mods: FxHashMap::default(),
-        }
+            lib_path: None,
+        };
+        res.init_paths();
+        res
+    }
+
+    fn init_paths(&mut self) {
+        self.lib_path = match std::env::var_os("YABO_LIB_PATH") {
+            Some(std_env_path) => Some(PathBuf::from(std_env_path)),
+            None => {
+                let mut yabo_dir = data_dir().unwrap();
+                yabo_dir.push("yabo");
+                yabo_dir.push("lib");
+                yabo_dir.exists().then_some(yabo_dir)
+            }
+        };
     }
 
     fn file_path(&self, dir: &Path, name: &str) -> Option<PathBuf> {
@@ -289,12 +305,17 @@ impl<'collection> FileResolver<'collection> {
             return file_id.ok_or(FileLoadError::Silenced);
         }
 
-        let new_file_path =
-            self.file_path(&path_dir, &name_str)
+        let new_file_path = if let Some(path) = self.file_path(&path_dir, &name_str) {
+            Ok(path)
+        } else {
+            self.lib_path
+                .clone()
+                .and_then(|lib_path| self.file_path(&lib_path, &name_str))
                 .ok_or_else(|| FileLoadError::DoesNotExist {
                     source: (origin, span),
-                    name: name.to_owned(),
-                });
+                    name,
+                })
+        };
         let new_file_path = new_file_path.and_then(|x| self.add_file(db, x, origin, span, name));
         self.relative_mods
             .insert((path_dir, name), new_file_path.as_ref().ok().cloned());
@@ -311,22 +332,17 @@ impl<'collection> FileResolver<'collection> {
             kind.set_db_path(db, Ok(*std));
             return Ok(());
         }
-        let std_env_path =
-            std::env::var_os(kind.env_var()).or_else(|| std::env::var_os("YABO_LIB_PATH"));
         let err = FileLoadError::NoStdLib {
             source: (FileId::default(), Span::default()),
             kind,
         };
-        let std_dir = if let Some(std_env_path) = std_env_path {
+        let std_dir = if let Some(std_env_path) = std::env::var_os(kind.env_var()) {
             PathBuf::from(std_env_path)
         } else {
-            let Some(mut yabo_dir) = data_dir() else {
-                kind.set_db_path(db, Err(SilencedError::new()));
+            let Some(lib_path) = self.lib_path.clone() else {
                 return Err(err);
             };
-            yabo_dir.push("yabo");
-            yabo_dir.push("lib");
-            yabo_dir
+            lib_path
         };
         let Some(std_dir) = self.file_path(&std_dir, kind.name()) else {
             kind.set_db_path(db, Err(SilencedError::new()));

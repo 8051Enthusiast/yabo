@@ -1,7 +1,8 @@
 ====[ source code ]====
-import std
-export def *test = std.summap({
-  return: std.basenum(10)? if 0..10, std.newline?
+import aoc
+import text
+export def *test = aoc.summap({
+  return: text.num? if 0..10, text.newline?
 })
 
 ====[ text 1 ]====

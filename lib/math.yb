@@ -1,0 +1,5 @@
+# Returns the maxiumum of a and b.
+fun max(a: int, b: int) = when?(a > b) then a else b
+
+# Returns the minimum of a and b.
+fun min(a: int, b: int) = when?(a < b) then a else b
