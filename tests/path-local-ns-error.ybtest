@@ -1,4 +1,4 @@
 ====[ source code ]====
-import std
-def *test = std.assert(true == false)
+import math
+def *test = math.assert(true == false)
            #~^ error[301] could not resolve name assert

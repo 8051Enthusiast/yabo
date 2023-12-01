@@ -1,9 +1,9 @@
 ====[ source code ]====
-import std
+import text
 export def *test = {
   /[^0-9]*/
   a: /[0-9]+./?
-  let return = a *> std.basenum(10)
+  let return = a *> text.num?
 }
 
 ====[ text 1 ]====

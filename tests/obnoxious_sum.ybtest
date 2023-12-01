@@ -1,6 +1,4 @@
 ====[ source code ]====
-import std
-
 fun *apply_with_data(data: *'t, f: *'t('t), default: 't): 't = {
   | x: data if !eof, return: f(x)
   | let return = default

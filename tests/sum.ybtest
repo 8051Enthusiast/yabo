@@ -1,6 +1,4 @@
 ====[ source code ]====
-import std
-
 def *sum(acc: int): int = {
   | x: u16l if !eof, return: sum(acc + x)
   | let return = acc

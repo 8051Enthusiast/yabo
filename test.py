@@ -78,33 +78,36 @@ class ErrorLocation:
 
 
 current_script_dir = os.path.dirname(os.path.realpath(__file__))
-std_path = os.path.join(current_script_dir, 'lib', 'std.yb')
 core_path = os.path.join(current_script_dir, 'lib', 'core.yb')
+lib_path = os.path.join(current_script_dir, 'lib')
+compiler_env = os.environ.copy()
+compiler_env['YABO_LIB_PATH'] = lib_path
+compiler_env['RUST_BACKTRACE'] = '1'
 compiler_dir = os.path.join(current_script_dir, 'crates', 'yaboc')
 
 def build_compiler_binary():
     os.chdir(compiler_dir)
     with subprocess.Popen(
-            ['cargo', 'metadata', '--format-version=1'], stdout=subprocess.PIPE) as cargo_metadata:
+            ['cargo', 'metadata', '--format-version=1'], stdout=subprocess.PIPE, env=compiler_env) as cargo_metadata:
         cargo_metadata_output = json.loads(
             cargo_metadata.communicate()[0].decode('utf-8'))
         cargo_args = ['cargo', 'build']
         if TARGET_RELEASE == 'release':
             cargo_args.append('--release')
-        subprocess.run(cargo_args, check=True)
+        subprocess.run(cargo_args, check=True, env=compiler_env)
         return os.path.join(cargo_metadata_output['target_directory'], TARGET_RELEASE, BINARY_NAME)
 
 def run_clippy():
     os.chdir(current_script_dir)
     cargo_args = ['cargo', 'clippy', '--workspace']
-    subprocess.run(cargo_args, check=False)
+    subprocess.run(cargo_args, check=False, env=compiler_env)
 
 def run_compiler_unit_tests():
     os.chdir(compiler_dir)
     cargo_args = ['cargo', 'nextest', 'run', '--workspace']
     if TARGET_RELEASE == 'release':
         cargo_args.append('--release')
-    cargo_test = subprocess.run(cargo_args, check=False)
+    cargo_test = subprocess.run(cargo_args, check=False, env=compiler_env)
     return cargo_test.returncode == 0
 
 
@@ -128,10 +131,10 @@ class CompiledSource:
                 sourcefile.write(source)
             with subprocess.Popen(
                 [compiler_path, "--output-json",
-                 "--module", f"std={std_path}",
                  "--module", f"core={core_path}",
                  sourcepath, self.compiled],
-                stderr=subprocess.PIPE
+                stderr=subprocess.PIPE,
+                env=compiler_env
             ) as compiler:
                 self.stderr = compiler.communicate()[1].decode('utf-8')
         except Exception as e:
@@ -142,7 +145,10 @@ class CompiledSource:
         diagnostics = defaultdict(list)
         total = 0
         for error in self.stderr.splitlines():
-            error_json = json.loads(error)
+            try:
+                error_json = json.loads(error)
+            except json.JSONDecodeError as e:
+                raise Exception(f'Error decoding {self.stderr}: {e}')
             diagnostics.update(ErrorLocation.from_diagnostics(error_json))
         for (linenum, line) in enumerate(self.source.splitlines()):
             linenum = linenum + 1

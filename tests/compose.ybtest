@@ -1,5 +1,5 @@
 ====[ source code ]====
-import std
+import text
 def *skip(skipper: *[u8]) = {
     skipper, return: /.*/
 }
@@ -13,7 +13,7 @@ def *skip_non_num = skip(/[^0-9]*/)
 export def *test = skip_4
                 |> after_hello
                 |> skip_non_num
-                |> std.basenum(10)
+                |> text.num?
 
 ====[ text 1 ]====
 hello agent 123 and hello agent 008!

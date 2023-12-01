@@ -1,0 +1,12 @@
+# Returns a cons-list of the given parser contingent in memory.
+def *list(element: *'r) = {
+  | this: element?
+    next: list(element?)
+  | +
+}
+
+# Returns the length of a given list.
+fun len(xs: list): int = (len(xs.?next) + 1) else 0
+
+# Skips the first n elements of a list xs.
+fun skip(xs: list, n: int): list = n if 0 then xs else skip(xs.?next, n - 1)

@@ -1,7 +1,7 @@
 ====[ source code ]====
-import std
+import aoc
 
-export def *test = std.summap({
+export def *test = aoc.summap({
   opp: ~, ~, own: ~, ~
   let return = own - 0x57 + (own + 2 - opp) % 3 * 3
 } if !eof)

@@ -1,5 +1,6 @@
 ====[ source code ]====
-import std
+import text
+import list
 
 def *op = {
   left: u32l
@@ -10,12 +11,12 @@ def *op = {
 def *line = {
   name: u32l
   ~, ~
-  | num: std.basenum(10)?
+  | num: text.num?
   | res: op
-  std.newline?
+  text.newline?
 }
 
-def *calculate_line(start: std.list[*line], x: std.list[*line], name: int): int = {
+def *calculate_line(start: list.list[*line], x: list.list[*line], name: int): int = {
   | let current = x.?this
     assert(current.name == name)?
     | let return = current.?num
@@ -31,7 +32,7 @@ def *calculate_line(start: std.list[*line], x: std.list[*line], name: int): int 
 
 export
 def *test = {
-  oplist: std.list(line?)
+  oplist: list.list(line?)
   return: calculate_line(oplist, oplist, 0x746f6f72)
 }
 

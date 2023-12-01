@@ -1,5 +1,4 @@
 ====[ source code ]====
-import std
 def *array(n: int) = [~](n)
 
 def *lengthed(parser: *'r) = {
