@@ -1,9 +1,24 @@
-fun ['t] *> summap_acc(f: ['t] *> int, acc: int): int = {
+import math
+# utility functions for advent of code (because it makes for good test cases)
+
+fun ['t] *> _map_acc(f: ['t] *> int, acc: int, op: int(int, int)): int = {
   | x: f?
-    return: summap_acc(f?, x + acc)
+    return: _map_acc(f?, op(acc, x), op)
   | let return = acc
 }
 
-# With f being a parser returning an int, returns the sum of all the ints
-# until the parser fails.
-fun ['t] *> summap(f: ['t] *> int) = summap_acc(f?, 0)
+fun _add(a: int, b: int): int = a + b
+
+# Parses until `f` fails, returning the sum of all parsed values
+fun ['t] *> summap(f: ['t] *> int) = _map_acc(f?, 0, _add)
+
+fun _mul(a: int, b: int): int = a * b
+
+# Parses until `f` fails, returning the product of all parsed values
+fun ['t] *> mulmap(f: ['t] *> int) = _map_acc(f?, 1, _mul)
+
+# Parses until `f` fails, returning the maximum of all parsed values
+fun ['t] *> maxmap(f: ['t] *> int) = _map_acc(f?, math.min_int(), math.max)
+
+# Parses until `f` fails, returning the minimum of all parsed values
+fun ['t] *> minmap(f: ['t] *> int) = _map_acc(f?, math.max_int(), math.min)

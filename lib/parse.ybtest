@@ -1,5 +1,0 @@
-# Parses a specific byte or fails
-def *byteval(x: int) = {
-  y: ~
-  assert?(x == y)
-}
