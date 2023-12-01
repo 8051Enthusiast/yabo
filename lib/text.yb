@@ -41,8 +41,8 @@ def *line_end = {
 }
 
 def *line = {
-  return: /[^\n\r]*/
-  line_end!
+  | return: /[^\n\r]*/, newline?
+  | return: /[^\n\r]+/, parse.eof?
 }
 
 def *empty_line = line |> parse.eof?
