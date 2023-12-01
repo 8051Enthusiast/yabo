@@ -1,0 +1,14 @@
+====[ source code ]====
+fun *last_byte: int = {
+  | ~ if !eof
+    return: last_byte?
+  | return: ~ if !eof
+}
+
+export fun *test = last_byte!
+
+====[ binary 1 ]====
+01 02 03
+
+====[ output 1 ]====
+3
