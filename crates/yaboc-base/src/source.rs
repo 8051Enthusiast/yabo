@@ -311,7 +311,7 @@ impl<'collection> FileResolver<'collection> {
             self.lib_path
                 .clone()
                 .and_then(|lib_path| self.file_path(&lib_path, &name_str))
-                .ok_or_else(|| FileLoadError::DoesNotExist {
+                .ok_or(FileLoadError::DoesNotExist {
                     source: (origin, span),
                     name,
                 })
