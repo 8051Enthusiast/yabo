@@ -53,6 +53,14 @@ pub enum ValBinOp {
     Then,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Origin {
+    User,
+    Compose,
+    Index,
+    Array,
+}
+
 impl TryFrom<expr::ValBinOp> for ValBinOp {
     type Error = expr::ValBinOp;
 
@@ -116,7 +124,7 @@ impl<C> TryFrom<expr::ValUnOp<C>> for ValUnOp<C> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ValVarOp {
-    PartialApply,
+    PartialApply(Origin),
 }
 
 impl TryFrom<expr::ValVarOp> for ValVarOp {
@@ -124,7 +132,7 @@ impl TryFrom<expr::ValVarOp> for ValVarOp {
 
     fn try_from(value: expr::ValVarOp) -> Result<Self, Self::Error> {
         match value {
-            expr::ValVarOp::PartialApply => Ok(ValVarOp::PartialApply),
+            expr::ValVarOp::PartialApply => Ok(ValVarOp::PartialApply(Origin::User)),
             expr::ValVarOp::Call => Err(expr::ValVarOp::Call),
         }
     }
@@ -277,7 +285,7 @@ pub fn resolve_expr_error(
                 ValUnOp::EvalFun,
                 D(id, |id, [lhs, rhs]| {
                     ExprHead::Variadic(
-                        ValVarOp::PartialApply,
+                        ValVarOp::PartialApply(Origin::Compose),
                         SmallVec::from(
                             &[Item(id, hir::CoreItem::Compose), Cont(lhs), Cont(rhs)][..],
                         ),
@@ -302,7 +310,7 @@ pub fn resolve_expr_error(
                             ValUnOp::EvalFun,
                             D(id, |id, [_, rhs]| {
                                 ExprHead::Variadic(
-                                    ValVarOp::PartialApply,
+                                    ValVarOp::PartialApply(Origin::Index),
                                     SmallVec::from(
                                         &[Item(id, hir::CoreItem::Index), Cont(rhs)][..],
                                     ),
@@ -313,7 +321,7 @@ pub fn resolve_expr_error(
                 ],
             ),
             (Cont(_), ExprHead::Monadic(expr::ValUnOp::Array, inner)) => ExprHead::Variadic(
-                ValVarOp::PartialApply,
+                ValVarOp::PartialApply(Origin::Array),
                 SmallVec::from(
                     &[
                         M(id, |_, _| ExprHead::Niladic(ResolvedAtom::Array)),
@@ -325,7 +333,7 @@ pub fn resolve_expr_error(
                 ValUnOp::EvalFun,
                 V(id, |_, args| {
                     ExprHead::Variadic(
-                        ValVarOp::PartialApply,
+                        ValVarOp::PartialApply(Origin::User),
                         args.iter().copied().map(Cont).collect(),
                     )
                 }),

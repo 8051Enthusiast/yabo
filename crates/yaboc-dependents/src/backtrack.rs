@@ -3,7 +3,7 @@ use yaboc_base::{error::SResult, interner::DefId};
 use yaboc_expr::{ExprHead, Expression, FetchExpr, TakeRef};
 use yaboc_hir::{ExprId, HirNode};
 use yaboc_hir_types::FullTypeId;
-use yaboc_resolve::expr::{Resolved, ResolvedAtom};
+use yaboc_resolve::expr::{Origin, Resolved, ResolvedAtom, ValVarOp};
 use yaboc_resolve::expr::{ValBinOp, ValUnOp};
 use yaboc_types::Type;
 
@@ -48,6 +48,10 @@ fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<(bool, bo
                 ExprHead::Dyadic(_, [(will_left, _), (will_right, _)]) => {
                     (will_left || will_right, false)
                 }
+                ExprHead::Variadic(ValVarOp::PartialApply(Origin::Compose), inner) => (
+                    inner.iter().any(|(will, _)| *will),
+                    inner.iter().any(|(_, can)| *can),
+                ),
                 ExprHead::Variadic(_, inner) => (inner.iter().any(|(will, _)| *will), inner[0].1),
             })
         })
