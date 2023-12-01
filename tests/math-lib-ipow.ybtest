@@ -1,0 +1,45 @@
+====[ source code ]====
+import text
+import math
+
+export
+fun *test = {
+  a: text.num?, /, /, b: text.num?
+  let return = math.ipow(a, b)
+}
+
+====[ text 1 ]====
+0, 0
+
+====[ output 1 ]====
+1
+
+====[ text 2 ]====
+2, 3
+
+====[ output 2 ]====
+8
+
+====[ text 3 ]====
+-2, 3
+
+====[ output 3 ]====
+-8
+
+====[ text 4 ]====
+0, 1
+
+====[ output 4 ]====
+0
+
+====[ text 5 ]====
+2, 0
+
+====[ output 5 ]====
+1
+
+====[ text 6 ]====
+13, 7
+
+====[ output 6 ]====
+62748517
