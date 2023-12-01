@@ -3,39 +3,26 @@
 import text
 import aoc
 import math
+import parse
 
-def *sublistsum = aoc.summap({
-  return: text.num?
-  text.newline?
-})
+def *sublistsum = aoc.summap(text.line? |> text.num?)
 
-def *listmax(min: int): int = {
-  text.newline?
-  sum: sublistsum
-  | return: listmax(math.max(min, sum))?
-  | let return = min
-}
+export
+def *test = aoc.maxmap({return: sublistsum, text.newline? if !eof})
+====[ text 1 ]====
+1000
+2000
+3000
 
-export def *test = {
-  first: sublistsum
-  return: listmax(first)
-}
-====[ binary 1 ]====
-31 30 30 30 0a
-32 30 30 30 0a
-33 30 30 30 0a
-0a
-34 30 30 30 0a
-0a
-35 30 30 30 0a
-36 30 30 
-30 0a
-0a
-37 30 30 30 0a
-38 30 30 30 0a
-39 30 30 30 0a
-0a
-31 30 30 30 30 0a
-00
+4000
+
+5000
+6000
+
+7000
+8000
+9000
+
+10000
 ====[ output 1 ]====
 24000

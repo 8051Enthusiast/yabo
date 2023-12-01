@@ -24,3 +24,6 @@ fun _ipow_impl(base: int, exp: int, acc: int): int = when?(exp == 0) then acc el
 :}
 
 fun ipow(base: int, exp: int): int = when!(exp >= 0) then _ipow_impl(base, exp, 1)
+
+fun min_int() = -(0x7FFFFFFFFFFFFFFF) - 1
+fun max_int() = 0x7FFFFFFFFFFFFFFF
