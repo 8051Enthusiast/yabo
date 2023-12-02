@@ -194,8 +194,8 @@ class CompiledSource:
     def has_errors(self) -> bool:
         return len(self.stderr) > 0
 
-    def __enter__(self) -> str:
-        return self.compiled
+    def __enter__(self) -> "CompiledSource":
+        return self
 
     def __exit__(self, _exc_type, _exc_value, _traceback):
         shutil.rmtree(self.dir)
@@ -412,22 +412,22 @@ class TestFile:
     def run(self) -> int:
         output: str = f'Running test {self.name}\n'
         failed_tests = 0
-        compiled_source = CompiledSource(self.source)
-        if compiled_source.has_errors():
-            try:
-                compiled_source.check_errors()
-            except Exception as e:
-                output += f'{RED} {e}{CLEAR}'
+        with CompiledSource(self.source) as compiled_source:
+            if compiled_source.has_errors():
+                try:
+                    compiled_source.check_errors()
+                except Exception as e:
+                    output += f'{RED} {e}{CLEAR}'
+                    print(output)
+                    return 1
+                if len(self.cases) > 0:
+                    output += f'{RED} Expected no errors, but got some{CLEAR}'
+                    print(output)
+                    return 1
+                output += f'{GREEN} Errortest passed{CLEAR}'
                 print(output)
-                return 1
-            if len(self.cases) > 0:
-                output += f'{RED} Expected no errors, but got some{CLEAR}'
-                print(output)
-                return 1
-            output += f'{GREEN} Errortest passed{CLEAR}'
-            print(output)
-            return 0
-        with compiled_source as compiled:
+                return 0
+            compiled = compiled_source.compiled
             for (test_name, pair) in self.cases.items():
                 buf = bytearray(pair.input)
                 lib = yabo.YaboLib(compiled, buf)
