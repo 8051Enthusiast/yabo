@@ -32,6 +32,9 @@ pub enum HirConversionError {
     ParseInNonParserBlock {
         span: Span,
     },
+    ReturnFieldUnsupported {
+        span: Span,
+    },
     Silenced,
 }
 
@@ -121,6 +124,12 @@ fn val_expression(
     let expr = DataExpr::new_from_unfold(expr, |expr| {
         let expr_res = match &expr.0 {
             ExpressionHead::Niladic(n) => ExprHead::Niladic(match &n.inner {
+                ast::ParserAtom::Atom(Atom::Field(FieldName::Return)) => {
+                    ctx.add_errors(Some(HirConversionError::ReturnFieldUnsupported {
+                        span: n.data,
+                    }));
+                    ParserAtom::Atom(Atom::Field(FieldName::Return))
+                }
                 ast::ParserAtom::Atom(atom) => ParserAtom::Atom(atom.clone()),
                 ast::ParserAtom::Single => ParserAtom::Single,
                 ast::ParserAtom::Nil => ParserAtom::Nil,
