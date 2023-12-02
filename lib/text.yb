@@ -4,7 +4,7 @@ import parse
 # For 0 <= i < 10, the digit is the corresponding ASCII digit.
 # For 10 <= i < 36, the digit is the corresponding ASCII letter from A to Z.
 # The result is the value of the digit.
-def *digit(base: int) = {
+fun *digit(base: int) = {
   x: ~
   | let value = x if 0x30..0x39 - 0x30
   | let value = x if 0x41..0x5a - 0x41 + 10
@@ -21,7 +21,7 @@ fun *number_acc(base: int, n: int): int = {
 }
 
 # Parses a number in the given base.
-def *basenum(base: int) = {
+fun *basenum(base: int) = {
   | /-/, let sign = -1
   | let sign = 1
   n: number_acc(base, 0)?
@@ -29,20 +29,19 @@ def *basenum(base: int) = {
 }
 
 # Parses a decimal number
-def *num = basenum(10)?
+fun *num = basenum(10)?
 
 # Parses a newline
-def *newline = /\r\n?|\n/
+fun *newline = /\r\n?|\n/
 
 # Parses a newline or eof
-def *line_end = {
+fun *line_end = {
   | newline?
   | parse.eof?
 }
 
-def *line = {
+fun *line = {
   | return: /[^\n\r]*/, newline?
   | return: /[^\n\r]+/, parse.eof?
 }
 
-def *empty_line = line |> parse.eof?
