@@ -13,57 +13,31 @@ pub enum Strictness {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Use {
-    pub strictness: Strictness,
+    pub strictness: DerefLevel,
+    pub return_origin: bool,
     pub always: bool,
 }
 
 impl Use {
     fn sometimes(self) -> Self {
         Use {
-            strictness: self.strictness,
             always: false,
-        }
-    }
-    fn new_always(strictness: Strictness) -> Self {
-        Use {
-            strictness,
-            always: true,
+            ..self
         }
     }
     fn new_static(deref_level: DerefLevel) -> Self {
         Use {
-            strictness: Strictness::Static(deref_level),
+            strictness: deref_level,
+            return_origin: false,
             always: true,
         }
     }
-}
-
-impl Ord for Strictness {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match (self, other) {
-            (Strictness::Static(a), Strictness::Static(b)) => a.cmp(b),
-            (Strictness::Return, Strictness::Return) => std::cmp::Ordering::Equal,
-            (Strictness::Static(a), Strictness::Return) => {
-                if a == &DerefLevel::zero() {
-                    std::cmp::Ordering::Less
-                } else {
-                    std::cmp::Ordering::Greater
-                }
-            }
-            (Strictness::Return, Strictness::Static(a)) => {
-                if a == &DerefLevel::zero() {
-                    std::cmp::Ordering::Greater
-                } else {
-                    std::cmp::Ordering::Less
-                }
-            }
+    fn new_return(deref_level: DerefLevel) -> Self {
+        Use {
+            strictness: deref_level,
+            return_origin: true,
+            always: true,
         }
-    }
-}
-
-impl PartialOrd for Strictness {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
     }
 }
 
@@ -72,6 +46,7 @@ impl std::ops::BitOr for Use {
     fn bitor(self, other: Self) -> Self {
         Use {
             strictness: self.strictness.max(other.strictness),
+            return_origin: self.return_origin && other.return_origin,
             always: self.always && other.always,
         }
     }
@@ -82,6 +57,7 @@ impl std::ops::BitAnd for Use {
     fn bitand(self, other: Self) -> Self {
         Use {
             strictness: self.strictness.max(other.strictness),
+            return_origin: self.return_origin && other.return_origin,
             always: self.always || other.always,
         }
     }
@@ -151,16 +127,15 @@ impl<'a> StrictnessCtx<'a> {
             let deref_level = db.deref_level(info.ty)?;
             //dbeprintln!(&(fun, db), "deref {} place {}", &deref_level, &place);
             if deref_level == DerefLevel::zero() {
+                // note that this makes return places of level 0 also have static,
+                // but that does not matter as the range of strictness is just 0..0 in both cases
                 fixed.map.insert(place, Use::new_static(deref_level));
                 continue;
             }
             match info.place {
-                Place::Return => fixed.map.insert(place, Use::new_always(Strictness::Return)),
+                Place::Return => fixed.map.insert(place, Use::new_return(deref_level)),
                 Place::Stack(_) => continue,
-                _ => {
-                    let deref_level = db.deref_level(info.ty)?;
-                    fixed.map.insert(place, Use::new_static(deref_level))
-                }
+                _ => fixed.map.insert(place, Use::new_static(deref_level)),
             };
         }
         let worklist = fun.success_returns().to_vec();
@@ -303,10 +278,13 @@ impl<'a> StrictnessCtx<'a> {
                 .map
                 .get(&place)
                 .or_else(|| kills.map.get(&place))
-                .filter(|x| x.always)
-                .map(|x| x.strictness);
+                .filter(|x| x.always);
             let strict = if let Some(strict) = overall_use {
-                strict
+                if strict.return_origin {
+                    Strictness::Return
+                } else {
+                    Strictness::Static(strict.strictness)
+                }
             } else {
                 let deref_level = self.db.deref_level(info.ty)?;
                 Strictness::Static(deref_level)
