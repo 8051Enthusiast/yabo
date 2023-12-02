@@ -489,8 +489,12 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             Comp::Equals => IntPredicate::EQ,
         };
         let comp_res = self.cg.builder.build_int_compare(op, lhs, rhs, "comp");
-        let ret_ptr = self.build_typed_place_ptr(ret, self.cg.llvm.bool_type());
-        self.cg.builder.build_store(ret_ptr, comp_res);
+        let zext_res =
+            self.cg
+                .builder
+                .build_int_z_extend(comp_res, self.cg.llvm.i8_type(), "zext_bool_to_u8");
+        let ret_ptr = self.build_typed_place_ptr(ret, self.cg.llvm.i8_type());
+        self.cg.builder.build_store(ret_ptr, zext_res);
     }
 
     fn set_arg(&mut self, fun: PlaceRef, arg: PlaceRef, argnum: u64, error: BasicBlock<'llvm>) {
