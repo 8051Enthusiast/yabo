@@ -52,27 +52,20 @@ fn conversion_report(error: HirConversionError) -> Option<Report> {
                 Label::new(span).with_message("all conjunctions must be either !eof or not"),
             ),
         ),
-        HirConversionError::NakedDef { span }  => Some(
-            Report::new(
-                DiagnosticKind::Error,
-                span.file,
-                "Naked definition",
-            )
-            .with_code(204)
-            .with_label(
-                Label::new(span).with_message("definitions must have function arguments or be a parser"),
-            ),
+        HirConversionError::NakedDef { span } => Some(
+            Report::new(DiagnosticKind::Error, span.file, "Naked definition")
+                .with_code(204)
+                .with_label(
+                    Label::new(span)
+                        .with_message("definitions must have function arguments or be a parser"),
+                ),
         ),
         HirConversionError::NonParserDef { span } => Some(
-            Report::new(
-                DiagnosticKind::Error,
-                span.file,
-                "Non-parser definition",
-            )
-            .with_code(205)
-            .with_label(
-                Label::new(span).with_message("a definition must either be declared with `fun` or be a parser"),
-            ),
+            Report::new(DiagnosticKind::Error, span.file, "Non-parser definition")
+                .with_code(205)
+                .with_label(Label::new(span).with_message(
+                    "a definition must either be declared with `fun` or be a parser",
+                )),
         ),
         HirConversionError::ParseInNonParserBlock { span } => Some(
             Report::new(
@@ -82,8 +75,17 @@ fn conversion_report(error: HirConversionError) -> Option<Report> {
             )
             .with_code(206)
             .with_label(
-                Label::new(span).with_message("only parser blocks (`{...}`) can contain parse statements"),
+                Label::new(span)
+                    .with_message("only parser blocks (`{...}`) can contain parse statements"),
             ),
+        ),
+        HirConversionError::ReturnFieldUnsupported { span } => Some(
+            Report::new(DiagnosticKind::Error, span.file, "Return field unsupported")
+                .with_code(207)
+                .with_label(
+                    Label::new(span)
+                        .with_message("referring to a `return` field is not yet supported"),
+                ),
         ),
         HirConversionError::Silenced => None,
     }

@@ -1,0 +1,8 @@
+====[ source code ]====
+fun f(x: u8) = (x > 10) if true
+export
+fun *test: int = {
+  return: ~
+  let _ = f(return)
+           #~^error[207] referring to a `return` field is not yet supported
+}
