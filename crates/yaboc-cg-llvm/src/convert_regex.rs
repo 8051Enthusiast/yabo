@@ -13,7 +13,7 @@ use yaboc_types::{PrimitiveType, Type, TypeInterner};
 use crate::{
     parser_args,
     val::{CgReturnValue, CgValue},
-    CodeGenCtx,
+    CodeGenCtx, defs::TAILCC,
 };
 
 pub struct RegexTranslator<'llvm, 'comp, 'r, D: DFA<ID = usize>> {
@@ -124,6 +124,7 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
             ],
             "next_ret",
         );
+        ret.set_call_convention(TAILCC);
         let ret = ret.try_as_basic_value().left().unwrap().into_int_value();
         let ret_bb = self.cg.llvm.append_basic_block(self.llvm_fun, "ret");
         let cont_bb = self.cg.llvm.append_basic_block(self.llvm_fun, "cont");
