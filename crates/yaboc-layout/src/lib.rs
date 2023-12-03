@@ -202,28 +202,47 @@ impl<'a> IMonoLayout<'a> {
         }
     }
 
-    pub fn remove_backtracking(self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> IMonoLayout<'a> {
+    pub fn set_backtracking(
+        self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+        bt: bool,
+    ) -> IMonoLayout<'a> {
         match self.mono_layout().0 {
-            MonoLayout::NominalParser(pd, f, _) => IMonoLayout(ctx.dcx.intern(Layout::Mono(
-                MonoLayout::NominalParser(*pd, f.clone(), false),
-                self.mono_layout().1,
-            ))),
-            MonoLayout::BlockParser(bd, cap, typeargs, _) => {
+            MonoLayout::NominalParser(pd, f, status) if *status != bt => {
                 IMonoLayout(ctx.dcx.intern(Layout::Mono(
-                    MonoLayout::BlockParser(*bd, cap.clone(), typeargs.clone(), false),
+                    MonoLayout::NominalParser(*pd, f.clone(), bt),
                     self.mono_layout().1,
                 )))
             }
-            MonoLayout::Regex(r, _) => IMonoLayout(ctx.dcx.intern(Layout::Mono(
-                MonoLayout::Regex(*r, false),
-                self.mono_layout().1,
-            ))),
-            MonoLayout::IfParser(inner, c, _) => IMonoLayout(ctx.dcx.intern(Layout::Mono(
-                MonoLayout::IfParser(*inner, *c, WiggleKind::Try),
-                self.mono_layout().1,
-            ))),
+            MonoLayout::BlockParser(bd, cap, typeargs, status) if *status != bt => {
+                IMonoLayout(ctx.dcx.intern(Layout::Mono(
+                    MonoLayout::BlockParser(*bd, cap.clone(), typeargs.clone(), bt),
+                    self.mono_layout().1,
+                )))
+            }
+            MonoLayout::Regex(r, status) if *status != bt => IMonoLayout(ctx.dcx.intern(
+                Layout::Mono(MonoLayout::Regex(*r, true), self.mono_layout().1),
+            )),
+            MonoLayout::IfParser(inner, c, status) if bool::from(*status) != bt => {
+                let new_status = if bt { WiggleKind::If } else { WiggleKind::Try };
+                IMonoLayout(ctx.dcx.intern(Layout::Mono(
+                    MonoLayout::IfParser(*inner, *c, new_status),
+                    self.mono_layout().1,
+                )))
+            }
             _ => self,
         }
+    }
+
+    pub fn remove_backtracking(self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> IMonoLayout<'a> {
+        self.set_backtracking(ctx, false)
+    }
+
+    pub fn backtrack_statuses(self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> [IMonoLayout<'a>; 2] {
+        [
+            self.set_backtracking(ctx, true),
+            self.set_backtracking(ctx, false),
+        ]
     }
 
     pub fn unapply_nominal(
