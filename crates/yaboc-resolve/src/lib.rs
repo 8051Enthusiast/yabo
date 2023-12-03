@@ -101,19 +101,17 @@ pub fn captures(db: &dyn Resolves, id: hir::BlockId) -> Arc<BTreeSet<DefId>> {
             } else {
                 continue;
             };
-            ret.extend(
-                resolved_expr
-                    .expr
-                    .take_ref()
-                    .iter_parts()
-                    .filter_map(|subexpr| {
-                        if let ExprHead::Niladic(expr::ResolvedAtom::Captured(capture)) = subexpr {
-                            Some(capture)
-                        } else {
-                            None
-                        }
-                    }),
-            );
+            for subexpr in resolved_expr.expr.take_ref().iter_parts() {
+                if let ExprHead::Niladic(expr::ResolvedAtom::Captured(capture)) = subexpr {
+                    ret.insert(capture);
+                } else if let ExprHead::Niladic(expr::ResolvedAtom::Block(bid, _)) = subexpr {
+                    ret.extend(
+                        db.captures(bid)
+                            .iter()
+                            .filter(|x| !id.0.is_ancestor_of(db, **x)),
+                    );
+                }
+            }
         }
     }
     Arc::new(ret)

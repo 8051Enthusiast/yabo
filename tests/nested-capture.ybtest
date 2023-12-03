@@ -1,0 +1,13 @@
+====[ source code ]====
+fun *t(s: int) = {
+  return: {
+    let return = s
+  }
+}
+
+export
+fun *test = t(54)
+====[ binary 1 ]====
+00
+====[ output 1 ]====
+54
