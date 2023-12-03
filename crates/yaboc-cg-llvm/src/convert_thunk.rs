@@ -388,7 +388,7 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
         if deref_level.is_deref() {
             let self_level = self
                 .cg
-                .build_deref_level_get(Some(self.target_layout), self.cg.any_ptr().get_undef());
+                .build_deref_level_get(Some(self.target_layout), self.cg.invalid_ptr());
             let no_deref = self.cg.builder.build_int_compare(
                 IntPredicate::ULE,
                 self_level,

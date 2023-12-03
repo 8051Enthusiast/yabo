@@ -230,6 +230,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.llvm.i8_type().ptr_type(AddressSpace::default())
     }
 
+    fn invalid_ptr(&self) -> PointerValue<'llvm> {
+        self.any_ptr().get_undef()
+    }
+
     fn word_size(&self) -> u64 {
         <*const u8>::tsize().size
     }
@@ -252,13 +256,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn undef_ret(&self) -> CgReturnValue<'llvm> {
-        let undef_ptr = self.any_ptr().get_undef();
+        let undef_ptr = self.invalid_ptr();
         let head = self.const_i64(DerefLevel::max().into_shifted_runtime_value() as i64);
         CgReturnValue::new(head, undef_ptr)
     }
 
     fn undef_val(&mut self) -> CgValue<'comp, 'llvm> {
-        let undef_ptr = self.any_ptr().get_undef();
+        let undef_ptr = self.invalid_ptr();
         let layout = ILayout::bottom(&mut self.layouts.dcx);
         CgValue::new(layout, undef_ptr)
     }
@@ -274,7 +278,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.set_last_instr_align(sa).unwrap();
         let u8_ptr_ty = self.llvm.i8_type().ptr_type(AddressSpace::default());
         match vtable {
-            None => self.any_ptr().get_undef(),
+            None => self.invalid_ptr(),
             Some(false) => self
                 .builder
                 .build_bitcast(ptr, u8_ptr_ty, name)
@@ -559,10 +563,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let arg_ptr = if !args.is_empty() {
             let mut from_sa = from_layout.size_align(self.layouts).unwrap();
             from_sa.align_mask |= layout_sa.align_mask;
-
             self.build_byte_gep(val.ptr, self.const_i64(from_sa.stride() as i64), "arg_ptr")
         } else {
-            self.any_ptr().get_undef()
+            self.invalid_ptr()
         };
         let arg = CgMonoValue::new(parser, arg_ptr);
         (from_val, arg)

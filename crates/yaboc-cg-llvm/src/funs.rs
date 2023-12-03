@@ -792,7 +792,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 .db
                 .intern_type(Type::Primitive(PrimitiveType::Unit));
             let unit_layout = canon_layout(self.layouts, unit_type).unwrap();
-            let undef = CgValue::new(unit_layout, self.any_ptr().get_undef());
+            let undef = CgValue::new(unit_layout, self.invalid_ptr());
             self.terminate_tail_typecast(undef, ret);
         } else {
             self.builder.build_return(Some(&self.const_i64(0)));

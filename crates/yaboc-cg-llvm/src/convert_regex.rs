@@ -112,7 +112,7 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
     }
 
     fn next_byte(&mut self) -> IntValue<'llvm> {
-        let undef = self.cg.any_ptr().get_undef();
+        let undef = self.cg.invalid_ptr();
         let head = DerefLevel::zero().into_shifted_runtime_value();
         let ret = self.cg.builder.build_call(
             self.parser_fun,
