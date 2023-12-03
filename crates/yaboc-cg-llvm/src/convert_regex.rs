@@ -139,11 +139,7 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
         self.cg.builder.position_at_end(ret_bb);
         self.cg.builder.build_return(Some(&ret));
         self.cg.builder.position_at_end(cont_bb);
-        let next_byte = self.cg.build_cast::<*mut i64, _>(self.next_byte.ptr);
-        self.cg
-            .builder
-            .build_load(next_byte, "next_byte")
-            .into_int_value()
+        self.cg.build_i64_load(self.next_byte.ptr, "next_byte")
     }
 
     fn add_state(&mut self, state: usize) {
@@ -191,7 +187,7 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
             let no_match_bool = self
                 .cg
                 .builder
-                .build_load(no_match, "no_match_bool")
+                .build_load(self.cg.llvm.bool_type(), no_match, "no_match_bool")
                 .into_int_value();
             self.cg
                 .builder

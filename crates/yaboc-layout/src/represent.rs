@@ -342,6 +342,7 @@ pub enum LayoutPart {
     Parse(RequirementSet, ParserFunKind, [u8; TRUNCATION_LENGTH]),
     Field(Identifier),
     VTable,
+    VTableTy,
     Start,
     End,
     Typecast,
@@ -381,6 +382,7 @@ impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
             }
             LayoutPart::Field(n) => dbwrite!(f, db, "field_{}", n),
             LayoutPart::VTable => write!(f, "vtable"),
+            LayoutPart::VTableTy => write!(f, "vtable_ty"),
             LayoutPart::Start => write!(f, "start"),
             LayoutPart::End => write!(f, "end"),
             LayoutPart::Typecast => write!(f, "typecast"),

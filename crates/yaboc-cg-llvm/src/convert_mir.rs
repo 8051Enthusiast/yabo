@@ -243,11 +243,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let (byte_ptr, shifted_bit) = self
             .discriminant_info(block, field)
             .expect("fields that are always present can not be set");
-        let byte = self
-            .cg
-            .builder
-            .build_load(byte_ptr, "lddisc")
-            .into_int_value();
+        let byte = self.cg.build_byte_load(byte_ptr, "lddisc");
         let modified_byte = if val {
             self.cg.builder.build_or(byte, shifted_bit, "setdisc")
         } else {
@@ -270,20 +266,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             ConstraintAtom::Atom(Atom::Number(num)) => {
                 let num = self.cg.const_i64(num);
                 let num_ptr = self.place_ptr(place);
-                let cast_num_ptr = self
-                    .cg
-                    .builder
-                    .build_bitcast(
-                        num_ptr,
-                        self.cg.llvm.i64_type().ptr_type(AddressSpace::default()),
-                        "cast_assert_num",
-                    )
-                    .into_pointer_value();
-                let num_actual = self
-                    .cg
-                    .builder
-                    .build_load(cast_num_ptr, "ld_assert_num")
-                    .into_int_value();
+                let num_actual = self.cg.build_i64_load(num_ptr, "ld_assert_num");
                 self.cg.builder.build_int_compare(
                     IntPredicate::EQ,
                     num,
@@ -294,20 +277,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             ConstraintAtom::Atom(Atom::Char(num)) => {
                 let num = self.cg.llvm.i32_type().const_int(num as u64, false);
                 let num_ptr = self.place_ptr(place);
-                let cast_num_ptr = self
-                    .cg
-                    .builder
-                    .build_bitcast(
-                        num_ptr,
-                        self.cg.llvm.i32_type().ptr_type(AddressSpace::default()),
-                        "cast_assert_char",
-                    )
-                    .into_pointer_value();
-                let num_actual = self
-                    .cg
-                    .builder
-                    .build_load(cast_num_ptr, "ld_assert_char")
-                    .into_int_value();
+                let num_actual = self.cg.build_char_load(num_ptr, "ld_assert_char");
                 self.cg.builder.build_int_compare(
                     IntPredicate::EQ,
                     num,
@@ -318,11 +288,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             ConstraintAtom::Atom(Atom::Bool(bool)) => {
                 let bool = self.cg.llvm.i8_type().const_int(bool as u64, false);
                 let bool_ptr = self.place_ptr(place);
-                let num_actual = self
-                    .cg
-                    .builder
-                    .build_load(bool_ptr, "ld_assert_bool")
-                    .into_int_value();
+                let num_actual = self.cg.build_byte_load(bool_ptr, "ld_assert_bool");
                 self.cg.builder.build_int_compare(
                     IntPredicate::EQ,
                     bool,
@@ -334,20 +300,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 let start = self.cg.const_i64(start);
                 let end = self.cg.const_i64(end);
                 let num_ptr = self.place_ptr(place);
-                let cast_num_ptr = self
-                    .cg
-                    .builder
-                    .build_bitcast(
-                        num_ptr,
-                        self.cg.llvm.i64_type().ptr_type(AddressSpace::default()),
-                        "cast_assert_range",
-                    )
-                    .into_pointer_value();
-                let num_actual = self
-                    .cg
-                    .builder
-                    .build_load(cast_num_ptr, "ld_assert_range")
-                    .into_int_value();
+                let num_actual = self.cg.build_i64_load(num_ptr, "ld_assert_range");
                 let cmp_start = self.cg.builder.build_int_compare(
                     IntPredicate::SGE,
                     num_actual,
@@ -431,7 +384,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 // result in issues with memcpy
                 None
             } else {
-                Some(self.fun.into())
+                Some(self.fun)
             };
             let ret =
                 self.cg
@@ -473,8 +426,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     }
 
     fn build_int_load(&mut self, place: PlaceRef) -> IntValue<'llvm> {
-        let ptr = self.build_typed_place_ptr(place, self.cg.llvm.i64_type());
-        self.cg.builder.build_load(ptr, "load_int").into_int_value()
+        let ptr = self.place_ptr(place);
+        self.cg.build_i64_load(ptr, "load_int")
     }
 
     fn comp(&mut self, ret: PlaceRef, op: Comp, left: PlaceRef, right: PlaceRef) {

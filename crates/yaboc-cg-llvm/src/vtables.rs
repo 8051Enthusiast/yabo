@@ -3,7 +3,7 @@ use yaboc_layout::vtable::{BlockFieldFun, CreateArgFun, EvalFunFun, LenFun};
 use super::*;
 
 impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
-    fn vtable_header(&mut self, layout: IMonoLayout<'comp>) -> StructValue<'llvm> {
+    fn vtable_header(&mut self, layout: IMonoLayout<'comp>, named: bool) -> StructValue<'llvm> {
         let size_align = layout
             .inner()
             .size_align_without_vtable(self.layouts)
@@ -24,25 +24,48 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .as_pointer_value();
         let size = self.const_size_t(size_align.size as i64);
         let align = self.const_size_t(size_align.align() as i64);
-        self.llvm.const_struct(
-            &[
+        if named {
+            let vtable_ty = self.vtable_ty(layout);
+            vtable_ty.const_named_struct(&[
                 head_disc_val.into(),
                 deref_level.into(),
                 typecast.into(),
                 mask.into(),
                 size.into(),
                 align.into(),
-            ],
-            false,
-        )
+            ])
+        } else {
+            self.llvm.const_struct(
+                &[
+                    head_disc_val.into(),
+                    deref_level.into(),
+                    typecast.into(),
+                    mask.into(),
+                    size.into(),
+                    align.into(),
+                ],
+                false,
+            )
+        }
+    }
+
+    fn vtable_ty(&mut self, layout: IMonoLayout<'comp>) -> inkwell::types::StructType<'llvm> {
+        let vtable_ty_name = self.sym(layout, LayoutPart::VTableTy);
+        if let Some(vtable_ty) = self.module.get_struct_type(&vtable_ty_name) {
+            return vtable_ty;
+        }
+        let vtable_ty = self.llvm.opaque_struct_type(&vtable_ty_name);
+        vtable_ty
     }
 
     fn create_vtable<T: TargetSized>(&mut self, layout: IMonoLayout<'comp>) -> GlobalValue<'llvm> {
-        let vtable_type = T::codegen_ty(self);
+        let vtable_fields = T::codegen_ty(self).into_struct_type().get_field_types();
+        let vtable_ty = self.vtable_ty(layout);
+        vtable_ty.set_body(&vtable_fields, false);
         let vtable_sym = self.sym(layout, LayoutPart::VTable);
-        let vtable =
-            self.module
-                .add_global(vtable_type, Some(AddressSpace::default()), &vtable_sym);
+        let vtable = self
+            .module
+            .add_global(vtable_ty, Some(AddressSpace::default()), &vtable_sym);
         vtable.set_linkage(Linkage::Internal);
         vtable.set_constant(true);
         vtable
@@ -53,22 +76,25 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         size: u32,
     ) -> GlobalValue<'llvm> {
-        let mut vtable_type = T::codegen_ty(self).into_struct_type();
-        vtable_type = self.resize_struct_end_array(vtable_type, size);
+        let mut vtable_fields = T::codegen_ty(self).into_struct_type().get_field_types();
+        self.resize_struct_end_array(&mut vtable_fields, size);
         if let Some((argnum, _)) = layout.arg_num(&self.compiler_database.db).unwrap() {
-            vtable_type = self.resize_struct_start_array(vtable_type, argnum as u32)
+            self.resize_struct_start_array(&mut vtable_fields, argnum as u32)
         }
+        let vtable_ty = self.vtable_ty(layout);
+        vtable_ty.set_body(&vtable_fields, false);
         let vtable_sym = self.sym(layout, LayoutPart::VTable);
-        let vtable =
-            self.module
-                .add_global(vtable_type, Some(AddressSpace::default()), &vtable_sym);
+        let vtable = self
+            .module
+            .add_global(vtable_ty, Some(AddressSpace::default()), &vtable_sym);
         vtable.set_linkage(Linkage::Internal);
+        vtable.set_constant(true);
         vtable
     }
 
     fn create_primitive_vtable(&mut self, layout: IMonoLayout<'comp>) {
         let vtable = self.create_vtable::<vtable::VTableHeader>(layout);
-        let vtable_header = self.vtable_header(layout);
+        let vtable_header = self.vtable_header(layout, true);
         if let MonoLayout::Primitive(PrimitiveType::U8) = layout.mono_layout().0 {
             // predeclare the current_element function so that we can call it
             // but don't put it into a vtable since it's a primitive type
@@ -80,47 +106,49 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn create_array_vtable(&mut self, layout: IMonoLayout<'comp>) {
         let vtable = self.create_vtable::<vtable::ArrayVTable>(layout);
-        let vtable_header = self.vtable_header(layout);
+        let vtable_header = self.vtable_header(layout, false);
         let single_foward = self.single_forward_fun_val(layout);
         let current_element = self.current_element_fun_val(layout);
         let array_len = self.array_len_fun_val(layout);
         let skip = self.skip_fun_val(layout);
         let span = self.span_fun_val(layout);
         let inner_array = self.inner_array_fun_val(layout);
-        let vtable_val = self.llvm.const_struct(
-            &[
-                vtable_header.into(),
-                single_foward.as_global_value().as_pointer_value().into(),
-                current_element.as_global_value().as_pointer_value().into(),
-                array_len.as_global_value().as_pointer_value().into(),
-                skip.as_global_value().as_pointer_value().into(),
-                span.as_global_value().as_pointer_value().into(),
-                inner_array.as_global_value().as_pointer_value().into(),
-            ],
-            false,
-        );
+        let vtable_ty = self.vtable_ty(layout);
+        let vtable_val = vtable_ty.const_named_struct(&[
+            vtable_header.into(),
+            single_foward.as_global_value().as_pointer_value().into(),
+            current_element.as_global_value().as_pointer_value().into(),
+            array_len.as_global_value().as_pointer_value().into(),
+            skip.as_global_value().as_pointer_value().into(),
+            span.as_global_value().as_pointer_value().into(),
+            inner_array.as_global_value().as_pointer_value().into(),
+        ]);
         vtable.set_initializer(&vtable_val);
     }
 
     fn create_nominal_vtable(&mut self, layout: IMonoLayout<'comp>) {
         let vtable = self.create_vtable::<vtable::NominalVTable>(layout);
-        let vtable_header = self.vtable_header(layout);
+        let vtable_header = self.vtable_header(layout, false);
         let MonoLayout::Nominal(pd, _, _) = layout.mono_layout().0 else {
             panic!("attempting to create nominal vtable of non-nominal layout")
         };
         let ident = pd.0.unwrap_name(&self.compiler_database.db);
-        let name = self.compiler_database.db.lookup_intern_identifier(ident).name;
+        let name = self
+            .compiler_database
+            .db
+            .lookup_intern_identifier(ident)
+            .name;
         let llvm_name = self.module_string(&name);
         let start = self.start_fun_val(layout);
         let end = self.end_fun_val(layout);
-        let vtable_val = self.llvm.const_struct(
+        let vtable_ty = self.vtable_ty(layout);
+        let vtable_val = vtable_ty.const_named_struct(
             &[
                 vtable_header.into(),
                 llvm_name.into(),
                 start.as_global_value().as_pointer_value().into(),
                 end.as_global_value().as_pointer_value().into(),
             ],
-            false,
         );
         vtable.set_initializer(&vtable_val);
     }
@@ -149,15 +177,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             })
             .collect();
         let vtable = self.create_resized_vtable::<vtable::BlockVTable>(layout, funs.len() as u32);
-        let vtable_header = self.vtable_header(layout);
+        let vtable_header = self.vtable_header(layout, false);
         let block_info = self.block_info(id);
         let access_array = BlockFieldFun::codegen_ty(self)
             .into_pointer_type()
             .const_array(&funs);
-        let vtable_val = self.llvm.const_struct(
-            &[vtable_header.into(), block_info.into(), access_array.into()],
-            false,
-        );
+        let vtable_ty = self.vtable_ty(layout);
+        let vtable_val = vtable_ty.const_named_struct(&[
+            vtable_header.into(),
+            block_info.into(),
+            access_array.into(),
+        ]);
         vtable.set_initializer(&vtable_val);
     }
 
@@ -195,7 +225,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let max = slots.keys().copied().max().unwrap_or(0);
         let arg_impl_array = self.create_set_arg_array(layout);
         let vtable = self.create_resized_vtable::<vtable::ParserVTable>(layout, (max + 1) as u32);
-        let vtable_header = self.vtable_header(layout);
+        let vtable_header = self.vtable_header(layout, false);
         let vtable_impls: Vec<_> = (0..=max)
             .map(|slot| {
                 let is_non_null = slots.contains_key(&slot);
@@ -220,15 +250,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let vtable_array = ParserFun::codegen_ty(self)
             .into_pointer_type()
             .const_array(&vtable_impls);
-        let vtable_val = self.llvm.const_struct(
-            &[
-                arg_impl_array.into(),
-                vtable_header.into(),
-                len_impl.into(),
-                vtable_array.into(),
-            ],
-            false,
-        );
+        let vtable_ty = self.vtable_ty(layout);
+        let vtable_val = vtable_ty.const_named_struct(&[
+            arg_impl_array.into(),
+            vtable_header.into(),
+            len_impl.into(),
+            vtable_array.into(),
+        ]);
         vtable.set_initializer(&vtable_val)
     }
 
@@ -243,7 +271,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let max = slots.keys().copied().max().unwrap_or(0);
         let arg_impl_array = self.create_set_arg_array(layout);
         let vtable = self.create_resized_vtable::<vtable::FunctionVTable>(layout, (max + 1) as u32);
-        let vtable_header = self.vtable_header(layout);
+        let vtable_header = self.vtable_header(layout, false);
         let vtable_impls: Vec<_> = (0..=max)
             .map(|slot| {
                 let is_non_null = slots.contains_key(&slot);
@@ -279,15 +307,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let vtable_array = CreateArgFun::codegen_ty(self)
             .into_pointer_type()
             .const_array(&vtable_impls);
-        let vtable_val = self.llvm.const_struct(
-            &[
-                arg_impl_array.into(),
-                vtable_header.into(),
-                eval_fun_impl.into(),
-                vtable_array.into(),
-            ],
-            false,
-        );
+        let vtable_ty = self.vtable_ty(layout);
+        let vtable_val = vtable_ty.const_named_struct(&[
+            arg_impl_array.into(),
+            vtable_header.into(),
+            eval_fun_impl.into(),
+            vtable_array.into(),
+        ]);
         vtable.set_initializer(&vtable_val)
     }
 
