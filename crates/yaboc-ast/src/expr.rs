@@ -573,7 +573,7 @@ pub enum ValBinOp {
     ParserApply,
     Else,
     Then,
-    Index,
+    Index(BtMarkKind),
     At,
 }
 
@@ -601,7 +601,8 @@ impl ValBinOp {
             "*>" => ParserApply,
             "else" => Else,
             "then" => Then,
-            ".[" => Index,
+            ".[" => Index(BtMarkKind::RemoveBt),
+            ".?[" => Index(BtMarkKind::KeepBt),
             "at" => At,
             otherwise => return Err(otherwise),
         })
@@ -634,7 +635,8 @@ impl Display for ValBinOp {
                 ValBinOp::ParserApply => "*>",
                 ValBinOp::Else => "else",
                 ValBinOp::Then => "then",
-                ValBinOp::Index => ".[",
+                ValBinOp::Index(BtMarkKind::RemoveBt) => ".[",
+                ValBinOp::Index(BtMarkKind::KeepBt) => ".?[",
                 ValBinOp::At => "at",
             }
         )
@@ -733,6 +735,15 @@ impl Display for WiggleKind {
                 WiggleKind::Try => "try",
             }
         )
+    }
+}
+
+impl From<WiggleKind> for bool {
+    fn from(kind: WiggleKind) -> Self {
+        match kind {
+            WiggleKind::If => true,
+            WiggleKind::Try => false,
+        }
     }
 }
 

@@ -1812,8 +1812,17 @@
               "type": "FIELD",
               "name": "op",
               "content": {
-                "type": "STRING",
-                "value": ".["
+                "type": "CHOICE",
+                "members": [
+                  {
+                    "type": "STRING",
+                    "value": ".["
+                  },
+                  {
+                    "type": "STRING",
+                    "value": ".?["
+                  }
+                ]
               }
             },
             {

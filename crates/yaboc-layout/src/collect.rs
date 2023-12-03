@@ -116,21 +116,14 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             matches!(mono.mono_layout().0, MonoLayout::BlockParser(..))
                 .then_some(UnprocessedCall::BlockEvalFun as fn(_) -> _)
         };
-        if self.functions.insert(mono) {
-            if TRACE_COLLECTION {
-                dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
-            }
-            if let Some(eval) = eval {
-                self.unprocessed.push(eval(mono));
-            }
-        }
-        let nbt = mono.remove_backtracking(self.ctx);
-        if self.functions.insert(nbt) {
-            if TRACE_COLLECTION {
-                dbeprintln!(self.ctx.db, "[collection] registered function {}", &nbt);
-            }
-            if let Some(eval) = eval {
-                self.unprocessed.push(eval(nbt));
+        for bt_status in mono.backtrack_statuses(self.ctx) {
+            if self.functions.insert(bt_status) {
+                if TRACE_COLLECTION {
+                    dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
+                }
+                if let Some(eval) = eval {
+                    self.unprocessed.push(eval(bt_status));
+                }
             }
         }
     }
@@ -180,12 +173,14 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 | MonoLayout::ArrayParser(Some((_, Some(_)))) => {
                     let ty = self.ctx.db.lookup_intern_type(mono.mono_layout().1);
                     if let Type::ParserArg { .. } = ty {
-                        if self.parsers.insert(mono) && TRACE_COLLECTION {
-                            dbeprintln!(self.ctx.db, "[collection] registered parser {}", &mono);
-                        }
-                        let nbt = mono.remove_backtracking(self.ctx);
-                        if self.parsers.insert(nbt) && TRACE_COLLECTION {
-                            dbeprintln!(self.ctx.db, "[collection] registered parser {}", &nbt);
+                        for bt_status in mono.backtrack_statuses(self.ctx) {
+                            if self.parsers.insert(bt_status) && TRACE_COLLECTION {
+                                dbeprintln!(
+                                    self.ctx.db,
+                                    "[collection] registered parser {}",
+                                    &mono
+                                );
+                            }
                         }
                     } else {
                         self.register_function(mono);
@@ -195,21 +190,17 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 | MonoLayout::Nil
                 | MonoLayout::IfParser(..)
                 | MonoLayout::Regex(..) => {
-                    if self.parsers.insert(mono) && TRACE_COLLECTION {
-                        dbeprintln!(self.ctx.db, "[collection] registered parser {}", &mono);
-                    }
-                    let nbt = mono.remove_backtracking(self.ctx);
-                    if self.parsers.insert(nbt) && TRACE_COLLECTION {
-                        dbeprintln!(self.ctx.db, "[collection] registered parser {}", &nbt);
+                    for bt_status in mono.backtrack_statuses(self.ctx) {
+                        if self.parsers.insert(bt_status) && TRACE_COLLECTION {
+                            dbeprintln!(self.ctx.db, "[collection] registered parser {}", &mono);
+                        }
                     }
                 }
                 MonoLayout::ArrayParser(Some((_, None)) | None) => {
-                    if self.functions.insert(mono) && TRACE_COLLECTION {
-                        dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
-                    }
-                    let nbt = mono.remove_backtracking(self.ctx);
-                    if self.functions.insert(nbt) && TRACE_COLLECTION {
-                        dbeprintln!(self.ctx.db, "[collection] registered function {}", &nbt);
+                    for bt_status in mono.backtrack_statuses(self.ctx) {
+                        if self.functions.insert(bt_status) && TRACE_COLLECTION {
+                            dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
+                        }
                     }
                 }
                 MonoLayout::Primitive(_) => {}

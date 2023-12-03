@@ -86,7 +86,7 @@ impl TryFrom<expr::ValBinOp> for ValBinOp {
             expr::ValBinOp::ParserApply => Ok(ValBinOp::ParserApply),
             expr::ValBinOp::Else => Ok(ValBinOp::Else),
             expr::ValBinOp::Then => Ok(ValBinOp::Then),
-            expr::ValBinOp::Index => Err(expr::ValBinOp::Index),
+            expr::ValBinOp::Index(p) => Err(expr::ValBinOp::Index(p)),
             expr::ValBinOp::Compose => Err(expr::ValBinOp::Compose),
             expr::ValBinOp::At => Err(expr::ValBinOp::At),
         }
@@ -260,9 +260,18 @@ pub fn resolve_expr_error(
         Cont(Idx),
         Item(Idx, hir::CoreItem),
         Block(Idx, hir::BlockId, hir::BlockKind),
-        M(Idx, fn(Idx, Idx) -> ExprHead<Resolved, Continue>),
-        D(Idx, fn(Idx, [Idx; 2]) -> ExprHead<Resolved, Continue>),
-        V(Idx, fn(Idx, &[Idx]) -> ExprHead<Resolved, Continue>),
+        M(
+            Idx,
+            fn(Idx, &expr::ValUnOp<HirConstraintId>, Idx) -> ExprHead<Resolved, Continue>,
+        ),
+        D(
+            Idx,
+            fn(Idx, &expr::ValBinOp, [Idx; 2]) -> ExprHead<Resolved, Continue>,
+        ),
+        V(
+            Idx,
+            fn(Idx, &expr::ValVarOp, &[Idx]) -> ExprHead<Resolved, Continue>,
+        ),
     }
     use Continue::*;
 
@@ -277,13 +286,13 @@ pub fn resolve_expr_error(
         let desugared = match (cont, head) {
             (Item(_, item), _) => ExprHead::Niladic(ResolvedAtom::ParserDef(core_items[item])),
             (Block(_, id, kind), _) => ExprHead::Niladic(ResolvedAtom::Block(id, kind)),
-            (M(_, f), ExprHead::Monadic(_, inner)) => f(id, *inner),
-            (D(_, f), ExprHead::Dyadic(_, [lhs, rhs])) => f(id, [*lhs, *rhs]),
-            (V(_, f), ExprHead::Variadic(_, inner)) => f(id, inner),
+            (M(_, f), ExprHead::Monadic(op, inner)) => f(id, op, *inner),
+            (D(_, f), ExprHead::Dyadic(op, [lhs, rhs])) => f(id, op, [*lhs, *rhs]),
+            (V(_, f), ExprHead::Variadic(op, inner)) => f(id, op, inner),
             (M(..) | D(..) | V(..), _) => unreachable!(),
             (Cont(_), ExprHead::Dyadic(expr::ValBinOp::Compose, _)) => ExprHead::Monadic(
                 ValUnOp::EvalFun,
-                D(id, |id, [lhs, rhs]| {
+                D(id, |id, _, [lhs, rhs]| {
                     ExprHead::Variadic(
                         ValVarOp::PartialApply(Origin::Compose),
                         SmallVec::from(
@@ -295,43 +304,53 @@ pub fn resolve_expr_error(
             (Cont(_), ExprHead::Dyadic(expr::ValBinOp::At, [lhs, _])) => ExprHead::Dyadic(
                 ValBinOp::ParserApply,
                 [
-                    D(id, |_, [_, rhs]| {
+                    D(id, |_, _, [_, rhs]| {
                         ExprHead::Monadic(ValUnOp::GetAddr, Cont(rhs))
                     }),
                     Cont(*lhs),
                 ],
             ),
-            (Cont(_), ExprHead::Dyadic(expr::ValBinOp::Index, [lhs, _])) => ExprHead::Dyadic(
-                ValBinOp::ParserApply,
-                [
-                    Cont(*lhs),
-                    D(id, |id, _| {
-                        ExprHead::Monadic(
-                            ValUnOp::EvalFun,
-                            D(id, |id, [_, rhs]| {
-                                ExprHead::Variadic(
-                                    ValVarOp::PartialApply(Origin::Index),
-                                    SmallVec::from(
-                                        &[Item(id, hir::CoreItem::Index), Cont(rhs)][..],
-                                    ),
-                                )
-                            }),
-                        )
-                    }),
-                ],
-            ),
+            (Cont(_), ExprHead::Dyadic(expr::ValBinOp::Index(_), [lhs, _])) => {
+                ExprHead::Dyadic(
+                    ValBinOp::ParserApply,
+                    [
+                        Cont(*lhs),
+                        D(id, |id, op, _| {
+                            let expr::ValBinOp::Index(bt) = op else {
+                                unreachable!()
+                            };
+                            ExprHead::Monadic(
+                                ValUnOp::BtMark(*bt),
+                                D(id, |id, _, _| {
+                                    ExprHead::Monadic(
+                                        ValUnOp::EvalFun,
+                                        D(id, |id, _, [_, rhs]| {
+                                            ExprHead::Variadic(
+                                                ValVarOp::PartialApply(Origin::Index),
+                                                SmallVec::from(
+                                                    &[Item(id, hir::CoreItem::Index), Cont(rhs)][..],
+                                                ),
+                                            )
+                                        }),
+                                    )
+                                }),
+                            )
+                        }),
+                    ],
+                )
+            }
             (Cont(_), ExprHead::Monadic(expr::ValUnOp::Array, inner)) => ExprHead::Variadic(
                 ValVarOp::PartialApply(Origin::Array),
                 SmallVec::from(
                     &[
-                        M(id, |_, _| ExprHead::Niladic(ResolvedAtom::Array)),
+                        M(id, |_, _, _| ExprHead::Niladic(ResolvedAtom::Array)),
                         Cont(*inner),
                     ][..],
                 ),
             ),
             (Cont(_), ExprHead::Variadic(expr::ValVarOp::Call, _)) => ExprHead::Monadic(
                 ValUnOp::EvalFun,
-                V(id, |_, args| {
+                V(id, |_, _, args| {
                     ExprHead::Variadic(
                         ValVarOp::PartialApply(Origin::User),
                         args.iter().copied().map(Cont).collect(),
