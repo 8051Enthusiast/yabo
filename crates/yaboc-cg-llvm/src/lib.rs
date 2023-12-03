@@ -11,6 +11,7 @@ use std::{ffi::OsStr, fmt::Debug, path::Path, rc::Rc};
 
 use defs::TAILCC;
 use fxhash::FxHashMap;
+use getset::Callable;
 use inkwell::{
     attributes::{Attribute, AttributeLoc},
     basic_block::BasicBlock,
@@ -23,10 +24,10 @@ use inkwell::{
         CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetData, TargetMachine,
         TargetTriple,
     },
-    types::{ArrayType, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, PointerType, StructType},
+    types::{ArrayType, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, PointerType},
     values::{
-        ArrayValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum, CallableValue,
-        FunctionValue, GlobalValue, IntValue, PointerValue, StructValue, UnnamedAddress,
+        ArrayValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue, GlobalValue,
+        IntValue, PointerValue, StructValue, UnnamedAddress,
     },
     AddressSpace, GlobalVisibility, IntPredicate, OptimizationLevel,
 };
@@ -131,24 +132,20 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         );
     }
 
-    fn resize_struct_end_array(&self, st: StructType<'llvm>, size: u32) -> StructType<'llvm> {
-        let mut field_types = st.get_field_types();
+    fn resize_struct_end_array(&self, field_types: &mut [BasicTypeEnum<'llvm>], size: u32) {
         if let Some(BasicTypeEnum::ArrayType(array)) = field_types.last_mut() {
             *array = array.get_element_type().array_type(size);
         } else {
             panic!("last field of struct is not an array")
         };
-        self.llvm.struct_type(&field_types, false)
     }
 
-    fn resize_struct_start_array(&self, st: StructType<'llvm>, size: u32) -> StructType<'llvm> {
-        let mut field_types = st.get_field_types();
+    fn resize_struct_start_array(&self, field_types: &mut [BasicTypeEnum<'llvm>], size: u32) {
         if let Some(BasicTypeEnum::ArrayType(array)) = field_types.first_mut() {
             *array = array.get_element_type().array_type(size);
         } else {
             panic!("first field of struct is not an array")
         };
-        self.llvm.struct_type(&field_types, false)
     }
 
     fn sym(&mut self, layout: IMonoLayout<'comp>, part: LayoutPart) -> String {
@@ -185,16 +182,21 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn build_get_vtable_tag(&mut self, layout: IMonoLayout<'comp>) -> PointerValue<'llvm> {
         let vtable = self.sym_ptr(layout, LayoutPart::VTable);
-        let vtable_ty = vtable.get_type().get_element_type().into_struct_type();
+        // parsers and function have an extra array at the front of the vtable, which we will have to skip
+        let vtable_ty_name = self.sym(layout, LayoutPart::VTableTy);
+        let vtable_ty = self.llvm.get_struct_type(&vtable_ty_name).unwrap();
         let header = if matches!(
             vtable_ty.get_field_type_at_index(0),
             Some(BasicTypeEnum::ArrayType(_))
         ) {
             unsafe {
-                vtable.const_in_bounds_gep(&[
-                    self.llvm.i32_type().const_int(0, false),
-                    self.llvm.i32_type().const_int(1, false),
-                ])
+                vtable.const_in_bounds_gep(
+                    vtable_ty,
+                    &[
+                        self.llvm.i32_type().const_int(0, false),
+                        self.llvm.i32_type().const_int(1, false),
+                    ],
+                )
             }
         } else {
             vtable
@@ -206,12 +208,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         part: LayoutPart,
-    ) -> CallableValue<'llvm> {
+    ) -> FunctionValue<'llvm> {
         let sym = self.sym(layout, part);
         let Some(fun) = self.module.get_function(&sym) else {
             panic!("could not find symbol {sym}");
         };
-        fun.into()
+        fun
     }
 
     fn const_size_t(&self, val: i64) -> IntValue<'llvm> {
@@ -322,19 +324,27 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn build_call_with_int_ret(
         &mut self,
-        call_fun: CallableValue<'llvm>,
+        call_fun: Callable<'llvm>,
         args: &[BasicMetadataValueEnum<'llvm>],
     ) -> IntValue<'llvm> {
-        let call = self.builder.build_call(call_fun, args, "call");
-        call.try_as_basic_value()
-            .left()
+        let call = match call_fun {
+            Callable::Pointer(ptr, ty) => self
+                .builder
+                .build_indirect_call(ty, ptr, args, "call")
+                .try_as_basic_value(),
+            Callable::Function(fun) => self
+                .builder
+                .build_call(fun, args, "call")
+                .try_as_basic_value(),
+        };
+        call.left()
             .expect("function shuold not return void")
             .into_int_value()
     }
 
     fn build_tailcc_call_with_int_ret(
         &mut self,
-        call_fun: CallableValue<'llvm>,
+        call_fun: FunctionValue<'llvm>,
         args: &[BasicMetadataValueEnum<'llvm>],
     ) -> IntValue<'llvm> {
         let call = self.builder.build_call(call_fun, args, "call");
@@ -355,9 +365,33 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.call_parser_fun_wrapper(ret, fun, from, call_kind.req)
     }
 
+    fn build_byte_load(&mut self, ptr: PointerValue<'llvm>, name: &str) -> IntValue<'llvm> {
+        let ty = self.llvm.i8_type();
+        self.builder.build_load(ty, ptr, name).into_int_value()
+    }
+
+    fn build_char_load(&mut self, ptr: PointerValue<'llvm>, name: &str) -> IntValue<'llvm> {
+        let ptr = self.build_cast::<*const char, _>(ptr);
+        let ty = self.llvm.i32_type();
+        self.builder.build_load(ty, ptr, name).into_int_value()
+    }
+
     fn build_i64_load(&mut self, ptr: PointerValue<'llvm>, name: &str) -> IntValue<'llvm> {
         let ptr = self.build_cast::<*const i64, _>(ptr);
-        self.builder.build_load(ptr, name).into_int_value()
+        let ty = self.llvm.i64_type();
+        self.builder.build_load(ty, ptr, name).into_int_value()
+    }
+
+    fn build_size_load(&mut self, ptr: PointerValue<'llvm>, name: &str) -> IntValue<'llvm> {
+        let ptr = self.build_cast::<*const usize, _>(ptr);
+        let ty = self.llvm.ptr_sized_int_type(&self.target_data, None);
+        self.builder.build_load(ty, ptr, name).into_int_value()
+    }
+
+    fn build_ptr_load(&mut self, ptr: PointerValue<'llvm>, name: &str) -> PointerValue<'llvm> {
+        let ptr = self.build_cast::<*const *mut u8, _>(ptr);
+        let ty = self.any_ptr();
+        self.builder.build_load(ty, ptr, name).into_pointer_value()
     }
 
     fn module_string(&mut self, s: &str) -> PointerValue<'llvm> {
@@ -408,8 +442,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             field_info.push(self.field_info(*name));
         }
 
-        let info_type = vtable::BlockFields::struct_type(self);
-        let info_type = self.resize_struct_end_array(info_type, field_info.len() as u32);
+        let mut info_fields = vtable::BlockFields::struct_type(self).get_field_types();
+        self.resize_struct_end_array(&mut info_fields, field_info.len() as u32);
+        let info_type = self.llvm.struct_type(&info_fields, false);
         let field_info_array = <*const u8>::codegen_ty(self)
             .into_pointer_type()
             .const_array(&field_info);
@@ -454,9 +489,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         byte_ptr: PointerValue<'llvm>,
         shifted_bit: IntValue<'llvm>,
     ) -> IntValue<'llvm> {
+        let i8_ty = self.llvm.i8_type();
         let byte = self
             .builder
-            .build_load(byte_ptr, "ld_assert_field")
+            .build_load(i8_ty, byte_ptr, "ld_assert_field")
             .into_int_value();
         let and_byte = self
             .builder
@@ -488,7 +524,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         name: &str,
     ) -> PointerValue<'llvm> {
         assert!(ptr.get_type() == self.any_ptr());
-        unsafe { self.builder.build_in_bounds_gep(ptr, &[int], name) }
+        let ty = self.llvm.i8_type();
+        unsafe { self.builder.build_in_bounds_gep(ty, ptr, &[int], name) }
     }
 
     fn build_field_gep(
@@ -543,7 +580,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn build_vtable_store(&mut self, dest: PointerValue<'llvm>, vtable: PointerValue<'llvm>) {
-        let vtable_offset = self.any_ptr().size_of().const_neg();
+        let vtable_offset = self.const_i64(-(self.word_size() as i64));
         let before_ptr = self.build_byte_gep(dest, vtable_offset, "vtable_ptr_skip");
         let ret_vtable_ptr = self.build_cast::<*mut *const u8, _>(before_ptr);
         self.builder.build_store(ret_vtable_ptr, vtable);

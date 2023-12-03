@@ -92,7 +92,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             return self.wrap_direct_call(inner, wrapper, false);
         };
         let ret = self.build_tailcc_call_with_int_ret(
-            inner.into(),
+            inner,
             &[
                 ret.ptr.into(),
                 val.ptr.into(),
@@ -248,10 +248,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     .build_store(offset_ptr, self.llvm.i8_type().const_zero());
             } else {
                 let mask = self.llvm.i8_type().const_int(*mask as u64, false);
-                let old_value = self
-                    .builder
-                    .build_load(offset_ptr, "old_value")
-                    .into_int_value();
+                let old_value = self.build_byte_load(offset_ptr, "old_value");
                 let new_value = self.builder.build_and(old_value, mask, "new_value");
                 self.builder.build_store(offset_ptr, new_value);
             }
@@ -266,10 +263,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 let inner_bit_offset = bit_offset % 8;
                 let disc_byte_ptr =
                     self.build_byte_gep(arg, self.const_i64(byte_offset as i64), "disc_byte_ptr");
-                let disc_byte = self
-                    .builder
-                    .build_load(disc_byte_ptr, "disc_byte")
-                    .into_int_value();
+                let disc_byte = self.build_byte_load(disc_byte_ptr, "disc_byte");
                 let disc_bit = self.builder.build_and(
                     disc_byte,
                     self.llvm.i8_type().const_int(1 << inner_bit_offset, false),
@@ -460,19 +454,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn get_slice_ptrs(&mut self, arg: PointerValue<'llvm>) -> [PointerValue<'llvm>; 2] {
-        let arg_ptr = self.build_cast::<*mut *const u8, _>(arg);
-        let ptr = self
-            .builder
-            .build_load(arg_ptr, "load_ptr")
-            .into_pointer_value();
+        let ptr = self.build_ptr_load(arg, "load_ptr");
+        let ptr_ty = self.any_ptr();
         let end_ptr_ptr = unsafe {
             self.builder
-                .build_in_bounds_gep(arg_ptr, &[self.const_i64(1)], "end_ptr_ptr")
+                .build_in_bounds_gep(ptr_ty, arg, &[self.const_i64(1)], "end_ptr_ptr")
         };
-        let end_ptr = self
-            .builder
-            .build_load(end_ptr_ptr, "load_end_ptr")
-            .into_pointer_value();
+        let end_ptr = self.build_ptr_load(end_ptr_ptr, "load_end_ptr");
         [ptr, end_ptr]
     }
 
@@ -483,12 +471,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let [arg] = get_fun_args(fun).map(|x| x.into_pointer_value());
         self.add_entry_block(fun);
         let arg_ptr = self.build_cast::<*mut *const u8, _>(arg);
-        let ptr = self
-            .builder
-            .build_load(arg_ptr, "load_ptr")
-            .into_pointer_value();
+        let ptr = self.build_ptr_load(arg_ptr, "load_ptr");
         let inc_ptr = self.build_byte_gep(ptr, self.const_i64(1), "inc_ptr");
-        self.builder.build_store(arg_ptr, inc_ptr);
+        self.builder.build_store(arg, inc_ptr);
         self.builder
             .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)));
     }
@@ -499,7 +484,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.add_entry_block(fun);
         let [arg] = get_fun_args(fun).map(|x| x.into_pointer_value());
         let [arg_start, arg_end] = self.get_slice_ptrs(arg);
-        let len = self.builder.build_ptr_diff(arg_end, arg_start, "len");
+        let i8 = self.llvm.i8_type();
+        let len = self.builder.build_ptr_diff(i8, arg_end, arg_start, "len");
         self.builder.build_return(Some(&len));
     }
 
@@ -529,10 +515,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let [start_ptr, _] = self.get_slice_ptrs(start);
         let [end_ptr, _] = self.get_slice_ptrs(end);
         let bufsl = self.build_cast::<*mut *const u8, _>(buf.ptr);
+        let ty = self.any_ptr();
         self.builder.build_store(bufsl, start_ptr);
         let bufsl = unsafe {
             self.builder
-                .build_in_bounds_gep(bufsl, &[self.const_i64(1)], "ret")
+                .build_in_bounds_gep(ty, bufsl, &[self.const_i64(1)], "ret")
         };
         self.builder.build_store(bufsl, end_ptr);
         self.terminate_tail_typecast(buf, ret)
@@ -549,14 +536,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             target_head.into_int_value(),
             return_ptr.into_pointer_value(),
         );
-        let int_ptr = self
-            .builder
-            .build_load(from, "load_ptr")
-            .into_pointer_value();
-        let byte = self
-            .builder
-            .build_load(int_ptr, "load_byte")
-            .into_int_value();
+        let int_ptr = self.build_ptr_load(from, "load_ptr");
+        let byte = self.build_byte_load(int_ptr, "load_byte");
         let int = self
             .builder
             .build_int_z_extend(byte, self.llvm.i64_type(), "int");
@@ -861,7 +842,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             arg
         };
         let ret = self.build_tailcc_call_with_int_ret(
-            regex_impl.into(),
+            regex_impl,
             &[
                 ret_copy.ptr.into(),
                 fun.ptr.into(),
