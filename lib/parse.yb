@@ -26,3 +26,11 @@ fun ['t] *> optional(f: ['t] *> 'r) = {
   | some: f?
   | none: +
 }
+
+fun ['t] *> _len_impl(acc: int): int = {
+  | ~ if !eof, return: _len_impl(acc + 1)
+  | let return = acc
+}
+
+# gets the length of the rest of the stream
+fun ['t] *> len = _len_impl(0)
