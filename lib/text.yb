@@ -13,18 +13,19 @@ fun *digit(base: int) = {
   let return = value
 }
 
-fun *number_acc(base: int, n: int): int = {
-  x: digit?(base) if !eof
-  let s = n * base + x
-  | return: number_acc(base, s)?
-  | let return = s
+fun *_number_acc(base: int, n: int): int = {
+  | x: digit?(base) if !eof
+    return: _number_acc(base, n * base + x)
+  | let return = n
 }
 
 # Parses a number in the given base.
 fun *basenum(base: int) = {
   | /-/, let sign = -1
   | let sign = 1
-  n: number_acc(base, 0)?
+  # make sure there is at least one digit
+  val: digit?(base) if !eof
+  n: _number_acc(base, val)?
   let return = sign * n
 }
 
