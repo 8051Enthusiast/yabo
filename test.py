@@ -392,7 +392,7 @@ class TestFile:
             elif kind == 'text':
                 if test_name in binary_cases:
                     raise Exception('Duplicate binary name: ' + test_name)
-                binary_cases[test_name] = subtext.strip().encode('utf-8')
+                binary_cases[test_name] = subtext.lstrip().encode('utf-8')
             elif kind == 'output':
                 if test_name in output_cases:
                     raise Exception('Duplicate output name: ' + test_name)
