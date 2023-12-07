@@ -252,3 +252,25 @@ def *nonsense(x: int, y: int) = 1 + nonsense(3, 4)
         applicant: (identifier)
         args: (number_literal)
         args: (number_literal)))))
+
+===========
+Array Index
+===========
+
+fun first_plus_one(arr: [u8]) = 1 + arr.[0]
+
+---
+(source_file
+  (parser_definition
+    name: (identifier)
+    argdefs: (arg_def_list
+      args: (arg_definition
+        name: (identifier)
+        ty: (type_array
+          expr: (parserdef_ref
+            name: (identifier)))))
+    to: (binary_expression
+      left: (number_literal)
+      right: (binary_expression
+        left: (identifier)
+        right: (number_literal)))))
