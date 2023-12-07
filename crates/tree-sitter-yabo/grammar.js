@@ -285,11 +285,13 @@ module.exports = grammar({
       }));
       return choice(
         regular_ops,
-        seq(
-          field('left', $._expression),
-          field('op', choice('.[', '.?[')),
-          field('right', $._expression),
-          ']'
+        prec.left(PREC.POSTFIX,
+          seq(
+            field('left', $._expression),
+            field('op', choice('.[', '.?[')),
+            field('right', $._expression),
+            ']'
+          )
         )
       )
     },
