@@ -15,14 +15,14 @@ use yaboc_base::{
     error_type,
     interner::{DefId, FieldName},
 };
-use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
+use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, ShapedData, TakeRef};
 use yaboc_hir::{self as hir, HirIdWrapper, ParserPredecessor};
 use yaboc_hir_types::TyHirs;
 use yaboc_resolve::expr::{Resolved, ResolvedAtom};
 
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 
-use backtrack::can_backtrack;
+use backtrack::{can_backtrack, expr_backtrack_status, BacktrackStatus};
 use fxhash::{FxHashMap, FxHashSet};
 
 pub use represent::dependency_dot;
@@ -30,6 +30,10 @@ pub use represent::dependency_dot;
 #[salsa::query_group(DependentsDatabase)]
 pub trait Dependents: TyHirs {
     fn can_backtrack(&self, def: DefId) -> SResult<bool>;
+    fn expr_backtrack_status(
+        &self,
+        expr: hir::ExprId,
+    ) -> SResult<ShapedData<Vec<BacktrackStatus>, Resolved>>;
     fn block_serialization(
         &self,
         id: hir::BlockId,
