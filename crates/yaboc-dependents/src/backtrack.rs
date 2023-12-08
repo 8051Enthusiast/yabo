@@ -1,6 +1,6 @@
 use yaboc_ast::expr::{BtMarkKind, WiggleKind};
 use yaboc_base::{error::SResult, interner::DefId};
-use yaboc_expr::{ExprHead, Expression, FetchExpr, TakeRef};
+use yaboc_expr::{ExprHead, Expression, FetchExpr, ShapedData, TakeRef};
 use yaboc_hir::{ExprId, HirNode};
 use yaboc_hir_types::FullTypeId;
 use yaboc_resolve::expr::{Origin, Resolved, ResolvedAtom, ValVarOp};
@@ -9,7 +9,7 @@ use yaboc_types::Type;
 
 use crate::Dependents;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct BacktrackStatus(u8);
 
 impl BacktrackStatus {
@@ -41,7 +41,7 @@ impl BacktrackStatus {
         Self(else_.0 | (self.0 & !1))
     }
 
-    fn combine_compose(self, others: &[Self]) -> Self {
+    fn combine_compose(self, others: &[&Self]) -> Self {
         // for a desugared compose application, we do not require the backtrack
         // annotation (?) on the operator itself, but allow the arguments to have
         // it.
@@ -65,10 +65,13 @@ impl std::ops::BitOr for BacktrackStatus {
     }
 }
 
-fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<BacktrackStatus> {
+pub fn expr_backtrack_status(
+    db: &dyn Dependents,
+    expr: ExprId,
+) -> SResult<ShapedData<Vec<BacktrackStatus>, Resolved>> {
     Resolved::expr_with_data::<FullTypeId>(db, expr)?
         .take_ref()
-        .try_fold(|(head, ty)| -> Result<BacktrackStatus, _> {
+        .try_scan(|(head, ty)| -> Result<BacktrackStatus, _> {
             let ty = db.lookup_intern_type(db.least_deref_type(*ty)?);
             let is_parser = matches!(ty, Type::ParserArg { .. });
             Ok(match head {
@@ -94,11 +97,11 @@ fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<Backtrack
                     status.can_backtrack_if(mark == BtMarkKind::KeepBt)
                 }
                 ExprHead::Monadic(ValUnOp::EvalFun, status) => status.eval(),
-                ExprHead::Monadic(_, status) => status,
-                ExprHead::Dyadic(ValBinOp::ParserApply, [lhs, rhs]) => lhs.eval() | rhs,
-                ExprHead::Dyadic(ValBinOp::Else, [lhs, rhs]) => lhs.combine_else(rhs),
-                ExprHead::Dyadic(ValBinOp::Then, [lhs, rhs]) => lhs.combine_then(rhs),
-                ExprHead::Dyadic(_, [lhs, rhs]) => lhs | rhs,
+                ExprHead::Monadic(_, status) => *status,
+                ExprHead::Dyadic(ValBinOp::ParserApply, [lhs, rhs]) => lhs.eval() | *rhs,
+                ExprHead::Dyadic(ValBinOp::Else, [lhs, rhs]) => lhs.combine_else(*rhs),
+                ExprHead::Dyadic(ValBinOp::Then, [lhs, rhs]) => lhs.combine_then(*rhs),
+                ExprHead::Dyadic(_, [lhs, rhs]) => *lhs | *rhs,
                 ExprHead::Variadic(ValVarOp::PartialApply(Origin::Compose), inner) => {
                     inner[0].combine_compose(&inner[1..])
                 }
@@ -111,9 +114,19 @@ fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<Backtrack
 
 pub fn can_backtrack(db: &dyn Dependents, def: DefId) -> SResult<bool> {
     let result = match db.hir_node(def)? {
-        HirNode::Expr(e) => expr_backtrack_status(db, e.id)?.has_backtracked(),
-        HirNode::Let(l) => expr_backtrack_status(db, l.expr)?.has_backtracked(),
-        HirNode::Parse(p) => expr_backtrack_status(db, p.expr)?.eval().has_backtracked(),
+        HirNode::Expr(e) => db
+            .expr_backtrack_status(e.id)?
+            .root_data()
+            .has_backtracked(),
+        HirNode::Let(l) => db
+            .expr_backtrack_status(l.expr)?
+            .root_data()
+            .has_backtracked(),
+        HirNode::Parse(p) => db
+            .expr_backtrack_status(p.expr)?
+            .root_data()
+            .eval()
+            .has_backtracked(),
         HirNode::Choice(c) => db.can_backtrack(c.subcontexts.last().unwrap().0)?,
         HirNode::ChoiceIndirection(_) => false,
         HirNode::Context(c) => c
