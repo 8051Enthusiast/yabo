@@ -7,7 +7,7 @@ use yaboc_base::{
 };
 use yaboc_constraint::{LenVal, LenVals};
 use yaboc_constraint::{Origin, PdLenTerm};
-use yaboc_dependents::{BlockSerialization, NeededBy, SubValue, SubValueKind};
+use yaboc_dependents::{BacktrackStatus, BlockSerialization, requirements::NeededBy, SubValue, SubValueKind};
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
 use yaboc_hir::{
     BlockId, ContextId, ExprId, HirIdWrapper, HirNode, LetStatement, ParseStatement, ParserDef,
@@ -42,10 +42,11 @@ impl<'a> LenMirCtx<'a> {
         if let Some(used) = self.expr_use.get(&expr_id) {
             return Ok(used.clone());
         }
-        let expr = Resolved::fetch_expr(self.db, expr_id)?;
-        let mut used = vec![false; expr.len()];
+        let expr = Resolved::expr_with_data::<BacktrackStatus>(self.db, expr_id)?;
+        let expr_ref = expr.take_ref();
+        let mut used = vec![false; expr_ref.len()];
         *used.last_mut().unwrap() = true;
-        for (idx, term) in expr.take_ref().iter_parts().enumerate().rev() {
+        for (idx, (term, _)) in expr_ref.iter_parts().enumerate().rev() {
             if !used[idx] {
                 continue;
             }
@@ -187,7 +188,9 @@ impl<'a> LenMirCtx<'a> {
 
     fn build_expr(&mut self, expr_id: ExprId) -> SResult<PlaceRef> {
         let used = self.expr_use(expr_id)?;
-        let expr = Resolved::expr_with_data::<(ExprIdx<Resolved>, FullTypeId)>(self.db, expr_id)?;
+        let expr = Resolved::expr_with_data::<((ExprIdx<Resolved>, FullTypeId), BacktrackStatus)>(
+            self.db, expr_id,
+        )?;
         self.w
             .convert_expr(expr_id, &expr, None, |idx| used[idx.as_usize()])
     }

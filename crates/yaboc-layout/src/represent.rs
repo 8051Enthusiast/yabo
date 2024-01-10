@@ -1,7 +1,7 @@
 use fxhash::FxHashMap;
 use sha2::Digest;
 use std::{collections::BTreeMap, fmt::Write};
-use yaboc_dependents::{NeededBy, RequirementSet};
+use yaboc_dependents::{requirements::NeededBy, requirements::RequirementSet};
 
 use yaboc_base::{
     databased_display::DatabasedDisplay,
@@ -157,7 +157,7 @@ impl<'a> LayoutHasher<'a> {
         if let Some(x) = self.map.get(&layout) {
             return *x;
         }
-        let mut hasher = sha2::Sha256::new();
+        let mut hasher = Default::default();
         self.hash_layout(&mut hasher, layout, db);
         let res = hasher.finalize().into();
         self.map.insert(layout, res);

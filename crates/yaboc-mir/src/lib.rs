@@ -19,7 +19,9 @@ use yaboc_base::{
     interner::{DefId, FieldName},
 };
 use yaboc_constraint::{Constraints, Origin};
-use yaboc_dependents::{Dependents, NeededBy, RequirementSet, SubValue};
+use yaboc_dependents::{
+    requirements::NeededBy, requirements::RequirementSet, Dependents, SubValue,
+};
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
 use yaboc_hir::{Block, BlockId, ExprId, HirConstraintId, HirIdWrapper, ParserDefId};
 use yaboc_hir_types::FullTypeId;
@@ -1031,7 +1033,7 @@ mod tests {
         config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase, Context,
     };
     use yaboc_constraint::ConstraintDatabase;
-    use yaboc_dependents::{DependentsDatabase, NeededBy};
+    use yaboc_dependents::{requirements::NeededBy, DependentsDatabase};
     use yaboc_hir::{HirDatabase, Hirs, Parser};
     use yaboc_hir_types::HirTypesDatabase;
     use yaboc_resolve::ResolveDatabase;

@@ -5,7 +5,7 @@ use fxhash::{FxHashMap, FxHashSet};
 
 use yaboc_absint::{AbstractDomain, Arg};
 use yaboc_base::dbeprintln;
-use yaboc_dependents::{NeededBy, RequirementSet};
+use yaboc_dependents::{requirements::NeededBy, requirements::RequirementSet};
 use yaboc_hir::{HirIdWrapper, ParserDefId};
 use yaboc_hir_types::DerefLevel;
 use yaboc_mir::{CallMeta, MirInstr, MirKind};

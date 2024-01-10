@@ -1,39 +1,39 @@
 mod backtrack;
 pub mod error;
 mod represent;
+pub mod requirements;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
 };
 
-use enumflags2::{bitflags, BitFlags};
+use enumflags2::bitflags;
 use hir::{Block, BlockKind};
+use requirements::{NeededBy, RequirementMatrix};
 use yaboc_base::{
     dbpanic,
     error::{SResult, SilencedError},
     error_type,
     interner::{DefId, FieldName},
 };
-use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, ShapedData, TakeRef};
+use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
 use yaboc_hir::{self as hir, HirIdWrapper, ParserPredecessor};
 use yaboc_hir_types::TyHirs;
 use yaboc_resolve::expr::{Resolved, ResolvedAtom};
 
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 
-use backtrack::{can_backtrack, expr_backtrack_status, BacktrackStatus};
+use backtrack::{can_backtrack, expr_backtrack_status, ExprBacktrackData};
 use fxhash::{FxHashMap, FxHashSet};
 
+pub use backtrack::BacktrackStatus;
 pub use represent::dependency_dot;
 
 #[salsa::query_group(DependentsDatabase)]
 pub trait Dependents: TyHirs {
     fn can_backtrack(&self, def: DefId) -> SResult<bool>;
-    fn expr_backtrack_status(
-        &self,
-        expr: hir::ExprId,
-    ) -> SResult<ShapedData<Vec<BacktrackStatus>, Resolved>>;
+    fn expr_backtrack_status(&self, expr: hir::ExprId) -> SResult<Arc<ExprBacktrackData>>;
     fn block_serialization(
         &self,
         id: hir::BlockId,
@@ -628,7 +628,7 @@ impl DependencyGraph {
                     edgeless.insert(get_prio(&self.graph, neighbor));
                 }
             }
-            let mut requirements = RequirementSet::empty();
+            let mut requirements = requirements::RequirementSet::empty();
             if reachable_val.contains(&val) {
                 requirements |= NeededBy::Val;
             }
@@ -642,14 +642,11 @@ impl DependencyGraph {
             let required_by = match val.kind {
                 SubValueKind::Bt => NeededBy::Backtrack.into(),
                 SubValueKind::Val => NeededBy::Val.into(),
-                SubValueKind::Front => RequirementSet::empty(),
+                SubValueKind::Front => requirements::RequirementSet::empty(),
                 SubValueKind::Back => NeededBy::Len.into(),
             };
             let matrix = RequirementMatrix::from_outer_product(required_by, requirements);
-            parse_requirements
-                .entry(val.id)
-                .and_modify(|e| *e = *e | matrix)
-                .or_insert(matrix);
+            *parse_requirements.entry(val.id).or_default() |= matrix;
             eval_order.push(SubValueInfo {
                 val,
                 requirements,
@@ -675,96 +672,10 @@ impl DependencyGraph {
     }
 }
 
-#[bitflags]
-#[repr(u8)]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-pub enum NeededBy {
-    Len = 1 << 0,
-    Val = 1 << 1,
-    Backtrack = 1 << 2,
-}
-
-impl std::fmt::Display for NeededBy {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            NeededBy::Len => write!(f, "len"),
-            NeededBy::Val => write!(f, "val"),
-            NeededBy::Backtrack => write!(f, "backtrack"),
-        }
-    }
-}
-
-pub type RequirementSet = BitFlags<NeededBy>;
-
-// stored in column-major order
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct RequirementMatrix([RequirementSet; 3]);
-
-impl RequirementMatrix {
-    pub fn new(len: RequirementSet, val: RequirementSet, backtrack: RequirementSet) -> Self {
-        Self([len, val, backtrack])
-    }
-
-    pub fn id() -> Self {
-        Self::new(
-            NeededBy::Len.into(),
-            NeededBy::Val.into(),
-            NeededBy::Backtrack.into(),
-        )
-    }
-
-    pub fn zero() -> Self {
-        Self::default()
-    }
-
-    /// calculates the boolean matrix operation self * needed_by
-    pub fn needs_when(self, needed_by: RequirementSet) -> RequirementSet {
-        let mut ret = RequirementSet::empty();
-        for (i, val) in Self::id().iter_cols().enumerate() {
-            if needed_by.contains(val) {
-                ret |= self.0[i];
-            }
-        }
-        ret
-    }
-
-    pub fn from_outer_product(left: RequirementSet, right: RequirementSet) -> Self {
-        let mut ret = Self::default();
-        for (i, val) in Self::id().iter_cols().enumerate() {
-            if right.contains(val) {
-                ret.0[i] |= left;
-            }
-        }
-        ret
-    }
-
-    pub fn iter_cols(self) -> impl Iterator<Item = RequirementSet> {
-        self.0.into_iter()
-    }
-}
-
-impl std::ops::Mul<RequirementSet> for RequirementMatrix {
-    type Output = RequirementSet;
-    fn mul(self, rhs: RequirementSet) -> Self::Output {
-        self.needs_when(rhs)
-    }
-}
-
-impl std::ops::BitOr for RequirementMatrix {
-    type Output = Self;
-    fn bitor(self, rhs: Self) -> Self::Output {
-        Self([
-            self.0[0] | rhs.0[0],
-            self.0[1] | rhs.0[1],
-            self.0[2] | rhs.0[2],
-        ])
-    }
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct SubValueInfo {
     pub val: SubValue,
-    pub requirements: RequirementSet,
+    pub requirements: requirements::RequirementSet,
     pub tail: bool,
 }
 

@@ -4,7 +4,7 @@ use inkwell::{
     IntPredicate,
 };
 
-use yaboc_dependents::{NeededBy, RequirementSet};
+use yaboc_dependents::{requirements::NeededBy, requirements::RequirementSet};
 use yaboc_hir_types::{TyHirs, NOBACKTRACK_BIT, VTABLE_BIT};
 use yaboc_layout::{prop::SizeAlign, ILayout, IMonoLayout, MonoLayout, TailInfo};
 use yaboc_types::PrimitiveType;

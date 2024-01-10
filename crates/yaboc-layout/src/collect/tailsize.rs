@@ -1,5 +1,5 @@
 use fxhash::{FxHashMap, FxHashSet};
-use yaboc_dependents::RequirementSet;
+use yaboc_dependents::requirements::RequirementSet;
 use yaboc_mir::{CallMeta, FunKind, MirInstr, MirKind};
 
 use crate::{

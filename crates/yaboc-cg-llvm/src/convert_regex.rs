@@ -4,7 +4,7 @@ use inkwell::{
     values::{FunctionValue, IntValue, PointerValue},
 };
 use regex_automata::DFA;
-use yaboc_dependents::RequirementSet;
+use yaboc_dependents::requirements::RequirementSet;
 use yaboc_hir_types::DerefLevel;
 use yaboc_layout::{ILayout, IMonoLayout, MonoLayout};
 use yaboc_mir::{CallMeta, ReturnStatus};

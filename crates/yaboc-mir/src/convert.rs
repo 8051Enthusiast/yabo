@@ -12,7 +12,8 @@ use yaboc_base::{
     interner::{DefId, FieldName, PathComponent},
 };
 use yaboc_dependents::{
-    BlockSerialization, NeededBy, RequirementMatrix, RequirementSet, SubValue, SubValueKind,
+    requirements::NeededBy, requirements::RequirementMatrix, requirements::RequirementSet,
+    BacktrackStatus, BlockSerialization, SubValue, SubValueKind,
 };
 use yaboc_expr::{ExprIdx, Expression, FetchExpr};
 use yaboc_hir::{
@@ -491,8 +492,10 @@ impl<'a> ConvertCtx<'a> {
                 if let Some(ctx) = e.parent_context {
                     self.change_context(ctx)
                 }
-                let resolved_expr =
-                    Resolved::expr_with_data::<(ExprIdx<Resolved>, FullTypeId)>(self.db, e.id)?;
+                let resolved_expr = Resolved::expr_with_data::<(
+                    (ExprIdx<Resolved>, FullTypeId),
+                    BacktrackStatus,
+                )>(self.db, e.id)?;
                 let place = self.w.val_place_at_def(e.id.0).unwrap();
                 self.w
                     .convert_expr(e.id, &resolved_expr, Some(place), |_| true)?;

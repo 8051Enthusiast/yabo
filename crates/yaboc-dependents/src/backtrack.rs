@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use yaboc_ast::expr::{BtMarkKind, WiggleKind};
+use yaboc_base::error::SilencedError;
 use yaboc_base::{error::SResult, interner::DefId};
-use yaboc_expr::{ExprHead, Expression, FetchExpr, ShapedData, TakeRef};
+use yaboc_expr::{ExprHead, Expression, FetchExpr, FetchKindData, ShapedData, TakeRef};
 use yaboc_hir::{ExprId, HirNode};
 use yaboc_hir_types::FullTypeId;
 use yaboc_resolve::expr::{Origin, Resolved, ResolvedAtom, ValVarOp};
@@ -13,11 +16,11 @@ use crate::Dependents;
 pub struct BacktrackStatus(u8);
 
 impl BacktrackStatus {
-    fn eval(self) -> Self {
+    pub fn eval(self) -> Self {
         Self(self.0 >> 1 | (self.0 & 1))
     }
 
-    fn has_backtracked(self) -> bool {
+    pub fn has_backtracked(self) -> bool {
         self.0 & 1 != 0
     }
 
@@ -25,7 +28,7 @@ impl BacktrackStatus {
         Self((s as u8) | self.0)
     }
 
-    fn can_backtrack(self) -> bool {
+    pub fn can_backtrack(self) -> bool {
         self.0 & 2 != 0
     }
 
@@ -65,10 +68,9 @@ impl std::ops::BitOr for BacktrackStatus {
     }
 }
 
-pub fn expr_backtrack_status(
-    db: &dyn Dependents,
-    expr: ExprId,
-) -> SResult<ShapedData<Vec<BacktrackStatus>, Resolved>> {
+pub type ExprBacktrackData = ShapedData<Vec<BacktrackStatus>, Resolved>;
+
+pub fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<Arc<ExprBacktrackData>> {
     Resolved::expr_with_data::<FullTypeId>(db, expr)?
         .take_ref()
         .try_scan(|(head, ty)| -> Result<BacktrackStatus, _> {
@@ -110,6 +112,16 @@ pub fn expr_backtrack_status(
                 }
             })
         })
+        .map(Arc::new)
+}
+
+impl<DB: Dependents + ?Sized> FetchKindData<BacktrackStatus, ExprId, DB> for Resolved {
+    type Err = SilencedError;
+    type Data = Arc<ExprBacktrackData>;
+
+    fn fetch_kind_data(db: &DB, id: ExprId) -> Result<Self::Data, Self::Err> {
+        db.expr_backtrack_status(id)
+    }
 }
 
 pub fn can_backtrack(db: &dyn Dependents, def: DefId) -> SResult<bool> {

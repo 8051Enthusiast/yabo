@@ -38,7 +38,7 @@ use yaboc_base::config::Configs;
 use yaboc_base::dbpanic;
 use yaboc_base::interner::{DefId, FieldName, Identifier, Interner};
 use yaboc_database::YabocDatabase;
-use yaboc_dependents::RequirementSet;
+use yaboc_dependents::requirements::RequirementSet;
 use yaboc_hir::{BlockId, HirIdWrapper, Hirs, ParserDefId};
 use yaboc_hir_types::{DerefLevel, TyHirs};
 use yaboc_layout::{
