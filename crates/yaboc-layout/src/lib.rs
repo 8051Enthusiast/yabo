@@ -1165,7 +1165,7 @@ mod tests {
     };
     use yaboc_base::{dbeprintln, dbformat};
     use yaboc_constraint::ConstraintDatabase;
-    use yaboc_dependents::{DependentsDatabase, NeededBy};
+    use yaboc_dependents::{requirements::NeededBy, DependentsDatabase};
     use yaboc_hir::{HirDatabase, Parser};
     use yaboc_hir_types::{HirTypesDatabase, TyHirs};
     use yaboc_mir::MirDatabase;

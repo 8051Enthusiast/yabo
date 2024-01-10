@@ -182,3 +182,10 @@ impl<K, D: IndexExpr<K>> IndexExpr<K> for std::rc::Rc<D> {
         self.as_ref().index_expr(idx)
     }
 }
+
+impl<K, D, F: Fn(ExprIdx<K>) -> D> IndexExpr<K> for F {
+    type Output<'a> = D where Self: 'a;
+    fn index_expr(&self, idx: ExprIdx<K>) -> Self::Output<'_> {
+        self(idx)
+    }
+}

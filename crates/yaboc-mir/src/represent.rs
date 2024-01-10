@@ -1,7 +1,7 @@
 use std::{fmt::Display, io::Write};
 
 use yaboc_base::{databased_display::DatabasedDisplay, dbformat, dbwrite};
-use yaboc_dependents::{RequirementSet, NeededBy};
+use yaboc_dependents::{requirements::NeededBy, requirements::RequirementSet};
 use yaboc_hir::HirIdWrapper;
 
 use crate::{strictness::Strictness, CallMeta, ControlFlow, FunKind, InsRef, MirKind, ZstVal};

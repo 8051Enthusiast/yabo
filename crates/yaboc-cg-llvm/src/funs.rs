@@ -1,7 +1,7 @@
 use fxhash::FxHashSet;
 use yaboc_base::low_effort_interner::Uniq;
 use yaboc_constraint::Constraints;
-use yaboc_dependents::NeededBy;
+use yaboc_dependents::requirements::NeededBy;
 use yaboc_layout::{
     collect::{fun_req, pd_len_req, pd_val_req},
     mir_subst::function_substitute,

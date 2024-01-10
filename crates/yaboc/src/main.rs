@@ -52,7 +52,7 @@ fn main() {
     context.set_config(Config {
         target_triple: String::from("x86_64-pc-linux-gnu"),
         // if x86-64 was so great,,,
-        target_cpu: String::from("x86-64-v2"),
+        target_cpu: String::from("skylake"),
         target_features: String::from(""),
         output_json: args.output_json,
     });
