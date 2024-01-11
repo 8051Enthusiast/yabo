@@ -78,6 +78,17 @@ impl std::ops::Mul<RequirementSet> for RequirementMatrix {
     }
 }
 
+impl std::ops::Mul<RequirementMatrix> for RequirementMatrix {
+    type Output = Self;
+    fn mul(self, rhs: Self) -> Self::Output {
+        let mut ret = Self::default();
+        for (i, col) in rhs.iter_cols().enumerate() {
+            ret.0[i] = self * col;
+        }
+        ret
+    }
+}
+
 impl std::ops::BitOr for RequirementMatrix {
     type Output = Self;
     fn bitor(self, rhs: Self) -> Self::Output {

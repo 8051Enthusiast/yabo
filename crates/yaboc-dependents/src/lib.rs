@@ -829,8 +829,20 @@ def *main = {
              010\n\
              001"
         );
-        assert_eq!(format!("{}", b * NeededBy::Backtrack.into()), "Backtrack");
-        assert_eq!(format!("{}", b * NeededBy::Val.into()), "Len | Val");
+        assert_eq!(
+            format!("{}", b * c),
+            "110\n\
+             010\n\
+             000"
+        );
+        assert_eq!(
+            format!("{}", a * a),
+            "111\n\
+             111\n\
+             000"
+        );
+        assert_eq!(format!("{}", b * !!NeededBy::Backtrack), "Backtrack");
+        assert_eq!(format!("{}", b * !!NeededBy::Val), "Len | Val");
         assert_eq!(
             format!("{}", c * (NeededBy::Len | NeededBy::Val)),
             "Len | Val"
