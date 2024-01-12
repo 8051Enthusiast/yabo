@@ -630,7 +630,7 @@ pub struct FunctionWriter {
 impl FunctionWriter {
     pub fn new(
         fun_ty: TypeId,
-        arg_ty: Option<TypeId>,
+        from_ty: Option<TypeId>,
         ret_ty: TypeId,
         req: RequirementSet,
     ) -> Self {
@@ -653,10 +653,10 @@ impl FunctionWriter {
             ty: fun_ty,
             remove_bt: false,
         });
-        if let Some(arg_ty) = arg_ty {
-            let arg = builder.add_place(PlaceInfo {
+        if let Some(from_ty) = from_ty {
+            let arg = builder.add_place(PlaceInfo  {
                 place: Place::Arg,
-                ty: arg_ty,
+                ty: from_ty,
                 remove_bt: false,
             });
             builder.fun.arg = Some(arg);
@@ -672,7 +672,7 @@ impl FunctionWriter {
         if req.contains(NeededBy::Len) {
             let retlen = builder.add_place(PlaceInfo {
                 place: Place::ReturnLen,
-                ty: arg_ty.unwrap(),
+                ty: from_ty.unwrap(),
                 remove_bt: false,
             });
             builder.fun.retlen = Some(retlen);
