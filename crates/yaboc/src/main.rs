@@ -25,6 +25,8 @@ struct Args {
     output_json: bool,
     #[clap(short, long, value_enum, default_value = "shared-lib")]
     emit: EmitKind,
+    #[clap(long)]
+    mir_emit_path: Option<String>,
     #[clap(short, long)]
     module: Vec<String>,
     infile: String,
@@ -69,7 +71,9 @@ fn main() {
     match match args.emit {
         EmitKind::Hir => context.write_hir(outfile).map_err(|x| x.to_string()),
         EmitKind::Mir => context.write_mir(outfile).map_err(|x| x.to_string()),
-        EmitKind::MirGraph => context.write_mir_graphs(outfile).map_err(|x| x.to_string()),
+        EmitKind::MirGraph => context
+            .write_mir_graphs(main, args.mir_emit_path.as_deref(), outfile)
+            .map_err(|x| x.to_string()),
         EmitKind::Deps => context.write_deps(outfile).map_err(|x| x.to_string()),
         EmitKind::Lens => context.write_lens(outfile).map_err(|x| x.to_string()),
         EmitKind::Llvm => context.write_llvm(outfile),

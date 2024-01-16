@@ -7,7 +7,7 @@ use yaboc_base::{
     config::{Config, Configs},
     error::Report,
     low_effort_interner,
-    source::AriadneCache,
+    source::{AriadneCache, FileId},
     Context,
 };
 use yaboc_cg_llvm::CodeGenCtx;
@@ -78,9 +78,14 @@ impl Driver {
         Ok(())
     }
 
-    pub fn write_mir_graphs(&self, outfile: &OsStr) -> Result<(), std::io::Error> {
+    pub fn write_mir_graphs(
+        &self,
+        file: FileId,
+        path: Option<&str>,
+        outfile: &OsStr,
+    ) -> Result<(), std::io::Error> {
         let mut out = std::fs::File::create(outfile)?;
-        print_all_mir_graphs(&self.db, &mut out)?;
+        print_all_mir_graphs(&self.db, &mut out, path, file)?;
         Ok(())
     }
 
