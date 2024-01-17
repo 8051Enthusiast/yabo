@@ -141,8 +141,34 @@ class CompiledSource:
             shutil.rmtree(self.dir)
             raise e
 
+    def check_diagnostic_match(self, diagnostics: dict[int, list[ErrorLocation]], expected: ErrorLocation):
+        if expected.line not in diagnostics or len(diagnostics[expected.line]) == 0:
+            raise Exception(
+                f'Expected error {expected.code} on line {expected.line}, '
+                'but no error was found'
+            )
+        line_diagnostics = diagnostics[expected.line]
+        found = any(expected.is_contained_in(actual) for actual in line_diagnostics)
+        if not found:
+            if len(line_diagnostics) == 1:
+                diag = line_diagnostics[0]
+                if diag.code != expected.code:
+                    raise Exception(
+                        f'Expected error {expected.code} on line {expected.line}, '
+                        f'but found error {diag.code} instead'
+                    )
+                else:
+                    raise Exception(
+                        f'Expected error message "{expected.contained_message}" on '
+                        f'line {expected.line}, but found "{diag.contained_message}"'
+                    )
+            raise Exception(
+                f'Expected error {expected.code} on line {expected.line}, '
+                'but none of the errors matched'
+            )
+
     def check_errors(self):
-        diagnostics = defaultdict(list)
+        diagnostics: dict[int, list[ErrorLocation]] = defaultdict(list)
         total = 0
         for error in self.stderr.splitlines():
             try:
@@ -150,6 +176,7 @@ class CompiledSource:
             except json.JSONDecodeError as e:
                 raise Exception(f'Error decoding {self.stderr}: {e}')
             diagnostics.update(ErrorLocation.from_diagnostics(error_json))
+
         for (linenum, line) in enumerate(self.source.splitlines()):
             linenum = linenum + 1
             match = error_comment.match(line)
@@ -157,35 +184,8 @@ class CompiledSource:
                 continue
             total += 1
             expected = ErrorLocation.from_match(match, linenum)
+            self.check_diagnostic_match(diagnostics, expected)
 
-            if expected.line not in diagnostics or len(diagnostics[expected.line]) == 0:
-                raise Exception(
-                    f'Expected error {expected.code} on line {expected.line}, '
-                    'but no error was found'
-                )
-            line_diagnostics = diagnostics[expected.line]
-            found = False
-            for actual in line_diagnostics:
-                if expected.is_contained_in(actual):
-                    found = True
-                    break
-            if not found:
-                if len(line_diagnostics) == 1:
-                    diag = line_diagnostics[0]
-                    if diag.code != expected.code:
-                        raise Exception(
-                            f'Expected error {expected.code} on line {expected.line}, '
-                            f'but found error {diag.code} instead'
-                        )
-                    else:
-                        raise Exception(
-                            f'Expected error message "{expected.contained_message}" on '
-                            f'line {expected.line}, but found "{diag.contained_message}"'
-                        )
-                raise Exception(
-                    f'Expected error {expected.code} on line {expected.line}, '
-                    'but none of the errors matched'
-                )
         if total == 0:
             raise Exception(
                 f'No error comments found in source but errors were found in stderr:\n{self.stderr}'
