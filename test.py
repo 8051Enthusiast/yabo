@@ -206,26 +206,25 @@ class InputOutputPair:
     input: bytes
     output: str
 
-# replace the following `is` with isInstance
 def dictionarified_obj(obj):
-    while type(obj) is yabo.NominalValue or type(obj) is yabo.U8Value:
+    while isinstance(obj, (yabo.NominalValue, yabo.U8Value)):
         obj = obj.deref()
     ty = type(obj)
-    if ty is int or ty is str or ty is bool:
+    if isinstance(obj, (int, str, bool)):
         return obj
-    if ty is yabo.ArrayValue:
+    if isinstance(obj, yabo.ArrayValue):
         return [dictionarified_obj(obj[i]) for i in range(len(obj))]
-    if ty is yabo.ParserValue:
+    if isinstance(obj, yabo.ParserValue):
         try:
             length = obj.len()
             return f"parser({length})"
         except:
             return "parser"
-    if ty is yabo.FunArgValue:
+    if isinstance(obj, yabo.FunArgValue):
         return "fun_args"
-    if ty is yabo.UnitValue:
+    if isinstance(obj, yabo.UnitValue):
         return "unit"
-    if ty is yabo.BlockValue:
+    if isinstance(obj, yabo.BlockValue):
         ret_dict = {}
         for field in obj.fields():
             ret_dict[field] = dictionarified_obj(obj.get(field))
