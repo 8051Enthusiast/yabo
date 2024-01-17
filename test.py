@@ -37,7 +37,14 @@ case_title = re.compile(r'^(binary|text|output)\s+(.+)$')
 # with error code 301
 error_comment = re.compile(r'^.*#(~\^*)\s*error\[(\d+)\]\s*(.*)$')
 
-arg_list = [ os.path.abspath(file) for file in sys.argv[1:] ]
+current_script_dir = os.path.dirname(os.path.realpath(__file__))
+core_path = os.path.join(current_script_dir, 'lib', 'core.yb')
+lib_path = os.path.join(current_script_dir, 'lib')
+compiler_env = os.environ.copy()
+compiler_env['YABO_LIB_PATH'] = lib_path
+compiler_env['RUST_BACKTRACE'] = '1'
+compiler_dir = os.path.join(current_script_dir, 'crates', 'yaboc')
+
 
 class ErrorLocation:
     contained_message: str
@@ -76,14 +83,6 @@ class ErrorLocation:
             self.line == other.line
         )
 
-
-current_script_dir = os.path.dirname(os.path.realpath(__file__))
-core_path = os.path.join(current_script_dir, 'lib', 'core.yb')
-lib_path = os.path.join(current_script_dir, 'lib')
-compiler_env = os.environ.copy()
-compiler_env['YABO_LIB_PATH'] = lib_path
-compiler_env['RUST_BACKTRACE'] = '1'
-compiler_dir = os.path.join(current_script_dir, 'crates', 'yaboc')
 
 def build_compiler_binary():
     os.chdir(compiler_dir)
@@ -475,21 +474,25 @@ def run_tests(files: list[str]) -> int:
             total_failed += run_test(file)
         return total_failed
         
+def main():
+    arg_list = [ os.path.abspath(file) for file in sys.argv[1:] ]
+    if len(arg_list) == 0:
+        run_clippy()
 
-if len(arg_list) == 0:
-    run_clippy()
+        if not run_compiler_unit_tests():
+            sys.exit(1)
+        target_dir = os.path.join(current_script_dir, 'tests')
+        files = [os.path.join(target_dir, x) for x in os.listdir(target_dir)]
+        total_failed = run_tests(files)
+    else:
+        total_failed = run_tests(arg_list)
 
-    if not run_compiler_unit_tests():
+    if total_failed != 0:
+        print(f'{total_failed} tests failed')
         sys.exit(1)
-    target_dir = os.path.join(current_script_dir, 'tests')
-    files = [os.path.join(target_dir, x) for x in os.listdir(target_dir)]
-    total_failed = run_tests(files)
-else:
-    total_failed = run_tests(arg_list)
+    else:
+        print('All tests passed')
+        sys.exit(1)
 
-if total_failed != 0:
-    print(f'{total_failed} tests failed')
-    sys.exit(1)
-else:
-    print('All tests passed')
-    sys.exit(1)
+if __name__ == '__main__':
+    main()
