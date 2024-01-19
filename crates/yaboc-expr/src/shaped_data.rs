@@ -1,4 +1,7 @@
-use std::{marker::PhantomData, ops::Index};
+use std::{
+    marker::PhantomData,
+    ops::{Index, IndexMut},
+};
 
 use crate::{ExprIdx, TakeRef};
 
@@ -145,6 +148,18 @@ impl<K, D: Index<usize>> Index<ExprIdx<K>> for ShapedData<D, K> {
     type Output = D::Output;
     fn index(&self, idx: ExprIdx<K>) -> &Self::Output {
         &self.data[idx.as_usize()]
+    }
+}
+
+impl<K, D: IndexMut<usize>> ShapedData<D, K> {
+    pub fn get_mut(&mut self, idx: ExprIdx<K>) -> &mut D::Output {
+        &mut self.data[idx.as_usize()]
+    }
+}
+
+impl<K, D: IndexMut<usize>> IndexMut<ExprIdx<K>> for ShapedData<D, K> {
+    fn index_mut(&mut self, idx: ExprIdx<K>) -> &mut Self::Output {
+        &mut self.data[idx.as_usize()]
     }
 }
 

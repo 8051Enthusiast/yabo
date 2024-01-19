@@ -13,7 +13,7 @@ use yaboc_base::{
 };
 use yaboc_dependents::{
     requirements::NeededBy, requirements::RequirementMatrix, requirements::RequirementSet,
-    BacktrackStatus, BlockSerialization, SubValue, SubValueKind,
+    BlockSerialization, SubValue, SubValueKind,
 };
 use yaboc_expr::{ExprIdx, Expression, FetchExpr};
 use yaboc_hir::{
@@ -457,6 +457,43 @@ impl<'a> ConvertCtx<'a> {
         Ok(())
     }
 
+    fn expr(
+        &mut self,
+        sub_value: SubValue,
+        e: hir::ValExpression,
+    ) -> Result<(), yaboc_base::error::SilencedError> {
+        if sub_value.kind != SubValueKind::Val {
+            return Ok(());
+        }
+        if let Some(ctx) = e.parent_context {
+            self.change_context(ctx)
+        }
+        let resolved_expr = Resolved::expr_with_data::<(
+            (ExprIdx<Resolved>, FullTypeId),
+            RequirementMatrix,
+        )>(self.db, e.id)?;
+        let place = self.w.val_place_at_def(e.id.0).unwrap();
+        let info = self.call_info_at_id(e.id.0);
+        self.w
+            .convert_expr(e.id, &resolved_expr, Some(place), |_| true, info.req)?;
+        Ok(())
+    }
+
+    fn block_len(&mut self, b: hir::Block) -> SResult<()> {
+        // if the last call is a tail call, we don't need this
+        let bb = self.w.f.current_bb;
+        if let Some(MirInstr::ParseCall(.., None)) = self.w.f.fun.bb(bb).ins.last() {
+            return Ok(());
+        }
+        let last_place_back = self.context_data[&b.root_context]
+            .ends
+            .map(|x| self.w.back_place_at_def(x.1).unwrap())
+            .unwrap_or_else(|| self.w.f.fun.arg().unwrap());
+        let current_place = self.w.back_place_at_def(b.id.0).unwrap();
+        self.w.copy(last_place_back, current_place);
+        Ok(())
+    }
+
     fn copy_predecessor(&mut self, pred: ParserPredecessor, id: DefId) {
         let from_place = match pred {
             ParserPredecessor::ChildOf(c) => {
@@ -486,19 +523,7 @@ impl<'a> ConvertCtx<'a> {
                 self.let_statement(&l)
             }
             hir::HirNode::Expr(e) => {
-                if sub_value.kind != SubValueKind::Val {
-                    return Ok(());
-                }
-                if let Some(ctx) = e.parent_context {
-                    self.change_context(ctx)
-                }
-                let resolved_expr = Resolved::expr_with_data::<(
-                    (ExprIdx<Resolved>, FullTypeId),
-                    BacktrackStatus,
-                )>(self.db, e.id)?;
-                let place = self.w.val_place_at_def(e.id.0).unwrap();
-                self.w
-                    .convert_expr(e.id, &resolved_expr, Some(place), |_| true)?;
+                self.expr(sub_value, e)?;
             }
             hir::HirNode::Parse(p) => {
                 self.change_context(p.parent_context);
@@ -529,17 +554,7 @@ impl<'a> ConvertCtx<'a> {
             hir::HirNode::ChoiceIndirection(_) => return Ok(()),
             // arg and return place already have this function
             hir::HirNode::Block(b) if sub_value.kind == SubValueKind::Back => {
-                // if the last call is a tail call, we don't need this
-                let bb = self.w.f.current_bb;
-                if let Some(MirInstr::ParseCall(.., None)) = self.w.f.fun.bb(bb).ins.last() {
-                    return Ok(());
-                }
-                let last_place_back = self.context_data[&b.root_context]
-                    .ends
-                    .map(|x| self.w.back_place_at_def(x.1).unwrap())
-                    .unwrap_or_else(|| self.w.f.fun.arg().unwrap());
-                let current_place = self.w.back_place_at_def(b.id.0).unwrap();
-                self.w.copy(last_place_back, current_place);
+                return self.block_len(b)
             }
             hir::HirNode::Block(_) => return Ok(()),
             hir::HirNode::Module(_)
@@ -718,6 +733,16 @@ impl<'a> ConvertCtx<'a> {
         let processed_parse_sites = FxHashSet::default();
         let mut req_transformer = BTreeMap::default();
         req_transformer.insert(id.0, RequirementMatrix::id());
+        let parserdef = id.lookup(db)?;
+        // if we want to know the length or bt, we need to know the value of the parser
+        req_transformer.insert(
+            parserdef.to.0,
+            RequirementMatrix::id()
+                | RequirementMatrix::outer(
+                    NeededBy::Val.into(),
+                    NeededBy::Len | NeededBy::Backtrack,
+                ),
+        );
         let req_transformer = Arc::new(req_transformer);
         let mut tails = BTreeSet::default();
         tails.insert(id.0);

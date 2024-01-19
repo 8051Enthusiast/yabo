@@ -7,7 +7,10 @@ use super::Mirs;
 use fxhash::FxHashMap;
 use yaboc_ast::expr::{BtMarkKind, ConstraintBinOp, ConstraintUnOp, WiggleKind};
 use yaboc_base::{error::SResult, interner::DefId};
-use yaboc_dependents::{BacktrackStatus, requirements::NeededBy, SubValue, SubValueKind};
+use yaboc_dependents::{
+    requirements::{NeededBy, RequirementMatrix, RequirementSet},
+    SubValue, SubValueKind,
+};
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchKindData, IdxExpression, IndexExpr, ZipExpr};
 use yaboc_hir::{BlockId, ExprId, HirConstraint};
 use yaboc_hir_types::FullTypeId;
@@ -23,7 +26,7 @@ use crate::{
 type IndexTypeExpr = ZipExpr<
     Arc<IdxExpression<Resolved>>,
     <Resolved as FetchKindData<
-        ((ExprIdx<Resolved>, FullTypeId), BacktrackStatus),
+        ((ExprIdx<Resolved>, FullTypeId), RequirementMatrix),
         ExprId,
         dyn Mirs,
     >>::Data,
@@ -32,6 +35,7 @@ type IndexTypeExpr = ZipExpr<
 pub struct ExprInfo<'a, F: Fn(ExprIdx<Resolved>) -> bool> {
     id: ExprId,
     content: &'a IndexTypeExpr,
+    req: RequirementSet,
     f: &'a F,
 }
 
@@ -326,7 +330,6 @@ impl<'a> ConvertExpr<'a> {
                 }
             },
             ExprHead::Variadic(v, _) => match *v {},
-
         }
     }
 
@@ -336,11 +339,13 @@ impl<'a> ConvertExpr<'a> {
         expr: &IndexTypeExpr,
         place: Option<PlaceRef>,
         fun_dep: impl Fn(ExprIdx<Resolved>) -> bool,
+        req: RequirementSet,
     ) -> SResult<PlaceRef> {
         let info = ExprInfo {
             id: expr_id,
             content: expr,
             f: &fun_dep,
+            req,
         };
         self.convert_expr_impl(info, expr.expr.root(), place)
     }
@@ -351,9 +356,13 @@ impl<'a> ConvertExpr<'a> {
         idx: ExprIdx<Resolved>,
         place: Option<PlaceRef>,
     ) -> SResult<PlaceRef> {
-        let ((idx, &ty), _) = expr.content.data.index_expr(idx);
-        let origin = PlaceOrigin::Expr(expr.id, idx);
+        let ((idx, &ty), bt) = expr.content.data.index_expr(idx);
+        let mut req = *bt * expr.req;
         if !(expr.f)(idx) {
+            req &= !NeededBy::Val;
+        }
+        let origin = PlaceOrigin::Expr(expr.id, idx);
+        if req.is_empty() {
             return Ok(self.load_undef(ty, place, origin));
         }
         Ok(match expr.content.expr.index_expr(idx) {
@@ -553,7 +562,7 @@ impl<'a> ConvertExpr<'a> {
                         let left_plc = self.new_stack_place(left_ldt, lorigin);
                         let left_plc = lrecurse(self, Some(left_plc))?;
                         let right_ldt = self.db.least_deref_type(right_ty)?;
-                        let req = NeededBy::Val | NeededBy::Backtrack;
+                        //let req = NeededBy::Val | NeededBy::Backtrack;
                         let right = self.copy_if_different_levels(
                             right_ldt, right_ty, None, rorigin, rrecurse,
                         )?;
