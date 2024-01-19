@@ -7,7 +7,10 @@ use yaboc_base::{
 };
 use yaboc_constraint::{LenVal, LenVals};
 use yaboc_constraint::{Origin, PdLenTerm};
-use yaboc_dependents::{BacktrackStatus, BlockSerialization, requirements::NeededBy, SubValue, SubValueKind};
+use yaboc_dependents::{
+    requirements::{NeededBy, RequirementMatrix},
+    BacktrackStatus, BlockSerialization, SubValue, SubValueKind,
+};
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
 use yaboc_hir::{
     BlockId, ContextId, ExprId, HirIdWrapper, HirNode, LetStatement, ParseStatement, ParserDef,
@@ -188,11 +191,11 @@ impl<'a> LenMirCtx<'a> {
 
     fn build_expr(&mut self, expr_id: ExprId) -> SResult<PlaceRef> {
         let used = self.expr_use(expr_id)?;
-        let expr = Resolved::expr_with_data::<((ExprIdx<Resolved>, FullTypeId), BacktrackStatus)>(
+        let expr = Resolved::expr_with_data::<((ExprIdx<Resolved>, FullTypeId), RequirementMatrix)>(
             self.db, expr_id,
         )?;
         self.w
-            .convert_expr(expr_id, &expr, None, |idx| used[idx.as_usize()])
+            .convert_expr(expr_id, &expr, None, |idx| used[idx.as_usize()], NeededBy::Val.into())
     }
 
     fn build_let(&mut self, subval: SubValue, let_statement: &LetStatement) -> SResult<()> {

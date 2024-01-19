@@ -100,7 +100,7 @@ pub fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<Arc<E
                 }
                 ExprHead::Monadic(ValUnOp::EvalFun, status) => status.eval(),
                 ExprHead::Monadic(_, status) => *status,
-                ExprHead::Dyadic(ValBinOp::ParserApply, [lhs, rhs]) => lhs.eval() | *rhs,
+                ExprHead::Dyadic(ValBinOp::ParserApply, [lhs, rhs]) => rhs.eval() | *lhs,
                 ExprHead::Dyadic(ValBinOp::Else, [lhs, rhs]) => lhs.combine_else(*rhs),
                 ExprHead::Dyadic(ValBinOp::Then, [lhs, rhs]) => lhs.combine_then(*rhs),
                 ExprHead::Dyadic(_, [lhs, rhs]) => *lhs | *rhs,

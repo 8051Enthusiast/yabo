@@ -17,7 +17,7 @@ use yaboc_base::{
     error_type,
     interner::{DefId, FieldName},
 };
-use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
+use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef, ShapedData};
 use yaboc_hir::{self as hir, HirIdWrapper, ParserPredecessor};
 use yaboc_hir_types::TyHirs;
 use yaboc_resolve::expr::{Resolved, ResolvedAtom};
@@ -29,11 +29,13 @@ use fxhash::{FxHashMap, FxHashSet};
 
 pub use backtrack::BacktrackStatus;
 pub use represent::dependency_dot;
+pub use requirements::expr_reqs;
 
 #[salsa::query_group(DependentsDatabase)]
 pub trait Dependents: TyHirs {
     fn can_backtrack(&self, def: DefId) -> SResult<bool>;
     fn expr_backtrack_status(&self, expr: hir::ExprId) -> SResult<Arc<ExprBacktrackData>>;
+    fn expr_reqs(&self, expr: hir::ExprId) -> SResult<Arc<ShapedData<Vec<RequirementMatrix>, Resolved>>>;
     fn block_serialization(
         &self,
         id: hir::BlockId,
@@ -645,7 +647,7 @@ impl DependencyGraph {
                 SubValueKind::Front => requirements::RequirementSet::empty(),
                 SubValueKind::Back => NeededBy::Len.into(),
             };
-            let matrix = RequirementMatrix::from_outer_product(required_by, requirements);
+            let matrix = RequirementMatrix::outer(required_by, requirements);
             *parse_requirements.entry(val.id).or_default() |= matrix;
             eval_order.push(SubValueInfo {
                 val,
