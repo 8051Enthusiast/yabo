@@ -16,6 +16,7 @@ impl<T: std::fmt::Debug> std::fmt::Display for Term<T> {
             Term::Arr => write!(f, "arr"),
             Term::Unify([lhs, rhs]) => write!(f, "[{}] = [{}]", lhs, rhs),
             Term::UnifyDyn([lhs, rhs]) => write!(f, "[{}] ~ [{}]", lhs, rhs),
+            Term::Then([lhs, rhs]) => write!(f, "[{}] then [{}]", lhs, rhs),
             Term::Copy(inner) => write!(f, "copy [{}]", inner),
             Term::Size(true, inner) => write!(f, "exact-size [{}]", inner),
             Term::Size(false, inner) => write!(f, "size [{}]", inner),

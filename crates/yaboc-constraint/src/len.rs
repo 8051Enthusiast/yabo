@@ -219,7 +219,9 @@ impl<'a> SizeTermBuilder<'a> {
                 ValBinOp::Else => {
                     Ok(self.push_term(Term::Unify([lhs, rhs]), is_definite(self.db, *ty)?, src))
                 }
-                ValBinOp::Then => Ok(rhs),
+                ValBinOp::Then => {
+                    Ok(self.push_term(Term::Then([lhs, rhs]), is_definite(self.db, *ty)?, src))
+                }
                 ValBinOp::And
                 | ValBinOp::Xor
                 | ValBinOp::Or
