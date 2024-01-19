@@ -287,7 +287,7 @@ pub fn len_errors(db: &dyn Constraints, pd: hir::ParserDefId) -> SResult<Vec<Len
                 continue;
             }
             arg
-        } else if let Term::Size(arg) = term {
+        } else if let Term::Size(true, arg) = term {
             arg
         } else {
             continue;

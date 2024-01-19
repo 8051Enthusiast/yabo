@@ -127,14 +127,14 @@ pub enum Term<ParserRef> {
     Unify([usize; 2]),
     UnifyDyn([usize; 2]),
     Copy(usize),
-    Size(usize),
+    Size(bool, usize),
 }
 
 impl<ParserRef> Term<ParserRef> {
     fn ref_indices(&self) -> &[usize] {
         match self {
             Term::Pd(_) | Term::Arg(_) | Term::Const(_) | Term::Opaque | Term::Arr => &[],
-            Term::OpaqueUn(x) | Term::Neg(x) | Term::Copy(x) | Term::Size(x) => slice::from_ref(x),
+            Term::OpaqueUn(x) | Term::Neg(x) | Term::Copy(x) | Term::Size(_, x) => slice::from_ref(x),
             Term::OpaqueBin(x)
             | Term::Apply(x)
             | Term::Unify(x)
@@ -701,7 +701,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 (Term::Arr, _) => Val::Poly(2, self.arr_circuit, SmallBitVec::ones(2)),
                 (Term::Unify(ops), _) => self.unify(*ops, false),
                 (Term::UnifyDyn(ops), _) => self.unify(*ops, true),
-                (Term::Copy(val) | Term::Size(val), _) => self.vals[*val].clone(),
+                (Term::Copy(val) | Term::Size(_, val), _) => self.vals[*val].clone(),
             };
             self.vals.push(val);
         }

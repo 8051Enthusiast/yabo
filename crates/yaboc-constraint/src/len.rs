@@ -96,7 +96,8 @@ impl<'a> SizeTermBuilder<'a> {
                 }
                 (hir::HirNode::Parse(p), SubValueKind::Back) => {
                     let front = self.vals[&SubValue::new_front(p.id.0)];
-                    let len = self.vals[&SubValue::new_val(p.expr.0)];
+                    let parser = self.vals[&SubValue::new_val(p.expr.0)];
+                    let len = self.push_term(Term::Size(false, parser), true, loc);
                     self.push_term(Term::Add([front, len]), true, loc)
                 }
                 (hir::HirNode::Block(_), SubValueKind::Front) => {
@@ -201,7 +202,7 @@ impl<'a> SizeTermBuilder<'a> {
             ExprHead::Monadic(m, inner) => match m {
                 ValUnOp::Neg => Ok(self.push_term(Term::Neg(inner), true, src)),
                 ValUnOp::Wiggle(_, _) | ValUnOp::BtMark(_) | ValUnOp::EvalFun => Ok(inner),
-                ValUnOp::Size => Ok(self.push_term(Term::Size(inner), true, src)),
+                ValUnOp::Size => Ok(self.push_term(Term::Size(true, inner), true, src)),
                 ValUnOp::Dot(..) => {
                     Ok(self.push_term(Term::OpaqueUn(inner), is_definite(self.db, *ty)?, src))
                 }
