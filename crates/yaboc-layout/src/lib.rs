@@ -325,6 +325,12 @@ impl<'a> ILayout<'a> {
         matches!(self.layout.1, Layout::Multi(_))
     }
 
+    pub fn is_int(self) -> bool {
+        matches!(
+            self.layout.1,
+            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int), _)
+        )
+    }
     fn map(
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
@@ -484,15 +490,22 @@ impl<'a> ILayout<'a> {
                         let ret = ctx.apply_thunk_arg(*pd, result_type, (from, arg_type), args)?;
                         Ok(ret)
                     }
-                    MonoLayout::BlockParser(block_id, _, subst, _) => ctx
-                        .eval_block(
-                            *block_id,
-                            self,
-                            Some((from, arg_type)),
-                            result_type,
-                            subst.clone(),
-                        )
-                        .ok_or_else(|| SilencedError::new().into()),
+                    MonoLayout::BlockParser(block_id, _, subst, _) => {
+                        let res = ctx
+                            .eval_block(
+                                *block_id,
+                                self,
+                                Some((from, arg_type)),
+                                result_type,
+                                subst.clone(),
+                            )
+                            .ok_or_else(|| SilencedError::new().into());
+                        if from.is_int() {
+                            Ok(ctx.dcx.intern(Layout::None))
+                        } else {
+                            res
+                        }
+                    }
                     MonoLayout::Single => from.array_primitive(ctx),
                     MonoLayout::Nil => Ok(ctx.dcx.intern(Layout::Mono(
                         MonoLayout::Primitive(PrimitiveType::Unit),
@@ -505,8 +518,17 @@ impl<'a> ILayout<'a> {
                             layout: Uniq(_, Layout::Mono(MonoLayout::Single, _)),
                         },
                         Some(_),
-                    ))) => Ok(from),
+                    ))) => {
+                        if from.is_int() {
+                            Ok(ctx.dcx.intern(Layout::None))
+                        } else {
+                            Ok(from)
+                        }
+                    }
                     MonoLayout::ArrayParser(Some((parser, Some(_)))) => {
+                        if from.is_int() {
+                            return Ok(ctx.dcx.intern(Layout::None));
+                        }
                         Ok(ctx.dcx.intern(Layout::Mono(
                             MonoLayout::Array {
                                 parser: *parser,
@@ -1165,10 +1187,11 @@ mod tests {
     };
     use yaboc_base::{dbeprintln, dbformat};
     use yaboc_constraint::ConstraintDatabase;
-    use yaboc_dependents::{requirements::NeededBy, DependentsDatabase};
+    use yaboc_dependents::DependentsDatabase;
     use yaboc_hir::{HirDatabase, Parser};
     use yaboc_hir_types::{HirTypesDatabase, TyHirs};
     use yaboc_mir::MirDatabase;
+    use yaboc_req::NeededBy;
     use yaboc_resolve::ResolveDatabase;
     use yaboc_types::{TypeInterner, TypeInternerDatabase};
 

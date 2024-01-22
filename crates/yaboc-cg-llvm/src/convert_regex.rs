@@ -4,16 +4,17 @@ use inkwell::{
     values::{FunctionValue, IntValue, PointerValue},
 };
 use regex_automata::DFA;
-use yaboc_dependents::requirements::RequirementSet;
 use yaboc_hir_types::DerefLevel;
 use yaboc_layout::{ILayout, IMonoLayout, MonoLayout};
 use yaboc_mir::{CallMeta, ReturnStatus};
+use yaboc_req::RequirementSet;
 use yaboc_types::{PrimitiveType, Type, TypeInterner};
 
 use crate::{
+    defs::TAILCC,
     parser_args,
     val::{CgReturnValue, CgValue},
-    CodeGenCtx, defs::TAILCC,
+    CodeGenCtx,
 };
 
 pub struct RegexTranslator<'llvm, 'comp, 'r, D: DFA<ID = usize>> {

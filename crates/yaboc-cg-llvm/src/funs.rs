@@ -1,13 +1,12 @@
 use fxhash::FxHashSet;
-use yaboc_base::low_effort_interner::Uniq;
 use yaboc_constraint::Constraints;
-use yaboc_dependents::requirements::NeededBy;
 use yaboc_layout::{
     collect::{fun_req, pd_len_req, pd_val_req},
     mir_subst::function_substitute,
     represent::ParserFunKind,
 };
 use yaboc_mir::{FunKind, MirKind};
+use yaboc_req::NeededBy;
 
 use crate::{
     convert_regex::RegexTranslator,
@@ -416,6 +415,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             Some(f) => return f,
             None => self.parser_impl_fun_val(layout, from, req),
         };
+        if from.is_int() {
+            self.add_entry_block(llvm_fun);
+            self.set_always_inline(llvm_fun);
+            self.builder
+                .build_return(Some(&self.const_i64(ReturnStatus::Error as i64)));
+            return llvm_fun;
+        }
         let mir_fun = Rc::new(self.mir_pd_parser(from, layout, req));
         let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
         let mut translator = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg);
@@ -1272,10 +1278,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             // in this case the parse call gets created by the vtable even though the value
             // actually never gets created, so we need to create a parse call that just returns
             // an error
-            if let ILayout {
-                layout: Uniq(_, Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int), _)),
-            } = from
-            {
+            if from.is_int() {
                 create_fun = Self::create_error_parse
             }
             let fun = create_fun(self, from, layout, meta.req);

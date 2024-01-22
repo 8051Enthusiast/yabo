@@ -8,18 +8,18 @@ use std::{
     sync::Arc,
 };
 
-use enumflags2::bitflags;
 use hir::{Block, BlockKind};
-use requirements::{NeededBy, RequirementMatrix};
+use requirements::ExprDepData;
 use yaboc_base::{
     dbpanic,
     error::{SResult, SilencedError},
     error_type,
     interner::{DefId, FieldName},
 };
-use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef, ShapedData};
+use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, ShapedData, TakeRef};
 use yaboc_hir::{self as hir, HirIdWrapper, ParserPredecessor};
 use yaboc_hir_types::TyHirs;
+use yaboc_req::{NeededBy, RequirementMatrix, RequirementSet};
 use yaboc_resolve::expr::{Resolved, ResolvedAtom};
 
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
@@ -35,7 +35,7 @@ pub use requirements::expr_reqs;
 pub trait Dependents: TyHirs {
     fn can_backtrack(&self, def: DefId) -> SResult<bool>;
     fn expr_backtrack_status(&self, expr: hir::ExprId) -> SResult<Arc<ExprBacktrackData>>;
-    fn expr_reqs(&self, expr: hir::ExprId) -> SResult<Arc<ShapedData<Vec<RequirementMatrix>, Resolved>>>;
+    fn expr_reqs(&self, expr: hir::ExprId) -> SResult<Arc<ShapedData<Vec<ExprDepData>, Resolved>>>;
     fn block_serialization(
         &self,
         id: hir::BlockId,
@@ -339,7 +339,7 @@ fn node_subvalue_kinds(node: &hir::HirNode) -> &'static [SubValueKind] {
             &[SubValueKind::Val, SubValueKind::Bt][..]
         }
         hir::HirNode::Block(Block {
-            kind: BlockKind::Fun,
+            kind: BlockKind::Inline,
             ..
         }) => &[SubValueKind::Val, SubValueKind::Bt][..],
         hir::HirNode::Parse(_) | hir::HirNode::Block(_) | hir::HirNode::Choice(_) => &[
@@ -630,7 +630,7 @@ impl DependencyGraph {
                     edgeless.insert(get_prio(&self.graph, neighbor));
                 }
             }
-            let mut requirements = requirements::RequirementSet::empty();
+            let mut requirements = RequirementSet::empty();
             if reachable_val.contains(&val) {
                 requirements |= NeededBy::Val;
             }
@@ -644,7 +644,7 @@ impl DependencyGraph {
             let required_by = match val.kind {
                 SubValueKind::Bt => NeededBy::Backtrack.into(),
                 SubValueKind::Val => NeededBy::Val.into(),
-                SubValueKind::Front => requirements::RequirementSet::empty(),
+                SubValueKind::Front => RequirementSet::empty(),
                 SubValueKind::Back => NeededBy::Len.into(),
             };
             let matrix = RequirementMatrix::outer(required_by, requirements);
@@ -677,7 +677,7 @@ impl DependencyGraph {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct SubValueInfo {
     pub val: SubValue,
-    pub requirements: requirements::RequirementSet,
+    pub requirements: RequirementSet,
     pub tail: bool,
 }
 

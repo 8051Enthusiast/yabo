@@ -16,4 +16,5 @@ yaboc-resolve = { path = "../yaboc-resolve" }
 yaboc-hir = { path = "../yaboc-hir" }
 yaboc-types = { path = "../yaboc-types" }
 yaboc-hir-types = { path = "../yaboc-hir-types" }
+yaboc-req = { path = "../yaboc-req" }
 fxhash = "0.2.1"

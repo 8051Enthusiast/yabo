@@ -3,7 +3,7 @@ use std::fmt::{Display, Write};
 use fxhash::FxHashMap;
 use yaboc_base::{databased_display::DatabasedDisplay, dbformat, dbwrite, error::SResult};
 
-use crate::{requirements::RequirementMatrix, DepType, DependencyGraph, SubValueKind};
+use crate::{DepType, DependencyGraph, SubValueKind};
 
 use super::{Dependents, SubValue};
 
@@ -21,24 +21,6 @@ impl Display for SubValueKind {
 impl<DB: Dependents + ?Sized> DatabasedDisplay<DB> for SubValue {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         dbwrite!(f, db, "{}({})", &self.kind, &self.id)
-    }
-}
-
-impl Display for RequirementMatrix {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (i, bit) in Self::id().iter_cols().enumerate() {
-            if i != 0 {
-                writeln!(f)?;
-            }
-            for column in self.iter_cols() {
-                if column.contains(bit) {
-                    write!(f, "1")?;
-                } else {
-                    write!(f, "0")?;
-                }
-            }
-        }
-        Ok(())
     }
 }
 

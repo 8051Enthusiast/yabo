@@ -1,0 +1,19 @@
+====[ source code ]====
+fun *sized(s: int) = ([~](s) |> ((s if 4..11 - 4) then u32l)) else u32b
+
+export
+fun *test = {
+  s: ~
+  return: [sized(s)](2)
+}
+====[ binary 1 ]====
+03 00 00 00 01 00 00 00 02
+
+====[ output 1 ]====
+[1, 2]
+
+====[ binary 2 ]====
+05 03 00 00 00 00 04 00 00 00 00
+
+====[ output 2 ]====
+[3, 4]

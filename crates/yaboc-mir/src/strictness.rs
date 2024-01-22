@@ -240,9 +240,11 @@ impl<'a> StrictnessCtx<'a> {
                 let Type::FunctionArg(_, arg_tys) = self.db.lookup_intern_type(ty) else {
                     panic!("Expected function type");
                 };
-                for (place, ty) in args.iter().zip(arg_tys.iter()) {
+                for ((place, used), ty) in args.iter().zip(arg_tys.iter()) {
                     let deref_level = self.db.deref_level(*ty)?;
-                    insert(*place, Use::new_static(deref_level));
+                    if *used {
+                        insert(*place, Use::new_static(deref_level));
+                    }
                 }
             }
             MirInstr::Copy(f, g, _) => {

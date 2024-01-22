@@ -310,35 +310,33 @@ pub fn resolve_expr_error(
                     Cont(*lhs),
                 ],
             ),
-            (Cont(_), ExprHead::Dyadic(expr::ValBinOp::Index(_), [lhs, _])) => {
-                ExprHead::Dyadic(
-                    ValBinOp::ParserApply,
-                    [
-                        Cont(*lhs),
-                        D(id, |id, op, _| {
-                            let expr::ValBinOp::Index(bt) = op else {
-                                unreachable!()
-                            };
-                            ExprHead::Monadic(
-                                ValUnOp::BtMark(*bt),
-                                D(id, |id, _, _| {
-                                    ExprHead::Monadic(
-                                        ValUnOp::EvalFun,
-                                        D(id, |id, _, [_, rhs]| {
-                                            ExprHead::Variadic(
-                                                ValVarOp::PartialApply(Origin::Index),
-                                                SmallVec::from(
-                                                    &[Item(id, hir::CoreItem::Index), Cont(rhs)][..],
-                                                ),
-                                            )
-                                        }),
-                                    )
-                                }),
-                            )
-                        }),
-                    ],
-                )
-            }
+            (Cont(_), ExprHead::Dyadic(expr::ValBinOp::Index(_), [lhs, _])) => ExprHead::Dyadic(
+                ValBinOp::ParserApply,
+                [
+                    Cont(*lhs),
+                    D(id, |id, op, _| {
+                        let expr::ValBinOp::Index(bt) = op else {
+                            unreachable!()
+                        };
+                        ExprHead::Monadic(
+                            ValUnOp::BtMark(*bt),
+                            D(id, |id, _, _| {
+                                ExprHead::Monadic(
+                                    ValUnOp::EvalFun,
+                                    D(id, |id, _, [_, rhs]| {
+                                        ExprHead::Variadic(
+                                            ValVarOp::PartialApply(Origin::Index),
+                                            SmallVec::from(
+                                                &[Item(id, hir::CoreItem::Index), Cont(rhs)][..],
+                                            ),
+                                        )
+                                    }),
+                                )
+                            }),
+                        )
+                    }),
+                ],
+            ),
             (Cont(_), ExprHead::Monadic(expr::ValUnOp::Array, inner)) => ExprHead::Variadic(
                 ValVarOp::PartialApply(Origin::Array),
                 SmallVec::from(
@@ -357,8 +355,8 @@ pub fn resolve_expr_error(
                     )
                 }),
             ),
-            (Cont(id), ExprHead::Niladic(ResolvedAtom::Block(b, hir::BlockKind::Fun))) => {
-                ExprHead::Monadic(ValUnOp::EvalFun, Block(id, *b, hir::BlockKind::Fun))
+            (Cont(id), ExprHead::Niladic(ResolvedAtom::Block(b, hir::BlockKind::Inline))) => {
+                ExprHead::Monadic(ValUnOp::EvalFun, Block(id, *b, hir::BlockKind::Inline))
             }
             (Cont(_), otherwise) => otherwise
                 .clone()

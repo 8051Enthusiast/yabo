@@ -246,6 +246,7 @@ impl<'intern> SubInfo<ILayout<'intern>> {
                     }
                     _ => unreachable!(),
                 },
+                Place::Undefined => ctx.dcx.intern(Layout::None),
             };
 
             // we don't want any type variables to appear here in general because we want a defined
