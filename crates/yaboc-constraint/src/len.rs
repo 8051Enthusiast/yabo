@@ -2,19 +2,21 @@ use std::sync::Arc;
 
 use super::Constraints;
 use fxhash::FxHashMap;
-use hir::{BlockKind, HirIdWrapper};
+use hir::HirIdWrapper;
+use yaboc_ast::expr::{FieldAccessMode, WiggleKind};
 use yaboc_base::{
     error::{SResult, Silencable, SilencedError},
     interner::{DefId, FieldName},
 };
-use yaboc_dependents::{BlockSerialization, SubValue, SubValueKind};
+use yaboc_dependents::{
+    requirements::ExprDepData, BacktrackStatus, BlockSerialization, SubValue, SubValueKind,
+};
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
 use yaboc_hir as hir;
-use yaboc_hir_types::FullTypeId;
-use yaboc_len::{SizeExpr, Term};
+use yaboc_len::{depvec::SmallBitVec, BlockInfo, BlockInfoIdx, BlockKind, SizeExpr, Term};
+use yaboc_req::NeededBy;
 use yaboc_resolve::expr::{Resolved, ResolvedAtom};
 use yaboc_resolve::expr::{ValBinOp, ValUnOp, ValVarOp};
-use yaboc_types::{NominalKind, NominalTypeHead, Type, TypeId};
 
 pub struct SizeTermBuilder<'a> {
     db: &'a dyn Constraints,
@@ -23,6 +25,7 @@ pub struct SizeTermBuilder<'a> {
     term_spans: Vec<Origin>,
     vals: FxHashMap<SubValue, usize>,
     block_locs: FxHashMap<hir::BlockId, usize>,
+    arg_depth: u32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -31,20 +34,8 @@ pub enum Origin {
     Node(DefId),
 }
 
-fn is_definite(db: &(impl Constraints + ?Sized), ty: TypeId) -> SResult<bool> {
-    Ok(matches!(
-        db.lookup_intern_type(db.least_deref_type(ty)?),
-        Type::Primitive(_)
-            | Type::Nominal(NominalTypeHead {
-                kind: NominalKind::Block,
-                ..
-            })
-            | Type::Loop(..)
-    ))
-}
-
 impl<'a> SizeTermBuilder<'a> {
-    pub fn new(db: &'a dyn Constraints) -> Self {
+    pub fn new(db: &'a dyn Constraints, arg_depth: u32) -> Self {
         Self {
             db,
             terms: SizeExpr::new(),
@@ -52,14 +43,31 @@ impl<'a> SizeTermBuilder<'a> {
             term_spans: Vec::new(),
             vals: FxHashMap::default(),
             block_locs: FxHashMap::default(),
+            arg_depth,
         }
     }
 
-    fn push_term(&mut self, term: Term<hir::ParserDefId>, definite: bool, span: Origin) -> usize {
-        let index = self.terms.push(term, definite);
+    fn push_term(&mut self, term: Term<hir::ParserDefId>, span: Origin) -> usize {
+        let index = self.terms.push(term, self.arg_depth);
         self.term_spans.push(span);
         self.call_arities.push(0);
         index
+    }
+
+    fn new_block(&mut self, bid: hir::BlockId) -> SResult<BlockInfoIdx> {
+        let mut captures = SmallBitVec::default();
+        for id in self.db.captures(bid).iter() {
+            let val = self.vals[&SubValue::new_val(*id)];
+            captures.set(val);
+        }
+        let kind = match bid.lookup(self.db)?.kind {
+            hir::BlockKind::Inline => BlockKind::Inline,
+            hir::BlockKind::Parser => BlockKind::Parser,
+        };
+        let block_info = BlockInfo { captures, kind };
+        let idx = BlockInfoIdx::new(self.terms.block_info.len() as u32);
+        self.terms.block_info.push(block_info);
+        Ok(idx)
     }
 
     fn create_block(&mut self, bid: hir::BlockId) -> SResult<usize> {
@@ -67,15 +75,11 @@ impl<'a> SizeTermBuilder<'a> {
         let mut whole_result = None;
         for val_loc in ser.eval_order.iter() {
             let loc = Origin::Node(val_loc.val.id);
-            let is_definite = || -> SResult<bool> {
-                let ty = self.db.parser_type_at(val_loc.val.id)?;
-                is_definite(self.db, ty)
-            };
             let val = match (self.db.hir_node(val_loc.val.id)?, val_loc.val.kind) {
                 (_, SubValueKind::Bt) => continue,
                 (hir::HirNode::Let(l), _) => {
                     let old_val = self.vals[&SubValue::new_val(l.expr.0)];
-                    self.push_term(Term::Copy(old_val), is_definite()?, loc)
+                    self.push_term(Term::Copy(old_val), loc)
                 }
                 (hir::HirNode::Expr(e), _) => self.create_expr(e.id)?,
                 (
@@ -87,21 +91,18 @@ impl<'a> SizeTermBuilder<'a> {
                     SubValueKind::Front,
                 ) => match pred {
                     hir::ParserPredecessor::ChildOf(id) => {
-                        self.push_term(Term::Const(0), true, Origin::Node(id.0))
+                        self.push_term(Term::Const(0), Origin::Node(id.0))
                     }
                     hir::ParserPredecessor::After(id) => self.vals[&SubValue::new_back(id)],
                 },
-                (hir::HirNode::Parse(_), SubValueKind::Val) => {
-                    self.push_term(Term::Opaque, is_definite()?, loc)
-                }
+                (hir::HirNode::Parse(_), SubValueKind::Val) => self.push_term(Term::Parsed, loc),
                 (hir::HirNode::Parse(p), SubValueKind::Back) => {
                     let front = self.vals[&SubValue::new_front(p.id.0)];
                     let parser = self.vals[&SubValue::new_val(p.expr.0)];
-                    let len = self.push_term(Term::Size(false, parser), true, loc);
-                    self.push_term(Term::Add([front, len]), true, loc)
+                    self.push_term(Term::Cat([front, parser]), loc)
                 }
                 (hir::HirNode::Block(_), SubValueKind::Front) => {
-                    self.push_term(Term::Const(0), true, loc)
+                    self.push_term(Term::Const(0), loc)
                 }
                 (hir::HirNode::Block(b), SubValueKind::Val) => {
                     let val = if b.returns {
@@ -109,35 +110,26 @@ impl<'a> SizeTermBuilder<'a> {
                         let ret = *ctx.vars.get(FieldName::Return).unwrap().inner();
                         self.vals[&SubValue::new_val(ret)]
                     } else {
-                        self.push_term(Term::Opaque, true, loc)
+                        self.push_term(Term::Opaque, loc)
                     };
-                    if b.kind == BlockKind::Fun {
-                        whole_result = Some(val);
+                    if b.kind == hir::BlockKind::Inline {
+                        whole_result = Some((val, loc));
                     }
                     val
                 }
                 (hir::HirNode::Block(b), SubValueKind::Back) => {
                     let x = if let Some((_, last)) = b.root_context.lookup(self.db)?.endpoints {
-                        let old_val = self.vals[&SubValue::new_back(last)];
-                        self.push_term(Term::Copy(old_val), true, loc)
+                        self.vals[&SubValue::new_back(last)]
                     } else {
-                        self.push_term(Term::Const(0), true, loc)
+                        self.push_term(Term::Const(0), loc)
                     };
-                    whole_result = Some(x);
+                    whole_result = Some((x, loc));
                     x
                 }
-                (hir::HirNode::ChoiceIndirection(c), SubValueKind::Val) => {
-                    let mut current_term = self.vals[&SubValue::new_val(c.choices[0].1)];
-                    for &(_, id) in c.choices.iter().skip(1) {
-                        let term = self.vals[&SubValue::new_val(id)];
-                        let loc = Origin::Node(id);
-                        current_term = self.push_term(
-                            Term::UnifyDyn([current_term, term]),
-                            is_definite()?,
-                            loc,
-                        );
-                    }
-                    current_term
+                (hir::HirNode::ChoiceIndirection(_), SubValueKind::Val) => {
+                    // TODO: lower choice indirections in mir so that this can be lowered
+                    // as UnifyDyn instead
+                    self.push_term(Term::Parsed, loc)
                 }
                 (hir::HirNode::Choice(c), SubValueKind::Back) => {
                     let mut current_term = None;
@@ -147,14 +139,12 @@ impl<'a> SizeTermBuilder<'a> {
                         let loc = Origin::Node(subctx.0);
                         let term = if let Some((_, end)) = endpoints {
                             let inner_len = self.vals[&SubValue::new_back(end)];
-                            self.push_term(Term::Add([front, inner_len]), true, loc)
+                            self.push_term(Term::Cat([front, inner_len]), loc)
                         } else {
-                            self.push_term(Term::Copy(front), true, loc)
+                            self.push_term(Term::Copy(front), loc)
                         };
                         current_term = match current_term {
-                            // since we can only evaluate a choice without arg by evaluating
-                            // every branch, we don't have a definite value, hence the "false"
-                            Some(t) => Some(self.push_term(Term::UnifyDyn([t, term]), false, loc)),
+                            Some(t) => Some(self.push_term(Term::UnifyDyn([t, term]), loc)),
                             None => Some(term),
                         };
                     }
@@ -164,93 +154,110 @@ impl<'a> SizeTermBuilder<'a> {
             };
             self.vals.insert(val_loc.val, val);
         }
-        let res = whole_result.expect("block is never terminated");
+        let (res, loc) = whole_result.expect("block is never terminated");
+        let idx = self.new_block(bid)?;
+        let res = self.push_term(Term::BlockEnd(idx, res), loc);
         self.block_locs.insert(bid, res);
         Ok(res)
     }
 
     fn create_expr(&mut self, expr_id: hir::ExprId) -> SResult<usize> {
-        let expr = Resolved::expr_with_data::<(ExprIdx<Resolved>, FullTypeId)>(self.db, expr_id)?;
+        let expr = Resolved::expr_with_data::<(ExprIdx<Resolved>, (ExprDepData, BacktrackStatus))>(
+            self.db, expr_id,
+        )?;
         let mapped = expr
             .take_ref()
-            .map(|(idx, ty)| (Origin::Expr(expr_id, idx), ty));
-        mapped.try_fold(|(head, (src, ty))| match head {
-            ExprHead::Niladic(n) => match n {
-                ResolvedAtom::Val(id) | ResolvedAtom::Captured(id) => {
-                    let referencing = self.vals[&SubValue::new_val(id)];
-                    Ok(self.push_term(Term::Copy(referencing), is_definite(self.db, *ty)?, src))
-                }
-                ResolvedAtom::ParserDef(pd) => {
-                    Ok(self.push_term(Term::Pd(pd), is_definite(self.db, *ty)?, src))
-                }
-                ResolvedAtom::Regex(r) => {
-                    let len = self.db.regex_len(r).map_err(|_| SilencedError::new())?;
-                    if let Some(len) = len {
-                        Ok(self.push_term(Term::Const(len), false, src))
-                    } else {
-                        Ok(self.push_term(Term::Opaque, false, src))
+            .map(|(idx, (dep, bt))| (Origin::Expr(expr_id, idx), dep.reqs, bt.can_backtrack()));
+        mapped
+            .try_fold(|(head, (src, dep, bt))| {
+                let needs_bt = (dep * !!NeededBy::Val).contains(NeededBy::Backtrack);
+                let ret = match head {
+                    ExprHead::Niladic(n) => match n {
+                        ResolvedAtom::Val(id) | ResolvedAtom::Captured(id) => {
+                            let referencing = self.vals[&SubValue::new_val(id)];
+                            self.push_term(Term::Copy(referencing), src)
+                        }
+                        ResolvedAtom::ParserDef(pd) => self.push_term(Term::Pd(pd), src),
+                        ResolvedAtom::Regex(r) => {
+                            let len = self.db.regex_len(r).map_err(|_| SilencedError::new())?;
+                            if let Some(len) = len {
+                                self.push_term(Term::Const(len), src)
+                            } else {
+                                self.push_term(Term::Opaque, src)
+                            }
+                        }
+                        ResolvedAtom::Number(n) => self.push_term(Term::Const(n.into()), src),
+                        ResolvedAtom::Char(c) => self.push_term(Term::Const(c.into()), src),
+                        ResolvedAtom::Bool(b) => self.push_term(Term::Const(b.into()), src),
+                        ResolvedAtom::Single => self.push_term(Term::Const(1), src),
+                        ResolvedAtom::Nil => self.push_term(Term::Const(0), src),
+                        ResolvedAtom::Array => self.push_term(Term::Arr, src),
+                        ResolvedAtom::Block(bid, _) => {
+                            self.arg_depth += 1;
+                            let ret = self.create_block(bid);
+                            self.arg_depth -= 1;
+                            ret?
+                        }
+                    },
+                    ExprHead::Monadic(m, (inner, inner_bt)) => match m {
+                        ValUnOp::Neg => self.push_term(Term::Neg(inner), src),
+                        ValUnOp::Wiggle(_, WiggleKind::If) if needs_bt => {
+                            self.push_term(Term::Backtracking(inner), src)
+                        }
+                        ValUnOp::EvalFun if inner_bt && needs_bt => {
+                            self.push_term(Term::Backtracking(inner), src)
+                        }
+                        ValUnOp::Wiggle(_, _) | ValUnOp::BtMark(_) | ValUnOp::EvalFun => inner,
+                        ValUnOp::Size => self.push_term(Term::Size(true, inner), src),
+                        ValUnOp::Dot(_, FieldAccessMode::Backtrack) if needs_bt => {
+                            let res = self.push_term(Term::OpaqueUn(inner), src);
+                            self.push_term(Term::Backtracking(res), src)
+                        }
+                        ValUnOp::Dot(..) => self.push_term(Term::OpaqueUn(inner), src),
+                        ValUnOp::Not => self.push_term(Term::OpaqueUn(inner), src),
+                        ValUnOp::GetAddr => self.push_term(Term::OpaqueUn(inner), src),
+                    },
+                    ExprHead::Dyadic(d, [(lhs, _), (rhs, rhs_bt)]) => match d {
+                        ValBinOp::Mul => self.push_term(Term::Mul([lhs, rhs]), src),
+                        ValBinOp::Plus => self.push_term(Term::Add([lhs, rhs]), src),
+                        ValBinOp::Minus => {
+                            let rhs = self.push_term(Term::Neg(rhs), src);
+                            self.push_term(Term::Add([lhs, rhs]), src)
+                        }
+                        ValBinOp::Else => self.push_term(Term::Unify([lhs, rhs]), src),
+                        ValBinOp::Then => self.push_term(Term::Then([lhs, rhs]), src),
+                        ValBinOp::ParserApply if rhs_bt && needs_bt => {
+                            let res = self.push_term(Term::OpaqueBin([lhs, rhs]), src);
+                            self.push_term(Term::Backtracking(res), src)
+                        }
+                        ValBinOp::And
+                        | ValBinOp::Xor
+                        | ValBinOp::Or
+                        | ValBinOp::LesserEq
+                        | ValBinOp::Lesser
+                        | ValBinOp::GreaterEq
+                        | ValBinOp::Greater
+                        | ValBinOp::Uneq
+                        | ValBinOp::Equals
+                        | ValBinOp::ShiftR
+                        | ValBinOp::ShiftL
+                        | ValBinOp::Div
+                        | ValBinOp::Modulo
+                        | ValBinOp::ParserApply => self.push_term(Term::OpaqueBin([lhs, rhs]), src),
+                    },
+                    ExprHead::Variadic(ValVarOp::PartialApply(_), args) => {
+                        let (f, _) = args[0];
+                        let mut ret = f;
+                        for (arg, _) in args[1..].iter() {
+                            ret = self.push_term(Term::Apply([ret, *arg]), src);
+                        }
+                        *self.call_arities.last_mut().unwrap() = args.len() - 1;
+                        ret
                     }
-                }
-                ResolvedAtom::Number(n) => Ok(self.push_term(Term::Const(n.into()), true, src)),
-                ResolvedAtom::Char(c) => Ok(self.push_term(Term::Const(c.into()), true, src)),
-                ResolvedAtom::Bool(b) => Ok(self.push_term(Term::Const(b.into()), true, src)),
-                ResolvedAtom::Single => Ok(self.push_term(Term::Const(1), false, src)),
-                ResolvedAtom::Nil => Ok(self.push_term(Term::Const(0), false, src)),
-                ResolvedAtom::Array => Ok(self.push_term(Term::Arr, false, src)),
-                ResolvedAtom::Block(bid, _) => self.create_block(bid),
-            },
-            ExprHead::Monadic(m, inner) => match m {
-                ValUnOp::Neg => Ok(self.push_term(Term::Neg(inner), true, src)),
-                ValUnOp::Wiggle(_, _) | ValUnOp::BtMark(_) | ValUnOp::EvalFun => Ok(inner),
-                ValUnOp::Size => Ok(self.push_term(Term::Size(true, inner), true, src)),
-                ValUnOp::Dot(..) => {
-                    Ok(self.push_term(Term::OpaqueUn(inner), is_definite(self.db, *ty)?, src))
-                }
-                ValUnOp::Not => Ok(self.push_term(Term::OpaqueUn(inner), true, src)),
-                ValUnOp::GetAddr => Ok(self.push_term(Term::OpaqueUn(inner), true, src)),
-            },
-            ExprHead::Dyadic(d, [lhs, rhs]) => match d {
-                ValBinOp::Mul => Ok(self.push_term(Term::Mul([lhs, rhs]), true, src)),
-                ValBinOp::Plus => Ok(self.push_term(Term::Add([lhs, rhs]), true, src)),
-                ValBinOp::Minus => {
-                    let rhs = self.push_term(Term::Neg(rhs), true, src);
-                    Ok(self.push_term(Term::Add([lhs, rhs]), true, src))
-                }
-                ValBinOp::Else => {
-                    Ok(self.push_term(Term::Unify([lhs, rhs]), is_definite(self.db, *ty)?, src))
-                }
-                ValBinOp::Then => {
-                    Ok(self.push_term(Term::Then([lhs, rhs]), is_definite(self.db, *ty)?, src))
-                }
-                ValBinOp::And
-                | ValBinOp::Xor
-                | ValBinOp::Or
-                | ValBinOp::LesserEq
-                | ValBinOp::Lesser
-                | ValBinOp::GreaterEq
-                | ValBinOp::Greater
-                | ValBinOp::Uneq
-                | ValBinOp::Equals
-                | ValBinOp::ShiftR
-                | ValBinOp::ShiftL
-                | ValBinOp::Div
-                | ValBinOp::Modulo
-                | ValBinOp::ParserApply => Ok(self.push_term(
-                    Term::OpaqueBin([lhs, rhs]),
-                    is_definite(self.db, *ty)?,
-                    src,
-                )),
-            },
-            ExprHead::Variadic(ValVarOp::PartialApply(_), args) => {
-                let f = args[0];
-                let mut ret = f;
-                for arg in args[1..].iter() {
-                    ret = self.push_term(Term::Apply([ret, *arg]), false, src);
-                }
-                *self.call_arities.last_mut().unwrap() = args.len() - 1;
-                Ok(ret)
-            }
-        })
+                };
+                Ok((ret, bt))
+            })
+            .map(|(x, _)| x)
     }
 
     fn create_pd(&mut self, pd: hir::ParserDefId) -> SResult<usize> {
@@ -262,12 +269,7 @@ impl<'a> SizeTermBuilder<'a> {
             .enumerate()
         {
             let loc = Origin::Node(arg.0);
-            let arg_ty = self.db.parser_type_at(arg.0)?;
-            let term = self.push_term(
-                Term::Arg(arg_idx.try_into().unwrap()),
-                is_definite(self.db, arg_ty)?,
-                loc,
-            );
+            let term = self.push_term(Term::Arg(arg_idx.try_into().unwrap()), loc);
             let val_loc = SubValue::new_val(arg.0);
             self.vals.insert(val_loc, term);
         }
@@ -283,16 +285,20 @@ pub struct PdLenTerm {
     pub vals: Arc<FxHashMap<SubValue, usize>>,
     pub root: usize,
     pub block_locs: FxHashMap<hir::BlockId, usize>,
+    pub is_val_fun: bool,
 }
 
 pub fn len_term(db: &dyn Constraints, pd: hir::ParserDefId) -> SResult<Arc<PdLenTerm>> {
-    let mut ctx = SizeTermBuilder::new(db);
+    let arg_count = db.argnum(pd)?.unwrap_or(0);
+    let mut ctx = SizeTermBuilder::new(db, arg_count as u32);
     let root = ctx.create_pd(pd)?;
     let call_arities = ctx.call_arities;
     let expr = ctx.terms;
     let term_spans = ctx.term_spans;
     let block_locs = ctx.block_locs;
     let vals = Arc::new(ctx.vals);
+    let parserdef = pd.lookup(db)?;
+    let val_fun = parserdef.from.is_none();
     Ok(Arc::new(PdLenTerm {
         expr,
         root,
@@ -300,5 +306,6 @@ pub fn len_term(db: &dyn Constraints, pd: hir::ParserDefId) -> SResult<Arc<PdLen
         vals,
         term_spans,
         block_locs,
+        is_val_fun: val_fun,
     }))
 }

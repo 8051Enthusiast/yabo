@@ -19,6 +19,7 @@ yaboc-absint = { path = "../yaboc-absint" }
 yaboc-mir = { path = "../yaboc-mir" }
 yaboc-layout = { path = "../yaboc-layout" }
 yaboc-database = { path = "../yaboc-database" }
+yaboc-req = { path = "../yaboc-req" }
 fxhash = "0.2.1"
 bumpalo = "3.13.0"
 inkwell = { version = "0.2.0", features = ["llvm16-0"] }

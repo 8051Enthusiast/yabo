@@ -38,7 +38,6 @@ use yaboc_base::config::Configs;
 use yaboc_base::dbpanic;
 use yaboc_base::interner::{DefId, FieldName, Identifier, Interner};
 use yaboc_database::YabocDatabase;
-use yaboc_dependents::requirements::RequirementSet;
 use yaboc_hir::{BlockId, HirIdWrapper, Hirs, ParserDefId};
 use yaboc_hir_types::{DerefLevel, TyHirs};
 use yaboc_layout::{
@@ -54,6 +53,7 @@ use yaboc_layout::{
     AbsLayoutCtx, ILayout, IMonoLayout, Layout, LayoutError, MonoLayout,
 };
 use yaboc_mir::{CallMeta, Mirs, ReturnStatus};
+use yaboc_req::RequirementSet;
 use yaboc_types::{PrimitiveType, Type, TypeInterner};
 
 use self::{convert_mir::MirTranslator, convert_thunk::ThunkContext};
@@ -211,7 +211,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> FunctionValue<'llvm> {
         let sym = self.sym(layout, part);
         let Some(fun) = self.module.get_function(&sym) else {
-            panic!("could not find symbol {sym}");
+            dbpanic!(
+                &self.compiler_database.db,
+                "could not find symbol {sym} of layout {}",
+                &layout
+            );
         };
         fun
     }

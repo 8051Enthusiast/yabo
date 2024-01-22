@@ -128,6 +128,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 };
                 self.place_ptr(front)
             }
+            mir::Place::Undefined => self.cg.invalid_ptr(),
         }
     }
 
@@ -474,7 +475,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         &mut self,
         ret: PlaceRef,
         fun: PlaceRef,
-        args: &[PlaceRef],
+        args: &[(PlaceRef, bool)],
         first_index: u64,
         ctrl: ControlFlow,
     ) {
@@ -490,7 +491,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let arg_layout = args
             .iter()
             .zip(arg_tys.iter())
-            .map(|(x, ty)| {
+            .map(|((x, _), ty)| {
                 self.mir_fun
                     .place(*x)
                     .typecast(self.cg.layouts, *ty)
@@ -522,8 +523,10 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         };
         let ret_val = self.return_val(ret);
         self.cg.call_fun_create(ret_val, fun, slot);
-        for (i, arg) in args.iter().enumerate() {
-            self.set_arg(ret, *arg, first_index - i as u64, error);
+        for (i, (arg, used)) in args.iter().enumerate() {
+            if *used {
+                self.set_arg(ret, *arg, first_index - i as u64, error);
+            }
         }
         self.cg
             .builder

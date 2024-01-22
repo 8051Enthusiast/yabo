@@ -5,10 +5,10 @@ use fxhash::{FxHashMap, FxHashSet};
 
 use yaboc_absint::{AbstractDomain, Arg};
 use yaboc_base::dbeprintln;
-use yaboc_dependents::{requirements::NeededBy, requirements::RequirementSet};
 use yaboc_hir::{HirIdWrapper, ParserDefId};
 use yaboc_hir_types::DerefLevel;
 use yaboc_mir::{CallMeta, MirInstr, MirKind};
+use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_types::{PrimitiveType, Type, TypeId};
 
 use crate::{
@@ -22,6 +22,8 @@ use self::tailsize::{CallSite, TailCollector};
 use super::{
     canon_layout, prop::PSize, AbsLayoutCtx, ILayout, IMonoLayout, Layout, LayoutError, MonoLayout,
 };
+
+const TRACE_COLLECTION: bool = false;
 
 type LayoutSet<'a> = FxHashSet<IMonoLayout<'a>>;
 
@@ -73,8 +75,6 @@ pub struct LayoutCollector<'a, 'b> {
     processed_calls: FxHashSet<(ILayout<'a>, IMonoLayout<'a>, CallMeta)>,
     unprocessed: Vec<UnprocessedCall<'a>>,
 }
-
-const TRACE_COLLECTION: bool = false;
 
 #[derive(Debug)]
 pub enum UnprocessedCall<'a> {
@@ -128,6 +128,19 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         }
     }
 
+    fn register_parser_or_function(&mut self, mono: IMonoLayout<'a>) {
+        let ty = self.ctx.db.lookup_intern_type(mono.mono_layout().1);
+        if let Type::ParserArg { .. } = ty {
+            for bt_status in mono.backtrack_statuses(self.ctx) {
+                if self.parsers.insert(bt_status) && TRACE_COLLECTION {
+                    dbeprintln!(self.ctx.db, "[collection] registered parser {}", &mono);
+                }
+            }
+        } else {
+            self.register_function(mono);
+        }
+    }
+
     fn register_layouts(&mut self, layout: ILayout<'a>) {
         for mono in &layout {
             if let Ok(sa) = mono.inner().size_align_without_vtable(self.ctx) {
@@ -168,23 +181,12 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         dbeprintln!(self.ctx.db, "[collection] registered block {}", &mono);
                     }
                 }
-                MonoLayout::NominalParser(_, _, _)
-                | MonoLayout::BlockParser(..)
-                | MonoLayout::ArrayParser(Some((_, Some(_)))) => {
-                    let ty = self.ctx.db.lookup_intern_type(mono.mono_layout().1);
-                    if let Type::ParserArg { .. } = ty {
-                        for bt_status in mono.backtrack_statuses(self.ctx) {
-                            if self.parsers.insert(bt_status) && TRACE_COLLECTION {
-                                dbeprintln!(
-                                    self.ctx.db,
-                                    "[collection] registered parser {}",
-                                    &mono
-                                );
-                            }
-                        }
-                    } else {
-                        self.register_function(mono);
-                    }
+                MonoLayout::NominalParser(_, _, _) | MonoLayout::BlockParser(..) => {
+                    self.register_parser_or_function(mono);
+                }
+                MonoLayout::ArrayParser(Some((inner_parser, Some(_)))) => {
+                    self.register_parser_or_function(mono);
+                    self.register_len(*inner_parser);
                 }
                 MonoLayout::Single
                 | MonoLayout::Nil
@@ -358,7 +360,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         match ins {
             MirInstr::ApplyArgs(_, fun, args, _, _) => {
                 let fun_layout = mir.place(fun);
-                let args = args.iter().map(|arg| mir.place(*arg)).collect::<Vec<_>>();
+                let args = args.iter().map(|(arg, _)| mir.place(*arg)).collect::<Vec<_>>();
                 let ty = mir.place_type(fun);
                 self.register_funcall(fun_layout, args, ty)?;
                 Ok(())
@@ -544,8 +546,21 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         Ok(())
     }
 
+    fn skip_call(&self, call: &UnprocessedCall) -> bool {
+        match call {
+            UnprocessedCall::NominalParser(t, _, MirKind::Call(_))
+            | UnprocessedCall::BlockParser(t, _, MirKind::Call(_))
+            | UnprocessedCall::IfParser(t, _, MirKind::Call(_)) => t,
+            _ => return false,
+        }
+        .is_int()
+    }
+
     fn proc_list(&mut self) -> Result<(), LayoutError> {
         while let Some(mono) = self.unprocessed.pop() {
+            if self.skip_call(&mono) {
+                continue;
+            }
             match mono {
                 UnprocessedCall::BlockParser(arg, parser, info) => {
                     self.collect_block_parse(arg, parser, info)?

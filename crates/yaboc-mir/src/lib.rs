@@ -19,12 +19,11 @@ use yaboc_base::{
     interner::{DefId, FieldName},
 };
 use yaboc_constraint::{Constraints, Origin};
-use yaboc_dependents::{
-    requirements::NeededBy, requirements::RequirementSet, Dependents, SubValue,
-};
+use yaboc_dependents::{Dependents, SubValue};
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
 use yaboc_hir::{Block, BlockId, ExprId, HirConstraintId, HirIdWrapper, ParserDefId};
 use yaboc_hir_types::FullTypeId;
+use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_resolve::expr::{Resolved, ResolvedAtom};
 use yaboc_resolve::expr::{ValBinOp, ValUnOp};
 use yaboc_types::{Type, TypeId};
@@ -271,7 +270,7 @@ pub enum MirInstr {
     StoreVal(PlaceRef, Val),
     SetDiscriminant(PlaceRef, FieldName, bool),
     GetAddr(PlaceRef, PlaceRef, ControlFlow),
-    ApplyArgs(PlaceRef, PlaceRef, Vec<PlaceRef>, u64, ControlFlow),
+    ApplyArgs(PlaceRef, PlaceRef, Vec<(PlaceRef, bool)>, u64, ControlFlow),
     Copy(PlaceRef, PlaceRef, ControlFlow),
     EvalFun(PlaceRef, PlaceRef, ControlFlow),
     ParseCall(
@@ -439,6 +438,7 @@ pub enum Place {
     Captured(PlaceRef, DefId),
     Front(PlaceRef),
     ModifiedBy(InsRef),
+    Undefined,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -654,7 +654,7 @@ impl FunctionWriter {
             remove_bt: false,
         });
         if let Some(from_ty) = from_ty {
-            let arg = builder.add_place(PlaceInfo  {
+            let arg = builder.add_place(PlaceInfo {
                 place: Place::Arg,
                 ty: from_ty,
                 remove_bt: false,
@@ -898,7 +898,7 @@ impl FunctionWriter {
     pub fn apply_args(
         &mut self,
         fun: PlaceRef,
-        args: Vec<PlaceRef>,
+        args: Vec<(PlaceRef, bool)>,
         target: PlaceRef,
         first_arg_index: u64,
         error: BBRef,
@@ -1033,9 +1033,10 @@ mod tests {
         config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase, Context,
     };
     use yaboc_constraint::ConstraintDatabase;
-    use yaboc_dependents::{requirements::NeededBy, DependentsDatabase};
+    use yaboc_dependents::DependentsDatabase;
     use yaboc_hir::{HirDatabase, Hirs, Parser};
     use yaboc_hir_types::HirTypesDatabase;
+    use yaboc_req::NeededBy;
     use yaboc_resolve::ResolveDatabase;
     use yaboc_types::TypeInternerDatabase;
 

@@ -1,7 +1,7 @@
 use fxhash::FxHashMap;
 use sha2::Digest;
 use std::{collections::BTreeMap, fmt::Write};
-use yaboc_dependents::{requirements::NeededBy, requirements::RequirementSet};
+use yaboc_req::{NeededBy, RequirementSet};
 
 use yaboc_base::{
     databased_display::DatabasedDisplay,

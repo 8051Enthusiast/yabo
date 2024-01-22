@@ -6,8 +6,8 @@ use yaboc_base::{
     interner::{DefinitionPath, IdentifierName},
     source::FileId,
 };
-use yaboc_dependents::{requirements::NeededBy, requirements::RequirementSet};
 use yaboc_hir::{HirIdWrapper, HirNode, Module, ParserDefId};
+use yaboc_req::{NeededBy, RequirementSet};
 
 use crate::{strictness::Strictness, CallMeta, ControlFlow, FunKind, InsRef, MirKind, ZstVal};
 
@@ -51,6 +51,7 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for PlaceRef {
             Place::ModifiedBy(ins_ref) => {
                 write!(f, "mod[{ins_ref}]")
             }
+            Place::Undefined => write!(f, "undef"),
         }
     }
 }
@@ -200,11 +201,15 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
             }
             MirInstr::ApplyArgs(target, origin, args, arg_start, cont) => {
                 dbwrite!(f, db, "{} = apply_args {}, (", target, origin)?;
-                for (i, arg) in args.iter().enumerate() {
+                for (i, (arg, used)) in args.iter().enumerate() {
                     if i != 0 {
                         write!(f, ", ")?;
                     }
-                    dbwrite!(f, db, "{}", arg)?;
+                    if *used {
+                        dbwrite!(f, db, "{}", arg)?;
+                    } else {
+                        dbwrite!(f, db, "({})", arg)?;
+                    }
                 }
                 dbwrite!(f, db, "), {}, {}", arg_start, cont)
             }
@@ -416,9 +421,9 @@ fn mir_graph<DB: Mirs, W: Write>(
     w: &mut W,
     fun: FunKind,
     prefix: &str,
-    req: RequirementSet,
+    kind: MirKind,
 ) -> std::io::Result<()> {
-    let mir = db.mir(fun, MirKind::Call(req)).unwrap();
+    let mir = db.mir(fun, kind).unwrap();
     writeln!(w, "subgraph cluster_{prefix} {{")?;
     writeln!(w, "\tlabel=\"{prefix}\"")?;
     let idx = |bbref: BBRef| bbref.as_index() + 1;
@@ -471,13 +476,23 @@ fn convert_dump_path<DB: Mirs>(
     db: &DB,
     s: &str,
     module: &Module,
-) -> std::io::Result<(ParserDefId, RequirementSet)> {
+) -> std::io::Result<(ParserDefId, MirKind)> {
     let Some((name, req)) = s.split_once(':') else {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             format!("Dump path \"{}\" must contain a colon", s),
         ));
     };
+    let ident = db.intern_identifier(IdentifierName { name: name.into() });
+    let Some(def) = module.defs.get(&ident) else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("No parserdef named \"{}\"", name),
+        ));
+    };
+    if req == "len" {
+        return Ok((*def, MirKind::Len));
+    }
     let mut flags = RequirementSet::empty();
     for (c, flag) in [
         ('l', NeededBy::Len),
@@ -488,14 +503,7 @@ fn convert_dump_path<DB: Mirs>(
             flags |= flag;
         }
     }
-    let ident = db.intern_identifier(IdentifierName { name: name.into() });
-    let Some(def) = module.defs.get(&ident) else {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("No parserdef named \"{}\"", name),
-        ));
-    };
-    Ok((*def, flags))
+    Ok((*def, MirKind::Call(flags)))
 }
 
 pub fn print_all_mir_graphs<DB: Mirs, W: Write>(
@@ -520,7 +528,7 @@ pub fn print_all_mir_graphs<DB: Mirs, W: Write>(
         req = r;
     } else {
         parserdefs = module.defs.values().copied().collect::<Vec<_>>();
-        req = RequirementSet::all();
+        req = MirKind::Call(RequirementSet::all());
     }
     for pd in parserdefs {
         let pd_name = dbformat!(db, "{}", &pd.0).replace(|c: char| !c.is_ascii_alphanumeric(), "_");

@@ -9,3 +9,4 @@ description.workspace = true
 rand = "0.8.5"
 regex-syntax = "0.6.29"
 smallvec = { workspace = true }
+yaboc-req = { path = "../yaboc-req" }

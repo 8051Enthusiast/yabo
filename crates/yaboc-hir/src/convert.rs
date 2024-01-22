@@ -141,7 +141,7 @@ fn val_expression(
                     let kind = if b.is_parser {
                         BlockKind::Parser
                     } else {
-                        BlockKind::Fun
+                        BlockKind::Inline
                     };
                     ParserAtom::Block(nid, kind)
                 }
@@ -334,7 +334,7 @@ fn block(
     let kind = if ast.is_parser {
         BlockKind::Parser
     } else {
-        BlockKind::Fun
+        BlockKind::Inline
     };
     let returns = match &ast.content {
         Some(c) => {
@@ -495,7 +495,7 @@ fn struct_context(
             }
             ast::ParserSequenceElement::Statement(x) => match x.as_ref() {
                 ast::Statement::Parse(p) => {
-                    if kind == BlockKind::Fun {
+                    if kind == BlockKind::Inline {
                         ctx.add_errors(Some(HirConversionError::ParseInNonParserBlock {
                             span: p.span,
                         }));

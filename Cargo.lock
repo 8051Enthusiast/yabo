@@ -1141,6 +1141,7 @@ dependencies = [
  "yaboc-hir-types",
  "yaboc-layout",
  "yaboc-mir",
+ "yaboc-req",
  "yaboc-resolve",
  "yaboc-types",
 ]
@@ -1158,6 +1159,7 @@ dependencies = [
  "yaboc-hir",
  "yaboc-hir-types",
  "yaboc-len",
+ "yaboc-req",
  "yaboc-resolve",
  "yaboc-types",
 ]
@@ -1184,7 +1186,6 @@ dependencies = [
 name = "yaboc-dependents"
 version = "0.1.0"
 dependencies = [
- "enumflags2",
  "fxhash",
  "petgraph",
  "salsa",
@@ -1193,6 +1194,7 @@ dependencies = [
  "yaboc-expr",
  "yaboc-hir",
  "yaboc-hir-types",
+ "yaboc-req",
  "yaboc-resolve",
  "yaboc-types",
 ]
@@ -1252,6 +1254,7 @@ dependencies = [
  "yaboc-hir",
  "yaboc-hir-types",
  "yaboc-mir",
+ "yaboc-req",
  "yaboc-resolve",
  "yaboc-types",
 ]
@@ -1263,6 +1266,7 @@ dependencies = [
  "rand",
  "regex-syntax 0.6.29",
  "smallvec",
+ "yaboc-req",
 ]
 
 [[package]]
@@ -1280,8 +1284,16 @@ dependencies = [
  "yaboc-hir",
  "yaboc-hir-types",
  "yaboc-len",
+ "yaboc-req",
  "yaboc-resolve",
  "yaboc-types",
+]
+
+[[package]]
+name = "yaboc-req"
+version = "0.1.0"
+dependencies = [
+ "enumflags2",
 ]
 
 [[package]]

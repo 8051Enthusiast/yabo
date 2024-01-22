@@ -1,0 +1,20 @@
+====[ source code ]====
+fun *sized(arr: [u8]) = [~](arr *> u32l)
+
+export
+fun *test = {
+  arr: [~](4)
+  t: [sized(arr)](2)
+}
+
+====[ binary 1 ]====
+02 00 00 00 01 02 03 04
+
+====[ output 1 ]====
+{
+  "arr": [2, 0, 0, 0],
+  "t": [
+    [1, 2],
+    [3, 4]
+  ]
+}

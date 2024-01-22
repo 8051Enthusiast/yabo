@@ -690,7 +690,7 @@ struct ParentInfo {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BlockKind {
     Parser,
-    Fun,
+    Inline,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]

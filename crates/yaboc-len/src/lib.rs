@@ -3,6 +3,7 @@ pub mod prob_array;
 pub mod regex;
 mod represent;
 
+use depvec::{ArgDeps, DepVec, SmallBitVec};
 pub use represent::len_graph;
 
 use prob_array::{RandomArray, UNINIT};
@@ -11,69 +12,12 @@ use std::{
     cmp::Ordering,
     collections::HashMap,
     hash::{BuildHasher, Hash},
-    ops::Index,
     slice,
     sync::Arc,
 };
+use yaboc_req::{NeededBy, RequirementMatrix, RequirementSet};
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
-pub struct SmallBitVec(SmallVec<[u64; 2]>);
-
-impl Index<usize> for SmallBitVec {
-    type Output = bool;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        let (word, bit) = (index / 64, index % 64);
-        if (self.0[word] >> bit) & 1 != 0 {
-            &true
-        } else {
-            &false
-        }
-    }
-}
-
-impl SmallBitVec {
-    pub fn new(bits: &[bool]) -> Self {
-        Self(
-            bits.chunks(64)
-                .map(|word| word.iter().enumerate().map(|(i, b)| (*b as u64) << i).sum())
-                .collect(),
-        )
-    }
-
-    pub fn ones(bits: usize) -> Self {
-        let mut words = SmallVec::with_capacity((bits + 63) / 64);
-        for _ in 0..words.capacity() {
-            words.push(u64::MAX);
-        }
-        SmallBitVec(words)
-    }
-
-    pub fn zeroes(bits: usize) -> Self {
-        let mut words = SmallVec::with_capacity((bits + 63) / 64);
-        for _ in 0..words.capacity() {
-            words.push(0);
-        }
-        SmallBitVec(words)
-    }
-
-    pub fn or(&self, other: &Self) -> Self {
-        let mut words = SmallVec::with_capacity(self.0.len().min(other.0.len()));
-        for (a, b) in self.0.iter().zip(other.0.iter()) {
-            words.push(a | b);
-        }
-        SmallBitVec(words)
-    }
-
-    pub fn is_zero_until(&self, idx: usize) -> bool {
-        (0..idx).all(|i| !self[i])
-    }
-
-    pub fn set(&mut self, idx: usize) {
-        let (word, bit) = (idx / 64, idx % 64);
-        self.0[word] |= 1 << bit;
-    }
-}
+pub mod depvec;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PolyOp {
@@ -108,7 +52,28 @@ pub enum PolyGate {
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct PolyCircuit {
     pub gates: Vec<PolyGate>,
-    pub deps: SmallBitVec,
+    pub deps: DepVec,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum BlockKind {
+    Parser,
+    Inline,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct BlockInfoIdx(u32);
+
+impl BlockInfoIdx {
+    pub fn new(idx: u32) -> Self {
+        Self(idx)
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct BlockInfo {
+    pub captures: SmallBitVec,
+    pub kind: BlockKind,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -129,21 +94,34 @@ pub enum Term<ParserRef> {
     Then([usize; 2]),
     Copy(usize),
     Size(bool, usize),
+    BlockEnd(BlockInfoIdx, usize),
+    Parsed,
+    Cat([usize; 2]),
+    Backtracking(usize),
 }
 
 impl<ParserRef> Term<ParserRef> {
     fn ref_indices(&self) -> &[usize] {
         match self {
-            Term::Pd(_) | Term::Arg(_) | Term::Const(_) | Term::Opaque | Term::Arr => &[],
-            Term::OpaqueUn(x) | Term::Neg(x) | Term::Copy(x) | Term::Size(_, x) => {
-                slice::from_ref(x)
-            }
+            Term::Pd(_)
+            | Term::Arg(_)
+            | Term::Const(_)
+            | Term::Opaque
+            | Term::Arr
+            | Term::Parsed => &[],
+            Term::OpaqueUn(x)
+            | Term::Neg(x)
+            | Term::Copy(x)
+            | Term::Size(_, x)
+            | Term::BlockEnd(_, x)
+            | Term::Backtracking(x) => slice::from_ref(x),
             Term::OpaqueBin(x)
             | Term::Apply(x)
             | Term::Unify(x)
             | Term::UnifyDyn(x)
             | Term::Mul(x)
             | Term::Add(x)
+            | Term::Cat(x)
             | Term::Then(x) => x,
         }
     }
@@ -152,70 +130,46 @@ impl<ParserRef> Term<ParserRef> {
 #[derive(Default, PartialEq, Eq, Debug, Clone)]
 pub struct SizeExpr<Pd> {
     pub terms: Vec<Term<Pd>>,
-    pub definite: Vec<bool>,
+    pub arg_depth: Vec<u32>,
+    pub block_info: SmallVec<[BlockInfo; 2]>,
 }
 
 impl<Pd> SizeExpr<Pd> {
     pub fn new() -> Self {
         Self {
             terms: vec![],
-            definite: vec![],
+            arg_depth: vec![],
+            block_info: Default::default(),
         }
     }
 
-    pub fn push(&mut self, term: Term<Pd>, definite: bool) -> usize {
+    pub fn push(&mut self, term: Term<Pd>, arg_depth: u32) -> usize {
         self.terms.push(term);
-        self.definite.push(definite);
+        self.arg_depth.push(arg_depth);
         self.terms.len() - 1
-    }
-
-    pub fn static_arg_deps<T: Clone + std::fmt::Debug>(
-        &self,
-        vals: &[Val<T>],
-        arg_count: usize,
-    ) -> Vec<SmallBitVec> {
-        let mut arg_deps = vec![SmallBitVec::zeroes(arg_count + 1); self.terms.len()];
-        for (i, term) in self.terms.iter().enumerate() {
-            if let Term::Apply([fun, arg]) = term {
-                arg_deps[i] = arg_deps[i].or(&arg_deps[*fun]);
-                if vals[*fun].uses_next_arg() {
-                    arg_deps[i] = arg_deps[i].or(&arg_deps[*arg]);
-                }
-            } else {
-                for dep in term.ref_indices() {
-                    arg_deps[i] = arg_deps[i].or(&arg_deps[*dep]);
-                }
-            }
-            match term {
-                Term::Arg(a) => arg_deps[i].set(arg_count - *a as usize - 1),
-                Term::Opaque => arg_deps[i].set(arg_count),
-                _ => (),
-            }
-        }
-        arg_deps
     }
 }
 
 pub enum Fun<ParserRef> {
     ParserRef(ParserRef),
-    Static(SmallBitVec),
+    Static(depvec::SmallBitVec),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Val<PolyCircuitId> {
     Undefined,
-    Const(u32, i128),
+    Const(u32, i128, DepVec),
     Arg(u32, u32),
     PolyOp(PolyOp),
-    Poly(u32, PolyCircuitId, SmallBitVec),
-    PartialPolyApply(u32, [usize; 2], PolyCircuitId, SmallBitVec),
-    Static(u32, SmallBitVec),
-    Dynamic,
+    Poly(u32, PolyCircuitId, DepVec),
+    PartialPolyApply(u32, [usize; 2], PolyCircuitId, DepVec),
+    Static(u32, DepVec),
+    Unsized,
 }
 
 impl<PolyCircuitId: Clone + std::fmt::Debug> Val<PolyCircuitId> {
-    pub fn is_dynamic(&self) -> bool {
-        matches!(self, Val::Dynamic)
+    pub fn is_unsized(&self) -> bool {
+        matches!(self, Val::Unsized)
     }
 
     fn is_poly(&self) -> bool {
@@ -248,38 +202,43 @@ impl<PolyCircuitId: Clone + std::fmt::Debug> Val<PolyCircuitId> {
             | Val::Poly(rank, ..)
             | Val::PartialPolyApply(rank, ..)
             | Val::Static(rank, ..) => Some(*rank),
-            Val::Dynamic => None,
+            Val::Unsized => None,
         }
     }
 
     fn as_arg_fun(&self) -> Self {
         match self {
-            Val::Static(rank, deps) if !deps.is_zero_until(*rank as usize) => Val::Dynamic,
-            Val::Poly(rank, .., x) | Val::PartialPolyApply(rank, .., x)
-                if !x.is_zero_until(*rank as usize) =>
+            Val::Static(rank, deps)
+            | Val::Poly(rank, .., deps)
+            | Val::PartialPolyApply(rank, .., deps)
+            | Val::Const(rank, _, deps)
+                if !deps.is_zero_below(*rank as usize) =>
             {
-                Val::Dynamic
+                Val::Unsized
             }
             otherwise => otherwise.clone(),
         }
     }
 
-    pub fn uses_next_arg(&self) -> bool {
+    pub fn next_arg_uses(&self) -> RequirementSet {
         match self {
-            Val::Undefined | Val::Const(_, _) | Val::Arg(_, _) | Val::PolyOp(_) => false,
-            Val::Poly(rank, _, deps)
+            Val::Undefined | Val::Arg(_, _) | Val::PolyOp(_) => RequirementSet::empty(),
+            Val::Unsized => NeededBy::Val | NeededBy::Len,
+            Val::Const(rank, _, deps)
+            | Val::Poly(rank, _, deps)
             | Val::PartialPolyApply(rank, _, _, deps)
-            | Val::Static(rank, deps) => deps[*rank as usize - 1],
-            Val::Dynamic => true,
+            | Val::Static(rank, deps) => deps.req(*rank as usize - 1),
         }
     }
 
-    fn deps(&self) -> SmallBitVec {
+    fn deps(&self) -> depvec::DepVec {
         match self {
-            Val::Const(rank, _) | Val::Arg(rank, _) => SmallBitVec::zeroes(*rank as usize),
-            Val::Poly(.., x) | Val::PartialPolyApply(.., x) => x.clone(),
-            Val::Static(_, deps) => deps.clone(),
-            Val::PolyOp(_) | Val::Undefined | Val::Dynamic => SmallBitVec::default(),
+            Val::Arg(_, _) => DepVec::default(),
+            Val::Const(_, _, x)
+            | Val::Poly(.., x)
+            | Val::PartialPolyApply(.., x)
+            | Val::Static(_, x) => x.clone(),
+            Val::PolyOp(_) | Val::Undefined | Val::Unsized => DepVec::default(),
         }
     }
 
@@ -297,7 +256,7 @@ impl<PolyCircuitId: Clone + std::fmt::Debug> Val<PolyCircuitId> {
             Val::Const(..) => 1,
             Val::Poly(..) => 2,
             Val::Static(..) => 3,
-            Val::Dynamic => 4,
+            Val::Unsized => 4,
             Val::Arg(..) | Val::PolyOp(..) | Val::PartialPolyApply(..) => {
                 panic!("fun_hierarchy_rank called on unfun value {:?}", self)
             }
@@ -326,9 +285,11 @@ impl Default for Parameter {
 }
 
 #[derive(Clone, Copy)]
-pub enum ArgKind {
-    Const(u32),
-    Dynamic,
+pub struct ArgRank(pub u32);
+
+pub struct Vals<ParserRef> {
+    pub vals: Vec<Val<ParserRef>>,
+    pub deps: Vec<ArgDeps>,
 }
 pub trait Env: Sized {
     type ParserRef: Copy + Eq + std::fmt::Debug;
@@ -346,19 +307,20 @@ pub struct SizeCalcCtx<'a, Γ: Env> {
     poly_vals: Vec<RandomArray>,
     pub vals: Vec<Val<Γ::PolyCircuitId>>,
     arr_circuit: Γ::PolyCircuitId,
-    args: &'a [ArgKind],
+    args: &'a [ArgRank],
     arg_poly_vals: Vec<RandomArray>,
+    deps: Vec<ArgDeps>,
 }
 
 impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
-    pub fn new(env: &'a Γ, size_expr: &'a SizeExpr<Γ::ParserRef>, args: &'a [ArgKind]) -> Self {
+    pub fn new(env: &'a Γ, size_expr: &'a SizeExpr<Γ::ParserRef>, args: &'a [ArgRank]) -> Self {
         // 5 extra slots to avoid reallocation when comparing polynomials
         let mut arg_poly_vals = vec![UNINIT; args.len() + 5];
         for arg in arg_poly_vals.iter_mut() {
             arg.random_element();
         }
         let arr_circuit = PolyCircuit {
-            deps: SmallBitVec::ones(2),
+            deps: DepVec::array_deps(),
             gates: vec![
                 PolyGate::Arg(0),
                 PolyGate::Arg(1),
@@ -374,16 +336,112 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             arr_circuit,
             args,
             arg_poly_vals,
+            deps: vec![Default::default(); size_expr.terms.len()],
         };
         ret.eval();
         ret
+    }
+
+    fn for_each_dep(&self, term_idx: usize, mut f: impl FnMut(&Self, usize, RequirementMatrix)) {
+        let term = &self.size_expr.terms[term_idx];
+        match term {
+            Term::Cat([lhs, rhs]) | Term::UnifyDyn([lhs, rhs]) => {
+                // this is only used for len functions to statically
+                // calculate their size and therefore only needs the length
+                let req = RequirementMatrix::diag(!!NeededBy::Len);
+                f(self, *lhs, req);
+                f(self, *rhs, req);
+            }
+            Term::Copy(inner) => {
+                // note that Backtrack is absent as it doesn't propagate accross expressions
+                let req = RequirementMatrix::diag(NeededBy::Len | NeededBy::Val);
+                f(self, *inner, req);
+            }
+            Term::Unify([lhs, rhs]) => {
+                // unlike other general ops, this one allows parsers
+                // to be passed through
+                let req = RequirementMatrix::id();
+                // the result also depends on backtracking of the left side
+                let lreq = req
+                    | RequirementMatrix::outer(
+                        !!NeededBy::Backtrack,
+                        NeededBy::Len | NeededBy::Val,
+                    );
+                f(self, *lhs, lreq);
+                f(self, *rhs, req);
+            }
+            Term::Size(_, inner) => {
+                // when we want the size val of something, we only need the length
+                // of the argument
+                let req = RequirementMatrix::diag(NeededBy::Len | NeededBy::Backtrack)
+                    | RequirementMatrix::outer(!!NeededBy::Len, !!NeededBy::Val);
+                f(self, *inner, req);
+            }
+            Term::Apply([lhs, rhs]) => {
+                f(self, *lhs, RequirementMatrix::id());
+                let val = &self.vals[*lhs];
+                // when we evaluate the value, we call the function with all its values,
+                // but when we want the length, we may not need everything
+                let mut req = RequirementMatrix::diag(NeededBy::Val | NeededBy::Backtrack);
+                req |= RequirementMatrix::outer(val.next_arg_uses(), !!NeededBy::Len);
+                f(self, *rhs, req);
+            }
+            Term::Then([lhs, rhs]) => {
+                // the value on the left side is ignored
+                let lreq = RequirementMatrix::diag(!!NeededBy::Backtrack);
+                f(self, *lhs, lreq);
+                let rreq = RequirementMatrix::id();
+                f(self, *rhs, rreq);
+            }
+            Term::BlockEnd(block_idx, len) => {
+                // note that we may iterate over the same value with different matrices twice
+                let block_info = &self.size_expr.block_info[block_idx.0 as usize];
+                let kind = block_info.kind;
+                // if this is an inline block, we evaluate the whole block as an opaque
+                // value which needs all dependencies even in case we only want the len
+                let needs_val = match kind {
+                    BlockKind::Parser => !!NeededBy::Val,
+                    BlockKind::Inline => NeededBy::Len | NeededBy::Val,
+                };
+                let vreq = RequirementMatrix::outer(!!NeededBy::Val, needs_val);
+                for cap in block_info.captures.iter_ones() {
+                    f(self, cap, vreq);
+                }
+                let lreq = RequirementMatrix::diag(!!NeededBy::Len);
+                f(self, *len, lreq);
+            }
+            Term::Backtracking(inner) => {
+                // in case of backtracking, whether it backtracks depends on the value
+                // dependencies
+                let mut req = RequirementMatrix::id();
+                req |= RequirementMatrix::outer(!!NeededBy::Val, !!NeededBy::Backtrack);
+                f(self, *inner, req);
+            }
+            Term::Parsed
+            | Term::Arg(_)
+            | Term::Pd(_)
+            | Term::Const(_)
+            | Term::Opaque
+            | Term::OpaqueUn(_)
+            | Term::OpaqueBin(_)
+            | Term::Mul(_)
+            | Term::Add(_)
+            | Term::Neg(_)
+            | Term::Arr => {
+                // these operations don't allow parsers to be passed through (or are niladic)
+                let req = RequirementMatrix::diag(NeededBy::Backtrack | NeededBy::Val);
+                for dep in term.ref_indices() {
+                    f(self, *dep, req);
+                }
+            }
+        }
     }
 
     fn poly_args_impl(&mut self, fun: Val<Γ::PolyCircuitId>) -> Vec<Option<Parameter>> {
         match fun {
             Val::PartialPolyApply(_, [fun, arg], ..) => {
                 let mut args = self.poly_args_impl(self.vals[fun].clone());
-                if self.vals[fun].uses_next_arg() {
+                if !self.vals[fun].next_arg_uses().is_empty() {
                     args.push(Some(Parameter::Val(arg)));
                 } else {
                     args.push(None);
@@ -462,7 +520,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             return;
         }
         match self.vals[idx].clone() {
-            Val::Const(_, c) => self.poly_vals[idx].array_from_const(c),
+            Val::Const(_, c, _) => self.poly_vals[idx].array_from_const(c),
             Val::Arg(_, a) => self.poly_vals[idx].clone_from(&self.arg_poly_vals[a as usize]),
             Val::PolyOp(op) => {
                 let deps = match &op {
@@ -502,25 +560,25 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         exec_op: impl Fn([i128; N]) -> (i128, bool),
         poly_op: PolyOp,
     ) -> Val<Γ::PolyCircuitId> {
-        if deps
-            .iter()
-            .any(|x| matches!(&self.vals[*x], Val::Undefined))
-        {
-            return Val::Undefined;
-        }
-        if deps.iter().any(|x| matches!(&self.vals[*x], Val::Dynamic)) {
-            return Val::Dynamic;
-        }
-        if deps
-            .iter()
-            .any(|x| matches!(&self.vals[*x], Val::Static(0, ..)))
-        {
-            return Val::Static(0, SmallBitVec::default());
+        for (predicate, val) in [
+            (
+                (|x| matches!(x, Val::Undefined)) as fn(&Val<_>) -> _,
+                Val::Undefined,
+            ),
+            (|x| matches!(x, Val::Unsized), Val::Unsized),
+            (
+                |x| matches!(x, Val::Static(0, _)),
+                Val::Static(0, DepVec::default()),
+            ),
+        ] {
+            if deps.iter().any(|x| predicate(&self.vals[*x])) {
+                return val;
+            }
         }
         let Some(consts) = deps
             .iter()
             .map(|x| match &self.vals[*x] {
-                Val::Const(0, x) => Some(*x),
+                Val::Const(0, x, _) => Some(*x),
                 _ => None,
             })
             .collect::<Option<SmallVec<[i128; N]>>>()
@@ -531,53 +589,25 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         if overflow {
             Val::Undefined
         } else {
-            Val::Const(0, res)
-        }
-    }
-
-    fn opaque_op(&self, args: &[usize], definite: bool) -> Val<Γ::PolyCircuitId> {
-        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-        enum State {
-            Static,
-            Dynamic,
-            Undefined,
-        }
-
-        let mut state = State::Static;
-        for arg in args {
-            match &self.vals[*arg] {
-                Val::Undefined => {
-                    state = state.max(State::Undefined);
-                }
-                Val::Dynamic => {
-                    state = state.max(State::Dynamic);
-                }
-                _ => {}
-            }
-        }
-        match state {
-            State::Static => Val::Static(0, SmallBitVec::default()),
-            State::Dynamic => {
-                if definite {
-                    Val::Static(0, SmallBitVec::default())
-                } else {
-                    Val::Dynamic
-                }
-            }
-            State::Undefined => Val::Undefined,
+            Val::Const(0, res, DepVec::default())
         }
     }
 
     fn apply_fun(&self, fun: usize, arg: usize) -> Val<Γ::PolyCircuitId> {
         let argv = self.vals[arg].as_arg_fun();
-        match (&self.vals[fun], &argv, self.vals[fun].uses_next_arg()) {
-            (Val::Undefined, ..) | (_, Val::Undefined, true) => Val::Undefined,
-            (Val::Arg(rank @ 1.., a), _, _) => Val::Arg(*rank - 1, *a),
-            (Val::Const(rank @ 1.., c), _, _) => Val::Const(*rank - 1, *c),
-            (Val::Static(1.., _), Val::Dynamic, true) => Val::Dynamic,
+        let next_arg_uses = self.vals[fun].next_arg_uses();
+        let uses_len = next_arg_uses.contains(NeededBy::Len);
+        let uses_val = next_arg_uses.contains(NeededBy::Val);
+        match (&self.vals[fun], &argv, (uses_len, uses_val)) {
+            (Val::Undefined, ..) | (_, Val::Undefined, (true, _)) => Val::Undefined,
+            (Val::Arg(rank @ 1.., a), ..) => Val::Arg(*rank - 1, *a),
+            (Val::Const(rank @ 1.., c, deps), ..) => Val::Const(*rank - 1, *c, deps.clone()),
+            (Val::Static(1.., ..), Val::Unsized, (true, _)) => Val::Unsized,
+            // because of the previous branch, either the argument is sized
+            // or the argument length is not used
             (Val::Static(rank @ 1.., deps), ..) => {
                 if *rank == 1 {
-                    Val::Static(*rank - 1, SmallBitVec::default())
+                    Val::Static(*rank - 1, DepVec::default())
                 } else {
                     Val::Static(*rank - 1, deps.clone())
                 }
@@ -586,10 +616,10 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 Val::PartialPolyApply(rank @ 1.., _, circ, deps)
                 | Val::Poly(rank @ 1.., circ, deps),
                 argv,
-                true,
+                (true, _),
             ) => {
-                if argv.is_dynamic() {
-                    Val::Dynamic
+                if argv.is_unsized() {
+                    Val::Unsized
                 } else if argv.is_poly() {
                     Val::PartialPolyApply(*rank - 1, [fun, arg], *circ, deps.clone())
                 } else {
@@ -599,51 +629,73 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             (
                 Val::PartialPolyApply(rank @ 1.., _, circ, deps)
                 | Val::Poly(rank @ 1.., circ, deps),
+                argv,
+                (false, true),
+            ) => {
+                if argv.is_unsized() {
+                    Val::Static(*rank - 1, deps.clone())
+                } else {
+                    Val::PartialPolyApply(*rank - 1, [fun, arg], *circ, deps.clone())
+                }
+            }
+            (
+                Val::PartialPolyApply(rank @ 1.., _, circ, deps)
+                | Val::Poly(rank @ 1.., circ, deps),
                 _,
-                false,
+                (false, false),
             ) => Val::PartialPolyApply(*rank - 1, [fun, arg], *circ, deps.clone()),
 
-            _ => Val::Dynamic,
+            _ => Val::Unsized,
         }
     }
 
-    fn unify(&mut self, ops @ [lidx, ridx]: [usize; 2], dy: bool) -> Val<Γ::PolyCircuitId> {
-        let maybe_static = |rank, deps| {
+    fn unify(
+        &mut self,
+        ops @ [lidx, ridx]: [usize; 2],
+        dy: bool,
+        pos: usize,
+    ) -> Val<Γ::PolyCircuitId> {
+        let mark_dyn = |this: &mut Self| {
             if dy {
-                Val::Dynamic
-            } else {
-                Val::Static(rank, deps)
+                let arg = this.size_expr.arg_depth[pos] - 1;
+                this.deps[pos].len().set_val(arg as usize);
             }
         };
         match ops.map(|x| self.vals[x].clone()) {
             [Val::Undefined, other] | [other, Val::Undefined] => other,
-            [Val::Dynamic, _] | [_, Val::Dynamic] => Val::Dynamic,
-            [lhs, rhs] if lhs.rank() != rhs.rank() => Val::Dynamic,
+            [Val::Unsized, _] | [_, Val::Unsized] => Val::Unsized,
+            [lhs, rhs] if lhs.rank() != rhs.rank() => Val::Unsized,
             [Val::Static(rank, ldeps), Val::Static(_, rdeps)] => {
                 let deps = ldeps.or(&rdeps);
-                maybe_static(rank, deps)
+                mark_dyn(self);
+                Val::Static(rank, deps)
             }
             [Val::Static(rank, ldeps), Val::Poly(.., x) | Val::PartialPolyApply(.., x)]
             | [Val::Poly(.., x) | Val::PartialPolyApply(.., x), Val::Static(rank, ldeps)] => {
                 let deps = ldeps.or(&x);
-                maybe_static(rank, deps)
+                mark_dyn(self);
+                Val::Static(rank, deps)
             }
             [Val::Static(rank, deps), Val::Arg(..) | Val::Const(..) | Val::PolyOp(..)]
             | [Val::PolyOp(..) | Val::Arg(..) | Val::Const(..), Val::Static(rank, deps)] => {
-                maybe_static(rank, deps)
+                mark_dyn(self);
+                Val::Static(rank, deps)
             }
-            [Val::Const(rank, a), Val::Const(_, b)] => {
+            [Val::Const(rank, a, ldeps), Val::Const(_, b, rdeps)] => {
+                let deps = ldeps.or(&rdeps);
                 if a == b {
-                    Val::Const(rank, a)
+                    Val::Const(rank, a, deps)
                 } else {
-                    maybe_static(rank, SmallBitVec::zeroes(rank as usize))
+                    mark_dyn(self);
+                    Val::Static(rank, deps)
                 }
             }
             [Val::Arg(rank, a), Val::Arg(_, b)] => {
                 if a == b {
                     Val::Arg(rank, a)
                 } else {
-                    maybe_static(rank, SmallBitVec::zeroes(rank as usize))
+                    mark_dyn(self);
+                    Val::Static(rank, Default::default())
                 }
             }
             [lhs @ (Val::PolyOp(..)
@@ -661,55 +713,91 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 } else {
                     let rank = lhs.rank().unwrap();
                     let deps = lhs.deps();
-                    maybe_static(rank, deps)
+                    mark_dyn(self);
+                    Val::Static(rank, deps)
                 }
             }
+        }
+    }
+
+    fn block_end(&mut self, len_loc: usize) -> Val<Γ::PolyCircuitId> {
+        let arg = self.size_expr.arg_depth[len_loc] as usize - 1;
+        let lendeps = self.deps[len_loc].len();
+        let depends_on_arg = lendeps.has_len(arg) || lendeps.has_val(arg);
+        let val = &self.vals[len_loc];
+        if depends_on_arg {
+            Val::Unsized
+        } else {
+            val.clone()
+        }
+    }
+
+    fn update_deps(&mut self, pos: usize) {
+        let term = &self.size_expr.terms[pos];
+        let mut cur = self.deps[pos].clone();
+        self.for_each_dep(pos, |this, dep, req| {
+            cur |= &req.pullback(&this.deps[dep].0);
+        });
+        self.deps[pos] = cur;
+        match term {
+            Term::Arg(a) => {
+                let idx = self.args.len() - *a as usize - 1;
+                self.deps[pos].len().set_len(idx);
+                self.deps[pos].val().set_val(idx);
+            }
+            Term::Parsed => {
+                let idx = self.size_expr.arg_depth[pos] as usize - 1;
+                self.deps[pos].len().set_len(idx);
+                self.deps[pos].val().set_val(idx);
+            }
+            _ => (),
         }
     }
 
     fn eval(&mut self) {
         for term_idx in 0..self.size_expr.terms.len() {
             let term = self.size_expr.terms[term_idx];
-            let definite = self.size_expr.definite[term_idx];
-            let val = match (&term, definite) {
-                (Term::Pd(pd), _) => self.env.size_info(pd),
-                (Term::Arg(a), def) => match self.args[*a as usize] {
-                    ArgKind::Const(rank) => Val::Arg(rank, *a),
-                    ArgKind::Dynamic => {
-                        if def {
-                            Val::Static(0, SmallBitVec::default())
-                        } else {
-                            Val::Dynamic
-                        }
-                    }
-                },
-                (Term::Apply([fun, arg]), _) => self.apply_fun(*fun, *arg),
-                (Term::Const(c), _) => Val::Const(0, *c),
-                (Term::Opaque, true) => Val::Static(0, SmallBitVec::default()),
-                (Term::Opaque, false) => Val::Dynamic,
-                (Term::OpaqueUn(arg), def) => self.opaque_op(&[*arg], def),
-                (Term::OpaqueBin([lhs, rhs]), def) => self.opaque_op(&[*lhs, *rhs], def),
-                (Term::Mul(ops), _) => self.poly_op(
+            let val = match &term {
+                Term::Pd(pd) => self.env.size_info(pd),
+                Term::Arg(a) => Val::Arg(self.args[*a as usize].0, *a),
+                Term::Apply([fun, arg]) => self.apply_fun(*fun, *arg),
+                Term::Const(c) => Val::Const(0, *c, Default::default()),
+                Term::OpaqueBin(..) | Term::Opaque | Term::Parsed | Term::OpaqueUn(_) => {
+                    Val::Unsized
+                }
+                Term::Mul(ops) => self.poly_op(
                     *ops,
                     |[lhs, rhs]| lhs.overflowing_mul(rhs),
                     PolyOp::Mul(*ops),
                 ),
-                (Term::Add(ops), _) => self.poly_op(
+                Term::Add(ops) | Term::Cat(ops) => self.poly_op(
                     *ops,
                     |[lhs, rhs]| lhs.overflowing_add(rhs),
                     PolyOp::Add(*ops),
                 ),
-                (Term::Neg(arg), _) => {
+                Term::Neg(arg) => {
                     self.poly_op([*arg], |[x]| x.overflowing_neg(), PolyOp::Neg(*arg))
                 }
-                (Term::Arr, _) => Val::Poly(2, self.arr_circuit, SmallBitVec::ones(2)),
-                (Term::Unify(ops), _) => self.unify(*ops, false),
-                (Term::UnifyDyn(ops), _) => self.unify(*ops, true),
-                (Term::Copy(val) | Term::Size(_, val) | Term::Then([_, val]), _) => {
+                Term::Arr => Val::Poly(2, self.arr_circuit, DepVec::array_deps()),
+                Term::Unify(ops) => self.unify(*ops, false, term_idx),
+                Term::UnifyDyn(ops) => self.unify(*ops, true, term_idx),
+                Term::Size(_, inner) => match self.vals[*inner].clone() {
+                    Val::Unsized | Val::Static(_, _) => Val::Unsized,
+                    otherwise => otherwise,
+                },
+                Term::BlockEnd(idx, len_loc) => {
+                    if self.size_expr.block_info[idx.0 as usize].kind == BlockKind::Parser {
+                        self.block_end(*len_loc)
+                    } else {
+                        self.vals[*len_loc].clone()
+                    }
+                }
+                Term::Copy(val) | Term::Then([_, val]) | Term::Backtracking(val) => {
                     self.vals[*val].clone()
                 }
             };
             self.vals.push(val);
+            self.update_deps(term_idx);
         }
     }
 
@@ -752,14 +840,10 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             return None;
         }
         let mut included = vec![false; self.vals.len()];
-        let mut args = SmallBitVec::zeroes(self.args.len());
         included[root] = true;
         for (i, val) in self.vals.iter().enumerate().rev() {
             if !included[i] {
                 continue;
-            }
-            if let Val::Arg(_, a) = val {
-                args.set(self.args.len() - *a as usize - 1);
             }
             if val.is_poly_fun() {
                 // higher order functions are not directly included
@@ -769,7 +853,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             }
             if let Val::PartialPolyApply(_, [fun, arg], ..) = val {
                 included[*fun] = true;
-                if self.vals[*fun].uses_next_arg() {
+                if !self.vals[*fun].next_arg_uses().is_empty() {
                     included[*arg] = true;
                 }
             } else {
@@ -791,7 +875,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                     gates_index.push(gates.len());
                     gates.push(PolyGate::Arg(a))
                 }
-                Val::Const(0, c) => {
+                Val::Const(0, c, _) => {
                     gates_index.push(gates.len());
                     gates.push(PolyGate::Const(c))
                 }
@@ -813,28 +897,45 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 }
             }
         }
-        Some(PolyCircuit { gates, deps: args })
+        Some(PolyCircuit {
+            gates,
+            deps: self.deps[root].len().clone(),
+        })
     }
 
     pub fn call_site_deps<T: Copy + Eq + Hash, H: BuildHasher + Default>(
         &self,
         origins: &[T],
         sizes: &[usize],
-        deps: &mut HashMap<T, SmallBitVec, H>,
-    ) {
+        root: usize,
+    ) -> HashMap<T, depvec::SmallBitVec, H> {
         let mut idx = sizes.len();
+        let mut deps = <HashMap<T, depvec::SmallBitVec, H>>::default();
+        let mut reqs = vec![RequirementSet::empty(); sizes.len()];
+        reqs[root] = NeededBy::Len.into();
         while idx > 0 {
             idx -= 1;
+            self.for_each_dep(idx, |_, dep, mat| {
+                let r = reqs[idx];
+                reqs[dep] |= mat * r;
+            });
             let size @ 1.. = sizes[idx] else {
                 continue;
             };
-            let mut call_deps = SmallBitVec::zeroes(size);
+            // if we need the value of the applied parser, we need all arguments
+            if reqs[idx].contains(NeededBy::Val) {
+                let call_deps = depvec::SmallBitVec::ones(size);
+                let origin = origins[idx];
+                deps.insert(origin, call_deps);
+                continue;
+            }
+            let mut call_deps = depvec::SmallBitVec::default();
             let mut f_idx = idx;
             for i in (0..size).rev() {
                 let Term::Apply([f, _]) = &self.size_expr.terms[f_idx] else {
                     panic!("call site does not consist of apply terms")
                 };
-                if self.vals[*f].uses_next_arg() {
+                if !self.vals[*f].next_arg_uses().is_empty() {
                     call_deps.set(i);
                 }
                 f_idx = *f;
@@ -842,35 +943,38 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             let origin = origins[idx];
             deps.insert(origin, call_deps);
         }
+        deps
     }
 
-    pub fn vals(self) -> Vec<Val<Γ::PolyCircuitId>> {
-        self.vals
+    pub fn vals(self) -> Vals<Γ::PolyCircuitId> {
+        Vals {
+            vals: self.vals,
+            deps: self.deps,
+        }
     }
 
-    pub fn fun_val(&mut self, root: usize) -> Val<Γ::PolyCircuitId> {
+    pub fn fun_val(&mut self, root: usize, is_val_fun: bool) -> Val<Γ::PolyCircuitId> {
         let arg_count = self.args.len() as u32;
+        let mut val_deps = DepVec::default();
+        if is_val_fun {
+            for i in 0..arg_count as usize {
+                val_deps.set_val(i);
+            }
+        }
         match &self.vals[root] {
             Val::Undefined => Val::Undefined,
-            Val::Const(0, c) => Val::Const(arg_count, *c),
+            Val::Const(0, c, _) => Val::Const(arg_count, *c, val_deps),
             Val::Arg(0, _) | Val::PolyOp(_) | Val::Poly(0, ..) | Val::PartialPolyApply(0, ..) => {
                 let circuit = self.create_polycircuit(root).unwrap();
-                let deps = circuit.deps.clone();
+                let deps = circuit.deps.or(&val_deps);
                 let circuit_id = self.env.intern_circuit(Arc::new(circuit));
                 Val::Poly(arg_count, circuit_id, deps)
             }
             Val::Static(0, _) => {
-                let deps = self
-                    .size_expr
-                    .static_arg_deps(&self.vals, self.args.len())
-                    .remove(root);
-                if deps[self.args.len()] {
-                    Val::Dynamic
-                } else {
-                    Val::Static(arg_count, deps)
-                }
+                let deps = self.deps[root].len().or(&val_deps);
+                Val::Static(arg_count, deps)
             }
-            Val::Dynamic => Val::Dynamic,
+            Val::Unsized => Val::Unsized,
             _ => panic!("cannot have higher-order function as total length"),
         }
     }

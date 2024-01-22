@@ -4,9 +4,9 @@ use inkwell::{
     IntPredicate,
 };
 
-use yaboc_dependents::{requirements::NeededBy, requirements::RequirementSet};
 use yaboc_hir_types::{TyHirs, NOBACKTRACK_BIT, VTABLE_BIT};
 use yaboc_layout::{prop::SizeAlign, ILayout, IMonoLayout, MonoLayout, TailInfo};
+use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_types::PrimitiveType;
 
 use crate::{
@@ -17,7 +17,6 @@ use crate::{
 use super::CodeGenCtx;
 
 pub trait ThunkInfo<'comp, 'llvm> {
-    fn alloc_size(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> SizeAlign;
     fn function(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm>;
     fn build_copy_region_ptr(
         &self,
@@ -71,10 +70,6 @@ impl<'comp, 'llvm> TypecastThunk<'comp, 'llvm> {
 }
 
 impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TypecastThunk<'comp, 'llvm> {
-    fn alloc_size(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> SizeAlign {
-        self.layout.inner().size_align(cg.layouts).unwrap()
-    }
-
     fn function(&self, _cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
         self.f
     }
@@ -151,9 +146,6 @@ pub struct TransmuteCopyThunk<'comp, 'llvm> {
 }
 
 impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TransmuteCopyThunk<'comp, 'llvm> {
-    fn alloc_size(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> SizeAlign {
-        self.to.inner().size_align(cg.layouts).unwrap()
-    }
     fn function(&self, _: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
         self.f
     }
@@ -211,13 +203,6 @@ impl<'comp> ValThunk<'comp> {
 }
 
 impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for ValThunk<'comp> {
-    fn alloc_size(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> SizeAlign {
-        self.from
-            .map(|x| x.size_align(cg.layouts).unwrap())
-            .unwrap_or_default()
-            .cat(self.fun.inner().size_align(cg.layouts).unwrap())
-    }
-
     fn function(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
         let f = if let Some(from) = self.from {
             cg.parser_fun_val_tail(self.fun, from, self.req)
@@ -302,10 +287,6 @@ pub struct BlockThunk<'comp> {
 }
 
 impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for BlockThunk<'comp> {
-    fn alloc_size(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> SizeAlign {
-        self.result.inner().size_align(cg.layouts).unwrap()
-    }
-
     fn function(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
         let f = if let Some(from) = self.from {
             cg.parser_fun_val_tail(self.fun, from, self.req)

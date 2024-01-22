@@ -8,8 +8,7 @@ use yaboc_base::{
 use yaboc_constraint::{LenVal, LenVals};
 use yaboc_constraint::{Origin, PdLenTerm};
 use yaboc_dependents::{
-    requirements::{NeededBy, RequirementMatrix},
-    BacktrackStatus, BlockSerialization, SubValue, SubValueKind,
+    requirements::ExprDepData, BacktrackStatus, BlockSerialization, SubValue, SubValueKind,
 };
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
 use yaboc_hir::{
@@ -18,6 +17,7 @@ use yaboc_hir::{
 };
 use yaboc_hir_types::FullTypeId;
 use yaboc_len::Val;
+use yaboc_req::NeededBy;
 use yaboc_resolve::expr::Resolved;
 use yaboc_resolve::expr::ValVarOp;
 use yaboc_types::{Type, TypeId};
@@ -47,23 +47,18 @@ impl<'a> LenMirCtx<'a> {
         }
         let expr = Resolved::expr_with_data::<BacktrackStatus>(self.db, expr_id)?;
         let expr_ref = expr.take_ref();
-        let mut used = vec![false; expr_ref.len()];
-        *used.last_mut().unwrap() = true;
+        let mut used = vec![true; expr_ref.len()];
         for (idx, (term, _)) in expr_ref.iter_parts().enumerate().rev() {
-            if !used[idx] {
-                continue;
-            }
             if let ExprHead::Variadic(ValVarOp::PartialApply(_), args) = term {
                 let call_site = Origin::Expr(expr_id, ExprIdx::new_from_usize(idx));
-                let call_deps = self.vals.call_sites[&call_site].clone();
-                used[args[0].as_usize()] = true;
+                let call_deps = if args.len() > 1 {
+                    self.vals.call_sites[&call_site].clone()
+                } else {
+                    Default::default()
+                };
                 for (i, arg_idx) in args[1..].iter().enumerate() {
                     let is_used = call_deps[i];
                     used[arg_idx.as_usize()] = is_used;
-                }
-            } else {
-                for arg_idx in term.inner_refs() {
-                    used[arg_idx.as_usize()] = true;
                 }
             }
         }
@@ -102,7 +97,7 @@ impl<'a> LenMirCtx<'a> {
 
     fn parse_deps(&mut self, parse: &ParseStatement) -> SResult<ContextId> {
         let val = self.back_val_at_id(parse.id.0);
-        assert!(!val.is_dynamic());
+        assert!(!val.is_unsized());
         if !matches!(val, Val::Const(..)) {
             self.expr_deps(parse.expr)?;
         }
@@ -115,7 +110,7 @@ impl<'a> LenMirCtx<'a> {
     fn let_deps(&mut self, let_statement: &LetStatement) -> SResult<ContextId> {
         let expr_id = let_statement.expr;
         let val = self.val_at_id(let_statement.id.0);
-        assert!(!val.is_dynamic());
+        assert!(!val.is_unsized());
         self.expr_deps(expr_id)?;
         Ok(let_statement.context)
     }
@@ -130,7 +125,7 @@ impl<'a> LenMirCtx<'a> {
 
     fn choice_deps(&mut self, choice: &StructChoice) -> SResult<ContextId> {
         let val = self.back_val_at_id(choice.id.0);
-        assert!(!val.is_dynamic());
+        assert!(!val.is_unsized());
         for subcontext in &choice.subcontexts {
             self.context_deps(*subcontext)?;
         }
@@ -191,11 +186,16 @@ impl<'a> LenMirCtx<'a> {
 
     fn build_expr(&mut self, expr_id: ExprId) -> SResult<PlaceRef> {
         let used = self.expr_use(expr_id)?;
-        let expr = Resolved::expr_with_data::<((ExprIdx<Resolved>, FullTypeId), RequirementMatrix)>(
+        let expr = Resolved::expr_with_data::<((ExprIdx<Resolved>, FullTypeId), ExprDepData)>(
             self.db, expr_id,
         )?;
-        self.w
-            .convert_expr(expr_id, &expr, None, |idx| used[idx.as_usize()], NeededBy::Val.into())
+        self.w.convert_expr(
+            expr_id,
+            &expr,
+            None,
+            |idx| used[idx.as_usize()],
+            NeededBy::Val.into(),
+        )
     }
 
     fn build_let(&mut self, subval: SubValue, let_statement: &LetStatement) -> SResult<()> {
@@ -212,7 +212,7 @@ impl<'a> LenMirCtx<'a> {
         let origin = PlaceOrigin::Ambient(self.block.unwrap(), parse.id.0);
         let len_place = self.w.f.new_stack_place(self.int, origin);
         let val = self.back_val_at_id(parse.id.0);
-        if let Val::Const(0, c) = val {
+        if let Val::Const(0, c, _) = val {
             let n = i64::try_from(c).unwrap();
             self.w.f.load_int(n, len_place);
         } else {
@@ -250,7 +250,7 @@ impl<'a> LenMirCtx<'a> {
         let len_place = self.w.f.new_stack_place(self.int, origin);
         let val = self.back_val_at_id(choice.id.0);
         let cont_bb = self.w.f.new_bb();
-        if let Val::Const(0, c) = val {
+        if let Val::Const(0, c, _) = val {
             let n = i64::try_from(c).unwrap();
             self.w.f.load_int(n, len_place);
         } else {
@@ -331,26 +331,15 @@ impl<'a> LenMirCtx<'a> {
         let vals = db.len_vals(pd);
         // this is needed for soundness as otherwise we could end up
         // with false dependencies on undefined arguments/captures
-        if let Val::Const(0, c) = vals.vals[block_idx] {
+        if let Val::Const(0, c, _) = vals.vals[block_idx] {
             let n = i64::try_from(c).unwrap();
             w.f.load_int(n, w.f.fun.ret().unwrap());
             w.f.ret(ReturnStatus::Ok);
             return Ok(w.f.fun);
         }
-        if let Val::Dynamic = vals.vals[block_idx] {
+        if let Val::Unsized = vals.vals[block_idx] {
             w.f.ret(ReturnStatus::Error);
             return Ok(w.f.fun);
-        }
-        // we have to check with static values whether they depend
-        // on a parsed value and if they do, we must return an error
-        // as we can not calculate it without the argument
-        if let Val::Static(..) = vals.vals[block_idx] {
-            let arg_deps = db.len_arg_deps(pd)?;
-            let arg_count = db.argnum(pd)?.unwrap_or_default();
-            if arg_deps[block_idx][arg_count] {
-                w.f.ret(ReturnStatus::Error);
-                return Ok(w.f.fun);
-            }
         }
         let mut lenctx = LenMirCtx {
             db,
@@ -382,13 +371,13 @@ impl<'a> LenMirCtx<'a> {
         let mut w = ConvertExpr::new(db, f, retreat, Default::default());
         let terms = db.len_term(id)?;
         let vals = db.len_vals(id);
-        if let Val::Const(_, c) = vals.fun_val {
+        if let Val::Const(_, c, _) = vals.fun_val {
             let n = i64::try_from(c).unwrap();
             w.f.load_int(n, w.f.fun.ret().unwrap());
             w.f.ret(ReturnStatus::Ok);
             return Ok(w.f.fun);
         }
-        if let Val::Dynamic = vals.fun_val {
+        if let Val::Unsized = vals.fun_val {
             w.f.ret(ReturnStatus::Error);
             return Ok(w.f.fun);
         }

@@ -1,6 +1,6 @@
 use fxhash::{FxHashMap, FxHashSet};
-use yaboc_dependents::requirements::RequirementSet;
 use yaboc_mir::{CallMeta, FunKind, MirInstr, MirKind};
+use yaboc_req::RequirementSet;
 
 use crate::{
     mir_subst::function_substitute, prop::SizeAlign, AbsLayoutCtx, ILayout, IMonoLayout,

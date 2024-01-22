@@ -364,7 +364,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                     let arg = self.infctx.var();
                     self.infctx.parser(result, arg)
                 }
-                BlockKind::Fun => self.infctx.zero_arg_function(result),
+                BlockKind::Inline => self.infctx.zero_arg_function(result),
             }
         } else {
             let pd = self.db.hir_parent_parserdef(b.0)?;

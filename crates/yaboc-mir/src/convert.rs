@@ -11,20 +11,21 @@ use yaboc_base::{
     error::SResult,
     interner::{DefId, FieldName, PathComponent},
 };
-use yaboc_dependents::{
-    requirements::NeededBy, requirements::RequirementMatrix, requirements::RequirementSet,
-    BlockSerialization, SubValue, SubValueKind,
-};
+use yaboc_dependents::{requirements::ExprDepData, BlockSerialization, SubValue, SubValueKind};
 use yaboc_expr::{ExprIdx, Expression, FetchExpr};
 use yaboc_hir::{
     self as hir, variable_set::VarStatus, BlockId, ChoiceId, ContextId, ExprId, HirIdWrapper,
     HirNode, ParserDefId, ParserPredecessor,
 };
 use yaboc_hir_types::FullTypeId;
+use yaboc_req::{NeededBy, RequirementMatrix, RequirementSet};
 use yaboc_resolve::expr::Resolved;
 use yaboc_types::{Type, TypeId};
 
-use crate::{expr::ConvertExpr, CallMeta};
+use crate::{
+    expr::{ConvertExpr, ExpressionLoc},
+    CallMeta,
+};
 
 use super::{
     BBRef, ExceptionRetreat, Function, FunctionWriter, MirInstr, Mirs, Place, PlaceInfo,
@@ -281,14 +282,12 @@ impl<'a> ConvertCtx<'a> {
         let parser_fun = self.w.val_place_at_def(expr.0).unwrap();
         let parser_ty = self.w.f.fun.place(parser_fun).ty;
         let arg_place = self.w.f.fun.arg().unwrap();
-        let ldt_parser = self.db.least_deref_type(parser_ty)?;
-        let ldt_parser_fun = self.w.copy_if_different_levels(
-            ldt_parser,
-            parser_ty,
-            None,
-            PlaceOrigin::Node(expr.0),
-            |_, _| Ok(parser_fun),
-        )?;
+        let loc = ExpressionLoc {
+            ty: parser_ty,
+            place: None,
+            origin: PlaceOrigin::Node(expr.0),
+        };
+        let ldt_parser_fun = self.w.copy_if_deref(loc, |_, _| Ok(parser_fun))?;
         let addr = self.w.front_place_at_def(call_loc).unwrap();
         let ret = if call_info.req.contains(NeededBy::Val) {
             if call_info.tail {
@@ -358,14 +357,12 @@ impl<'a> ConvertCtx<'a> {
         let expr = pd.to;
         let parser_fun = self.w.val_place_at_def(expr.0).unwrap();
         let parser_ty = self.w.f.fun.place(parser_fun).ty;
-        let ldt_parser = self.db.least_deref_type(parser_ty)?;
-        let ldt_parser_fun = self.w.copy_if_different_levels(
-            ldt_parser,
-            parser_ty,
-            None,
-            PlaceOrigin::Node(expr.0),
-            |_, _| Ok(parser_fun),
-        )?;
+        let loc = ExpressionLoc {
+            ty: parser_ty,
+            place: None,
+            origin: PlaceOrigin::Node(expr.0),
+        };
+        let ldt_parser_fun = self.w.copy_if_deref(loc, |_, _| Ok(parser_fun))?;
         let addr = self.w.front_place_at_def(call_loc).unwrap();
         let ret = info
             .req
@@ -470,7 +467,7 @@ impl<'a> ConvertCtx<'a> {
         }
         let resolved_expr = Resolved::expr_with_data::<(
             (ExprIdx<Resolved>, FullTypeId),
-            RequirementMatrix,
+            ExprDepData,
         )>(self.db, e.id)?;
         let place = self.w.val_place_at_def(e.id.0).unwrap();
         let info = self.call_info_at_id(e.id.0);

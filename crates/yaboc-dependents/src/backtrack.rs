@@ -12,7 +12,7 @@ use yaboc_types::Type;
 
 use crate::Dependents;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub struct BacktrackStatus(u8);
 
 impl BacktrackStatus {
