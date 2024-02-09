@@ -44,7 +44,7 @@ compiler_env = os.environ.copy()
 compiler_env['YABO_LIB_PATH'] = lib_path
 compiler_env['RUST_BACKTRACE'] = '1'
 compiler_dir = os.path.join(current_script_dir, 'crates', 'yaboc')
-
+compiler_bin = "yaboc" 
 
 class ErrorLocation:
     contained_message: str
@@ -110,8 +110,6 @@ def run_compiler_unit_tests():
     return cargo_test.returncode == 0
 
 
-compiler_path = build_compiler_binary()
-
 
 class CompiledSource:
     dir: str
@@ -129,7 +127,7 @@ class CompiledSource:
             with open(sourcepath, 'w', encoding='utf-8') as sourcefile:
                 sourcefile.write(source)
             with subprocess.Popen(
-                [compiler_path, "--output-json",
+                [compiler_bin, "--output-json",
                  "--module", f"core={core_path}",
                  sourcepath, self.compiled],
                 stderr=subprocess.PIPE,
@@ -475,7 +473,9 @@ def run_tests(files: list[str]) -> int:
         return total_failed
         
 def main():
+    global compiler_bin
     arg_list = [ os.path.abspath(file) for file in sys.argv[1:] ]
+    compiler_bin = build_compiler_binary()
     if len(arg_list) == 0:
         run_clippy()
 
