@@ -2,10 +2,10 @@
 import text
 import list
 
-fun *line(len: int) = {return: ~[len], ~}
+fun *line(len: int) = {return: [len], ~}
 
 fun *num(start: int) = {
-  pre: ~[start]
+  pre: [start]
   str: when?(pre.?[start - 1] if '0'..'9' then false else true) then /[0-9]+/
   let len = list.len(str *> list.list(~ if !eof))
   let val = str *> text.num!

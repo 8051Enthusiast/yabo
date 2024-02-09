@@ -2,7 +2,7 @@
 export
 def *test = {
   rows: ~, cols: ~
-  m: ~[cols][rows]
+  m: [cols][rows]
 }
 
 ====[ binary 1 ]====

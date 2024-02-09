@@ -8,7 +8,7 @@ def *u16l = {
 export
 def *test = {
   a: u16l
-  ~[8 - u16l.sizeof]
+  [8 - u16l.sizeof]
   b: u16l
 }
 

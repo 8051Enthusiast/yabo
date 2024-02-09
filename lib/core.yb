@@ -113,6 +113,6 @@ fun ['a] *> compose(a: ['a] *> ['b], b: ['b] *> 'c) = {
 }
 
 fun ['a] *> index(idx: int): 'a = {
-  ~[idx if 0..0x7fffffffffffffff] if !eof
+  [idx if 0..0x7fffffffffffffff] if !eof
   return: ~ if !eof
 }

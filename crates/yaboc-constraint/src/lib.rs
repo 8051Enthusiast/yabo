@@ -400,13 +400,13 @@ mod tests {
     fn poly_unify() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            def *square(n: int) = ~[n * n]
+            def *square(n: int) = [n * n]
             def *poly_unify(n: int, m: int) = {
                 | square(n + m)
                   poly_unify(0, 0)
-                | ~[2 * n * m - 1]
-                  ~[n * n]
-                  ~[m * m]
+                | [2 * n * m - 1]
+                  [n * n]
+                  [m * m]
                   ~
             }
         "#,
@@ -419,7 +419,7 @@ mod tests {
     fn static_size() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            def *stat(a: int, b: int) = ~[1 << a] |> ~[1 << b]
+            def *stat(a: int, b: int) = [1 << a] |> [1 << b]
         "#,
         );
         let stat = ctx.parser("stat");
@@ -452,9 +452,9 @@ mod tests {
     fn backtrack_dep() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            def *backtrack_if(x: int) = x if 0 then ~[1] else ~[2]
-            def *backtrack_when(x: int) = when?(x == 0) then ~[1] else ~[2]
-            def *backtrack_field(x: int) = {: let y = x if 0 :}.?y then ~[1] else ~[2]
+            def *backtrack_if(x: int) = x if 0 then [1] else [2]
+            def *backtrack_when(x: int) = when?(x == 0) then [1] else [2]
+            def *backtrack_field(x: int) = {: let y = x if 0 :}.?y then [1] else [2]
             "#,
         );
         for parser_name in ["backtrack_if", "backtrack_when", "backtrack_field"] {
@@ -475,7 +475,7 @@ mod tests {
                 let return = x
             }
             fun *test(x: int, y: int) = {
-                ~[y]
+                [y]
                 uses_vals(x)
             }
             "#

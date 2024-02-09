@@ -61,7 +61,7 @@ fun rank(cards: [u8]) = {:
 :}
 
 fun *play = {
-  cards: ~[5], ~
+  cards: [5], ~
   bet: text.num!, ~
   let score = rank(cards)
 }

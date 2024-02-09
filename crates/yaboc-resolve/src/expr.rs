@@ -338,15 +338,22 @@ pub fn resolve_expr_error(
                     }),
                 ],
             ),
-            (Cont(_), ExprHead::Monadic(expr::ValUnOp::Array, inner)) => ExprHead::Variadic(
-                ValVarOp::PartialApply(Origin::Array),
-                SmallVec::from(
-                    &[
-                        M(id, |_, _, _| ExprHead::Niladic(ResolvedAtom::Array)),
-                        Cont(*inner),
-                    ][..],
-                ),
+            (Cont(_), ExprHead::Monadic(expr::ValUnOp::Array, _)) => ExprHead::Monadic(
+                ValUnOp::EvalFun,
+                M(id, |id, _, inner| {
+                    ExprHead::Variadic(
+                        ValVarOp::PartialApply(Origin::Array),
+                        SmallVec::from(
+                            &[
+                                M(id, |_, _, _| ExprHead::Niladic(ResolvedAtom::Array)),
+                                M(id, |_, _, _| ExprHead::Niladic(ResolvedAtom::Single)),
+                                Cont(inner),
+                            ][..],
+                        ),
+                    )
+                }),
             ),
+
             (Cont(_), ExprHead::Dyadic(expr::ValBinOp::Array, _)) => ExprHead::Monadic(
                 ValUnOp::EvalFun,
                 D(id, |id, _, [lhs, rhs]| {

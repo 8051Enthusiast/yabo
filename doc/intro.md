@@ -458,6 +458,15 @@ def *padded_to_1024 = {
 }
 ```
 
+In many cases, the parser underlying the array will be of the same type as the parsed array (for most cases, `u8`), so instead of using `~[len]` (which frankly does look a bit silly) we can just write `[len]`:
+```
+def *padded_to_1024 = {
+  let parser = const_sized2(u8, u16l)
+  return: parser
+  [1024 - parser.sizeof]
+}
+```
+
 ### Operators woking with arrays
 The `*>` operator allows applying a parser to an array:
 ```

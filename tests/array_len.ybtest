@@ -1,14 +1,14 @@
 ====[ source code ]====
-def *array(n: int) = ~[n]
+def *array(n: int) = [n]
 
 def *lengthed(parser: *'r) = {
     len: ~
     # just to make sure composition works
-    return: ~[len] |> array(len) |> ~[len] |> u8[len] |> parser
+    return: [len] |> array(len) |> [len] |> u8[len] |> parser
 }
 
 export
-def *test = ~[24] |> {
+def *test = [24] |> {
     a8: lengthed(u8l)
     a16: lengthed(u16l)
     a32: lengthed(u32l)
