@@ -1,8 +1,8 @@
 # fields of the FAT32 header
 export
 def *fat32_header = {
-  jmp_boot: u8[3]
-  oem_name: u8[8]
+  jmp_boot: [3]
+  oem_name: [8]
   byts_per_sec: u16l
   sec_per_clus: u8 
   let bytes_per_cluster = byts_per_sec * sec_per_clus
@@ -22,13 +22,13 @@ def *fat32_header = {
   root_clus: u32l
   fs_info: u16l
   bk_boot_sec: u16l
-  u8[12]
+  [12]
   drv_num: u8
   ~
   boot_sig: u8
   vol_id: u32l
-  vol_lab: u8[11]
-  fil_sys_type: u8[8]
+  vol_lab: [11]
+  fil_sys_type: [8]
 }
 
 # defines an integer in a FAT entry that has the high 4 bits masked out
@@ -50,8 +50,8 @@ def *fat_table(size: int) = fat_entry[size / u32l.sizeof]
 
 # defines a short entry in the directory
 def *short_entry = {
-  name: u8[8]
-  ext: u8[3]
+  name: [8]
+  ext: [3]
   attr: u8
   res: u8
   crt_time_tenth: u8
