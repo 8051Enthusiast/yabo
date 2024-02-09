@@ -1972,7 +1972,7 @@
           "name": "start",
           "content": {
             "type": "SYMBOL",
-            "name": "number_literal"
+            "name": "_int_literal"
           }
         },
         {
@@ -1984,7 +1984,7 @@
           "name": "end",
           "content": {
             "type": "SYMBOL",
-            "name": "number_literal"
+            "name": "_int_literal"
           }
         }
       ]
@@ -2221,11 +2221,7 @@
       "members": [
         {
           "type": "SYMBOL",
-          "name": "number_literal"
-        },
-        {
-          "type": "SYMBOL",
-          "name": "char_literal"
+          "name": "_int_literal"
         },
         {
           "type": "SYMBOL",
@@ -2234,6 +2230,19 @@
         {
           "type": "SYMBOL",
           "name": "regex_literal"
+        }
+      ]
+    },
+    "_int_literal": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "number_literal"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "char_literal"
         }
       ]
     },
@@ -2304,32 +2313,8 @@
       "value": "-?([0-9]+|0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+)"
     },
     "char_literal": {
-      "type": "TOKEN",
-      "content": {
-        "type": "SEQ",
-        "members": [
-          {
-            "type": "STRING",
-            "value": "'"
-          },
-          {
-            "type": "CHOICE",
-            "members": [
-              {
-                "type": "IMMEDIATE_TOKEN",
-                "content": {
-                  "type": "PATTERN",
-                  "value": "[^\\n']"
-                }
-              }
-            ]
-          },
-          {
-            "type": "STRING",
-            "value": "'"
-          }
-        ]
-      }
+      "type": "PATTERN",
+      "value": "'([^'\\\\\\n]|\\\\.)'"
     },
     "bool_literal": {
       "type": "CHOICE",

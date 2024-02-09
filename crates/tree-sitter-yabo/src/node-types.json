@@ -1698,6 +1698,10 @@
         "required": true,
         "types": [
           {
+            "type": "char_literal",
+            "named": true
+          },
+          {
             "type": "number_literal",
             "named": true
           }
@@ -1707,6 +1711,10 @@
         "multiple": false,
         "required": true,
         "types": [
+          {
+            "type": "char_literal",
+            "named": true
+          },
           {
             "type": "number_literal",
             "named": true
