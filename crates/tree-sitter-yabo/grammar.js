@@ -318,9 +318,9 @@ module.exports = grammar({
       $.parserdef_ref,
     ),
     range: $ => seq(
-      field('start', $.number_literal),
+      field('start', $._int_literal),
       '..',
-      field('end', $.number_literal),
+      field('end', $._int_literal),
     ),
     _constraint_atom: $ => choice(
       $._atom,
@@ -369,10 +369,13 @@ module.exports = grammar({
       $._literal,
     ),
     _literal: $ => choice(
-      $.number_literal,
-      $.char_literal,
+      $._int_literal,
       $.bool_literal,
       $.regex_literal,
+    ),
+    _int_literal: $ => choice(
+      $.number_literal,
+      $.char_literal,
     ),
     primitive_type: $ => choice(
       'int',
@@ -391,13 +394,7 @@ module.exports = grammar({
     retvrn: $ => 'return',
     identifier: $ => /[A-Za-z_][A-Za-z_0-9]*/,
     number_literal: $ => /-?([0-9]+|0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+)/,
-    char_literal: $ => token(seq(
-      '\'',
-      choice(
-        token.immediate(/[^\n']/)
-      ),
-      '\'',
-    )),
+    char_literal: $ => /'([^'\\\n]|\\.)'/,
     bool_literal: $ => choice(
       'true',
       'false',

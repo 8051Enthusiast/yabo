@@ -565,8 +565,19 @@ astify! {
 
 astify! {
     struct range = Range {
-        start: number_literal[!],
-        end: number_literal[!],
+        start: integer[!],
+        end: integer[!],
+    };
+}
+
+enum IntLiteral {
+    Number(i64),
+}
+
+astify! {
+    enum int_literal = IntLiteral {
+        Number(number_literal),
+        Number(char_literal),
     };
 }
 
@@ -574,9 +585,8 @@ astify! {
     enum atom = Atom {
         Field(identifier),
         Field(retvrn),
-        Number(number_literal),
-        Number(char_literal),
         Bool(bool_literal),
+        Number(integer..),
     };
 }
 
@@ -854,6 +864,11 @@ fn idspan(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<IdSpan> {
     })
 }
 
+fn integer(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<i64> {
+    let IntLiteral::Number(n) = int_literal(db, fd, c)?;
+    Ok(n)
+}
+
 fn number_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<i64> {
     let Spanned { inner, span } = spanned(node_to_string)(db, fd, c)?;
     let (num, radix) = if let Some(hex) = inner.strip_prefix("0x") {
@@ -875,11 +890,25 @@ fn char_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<i64> {
         .and_then(|s| s.strip_suffix('\''))
         .ok_or_else(|| vec![GenericParseError { loc: span }])?;
     let mut it = without_quotes.chars();
-    let first = it
-        .next()
-        .filter(|_| it.next().is_none())
-        .ok_or_else(|| vec![GenericParseError { loc: span }])?;
-    Ok(first as i64)
+    match it.next() {
+        Some('\\') => {
+            let c = it
+                .next()
+                .ok_or_else(|| vec![GenericParseError { loc: span }])?;
+            let val = match c {
+                'n' => b'\n' as i64,
+                'r' => b'\r' as i64,
+                't' => b'\t' as i64,
+                '\\' => b'\\' as i64,
+                '\'' => b'\'' as i64,
+                '0' => 0,
+                _ => return Err(vec![GenericParseError { loc: span }]),
+            };
+            Ok(val)
+        }
+        Some(c) => Ok(c as i64),
+        None => Err(vec![GenericParseError { loc: span }]),
+    }
 }
 
 fn bool_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<bool> {
