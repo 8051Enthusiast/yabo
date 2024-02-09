@@ -6,7 +6,7 @@ fun flag() = {:
 :}
 def *flag_int = flag!().?r then u32l else u16l 
 export
-def *test = {~, return: [flag_int](3)}
+def *test = {~, return: flag_int[3]}
 
 ====[ binary 1 ]====
 00 01 02 03 04 05 06 07 08 09 0a 0b 0c

@@ -575,6 +575,7 @@ pub enum ValBinOp {
     Then,
     Index(BtMarkKind),
     At,
+    Array,
 }
 
 impl ValBinOp {
@@ -603,6 +604,7 @@ impl ValBinOp {
             "then" => Then,
             ".[" => Index(BtMarkKind::RemoveBt),
             ".?[" => Index(BtMarkKind::KeepBt),
+            "[" => Array,
             "at" => At,
             otherwise => return Err(otherwise),
         })
@@ -637,6 +639,7 @@ impl Display for ValBinOp {
                 ValBinOp::Then => "then",
                 ValBinOp::Index(BtMarkKind::RemoveBt) => ".[",
                 ValBinOp::Index(BtMarkKind::KeepBt) => ".?[",
+                ValBinOp::Array => "[",
                 ValBinOp::At => "at",
             }
         )

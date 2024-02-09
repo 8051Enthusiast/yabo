@@ -30,7 +30,7 @@ fun *test = {
   let card_len = (card *> parse.len) try 0..16
   let len = ((first_line *> parse.len) + card_len) try 0..256
   let first_num = first_line *> winning(0, 0)
-  other_lines: aoc.summap([~](len) if !eof |> {[~](card_len) if !eof, return: winning(0, 0)})
+  other_lines: aoc.summap(~[len] if !eof |> {~[card_len] if !eof, return: winning(0, 0)})
   let return = other_lines + first_num
 }
 

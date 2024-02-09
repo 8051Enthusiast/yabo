@@ -15,7 +15,7 @@ def *case = {
 }
 
 export
-def *test = [case](11)
+def *test = case[11]
 
 ====[ binary 1 ]====
 02 04 06 08 0a 01 03 05 07 09 00

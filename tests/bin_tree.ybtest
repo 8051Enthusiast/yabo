@@ -4,7 +4,7 @@ fun *binary_tree(inner: *'t) = {
   | tag: u8
     val: u32l
     len: u32l
-    left: [~](len) |> inner
+    left: ~[len] |> inner
     right: inner
 }
 

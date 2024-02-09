@@ -56,7 +56,7 @@ impl<P: std::fmt::Debug> std::fmt::Display for Val<P> {
             Val::Undefined => write!(f, "undef"),
             Val::Const(0, c, _) => write!(f, "{}", c),
             Val::Const(a, c, deps) => {
-                write_deps(f, &deps, *a)?;
+                write_deps(f, deps, *a)?;
                 write!(f, " → {c}")
             }
             Val::Arg(0, idx) => write!(f, "arg {}", idx),

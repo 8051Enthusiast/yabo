@@ -3,5 +3,5 @@ fun *uses_arg_indirectly(x: int) = x if 0 then u32l else i64l
 
 fun *not_static_len = {x: ~, uses_arg_indirectly(x)}
 
-fun *test = [not_static_len](3)
+fun *test = not_static_len[3]
             #~^error[601] nonsized parser where sized parser is expected
