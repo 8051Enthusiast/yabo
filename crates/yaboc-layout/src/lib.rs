@@ -611,27 +611,19 @@ impl<'a> ILayout<'a> {
                     let res = ctx.dcx.intern(Layout::Mono(layout, ty));
                     Ok(res)
                 }
-                // array parser just has a single int argument
-                MonoLayout::ArrayParser(Some((inner_parser, None))) => {
-                    assert_eq!(typecast_args.len(), 1);
-                    let (arg, _) = typecast_args[0];
-                    let layout = MonoLayout::ArrayParser(Some((*inner_parser, Some(arg))));
-                    let ty = ctx
-                        .db
-                        .intern_type(Type::FunctionArg(result_type, Arc::default()));
-                    let res = ctx.dcx.intern(Layout::Mono(layout, ty));
-                    Ok(res)
-                }
-                // the parser argument
-                // note that the syntax makes it impossible to apply two arguments
-                // at once
-                MonoLayout::ArrayParser(None) => {
-                    assert_eq!(typecast_args.len(), 1);
-                    let (arg, _) = typecast_args[0];
-                    let layout = MonoLayout::ArrayParser(Some((arg, None)));
+                MonoLayout::ArrayParser(args) => {
+                    let new_args = match (args, typecast_args.as_slice()) {
+                        (args, []) => *args,
+                        (None, [(parser, _)]) => Some((*parser, None)),
+                        (None, [(parser, _), (arg, _)]) | (Some((parser, None)), [(arg, _)]) => {
+                            Some(((*parser), Some(*arg)))
+                        }
+                        _ => panic!("Invalid number of arguments for array parser"),
+                    };
+                    let layout = MonoLayout::ArrayParser(new_args);
                     let ty = ctx.db.intern_type(Type::FunctionArg(
                         result_type,
-                        Arc::new(arg_types[1..].to_vec()),
+                        Arc::new(arg_types[typecast_args.len()..].to_vec()),
                     ));
                     let res = ctx.dcx.intern(Layout::Mono(layout, ty));
                     Ok(res)
@@ -1328,7 +1320,7 @@ def *main = {
         let ctx = Context::<LayoutTestDatabase>::mock(
             r"
 export
-def *test = [[[~](2)](3)](5)
+def *test = ~[2][3][5]
             ",
         );
         let bump = Bump::new();

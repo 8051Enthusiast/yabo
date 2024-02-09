@@ -288,11 +288,11 @@ module.exports = grammar({
         prec.left(PREC.POSTFIX,
           seq(
             field('left', $._expression),
-            field('op', choice('.[', '.?[')),
+            field('op', choice('.[', '.?[', '[')),
             field('right', $._expression),
             ']'
           )
-        )
+        ),
       )
     },
     unary_expression: $ => choice(
@@ -301,11 +301,11 @@ module.exports = grammar({
           field('op', choice('-', '!', 'if')),
           field('right', $._expression)
         ),
-        seq(
+        /*seq(
           field('op', '['),
           field('right', $._expression),
           ']'
-        ))),
+        )*/)),
       prec(PREC.POSTFIX, seq(
         field('right', $._expression),
         '.',

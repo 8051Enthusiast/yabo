@@ -412,20 +412,20 @@ if the parser has a constant size it can be used inside an array:
 ```
 def *pascal_string = {
   len: u8
-  return: [u8](len)
+  return: u8[len]
 }
 ```
-`[parser]` is a parser combinator that takes the length of the array and returns a parser for an array of that length.
-If `parser` is of type `'t *> 'r`, then `[parser]` is of type `('t *> ['r])(int)`.
+`parser[len]` takes a parser (`u8`) and the length of the array (`len`) and returns a parser for an array of that length with elements from the parser.
+If `parser` is of type `'t *> 'r`, then `parser[len]` is of type `'t *> ['r]`.
 
 In order for the compiler to infer that two branches are of the same length (which is required for the length to be constant), it has the ability to reason about polynomial equality.
 For example, the following would be constant size
 ```
 def *const_sized(a: int, b: int) = {
-  | [u8](a * a)
-    [u8](2 * a * b)
-    [u8](b * b)
-  | [u8]((a + b) * (a + b))
+  | u8[a * a]
+    u8[2 * a * b]
+    u8[b * b]
+  | u8[(a + b) * (a + b)]
 }
 ```
 as a² + 2ab + b² = (a + b)² (binomial formula).
@@ -445,7 +445,7 @@ We can also nest arrays:
 def *matrix = {
   width: u8
   height: u8
-  return: [[u8](width)](height)
+  return: u8[width][height]
 }
 ```
 
@@ -454,7 +454,7 @@ If the parser is constant-sized, we can get the length of the parser without app
 def *padded_to_1024 = {
   let parser = const_sized2(u8, u16l)
   return: parser
-  [u8](1024 - parser.sizeof)
+  u8[1024 - parser.sizeof]
 }
 ```
 
@@ -462,13 +462,13 @@ def *padded_to_1024 = {
 The `*>` operator allows applying a parser to an array:
 ```
 def *padded_to_1024 = {
-  array: [u8](1024)
+  array: u8[1024]
   let return = array *> const_sized2(u8, u16l)
 }
 ```
 Similarly, `|>` allows composition of parsers:
 ```
-def *padded_to_1024 = [u8](1024) |> const_sized2(u8, u16l)
+def *padded_to_1024 = u8[1024] |> const_sized2(u8, u16l)
 ```
 `|>` actually just desugars to a call to this combinator:
 ```
@@ -480,7 +480,7 @@ fun ['a] *> compose(a: ['a] *> ['b], b: ['b] *> 'c) = {
 We can also index into arrays with `.[index]`:
 ```
 def *first_byte = {
-  array: [u8](1024)
+  array: u8[1024]
   let return = array.[0]
 }
 ```

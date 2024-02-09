@@ -3,9 +3,9 @@
 # logical block address (a logical block is assumed to be 512 here)
 def *lba = i64l
 
-def *guid = [~](16)
+def *guid = ~[16]
 
-def *partition(blocks: int) = [~](blocks * 512)
+def *partition(blocks: int) = ~[blocks * 512]
 
 # flags, including those for windows
 def *flags = {
@@ -37,17 +37,17 @@ def *partition_entry = {
     let part = partition(last_lba - first_lba + 1) at (first_lba * 512)
     partition_flags: flags
     # name encoded in utf-16le
-    name: [u16l](36)
+    name: u16l[36]
 }
 
-def *partition_table(size: int, count: int) = [[~](size) |> partition_entry](count)
+def *partition_table(size: int, count: int) = (~[size] |> partition_entry)[count]
 
 export def *gpt = {
   # protective mbr
-  mbr: [~](512)
+  mbr: ~[512]
   signature: /EFI PART/
   # should be version 1.0
-  version: [u16l](2)
+  version: u16l[2]
   header_size: u32l
   # crc32 of the header with this field set to 0
   checksum: u32l

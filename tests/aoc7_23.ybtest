@@ -6,7 +6,7 @@ fun *match(f: int) = {
   r: ~, let return = when?(f == r) then 1 else 0
 }
 
-fun *match_count(f: int, len: int) = [match(f)](len) |> aoc.summap(~ if !eof)
+fun *match_count(f: int, len: int) = match(f)[len] |> aoc.summap(~ if !eof)
 
 fun *same_count = {
   | f: ~, count: match_count(f, 4) if 2..4, let return = count + 1
@@ -45,7 +45,7 @@ fun *card_rank = {
 }
 
 fun *hand_rank = {
-  ranks: [card_rank](5)
+  ranks: card_rank[5]
   let return = ranks.[0] << 16 | ranks.[1] << 12 | ranks.[2] << 8 | ranks.[3] << 4 | ranks.[4]
 }
 
@@ -61,7 +61,7 @@ fun rank(cards: [u8]) = {:
 :}
 
 fun *play = {
-  cards: [~](5), ~
+  cards: ~[5], ~
   bet: text.num!, ~
   let score = rank(cards)
 }

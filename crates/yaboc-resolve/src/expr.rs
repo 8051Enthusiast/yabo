@@ -89,6 +89,7 @@ impl TryFrom<expr::ValBinOp> for ValBinOp {
             expr::ValBinOp::Index(p) => Err(expr::ValBinOp::Index(p)),
             expr::ValBinOp::Compose => Err(expr::ValBinOp::Compose),
             expr::ValBinOp::At => Err(expr::ValBinOp::At),
+            expr::ValBinOp::Array => Err(expr::ValBinOp::Array),
         }
     }
 }
@@ -345,6 +346,21 @@ pub fn resolve_expr_error(
                         Cont(*inner),
                     ][..],
                 ),
+            ),
+            (Cont(_), ExprHead::Dyadic(expr::ValBinOp::Array, _)) => ExprHead::Monadic(
+                ValUnOp::EvalFun,
+                D(id, |id, _, [lhs, rhs]| {
+                    ExprHead::Variadic(
+                        ValVarOp::PartialApply(Origin::Array),
+                        SmallVec::from(
+                            &[
+                                D(id, |_, _, _| ExprHead::Niladic(ResolvedAtom::Array)),
+                                Cont(lhs),
+                                Cont(rhs),
+                            ][..],
+                        ),
+                    )
+                }),
             ),
             (Cont(_), ExprHead::Variadic(expr::ValVarOp::Call, _)) => ExprHead::Monadic(
                 ValUnOp::EvalFun,
