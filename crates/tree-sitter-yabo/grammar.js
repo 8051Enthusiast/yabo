@@ -296,20 +296,21 @@ module.exports = grammar({
       )
     },
     unary_expression: $ => choice(
-      prec(PREC.PREFIX, choice(
+      prec(PREC.PREFIX,
         seq(
           field('op', choice('-', '!', 'if')),
           field('right', $._expression)
         ),
-        /*seq(
-          field('op', '['),
-          field('right', $._expression),
-          ']'
-        )*/)),
+      ),
       prec(PREC.POSTFIX, seq(
         field('right', $._expression),
         '.',
         field('op', 'sizeof')
+      )),
+      prec(PREC.POSTFIX, seq(
+        field('op', '['),
+        field('right', $._expression),
+        ']'
       ))
     ),
     _type_atom: $ => choice(

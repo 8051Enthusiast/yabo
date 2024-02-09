@@ -1,6 +1,6 @@
 ====[ source code ]====
 export
-def *test = ~[2][3][5]
+def *test = [2][3][5]
 
 ====[ binary 1 ]====
 00 01  02 03  04 05

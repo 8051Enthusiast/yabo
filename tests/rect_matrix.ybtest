@@ -1,5 +1,5 @@
 ====[ source code ]====
-def *matrix(rows: int, columns: int) = ~[rows][columns]
+def *matrix(rows: int, columns: int) = [rows][columns]
 export
 def *test = {
     rows: ~, columns: ~

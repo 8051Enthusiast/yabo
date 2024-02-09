@@ -1,5 +1,5 @@
 ====[ source code ]====
-fun *sized(s: int) = (~[s] |> ((s if 4..11 - 4) then u32l)) else u32b
+fun *sized(s: int) = ([s] |> ((s if 4..11 - 4) then u32l)) else u32b
 
 export
 fun *test = {

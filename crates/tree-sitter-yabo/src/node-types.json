@@ -2061,6 +2061,10 @@
             "named": false
           },
           {
+            "type": "[",
+            "named": false
+          },
+          {
             "type": "if",
             "named": false
           },

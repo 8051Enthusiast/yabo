@@ -1,9 +1,9 @@
 ====[ source code ]====
-fun *sized(arr: [u8]) = ~[arr *> u32l]
+fun *sized(arr: [u8]) = [arr *> u32l]
 
 export
 fun *test = {
-  arr: ~[4]
+  arr: [4]
   t: sized(arr)[2]
 }
 

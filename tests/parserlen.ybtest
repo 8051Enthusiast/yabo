@@ -3,29 +3,29 @@ def *g(a: *'a, b: *'b) = {
   | a?, b?, a?
   | b?, a?, a?
 }
-def *square(n: int) = ~[n * n]
+def *square(n: int) = [n * n]
 def *poly_unify(n: int, m: int) = {
-  | ~[2 * n * m - 1]
-    ~[n * n]
-    ~[m * m]
+  | [2 * n * m - 1]
+    [n * n]
+    [m * m]
     ~
   | square(n + m)
     poly_unify(0, 0)
 }
 def *static_len(a: int) = {
-  | ~[a], ~[a]
-  | ~[2 * a]
-  ~[a & 43]
+  | [a], [a]
+  | [2 * a]
+  [a & 43]
 }
 def *dynamic = {
-  x: ~, ~[x]
+  x: ~, [x]
 }
 export def *test = {
   let a = +
   let b = ~
   let c = { d, b, b }
-  let d = ~[10]
-  let e = g(~[10], ~)
+  let d = [10]
+  let e = g([10], ~)
   let h = poly_unify(4, 3)
   let k = static_len(31)
   let l = g(dynamic, +)
