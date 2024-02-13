@@ -148,6 +148,9 @@ pub fn parser_returns_ssc(
                 if def.kind.thunky() {
                     deref = check_for_typevar(db, deref).map_err(spanned)?;
                 }
+                if def.kind == DefKind::Static && def.ret_ty.is_none() {
+                    deref = db.least_deref_type(deref)?;
+                }
                 Ok(ParserDefType { id: def.id, deref })
             })
         })
