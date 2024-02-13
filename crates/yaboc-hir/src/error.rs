@@ -87,6 +87,13 @@ fn conversion_report(error: HirConversionError) -> Option<Report> {
                         .with_message("referring to a `return` field is not yet supported"),
                 ),
         ),
+        HirConversionError::ClothedStatic { span } => Some(
+            Report::new(DiagnosticKind::Error, span.file, "Static with arguments")
+                .with_code(208)
+                .with_label(
+                    Label::new(span).with_message("statics cannot be defined with arguments"),
+                ),
+        ),
         HirConversionError::Silenced => None,
     }
 }

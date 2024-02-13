@@ -407,7 +407,7 @@ impl<'a> ILayout<'a> {
                 }
             };
             let is_fun = if let MonoLayout::Nominal(pd, _, _) = layout.mono_layout().0 {
-                !pd.lookup(ctx.db)?.thunky
+                !pd.lookup(ctx.db)?.kind.thunky()
             } else {
                 false
             };
@@ -879,6 +879,28 @@ pub fn canon_layout<'a, 'b>(
     }
 }
 
+pub fn init_globals<'comp>(ctx: &mut AbsIntCtx<'comp, ILayout<'comp>>) -> Result<(), LayoutError> {
+    let pds = ctx.db.global_sequence()?;
+    for pd in pds.iter() {
+        let ret_ty = ctx.db.parser_returns(*pd)?.deref;
+        let thunk_ty = ctx
+            .db
+            .intern_type(Type::Nominal(ctx.db.parser_args(*pd)?.thunk));
+        let thunk_fun_ty = ctx
+            .db
+            .intern_type(Type::FunctionArg(thunk_ty, Default::default()));
+        let fun_layout = ctx.dcx.intern(Layout::Mono(
+            MonoLayout::NominalParser(*pd, Default::default(), true),
+            thunk_fun_ty,
+        ));
+        let return_layout = fun_layout.eval_fun(ctx)?.typecast(ctx, ret_ty)?.0;
+        ctx.dcx
+            .globals
+            .insert(*pd, (fun_layout.maybe_mono().unwrap(), return_layout));
+    }
+    Ok(())
+}
+
 #[derive(Debug)]
 pub enum LayoutError {
     LayoutError,
@@ -904,6 +926,7 @@ pub struct LayoutContext<'a> {
     sizes: FxHashMap<ILayout<'a>, SizeAlign>,
     manifestations: FxHashMap<ILayout<'a>, Arc<StructManifestation>>,
     hashes: LayoutHasher<'a>,
+    globals: FxHashMap<hir::ParserDefId, (IMonoLayout<'a>, ILayout<'a>)>,
 }
 
 impl<'a> LayoutContext<'a> {
@@ -913,6 +936,7 @@ impl<'a> LayoutContext<'a> {
             sizes: Default::default(),
             manifestations: Default::default(),
             hashes: LayoutHasher::new(),
+            globals: Default::default(),
         }
     }
     pub fn intern(&mut self, layout: InternedLayout<'a>) -> ILayout<'a> {
@@ -969,6 +993,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
             return Ok((self, false));
         }
         let layouts = match (&self.layout.1, &other.layout.1) {
+            (Layout::None, Layout::None) => return Ok((self, false)),
             (Layout::None, _) => return Ok((other, true)),
             (_, Layout::None) => return Ok((self, false)),
             (Layout::Mono(_, _), Layout::Mono(_, _)) => vec![self, other],
@@ -1049,6 +1074,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ResolvedAtom::ParserDef(pd) => {
                     make_layout(MonoLayout::NominalParser(pd, Vec::new(), true))
                 }
+                ResolvedAtom::Global(pd) => ctx.dcx.globals[&pd].1,
                 ResolvedAtom::Block(block_id, _) => {
                     let mut captures = BTreeMap::new();
                     let capture_ids = ctx.db.captures(block_id);
@@ -1347,7 +1373,5 @@ def *test = [2][3][5]
             dbeprintln!(&ctx.db, "tail: {} -> {}", &from, &to);
             eprintln!("{:?}", sa);
         }
-        //let tailsize = layouts.tail_sa[&(slice, canon)].unwrap();
-        //assert_eq!(tailsize.size, 24);
     }
 }

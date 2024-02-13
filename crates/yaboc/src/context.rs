@@ -131,10 +131,7 @@ impl Driver {
             Ok(x) => x,
             Err(e) => panic!("Error while creating codegen context: {e:#?}"),
         };
-        codegen.create_all_vtables();
-        codegen.create_all_funs();
-        codegen.create_pd_exports();
-        codegen.create_max_buf_size();
+        codegen.run_codegen();
         f(codegen).map_err(|x| x.to_string())
     }
 

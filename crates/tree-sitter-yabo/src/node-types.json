@@ -1392,6 +1392,24 @@
           }
         ]
       },
+      "kind": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "def",
+            "named": false
+          },
+          {
+            "type": "fun",
+            "named": false
+          },
+          {
+            "type": "static",
+            "named": false
+          }
+        ]
+      },
       "name": {
         "multiple": false,
         "required": true,
@@ -1455,20 +1473,6 @@
           {
             "type": "unary_type_expression",
             "named": true
-          }
-        ]
-      },
-      "thunky": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "def",
-            "named": false
-          },
-          {
-            "type": "fun",
-            "named": false
           }
         ]
       },
@@ -2570,6 +2574,10 @@
   },
   {
     "type": "sizeof",
+    "named": false
+  },
+  {
+    "type": "static",
     "named": false
   },
   {

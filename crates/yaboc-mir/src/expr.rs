@@ -12,7 +12,7 @@ use yaboc_base::{
 };
 use yaboc_dependents::{requirements::ExprDepData, SubValue, SubValueKind};
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchKindData, IdxExpression, IndexExpr, ZipExpr};
-use yaboc_hir::{BlockId, ExprId, HirConstraint, HirConstraintId};
+use yaboc_hir::{BlockId, ExprId, HirConstraint, HirConstraintId, ParserDefId};
 use yaboc_hir_types::FullTypeId;
 use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_resolve::expr::{Resolved, ResolvedAtom, ValBinOp, ValUnOp, ValVarOp};
@@ -202,6 +202,22 @@ impl<'a> ConvertExpr<'a> {
         let new_place = self.unwrap_or_stack(loc);
         self.copy(place_ref, new_place);
         Some(new_place)
+    }
+
+    fn load_global(&mut self, pd: ParserDefId, loc: ExpressionLoc) -> SResult<PlaceRef> {
+        let global_ty = self.db.parser_returns(pd)?.deref;
+        let place_info = PlaceInfo {
+            place: Place::Global(pd),
+            ty: loc.ty,
+            remove_bt: false,
+        };
+        let place_ref = self.f.add_place(place_info);
+        if self.db.deref_level(loc.ty) == self.db.deref_level(global_ty) && loc.place.is_none() {
+            return Ok(place_ref);
+        }
+        let new_place = self.unwrap_or_stack(loc);
+        self.copy(place_ref, new_place);
+        Ok(new_place)
     }
 
     fn load_captured(&mut self, captured: DefId, loc: ExpressionLoc) -> SResult<PlaceRef> {
@@ -443,6 +459,7 @@ impl<'a> ConvertExpr<'a> {
             ResolvedAtom::Char(c) => self.load_char(*c, loc),
             ResolvedAtom::Bool(b) => self.load_bool(*b, loc),
             ResolvedAtom::ParserDef(pd) => self.load_zst(ZstVal::ParserDef(*pd), loc),
+            ResolvedAtom::Global(pd) => self.load_global(*pd, loc)?,
             ResolvedAtom::Single => self.load_zst(ZstVal::Single, loc),
             ResolvedAtom::Nil => self.load_zst(ZstVal::Nil, loc),
             ResolvedAtom::Array => self.load_zst(ZstVal::Array, loc),

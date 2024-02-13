@@ -26,6 +26,9 @@ pub enum HirConversionError {
     NakedDef {
         span: Span,
     },
+    ClothedStatic {
+        span: Span,
+    },
     NonParserDef {
         span: Span,
     },
@@ -254,12 +257,17 @@ fn arg_def(ast: &ast::ArgDefinition, ctx: &HirConversionCtx, id: ArgDefId) {
 }
 
 fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDefId) {
-    if ast.from.is_none() && ast.argdefs.is_none() {
+    if ast.from.is_none() && ast.argdefs.is_none() && ast.kind != ast::DefKind::Static {
         ctx.add_errors(Some(HirConversionError::NakedDef {
             span: ast.name.span,
         }));
     }
-    if ast.from.is_none() && ast.thunky {
+    if (ast.from.is_some() || ast.argdefs.is_some()) && ast.kind == ast::DefKind::Static {
+        ctx.add_errors(Some(HirConversionError::ClothedStatic {
+            span: ast.name.span,
+        }));
+    }
+    if ast.from.is_none() && ast.kind == ast::DefKind::Def {
         ctx.add_errors(Some(HirConversionError::NonParserDef {
             span: ast.name.span,
         }));
@@ -301,11 +309,15 @@ fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDef
         }
         args
     });
-    let thunky = ast.thunky;
+    let kind = match ast.kind {
+        ast::DefKind::Fun => DefKind::Fun,
+        ast::DefKind::Def => DefKind::Def,
+        ast::DefKind::Static => DefKind::Static,
+    };
     let pdef = ParserDef {
         qualifier,
         id,
-        thunky,
+        kind,
         from: ast.from.is_some().then_some(from),
         args,
         to,

@@ -655,11 +655,24 @@ impl ArgDef {
     }
 }
 
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
+pub enum DefKind {
+    Fun,
+    Def,
+    Static,
+}
+
+impl DefKind {
+    pub fn thunky(self) -> bool {
+        matches!(self, DefKind::Def)
+    }
+}
+
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDef {
     pub id: ParserDefId,
     pub qualifier: Qualifier,
-    pub thunky: bool,
+    pub kind: DefKind,
     pub from: Option<TExprId>,
     pub args: Option<Vec<ArgDefId>>,
     pub to: ExprId,

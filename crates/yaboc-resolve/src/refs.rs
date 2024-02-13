@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use hir::DefKind;
 use yaboc_ast::expr::Atom;
 use yaboc_base::interner::{DefId, FieldName, Identifier};
 use yaboc_expr::{ExprHead, Expression, TakeRef};
@@ -9,6 +10,7 @@ use super::*;
 
 pub enum VarType {
     ParserDef,
+    Static,
     Value,
 }
 
@@ -45,6 +47,15 @@ pub enum Resolved {
     Unresolved,
 }
 
+fn resolve_pd(db: &(impl Resolves + ?Sized), pd: hir::ParserDefId) -> SResult<Resolved> {
+    let parserdef = pd.lookup(db)?;
+    if parserdef.kind == DefKind::Static {
+        Ok(Resolved::Value(pd.id(), VarType::Static))
+    } else {
+        Ok(Resolved::Value(pd.id(), VarType::ParserDef))
+    }
+}
+
 pub fn resolve_var_ref(
     db: &(impl Resolves + ?Sized),
     loc: DefId,
@@ -64,14 +75,14 @@ pub fn resolve_var_ref(
                     FieldName::Return => return Ok(Resolved::Unresolved),
                 };
                 if let Some(s) = m.defs.get(&ident) {
-                    return Ok(Resolved::Value(s.id(), VarType::ParserDef));
+                    return resolve_pd(db, *s);
                 }
                 if let Some(import) = m.imports.get(&ident) {
                     return Ok(Resolved::Module(import.lookup(db)?.mod_ref));
                 } else if use_core {
                     let core = core_mod(db)?;
                     if let Some(s) = core.defs.get(&ident) {
-                        return Ok(Resolved::Value(s.id(), VarType::ParserDef));
+                        return resolve_pd(db, *s);
                     }
                     // we intentionally do not check for imports here, this way the core
                     // module can have imports for implementation without polluting the
@@ -123,7 +134,7 @@ fn expr_parser_refs<'a>(
         .into_iter()
         .flat_map(move |ident| resolve_var_ref(db, context, ident, false).ok())
         .flat_map(|resolved| match resolved {
-            Resolved::Value(id, VarType::ParserDef) => Some(hir::ParserDefId(id)),
+            Resolved::Value(id, VarType::ParserDef | VarType::Static) => Some(hir::ParserDefId(id)),
             _ => None,
         })
 }

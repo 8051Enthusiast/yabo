@@ -51,6 +51,10 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for PlaceRef {
             Place::ModifiedBy(ins_ref) => {
                 write!(f, "mod[{ins_ref}]")
             }
+            Place::Global(pd) => {
+                let name = db.lookup_intern_identifier(pd.0.unwrap_name(*db)).name;
+                write!(f, "@{}", name)
+            }
             Place::Undefined => write!(f, "undef"),
         }
     }

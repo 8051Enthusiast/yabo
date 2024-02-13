@@ -450,7 +450,7 @@ astify! {
 astify! {
     struct parser_definition = ParserDefinition {
         qualifier: quali[?],
-        thunky: thunky_sign[!],
+        kind: def_kind[!],
         name: idspan[!],
         argdefs: arg_def_list[?],
         from: expression(type_expression)[?],
@@ -960,11 +960,12 @@ fn node_to_string(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Strin
     Ok(text)
 }
 
-fn thunky_sign(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<bool> {
+fn def_kind(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<DefKind> {
     let str = node_to_string(db, fd, c)?;
     Ok(match str.as_ref() {
-        "def" => true,
-        "fun" => false,
+        "def" => DefKind::Def,
+        "fun" => DefKind::Fun,
+        "static" => DefKind::Static,
         otherwise => panic!("Unknown thunk {otherwise}"),
     })
 }

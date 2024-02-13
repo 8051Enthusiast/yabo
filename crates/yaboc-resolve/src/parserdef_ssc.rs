@@ -1,12 +1,18 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     sync::Arc,
 };
 
-use petgraph::Graph;
+use hir::DefKind;
+use petgraph::{
+    visit::{DfsPostOrder, Walker},
+    Graph,
+};
 
-use yaboc_base::error::{SResult, SilencedError};
+use yaboc_base::error::{SResult, Silencable, SilencedError};
 use yaboc_hir::{self as hir, HirIdWrapper};
+
+use crate::{ResolveError, ResolveErrors};
 
 use super::{refs, Resolves};
 
@@ -25,17 +31,21 @@ impl salsa::InternKey for FunctionSscId {
 
 pub fn parser_ssc(db: &dyn Resolves, id: hir::ParserDefId) -> SResult<FunctionSscId> {
     let module = db.hir_parent_module(id.0)?;
-    let sscs = db.mod_parser_ssc(module)?;
-    sscs.get(&id).copied().ok_or_else(SilencedError::new)
+    let order = db.mod_parser_ssc(module).silence()?;
+    order.sscs.get(&id).copied().ok_or_else(SilencedError::new)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ModuleOrder {
+    pub sscs: Arc<BTreeMap<hir::ParserDefId, FunctionSscId>>,
+    pub statics: Arc<[hir::ParserDefId]>,
 }
 
 pub fn mod_parser_ssc(
     db: &dyn Resolves,
     module: hir::ModuleId,
-) -> SResult<Arc<BTreeMap<hir::ParserDefId, FunctionSscId>>> {
-    if db.cyclic_import().is_some() {
-        return Err(SilencedError::new());
-    }
+) -> Result<ModuleOrder, ResolveErrors> {
+    db.module_sequence().silence()?;
     let mut graph = Graph::new();
     let module = module.lookup(db)?;
     let mut index_map = HashMap::new();
@@ -51,16 +61,42 @@ pub fn mod_parser_ssc(
         }
     }
     let sscs = petgraph::algo::kosaraju_scc(&graph);
-    let mut ret = BTreeMap::new();
+    let mut ret_sscs = BTreeMap::new();
+    let mut statics = BTreeSet::default();
+    let mut errs = Vec::new();
     for ssc in sscs {
+        let is_rec = ssc.len() > 1 || graph.contains_edge(ssc[0], ssc[0]);
         let new_ssc: Vec<_> = ssc
             .iter()
             .map(|x| *graph.node_weight(*x).unwrap())
             .collect();
         let id = db.intern_recursion_scc(new_ssc.clone());
-        for parser in new_ssc {
-            ret.insert(parser, id);
+        for pd in new_ssc {
+            ret_sscs.insert(pd, id);
+            if pd.lookup(db)?.kind == DefKind::Static {
+                if is_rec {
+                    errs.push(ResolveError::CyclicGlobal(pd));
+                }
+                statics.insert(pd);
+            }
         }
     }
-    Ok(Arc::new(ret))
+    if !errs.is_empty() {
+        return Err(ResolveErrors(errs.into()));
+    }
+    let mut ret_statics = Vec::new();
+    while let Some(s) = statics.pop_first() {
+        let dfs = DfsPostOrder::new(&graph, index_map[&s]);
+        for node in dfs.iter(&graph) {
+            if statics.remove(&graph[node]) {
+                ret_statics.push(graph[node]);
+            }
+        }
+        ret_statics.push(s);
+    }
+    let ret = ModuleOrder {
+        sscs: Arc::new(ret_sscs),
+        statics: ret_statics.into(),
+    };
+    Ok(ret)
 }

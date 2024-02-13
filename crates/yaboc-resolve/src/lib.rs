@@ -4,10 +4,11 @@ pub mod parserdef_ssc;
 mod refs;
 
 use std::collections::BTreeSet;
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use fxhash::FxHashMap;
-use parserdef_ssc::{mod_parser_ssc, parser_ssc};
+use hir::ModuleId;
+use parserdef_ssc::{mod_parser_ssc, parser_ssc, ModuleOrder};
 use petgraph::Graph;
 
 use yaboc_base::error::SResult;
@@ -27,20 +28,18 @@ use self::refs::parserdef_ref;
 pub trait Resolves: crate::hir::Hirs {
     #[salsa::interned]
     fn intern_recursion_scc(&self, functions: Vec<hir::ParserDefId>) -> FunctionSscId;
-    fn mod_parser_ssc(
-        &self,
-        module: hir::ModuleId,
-    ) -> SResult<Arc<BTreeMap<hir::ParserDefId, FunctionSscId>>>;
+    fn mod_parser_ssc(&self, module: hir::ModuleId) -> Result<ModuleOrder, ResolveErrors>;
     fn parser_ssc(&self, parser: hir::ParserDefId) -> SResult<FunctionSscId>;
     fn resolve_expr_error(&self, expr_id: hir::ExprId) -> Result<ResolvedExpr, ResolveError>;
     fn resolve_expr(&self, expr_id: hir::ExprId) -> SResult<ResolvedExpr>;
     fn captures(&self, id: hir::BlockId) -> Arc<BTreeSet<DefId>>;
     fn parserdef_ref(&self, loc: DefId, name: Vec<Identifier>)
         -> SResult<Option<hir::ParserDefId>>;
-    fn cyclic_import(&self) -> Option<Arc<Vec<ResolveError>>>;
+    fn module_sequence(&self) -> Result<Arc<Vec<ModuleId>>, ResolveErrors>;
+    fn global_sequence(&self) -> SResult<Arc<[hir::ParserDefId]>>;
 }
 
-fn cyclic_import(db: &dyn Resolves) -> Option<Arc<Vec<ResolveError>>> {
+fn module_sequence(db: &dyn Resolves) -> Result<Arc<Vec<ModuleId>>, ResolveErrors> {
     let mut graph = Graph::new();
     let mut index_map = FxHashMap::default();
     for module in db.all_modules() {
@@ -76,11 +75,23 @@ fn cyclic_import(db: &dyn Resolves) -> Option<Arc<Vec<ResolveError>>> {
         let files: Vec<_> = ssc.iter().map(|index| graph[*index]).collect();
         errors.push(ResolveError::CyclicImport(Arc::new(files)));
     }
-    if errors.is_empty() {
-        None
-    } else {
-        Some(Arc::new(errors))
+    if !errors.is_empty() {
+        return Err(ResolveErrors(errors.into()));
     }
+    let ordered = petgraph::algo::toposort(&graph, None).unwrap();
+    let ordered: Vec<_> = ordered
+        .iter()
+        .map(|index| ModuleId(db.intern_hir_path(DefinitionPath::Module(graph[*index]))))
+        .collect();
+    Ok(Arc::new(ordered))
+}
+
+fn global_sequence(db: &dyn Resolves) -> SResult<Arc<[hir::ParserDefId]>> {
+    let mut ret = Vec::new();
+    for &module in db.module_sequence().silence()?.iter() {
+        ret.extend(db.mod_parser_ssc(module).silence()?.statics.iter().copied());
+    }
+    Ok(ret.into())
 }
 
 fn resolve_expr(db: &dyn Resolves, expr_id: hir::ExprId) -> SResult<ResolvedExpr> {
@@ -122,6 +133,7 @@ pub enum ResolveError {
     Unresolved(ExprId, SpanIndex, FieldName),
     CyclicImport(Arc<Vec<FileId>>),
     ModuleInExpression(ExprId, SpanIndex),
+    CyclicGlobal(hir::ParserDefId),
     Silenced(SilencedError),
 }
 
@@ -139,6 +151,22 @@ impl Silencable for ResolveError {
             ResolveError::Silenced(e) => e,
             _ => SilencedError::new(),
         }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ResolveErrors(pub Arc<[ResolveError]>);
+
+impl From<SilencedError> for ResolveErrors {
+    fn from(e: SilencedError) -> Self {
+        ResolveErrors(Arc::new([e.into()]))
+    }
+}
+
+impl Silencable for ResolveErrors {
+    type Out = SilencedError;
+
+    fn silence(self) -> Self::Out {
+        self.0.silence()
     }
 }
 

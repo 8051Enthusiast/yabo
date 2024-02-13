@@ -145,7 +145,7 @@ pub fn parser_returns_ssc(
                 let mut deref = ctx
                     .inftype_to_concrete_type(ctx.inftypes[&def.id.0])
                     .map_err(spanned)?;
-                if def.thunky {
+                if def.kind.thunky() {
                     deref = check_for_typevar(db, deref).map_err(spanned)?;
                 }
                 Ok(ParserDefType { id: def.id, deref })

@@ -36,7 +36,7 @@ Stack bump(Stack stack) {
   size_t size = dyn_val_size(stack.current);
   size_t aligned_size =
       (size + _Alignof(DynValue) - 1) & ~(_Alignof(DynValue) - 1);
-  if (stack.limit - (char *)stack.current < aligned_size) {
+  if ((size_t)(stack.limit - (char *)stack.current) < aligned_size) {
     fprintf(stderr, "Value stack overflow\n");
     exit(1);
   }
@@ -66,16 +66,16 @@ int print_char(DynValue *val, int indent, Stack stack, FILE *out) {
     fputc_ret(char_value, out);
   } else if (char_value < 0x800) {
     fputc_ret(0xc0 | char_value >> 6, out);
-    fputc_ret(0x80 | 0x3f & char_value, out);
+    fputc_ret(0x80 | (0x3f & char_value), out);
   } else if (char_value < 0x10000) {
     fputc_ret(0xe0 | char_value >> 12, out);
-    fputc_ret(0x80 | 0x3f & char_value >> 6, out);
-    fputc_ret(0x80 | 0x3f & char_value, out);
+    fputc_ret(0x80 | (0x3f & (char_value >> 6)), out);
+    fputc_ret(0x80 | (0x3f & char_value), out);
   } else {
     fputc_ret(0xf0 | char_value >> 18, out);
-    fputc_ret(0x80 | 0x3f & char_value >> 12, out);
-    fputc_ret(0x80 | 0x3f & char_value >> 6, out);
-    fputc_ret(0x80 | 0x3f & char_value, out);
+    fputc_ret(0x80 | (0x3f & (char_value >> 12)), out);
+    fputc_ret(0x80 | (0x3f & (char_value >> 6)), out);
+    fputc_ret(0x80 | (0x3f & char_value), out);
   }
   fputc_ret('"', out);
   return 0;
@@ -117,7 +117,6 @@ int print_block(DynValue *val, int indent, Stack stack, FILE *out) {
   struct BlockVTable *vtable = (struct BlockVTable *)val->vtable;
   char **field_desc = vtable->fields->fields;
   char **field_end = field_desc + vtable->fields->number_fields;
-  int status;
   if (fputs("{\n", out) == EOF)
     return EOF;
   int64_t (**access_impl)(void *, const void *, uint64_t) = vtable->access_impl;
@@ -263,10 +262,19 @@ int main(int argc, char **argv) {
     perror("could not find yabo_max_buf_size (is this a yabo library?)");
     exit(1);
   }
-  struct Slice *yabo_global_address =
-      (struct Slice *)dlsym(lib, "yabo_global_address");
+  struct Slice *yabo_global_address = dlsym(lib, "yabo_global_address");
   if (yabo_global_address) {
     *yabo_global_address = file;
+  }
+  int64_t (*yabo_global_init)(void) = dlsym(lib, "yabo_global_init");
+  if (yabo_global_init) {
+    int64_t status = yabo_global_init();
+    if (status != 0) {
+      fprintf(stderr,
+              "failed to initialize yabo library with status %" PRId64 "\n",
+              status);
+      exit(1);
+    }
   }
   ParseFun *parser = (ParseFun *)dlsym(lib, argv[2]);
   if (!parser) {

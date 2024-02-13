@@ -246,6 +246,7 @@ impl<'intern> SubInfo<ILayout<'intern>> {
                     }
                     _ => unreachable!(),
                 },
+                Place::Global(pd) => ctx.dcx.globals[&pd].1,
                 Place::Undefined => ctx.dcx.intern(Layout::None),
             };
 

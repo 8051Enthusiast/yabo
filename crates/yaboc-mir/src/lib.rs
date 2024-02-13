@@ -438,6 +438,7 @@ pub enum Place {
     Captured(PlaceRef, DefId),
     Front(PlaceRef),
     ModifiedBy(InsRef),
+    Global(ParserDefId),
     Undefined,
 }
 

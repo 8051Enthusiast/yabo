@@ -45,6 +45,7 @@
 [
     "fun"
     "def"
+    "static"
 ] @keyword.function
 
 [

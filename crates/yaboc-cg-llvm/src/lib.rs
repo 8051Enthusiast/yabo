@@ -280,7 +280,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let ty = self.sa_type(sa);
         let ptr = self.builder.build_alloca(ty, "alloca");
         self.set_last_instr_align(sa).unwrap();
-        let u8_ptr_ty = self.llvm.i8_type().ptr_type(AddressSpace::default());
+        let u8_ptr_ty = self.any_ptr();
         match vtable {
             None => self.invalid_ptr(),
             Some(false) => self
@@ -536,6 +536,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         unsafe { self.builder.build_in_bounds_gep(ty, ptr, &[int], name) }
     }
 
+    fn const_byte_gep(&mut self, ptr: PointerValue<'llvm>, int: i64) -> PointerValue<'llvm> {
+        assert!(ptr.get_type() == self.any_ptr());
+        if int == 0 {
+            return ptr;
+        }
+        let ty = self.llvm.i8_type();
+        let int = self.llvm.i32_type().const_int(int as u64, false);
+        unsafe { ptr.const_gep(ty, &[int]) }
+    }
+
     fn build_field_gep(
         &mut self,
         field: DefId,
@@ -630,6 +640,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         buf_size.set_initializer(&size);
         buf_size.set_linkage(Linkage::External);
         buf_size.set_constant(true);
+    }
+
+    pub fn run_codegen(&mut self) {
+        self.create_all_vtables();
+        self.create_all_statics();
+        self.create_all_funs();
+        self.create_pd_exports();
+        self.create_max_buf_size();
     }
 
     pub fn llvm_code(self, outfile: &OsStr) -> Result<(), LLVMString> {
