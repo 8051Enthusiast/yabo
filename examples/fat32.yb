@@ -31,6 +31,8 @@ def *fat32_header = {
   fil_sys_type: [8]
 }
 
+static header = fat32_header at 0
+
 # defines an integer in a FAT entry that has the high 4 bits masked out
 def *masked_fat_val = {
   val: u32l
@@ -46,7 +48,19 @@ def *fat_entry = {
 }
 
 # defines a fat table of a given size
-def *fat_table(size: int) = fat_entry[size / u32l.sizeof]
+def *fat_table = fat_entry[header.fat_sz32 * header.byts_per_sec / u32l.sizeof]
+
+static fat = fat_table at (header.byts_per_sec * header.rsvd_sec_cnt)
+
+static blocks = {
+  [header.byts_per_sec * header.rsvd_sec_cnt]
+  fat_table[header.num_fats]
+  let data_sec = header.tot_sec32 - (header.rsvd_sec_cnt + header.fat_sz32 * header.num_fats)
+  let count_of_clusters = data_sec / header.sec_per_clus
+  return: [header.bytes_per_cluster][count_of_clusters]
+} at 0
+
+fun parse_block(idx: int, data: *'t(int)) = blocks.[idx - 2] *> data(idx)
 
 # defines a short entry in the directory
 def *short_entry = {
@@ -79,46 +93,30 @@ def *long_entry = {
 }
 
 # a single entry in the directory, either a long or short entry, or empty
-def *dir_entry(blocks: [[u8]], fat: [fat_entry], sec_size: int) = u8[32] |> {
+def *dir_entry = [32] |> {
   | empty: u8 if 0 or 0xE5
   | long: long_entry?
   | short: short_entry
     | assert(short.name.[0] == 0x2E)?
       let hidden = 1
     | assert(short.attr & 0x10 != 0)?
-      let subdir = blocks.[short.cluster - 2] *>
-        dir_entries(blocks, fat, sec_size, short.cluster)
-    | let file = blocks.[short.cluster - 2] *>
-        file_entry(blocks, fat, sec_size, short.cluster)
+      let subdir = parse_block(short.cluster, dir_entries)
+    | let file = parse_block(short.cluster, file_entry)
 }
 
 # a chain of directory entries
-def *dir_entries(blocks: [[u8]], fat: [fat_entry], sec_size: int, idx: int) = 
-  entry(blocks, fat, dir_entry(blocks, fat, sec_size)[sec_size / 32], idx)
+def *dir_entries(idx: int) = entry(dir_entry[header.byts_per_sec / dir_entry.sizeof], idx)
 
 # a chain of file entries
-def *file_entry(blocks: [[u8]], fat: [fat_entry], sec_size: int, idx: int) =
-  entry(blocks, fat, u8[sec_size], idx)
+def *file_entry(idx: int) = entry([header.bytes_per_cluster], idx)
 
 # takes a data type and returns a linked list of entries using the FAT
-def *entry(blocks: [[u8]], fat: [fat_entry], data_type: *'t, idx: int) = {
+def *entry(data_type: *'t, idx: int) = {
   data: data_type
   | let next_idx = fat.[idx].?next
-    let next = blocks.[next_idx - 2] *> entry(blocks, fat, data_type, next_idx)
+    let next = parse_block(next_idx, entry(data_type, ..))
   | +
 }
 
 export
-def *fat32 = {
-  header: fat32_header
-  u8[header.byts_per_sec * header.rsvd_sec_cnt - fat32_header.sizeof]
-  let fat_tab = fat_table(header.fat_sz32 * header.byts_per_sec)
-  fat: fat_tab
-  # padding for reserve FAT sectors
-  fat_tab[header.num_fats - 1]
-  let data_sec = header.tot_sec32 - (header.rsvd_sec_cnt + header.fat_sz32 * header.num_fats)
-  let count_of_clusters = data_sec / header.sec_per_clus
-  blocks: u8[header.bytes_per_cluster][count_of_clusters]
-  let return = blocks.[header.root_clus - 2] *>
-      dir_entries(blocks, fat, header.bytes_per_cluster, header.root_clus)
-}
+def *fat32 = {let return = parse_block(header.root_clus, dir_entries)}
