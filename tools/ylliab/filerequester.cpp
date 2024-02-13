@@ -65,6 +65,15 @@ Executor::Executor(std::filesystem::path path, FileRef file_content)
     global_address->start = span.data();
     global_address->end = span.data() + span.size();
   }
+  typedef int64_t (*init_fun)(void);
+  auto global_init = reinterpret_cast<init_fun>(dlsym(lib, "yabo_global_init"));
+  int64_t status = global_init();
+  if (status) {
+    auto err = std::format("Global init failed with status {}", status);
+    dlclose(lib);
+    std::filesystem::remove(tmp_file);
+    throw ExecutorError(err);
+  }
   vals = YaboValCreator(YaboValStorage(*size));
 }
 

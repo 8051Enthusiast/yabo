@@ -20,6 +20,7 @@ pub enum ResolvedAtom {
     Val(DefId),
     Captured(DefId),
     ParserDef(hir::ParserDefId),
+    Global(hir::ParserDefId),
     Regex(Regex),
     Number(i64),
     Char(u32),
@@ -197,6 +198,7 @@ fn resolve_expr_modules(
         };
         Ok(PartialEval::Uneval(match kind {
             refs::VarType::ParserDef => ResolvedAtom::ParserDef(hir::ParserDefId(id)),
+            refs::VarType::Static => ResolvedAtom::Global(hir::ParserDefId(id)),
             refs::VarType::Value => {
                 let is_captured = parent_block
                     .map(|x| !x.0.is_ancestor_of(db, id))

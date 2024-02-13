@@ -1,0 +1,17 @@
+====[ source code ]====
+static i32l_or_i16l = (u8 at 0) if 0x11..0x20 then i32l else i16l
+
+export
+fun *test = i32l_or_i16l[2]
+
+====[ binary 1 ]====
+11 00 00 00 12 00 00 00
+
+====[ output 1 ]====
+[17, 18]
+
+====[ binary 2 ]====
+01 00 02 00 03 00 04 00
+
+====[ output 2 ]====
+[1, 2]

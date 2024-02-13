@@ -67,10 +67,10 @@ pub fn parser_args_error(
     } else {
         None
     };
-    let kind = if pd.thunky {
-        NominalKind::Def
-    } else {
-        NominalKind::Fun
+    let kind = match pd.kind {
+        DefKind::Def => NominalKind::Def,
+        DefKind::Fun => NominalKind::Fun,
+        DefKind::Static => NominalKind::Static,
     };
     let thunk = NominalTypeHead {
         kind,
@@ -84,7 +84,7 @@ pub fn parser_args_error(
         from: from_ty,
         args,
         thunk,
-        thunky: pd.thunky,
+        thunky: pd.kind.thunky(),
     })
 }
 

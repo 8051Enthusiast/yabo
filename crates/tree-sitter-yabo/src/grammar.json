@@ -59,7 +59,7 @@
         },
         {
           "type": "FIELD",
-          "name": "thunky",
+          "name": "kind",
           "content": {
             "type": "CHOICE",
             "members": [
@@ -70,6 +70,10 @@
               {
                 "type": "STRING",
                 "value": "fun"
+              },
+              {
+                "type": "STRING",
+                "value": "static"
               }
             ]
           }

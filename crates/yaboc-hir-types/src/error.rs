@@ -20,7 +20,7 @@ pub fn errors(db: &(impl TyHirs + ?Sized)) -> Vec<Report> {
     let mut sscs: FxHashSet<FunctionSscId> = Default::default();
     for module in modules {
         if let Ok(x) = db.mod_parser_ssc(module) {
-            sscs.extend(x.values());
+            sscs.extend(x.sscs.values());
         }
     }
     let mut errors = Vec::new();

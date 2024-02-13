@@ -1,17 +1,20 @@
 mod call_info;
 mod tailsize;
 
+use std::collections::hash_map::Entry;
+
 use fxhash::{FxHashMap, FxHashSet};
 
 use yaboc_absint::{AbstractDomain, Arg};
 use yaboc_base::dbeprintln;
 use yaboc_hir::{HirIdWrapper, ParserDefId};
 use yaboc_hir_types::DerefLevel;
-use yaboc_mir::{CallMeta, MirInstr, MirKind};
+use yaboc_mir::{CallMeta, MirInstr, MirKind, Place};
 use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_types::{PrimitiveType, Type, TypeId};
 
 use crate::{
+    init_globals,
     mir_subst::{function_substitute, FunctionSubstitute},
     prop::SizeAlign,
 };
@@ -53,6 +56,7 @@ pub struct LayoutCollection<'a> {
     pub functions: LayoutSet<'a>,
     pub primitives: LayoutSet<'a>,
     pub lens: LayoutSet<'a>,
+    pub globals: FxHashMap<ParserDefId, (IMonoLayout<'a>, ILayout<'a>)>,
     pub parser_slots: call_info::CallSlotResult<'a, (ILayout<'a>, CallMeta)>,
     pub funcall_slots: call_info::CallSlotResult<'a, ILayout<'a>>,
     pub tail_sa: FxHashMap<(ILayout<'a>, IMonoLayout<'a>), TailInfo>,
@@ -70,6 +74,7 @@ pub struct LayoutCollector<'a, 'b> {
     parsers: LayoutSet<'a>,
     functions: LayoutSet<'a>,
     lens: LayoutSet<'a>,
+    globals: FxHashMap<ParserDefId, (IMonoLayout<'a>, ILayout<'a>)>,
     root: Vec<(ILayout<'a>, IMonoLayout<'a>)>,
     max_sa: SizeAlign,
     processed_calls: FxHashSet<(ILayout<'a>, IMonoLayout<'a>, CallMeta)>,
@@ -99,6 +104,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             parsers: Default::default(),
             functions: Default::default(),
             lens: Default::default(),
+            globals: Default::default(),
             max_sa: Default::default(),
             processed_calls: Default::default(),
             unprocessed: Default::default(),
@@ -163,7 +169,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 }
                 MonoLayout::Nominal(pd, _, _) => {
                     let parserdef = pd.lookup(self.ctx.db).unwrap();
-                    if parserdef.thunky && self.nominals.insert(mono) {
+                    if parserdef.kind.thunky() && self.nominals.insert(mono) {
                         if TRACE_COLLECTION {
                             dbeprintln!(self.ctx.db, "[collection] registered nominal {}", &mono);
                         }
@@ -352,6 +358,18 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         }
     }
 
+    fn register_global(&mut self, pd: ParserDefId) {
+        if let Entry::Vacant(v) = self.globals.entry(pd) {
+            if TRACE_COLLECTION {
+                dbeprintln!(self.ctx.db, "[collection] registered global {}", &pd.0);
+            }
+            let entries @ (fun, layout) = self.ctx.dcx.globals[&pd];
+            v.insert(entries);
+            self.register_layouts(fun.inner());
+            self.register_layouts(layout);
+        }
+    }
+
     fn collect_ins(
         &mut self,
         mir: &FunctionSubstitute<'a>,
@@ -360,7 +378,10 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         match ins {
             MirInstr::ApplyArgs(_, fun, args, _, _) => {
                 let fun_layout = mir.place(fun);
-                let args = args.iter().map(|(arg, _)| mir.place(*arg)).collect::<Vec<_>>();
+                let args = args
+                    .iter()
+                    .map(|(arg, _)| mir.place(*arg))
+                    .collect::<Vec<_>>();
                 let ty = mir.place_type(fun);
                 self.register_funcall(fun_layout, args, ty)?;
                 Ok(())
@@ -386,6 +407,11 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         }
         for layout in mir.stack_layouts.iter() {
             self.register_layouts(*layout);
+        }
+        for (_, place) in mir.f.iter_places() {
+            if let Place::Global(pd) = &place.place {
+                self.register_global(*pd);
+            }
         }
         for ins in mir.f.iter_bb().flat_map(|(_, block)| block.ins()) {
             self.collect_ins(mir, ins)?;
@@ -492,7 +518,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         // it may happen that the thunk does not actually exist as a value
         // anywhere in the program because it always gets immediately evaluated,
         // but we need to register it anyway because it is needed for codegen
-        if info != MirKind::Len && parserdef.thunky {
+        if info != MirKind::Len && parserdef.kind.thunky() {
             self.register_layouts(thunk.inner());
         }
         // instantiate info for thunk
@@ -604,6 +630,10 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
 
     pub fn collect(&mut self, pds: &[ParserDefId]) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
+            eprintln!("[collection] initializing globals...")
+        }
+        init_globals(self.ctx)?;
+        if TRACE_COLLECTION {
             eprintln!("[collection] collecting layouts for:");
         }
         for pd in pds {
@@ -699,6 +729,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             parsers: self.parsers,
             functions: self.functions,
             lens: self.lens,
+            globals: self.globals,
             max_sa: self.max_sa,
             primitives,
             parser_slots,

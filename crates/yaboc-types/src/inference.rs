@@ -44,7 +44,7 @@ impl<'intern> InferenceType<'intern> {
         matches!(
             self,
             InferenceType::Nominal(NominalInfHead {
-                kind: NominalKind::Fun,
+                kind: NominalKind::Fun | NominalKind::Static,
                 ..
             })
         )

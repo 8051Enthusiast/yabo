@@ -1,5 +1,6 @@
 use fxhash::FxHashSet;
 use yaboc_constraint::Constraints;
+use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{
     collect::{fun_req, pd_len_req, pd_val_req},
     mir_subst::function_substitute,
@@ -7,6 +8,7 @@ use yaboc_layout::{
 };
 use yaboc_mir::{FunKind, MirKind};
 use yaboc_req::NeededBy;
+use yaboc_resolve::Resolves;
 
 use crate::{
     convert_regex::RegexTranslator,
@@ -368,7 +370,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             panic!("create_pd_parse has to be called with a nominal parser layout");
         };
 
-        let thunky = pd.lookup(&self.compiler_database.db).unwrap().thunky;
+        let thunky = pd.lookup(&self.compiler_database.db).unwrap().kind.thunky();
 
         if !req.contains(NeededBy::Val) || !thunky {
             // just call impl_fun and return
@@ -1369,9 +1371,40 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.create_pd_start(layout);
     }
 
+    fn create_init_fun(&mut self) {
+        let llvm_fun = self.global_constant_init_fun_val();
+        self.add_entry_block(llvm_fun);
+        let global_sequence = self.compiler_database.db.global_sequence().unwrap();
+        for pd in global_sequence.iter() {
+            let Some(&(fun, layout)) = self.collected_layouts.globals.get(pd) else {
+                continue;
+            };
+            let Type::FunctionArg(ret, _) = self
+                .compiler_database
+                .db
+                .lookup_intern_type(fun.mono_layout().1)
+            else {
+                panic!("attempting to create init function with non-function type stored in layout")
+            };
+            let level = self.layouts.db.deref_level(ret).unwrap();
+            let global = self.global_constant(*pd);
+            let mut head = level.into_shifted_runtime_value();
+            if layout.is_multi() {
+                head |= 1 << VTABLE_BIT;
+            }
+            let ret_val = CgReturnValue::new(self.const_i64(head as i64), global);
+            let fun_val = CgValue::new(fun.inner(), self.any_ptr().const_null());
+            let status = self.call_eval_fun_fun(ret_val, fun_val, ParserFunKind::Wrapper);
+            self.non_zero_early_return(llvm_fun, status);
+        }
+        let zero = self.const_i64(0);
+        self.builder.build_return(Some(&zero));
+    }
+
     pub fn create_all_funs(&mut self) {
         let collected_layouts = self.collected_layouts.clone();
         self.create_all_header_funs();
+        self.create_init_fun();
         for layout in collected_layouts.arrays.iter() {
             self.create_array_funs(*layout);
         }

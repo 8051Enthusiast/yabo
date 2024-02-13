@@ -177,7 +177,9 @@ impl<'a> SizeTermBuilder<'a> {
                             let referencing = self.vals[&SubValue::new_val(id)];
                             self.push_term(Term::Copy(referencing), src)
                         }
-                        ResolvedAtom::ParserDef(pd) => self.push_term(Term::Pd(pd), src),
+                        ResolvedAtom::ParserDef(pd) | ResolvedAtom::Global(pd) => {
+                            self.push_term(Term::Pd(pd), src)
+                        }
                         ResolvedAtom::Regex(r) => {
                             let len = self.db.regex_len(r).map_err(|_| SilencedError::new())?;
                             if let Some(len) = len {

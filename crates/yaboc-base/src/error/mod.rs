@@ -85,10 +85,23 @@ impl<E: Into<SilencedError>> Silencable for E {
     }
 }
 
-impl<E: Into<SilencedError>> Silencable for Vec<E> {
+impl<E: Silencable<Out = SilencedError>> Silencable for Vec<E> {
+    type Out = SilencedError;
+    fn silence(mut self) -> Self::Out {
+        match self.pop() {
+            Some(e) => e.silence(),
+            None => SilencedError::default(),
+        }
+    }
+}
+
+impl<E: Silencable<Out = SilencedError> + Clone> Silencable for Arc<[E]> {
     type Out = SilencedError;
     fn silence(self) -> Self::Out {
-        SilencedError::default()
+        match self.first().cloned() {
+            Some(e) => e.silence(),
+            None => SilencedError::default(),
+        }
     }
 }
 

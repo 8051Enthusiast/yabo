@@ -147,6 +147,7 @@ pub enum PrimitiveType {
 pub enum NominalKind {
     Fun,
     Def,
+    Static,
     Block,
 }
 

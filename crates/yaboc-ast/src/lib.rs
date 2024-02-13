@@ -267,10 +267,18 @@ pub struct Import {
     pub span: Span,
 }
 
+
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
+pub enum DefKind {
+    Def,
+    Fun,
+    Static,
+}
+
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDefinition {
     pub qualifier: Option<Qualifier>,
-    pub thunky: bool,
+    pub kind: DefKind,
     pub name: IdSpan,
     pub from: Option<TypeExpression>,
     pub argdefs: Option<ArgDefList>,

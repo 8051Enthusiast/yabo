@@ -4,7 +4,7 @@ use yaboc_base::{
         diagnostic::{DiagnosticKind, Label},
         Report,
     },
-    source::{Span, SpanIndex},
+    source::{IndirectSpan, Span, SpanIndex},
 };
 use yaboc_hir::{self as hir, walk::ChildIter, ExprId};
 
@@ -13,6 +13,13 @@ use super::{ResolveError, Resolves};
 pub fn errors(db: &(impl Resolves + ?Sized)) -> Vec<Report> {
     let mut errors = Vec::new();
     for module in db.all_modules() {
+        errors.extend(
+            db.mod_parser_ssc(module)
+                .err()
+                .iter()
+                .flat_map(|x| x.0.iter())
+                .flat_map(|x| make_report(db, x)),
+        );
         for node in ChildIter::new(module.0, db) {
             // let chains would make this so much prettier...
             if let hir::HirNode::Expr(expr) = &node {
@@ -25,9 +32,10 @@ pub fn errors(db: &(impl Resolves + ?Sized)) -> Vec<Report> {
         }
     }
     errors.extend(
-        db.cyclic_import()
+        db.module_sequence()
+            .err()
             .iter()
-            .flat_map(|x| x.iter())
+            .flat_map(|x| x.0.iter())
             .flat_map(|x| make_report(db, x)),
     );
     errors
@@ -69,6 +77,13 @@ fn make_report(db: &(impl Resolves + ?Sized), err: &ResolveError) -> Option<Repo
             )
             .with_code(303)
             .with_label(Label::new(span).with_message("module used here"));
+            Some(report)
+        }
+        ResolveError::CyclicGlobal(pd) => {
+            let span = db.indirect_span(IndirectSpan::default_span(pd.0)).ok()?;
+            let mut report =
+                Report::new(DiagnosticKind::Error, span.file, "static uses itself").with_code(304);
+            report.add_label(Label::new(span).with_message("static defined here"));
             Some(report)
         }
         ResolveError::Silenced(_) => None,

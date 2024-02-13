@@ -26,6 +26,7 @@ YABO_ANY = ((1 << 64) - 1) & ~0xff
 YABO_VTABLE = 1
 
 YABO_GLOBAL_ADDRESS_NAME = "yabo_global_address"
+YABO_GLOBAL_INIT_NAME = "yabo_global_init"
 
 OK = 0
 ERROR = 1
@@ -136,6 +137,7 @@ class NominalVTable(Structure):
 
 PARSER_TY = CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64, _voidptr)
 LEN_FUN_TY = CFUNCTYPE(c_int64, POINTER(c_int64), POINTER(c_ubyte))
+INIT_TY = CFUNCTYPE(c_int64)
 
 class ParserVTable(Structure):
     __slots__ = [
@@ -280,6 +282,9 @@ class YaboLib(ctypes.CDLL):
                 # if an unneeded global address is provided, we can just
                 # ignore it
                 pass
+        status = self[YABO_GLOBAL_INIT_NAME]()
+        _check_status(status)
+        
         self._loc = threading.local()
 
     def parser(self, name: str) -> Parser:

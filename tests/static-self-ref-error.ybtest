@@ -1,0 +1,5 @@
+====[ source code ]====
+static f = g + 1
+#~^error[304] static uses itself
+static g = f + 1
+#~^error[304] static uses itself

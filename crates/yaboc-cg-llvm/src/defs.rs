@@ -1,11 +1,15 @@
+use yaboc_base::dbformat;
+use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::represent::ParserFunKind;
 use yaboc_mir::CallMeta;
+use yaboc_resolve::Resolves;
 
 use super::*;
 
 // llvm id for the tailcc calling convention
 pub const TAILCC: u32 = 18;
 pub const YABO_GLOBAL_ADDRESS: &str = "yabo_global_address";
+pub const YABO_GLOBAL_INIT: &str = "yabo_global_init";
 
 impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn fun_val(
@@ -230,17 +234,28 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret
     }
 
-    pub(super) fn arg_level_and_offset(
+    fn array_arg_level_and_offset(
         &mut self,
         layout: IMonoLayout<'comp>,
-        argnum: PSize,
-    ) -> (i64, PSize) {
+        argnum: u64,
+    ) -> Option<(i64, u64)> {
         if let MonoLayout::ArrayParser(s) = layout.mono_layout().0 {
+            let Some((parser, maybe_len)) = s else {
+                dbpanic!(
+                    &self.compiler_database.db,
+                    "trying to get arg struct for non-array parser layout {}",
+                    &layout.inner()
+                );
+            };
             if argnum == 1 {
-                return (0, 0);
+                return Some(if parser.is_multi() {
+                    (1 << VTABLE_BIT, self.word_size())
+                } else {
+                    (0, 0)
+                });
             }
             assert!(argnum == 0);
-            let Some((_, Some(l))) = s else {
+            let Some(l) = maybe_len else {
                 dbpanic!(
                     &self.compiler_database.db,
                     "trying to non-existent int arg struct for array parser layout {}",
@@ -249,7 +264,18 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             };
             let int_size = l.size_align(self.layouts).unwrap().size;
             let whole_size = layout.inner().size_align(self.layouts).unwrap().size;
-            return (0, whole_size - int_size);
+            return Some((0, whole_size - int_size));
+        }
+        None
+    }
+
+    pub(super) fn arg_level_and_offset(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+        argnum: PSize,
+    ) -> (i64, PSize) {
+        if let Some(value) = self.array_arg_level_and_offset(layout, argnum) {
+            return value;
         }
         let (pd, args) = if let MonoLayout::NominalParser(pd, args, _) = layout.mono_layout().0 {
             (*pd, args)
@@ -332,5 +358,49 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let u8_ptr = ptr.const_cast(self.any_ptr());
         let layout = IMonoLayout::u8_array(self.layouts);
         CgMonoValue::new(layout, u8_ptr)
+    }
+
+    pub(super) fn global_constant(&mut self, pd: ParserDefId) -> PointerValue<'llvm> {
+        let layout = self.collected_layouts.globals[&pd].1;
+        let hash = truncated_hex(&self.compiler_database.db.def_hash(pd.0));
+        let name = pd.0.unwrap_name(&self.compiler_database.db);
+        let sym = dbformat!(&self.compiler_database.db, "g${}${}", &hash, &name);
+        let global_val = if let Some(x) = self.module.get_global(&sym) {
+            x
+        } else {
+            let sa = layout.size_align(self.layouts).unwrap();
+            let llvm_ty = self.sa_type(sa);
+            let global = self.module.add_global(llvm_ty, None, &sym);
+            global.set_alignment(sa.align() as u32);
+            global.set_initializer(&llvm_ty.const_zero());
+            global
+        };
+        self.const_byte_gep(
+            global_val.as_pointer_value(),
+            self.layout_inner_offset(layout) as i64,
+        )
+    }
+
+    pub(super) fn create_all_statics(&mut self) {
+        let global_sequence = self.compiler_database.db.global_sequence().unwrap();
+        for pd in global_sequence.iter() {
+            if !self.collected_layouts.globals.contains_key(pd) {
+                continue;
+            };
+            self.global_constant(*pd);
+        }
+        let zero = self.const_i64(0);
+        self.builder.build_return(Some(&zero));
+    }
+
+    pub(super) fn global_constant_init_fun_val(&mut self) -> FunctionValue<'llvm> {
+        if let Some(x) = self.module.get_function(YABO_GLOBAL_INIT) {
+            return x;
+        }
+        let fun_type = self.llvm.i64_type().fn_type(&[], false);
+        let f = self
+            .module
+            .add_function(YABO_GLOBAL_INIT, fun_type, Some(Linkage::External));
+        f
     }
 }

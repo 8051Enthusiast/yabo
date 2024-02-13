@@ -128,6 +128,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 };
                 self.place_ptr(front)
             }
+            mir::Place::Global(pd) => self.cg.global_constant(pd),
             mir::Place::Undefined => self.cg.invalid_ptr(),
         }
     }
