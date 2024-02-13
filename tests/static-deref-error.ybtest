@@ -1,0 +1,7 @@
+====[ source code ]====
+static var = u8 at 0
+
+fun f(x: u8): int = x
+
+fun g() = f(var)
+#~^error[507] expected u8, but got int
