@@ -89,12 +89,6 @@ impl<'a> LenMirCtx<'a> {
         self.vals.vals[len_expr_idx].clone()
     }
 
-    fn val_at_id(&self, id: DefId) -> LenVal {
-        let subval = SubValue::new_val(id);
-        let len_expr_idx = self.terms.vals[&subval];
-        self.vals.vals[len_expr_idx].clone()
-    }
-
     fn parse_deps(&mut self, parse: &ParseStatement) -> SResult<ContextId> {
         let val = self.back_val_at_id(parse.id.0);
         assert!(!val.is_unsized());
@@ -109,8 +103,6 @@ impl<'a> LenMirCtx<'a> {
 
     fn let_deps(&mut self, let_statement: &LetStatement) -> SResult<ContextId> {
         let expr_id = let_statement.expr;
-        let val = self.val_at_id(let_statement.id.0);
-        assert!(!val.is_unsized());
         self.expr_deps(expr_id)?;
         Ok(let_statement.context)
     }
