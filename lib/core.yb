@@ -11,6 +11,9 @@ fun ['t] *> assert(big: bit) = {
 # ```
 fun when(big: bit) = big if true
 
+# Same as +
+fun *nil = +
+
 # =============== inttypes ===============
 
 # Parses an 8-bit unsigned integer.
