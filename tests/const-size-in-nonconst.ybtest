@@ -1,0 +1,17 @@
+====[ source code ]====
+export
+def *test = {
+  let return = {
+    a: u32l
+    b: u32l
+    c: u32l
+    [0]
+  }.sizeof
+}
+
+
+====[ binary 1 ]====
+00
+
+====[ output 1 ]====
+12
