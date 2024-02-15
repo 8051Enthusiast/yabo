@@ -1,0 +1,166 @@
+import math
+import list
+
+# ext2 implementation
+# somewhat incomplete, but it works on my test images
+
+export
+def *ext2_superblock = {
+  inodes_count: u32l
+  blocks_count: u32l
+  r_blocks_count: u32l
+  free_blocks_count: u32l
+  free_inodes_count: u32l
+  first_data_block: u32l
+  log_block_size: u32l
+  log_frag_size: u32l
+  blocks_per_group: u32l
+  frags_per_group: u32l
+  inodes_per_group: u32l
+  mtime: u32l
+  wtime: u32l
+  mnt_count: u16l
+  max_mnt_count: u16l
+  magic: u16l
+  state: u16l
+  errors: u16l
+  minor_rev_level: u16l 
+  lastcheck: u32l
+  checkinterval: u32l
+  creator_os: u32l
+  rev_level: u32l
+  def_resuid: u16l
+  def_resgid: u16l
+  first_ino: u32l 
+  inode_size: u16l 
+  block_group_nr: u16l 
+  feature_compat: u32l 
+  feature_incompat: u32l 
+  feature_ro_compat: u32l 
+  uuid: [16]
+  volume_name: [16]
+  last_mounted: [64]
+  algorithm_usage_bitmap: u32l
+  prealloc_blocks: u8
+  prealloc_dir_blocks: u8
+  [2]
+  journal_uuid: u8[16]
+  journal_inum: u32l
+  journal_dev: u32l
+  last_orphan: u32l
+  hash_seed: u32l[4]
+  def_hash_version: u8
+  [3]
+  default_mount_opts: u32l
+  first_meta_bg: u32l
+  u32l[190]
+}
+
+static superblock = ext2_superblock at 1024
+
+static block_size = 1024 << superblock.log_block_size
+static inode_size = superblock.rev_level if 0 then 128 else superblock.inode_size
+
+export
+def *ext2_group_desc = {
+  block_bitmap: u32l
+  inode_bitmap: u32l
+  inode_table: u32l
+  free_blocks_count: u16l
+  free_inodes_count: u16l
+  used_dirs_count: u16l
+  pad: u16l
+  reserved: u32l[3]
+}
+
+static group_descs = ext2_group_desc[superblock.blocks_count / superblock.blocks_per_group] at
+                                                              math.max(2048, block_size)
+
+fun inode_at(idx: int) = {:
+  let group = idx / superblock.inodes_per_group
+  let offset = idx % superblock.inodes_per_group
+  let inodes_start = group_descs.[group].inode_table * block_size
+  let return = inode at (inodes_start + offset * inode_size)
+:}
+
+def *inode_ptr = {
+  inode_idx: u32l
+  | inode_idx if 0 then nil
+  | let pointee = inode_at(inode_idx - 1)
+}
+
+def *block_ptr(data: *'t) = {
+  block: u32l
+  | block if 0 then nil
+  | let pointee = data at (block * block_size)
+}
+
+def *indirect(data: *'t) = block_ptr(data)[block_size / u32l.sizeof]
+
+def *data_blocks(data: *'t) = {
+  direct: block_ptr(data)[12]
+  indirect1: block_ptr(indirect(data))
+  indirect2: block_ptr(indirect(indirect(data)))
+  indirect3: block_ptr(indirect(indirect(indirect(data))))
+}
+
+fun inode_type(mode: int) = {:
+  let masked = mode & 0xF000
+  | let fifo = masked if 0x1000
+  | let char_dev = masked if 0x2000
+  | let dir = masked if 0x4000
+  | let block_dev = masked if 0x6000
+  | let file = masked if 0x8000
+  | let symlink = masked if 0xA000
+  | let socket = masked if 0xC000
+  | let unknown = masked
+:}
+
+def *byte_block = [block_size]
+
+def *dir_entry = {
+  inode_idx: inode_ptr if !eof and pointee
+  rec_len: u16l
+  name_len: u8
+  file_type: u8
+  name: [rec_len - 8] |> [name_len] 
+}
+
+def *dir_entries = [block_size] |> list.list(dir_entry)
+
+export
+def *inode = {
+  mode: u16l
+  let mode_type = inode_type(mode)
+  uid: u16l
+  size: u32l
+  atime: u32l
+  ctime: u32l
+  mtime: u32l
+  dtime: u32l
+  gid: u16l
+  links_count: u16l
+  blocks: u32l
+  flags: u32l
+  osd1: u32l
+  block_bytes: [u32l.sizeof * 15]
+  | let file = mode_type if file then (block_bytes *> data_blocks(byte_block))
+  | let dir = mode_type if dir then (block_bytes *> data_blocks(dir_entries))
+  | let short_symlink = mode_type if symlink then size if 0..59 then (block_bytes *> [size])
+  | let symlink = mode_type if symlink then (block_bytes *> byte_block)
+  | let dev = mode_type if char_dev or block_dev then (block_bytes *> {
+      minor: u8
+      major: u8
+    })
+  | nil
+  generation: u32l
+  file_acl: u32l
+  dir_acl: u32l
+  faddr: u32l
+  osd2: u32l[3]
+}
+
+export
+fun *root = {
+  let root_inode = inode_at(1)
+}
