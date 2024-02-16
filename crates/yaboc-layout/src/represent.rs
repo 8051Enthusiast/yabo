@@ -9,10 +9,11 @@ use yaboc_base::{
     hash::StableHash,
     interner::{DefId, FieldName, Identifier},
 };
+use yaboc_target::layout::PSize;
 
 use crate::ILayout;
 
-use super::{prop::PSize, IMonoLayout, Layout, Layouts, MonoLayout};
+use super::{IMonoLayout, Layout, Layouts, MonoLayout};
 use yaboc_absint::AbsInt;
 
 impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {

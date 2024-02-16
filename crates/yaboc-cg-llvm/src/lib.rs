@@ -44,7 +44,6 @@ use yaboc_layout::{
     canon_layout,
     collect::{root_req, LayoutCollection},
     mir_subst::FunctionSubstitute,
-    prop::{CodegenTypeContext, PSize, SizeAlign, TargetSized},
     represent::{truncated_hex, LayoutPart},
     vtable::{
         self, ArrayVTableFields, BlockVTableFields, FunctionVTableFields, ParserFun,
@@ -54,6 +53,7 @@ use yaboc_layout::{
 };
 use yaboc_mir::{CallMeta, Mirs, ReturnStatus};
 use yaboc_req::RequirementSet;
+use yaboc_target::layout::{CodegenTypeContext, PSize, SizeAlign, TargetSized};
 use yaboc_types::{PrimitiveType, Type, TypeInterner};
 
 use self::{convert_mir::MirTranslator, convert_thunk::ThunkContext};
@@ -62,6 +62,7 @@ pub struct CodeGenCtx<'llvm, 'comp> {
     llvm: &'llvm Context,
     target: TargetMachine,
     target_data: TargetData,
+    yabo_target: yaboc_target::Target,
     builder: Builder<'llvm>,
     pass_options: PassBuilderOptions,
     module: Module<'llvm>,
@@ -90,13 +91,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let builder = llvm_context.create_builder();
         let module = llvm_context.create_module("yabo");
         let cfg = compiler_database.db.config();
+        let yabo_target = yaboc_target::target(&cfg.target_triple).unwrap();
         let triple = TargetTriple::create(&cfg.target_triple);
         let target = Target::from_triple(&triple)
-            .expect("no")
+            .unwrap()
             .create_target_machine(
                 &triple,
-                &cfg.target_cpu,
-                &cfg.target_features,
+                cfg.target_cpu.as_deref().unwrap_or(yabo_target.default_cpu),
+                cfg.target_features
+                    .as_deref()
+                    .unwrap_or(yabo_target.default_features),
                 OptimizationLevel::Aggressive,
                 RelocMode::PIC,
                 CodeModel::Default,
@@ -114,6 +118,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         Ok(CodeGenCtx {
             llvm: llvm_context,
             target,
+            yabo_target,
             builder,
             pass_options: pbo,
             module,
@@ -239,7 +244,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn word_size(&self) -> u64 {
-        <*const u8>::tsize().size
+        <*const u8>::tsize(&self.yabo_target.data).size
     }
 
     fn layout_inner_offset(&self, layout: ILayout<'comp>) -> u64 {
@@ -740,7 +745,7 @@ impl<'llvm, 'comp> CodegenTypeContext for CodeGenCtx<'llvm, 'comp> {
         self.llvm.i8_type().array_type(0).into()
     }
 
-    fn array(&mut self, ty: Self::Type, size: yaboc_layout::prop::PSize) -> Self::Type {
+    fn array(&mut self, ty: Self::Type, size: yaboc_target::layout::PSize) -> Self::Type {
         ty.array_type(size.try_into().expect("array size too big"))
             .into()
     }

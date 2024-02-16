@@ -1,7 +1,6 @@
 #![allow(clippy::type_complexity)]
 pub mod collect;
 pub mod mir_subst;
-pub mod prop;
 pub mod represent;
 pub mod vtable;
 use std::cmp::Ordering;
@@ -23,10 +22,10 @@ use yaboc_hir::{self as hir, HirIdWrapper};
 use yaboc_hir_types::{DerefLevel, NominalId};
 use yaboc_mir::Mirs;
 use yaboc_resolve::expr::{Resolved, ResolvedAtom, ValBinOp, ValUnOp, ValVarOp};
+use yaboc_target::layout::{PSize, SizeAlign, TargetLayoutData, TargetSized, Zst};
 use yaboc_types::{PrimitiveType, Type, TypeId, TypeInterner};
 
 pub use self::collect::TailInfo;
-use self::prop::{PSize, SizeAlign, TargetSized, Zst};
 use self::represent::{LayoutHasher, LayoutPart, LayoutSymbol};
 
 #[derive(Clone, PartialEq, Eq, Default, Debug)]
@@ -686,8 +685,9 @@ impl<'a> ILayout<'a> {
         if let Some(sa) = ctx.dcx.sizes.get(&self) {
             return Ok(*sa);
         }
+        let data = &ctx.dcx.target_data;
         let ret = match &self.layout.1 {
-            Layout::None => Zst::tsize(),
+            Layout::None => Zst::tsize(data),
             Layout::Mono(MonoLayout::Block(id, fields), _) => {
                 self.block_manifestation(ctx, *id, fields)?.size
             }
@@ -709,27 +709,27 @@ impl<'a> ILayout<'a> {
             Layout::Mono(MonoLayout::NominalParser(id, args, _), _) => {
                 self.nominal_parser_manifestation(ctx, *id, args)?.size
             }
-            Layout::Mono(MonoLayout::SlicePtr, _) => <&Zst>::tsize().array(2),
-            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Bit), _) => bool::tsize(),
-            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Char), _) => char::tsize(),
-            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int), _) => i64::tsize(),
-            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Unit), _) => Zst::tsize(),
-            Layout::Mono(MonoLayout::Primitive(PrimitiveType::U8), _) => <&Zst>::tsize(),
+            Layout::Mono(MonoLayout::SlicePtr, _) => <&Zst>::tsize(data).array(2),
+            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Bit), _) => bool::tsize(data),
+            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Char), _) => char::tsize(data),
+            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int), _) => i64::tsize(data),
+            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Unit), _) => Zst::tsize(data),
+            Layout::Mono(MonoLayout::Primitive(PrimitiveType::U8), _) => <&Zst>::tsize(data),
             Layout::Mono(
                 MonoLayout::Single
                 | MonoLayout::Nil
                 | MonoLayout::Regex(_, _)
                 | MonoLayout::ArrayParser(None),
                 _,
-            ) => Zst::tsize(),
+            ) => Zst::tsize(data),
             Layout::Mono(MonoLayout::Tuple(elements), _) => {
-                let mut size = Zst::tsize();
+                let mut size = Zst::tsize(data);
                 for element in elements {
                     size = size.cat(element.size_align(ctx)?);
                 }
                 size
             }
-            Layout::Multi(m) => m.layouts.iter().try_fold(Zst::tsize(), |sa, layout| {
+            Layout::Multi(m) => m.layouts.iter().try_fold(Zst::tsize(data), |sa, layout| {
                 Ok::<_, SilencedError>(sa.union(layout.size_align(ctx)?))
             })?,
         };
@@ -740,7 +740,7 @@ impl<'a> ILayout<'a> {
     pub fn size_align(self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> SResult<SizeAlign> {
         let size = self.size_align_without_vtable(ctx)?;
         Ok(if let Layout::Multi(_) = self.layout.1 {
-            <&Zst>::tsize().cat(size)
+            <&Zst>::tsize(&ctx.dcx.target_data).cat(size)
         } else {
             size
         })
@@ -927,16 +927,18 @@ pub struct LayoutContext<'a> {
     manifestations: FxHashMap<ILayout<'a>, Arc<StructManifestation>>,
     hashes: LayoutHasher<'a>,
     globals: FxHashMap<hir::ParserDefId, (IMonoLayout<'a>, ILayout<'a>)>,
+    target_data: TargetLayoutData,
 }
 
 impl<'a> LayoutContext<'a> {
-    pub fn new(intern: Interner<'a, InternedLayout<'a>>) -> Self {
+    pub fn new(intern: Interner<'a, InternedLayout<'a>>, target_data: TargetLayoutData) -> Self {
         Self {
             intern,
             sizes: Default::default(),
             manifestations: Default::default(),
             hashes: LayoutHasher::new(),
             globals: Default::default(),
+            target_data,
         }
     }
     pub fn intern(&mut self, layout: InternedLayout<'a>) -> ILayout<'a> {
@@ -1258,7 +1260,7 @@ def *main = {
         );
         let bump = Bump::new();
         let intern = Interner::<InternedLayout>::new(&bump);
-        let layout_ctx = LayoutContext::new(intern);
+        let layout_ctx = LayoutContext::new(intern, yaboc_target::layout::POINTER64);
         let mut outlayer = AbsIntCtx::<ILayout>::new(&ctx.db, layout_ctx);
         let main = ctx.parser("main");
         let main_ty = ctx
@@ -1351,7 +1353,7 @@ def *test = [2][3][5]
         );
         let bump = Bump::new();
         let intern = Interner::<InternedLayout>::new(&bump);
-        let layout_ctx = LayoutContext::new(intern);
+        let layout_ctx = LayoutContext::new(intern, yaboc_target::layout::POINTER64);
         let mut outlayer = AbsIntCtx::<ILayout>::new(&ctx.db, layout_ctx);
         let test = ctx.parser("test");
         let test_ty = ctx

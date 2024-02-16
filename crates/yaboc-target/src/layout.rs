@@ -12,38 +12,10 @@ pub trait CodegenTypeContext {
 }
 
 pub type PSize = u64;
-pub const TARGET_POINTER_SA: SizeAlign = SizeAlign {
-    size: 8,
-    align_mask: 0b111,
-};
-pub const TARGET_SIZE_SA: SizeAlign = SizeAlign {
-    size: 8,
-    align_mask: 0b111,
-};
-pub const TARGET_BIT_SA: SizeAlign = SizeAlign {
-    size: 1,
-    align_mask: 0,
-};
-pub const TARGET_BYTE_SA: SizeAlign = SizeAlign {
-    size: 1,
-    align_mask: 0,
-};
-pub const TARGET_CHAR_SA: SizeAlign = SizeAlign {
-    size: 4,
-    align_mask: 0b11,
-};
-pub const TARGET_INT_SA: SizeAlign = SizeAlign {
-    size: 8,
-    align_mask: 0b111,
-};
-pub const TARGET_ZST_SA: SizeAlign = SizeAlign {
-    size: 0,
-    align_mask: 0,
-};
 
 pub struct Zst([u8; 0]);
 
-const fn max(a: PSize, b: PSize) -> PSize {
+pub(crate) const fn max(a: PSize, b: PSize) -> PSize {
     if a > b {
         a
     } else {
@@ -95,16 +67,31 @@ impl SizeAlign {
     pub const fn array_offset(self, index: PSize) -> PSize {
         self.stride() * index
     }
+    pub const fn int_sa(size_log: u8) -> Self {
+        SizeAlign {
+            size: 1 << size_log,
+            align_mask: (1 << size_log) - 1,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct TargetLayoutData {
+    pub pointer_sa: SizeAlign,
+    pub int_sa: SizeAlign,
+    pub byte_sa: SizeAlign,
+    pub bit_sa: SizeAlign,
+    pub char_sa: SizeAlign,
 }
 
 pub trait TargetSized: Sized {
-    fn tsize() -> SizeAlign;
+    fn tsize(data: &TargetLayoutData) -> SizeAlign;
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type;
 }
 
 impl<T: TargetSized> TargetSized for &T {
-    fn tsize() -> SizeAlign {
-        TARGET_POINTER_SA
+    fn tsize(data: &TargetLayoutData) -> SizeAlign {
+        data.pointer_sa
     }
 
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
@@ -114,8 +101,8 @@ impl<T: TargetSized> TargetSized for &T {
 }
 
 impl<T: TargetSized> TargetSized for *const T {
-    fn tsize() -> SizeAlign {
-        TARGET_POINTER_SA
+    fn tsize(data: &TargetLayoutData) -> SizeAlign {
+        data.pointer_sa
     }
 
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
@@ -125,8 +112,8 @@ impl<T: TargetSized> TargetSized for *const T {
 }
 
 impl<T: TargetSized> TargetSized for *mut T {
-    fn tsize() -> SizeAlign {
-        TARGET_POINTER_SA
+    fn tsize(data: &TargetLayoutData) -> SizeAlign {
+        data.pointer_sa
     }
 
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
@@ -136,8 +123,8 @@ impl<T: TargetSized> TargetSized for *mut T {
 }
 
 impl<T: TargetSized> TargetSized for Option<&T> {
-    fn tsize() -> SizeAlign {
-        <&T>::tsize()
+    fn tsize(data: &TargetLayoutData) -> SizeAlign {
+        <&T>::tsize(data)
     }
 
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
@@ -149,8 +136,8 @@ impl<T: TargetSized> TargetSized for Option<&T> {
 macro_rules! fn_impl {
     ($($name:ident),*) => {
         impl<Ret: TargetSized, $($name: TargetSized),*> TargetSized for fn($($name),*) -> Ret {
-            fn tsize() -> SizeAlign {
-                TARGET_POINTER_SA
+            fn tsize(data: &TargetLayoutData) -> SizeAlign {
+                data.pointer_sa
             }
 
             fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
@@ -163,8 +150,8 @@ macro_rules! fn_impl {
             }
         }
         impl<Ret: TargetSized, $($name: TargetSized),*> TargetSized for Option<fn($($name),*) -> Ret> {
-            fn tsize() -> SizeAlign {
-                TARGET_POINTER_SA
+            fn tsize(data: &TargetLayoutData) -> SizeAlign {
+                data.pointer_sa
             }
 
             fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
@@ -180,14 +167,21 @@ macro_rules! fn_impl {
 }
 
 fn_impl!(A);
+
 fn_impl!(A, B);
+
 fn_impl!(A, B, C);
+
 fn_impl!(A, B, C, D);
+
 fn_impl!(A, B, C, D, E);
 
 impl TargetSized for Zst {
-    fn tsize() -> SizeAlign {
-        TARGET_ZST_SA
+    fn tsize(_: &TargetLayoutData) -> SizeAlign {
+        SizeAlign {
+            size: 0,
+            align_mask: 0,
+        }
     }
 
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
@@ -196,8 +190,8 @@ impl TargetSized for Zst {
 }
 
 impl TargetSized for char {
-    fn tsize() -> SizeAlign {
-        TARGET_CHAR_SA
+    fn tsize(data: &TargetLayoutData) -> SizeAlign {
+        data.char_sa
     }
 
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
@@ -206,8 +200,8 @@ impl TargetSized for char {
 }
 
 impl TargetSized for i64 {
-    fn tsize() -> SizeAlign {
-        TARGET_INT_SA
+    fn tsize(data: &TargetLayoutData) -> SizeAlign {
+        data.int_sa
     }
 
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
@@ -216,8 +210,8 @@ impl TargetSized for i64 {
 }
 
 impl TargetSized for u8 {
-    fn tsize() -> SizeAlign {
-        TARGET_BYTE_SA
+    fn tsize(data: &TargetLayoutData) -> SizeAlign {
+        data.byte_sa
     }
 
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
@@ -226,8 +220,8 @@ impl TargetSized for u8 {
 }
 
 impl TargetSized for u64 {
-    fn tsize() -> SizeAlign {
-        TARGET_INT_SA
+    fn tsize(data: &TargetLayoutData) -> SizeAlign {
+        data.int_sa
     }
 
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
@@ -236,8 +230,8 @@ impl TargetSized for u64 {
 }
 
 impl TargetSized for usize {
-    fn tsize() -> SizeAlign {
-        TARGET_SIZE_SA
+    fn tsize(data: &TargetLayoutData) -> SizeAlign {
+        data.pointer_sa
     }
 
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
@@ -246,8 +240,8 @@ impl TargetSized for usize {
 }
 
 impl TargetSized for bool {
-    fn tsize() -> SizeAlign {
-        TARGET_BIT_SA
+    fn tsize(data: &TargetLayoutData) -> SizeAlign {
+        data.bit_sa
     }
 
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
@@ -256,8 +250,8 @@ impl TargetSized for bool {
 }
 
 impl<T: TargetSized, const N: usize> TargetSized for [T; N] {
-    fn tsize() -> SizeAlign {
-        T::tsize().array(N as PSize)
+    fn tsize(data: &TargetLayoutData) -> SizeAlign {
+        T::tsize(data).array(N as PSize)
     }
 
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
@@ -272,34 +266,106 @@ macro_rules! target_struct {
         #[repr(C)]
         $pub struct $name {$($field_pub $field: $ty),*}
 
-        impl $crate::prop::TargetSized for $name {
-            fn tsize() -> $crate::prop::SizeAlign {
-                $crate::prop::Zst::tsize()
+        impl $crate::layout::TargetSized for $name {
+            fn tsize(data: &$crate::layout::TargetLayoutData) -> $crate::layout::SizeAlign {
+                $crate::layout::Zst::tsize(data)
                 $(
-                    .cat(<$ty as $crate::prop::TargetSized>::tsize())
+                    .cat(<$ty as $crate::layout::TargetSized>::tsize(data))
                 )*
             }
 
-            fn codegen_ty<Ctx: $crate::prop::CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
+            fn codegen_ty<Ctx: $crate::layout::CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
                 $name::struct_type(ctx).into()
             }
         }
 
         impl $name {
-            pub fn struct_type<Ctx: $crate::prop::CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::StructType {
+            pub fn struct_type<Ctx: $crate::layout::CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::StructType {
                 let arr = &[$(
-                    <$ty as $crate::prop::TargetSized>::codegen_ty(ctx)
+                    <$ty as $crate::layout::TargetSized>::codegen_ty(ctx)
                 ),*];
                 ctx.tuple(arr)
             }
         }
 
-        paste::paste! {
-            #[repr(i32)]
+        $crate::paste::paste! {
             #[allow(non_camel_case_types)]
+            #[allow(unused)]
             $pub enum [<$name Fields>] {
                 $($field),*
             }
         }
     };
+}
+
+pub const POINTER64: TargetLayoutData = TargetLayoutData {
+    pointer_sa: SizeAlign {
+        size: 8,
+        align_mask: 7,
+    },
+    int_sa: SizeAlign {
+        size: 8,
+        align_mask: 7,
+    },
+    byte_sa: SizeAlign {
+        size: 1,
+        align_mask: 0,
+    },
+    bit_sa: SizeAlign {
+        size: 1,
+        align_mask: 0,
+    },
+    char_sa: SizeAlign {
+        size: 4,
+        align_mask: 3,
+    },
+};
+
+pub const POINTER32: TargetLayoutData = TargetLayoutData {
+    pointer_sa: SizeAlign {
+        size: 4,
+        align_mask: 3,
+    },
+    int_sa: SizeAlign {
+        size: 4,
+        align_mask: 3,
+    },
+    byte_sa: SizeAlign {
+        size: 1,
+        align_mask: 0,
+    },
+    bit_sa: SizeAlign {
+        size: 1,
+        align_mask: 0,
+    },
+    char_sa: SizeAlign {
+        size: 4,
+        align_mask: 3,
+    },
+};
+
+#[cfg(test)]
+mod tests {
+    use crate::layout::SizeAlign;
+
+    use super::TargetSized;
+
+    #[test]
+    fn struct_size() {
+        target_struct!(
+            pub struct Test {
+                pub a: u8,
+                pub b: u64,
+                pub c: u8,
+            }
+        );
+        let data = super::POINTER64;
+        assert_eq!(
+            Test::tsize(&data),
+            SizeAlign {
+                size: 17,
+                align_mask: 7
+            }
+        );
+    }
 }

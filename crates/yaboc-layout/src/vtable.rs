@@ -1,4 +1,4 @@
-use crate::target_struct;
+use yaboc_target::target_struct;
 
 pub type TypecastFun = fn(ret: *mut u8, from: *const u8, target_head: i64) -> i64;
 pub type MaskFun = fn(ret: *mut u8) -> usize;
@@ -95,35 +95,36 @@ target_struct! {
 
 #[cfg(test)]
 mod tests {
-    use crate::prop::{SizeAlign, TargetSized};
+    use yaboc_target::layout::{SizeAlign, TargetSized};
 
     use super::*;
 
     #[test]
     fn vtable_sizes() {
+        let data = yaboc_target::layout::POINTER64;
         assert_eq!(
-            VTableHeader::tsize(),
+            VTableHeader::tsize(&data),
             SizeAlign {
                 size: 48,
                 align_mask: 0b111
             }
         );
         assert_eq!(
-            BlockVTable::tsize(),
+            BlockVTable::tsize(&data),
             SizeAlign {
                 size: 56,
                 align_mask: 0b111,
             }
         );
         assert_eq!(
-            ParserVTable::tsize(),
+            ParserVTable::tsize(&data),
             SizeAlign {
                 size: 56,
                 align_mask: 0b111,
             }
         );
         assert_eq!(
-            ArrayVTable::tsize(),
+            ArrayVTable::tsize(&data),
             SizeAlign {
                 size: 96,
                 align_mask: 0b111,
