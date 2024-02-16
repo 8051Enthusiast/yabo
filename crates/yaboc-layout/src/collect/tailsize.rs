@@ -1,10 +1,10 @@
 use fxhash::{FxHashMap, FxHashSet};
 use yaboc_mir::{CallMeta, FunKind, MirInstr, MirKind};
 use yaboc_req::RequirementSet;
+use yaboc_target::layout::SizeAlign;
 
 use crate::{
-    mir_subst::function_substitute, prop::SizeAlign, AbsLayoutCtx, ILayout, IMonoLayout,
-    LayoutError, MonoLayout,
+    mir_subst::function_substitute, AbsLayoutCtx, ILayout, IMonoLayout, LayoutError, MonoLayout,
 };
 
 #[derive(Default, Clone, Copy)]

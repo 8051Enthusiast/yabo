@@ -1,0 +1,9 @@
+[package]
+name = "yaboc-target"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+license.workspace = true
+
+[dependencies]
+paste = "1.0.14"

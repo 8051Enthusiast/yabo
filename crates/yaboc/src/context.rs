@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, io::Write, process::Command, sync::Arc};
+use std::{ffi::OsStr, io::Write, sync::Arc};
 
 use bumpalo::Bump;
 use inkwell::support::LLVMString;
@@ -15,6 +15,7 @@ use yaboc_database::YabocDatabase;
 use yaboc_hir::represent::HirGraph;
 use yaboc_layout::{InternedLayout, LayoutContext};
 use yaboc_mir::{print_all_mir, print_all_mir_graphs};
+use yaboc_target::Target;
 const ERROR_FNS: &[fn(&YabocDatabase) -> Vec<Report>] = &[
     yaboc_ast::error::errors,
     yaboc_hir::error::errors,
@@ -24,27 +25,32 @@ const ERROR_FNS: &[fn(&YabocDatabase) -> Vec<Report>] = &[
     yaboc_constraint::error::errors,
 ];
 
-#[derive(Default)]
-pub struct Driver(Context<YabocDatabase>);
+pub struct Driver {
+    ctx: Context<YabocDatabase>,
+    target: Target,
+}
 
 impl std::ops::Deref for Driver {
     type Target = Context<YabocDatabase>;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.ctx
     }
 }
 
 impl std::ops::DerefMut for Driver {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        &mut self.ctx
     }
 }
 
 impl Driver {
-    pub fn set_config(&mut self, config: Config) {
+    pub fn new(config: Config) -> Option<Self> {
+        let target = yaboc_target::target(&config.target_triple)?;
+        let mut ctx = Context::<YabocDatabase>::default();
         let config = Arc::new(config);
-        self.db.set_config(config);
+        ctx.db.set_config(config);
+        Some(Self { ctx, target })
     }
     fn diagnostics(&self) -> Vec<Report> {
         let mut ret = self.collection_reports.clone();
@@ -125,7 +131,7 @@ impl Driver {
         let llvm = inkwell::context::Context::create();
         let bump = Bump::new();
         let intern = low_effort_interner::Interner::<InternedLayout>::new(&bump);
-        let layout_ctx = LayoutContext::new(intern);
+        let layout_ctx = LayoutContext::new(intern, self.target.data);
         let mut layouts = yaboc_layout::AbsLayoutCtx::new(&self.db, layout_ctx);
         let mut codegen = match yaboc_cg_llvm::CodeGenCtx::new(&llvm, self, &mut layouts) {
             Ok(x) => x,
@@ -146,14 +152,11 @@ impl Driver {
     pub fn write_shared_lib(&self, outfile: &OsStr) -> Result<(), String> {
         let temp_object_file = NamedTempFile::new().map_err(|e| e.to_string())?;
         let temp_path = temp_object_file.into_temp_path();
-        let temp_path = temp_path.as_os_str();
-        self.codegen_and_then(|codegen| codegen.object_file(temp_path))?;
-        Command::new("clang")
-            .arg("-shared")
-            .arg("-o")
-            .arg(outfile)
-            .arg(temp_path)
-            .status()
+        let temp_path = temp_path.to_path_buf();
+        self.codegen_and_then(|codegen| codegen.object_file(temp_path.as_os_str()))?;
+        self.target
+            .linker
+            .link_shared(&temp_path, outfile.as_ref())
             .map_err(|e| e.to_string())?;
         Ok(())
     }

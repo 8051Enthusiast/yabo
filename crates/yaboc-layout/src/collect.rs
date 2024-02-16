@@ -11,20 +11,18 @@ use yaboc_hir::{HirIdWrapper, ParserDefId};
 use yaboc_hir_types::DerefLevel;
 use yaboc_mir::{CallMeta, MirInstr, MirKind, Place};
 use yaboc_req::{NeededBy, RequirementSet};
+use yaboc_target::layout::{PSize, SizeAlign};
 use yaboc_types::{PrimitiveType, Type, TypeId};
 
 use crate::{
     init_globals,
     mir_subst::{function_substitute, FunctionSubstitute},
-    prop::SizeAlign,
 };
 
 pub use self::tailsize::TailInfo;
 use self::tailsize::{CallSite, TailCollector};
 
-use super::{
-    canon_layout, prop::PSize, AbsLayoutCtx, ILayout, IMonoLayout, Layout, LayoutError, MonoLayout,
-};
+use super::{canon_layout, AbsLayoutCtx, ILayout, IMonoLayout, Layout, LayoutError, MonoLayout};
 
 const TRACE_COLLECTION: bool = false;
 

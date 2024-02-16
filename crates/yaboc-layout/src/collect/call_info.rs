@@ -1,5 +1,5 @@
 use super::LayoutSet;
-use crate::prop::PSize;
+use yaboc_target::layout::PSize;
 use crate::ILayout;
 use crate::IMonoLayout;
 use fxhash::FxHashMap;

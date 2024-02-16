@@ -8,6 +8,7 @@ description.workspace = true
 [dependencies]
 salsa = "0.16.1"
 yaboc-base = { path = "../yaboc-base" }
+yaboc-target = { path = "../yaboc-target" }
 yaboc-expr = { path = "../yaboc-expr" }
 yaboc-ast = { path = "../yaboc-ast" }
 yaboc-hir = { path = "../yaboc-hir" }
@@ -21,6 +22,5 @@ yaboc-mir = { path = "../yaboc-mir" }
 yaboc-req = { path = "../yaboc-req" }
 fxhash = "0.2.1"
 petgraph = "0.6.3"
-paste = "1.0.12"
 sha2 = "0.10.7"
 bumpalo = "3.13.0"

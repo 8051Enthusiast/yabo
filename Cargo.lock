@@ -1078,6 +1078,7 @@ dependencies = [
  "yaboc-layout",
  "yaboc-mir",
  "yaboc-resolve",
+ "yaboc-target",
  "yaboc-types",
 ]
 
@@ -1143,6 +1144,7 @@ dependencies = [
  "yaboc-mir",
  "yaboc-req",
  "yaboc-resolve",
+ "yaboc-target",
  "yaboc-types",
 ]
 
@@ -1241,7 +1243,6 @@ version = "0.1.0"
 dependencies = [
  "bumpalo",
  "fxhash",
- "paste",
  "petgraph",
  "salsa",
  "sha2",
@@ -1256,6 +1257,7 @@ dependencies = [
  "yaboc-mir",
  "yaboc-req",
  "yaboc-resolve",
+ "yaboc-target",
  "yaboc-types",
 ]
 
@@ -1307,6 +1309,13 @@ dependencies = [
  "yaboc-base",
  "yaboc-expr",
  "yaboc-hir",
+]
+
+[[package]]
+name = "yaboc-target"
+version = "0.1.0"
+dependencies = [
+ "paste",
 ]
 
 [[package]]

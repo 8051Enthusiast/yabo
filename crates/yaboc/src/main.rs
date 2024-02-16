@@ -50,14 +50,14 @@ fn main() {
             }
         })
         .collect();
-    let mut context = Driver::default();
-    context.set_config(Config {
+    let Some(mut context) = Driver::new(Config {
         target_triple: String::from("x86_64-pc-linux-gnu"),
-        // if x86-64 was so great,,,
-        target_cpu: String::from("skylake"),
-        target_features: String::from(""),
         output_json: args.output_json,
-    });
+        target_cpu: None,
+        target_features: None,
+    }) else {
+        exit_with_message("Invalid target triple");
+    };
     let main = context.fc.add(infile).expect("Could not read file");
     context.update_db(&[main], &modules);
     if context.print_diagnostics() {
