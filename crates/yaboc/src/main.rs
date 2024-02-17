@@ -27,6 +27,8 @@ struct Args {
     emit: EmitKind,
     #[clap(long)]
     mir_emit_path: Option<String>,
+    #[clap(long)]
+    target: Option<String>,
     #[clap(short, long)]
     module: Vec<String>,
     infile: String,
@@ -50,13 +52,17 @@ fn main() {
             }
         })
         .collect();
-    let Some(mut context) = Driver::new(Config {
-        target_triple: String::from("x86_64-pc-linux-gnu"),
+    let target_triple = args
+        .target
+        .unwrap_or_else(|| "x86_64-unknown-linux-gnu".to_string());
+    let mut context = match Driver::new(Config {
+        target_triple,
         output_json: args.output_json,
         target_cpu: None,
         target_features: None,
-    }) else {
-        exit_with_message("Invalid target triple");
+    }) {
+        Ok(ctx) => ctx,
+        Err(e) => exit_with_message(&format!("Could not create context: {e}")),
     };
     let main = context.fc.add(infile).expect("Could not read file");
     context.update_db(&[main], &modules);

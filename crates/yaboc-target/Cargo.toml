@@ -7,3 +7,4 @@ license.workspace = true
 
 [dependencies]
 paste = "1.0.14"
+tempfile = "3.10.0"

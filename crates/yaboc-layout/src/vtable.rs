@@ -6,7 +6,7 @@ pub type MaskFun = fn(ret: *mut u8) -> usize;
 target_struct! {
     pub struct VTableHeader {
         pub head: i64,
-        pub deref_level: usize,
+        pub deref_level: i64,
         pub typecast_impl: TypecastFun,
         pub mask_impl: MaskFun,
         pub size: usize,

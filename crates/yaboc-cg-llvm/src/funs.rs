@@ -13,7 +13,6 @@ use yaboc_resolve::Resolves;
 use crate::{
     convert_regex::RegexTranslator,
     convert_thunk::{BlockThunk, TransmuteCopyThunk, TypecastThunk, ValThunk},
-    defs::TAILCC,
 };
 
 use super::*;
@@ -57,7 +56,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         let call = self.builder.build_call(fun, &args, "call");
         call.set_tail_call(tail);
-        call.set_call_convention(TAILCC);
+        call.set_call_convention(self.tailcc());
         let ret = call.try_as_basic_value().left().unwrap().into_int_value();
         self.builder.build_return(Some(&ret));
         wrapper

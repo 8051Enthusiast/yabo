@@ -45,12 +45,21 @@ impl std::ops::DerefMut for Driver {
 }
 
 impl Driver {
-    pub fn new(config: Config) -> Option<Self> {
-        let target = yaboc_target::target(&config.target_triple)?;
+    pub fn new(config: Config) -> Result<Self, String> {
+        let mut lib_path = yaboc_base::source::yabo_lib_path().ok_or_else(|| {
+            "Could not find yaboc library path. Please set the YABO_LIB_PATH environment variable"
+        })?;
+        lib_path.push("rt.c");
+        let target = yaboc_target::target(&config.target_triple, lib_path).ok_or_else(|| {
+            format!(
+                "Target triple {} is not supported by yabo",
+                config.target_triple
+            )
+        })?;
         let mut ctx = Context::<YabocDatabase>::default();
         let config = Arc::new(config);
         ctx.db.set_config(config);
-        Some(Self { ctx, target })
+        Ok(Self { ctx, target })
     }
     fn diagnostics(&self) -> Vec<Report> {
         let mut ret = self.collection_reports.clone();
@@ -133,10 +142,11 @@ impl Driver {
         let intern = low_effort_interner::Interner::<InternedLayout>::new(&bump);
         let layout_ctx = LayoutContext::new(intern, self.target.data);
         let mut layouts = yaboc_layout::AbsLayoutCtx::new(&self.db, layout_ctx);
-        let mut codegen = match yaboc_cg_llvm::CodeGenCtx::new(&llvm, self, &mut layouts) {
-            Ok(x) => x,
-            Err(e) => panic!("Error while creating codegen context: {e:#?}"),
-        };
+        let mut codegen =
+            match yaboc_cg_llvm::CodeGenCtx::new(&llvm, self, &mut layouts, self.target.clone()) {
+                Ok(x) => x,
+                Err(e) => panic!("Error while creating codegen context: {e:#?}"),
+            };
         codegen.run_codegen();
         f(codegen).map_err(|x| x.to_string())
     }

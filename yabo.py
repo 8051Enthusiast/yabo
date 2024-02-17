@@ -67,7 +67,7 @@ class VTableHeader(Structure):
     ]
     _fields_ = [
         ('head', c_int64),
-        ('deref_level', c_size_t),
+        ('deref_level', c_int64),
         ('typecast_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64)),
         ('mask_impl', CFUNCTYPE(c_size_t, _voidptr)),
         ('size', c_size_t),
