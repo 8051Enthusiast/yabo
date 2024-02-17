@@ -2,7 +2,7 @@ use inkwell::types::FunctionType;
 use yaboc_layout::{represent::ParserFunKind, vtable::NominalVTableFields};
 use yaboc_types::TypeId;
 
-use crate::{defs::TAILCC, val::CgReturnValue};
+use crate::val::CgReturnValue;
 
 use super::*;
 
@@ -197,7 +197,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             "impl_tail_call",
         );
         call_ret.set_tail_call(tail);
-        call_ret.set_call_convention(TAILCC);
+        call_ret.set_call_convention(self.tailcc());
         let ret = call_ret
             .try_as_basic_value()
             .left()
@@ -283,7 +283,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             ),
         };
         call_ret.set_tail_call(true);
-        call_ret.set_call_convention(TAILCC);
+        call_ret.set_call_convention(self.tailcc());
         let ret = call_ret
             .try_as_basic_value()
             .left()

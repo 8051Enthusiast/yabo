@@ -9,7 +9,6 @@ mod vtables;
 
 use std::{ffi::OsStr, fmt::Debug, path::Path, rc::Rc};
 
-use defs::TAILCC;
 use fxhash::FxHashMap;
 use getset::Callable;
 use inkwell::{
@@ -76,6 +75,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         llvm_context: &'llvm Context,
         compiler_database: &'comp yaboc_base::Context<YabocDatabase>,
         layouts: &'comp mut AbsLayoutCtx<'comp>,
+        yabo_target: yaboc_target::Target,
     ) -> Result<Self, LayoutError> {
         let pds = compiler_database.db.all_exported_parserdefs();
         let collected_layouts =
@@ -91,7 +91,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let builder = llvm_context.create_builder();
         let module = llvm_context.create_module("yabo");
         let cfg = compiler_database.db.config();
-        let yabo_target = yaboc_target::target(&cfg.target_triple).unwrap();
         let triple = TargetTriple::create(&cfg.target_triple);
         let target = Target::from_triple(&triple)
             .unwrap()
@@ -361,7 +360,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         args: &[BasicMetadataValueEnum<'llvm>],
     ) -> IntValue<'llvm> {
         let call = self.builder.build_call(call_fun, args, "call");
-        call.set_call_convention(TAILCC);
+        call.set_call_convention(self.tailcc());
         call.try_as_basic_value()
             .left()
             .expect("function shuold not return void")

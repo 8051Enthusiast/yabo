@@ -214,6 +214,18 @@ impl std::fmt::Display for LibKind {
     }
 }
 
+pub fn yabo_lib_path() -> Option<PathBuf> {
+    match std::env::var_os("YABO_LIB_PATH") {
+        Some(std_env_path) => Some(PathBuf::from(std_env_path)),
+        None => {
+            let mut yabo_dir = data_dir().unwrap();
+            yabo_dir.push("yabo");
+            yabo_dir.push("lib");
+            yabo_dir.exists().then_some(yabo_dir)
+        }
+    }
+}
+
 impl<'collection> FileResolver<'collection> {
     pub fn new(files: &'collection mut FileCollection) -> Self {
         let mut res = FileResolver {
@@ -228,15 +240,7 @@ impl<'collection> FileResolver<'collection> {
     }
 
     fn init_paths(&mut self) {
-        self.lib_path = match std::env::var_os("YABO_LIB_PATH") {
-            Some(std_env_path) => Some(PathBuf::from(std_env_path)),
-            None => {
-                let mut yabo_dir = data_dir().unwrap();
-                yabo_dir.push("yabo");
-                yabo_dir.push("lib");
-                yabo_dir.exists().then_some(yabo_dir)
-            }
-        };
+        self.lib_path = yabo_lib_path();
     }
 
     fn file_path(&self, dir: &Path, name: &str) -> Option<PathBuf> {

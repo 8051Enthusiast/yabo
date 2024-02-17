@@ -6,12 +6,17 @@ use yaboc_resolve::Resolves;
 
 use super::*;
 
-// llvm id for the tailcc calling convention
-pub const TAILCC: u32 = 18;
 pub const YABO_GLOBAL_ADDRESS: &str = "yabo_global_address";
 pub const YABO_GLOBAL_INIT: &str = "yabo_global_init";
 
 impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
+    pub(crate) fn tailcc(&self) -> u32 {
+        if self.yabo_target.use_tailcc {
+            18
+        } else {
+            0
+        }
+    }
     fn fun_val(
         &mut self,
         layout: IMonoLayout<'comp>,
@@ -205,7 +210,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> FunctionValue<'llvm> {
         let part = self.parser_layout_part(from, req, ParserFunKind::TailWrapper);
         let ret = self.ppip_fun_val(layout, part);
-        ret.set_call_conventions(TAILCC);
+        ret.set_call_conventions(self.tailcc());
         ret
     }
 
@@ -217,7 +222,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> FunctionValue<'llvm> {
         let part = self.parser_layout_part(from, req, ParserFunKind::Worker);
         let ret = self.ppip_fun_val(layout, part);
-        ret.set_call_conventions(TAILCC);
+        ret.set_call_conventions(self.tailcc());
         ret
     }
 
