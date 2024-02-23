@@ -68,7 +68,7 @@ HexTableModel::pixel_offset_global_row_range(int offset, int max) const {
   uint64_t size = global_row_count();
   auto start = size * offset / max;
   auto end = size * (offset + 1) / max;
-  return {GlobalRow{start}, GlobalRow{end}};
+  return {GlobalRow{(size_t)start}, GlobalRow{(size_t)end}};
 }
 
 int HexTableModel::row_pixel_offset(GlobalRow row, int max) const {
@@ -179,7 +179,7 @@ HexCell::HexCell(QFont font) : font(font) {
 }
 int HexTableModel::rowCount(const QModelIndex &parent) const {
   auto file_rows = global_row_count();
-  return (int)std::min(file_rows, max_view_size);
+  return (int)std::min(file_rows, (size_t)max_view_size);
 }
 int HexTableModel::local_row(GlobalRow row) const {
   auto relative = (int64_t)row.row - (int64_t)model_offset;
