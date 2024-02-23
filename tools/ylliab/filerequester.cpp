@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <qthread.h>
 #include <qvariant.h>
+#include <sstream>
 #include <stdexcept>
 #include <vector>
 
@@ -32,31 +33,34 @@ Executor::Executor(std::filesystem::path path, FileRef file_content)
     // before we dlopen it anyway, and we can only dlopen through
     // a file path)
     auto random_num = std::random_device()();
-    tmp_file = tmp_root / std::format("yabo_{:x}.so", random_num);
+    auto tmp_file_name =
+        std::string("yabo_") + std::to_string(random_num) + std::string(".so");
+    tmp_file = tmp_root / tmp_file_name;
 
     std::filesystem::copy_file(
         path, tmp_file, std::filesystem::copy_options::overwrite_existing);
   } catch (std::filesystem::filesystem_error &e) {
-    auto err = std::format("Could not create temporary file: {}", e.what());
-    throw ExecutorError(err);
+    auto err = std::stringstream()
+               << "Could not create temporary file: " << e.what();
+    throw ExecutorError(err.str());
   }
 
   lib = dlopen(tmp_file.c_str(), RTLD_LAZY);
   if (!lib) {
-    auto err =
-        std::format("Could not open file {}; {}", path.string(), dlerror());
+    auto err = std::stringstream()
+               << "Could not open file " << path.string() << "; " << dlerror();
     std::filesystem::remove(tmp_file);
-    throw ExecutorError(err);
+    throw ExecutorError(err.str());
   }
 
   auto size = reinterpret_cast<size_t *>(dlsym(lib, "yabo_max_buf_size"));
   if (!size) {
-    auto err = std::format("File does not contain yabo_ma_buf_size symbol: {}. "
-                           "Is the file in the right format?",
-                           dlerror());
+    auto err = std::stringstream()
+               << "File does not contain yabo_ma_buf_size symbol: " << dlerror()
+               << ". Is the file in the right format?";
     dlclose(lib);
     std::filesystem::remove(tmp_file);
-    throw ExecutorError(err);
+    throw ExecutorError(err.str());
   }
   auto global_address =
       reinterpret_cast<Slice *>(dlsym(lib, "yabo_global_address"));
@@ -69,10 +73,11 @@ Executor::Executor(std::filesystem::path path, FileRef file_content)
   auto global_init = reinterpret_cast<init_fun>(dlsym(lib, "yabo_global_init"));
   int64_t status = global_init();
   if (status) {
-    auto err = std::format("Global init failed with status {}", status);
+    auto err = std::stringstream()
+               << "Global init failed with status " << status;
     dlclose(lib);
     std::filesystem::remove(tmp_file);
-    throw ExecutorError(err);
+    throw ExecutorError(err.str());
   }
   vals = YaboValCreator(YaboValStorage(*size));
 }
@@ -284,8 +289,7 @@ void FileRequester::process_response(Response resp) {
     node.n_children += vals.size();
     if (vals.size() == array_fetch_size &&
         resp.metadata.kind == MessageType::ARRAY_ELEMENTS) {
-      node.state =
-          TreeNodeState::LOADED_INCOMPLETE_CHIlDREN;
+      node.state = TreeNodeState::LOADED_INCOMPLETE_CHIlDREN;
     } else {
       node.state = TreeNodeState::LOADED;
     }
@@ -495,19 +499,25 @@ std::unique_ptr<FileRequester> FileRequesterFactory::create_file_requester(
         std::make_unique<FileRequester>(p, file, parser_name, recursive_fetch);
     return req;
   } catch (std::system_error &e) {
-    auto msg = std::format("Could not open file {}: {}",
-                           file_path.toStdString(), e.what());
-    auto req = std::make_unique<FileRequester>(QString::fromStdString(msg));
+    auto msg = std::stringstream()
+               << "Could not open file " << file_path.toStdString() << ": "
+               << e.what();
+    auto req =
+        std::make_unique<FileRequester>(QString::fromStdString(msg.str()));
     return req;
   } catch (std::runtime_error &e) {
-    auto msg = std::format("Could not open file {}: {}",
-                           file_path.toStdString(), e.what());
-    auto req = std::make_unique<FileRequester>(QString::fromStdString(msg));
+    auto msg = std::stringstream()
+               << "Could not open file " << file_path.toStdString() << ": "
+               << e.what();
+    auto req =
+        std::make_unique<FileRequester>(QString::fromStdString(msg.str()));
     return req;
   } catch (ExecutorError &e) {
-    auto msg = std::format("Could not open file {}: {}",
-                           file_path.toStdString(), e.what());
-    auto req = std::make_unique<FileRequester>(QString::fromStdString(msg));
+    auto msg = std::stringstream()
+               << "Could not open file " << file_path.toStdString() << ": "
+               << e.what();
+    auto req =
+        std::make_unique<FileRequester>(QString::fromStdString(msg.str()));
     return req;
   }
 }
