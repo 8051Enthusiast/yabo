@@ -117,3 +117,43 @@ impl Linker for WasmLinker {
         Ok(())
     }
 }
+
+pub struct EmscriptenLinker {
+    wasm_ld: String,
+}
+
+impl EmscriptenLinker {
+    pub fn new() -> Self {
+        Self {
+            wasm_ld: "wasm-ld".to_string(),
+        }
+    }
+}
+
+impl Linker for EmscriptenLinker {
+    fn link_shared(&self, path: &Path, output_path: &Path) -> std::io::Result<()> {
+        let output = Command::new(&self.wasm_ld)
+            .arg("-shared")
+            .arg("--import-memory")
+            .arg("--export-dynamic")
+            .arg("--export-if-defined=__wasm_apply_data_relocs")
+            .arg("--export=__wasm_call_ctors")
+            .arg("--experimental-pic")
+            .arg("--stack-first")
+            .arg("-o")
+            .arg(output_path)
+            .arg(path)
+            .output()?;
+        if !output.status.success() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!(
+                    "Linker failed with status {}:\n{}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr)
+                ),
+            ));
+        }
+        Ok(())
+    }
+}
