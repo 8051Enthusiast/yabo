@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "color.hpp"
+#include "filecontent.hpp"
 #include "filerequester.hpp"
 #include "graph.hpp"
 #include "request.hpp"
@@ -26,16 +27,12 @@ Executor::Executor(std::filesystem::path path, FileRef file_content)
   // this is because dlopen does not work well if the file changes, and
   // global symbols would get deduplicated which is also a bad idea
   try {
-    auto tmp_root = std::filesystem::temp_directory_path();
     // note: this is essentially tmpnam, but we are cool and totally
     // allowed to do this
     // (an attacker can just mess with the file after it was created and
     // before we dlopen it anyway, and we can only dlopen through
     // a file path)
-    auto random_num = std::random_device()();
-    auto tmp_file_name =
-        std::string("yabo_") + std::to_string(random_num) + std::string(".so");
-    tmp_file = tmp_root / tmp_file_name;
+    tmp_file = tmp_file_name("yabo_", ".so");
 
     std::filesystem::copy_file(
         path, tmp_file, std::filesystem::copy_options::overwrite_existing);
@@ -56,7 +53,7 @@ Executor::Executor(std::filesystem::path path, FileRef file_content)
   auto size = reinterpret_cast<size_t *>(dlsym(lib, "yabo_max_buf_size"));
   if (!size) {
     auto err = std::stringstream()
-               << "File does not contain yabo_ma_buf_size symbol: " << dlerror()
+               << "File does not contain yabo_max_buf_size symbol: " << dlerror()
                << ". Is the file in the right format?";
     dlclose(lib);
     std::filesystem::remove(tmp_file);
@@ -491,13 +488,10 @@ void FileRequester::change_root(RootIndex root) {
 std::unique_ptr<FileRequester> FileRequesterFactory::create_file_requester(
     QString parser_lib_path, QString file_path, QString parser_name,
     bool recursive_fetch) {
-  std::filesystem::path p = parser_lib_path.toStdString();
-  std::vector<uint8_t> file;
   try {
     FileRef file = std::make_shared<FileContent>(file_path.toStdString());
-    auto req =
-        std::make_unique<FileRequester>(p, file, parser_name, recursive_fetch);
-    return req;
+    return create_file_requester(parser_lib_path, file, parser_name,
+                                 recursive_fetch);
   } catch (std::system_error &e) {
     auto msg = std::stringstream()
                << "Could not open file " << file_path.toStdString() << ": "
@@ -512,10 +506,20 @@ std::unique_ptr<FileRequester> FileRequesterFactory::create_file_requester(
     auto req =
         std::make_unique<FileRequester>(QString::fromStdString(msg.str()));
     return req;
+  }
+}
+
+std::unique_ptr<FileRequester>
+FileRequesterFactory::create_file_requester(QString parser_lib_path,
+                                            FileRef file, QString parser_name,
+                                            bool recursive_fetch) {
+  std::filesystem::path p = parser_lib_path.toStdString();
+  try {
+    auto req =
+        std::make_unique<FileRequester>(p, file, parser_name, recursive_fetch);
+    return req;
   } catch (ExecutorError &e) {
-    auto msg = std::stringstream()
-               << "Could not open file " << file_path.toStdString() << ": "
-               << e.what();
+    auto msg = std::stringstream() << "Could not open file: " << e.what();
     auto req =
         std::make_unique<FileRequester>(QString::fromStdString(msg.str()));
     return req;

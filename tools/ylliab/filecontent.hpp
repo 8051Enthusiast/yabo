@@ -10,6 +10,7 @@
 class FileContent {
 public:
   FileContent(std::filesystem::path path);
+  FileContent(std::vector<uint8_t> vec);
   ~FileContent();
   std::span<const uint8_t> span() const;
 
@@ -18,3 +19,5 @@ private:
 };
 
 using FileRef = std::shared_ptr<FileContent>;
+
+std::filesystem::path tmp_file_name(std::string prefix, std::string suffix);
