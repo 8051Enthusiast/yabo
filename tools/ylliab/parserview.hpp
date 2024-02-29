@@ -35,6 +35,5 @@ private slots:
   std::unique_ptr<GraphScene> scene;
   std::unique_ptr<YaboTreeModel> treeModel;
   std::unique_ptr<HexTableModel> hexModel;
-  std::unique_ptr<HexCell> hexCell;
   QThread graph_thread;
 };

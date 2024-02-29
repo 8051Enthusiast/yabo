@@ -1,4 +1,5 @@
 #include "filecontent.hpp"
+#include <random>
 extern "C" {
 #include <fcntl.h>
 #include <sys/ioctl.h>
@@ -52,6 +53,8 @@ FileContent::FileContent(std::filesystem::path path) {
   file.read(reinterpret_cast<char *>(vec.data()), size);
 }
 
+FileContent::FileContent(std::vector<uint8_t> vec) { content = vec; }
+
 FileContent::~FileContent() {
   if (std::holds_alternative<std::span<const uint8_t>>(content)) {
     auto span = std::get<std::span<const uint8_t>>(content);
@@ -65,4 +68,11 @@ std::span<const uint8_t> FileContent::span() const {
   } else {
     return std::span<const uint8_t>(std::get<std::vector<uint8_t>>(content));
   }
+}
+
+std::filesystem::path tmp_file_name(std::string prefix, std::string suffix) {
+  auto tmp_root = std::filesystem::temp_directory_path();
+  auto random_num = std::random_device()();
+  auto tmp_file_name = prefix + std::to_string(random_num) + suffix;
+  return tmp_root / tmp_file_name;
 }

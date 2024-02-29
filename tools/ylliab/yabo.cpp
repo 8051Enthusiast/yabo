@@ -1,5 +1,6 @@
 #include "yabo.hpp"
 #include "yabo/vtable.h"
+#include <algorithm>
 
 constexpr uint64_t DEFAULT_LEVEL = YABO_ANY;
 YaboValKind YaboVal::kind() {

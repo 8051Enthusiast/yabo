@@ -242,4 +242,8 @@ public:
                                                        QString file_path,
                                                        QString parser_name,
                                                        bool recursive_fetch);
+  std::unique_ptr<FileRequester> create_file_requester(QString parser_lib_path,
+                                                       FileRef file,
+                                                       QString parser_name,
+                                                       bool recursive_fetch);
 };
