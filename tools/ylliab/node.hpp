@@ -24,5 +24,6 @@ public:
   virtual QString node_name(Node idx) const = 0;
   virtual QColor node_color(Node idx) const = 0;
   virtual void change_root(Node idx) = 0;
-  virtual std::optional<std::pair<size_t, size_t>> node_range(Node idx) const = 0;
+  virtual std::optional<std::pair<size_t, size_t>>
+  node_range(Node idx) const = 0;
 };

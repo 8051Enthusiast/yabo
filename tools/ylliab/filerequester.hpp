@@ -40,6 +40,10 @@ public:
   std::optional<Response> execute_parser(Meta meta, char const *func_name);
 public slots:
   void execute_request_slot(Request req) {
+    if (init_lib()) {
+      emit response(Response(req.metadata));
+      return;
+    }
     auto resp = execute_request(req);
     if (resp.has_value()) {
       emit response(std::move(resp.value()));
@@ -48,6 +52,10 @@ public slots:
     }
   }
   void execute_parser_slot(Meta meta, QString func_name) {
+    if (init_lib()) {
+      emit response(Response(meta));
+      return;
+    }
     auto s = func_name.toStdString();
     auto resp = execute_parser(meta, s.c_str());
     if (resp.has_value()) {
@@ -60,6 +68,7 @@ signals:
   void response(Response resp);
 
 private:
+  int64_t init_lib();
   std::optional<Response> get_fields(Request &req);
   std::optional<Response> get_array_members(Request &req);
   SpannedVal normalize(YaboVal val, FileSpan parent_span);
@@ -146,8 +155,7 @@ public:
                 bool recursive_fetch = true);
   FileRequester(QString error_msg) : error_msg(error_msg) {}
   ~FileRequester() {
-    executor_thread.quit();
-    executor_thread.wait();
+    executor_thread->quit();
   }
   bool has_children(TreeIndex idx) const {
     auto val = arborist->get_node(idx).val;
@@ -189,7 +197,7 @@ public:
   QColor node_color(Node idx) const override;
   std::optional<std::pair<size_t, size_t>> node_range(Node idx) const override;
 
-  void start_executor_thread() { executor_thread.start(); }
+  void start_executor_thread() { executor_thread->start(); }
   void change_root(RootIndex node);
   void change_root(Node node) override;
   RootIndex root_idx(Node node) const;
@@ -215,7 +223,7 @@ private:
   void init_root(QString parser_name);
   void set_value(TreeIndex idx, SpannedVal val, RootIndex root);
 
-  QThread executor_thread;
+  QThread *executor_thread;
   std::unique_ptr<Arborist> arborist;
   std::unordered_map<QString, RootIndex> parser_root;
   std::unordered_map<YaboVal, RootIndex> nominal_bubbles;

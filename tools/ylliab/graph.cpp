@@ -4,6 +4,15 @@
 
 using namespace std::complex_literals;
 
+Graph::Graph(Node root, QObject *parent)
+    : QObject(parent), outdegree(1, 0), center(0) {
+  add_node(root);
+  timer = new QTimer(this);
+  timer->setInterval(100);
+  connect(timer, &QTimer::timeout, this, &Graph::step);
+  timer->start();
+}
+
 void Graph::add_edge(Edge edge) {
   if (edge.start == edge.end) {
     return;
@@ -156,6 +165,14 @@ void Graph::step() {
   auto update = PositionsUpdate{x, y, std::move(new_edges)};
   new_edges = {};
   emit positions_update(update);
+}
+
+GraphNodeItem::GraphNodeItem(QGraphicsItem *parent, NodeInfoProvider &provider,
+                             GraphScene &scene, Node idx)
+    : QGraphicsSimpleTextItem(provider.node_name(idx), parent), scene(scene),
+      idx(idx), color(provider.node_color(idx)) {
+  // make clickable
+  setAcceptHoverEvents(true);
 }
 
 void GraphNodeItem::paint(QPainter *painter,

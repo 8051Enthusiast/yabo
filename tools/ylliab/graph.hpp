@@ -56,14 +56,7 @@ Q_DECLARE_METATYPE(PositionsUpdate)
 class Graph : public QObject {
   Q_OBJECT
 public:
-  Graph(Node root, QObject *parent = nullptr)
-      : QObject(parent), outdegree(1, 0), center(0) {
-    add_node(root);
-    timer = new QTimer(this);
-    timer->setInterval(100);
-    connect(timer, &QTimer::timeout, this, &Graph::step);
-    timer->start();
-  }
+  Graph(Node root, QObject *parent = nullptr);
 public slots:
   void update_graph(GraphUpdate update);
 private slots:
@@ -107,12 +100,7 @@ class GraphScene;
 class GraphNodeItem : public QGraphicsSimpleTextItem {
 public:
   GraphNodeItem(QGraphicsItem *parent, NodeInfoProvider &provider,
-                GraphScene &scene, Node idx)
-      : QGraphicsSimpleTextItem(provider.node_name(idx), parent), scene(scene),
-        idx(idx), color(provider.node_color(idx)) {
-    // make clickable
-    setAcceptHoverEvents(true);
-  }
+                GraphScene &scene, Node idx);
   void paint(QPainter *painter, const QStyleOptionGraphicsItem *option,
              QWidget *widget = nullptr) override;
   QRectF boundingRect() const override {

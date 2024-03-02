@@ -11,8 +11,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(QT NAMES Qt6 REQUIRED COMPONENTS Widgets Core OpenGL OpenGLWidgets)
-find_package(Qt6 REQUIRED COMPONENTS Widgets Core OpenGL OpenGLWidgets)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Core OpenGL OpenGLWidgets Network)
 
 qt_add_library(ylliab_core STATIC
     request.hpp
@@ -36,6 +35,7 @@ qt_add_executable(ylliab
 )
 
 qt_add_executable(yphbt
+    compile.hpp compile.cpp
     yphbtwindow.hpp yphbtwindow.cpp yphbtwindow.ui
     yphbt.cpp
 )
@@ -52,8 +52,16 @@ target_link_libraries(ylliab PRIVATE
 )
 
 target_link_libraries(yphbt PRIVATE
-    ylliab_core Qt6::Core Qt6::Widgets
+    ylliab_core Qt6::Core Qt6::Widgets Qt6::Network
 )
+
+if(EMSCRIPTEN)
+    target_link_options(ylliab PUBLIC -sMAIN_MODULE=2)
+    target_link_options(yphbt PUBLIC -sMAIN_MODULE=2 -sSTACK_SIZE=5MB)
+    target_compile_options(ylliab_core PUBLIC -fPIC)
+    target_compile_options(ylliab PUBLIC -fPIC)
+    target_compile_options(yphbt PUBLIC -fPIC)
+endif()
 
 set_target_properties(ylliab PROPERTIES
     WIN32_EXECUTABLE TRUE

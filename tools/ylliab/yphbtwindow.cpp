@@ -1,15 +1,16 @@
 #include "yphbtwindow.hpp"
+#include "compile.hpp"
 #include "filecontent.hpp"
 #include "filerequester.hpp"
 #include "hexview.hpp"
 #include "ui_yphbtwindow.h"
 
+#include <QFileDialog>
 #include <QMessageBox>
 #include <QProcess>
 #include <QRunnable>
 #include <QTemporaryFile>
 #include <QThreadPool>
-#include <QFileDialog>
 #include <memory>
 
 static constexpr uint8_t PNG_EXAMPLE[] = {
@@ -32,12 +33,8 @@ YphbtWindow::~YphbtWindow() { delete ui; }
 
 void YphbtWindow::on_actionCompile_triggered() {
   auto program = ui->plainTextEdit->toPlainText();
-  auto runner = new CompilerRunner(program);
-  connect(runner, &CompilerRunner::compiled_file, this,
-          &YphbtWindow::load_compiled_file, Qt::QueuedConnection);
-  connect(runner, &CompilerRunner::send_error, this,
-          &YphbtWindow::compile_error, Qt::QueuedConnection);
-  QThreadPool::globalInstance()->start(runner);
+  start_remote_compile(program, this, &YphbtWindow::load_compiled_file,
+                      &YphbtWindow::compile_error);
 }
 
 void YphbtWindow::on_actionLoadFile_triggered() {
@@ -67,27 +64,6 @@ void YphbtWindow::compile_error(QString error) {
   QMessageBox::critical(this, "Compile Error", error);
 }
 
-void CompilerRunner::run() {
-  auto temp_output_path =
-      QString::fromStdString(tmp_file_name("yabo_", ".so").string());
-  QTemporaryFile input_file;
-  if (!input_file.open()) {
-    emit send_error("Failed to create temporary file");
-    return;
-  }
-  input_file.write(program.toUtf8());
-  input_file.flush();
-  QProcess process;
-  process.start("yaboc", {input_file.fileName(), temp_output_path});
-  process.waitForFinished();
-  auto output = process.readAllStandardError();
-  if (process.exitCode() != 0) {
-    auto error_msg = QString("Failed to compile:\n") + output;
-    emit send_error(error_msg);
-    return;
-  }
-  emit compiled_file(temp_output_path);
-}
 void YphbtWindow::set_new_file_requester(
     std::unique_ptr<FileRequester> &&new_file_requester) {
   auto newTreeModel = std::make_unique<YaboTreeModel>(new_file_requester.get());

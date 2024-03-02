@@ -20,8 +20,17 @@
 #include "yabo.hpp"
 #include "yabo/vtable.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+
+// https://github.com/WebAssembly/binaryen/pull/2427
+const char *YABO_GLOBAL_INIT = "orig$yabo_global_init";
+#else
+const char *YABO_GLOBAL_INIT = "yabo_global_init";
+#endif
+
 Executor::Executor(std::filesystem::path path, FileRef file_content)
-    : file(file_content) {
+    : file(file_content), lib(nullptr) {
   // we need to create a tmpfile copy of the library pointed to by
   // `path` which we then dlopen
   // this is because dlopen does not work well if the file changes, and
@@ -42,23 +51,61 @@ Executor::Executor(std::filesystem::path path, FileRef file_content)
     throw ExecutorError(err.str());
   }
 
+  // lib = dlopen(tmp_file.c_str(), RTLD_LAZY);
+  // if (!lib) {
+  //   auto err = std::stringstream()
+  //              << "Could not open file " << path.string() << "; " <<
+  //              dlerror();
+  //   std::filesystem::remove(tmp_file);
+  //   throw ExecutorError(err.str());
+  // }
+
+  // auto size = reinterpret_cast<size_t *>(dlsym(lib, "yabo_max_buf_size"));
+  // if (!size) {
+  //   auto err = std::stringstream()
+  //              << "File does not contain yabo_max_buf_size symbol: "
+  //              << dlerror() << ". Is the file in the right format?";
+  //   dlclose(lib);
+  //   std::filesystem::remove(tmp_file);
+  //   throw ExecutorError(err.str());
+  // }
+  // auto global_address =
+  //     reinterpret_cast<Slice *>(dlsym(lib, "yabo_global_address"));
+  // if (global_address) {
+  //   auto span = file->span();
+  //   global_address->start = span.data();
+  //   global_address->end = span.data() + span.size();
+  // }
+  // typedef int64_t (*init_fun)(void);
+  // auto global_init = reinterpret_cast<init_fun>(dlsym(lib,
+  // YABO_GLOBAL_INIT)); int64_t status = global_init(); if (status) {
+  //   auto err = std::stringstream()
+  //              << "Global init failed with status " << status;
+  //   dlclose(lib);
+  //   std::filesystem::remove(tmp_file);
+  //   throw ExecutorError(err.str());
+  // }
+  // vals = YaboValCreator(YaboValStorage(*size));
+}
+
+int64_t Executor::init_lib() {
+  if (lib) {
+    return 0;
+  }
   lib = dlopen(tmp_file.c_str(), RTLD_LAZY);
   if (!lib) {
-    auto err = std::stringstream()
-               << "Could not open file " << path.string() << "; " << dlerror();
-    std::filesystem::remove(tmp_file);
-    throw ExecutorError(err.str());
+    // error = dlerror();
+    return -1;
   }
 
   auto size = reinterpret_cast<size_t *>(dlsym(lib, "yabo_max_buf_size"));
   if (!size) {
-    auto err = std::stringstream()
-               << "File does not contain yabo_max_buf_size symbol: " << dlerror()
-               << ". Is the file in the right format?";
-    dlclose(lib);
-    std::filesystem::remove(tmp_file);
-    throw ExecutorError(err.str());
+    // error = QString("File does not contain yabo_max_buf_size symbol: %1. Is "
+    //                 "the file in the right format?")
+    //             .arg(dlerror());
+    return -1;
   }
+
   auto global_address =
       reinterpret_cast<Slice *>(dlsym(lib, "yabo_global_address"));
   if (global_address) {
@@ -66,21 +113,22 @@ Executor::Executor(std::filesystem::path path, FileRef file_content)
     global_address->start = span.data();
     global_address->end = span.data() + span.size();
   }
+
   typedef int64_t (*init_fun)(void);
-  auto global_init = reinterpret_cast<init_fun>(dlsym(lib, "yabo_global_init"));
+  auto global_init = reinterpret_cast<init_fun>(dlsym(lib, YABO_GLOBAL_INIT));
   int64_t status = global_init();
   if (status) {
-    auto err = std::stringstream()
-               << "Global init failed with status " << status;
-    dlclose(lib);
-    std::filesystem::remove(tmp_file);
-    throw ExecutorError(err.str());
+    // error = QString("Global init failed with status %1").arg(status);
+    return -1;
   }
   vals = YaboValCreator(YaboValStorage(*size));
+  return 0;
 }
 
 Executor::~Executor() {
-  dlclose(lib);
+  if (lib) {
+    dlclose(lib);
+  }
   std::filesystem::remove(tmp_file);
 }
 
@@ -210,13 +258,13 @@ RootIndex Arborist::add_root_node(size_t root_count, QString &field_name) {
 FileRequester::FileRequester(std::filesystem::path path, FileRef file,
                              QString parser_name, bool recursive_fetch)
     : recursive_fetch(recursive_fetch) {
+  executor_thread = new QThread();
   Executor *executor;
   this->file = file;
   executor = new Executor(path, file);
-  executor->moveToThread(&executor_thread);
+  executor->moveToThread(executor_thread);
   arborist = std::make_unique<Arborist>();
-  connect(&executor_thread, &QThread::finished, executor,
-          &QObject::deleteLater);
+  connect(executor_thread, &QThread::finished, executor, &QObject::deleteLater);
   connect(executor, &Executor::response, this,
           &FileRequester::process_response);
   connect(this, &FileRequester::request, executor,
