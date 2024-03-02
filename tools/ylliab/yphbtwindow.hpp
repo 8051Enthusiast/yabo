@@ -8,18 +8,6 @@
 #include <QTemporaryFile>
 #include <QUrl>
 
-class CompilerRunner : public QObject, public QRunnable {
-  Q_OBJECT
-public:
-  CompilerRunner(QString program) : program(program) {}
-  ~CompilerRunner() = default;
-  QString program;
-  void run();
-signals:
-  void send_error(QString error);
-  void compiled_file(QString file_path);
-};
-
 namespace Ui {
 class YphbtWindow;
 }

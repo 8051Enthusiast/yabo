@@ -26,7 +26,7 @@ enum class YaboValKind : int64_t {
 
 typedef std::span<const uint8_t> FileSpan;
 
-static inline bool span_contains(FileSpan outer, FileSpan inner) noexcept {
+static bool span_contains(FileSpan outer, FileSpan inner) noexcept {
   return outer.data() <= inner.data() &&
          outer.data() + outer.size() >= inner.data() + inner.size();
 }
@@ -40,23 +40,21 @@ struct YaboVal {
   const DynValue *operator->() const noexcept { return val; }
   YaboValKind kind();
 
-  inline int64_t access_int() const noexcept { return *(int64_t *)val->data; }
+  int64_t access_int() const noexcept { return *(int64_t *)val->data; }
 
-  inline int32_t access_char() const noexcept { return *(int32_t *)val->data; }
+  int32_t access_char() const noexcept { return *(int32_t *)val->data; }
 
-  inline int8_t access_bool() const noexcept { return *(int8_t *)val->data; }
+  int8_t access_bool() const noexcept { return *(int8_t *)val->data; }
 
-  inline const uint8_t *access_u8() const noexcept {
+  const uint8_t *access_u8() const noexcept {
     return *(const uint8_t **)val->data;
   }
 
-  inline uint64_t access_error() const noexcept {
-    return *(uint64_t *)val->data;
-  }
+  uint64_t access_error() const noexcept { return *(uint64_t *)val->data; }
 
-  inline bool is_exceptional() const noexcept { return !val->vtable; }
+  bool is_exceptional() const noexcept { return !val->vtable; }
 
-  inline bool is_backtrack() const noexcept {
+  bool is_backtrack() const noexcept {
     return !val->vtable && access_error() == BACKTRACK;
   }
 };
@@ -116,18 +114,18 @@ public:
   }
 
 private:
-  inline size_t fresh_storage_size() const {
+  size_t fresh_storage_size() const {
     auto current_len = old_storage.size();
     return std::max(2 * (max_size + alignof(max_align_t)),
                     base_alloc_size << current_len);
   }
 
-  inline size_t current_free_space() const noexcept {
+  size_t current_free_space() const noexcept {
     return fresh_storage_size() - current_offset;
   }
 
-  inline DynValue *tmp() const { return (DynValue *)tmp_storage.get(); }
-  inline DynValue *tmp2() const { return (DynValue *)tmp_storage2.get(); }
+  DynValue *tmp() const { return (DynValue *)tmp_storage.get(); }
+  DynValue *tmp2() const { return (DynValue *)tmp_storage2.get(); }
 
   DynValue *next_val_ptr();
   void expand_storage();
