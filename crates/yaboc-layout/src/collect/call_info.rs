@@ -1,5 +1,4 @@
 use super::LayoutSet;
-use yaboc_target::layout::PSize;
 use crate::ILayout;
 use crate::IMonoLayout;
 use fxhash::FxHashMap;
@@ -7,6 +6,7 @@ use fxhash::FxHashSet;
 use petgraph::unionfind::UnionFind;
 use std::collections::hash_map::Entry;
 use std::rc::Rc;
+use yaboc_target::layout::PSize;
 
 pub struct CallInfo<'a, Arg: std::hash::Hash + Eq + Copy> {
     pub(crate) map: FxHashMap<Arg, FxHashSet<ILayout<'a>>>,

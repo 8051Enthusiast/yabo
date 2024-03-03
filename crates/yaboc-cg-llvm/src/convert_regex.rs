@@ -13,7 +13,7 @@ use yaboc_types::{PrimitiveType, Type, TypeInterner};
 use crate::{
     parser_args,
     val::{CgReturnValue, CgValue},
-    CodeGenCtx,
+    CodeGenCtx, IResult,
 };
 
 pub struct RegexTranslator<'llvm, 'comp, 'r, D: DFA<ID = usize>> {
@@ -39,7 +39,7 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
         dfa: &'r D,
         from: ILayout<'comp>,
         greedy: bool,
-    ) -> Self {
+    ) -> IResult<Self> {
         let int = cg
             .compiler_database
             .db
@@ -54,13 +54,15 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
         ));
 
         cg.add_entry_block(llvm_fun);
-        let next_byte = cg.build_alloca_value(int_layout, "next_byte");
-        let tmp_ret = cg.build_alloca_value(from, "tmp_ret");
+        let next_byte = cg.build_alloca_value(int_layout, "next_byte")?;
+        let tmp_ret = cg.build_alloca_value(from, "tmp_ret")?;
         let greedy_info = if greedy {
-            let no_match = cg.builder.build_alloca(cg.llvm.bool_type(), "has_matched");
+            let no_match = cg
+                .builder
+                .build_alloca(cg.llvm.bool_type(), "has_matched")?;
             cg.builder
-                .build_store(no_match, cg.llvm.bool_type().const_int(1, false));
-            let last_match = cg.build_alloca_value(from, "last_match");
+                .build_store(no_match, cg.llvm.bool_type().const_int(1, false))?;
+            let last_match = cg.build_alloca_value(from, "last_match")?;
             Some((no_match, last_match))
         } else {
             None
@@ -72,7 +74,7 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
         let (ret, _, head, arg) = parser_args(llvm_fun);
         let from = CgValue::new(from, arg);
         let ret = CgReturnValue::new(head, ret);
-        Self {
+        Ok(Self {
             cg,
             llvm_fun,
             dfa,
@@ -86,11 +88,16 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
             new_states,
             parser_fun,
             from,
-        }
+        })
     }
 
-    fn copy_position(&mut self, dest: CgValue<'comp, 'llvm>, src: CgValue<'comp, 'llvm>) {
-        self.cg.build_copy_invariant(dest, src)
+    fn copy_position(
+        &mut self,
+        dest: CgValue<'comp, 'llvm>,
+        src: CgValue<'comp, 'llvm>,
+    ) -> IResult<()> {
+        self.cg.build_copy_invariant(dest, src)?;
+        Ok(())
     }
 
     fn state_bb(&mut self, state: usize) -> BasicBlock<'llvm> {
@@ -111,7 +118,7 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
         }
     }
 
-    fn next_byte(&mut self) -> IntValue<'llvm> {
+    fn next_byte(&mut self) -> IResult<IntValue<'llvm>> {
         let undef = self.cg.invalid_ptr();
         let head = DerefLevel::zero().into_shifted_runtime_value();
         let ret = self.cg.builder.build_call(
@@ -123,7 +130,7 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
                 self.from.ptr.into(),
             ],
             "next_ret",
-        );
+        )?;
         ret.set_call_convention(self.cg.tailcc());
         let ret = ret.try_as_basic_value().left().unwrap().into_int_value();
         let ret_bb = self.cg.llvm.append_basic_block(self.llvm_fun, "ret");
@@ -136,32 +143,32 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
                 (self.cg.const_i64(ReturnStatus::Backtrack as i64), self.bt),
                 (self.cg.const_i64(ReturnStatus::Eof as i64), self.bt),
             ],
-        );
+        )?;
         self.cg.builder.position_at_end(ret_bb);
-        self.cg.builder.build_return(Some(&ret));
+        self.cg.builder.build_return(Some(&ret))?;
         self.cg.builder.position_at_end(cont_bb);
         self.cg.build_i64_load(self.next_byte.ptr, "next_byte")
     }
 
-    fn add_state(&mut self, state: usize) {
+    fn add_state(&mut self, state: usize) -> IResult<()> {
         let bb = self.state_bb(state);
         self.cg.builder.position_at_end(bb);
         if self.dfa.is_dead_state(state) {
-            self.cg.builder.build_unconditional_branch(self.bt);
-            return;
+            self.cg.builder.build_unconditional_branch(self.bt)?;
+            return Ok(());
         }
         if self.dfa.is_match_state(state) {
             if let Some((has_no_match, last_match)) = self.greedy_info {
                 self.cg
                     .builder
-                    .build_store(has_no_match, self.cg.llvm.bool_type().const_zero());
-                self.copy_position(last_match, self.from);
+                    .build_store(has_no_match, self.cg.llvm.bool_type().const_zero())?;
+                self.copy_position(last_match, self.from)?;
             } else {
-                self.cg.builder.build_unconditional_branch(self.succ);
-                return;
+                self.cg.builder.build_unconditional_branch(self.succ)?;
+                return Ok(());
             }
         }
-        let next_byte = self.next_byte();
+        let next_byte = self.next_byte()?;
         let mut next_bbs = Vec::new();
         for possible_byte in 0..=255 {
             let next_state = self.dfa.next_state(state, possible_byte);
@@ -169,47 +176,53 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
             let llvm_int = self.cg.const_i64(possible_byte as i64);
             next_bbs.push((llvm_int, next_bb));
         }
-        self.cg.builder.build_switch(next_byte, self.bt, &next_bbs);
+        self.cg
+            .builder
+            .build_switch(next_byte, self.bt, &next_bbs)?;
+        Ok(())
     }
 
-    fn add_succ_block(&mut self) {
+    fn add_succ_block(&mut self) -> IResult<()> {
         self.cg.builder.position_at_end(self.succ);
         if let Some((_, last_match)) = self.greedy_info {
-            self.copy_position(self.from, last_match);
+            self.copy_position(self.from, last_match)?;
         }
-        let ret = self.cg.call_span_fun(self.ret, self.tmp_ret, self.from);
-        self.cg.builder.build_return(Some(&ret));
+        let ret = self.cg.call_span_fun(self.ret, self.tmp_ret, self.from)?;
+        self.cg.builder.build_return(Some(&ret))?;
+        Ok(())
     }
 
-    fn add_bt_block(&mut self) {
+    fn add_bt_block(&mut self) -> IResult<()> {
         self.cg.builder.position_at_end(self.bt);
         if let Some((no_match, _)) = self.greedy_info {
             let no_match_block = self.cg.llvm.append_basic_block(self.llvm_fun, "no_match");
             let no_match_bool = self
                 .cg
                 .builder
-                .build_load(self.cg.llvm.bool_type(), no_match, "no_match_bool")
+                .build_load(self.cg.llvm.bool_type(), no_match, "no_match_bool")?
                 .into_int_value();
             self.cg
                 .builder
-                .build_conditional_branch(no_match_bool, no_match_block, self.succ);
+                .build_conditional_branch(no_match_bool, no_match_block, self.succ)?;
             self.cg.builder.position_at_end(no_match_block);
         }
         self.cg
             .builder
-            .build_return(Some(&self.cg.const_i64(ReturnStatus::Backtrack as i64)));
+            .build_return(Some(&self.cg.const_i64(ReturnStatus::Backtrack as i64)))?;
+        Ok(())
     }
 
-    pub fn build(&mut self) {
-        self.copy_position(self.tmp_ret, self.from);
+    pub fn build(&mut self) -> IResult<()> {
+        self.copy_position(self.tmp_ret, self.from)?;
         let start_state_block = self.state_bb(self.dfa.start_state());
         self.cg
             .builder
-            .build_unconditional_branch(start_state_block);
-        self.add_succ_block();
-        self.add_bt_block();
+            .build_unconditional_branch(start_state_block)?;
+        self.add_succ_block()?;
+        self.add_bt_block()?;
         while let Some(state) = self.new_states.pop() {
-            self.add_state(state);
+            self.add_state(state)?;
         }
+        Ok(())
     }
 }

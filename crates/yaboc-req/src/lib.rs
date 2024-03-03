@@ -131,7 +131,6 @@ impl std::fmt::Display for NeededBy {
     }
 }
 
-
 impl std::fmt::Display for RequirementMatrix {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (i, bit) in Self::id().iter_cols().enumerate() {

@@ -186,9 +186,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         &self.pd_result
     }
 
-    pub fn block_result(
-        &self,
-    ) -> &FxHashMap<CallSite<Dom>, MaybeEpoch<BlockEvaluated<Dom>>> {
+    pub fn block_result(&self) -> &FxHashMap<CallSite<Dom>, MaybeEpoch<BlockEvaluated<Dom>>> {
         &self.block_result
     }
 

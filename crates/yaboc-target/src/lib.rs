@@ -24,7 +24,7 @@ pub fn target(triple: &str, rt_path: PathBuf) -> Option<Target> {
             default_cpu: "x86-64-v2",
             use_tailcc: true,
         }),
-        "wasm32-unknown-unknown"  => Some(Target {
+        "wasm32-unknown-unknown" => Some(Target {
             data: layout::POINTER32,
             linker: Arc::new(link::WasmLinker::new(rt_path)),
             default_features: "",
