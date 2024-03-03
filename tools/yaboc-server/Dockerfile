@@ -18,7 +18,7 @@ WORKDIR /src
 RUN cargo build --release
 
 
-FROM emscripten/emsdk:3.1.37
+FROM emscripten/emsdk:3.1.54
 
 COPY --from=0 /src/yaboc-server /usr/local/bin/yaboc-server
 COPY --from=1 /src/target/release/yaboc /usr/local/bin/yaboc
