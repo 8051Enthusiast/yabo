@@ -386,7 +386,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         )
     }
 
-    pub(super) fn create_all_statics(&mut self) {
+    pub(super) fn create_all_statics(&mut self) -> IResult<()> {
         let global_sequence = self.compiler_database.db.global_sequence().unwrap();
         for pd in global_sequence.iter() {
             if !self.collected_layouts.globals.contains_key(pd) {
@@ -394,8 +394,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             };
             self.global_constant(*pd);
         }
-        let zero = self.const_i64(0);
-        self.builder.build_return(Some(&zero));
+        Ok(())
     }
 
     pub(super) fn global_constant_init_fun_val(&mut self) -> FunctionValue<'llvm> {

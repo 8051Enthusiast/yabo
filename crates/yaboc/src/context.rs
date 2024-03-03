@@ -1,7 +1,6 @@
 use std::{ffi::OsStr, io::Write, sync::Arc};
 
 use bumpalo::Bump;
-use inkwell::support::LLVMString;
 use tempfile::NamedTempFile;
 use yaboc_base::{
     config::{Config, Configs},
@@ -10,7 +9,10 @@ use yaboc_base::{
     source::{AriadneCache, FileId},
     Context,
 };
-use yaboc_cg_llvm::CodeGenCtx;
+use yaboc_cg_llvm::{
+    inkwell::{self, support::LLVMString},
+    CodeGenCtx,
+};
 use yaboc_database::YabocDatabase;
 use yaboc_hir::represent::HirGraph;
 use yaboc_layout::{InternedLayout, LayoutContext};
@@ -46,9 +48,9 @@ impl std::ops::DerefMut for Driver {
 
 impl Driver {
     pub fn new(config: Config) -> Result<Self, String> {
-        let mut lib_path = yaboc_base::source::yabo_lib_path().ok_or_else(|| {
-            "Could not find yaboc library path. Please set the YABO_LIB_PATH environment variable"
-        })?;
+        let mut lib_path = yaboc_base::source::yabo_lib_path().ok_or(
+            "Could not find yaboc library path. Please set the YABO_LIB_PATH environment variable",
+        )?;
         lib_path.push("rt.c");
         let target = yaboc_target::target(&config.target_triple, lib_path).ok_or_else(|| {
             format!(

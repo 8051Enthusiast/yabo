@@ -130,6 +130,12 @@ impl EmscriptenLinker {
     }
 }
 
+impl Default for EmscriptenLinker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Linker for EmscriptenLinker {
     fn link_shared(&self, path: &Path, output_path: &Path) -> std::io::Result<()> {
         let output = Command::new(&self.wasm_ld)

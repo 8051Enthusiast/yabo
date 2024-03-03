@@ -478,7 +478,7 @@ mod tests {
                 [y]
                 uses_vals(x)
             }
-            "#
+            "#,
         );
         let test = ctx.parser("test");
         let len = ctx.db.fun_len(test);

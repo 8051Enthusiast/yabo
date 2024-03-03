@@ -11,10 +11,11 @@ use std::{ffi::OsStr, fmt::Debug, path::Path, rc::Rc};
 
 use fxhash::FxHashMap;
 use getset::Callable;
+pub use inkwell;
 use inkwell::{
     attributes::{Attribute, AttributeLoc},
     basic_block::BasicBlock,
-    builder::Builder,
+    builder::{Builder, BuilderError},
     context::Context,
     module::{Linkage, Module},
     passes::PassBuilderOptions,
@@ -56,6 +57,8 @@ use yaboc_target::layout::{CodegenTypeContext, PSize, SizeAlign, TargetSized};
 use yaboc_types::{PrimitiveType, Type, TypeInterner};
 
 use self::{convert_mir::MirTranslator, convert_thunk::ThunkContext};
+
+pub type IResult<T> = Result<T, BuilderError>;
 
 pub struct CodeGenCtx<'llvm, 'comp> {
     llvm: &'llvm Context,
@@ -280,29 +283,33 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         sa: SizeAlign,
         vtable: Option<bool>,
         name: &str,
-    ) -> PointerValue<'llvm> {
+    ) -> IResult<PointerValue<'llvm>> {
         let ty = self.sa_type(sa);
-        let ptr = self.builder.build_alloca(ty, "alloca");
+        let ptr = self.builder.build_alloca(ty, "alloca")?;
         self.set_last_instr_align(sa).unwrap();
         let u8_ptr_ty = self.any_ptr();
-        match vtable {
+        Ok(match vtable {
             None => self.invalid_ptr(),
             Some(false) => self
                 .builder
-                .build_bitcast(ptr, u8_ptr_ty, name)
+                .build_bitcast(ptr, u8_ptr_ty, name)?
                 .into_pointer_value(),
             Some(true) => {
                 let cast_ptr = self
                     .builder
-                    .build_bitcast(ptr, u8_ptr_ty, name)
+                    .build_bitcast(ptr, u8_ptr_ty, name)?
                     .into_pointer_value();
                 let ptr_width = self.any_ptr().size_of();
-                self.build_byte_gep(cast_ptr, ptr_width, name)
+                self.build_byte_gep(cast_ptr, ptr_width, name)?
             }
-        }
+        })
     }
 
-    fn build_layout_alloca(&mut self, layout: ILayout<'comp>, name: &str) -> PointerValue<'llvm> {
+    fn build_layout_alloca(
+        &mut self,
+        layout: ILayout<'comp>,
+        name: &str,
+    ) -> IResult<PointerValue<'llvm>> {
         let sa = layout
             .size_align(self.layouts)
             .expect("Could not get size/alignment of layout");
@@ -314,57 +321,63 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.build_sa_alloca(sa, vtable, name)
     }
 
-    fn build_alloca_value(&mut self, layout: ILayout<'comp>, name: &str) -> CgValue<'comp, 'llvm> {
-        let ptr = self.build_layout_alloca(layout, name);
-        CgValue::new(layout, ptr)
+    fn build_alloca_value(
+        &mut self,
+        layout: ILayout<'comp>,
+        name: &str,
+    ) -> IResult<CgValue<'comp, 'llvm>> {
+        let ptr = self.build_layout_alloca(layout, name)?;
+        Ok(CgValue::new(layout, ptr))
     }
 
     fn build_alloca_mono_value(
         &mut self,
         layout: IMonoLayout<'comp>,
         name: &str,
-    ) -> CgMonoValue<'comp, 'llvm> {
-        let ptr = self.build_layout_alloca(layout.inner(), name);
-        CgMonoValue::new(layout, ptr)
+    ) -> IResult<CgMonoValue<'comp, 'llvm>> {
+        let ptr = self.build_layout_alloca(layout.inner(), name)?;
+        Ok(CgMonoValue::new(layout, ptr))
     }
 
-    fn build_alloca_int(&mut self, name: &str) -> CgMonoValue<'comp, 'llvm> {
+    fn build_alloca_int(&mut self, name: &str) -> IResult<CgMonoValue<'comp, 'llvm>> {
         let int_layout = self.layouts.dcx.int(self.layouts.db);
-        let ptr = self.build_layout_alloca(int_layout, name);
-        CgMonoValue::new(int_layout.maybe_mono().unwrap(), ptr)
+        let ptr = self.build_layout_alloca(int_layout, name)?;
+        Ok(CgMonoValue::new(int_layout.maybe_mono().unwrap(), ptr))
     }
 
     fn build_call_with_int_ret(
         &mut self,
         call_fun: Callable<'llvm>,
         args: &[BasicMetadataValueEnum<'llvm>],
-    ) -> IntValue<'llvm> {
+    ) -> IResult<IntValue<'llvm>> {
         let call = match call_fun {
             Callable::Pointer(ptr, ty) => self
                 .builder
-                .build_indirect_call(ty, ptr, args, "call")
+                .build_indirect_call(ty, ptr, args, "call")?
                 .try_as_basic_value(),
             Callable::Function(fun) => self
                 .builder
-                .build_call(fun, args, "call")
+                .build_call(fun, args, "call")?
                 .try_as_basic_value(),
         };
-        call.left()
+        Ok(call
+            .left()
             .expect("function shuold not return void")
-            .into_int_value()
+            .into_int_value())
     }
 
     fn build_tailcc_call_with_int_ret(
         &mut self,
         call_fun: FunctionValue<'llvm>,
         args: &[BasicMetadataValueEnum<'llvm>],
-    ) -> IntValue<'llvm> {
-        let call = self.builder.build_call(call_fun, args, "call");
+    ) -> IResult<IntValue<'llvm>> {
+        let call = self.builder.build_call(call_fun, args, "call")?;
         call.set_call_convention(self.tailcc());
-        call.try_as_basic_value()
+        Ok(call
+            .try_as_basic_value()
             .left()
             .expect("function shuold not return void")
-            .into_int_value()
+            .into_int_value())
     }
 
     fn build_parser_call(
@@ -373,37 +386,53 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         fun: CgValue<'comp, 'llvm>,
         from: CgValue<'comp, 'llvm>,
         call_kind: CallMeta,
-    ) -> IntValue<'llvm> {
+    ) -> IResult<IntValue<'llvm>> {
         self.call_parser_fun_wrapper(ret, fun, from, call_kind.req)
     }
 
-    fn build_byte_load(&mut self, ptr: PointerValue<'llvm>, name: &str) -> IntValue<'llvm> {
+    fn build_byte_load(
+        &mut self,
+        ptr: PointerValue<'llvm>,
+        name: &str,
+    ) -> IResult<IntValue<'llvm>> {
         let ty = self.llvm.i8_type();
-        self.builder.build_load(ty, ptr, name).into_int_value()
+        Ok(self.builder.build_load(ty, ptr, name)?.into_int_value())
     }
 
-    fn build_char_load(&mut self, ptr: PointerValue<'llvm>, name: &str) -> IntValue<'llvm> {
-        let ptr = self.build_cast::<*const char, _>(ptr);
+    fn build_char_load(
+        &mut self,
+        ptr: PointerValue<'llvm>,
+        name: &str,
+    ) -> IResult<IntValue<'llvm>> {
+        let ptr = self.build_cast::<*const char, _>(ptr)?;
         let ty = self.llvm.i32_type();
-        self.builder.build_load(ty, ptr, name).into_int_value()
+        Ok(self.builder.build_load(ty, ptr, name)?.into_int_value())
     }
 
-    fn build_i64_load(&mut self, ptr: PointerValue<'llvm>, name: &str) -> IntValue<'llvm> {
-        let ptr = self.build_cast::<*const i64, _>(ptr);
+    fn build_i64_load(&mut self, ptr: PointerValue<'llvm>, name: &str) -> IResult<IntValue<'llvm>> {
+        let ptr = self.build_cast::<*const i64, _>(ptr)?;
         let ty = self.llvm.i64_type();
-        self.builder.build_load(ty, ptr, name).into_int_value()
+        Ok(self.builder.build_load(ty, ptr, name)?.into_int_value())
     }
 
-    fn build_size_load(&mut self, ptr: PointerValue<'llvm>, name: &str) -> IntValue<'llvm> {
-        let ptr = self.build_cast::<*const usize, _>(ptr);
+    fn build_size_load(
+        &mut self,
+        ptr: PointerValue<'llvm>,
+        name: &str,
+    ) -> IResult<IntValue<'llvm>> {
+        let ptr = self.build_cast::<*const usize, _>(ptr)?;
         let ty = self.llvm.ptr_sized_int_type(&self.target_data, None);
-        self.builder.build_load(ty, ptr, name).into_int_value()
+        Ok(self.builder.build_load(ty, ptr, name)?.into_int_value())
     }
 
-    fn build_ptr_load(&mut self, ptr: PointerValue<'llvm>, name: &str) -> PointerValue<'llvm> {
-        let ptr = self.build_cast::<*const *mut u8, _>(ptr);
+    fn build_ptr_load(
+        &mut self,
+        ptr: PointerValue<'llvm>,
+        name: &str,
+    ) -> IResult<PointerValue<'llvm>> {
+        let ptr = self.build_cast::<*const *mut u8, _>(ptr)?;
         let ty = self.any_ptr();
-        self.builder.build_load(ty, ptr, name).into_pointer_value()
+        Ok(self.builder.build_load(ty, ptr, name)?.into_pointer_value())
     }
 
     fn module_string(&mut self, s: &str) -> PointerValue<'llvm> {
@@ -477,7 +506,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         block_id: BlockId,
         block: CgValue<'comp, 'llvm>,
         field: FieldName,
-    ) -> Option<(PointerValue<'llvm>, IntValue<'llvm>)> {
+    ) -> IResult<Option<(PointerValue<'llvm>, IntValue<'llvm>)>> {
         let manifestation = self.layouts.dcx.manifestation(block.layout);
         let disc_offset = manifestation.discriminant_offset;
         let root_ctx = block_id
@@ -485,48 +514,51 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .unwrap()
             .root_context;
         let def_id = root_ctx.0.child_field(&self.compiler_database.db, field);
-        let inner_offset = manifestation.discriminant_mapping.get(&def_id)?;
+        let Some(inner_offset) = manifestation.discriminant_mapping.get(&def_id) else {
+            return Ok(None);
+        };
         let byte_offset = self
             .llvm
             .i32_type()
             .const_int(disc_offset + inner_offset / 8, false);
         let bit_offset = inner_offset % 8;
         let shifted_bit = self.llvm.i8_type().const_int(1 << bit_offset, false);
-        let byte_ptr = self.build_byte_gep(block.ptr, byte_offset, "gepdisc");
-        Some((byte_ptr, shifted_bit))
+        let byte_ptr = self.build_byte_gep(block.ptr, byte_offset, "gepdisc")?;
+        Ok(Some((byte_ptr, shifted_bit)))
     }
 
     fn build_discriminant_check(
         &mut self,
         byte_ptr: PointerValue<'llvm>,
         shifted_bit: IntValue<'llvm>,
-    ) -> IntValue<'llvm> {
+    ) -> IResult<IntValue<'llvm>> {
         let i8_ty = self.llvm.i8_type();
         let byte = self
             .builder
-            .build_load(i8_ty, byte_ptr, "ld_assert_field")
+            .build_load(i8_ty, byte_ptr, "ld_assert_field")?
             .into_int_value();
         let and_byte = self
             .builder
-            .build_and(byte, shifted_bit, "cmp_assert_field");
-        self.builder.build_int_compare(
+            .build_and(byte, shifted_bit, "cmp_assert_field")?;
+        let comp = self.builder.build_int_compare(
             IntPredicate::NE,
             and_byte,
             self.llvm.i8_type().const_zero(),
             "and_assert_not_zero",
-        )
+        )?;
+        Ok(comp)
     }
 
     fn build_cast<T: TargetSized, R: TryFrom<BasicValueEnum<'llvm>>>(
         &mut self,
         v: impl BasicValue<'llvm>,
-    ) -> R
+    ) -> IResult<R>
     where
         R::Error: Debug,
     {
         let ty = T::codegen_ty(self);
-        let casted = self.builder.build_bitcast(v, ty, "cast");
-        R::try_from(casted).expect("could not cast")
+        let casted = self.builder.build_bitcast(v, ty, "cast")?;
+        Ok(R::try_from(casted).expect("could not cast"))
     }
 
     fn build_byte_gep(
@@ -534,10 +566,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ptr: PointerValue<'llvm>,
         int: IntValue<'llvm>,
         name: &str,
-    ) -> PointerValue<'llvm> {
+    ) -> IResult<PointerValue<'llvm>> {
         assert!(ptr.get_type() == self.any_ptr());
         let ty = self.llvm.i8_type();
-        unsafe { self.builder.build_in_bounds_gep(ty, ptr, &[int], name) }
+        let byte = unsafe { self.builder.build_in_bounds_gep(ty, ptr, &[int], name) }?;
+        Ok(byte)
     }
 
     fn const_byte_gep(&mut self, ptr: PointerValue<'llvm>, int: i64) -> PointerValue<'llvm> {
@@ -555,21 +588,21 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         field: DefId,
         val: CgValue<'comp, 'llvm>,
         field_layout: ILayout<'comp>,
-    ) -> CgValue<'comp, 'llvm> {
+    ) -> IResult<CgValue<'comp, 'llvm>> {
         let mut offset = self.layouts.dcx.manifestation(val.layout).field_offsets[&field];
         if field_layout.is_multi() {
             offset += self.word_size();
         }
         let offset_llvm_int = self.llvm.i64_type().const_int(offset, false);
 
-        let field_ptr = self.build_byte_gep(val.ptr, offset_llvm_int, "gepfield");
-        CgValue::new(field_layout, field_ptr)
+        let field_ptr = self.build_byte_gep(val.ptr, offset_llvm_int, "gepfield")?;
+        Ok(CgValue::new(field_layout, field_ptr))
     }
 
     fn build_nominal_components(
         &mut self,
         val: CgMonoValue<'comp, 'llvm>,
-    ) -> (CgValue<'comp, 'llvm>, CgMonoValue<'comp, 'llvm>) {
+    ) -> IResult<(CgValue<'comp, 'llvm>, CgMonoValue<'comp, 'llvm>)> {
         let MonoLayout::Nominal(pd, _, args) = val.layout.mono_layout().0 else {
             panic!("build_nominal_components has to be called with a nominal parser layout");
         };
@@ -577,34 +610,43 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let parserdef = pd.lookup(&self.compiler_database.db).unwrap();
         let layout_sa = val.layout.inner().size_align(self.layouts).unwrap();
         let (from_layout, parser) = val.layout.unapply_nominal(self.layouts);
-        let from_val = self.build_field_gep(parserdef.from.unwrap().0, val.into(), from_layout);
+        let from_val = self.build_field_gep(parserdef.from.unwrap().0, val.into(), from_layout)?;
         let arg_ptr = if !args.is_empty() {
             let mut from_sa = from_layout.size_align(self.layouts).unwrap();
             from_sa.align_mask |= layout_sa.align_mask;
-            self.build_byte_gep(val.ptr, self.const_i64(from_sa.stride() as i64), "arg_ptr")
+            self.build_byte_gep(val.ptr, self.const_i64(from_sa.stride() as i64), "arg_ptr")?
         } else {
             self.invalid_ptr()
         };
         let arg = CgMonoValue::new(parser, arg_ptr);
-        (from_val, arg)
+        Ok((from_val, arg))
     }
 
-    fn build_copy_invariant(&mut self, dest: CgValue<'comp, 'llvm>, src: CgValue<'comp, 'llvm>) {
+    fn build_copy_invariant(
+        &mut self,
+        dest: CgValue<'comp, 'llvm>,
+        src: CgValue<'comp, 'llvm>,
+    ) -> IResult<PointerValue<'llvm>> {
         let sa = dest.layout.size_align(self.layouts).unwrap();
-        let src_ptr = self.get_object_start(src);
-        let dest_ptr = self.get_object_start(dest);
+        let src_ptr = self.get_object_start(src)?;
+        let dest_ptr = self.get_object_start(dest)?;
         let size = self.const_i64(sa.size as i64);
         let align = sa.align() as u32;
         self.builder
-            .build_memcpy(dest_ptr, align, src_ptr, align, size)
-            .unwrap();
+            .build_memcpy(dest_ptr, align, src_ptr, align, size)?;
+        Ok(dest_ptr)
     }
 
-    fn build_vtable_store(&mut self, dest: PointerValue<'llvm>, vtable: PointerValue<'llvm>) {
+    fn build_vtable_store(
+        &mut self,
+        dest: PointerValue<'llvm>,
+        vtable: PointerValue<'llvm>,
+    ) -> IResult<()> {
         let vtable_offset = self.const_i64(-(self.word_size() as i64));
-        let before_ptr = self.build_byte_gep(dest, vtable_offset, "vtable_ptr_skip");
-        let ret_vtable_ptr = self.build_cast::<*mut *const u8, _>(before_ptr);
-        self.builder.build_store(ret_vtable_ptr, vtable);
+        let before_ptr = self.build_byte_gep(dest, vtable_offset, "vtable_ptr_skip")?;
+        let ret_vtable_ptr = self.build_cast::<*mut *const u8, _>(before_ptr)?;
+        self.builder.build_store(ret_vtable_ptr, vtable)?;
+        Ok(())
     }
 
     fn create_pd_export(
@@ -625,7 +667,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         global.set_visibility(GlobalVisibility::Default);
     }
 
-    pub fn create_pd_exports(&mut self) {
+    pub fn create_pd_exports(&mut self) -> IResult<()> {
         let collected_layouts = self.collected_layouts.clone();
         let from = IMonoLayout::u8_array(self.layouts);
         for (layout, _) in collected_layouts.root.iter() {
@@ -633,6 +675,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 self.create_pd_export(*pd, *layout, from.inner());
             }
         }
+        Ok(())
     }
 
     pub fn create_max_buf_size(&mut self) {
@@ -648,9 +691,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub fn run_codegen(&mut self) {
         self.create_all_vtables();
-        self.create_all_statics();
-        self.create_all_funs();
-        self.create_pd_exports();
+        self.create_all_statics().expect("Codegen failed");
+        self.create_all_funs().expect("Codegen failed");
+        self.create_pd_exports().expect("Codegen failed");
         self.create_max_buf_size();
     }
 

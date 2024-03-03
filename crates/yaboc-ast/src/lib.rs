@@ -267,7 +267,6 @@ pub struct Import {
     pub span: Span,
 }
 
-
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub enum DefKind {
     Def,

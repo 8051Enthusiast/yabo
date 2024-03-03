@@ -142,14 +142,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let start = self.start_fun_val(layout);
         let end = self.end_fun_val(layout);
         let vtable_ty = self.vtable_ty(layout);
-        let vtable_val = vtable_ty.const_named_struct(
-            &[
-                vtable_header.into(),
-                llvm_name.into(),
-                start.as_global_value().as_pointer_value().into(),
-                end.as_global_value().as_pointer_value().into(),
-            ],
-        );
+        let vtable_val = vtable_ty.const_named_struct(&[
+            vtable_header.into(),
+            llvm_name.into(),
+            start.as_global_value().as_pointer_value().into(),
+            end.as_global_value().as_pointer_value().into(),
+        ]);
         vtable.set_initializer(&vtable_val);
     }
 
