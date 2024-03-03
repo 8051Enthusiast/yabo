@@ -20,6 +20,7 @@ public:
   ~YphbtWindow();
 
 private slots:
+  void after_init();
   void on_actionCompile_triggered();
   void on_actionLoadFile_triggered();
   void load_compiled_file(QString file_path);
