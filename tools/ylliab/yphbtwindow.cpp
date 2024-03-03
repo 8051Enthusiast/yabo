@@ -12,6 +12,7 @@
 #include <QTemporaryFile>
 #include <QThreadPool>
 #include <memory>
+#include <qobjectdefs.h>
 
 static constexpr uint8_t PNG_EXAMPLE[] = {
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
@@ -27,21 +28,28 @@ YphbtWindow::YphbtWindow(QWidget *parent)
           PNG_EXAMPLE, PNG_EXAMPLE + sizeof(PNG_EXAMPLE)))),
       file_requester(nullptr), treeModel(nullptr), hexModel(nullptr) {
   ui->setupUi(this);
+  // for some reason, qt on emscripten does not like when this is directly
+  // executed (and debugging wasm is a pain)
+  QMetaObject::invokeMethod(this, "after_init", Qt::QueuedConnection);
 }
 
 YphbtWindow::~YphbtWindow() { delete ui; }
 
+void YphbtWindow::after_init() { on_actionCompile_triggered(); }
+
 void YphbtWindow::on_actionCompile_triggered() {
   auto program = ui->plainTextEdit->toPlainText();
   start_remote_compile(program, this, &YphbtWindow::load_compiled_file,
-                      &YphbtWindow::compile_error);
+                       &YphbtWindow::compile_error);
 }
 
 void YphbtWindow::on_actionLoadFile_triggered() {
-  QFileDialog::getOpenFileContent("*.*", [this](const QString &file_path, const QByteArray &content) {
-    file = std::make_shared<FileContent>(std::vector<uint8_t>(content.begin(), content.end()));
-    on_actionCompile_triggered();
-  });
+  QFileDialog::getOpenFileContent(
+      "*.*", [this](const QString &file_path, const QByteArray &content) {
+        file = std::make_shared<FileContent>(
+            std::vector<uint8_t>(content.begin(), content.end()));
+        on_actionCompile_triggered();
+      });
 }
 
 void YphbtWindow::load_compiled_file(QString file_path) {
