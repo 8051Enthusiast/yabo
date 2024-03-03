@@ -327,7 +327,7 @@ pub const POINTER32: TargetLayoutData = TargetLayoutData {
         align_mask: 3,
     },
     int_sa: SizeAlign {
-        size: 4,
+        size: 8,
         align_mask: 3,
     },
     byte_sa: SizeAlign {
