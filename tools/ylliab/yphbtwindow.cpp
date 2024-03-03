@@ -38,12 +38,10 @@ void YphbtWindow::on_actionCompile_triggered() {
 }
 
 void YphbtWindow::on_actionLoadFile_triggered() {
-  auto file_path = QFileDialog::getOpenFileName(this, "Open File", "");
-  if (file_path == "") {
-    return;
-  }
-  file = std::make_shared<FileContent>(file_path.toStdString());
-  on_actionCompile_triggered();
+  QFileDialog::getOpenFileContent("*.*", [this](const QString &file_path, const QByteArray &content) {
+    file = std::make_shared<FileContent>(std::vector<uint8_t>(content.begin(), content.end()));
+    on_actionCompile_triggered();
+  });
 }
 
 void YphbtWindow::load_compiled_file(QString file_path) {
