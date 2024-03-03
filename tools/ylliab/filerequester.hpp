@@ -155,7 +155,9 @@ public:
                 bool recursive_fetch = true);
   FileRequester(QString error_msg) : error_msg(error_msg) {}
   ~FileRequester() {
-    executor_thread->quit();
+    if (executor_thread) {
+      executor_thread->quit();
+    }
   }
   bool has_children(TreeIndex idx) const {
     auto val = arborist->get_node(idx).val;
