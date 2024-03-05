@@ -11,6 +11,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+set(DARK_STYLE_QRC_PATH CACHE FILEPATH "Path to darkstyle.qrc.")
+
 find_package(Qt6 REQUIRED COMPONENTS Widgets Core OpenGL OpenGLWidgets Network)
 
 qt_add_library(ylliab_core STATIC
@@ -35,6 +37,7 @@ qt_add_executable(ylliab
 )
 
 qt_add_executable(yphbt
+    ${DARK_STYLE_QRC_PATH}
     compile.hpp compile.cpp
     yphbtwindow.hpp yphbtwindow.cpp yphbtwindow.ui
     yphbt.cpp

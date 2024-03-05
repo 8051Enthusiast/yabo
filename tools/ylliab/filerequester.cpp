@@ -478,13 +478,13 @@ void FileRequester::fetch_children(TreeIndex idx, RootIndex root) {
   emit request(Request{Meta{idx, message_type, root}, val, start});
 }
 
-QColor FileRequester::color(TreeIndex idx) const {
+std::optional<QColor> FileRequester::color(TreeIndex idx) const {
   auto &node = arborist->get_node(idx);
   if (node.val.has_value() && node.val->kind() == YaboValKind::YABONOM) {
     auto bubble = nominal_bubbles.at(node.val.value());
     return node_color(bubble);
   }
-  return QColor(255, 255, 255);
+  return {};
 }
 
 void FileRequester::set_parser(QString name) {

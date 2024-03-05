@@ -3,6 +3,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <qnamespace.h>
+#include <qpalette.h>
 
 ColorScrollBar::ColorScrollBar(HexTableModel *model, QWidget *parent)
     : QScrollBar(parent), model(model) {
@@ -31,16 +32,17 @@ void ColorScrollBar::refresh_minimap() {
   auto size = this->size().height();
   if (!minimap || size != minimap.size().height() || minimap_updated) {
     minimap_updated = false;
-    minimap = model->node_minimap(size);
+    minimap = model->node_minimap(size, this->palette().color(QPalette::Base));
   }
 }
 
 void ColorScrollBar::paintEvent(QPaintEvent *event) {
   refresh_minimap();
   QPainter painter(this);
-  painter.setPen(Qt::gray);
-  painter.setBrush(minimap);
   auto size = this->size();
+  auto border = this->palette().color(QPalette::Shadow);
+  painter.setPen(border);
+  painter.setBrush(minimap);
   painter.drawRect(0, 0, size.width() - 1, size.height() - 1);
   painter.setPen(Qt::red);
   auto offset = marker_offset();

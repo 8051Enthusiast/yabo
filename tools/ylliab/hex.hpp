@@ -4,6 +4,7 @@
 #include "rangemap.hpp"
 #include <QAbstractItemDelegate>
 #include <QAbstractTableModel>
+#include <QStyledItemDelegate>
 #include <QColor>
 #include <QPixmap>
 
@@ -27,7 +28,7 @@ public:
 
   void handle_doubleclick(const QModelIndex &index);
 
-  QPixmap node_minimap(int len) const;
+  QPixmap node_minimap(int len, QColor default_color) const;
 
   std::optional<size_t> node_addr(Node node) const;
 
@@ -65,7 +66,7 @@ private:
   static constexpr uint64_t max_view_offset = 3 * max_view_size / 4;
 };
 
-class HexCell : public QAbstractItemDelegate {
+class HexCell : public QStyledItemDelegate {
   Q_OBJECT
 public:
   HexCell(QFont font);
