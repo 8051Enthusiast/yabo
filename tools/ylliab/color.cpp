@@ -3,13 +3,30 @@
 #include <complex>
 #include <random>
 
-// we generate colors at a fixed luminance of 85
-constexpr float luminance = 85.0;
+bool use_dark_random_colors = false;
 
-// parallelogram with minimum(-ish) area that covers the srgb gamut at luminance 80
-constexpr std::complex<float> start_pos = {-54.02480553, -26.8951105};
-constexpr std::complex<float> first_axis = {87.04113298, 4.56163248};
-constexpr std::complex<float> second_axis = {-31.00257534, 108.11882904};
+struct ColorSpaceSlice {
+  float luminance;
+  // parallelogram with minimum(-ish) area that covers the srgb gamut in CIELAB
+  // at luminance
+  std::complex<float> start_pos;
+  std::complex<float> first_axis;
+  std::complex<float> second_axis;
+};
+
+static constexpr ColorSpaceSlice LIGHT_SPACE = {85.0,
+                                                {-54.02480553, -26.8951105},
+                                                {87.04113298, 4.56163248},
+                                                {-31.00257534, 108.11882904}};
+
+static constexpr ColorSpaceSlice DARK_SPACE = {70.0,
+                                               {-36.02653126, -51.09285043},
+                                               {108.65374119, 5.69430129},
+                                               {-37.05923352, 121.21529099}};
+
+static ColorSpaceSlice const &current_slice() {
+  return use_dark_random_colors ? DARK_SPACE : LIGHT_SPACE;
+}
 
 struct Color {
   float component[3];
@@ -29,7 +46,6 @@ static Color lin_srgb_to_srgb(Color srgb) {
   }
   return rgb;
 }
-
 
 constexpr float xyz_to_srgb_matrix[3][3] = {{3.2406, -1.5372, -0.4986},
                                             {-0.9689, 1.8758, 0.0415},
@@ -78,10 +94,12 @@ QColor random_color(size_t seed) {
   std::uniform_real_distribution<float> dist(0, 1);
   // superstition
   dist(rng);
-  lab[0] = luminance;
+  auto &slice = current_slice();
+  lab[0] = slice.luminance;
   // rejection sampling by generating a random point in the parallelogram
   do {
-    auto val = start_pos + first_axis * dist(rng) + second_axis * dist(rng);
+    auto val = slice.start_pos + slice.first_axis * dist(rng) +
+               slice.second_axis * dist(rng);
     lab[1] = val.real();
     lab[2] = val.imag();
     auto xyz = cielab_to_xyz(lab);

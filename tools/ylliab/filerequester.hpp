@@ -187,7 +187,7 @@ public:
   }
   bool can_fetch_children(TreeIndex idx);
   void fetch_children(TreeIndex idx, RootIndex root);
-  QColor color(TreeIndex idx) const;
+  std::optional<QColor> color(TreeIndex idx) const;
 
   QString error_message() const { return error_msg; }
   FileRef file_ref() const noexcept { return file; }

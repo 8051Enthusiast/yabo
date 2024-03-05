@@ -2,6 +2,8 @@
 #include "filerequester.hpp"
 #include "request.hpp"
 #include <qcolor.h>
+#include <qnamespace.h>
+#include <qvariant.h>
 
 enum Column {
   FIELD = 0,
@@ -67,13 +69,19 @@ QVariant YaboTreeModel::color(const QModelIndex &index) const {
   if (index.column() != Column::VALUE) {
     return QVariant();
   }
-  return file_requester->color(to_tree_index(index));
+  auto col = file_requester->color(to_tree_index(index));
+  if (col) {
+    return *col;
+  }
+  return QVariant();
 }
 
 QVariant YaboTreeModel::data(const QModelIndex &index, int role) const {
   if (role != Qt::DisplayRole) {
     if (role == Qt::BackgroundRole) {
       return color(index);
+    } else if (role == Qt::ForegroundRole && color(index).isValid()) {
+      return QColor(Qt::black);
     }
     return QVariant();
   }

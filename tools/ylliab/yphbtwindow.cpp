@@ -39,7 +39,7 @@ void YphbtWindow::after_init() { on_actionCompile_triggered(); }
 
 void YphbtWindow::on_actionCompile_triggered() {
   auto program = ui->plainTextEdit->toPlainText();
-  start_remote_compile(program, this, &YphbtWindow::load_compiled_file,
+  start_local_compile(program, this, &YphbtWindow::load_compiled_file,
                        &YphbtWindow::compile_error);
 }
 

@@ -3,9 +3,10 @@
 #include "colorscrollbar.hpp"
 #include "hex.hpp"
 
+#include <QAbstractItemView>
 #include <QHeaderView>
 #include <QTableView>
-#include <QAbstractItemView>
+#include <qpalette.h>
 
 HexTableView::HexTableView(QWidget *parent) : QTableView(parent) {
   QFont hexfont("Monospace");
@@ -30,7 +31,8 @@ void HexTableView::setModel(HexTableModel *model) {
   horiz_header->setDefaultSectionSize(size.width());
   QTableView::setModel(model);
   auto scroll_bar = new ColorScrollBar(model);
-  connect(scroll_bar, &ColorScrollBar::big_jump, this, &HexTableView::goto_addr);
+  connect(scroll_bar, &ColorScrollBar::big_jump, this,
+          &HexTableView::goto_addr);
   setVerticalScrollBar(scroll_bar);
 }
 
@@ -44,6 +46,6 @@ void HexTableView::goto_addr(size_t addr) {
 }
 
 void HexTableView::goto_node(Node node) {
-  auto addr = hexModel->node_addr(node);  
+  auto addr = hexModel->node_addr(node);
   goto_addr(*addr);
 }

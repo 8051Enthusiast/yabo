@@ -3,6 +3,7 @@
 #include <QPixmap>
 #include <qimage.h>
 #include <qnamespace.h>
+#include <qstyleditemdelegate.h>
 #include <vector>
 
 QVariant HexTableModel::data(const QModelIndex &index, int role) const {
@@ -20,6 +21,12 @@ QVariant HexTableModel::data(const QModelIndex &index, int role) const {
       return QColor(Qt::transparent);
     }
     return node_info->node_color(node->node);
+  } else if (role == Qt::ForegroundRole) {
+    auto node = ranges.get(offset);
+    if (node) {
+      return QColor(Qt::black);
+    }
+    return QVariant();
   } else {
     return QVariant();
   }
@@ -27,6 +34,9 @@ QVariant HexTableModel::data(const QModelIndex &index, int role) const {
 
 QVariant HexTableModel::headerData(int section, Qt::Orientation orientation,
                                    int role) const {
+  if (role == Qt::TextAlignmentRole) {
+    return Qt::AlignCenter;
+  }
   if (role == Qt::BackgroundRole) {
     return QColor(Qt::lightGray);
   }
@@ -123,10 +133,10 @@ void HexTableModel::handle_doubleclick(const QModelIndex &index) {
   node_info->change_root(node->node);
 }
 
-QPixmap HexTableModel::node_minimap(int len) const {
+QPixmap HexTableModel::node_minimap(int len, QColor background_color) const {
   auto inner_len = len - 2;
+  auto default_color = background_color.rgb();
   QImage image(1, len, QImage::Format_RGB32);
-  auto default_color = QColor(Qt::white).rgb();
   image.setPixel(0, 0, default_color);
   image.setPixel(0, len - 1, default_color);
   for (size_t i = 0; i < inner_len; i++) {
@@ -153,11 +163,27 @@ void HexCell::paint(QPainter *painter, const QStyleOptionViewItem &option,
   auto data = index.data().toString();
   painter->save();
   painter->setPen(Qt::transparent);
-  auto background = index.data(Qt::BackgroundRole).value<QColor>();
-  painter->setBrush(background);
+  auto background = index.data(Qt::BackgroundRole);
+  QBrush brush;
+  if (background.isValid()) {
+    brush.setColor(background.value<QColor>());
+  } else {
+    brush.setColor(option.palette.color(QPalette::Base));
+  }
+  if (option.state & (QStyle::State_Selected | QStyle::State_MouseOver)) {
+    brush.setStyle(Qt::Dense4Pattern);
+  } else {
+    brush.setStyle(Qt::SolidPattern);
+  }
+  painter->setBrush(brush);
   painter->drawRect(option.rect);
+  auto foreground = index.data(Qt::ForegroundRole);
+  if (foreground.isValid()) {
+    painter->setPen(foreground.value<QColor>());
+  } else {
+    painter->setPen(option.palette.color(QPalette::Text));
+  }
   painter->setFont(font);
-  painter->setPen(Qt::black);
   painter->drawText(option.rect, Qt::AlignCenter, data);
   painter->restore();
 }
