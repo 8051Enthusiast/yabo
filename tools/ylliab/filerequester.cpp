@@ -50,42 +50,6 @@ Executor::Executor(std::filesystem::path path, FileRef file_content)
                << "Could not create temporary file: " << e.what();
     throw ExecutorError(err.str());
   }
-
-  // lib = dlopen(tmp_file.c_str(), RTLD_LAZY);
-  // if (!lib) {
-  //   auto err = std::stringstream()
-  //              << "Could not open file " << path.string() << "; " <<
-  //              dlerror();
-  //   std::filesystem::remove(tmp_file);
-  //   throw ExecutorError(err.str());
-  // }
-
-  // auto size = reinterpret_cast<size_t *>(dlsym(lib, "yabo_max_buf_size"));
-  // if (!size) {
-  //   auto err = std::stringstream()
-  //              << "File does not contain yabo_max_buf_size symbol: "
-  //              << dlerror() << ". Is the file in the right format?";
-  //   dlclose(lib);
-  //   std::filesystem::remove(tmp_file);
-  //   throw ExecutorError(err.str());
-  // }
-  // auto global_address =
-  //     reinterpret_cast<Slice *>(dlsym(lib, "yabo_global_address"));
-  // if (global_address) {
-  //   auto span = file->span();
-  //   global_address->start = span.data();
-  //   global_address->end = span.data() + span.size();
-  // }
-  // typedef int64_t (*init_fun)(void);
-  // auto global_init = reinterpret_cast<init_fun>(dlsym(lib,
-  // YABO_GLOBAL_INIT)); int64_t status = global_init(); if (status) {
-  //   auto err = std::stringstream()
-  //              << "Global init failed with status " << status;
-  //   dlclose(lib);
-  //   std::filesystem::remove(tmp_file);
-  //   throw ExecutorError(err.str());
-  // }
-  // vals = YaboValCreator(YaboValStorage(*size));
 }
 
 int64_t Executor::init_lib() {

@@ -9,7 +9,6 @@
 #include <QNetworkReply>
 #include <QThreadPool>
 
-#ifndef __EMSCRIPTEN__
 class LocalCompilerRunner : public QObject, public QRunnable {
   Q_OBJECT
 public:
@@ -34,14 +33,14 @@ static inline void start_local_compile(QString program, T *object,
                   compile_error, Qt::QueuedConnection);
   QThreadPool::globalInstance()->start(runner);
 }
-#endif
 
 class RemoteCompilerRunner : public QObject {
   Q_OBJECT
 public:
-  RemoteCompilerRunner(QString program);
+  RemoteCompilerRunner(QString program, QUrl url);
   ~RemoteCompilerRunner() = default;
   QString program;
+  QUrl url;
   void run();
 signals:
   void send_error(QString error);
@@ -49,10 +48,10 @@ signals:
 };
 
 template <class T>
-static inline void start_remote_compile(QString program, T *object,
+static inline void start_remote_compile(QUrl url, QString program, T *object,
                                         void (T::*load_compiled_file)(QString),
                                         void (T::*compile_error)(QString)) {
-  auto runner = new RemoteCompilerRunner(program);
+  auto runner = new RemoteCompilerRunner(program, url);
   object->connect(runner, &RemoteCompilerRunner::compiled_file, object,
                   load_compiled_file, Qt::QueuedConnection);
   object->connect(runner, &RemoteCompilerRunner::send_error, object,

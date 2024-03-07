@@ -11,6 +11,7 @@
 #include <QRunnable>
 #include <QTemporaryFile>
 #include <QThreadPool>
+#include <QtGlobal>
 #include <memory>
 #include <qobjectdefs.h>
 
@@ -22,12 +23,24 @@ static constexpr uint8_t PNG_EXAMPLE[] = {
     0x02, 0x00, 0x01, 0x73, 0x75, 0x01, 0x18, 0x00, 0x00, 0x00, 0x00, 0x49,
     0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82};
 
-YphbtWindow::YphbtWindow(QWidget *parent)
+YphbtWindow::YphbtWindow(QWidget *parent, std::optional<QString> source,
+                         std::optional<QByteArray> input)
     : QMainWindow(parent), ui(new Ui::YphbtWindow),
       file(std::make_shared<FileContent>(std::vector<uint8_t>(
           PNG_EXAMPLE, PNG_EXAMPLE + sizeof(PNG_EXAMPLE)))),
       file_requester(nullptr), treeModel(nullptr), hexModel(nullptr) {
   ui->setupUi(this);
+  auto compile_url_env = qEnvironmentVariable("YPHBT_COMPILE_URL");
+  if (compile_url_env != "") {
+    compile_url = QUrl(compile_url_env);
+  }
+  if (source) {
+    ui->plainTextEdit->setPlainText(*source);
+  }
+  if (input) {
+    file = std::make_shared<FileContent>(
+        std::vector<uint8_t>(input->begin(), input->end()));
+  }
   // for some reason, qt on emscripten does not like when this is directly
   // executed (and debugging wasm is a pain)
   QMetaObject::invokeMethod(this, "after_init", Qt::QueuedConnection);
@@ -39,8 +52,14 @@ void YphbtWindow::after_init() { on_actionCompile_triggered(); }
 
 void YphbtWindow::on_actionCompile_triggered() {
   auto program = ui->plainTextEdit->toPlainText();
-  start_local_compile(program, this, &YphbtWindow::load_compiled_file,
-                       &YphbtWindow::compile_error);
+  if (compile_url) {
+    start_remote_compile(*compile_url, program, this,
+                         &YphbtWindow::load_compiled_file,
+                         &YphbtWindow::compile_error);
+  } else {
+    start_local_compile(program, this, &YphbtWindow::load_compiled_file,
+                        &YphbtWindow::compile_error);
+  }
 }
 
 void YphbtWindow::on_actionLoadFile_triggered() {

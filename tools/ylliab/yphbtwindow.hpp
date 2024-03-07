@@ -16,7 +16,8 @@ class YphbtWindow : public QMainWindow {
   Q_OBJECT
 
 public:
-  explicit YphbtWindow(QWidget *parent = nullptr);
+  YphbtWindow(QWidget *parent = nullptr, std::optional<QString> source = {},
+              std::optional<QByteArray> input = {});
   ~YphbtWindow();
 
 private slots:
@@ -29,8 +30,7 @@ private slots:
   void on_tableView_doubleClicked(const QModelIndex &index);
   void on_treeView_doubleClicked(const QModelIndex &index);
 
-
-  private:
+private:
   void
   set_new_file_requester(std::unique_ptr<FileRequester> &&new_file_requester);
 
@@ -39,4 +39,5 @@ private slots:
   std::unique_ptr<YaboTreeModel> treeModel;
   std::unique_ptr<HexTableModel> hexModel;
   FileRef file;
+  std::optional<QUrl> compile_url;
 };
