@@ -103,6 +103,8 @@ void YphbtWindow::set_new_file_requester(
           &HexTableView::goto_node);
   connect(file_requester.get(), &FileRequester::new_node, hexModel.get(),
           &HexTableModel::add_range);
+  connect(treeModel.get(), &YaboTreeModel::expand, ui->treeView,
+          &QTreeView::expand);
   file_requester->start_executor_thread();
 }
 

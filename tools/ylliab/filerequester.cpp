@@ -245,7 +245,10 @@ void FileRequester::set_value(TreeIndex idx, SpannedVal val, RootIndex root) {
   if (val.kind() == YaboValKind::YABOARRAY ||
       val.kind() == YaboValKind::YABOBLOCK) {
     node.state = TreeNodeState::LOADED_INCOMPLETE_CHIlDREN;
-    if (recursive_fetch && root == current_root) {
+    // idx.idx == 0 so that the top root is loaded when it is first seen
+    // so that we can expand it automatically
+    if ((recursive_fetch && root_info.at(root.root_idx).visited) ||
+        idx.idx == 0) {
       fetch_children(idx, root);
     }
   } else {
@@ -267,7 +270,7 @@ void FileRequester::set_value(TreeIndex idx, SpannedVal val, RootIndex root) {
   }
   auto empty = QString("");
   auto new_nominal_bubble = arborist->add_root_node(root_count++, empty);
-  root_causes.push_back({val, generate_new_node_color(val)});
+  root_info.push_back({val, generate_new_node_color(val), false});
   auto req = Request{Meta{new_nominal_bubble.tree_index, MessageType::DEREF,
                           new_nominal_bubble},
                      val};
@@ -302,7 +305,7 @@ void FileRequester::process_response(Response resp) {
     } else {
       node.state = TreeNodeState::LOADED;
     }
-    emit tree_end_insert_rows(resp.metadata.root);
+    emit tree_end_insert_rows(resp.metadata.idx, resp.metadata.root);
     break;
   }
   case MessageType::ERROR:
@@ -401,7 +404,8 @@ FileSpan FileRequester::span(TreeIndex idx) const {
 
 void FileRequester::init_root(QString parser_name) {
   auto idx = arborist->add_root_node(root_count++, parser_name);
-  root_causes.push_back({parser_name, generate_new_node_color(parser_name)});
+  root_info.push_back(
+      {parser_name, generate_new_node_color(parser_name), true});
   parser_root.insert({parser_name, idx});
   graph_update.new_components.push_back(Node{idx});
   emit update_graph(std::move(graph_update));
@@ -458,7 +462,7 @@ void FileRequester::set_parser(QString name) {
     return;
   }
   auto idx = arborist->add_root_node(root_count++, name);
-  root_causes.push_back({name, generate_new_node_color(name)});
+  root_info.push_back({name, generate_new_node_color(name)});
   parser_root.insert({name, idx});
   graph_update.new_components.push_back(Node{idx});
   emit update_graph(std::move(graph_update));
@@ -491,10 +495,11 @@ void FileRequester::change_root(RootIndex root) {
     return;
   }
   current_root = root;
+  root_info.at(root.root_idx).visited = true;
   emit root_changed(Node(root));
-  if (recursive_fetch) {
-    fetch_children(root.tree_index, root);
-  }
+  // if (recursive_fetch) {
+  //   fetch_children(root.tree_index, root);
+  // }
 }
 
 std::unique_ptr<FileRequester> FileRequesterFactory::create_file_requester(
@@ -539,7 +544,7 @@ FileRequesterFactory::create_file_requester(QString parser_lib_path,
 }
 
 QString FileRequester::node_name(Node idx) const {
-  auto cause = root_causes.at(idx.idx).cause;
+  auto cause = root_info.at(idx.idx).cause;
   if (std::holds_alternative<QString>(cause)) {
     return std::get<QString>(cause);
   }
@@ -549,7 +554,7 @@ QString FileRequester::node_name(Node idx) const {
 }
 
 QColor FileRequester::node_color(Node idx) const {
-  return root_causes.at(idx.idx).color;
+  return root_info.at(idx.idx).color;
 }
 
 std::optional<std::pair<size_t, size_t>>
