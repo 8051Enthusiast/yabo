@@ -198,12 +198,15 @@ void YaboTreeModel::begin_insert_rows(TreeIndex parent, int first, int last,
   beginInsertRows(idx, first, last);
 }
 
-void YaboTreeModel::end_insert_rows(RootIndex root) {
+void YaboTreeModel::end_insert_rows(TreeIndex parent, RootIndex root) {
   if (root != root_id) {
     return;
   }
   if (inserting_rows) {
     endInsertRows();
+  }
+  if (parent == root.tree_index) {
+    emit expand(to_qindex(parent, 0));
   }
   inserting_rows = false;
 }
@@ -218,6 +221,7 @@ void YaboTreeModel::set_root(RootIndex new_root) {
   undo_stack.push_back(root_id);
   undo_stack_idx++;
   endResetModel();
+  emit expand(to_qindex(root_id.tree_index, 0));
 }
 
 void YaboTreeModel::redo() {

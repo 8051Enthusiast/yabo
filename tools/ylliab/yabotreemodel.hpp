@@ -35,10 +35,13 @@ public:
   void undo();
   void redo();
 
+signals:
+  void expand(const QModelIndex &index);
+
 private slots:
   void data_changed(TreeIndex idx, RootIndex root);
   void begin_insert_rows(TreeIndex parent, int first, int last, RootIndex root);
-  void end_insert_rows(RootIndex root);
+  void end_insert_rows(TreeIndex parent, RootIndex root);
   void change_root(Node idx);
 
 private:

@@ -30,6 +30,8 @@ ParserView::ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req)
           &HexTableView::goto_node);
   connect(fileRequester.get(), &FileRequester::new_node, hexModel.get(),
           &HexTableModel::add_range);
+  connect(treeModel.get(), &YaboTreeModel::expand, ui->treeView,
+          &QTreeView::expand);
   ui->graphicsView->setScene(scene.get());
   QOpenGLWidget *glWidget = new QOpenGLWidget();
   ui->graphicsView->setViewport(glWidget);

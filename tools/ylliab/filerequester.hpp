@@ -217,7 +217,7 @@ signals:
   void tree_data_changed(TreeIndex idx, RootIndex root);
   void tree_begin_insert_rows(TreeIndex parent, int first, int last,
                               RootIndex root);
-  void tree_end_insert_rows(RootIndex root);
+  void tree_end_insert_rows(TreeIndex parent, RootIndex root);
 
 private:
   QColor generate_new_node_color(YaboVal val) const;
@@ -233,11 +233,12 @@ private:
   RootIndex current_root = RootIndex(TreeIndex(0), 0);
   GraphUpdate graph_update;
   FileRef file;
-  struct RootCause {
+  struct RootInfo {
     std::variant<QString, YaboVal> cause;
     QColor color;
+    bool visited;
   };
-  std::vector<RootCause> root_causes;
+  std::vector<RootInfo> root_info;
   bool recursive_fetch;
   // for qml to handle errors
   QString error_msg;
