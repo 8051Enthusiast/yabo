@@ -61,6 +61,7 @@ target_link_libraries(yphbt PRIVATE
 if(EMSCRIPTEN)
     target_link_options(ylliab PUBLIC -sMAIN_MODULE=2)
     target_link_options(yphbt PUBLIC -sMAIN_MODULE=2 -sSTACK_SIZE=5MB)
+    set_target_properties(yphbt PROPERTIES QT_WASM_EXTRA_EXPORTED_METHODS "ENV")
     target_compile_options(ylliab_core PUBLIC -fPIC)
     target_compile_options(ylliab PUBLIC -fPIC)
     target_compile_options(yphbt PUBLIC -fPIC)

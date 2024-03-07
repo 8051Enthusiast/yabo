@@ -4,11 +4,11 @@
 #include <QFile>
 #include <QTemporaryFile>
 
-#ifndef __EMSCRIPTEN__
-#include <QProcess>
 
 LocalCompilerRunner::LocalCompilerRunner(QString program) : program(program) {}
 
+#ifndef __EMSCRIPTEN__
+#include <QProcess>
 void LocalCompilerRunner::run() {
   auto temp_output_path =
       QString::fromStdString(tmp_file_name("yabo_", ".so").string());
@@ -30,18 +30,23 @@ void LocalCompilerRunner::run() {
   }
   emit compiled_file(temp_output_path);
 }
+#else
+void LocalCompilerRunner::run() {
+  emit send_error("Local compilation is not supported on this platform");
+}
 #endif
 
-RemoteCompilerRunner::RemoteCompilerRunner(QString program)
-    : program(program) {}
+RemoteCompilerRunner::RemoteCompilerRunner(QString program, QUrl url)
+    : program(program), url(url) {}
 
 void RemoteCompilerRunner::run() {
   auto manager = new QNetworkAccessManager(this);
   auto temp_output_path =
       QString::fromStdString(tmp_file_name("yabo_", ".so").string());
   auto receive = [this, manager, temp_output_path](QNetworkReply *reply) {
-    //deleteLater();
-    if (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute) == 422 /* Unprocessable Entity */) {
+    // deleteLater();
+    if (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute) ==
+        422 /* Unprocessable Entity */) {
       auto error_text = reply->readAll();
       emit send_error(QString::fromUtf8(error_text));
       return;
@@ -61,7 +66,7 @@ void RemoteCompilerRunner::run() {
     emit compiled_file(temp_output_path);
   };
   connect(manager, &QNetworkAccessManager::finished, receive);
-  auto request = QNetworkRequest(QUrl("http://localhost:8000/compile"));
+  auto request = QNetworkRequest(url);
   request.setHeader(QNetworkRequest::ContentTypeHeader, "text/plain");
   manager->post(request, program.toUtf8());
 }

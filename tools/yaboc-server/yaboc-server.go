@@ -76,6 +76,8 @@ func set_cors(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "OPTIONS, POST, PUT")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
+	w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
 }
 
 func compileHandler(w http.ResponseWriter, r *http.Request, conf config, cmd []string) {
@@ -118,6 +120,19 @@ func compileHandler(w http.ResponseWriter, r *http.Request, conf config, cmd []s
 	}
 }
 
+func serveStatic(w http.ResponseWriter, r *http.Request, root string) {
+	set_cors(w)
+	if r.Method == http.MethodOptions {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method is not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	rootFs := os.DirFS(root)
+	http.ServeFileFS(w, r, rootFs, r.URL.Path)
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		panic("No command given")
@@ -126,6 +141,13 @@ func main() {
 	conf := get_config()
 	http.HandleFunc("/compile", func(w http.ResponseWriter, r *http.Request) {
 		compileHandler(w, r, conf, compileCommand)
+	})
+	root := "."
+	if env_root := os.Getenv("YABOCSERV_ROOT"); env_root != "" {
+		root = env_root
+	}
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		serveStatic(w, r, root)
 	})
 	http.ListenAndServe(":"+strconv.Itoa(conf.Port), nil)
 }
