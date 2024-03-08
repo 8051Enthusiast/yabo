@@ -28,6 +28,7 @@ qt_add_library(ylliab_core STATIC
     hexview.hpp hexview.cpp
     filerequester.hpp filerequester.cpp
     yabotreemodel.hpp yabotreemodel.cpp
+    init.hpp init.cpp
 )
 
 qt_add_executable(ylliab

@@ -49,3 +49,32 @@ void HexTableView::goto_node(Node node) {
   auto addr = hexModel->node_addr(node);
   goto_addr(*addr);
 }
+
+void HexTableView::select_addr_range(size_t start, size_t end) {
+  selectionModel()->clearSelection();
+  if (start == end) {
+    return;
+  }
+  auto start_row = hexModel->addr_row(start);
+  auto last_row = hexModel->addr_row(end - 1);
+  auto start_local_row = hexModel->local_row(start_row);
+  auto last_local_row = hexModel->local_row(last_row);
+  auto col = hexModel->columnCount();
+  auto start_column = start % col;
+  auto last_column = (end - 1) % col;
+  auto selection = QItemSelection();
+  if (start_local_row == last_local_row) {
+    selection.select(hexModel->index(start_local_row, start_column),
+                     hexModel->index(start_local_row, last_column));
+  } else {
+    selection.select(hexModel->index(start_local_row, start_column),
+                     hexModel->index(start_local_row, col - 1));
+    if (last_local_row - start_local_row >= 2) {
+      selection.select(hexModel->index(start_local_row + 1, 0),
+                       hexModel->index(last_local_row - 1, col - 1));
+    }
+    selection.select(hexModel->index(last_local_row, 0),
+                     hexModel->index(last_local_row, last_column));
+  }
+  selectionModel()->select(selection, QItemSelectionModel::Select);
+}

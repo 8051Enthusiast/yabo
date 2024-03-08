@@ -1,20 +1,12 @@
-#include "graph.hpp"
+#include "init.hpp"
 #include "mainwindow.hpp"
-#include "request.hpp"
 
 #include <QApplication>
 #include <QMetaType>
 
 int main(int argc, char *argv[]) {
   QApplication a(argc, argv);
-  qRegisterMetaType<Meta>();
-  qRegisterMetaType<Request>();
-  qRegisterMetaType<Response>();
-  qRegisterMetaType<TreeIndex>();
-  qRegisterMetaType<RootIndex>();
-  qRegisterMetaType<NodeRange>();
-  qRegisterMetaType<GraphUpdate>();
-  qRegisterMetaType<PositionsUpdate>();
+  init_meta_types();
   MainWindow w;
   w.show();
   return a.exec();

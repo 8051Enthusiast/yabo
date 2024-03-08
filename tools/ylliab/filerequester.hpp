@@ -198,12 +198,14 @@ public:
   QString node_name(Node idx) const override;
   QColor node_color(Node idx) const override;
   std::optional<std::pair<size_t, size_t>> node_range(Node idx) const override;
+  void select_idx(TreeIndex idx);
 
   void start_executor_thread() { executor_thread->start(); }
   void change_root(RootIndex node);
   void change_root(Node node) override;
   RootIndex root_idx(Node node) const;
   RootIndex get_current_root() const { return current_root; }
+
 
 public slots:
   void process_response(Response resp);
@@ -218,6 +220,7 @@ signals:
   void tree_begin_insert_rows(TreeIndex parent, int first, int last,
                               RootIndex root);
   void tree_end_insert_rows(TreeIndex parent, RootIndex root);
+  void select_range(size_t start, size_t end);
 
 private:
   QColor generate_new_node_color(YaboVal val) const;

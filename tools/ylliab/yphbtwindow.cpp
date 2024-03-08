@@ -3,6 +3,7 @@
 #include "filecontent.hpp"
 #include "filerequester.hpp"
 #include "hexview.hpp"
+#include "init.hpp"
 #include "ui_yphbtwindow.h"
 
 #include <QFileDialog>
@@ -99,12 +100,8 @@ void YphbtWindow::set_new_file_requester(
   ui->tableView->setModel(newHexModel.get());
   hexModel = std::move(newHexModel);
   file_requester = std::move(new_file_requester);
-  connect(file_requester.get(), &FileRequester::root_changed, ui->tableView,
-          &HexTableView::goto_node);
-  connect(file_requester.get(), &FileRequester::new_node, hexModel.get(),
-          &HexTableModel::add_range);
-  connect(treeModel.get(), &YaboTreeModel::expand, ui->treeView,
-          &QTreeView::expand);
+  connect_hex_and_tree(ui->tableView, ui->treeView, hexModel.get(),
+                       treeModel.get(), file_requester.get());
   file_requester->start_executor_thread();
 }
 

@@ -1,7 +1,6 @@
 #include "color.hpp"
-#include "graph.hpp"
-#include "request.hpp"
 #include "yphbtwindow.hpp"
+#include "init.hpp"
 
 #include <QApplication>
 #include <QMetaType>
@@ -9,14 +8,7 @@
 
 int main(int argc, char **argv) {
   QApplication a(argc, argv);
-  qRegisterMetaType<Meta>();
-  qRegisterMetaType<Request>();
-  qRegisterMetaType<Response>();
-  qRegisterMetaType<TreeIndex>();
-  qRegisterMetaType<RootIndex>();
-  qRegisterMetaType<NodeRange>();
-  qRegisterMetaType<GraphUpdate>();
-  qRegisterMetaType<PositionsUpdate>();
+  init_meta_types();
   QFile f(":qdarkstyle/dark/darkstyle.qss");
   if (f.exists() && f.open(QFile::ReadOnly | QFile::Text)) {
     QTextStream ts(&f);

@@ -496,10 +496,8 @@ void FileRequester::change_root(RootIndex root) {
   }
   current_root = root;
   root_info.at(root.root_idx).visited = true;
+  emit select_range(0, 0);
   emit root_changed(Node(root));
-  // if (recursive_fetch) {
-  //   fetch_children(root.tree_index, root);
-  // }
 }
 
 std::unique_ptr<FileRequester> FileRequesterFactory::create_file_requester(
@@ -581,4 +579,14 @@ QColor FileRequester::generate_new_node_color(YaboVal val) const {
 QColor FileRequester::generate_new_node_color(QString val) const {
   size_t hash = std::hash<QString>()(val);
   return random_color(hash);
+}
+
+void FileRequester::select_idx(TreeIndex idx) {
+  auto sp = span(idx);
+  if (!sp.data()) {
+    return;
+  }
+  auto start = sp.data() - file->span().data();
+  auto end = start + sp.size();
+  emit select_range(start, end);
 }
