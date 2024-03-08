@@ -23,6 +23,8 @@ void connect_hex_and_tree(HexTableView *hex_view, QTreeView *tree_view,
                    &HexTableView::select_addr_range);
   QObject::connect(file_requester, &FileRequester::new_node, hex_model,
                    &HexTableModel::add_range);
+  QObject::connect(file_requester, &FileRequester::goto_addr, hex_view,
+                   &HexTableView::goto_addr);
   QObject::connect(tree_model, &YaboTreeModel::expand, tree_view,
                    &QTreeView::expand);
   QObject::connect(tree_view->selectionModel(),

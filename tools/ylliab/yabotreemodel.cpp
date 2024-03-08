@@ -245,10 +245,16 @@ void YaboTreeModel::undo() {
 }
 
 void YaboTreeModel::handle_doubleclick(const QModelIndex &index) {
-  if (index.column() != Column::VALUE) {
-    return;
+  if (index.column() == Column::VALUE) {
+    file_requester->set_bubble(to_tree_index(index));
   }
-  file_requester->set_bubble(to_tree_index(index));
+  if (index.column() == Column::ADDR) {
+    auto span = file_requester->span(to_tree_index(index));
+    if (span.data()) {
+      emit file_requester->goto_addr(span.data() -
+                                     file_requester->file_base_addr());
+    }
+  }
 }
 
 void YaboTreeModel::change_root(Node idx) {
