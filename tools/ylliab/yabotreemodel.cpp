@@ -255,3 +255,12 @@ void YaboTreeModel::change_root(Node idx) {
   auto root = file_requester->root_idx(idx);
   set_root(root);
 }
+
+void YaboTreeModel::change_selected(const QModelIndex &current,
+                                    const QModelIndex &previous) {
+  if (!current.isValid()) {
+    file_requester->select_range(0, 0);
+  }
+  auto idx = to_tree_index(current);
+  file_requester->select_idx(idx);
+}

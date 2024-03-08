@@ -35,6 +35,8 @@ public:
   void undo();
   void redo();
 
+  void change_selected(const QModelIndex &current, const QModelIndex &previous);
+
 signals:
   void expand(const QModelIndex &index);
 

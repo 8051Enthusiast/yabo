@@ -1,5 +1,6 @@
 #include "parserview.hpp"
 #include "hex.hpp"
+#include "init.hpp"
 #include "ui_parserview.h"
 #include "yabotreemodel.hpp"
 
@@ -26,12 +27,8 @@ ParserView::ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req)
           &Graph::update_graph, Qt::QueuedConnection);
   connect(fileRequester.get(), &FileRequester::root_changed, scene.get(),
           &GraphScene::select_node);
-  connect(fileRequester.get(), &FileRequester::root_changed, ui->tableView,
-          &HexTableView::goto_node);
-  connect(fileRequester.get(), &FileRequester::new_node, hexModel.get(),
-          &HexTableModel::add_range);
-  connect(treeModel.get(), &YaboTreeModel::expand, ui->treeView,
-          &QTreeView::expand);
+  connect_hex_and_tree(ui->tableView, ui->treeView, hexModel.get(),
+                       treeModel.get(), fileRequester.get());
   ui->graphicsView->setScene(scene.get());
   QOpenGLWidget *glWidget = new QOpenGLWidget();
   ui->graphicsView->setViewport(glWidget);
