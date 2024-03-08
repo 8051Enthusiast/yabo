@@ -44,7 +44,7 @@ void RemoteCompilerRunner::run() {
   auto temp_output_path =
       QString::fromStdString(tmp_file_name("yabo_", ".so").string());
   auto receive = [this, manager, temp_output_path](QNetworkReply *reply) {
-    // deleteLater();
+    deleteLater();
     if (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute) ==
         422 /* Unprocessable Entity */) {
       auto error_text = reply->readAll();
