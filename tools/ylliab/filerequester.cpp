@@ -182,18 +182,20 @@ Executor::DerefInfo Executor::deref(YaboVal val) {
 
 SpannedVal Executor::normalize(YaboVal val, FileSpan parent_span) {
   std::optional<SpannedVal> first_outside;
+  bool active = false;
   while (true) {
     if (val.kind() == YaboValKind::YABOU8) {
       const uint8_t *start = val.access_u8();
-      return SpannedVal{val, FileSpan(start, 1)};
+      return SpannedVal(val, FileSpan(start, 1), true);
     }
     auto deref_info = deref(val);
     if (!deref_info.val.has_value()) {
       break;
     }
     if (deref_info.span.has_value()) {
+      active = true;
       if (!span_contains(parent_span, deref_info.span.value())) {
-        first_outside = SpannedVal{val, deref_info.span.value()};
+        first_outside = SpannedVal(val, deref_info.span.value(), true);
       }
       parent_span = deref_info.span.value();
     }
@@ -203,7 +205,7 @@ SpannedVal Executor::normalize(YaboVal val, FileSpan parent_span) {
                                     val.kind() == YaboValKind::YABOBLOCK)) {
     return first_outside.value();
   }
-  return SpannedVal{val, parent_span};
+  return SpannedVal(val, parent_span, active);
 }
 
 TreeIndex Arborist::add_node(ParentBranch parent, QString &field_name) {
@@ -394,12 +396,11 @@ FileSpan FileRequester::span(TreeIndex idx) const {
   if (parent == INVALID_PARENT) {
     return inner_val.span;
   }
-  auto parent_span = arborist->get_node(parent).val.value().span;
-  if (parent_span.data() == inner_val.span.data() &&
-      parent_span.size() == inner_val.span.size()) {
+  if (!inner_val.active) {
     return FileSpan();
+  } else {
+    return inner_val.span;
   }
-  return inner_val.span;
 }
 
 void FileRequester::init_root(QString parser_name) {

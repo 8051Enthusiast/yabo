@@ -62,7 +62,7 @@ struct Request {
       : metadata(meta), val(value), array_start_index(0) {}
   Request(Meta meta, SpannedVal value, size_t array_start_index)
       : metadata(meta), val(value), array_start_index(array_start_index) {}
-  Request() : metadata(Meta()), val(YaboVal(nullptr)) {}
+  Request() : metadata(Meta()), val(SpannedVal()) {}
   Meta metadata;
   SpannedVal val;
   // only used to indicate the start index of an array

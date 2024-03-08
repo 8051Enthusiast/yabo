@@ -95,7 +95,7 @@ SpannedVal YaboValStorage::with_span_and_return_buf(
   auto val = with_return_buf([=](uint8_t *ret) { return f(tmp_val, ret); });
   std::memcpy(&slice, tmp_val, sizeof(Slice));
   auto size = slice.start - span.data();
-  return SpannedVal(val, FileSpan(span.data(), size));
+  return SpannedVal(val, FileSpan(span.data(), size), true);
 }
 
 std::optional<YaboVal> YaboValCreator::access_field(YaboVal val,
