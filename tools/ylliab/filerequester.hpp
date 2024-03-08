@@ -221,6 +221,7 @@ signals:
                               RootIndex root);
   void tree_end_insert_rows(TreeIndex parent, RootIndex root);
   void select_range(size_t start, size_t end);
+  void goto_addr(size_t addr);
 
 private:
   QColor generate_new_node_color(YaboVal val) const;
