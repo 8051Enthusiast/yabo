@@ -187,6 +187,13 @@ std::optional<FileSpan> YaboValCreator::extent(YaboVal val) {
     auto start = val.access_u8();
     return FileSpan(start, 1);
   }
+  if (val.kind() == YaboValKind::YABOARRAY) {
+    return storage.tmp_buf_o_plenty<std::optional<FileSpan>>(
+        [=](DynValue *t1, DynValue *t2) -> std::optional<FileSpan> {
+          val->vtable->typecast_impl(t1->data, val->data, 0 | YABO_VTABLE);
+          return primary_slice(t1, t2);
+        });
+  }
   if (val.kind() != YaboValKind::YABONOM) {
     return {};
   }
