@@ -72,7 +72,31 @@ struct Request {
 
 Q_DECLARE_METATYPE(Request)
 
-using NamedYaboVal = std::pair<QString, SpannedVal>;
+struct NamedYaboVal {
+  QString name;
+  SpannedVal val;
+  std::strong_ordering operator<=>(const NamedYaboVal &other) const {
+    auto active_cmp = !val.active <=> !other.val.active;
+    if (active_cmp != 0) {
+      return active_cmp;
+    }
+    auto start_cmp = val.span.data() <=> other.val.span.data();
+    if (start_cmp != 0) {
+      return start_cmp;
+    }
+    auto len_cmp = ~val.span.size() <=> ~other.val.span.size();
+    if (len_cmp != 0) {
+      return len_cmp;
+    }
+    if (name < other.name) {
+      return std::strong_ordering::less;
+    }
+    if (name > other.name) {
+      return std::strong_ordering::greater;
+    }
+    return std::strong_ordering::equal;
+  }
+};
 using YaboValVec = std::vector<NamedYaboVal>;
 
 struct Response {

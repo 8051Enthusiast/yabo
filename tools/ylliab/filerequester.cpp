@@ -104,9 +104,10 @@ std::optional<Response> Executor::get_fields(Request &req) {
     auto field_val = vals.access_field(req.val, name);
     if (field_val.has_value()) {
       auto new_val = normalize(field_val.value(), req.val.span);
-      ret.push_back(std::pair(QString(name), new_val));
+      ret.push_back(NamedYaboVal{QString(name), new_val});
     }
   }
+  std::sort(ret.begin(), ret.end());
   return Response(req.metadata, std::move(ret));
 }
 
@@ -119,7 +120,7 @@ std::optional<Response> Executor::get_array_members(Request &req) {
     auto idx_val = vals.index(req.val, i);
     if (idx_val.has_value()) {
       auto new_val = normalize(idx_val.value(), req.val.span);
-      ret.push_back(std::pair(QString::number(i), new_val));
+      ret.push_back(NamedYaboVal{QString::number(i), new_val});
     } else {
       return {};
     }
@@ -303,8 +304,8 @@ void FileRequester::process_response(Response resp) {
                                 start + vals.size() - 1, resp.metadata.root);
     for (size_t i = 0; i < vals.size(); i++) {
       auto branch = ParentBranch{resp.metadata.idx, i + start};
-      auto tree_idx = arborist->add_node(branch, vals[i].first);
-      set_value(tree_idx, vals[i].second, resp.metadata.root);
+      auto tree_idx = arborist->add_node(branch, vals[i].name);
+      set_value(tree_idx, vals[i].val, resp.metadata.root);
     }
     auto &node = arborist->get_node(resp.metadata.idx);
     node.n_children += vals.size();
