@@ -201,6 +201,13 @@ SpannedVal Executor::normalize(YaboVal val, FileSpan parent_span) {
     }
     val = deref_info.val.value();
   }
+  if (val.kind() == YaboValKind::YABOARRAY) {
+    auto extent = vals.extent(val);
+    if (extent.has_value()) {
+      parent_span = extent.value();
+      active = true;
+    }
+  }
   if (first_outside.has_value() && (val.kind() == YaboValKind::YABOARRAY ||
                                     val.kind() == YaboValKind::YABOBLOCK)) {
     return first_outside.value();

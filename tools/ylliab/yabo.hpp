@@ -116,6 +116,11 @@ public:
     auto t3 = tmp2();
     return f(t1, t2, t3);
   }
+  template <typename T>
+  T tmp_buf_o_plenty(std::function<T(DynValue *tmp1, DynValue *tmp2)> f) {
+    return tmp_buf_o_plenty<T>(
+        [=](DynValue *t1, DynValue *t2, DynValue *) { return f(t1, t2); });
+  }
 
 private:
   size_t fresh_storage_size() const {
