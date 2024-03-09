@@ -16,19 +16,47 @@
   <widget class="QWidget" name="centralwidget">
    <layout class="QHBoxLayout" name="horizontalLayout">
     <item>
-     <widget class="QSplitter" name="splitter_2">
+     <widget class="QSplitter" name="splitter_3">
       <property name="orientation">
        <enum>Qt::Horizontal</enum>
       </property>
-      <widget class="QPlainTextEdit" name="plainTextEdit">
-       <property name="font">
-        <font>
-         <family>Monospace</family>
-        </font>
+      <widget class="QSplitter" name="splitter_2">
+       <property name="orientation">
+        <enum>Qt::Vertical</enum>
        </property>
-       <property name="plainText">
-        <string>export def *main = ~</string>
-       </property>
+       <widget class="QPlainTextEdit" name="plainTextEdit">
+        <property name="font">
+         <font>
+          <family>  DejaVu Sans Mono</family>
+          <italic>false</italic>
+          <bold>false</bold>
+         </font>
+        </property>
+        <property name="plainText">
+         <string>export def *main = ~</string>
+        </property>
+       </widget>
+       <widget class="CompilerErrorView" name="errorView">
+        <property name="enabled">
+         <bool>true</bool>
+        </property>
+        <property name="font">
+         <font>
+          <family>DejaVu Sans Mono</family>
+          <italic>false</italic>
+          <bold>false</bold>
+         </font>
+        </property>
+        <property name="lineWrapMode">
+         <enum>QTextEdit::NoWrap</enum>
+        </property>
+        <property name="readOnly">
+         <bool>true</bool>
+        </property>
+        <property name="textInteractionFlags">
+         <set>Qt::TextSelectableByMouse</set>
+        </property>
+       </widget>
       </widget>
       <widget class="QSplitter" name="splitter">
        <property name="orientation">
@@ -98,6 +126,11 @@
    <class>HexTableView</class>
    <extends>QTableView</extends>
    <header>hexview.hpp</header>
+  </customwidget>
+  <customwidget>
+   <class>CompilerErrorView</class>
+   <extends>QTextEdit</extends>
+   <header>compiler_error_view.hpp</header>
   </customwidget>
  </customwidgets>
  <resources/>

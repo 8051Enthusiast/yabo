@@ -109,3 +109,33 @@ QColor random_color(size_t seed) {
   auto color = QColor::fromRgbF(srgb[0], srgb[1], srgb[2]);
   return color;
 }
+
+static constexpr std::array<QColor, 16> ansi_colors = {
+    QColor(0, 0, 0),      QColor(205, 0, 0),     QColor(0, 205, 0),
+    QColor(205, 205, 0),  QColor(0, 0, 238),     QColor(205, 0, 205),
+    QColor(0, 205, 205),  QColor(229, 229, 229), QColor(127, 127, 127),
+    QColor(255, 0, 0),    QColor(0, 255, 0),     QColor(255, 255, 0),
+    QColor(92, 92, 255),  QColor(255, 0, 255),   QColor(0, 255, 255),
+    QColor(255, 255, 255)};
+
+QColor ansi_color_16(uint8_t color) { return ansi_colors.at(color); }
+
+static constexpr std::array<uint8_t, 6> col6 = {0x00, 0x5f, 0x87,
+                                                0xaf, 0xd7, 0xff};
+static constexpr uint8_t base = col6.size();
+
+QColor ansi_color_256(uint8_t color) {
+  if (color < 16) {
+    return ansi_color_16(color);
+  }
+  color -= 16;
+  if (color < base * base * base) {
+    uint8_t r = color / (base * base);
+    uint8_t g = (color / base) % base;
+    uint8_t b = color % base;
+    return QColor(col6[r], col6[g], col6[b]);
+  }
+  color -= base * base * base;
+  auto shade = color * 10 + 8;
+  return QColor(shade, shade, shade);
+}
