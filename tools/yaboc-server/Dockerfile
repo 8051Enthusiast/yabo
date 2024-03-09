@@ -1,4 +1,4 @@
-FROM golang:1-bookworm
+FROM golang:1-bookworm AS server
 
 ADD tools/yaboc-server /src
 WORKDIR /src
@@ -6,7 +6,7 @@ WORKDIR /src
 RUN go build -o yaboc-server
 
 
-FROM rust:1-bookworm
+FROM rust:1-bookworm AS compiler
 
 RUN apt-get update && apt-get install -y cmake
 
@@ -27,7 +27,23 @@ WORKDIR /src/yabo
 
 RUN cargo build --release
 
-FROM debian:bookworm
+FROM debian:bookworm AS emscripten
+
+ARG EMSCRIPTEN_VERSION=3.1.54
+
+ADD https://github.com/emscripten-core/emsdk/archive/refs/tags/${EMSCRIPTEN_VERSION}.tar.gz \
+    /src/
+
+RUN apt-get update && apt-get install -y python3 xz-utils cmake build-essential git \
+ && tar -xf /src/${EMSCRIPTEN_VERSION}.tar.gz -C / \
+ && mv /emsdk-${EMSCRIPTEN_VERSION} /opt/emsdk \
+ && /opt/emsdk/emsdk install --build=Release sdk-main-64bit \
+ && /opt/emsdk/emsdk activate sdk-main-64bit \
+ && bash -c '. /opt/emsdk/emsdk_env.sh && bootstrap'
+
+RUN rm -rf /opt/emsdk/llvm/git/src
+
+FROM debian:bookworm AS qt
 
 ADD https://github.com/qt/qtbase/archive/refs/tags/v6.6.2.zip /src/
 RUN apt-get update && apt-get install -y build-essential cmake unzip libgl1-mesa-dev
@@ -38,19 +54,12 @@ RUN --mount=type=tmpfs,target=/build \
  && cmake --build . -t qtbase \
  && cmake --install . --prefix /opt/qt6
 
-ARG EMSCRIPTEN_VERSION=3.1.54
+COPY --from=emscripten /opt/emsdk/ /opt/emsdk/
 
-ADD https://github.com/emscripten-core/emsdk/archive/refs/tags/${EMSCRIPTEN_VERSION}.tar.gz \
-    /src/
-
-RUN apt-get update && apt-get install -y python3 xz-utils \
- && tar -xf /src/${EMSCRIPTEN_VERSION}.tar.gz -C / \
- && mv /emsdk-${EMSCRIPTEN_VERSION} /opt/emsdk \
- && /opt/emsdk/emsdk install ${EMSCRIPTEN_VERSION} \
- && /opt/emsdk/emsdk activate ${EMSCRIPTEN_VERSION}
-
+RUN apt-get update && apt-get install -y python3 git
 RUN --mount=type=tmpfs,target=/build bash -c '\
     . /opt/emsdk/emsdk_env.sh \
+ && /opt/emsdk/emscripten/main/emcc --version \
  && cd /build \
  && /src/qtbase-6.6.2/configure -prefix /opt/qt6-wasm -qt-host-path /opt/qt6 -feature-thread -no-warnings-are-errors -platform wasm-emscripten \
  && cmake --build . -t qtbase --parallel $(nproc)\
@@ -72,31 +81,25 @@ RUN --mount=type=tmpfs,target=/build bash -c '\
 
 FROM debian:bookworm-slim
 
-ARG EMSCRIPTEN_VERSION=3.1.54
-
-ADD https://github.com/emscripten-core/emsdk/archive/refs/tags/${EMSCRIPTEN_VERSION}.tar.gz \
-    /src/
-RUN apt-get update && apt-get install -y python3 xz-utils \
- && tar -xf /src/${EMSCRIPTEN_VERSION}.tar.gz -C / \
- && mv /emsdk-${EMSCRIPTEN_VERSION} /opt/emsdk \
- && /opt/emsdk/emsdk install ${EMSCRIPTEN_VERSION} \
- && /opt/emsdk/emsdk activate ${EMSCRIPTEN_VERSION} \
- && rm -rf /src 
+RUN apt-get update && apt-get install -y python3 git
 
 COPY tools/yaboc-server/build.sh /opt/bin/build.sh
 ADD ./lib /opt/lib
-COPY --from=0 /src/yaboc-server /opt/bin/yaboc-server
-COPY --from=1 /src/yabo/target/release/yaboc /opt/bin/yaboc
-COPY --from=2 /opt/yphbt/* /opt/yphbt/
+COPY --from=server /src/yaboc-server /opt/bin/yaboc-server
+COPY --from=compiler /src/yabo/target/release/yaboc /opt/bin/yaboc
+COPY --from=emscripten /opt/emsdk/ /opt/emsdk/
+COPY --from=qt /opt/yphbt/ /opt/yphbt/
 COPY ./tools/yaboc-server/index.html /opt/yphbt/index.html
 
 ENV YABO_LIB_PATH=/opt/lib
+RUN mkdir /home/emscripten && chown 1000:1000 /home/emscripten
+ENV HOME=/home/emscripten
 
+USER 1000:1000
 # initialize emcc's cache by running once
 RUN bash -c '. /opt/emsdk/emsdk_env.sh && /opt/bin/build.sh <(echo "export def *main = ~") /dev/null'
 
 WORKDIR /tmp
-USER 1000:1000
 EXPOSE 8000
 ENV YABOCSERV_ROOT=/opt/yphbt
 
