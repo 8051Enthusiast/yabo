@@ -6,6 +6,24 @@
 #include <qstyleditemdelegate.h>
 #include <vector>
 
+static uint8_t address_digit_count(uint64_t file_size) {
+  if (!file_size) {
+    return 4;
+  }
+  if ((file_size - 1) >> 32) {
+    return 16;
+  }
+  if ((file_size - 1) >> 16) {
+    return 8;
+  }
+  return 4;
+}
+
+HexTableModel::HexTableModel(FileRef file, NodeInfoProvider *node_info)
+    : file(file), node_info(node_info) {
+  file_address_digit_count = address_digit_count(file->span().size());
+}
+
 QVariant HexTableModel::data(const QModelIndex &index, int role) const {
   auto row = index.row();
   auto col = index.column();
@@ -31,7 +49,6 @@ QVariant HexTableModel::data(const QModelIndex &index, int role) const {
     return QVariant();
   }
 }
-
 QVariant HexTableModel::headerData(int section, Qt::Orientation orientation,
                                    int role) const {
   if (role == Qt::TextAlignmentRole) {
@@ -41,8 +58,8 @@ QVariant HexTableModel::headerData(int section, Qt::Orientation orientation,
     return QColor(Qt::lightGray);
   }
   if (role == Qt::DisplayRole && orientation == Qt::Vertical) {
-    return QString("0x%1").arg(row_addr(global_row(section)), 16, 16,
-                               QChar('0'));
+    return QString("%1").arg(row_addr(global_row(section)),
+                             file_address_digit_count, 16, QChar('0'));
   } else {
     return QVariant();
   }
@@ -194,14 +211,12 @@ QSize HexCell::sizeHint(const QStyleOptionViewItem &option,
   return cell_size;
 }
 
-HexCell::HexCell(QFont font) : font(font) {
+HexCell::HexCell(QFont font, size_t file_size) : font(font) {
   auto metrics = QFontMetrics(font);
   cell_size = metrics.size(0, "00");
   cell_size.setHeight(cell_size.height() + 6);
   cell_size.setWidth(cell_size.width() + 10);
-  header_size = metrics.size(0, "0x0000000000000000");
-  header_size.setHeight(header_size.height() + 6);
-  header_size.setWidth(header_size.width() + 10);
+  set_file_size(file_size);
 }
 int HexTableModel::rowCount(const QModelIndex &parent) const {
   auto file_rows = global_row_count();
@@ -220,4 +235,12 @@ int HexTableModel::local_row(GlobalRow row) const {
 }
 GlobalRow HexTableModel::global_row(int row) const {
   return GlobalRow{row + model_offset};
+}
+void HexCell::set_file_size(size_t file_size) {
+  auto metrics = QFontMetrics(font);
+  auto addr_string = QString("0x%1").arg(
+      file_size, address_digit_count(file_size), 16, QChar('0'));
+  header_size = metrics.size(0, addr_string);
+  header_size.setHeight(header_size.height() + 6);
+  header_size.setWidth(header_size.width() + 10);
 }

@@ -13,22 +13,25 @@ HexTableView::HexTableView(QWidget *parent) : QTableView(parent) {
   hexfont.setStyleHint(QFont::TypeWriter);
   hexfont.setPointSize(12);
   setFont(hexfont);
-  hexCell = std::make_unique<HexCell>(hexfont);
+  hexCell = std::make_unique<HexCell>(hexfont, 0);
   setItemDelegate(hexCell.get());
 }
 
 void HexTableView::setModel(HexTableModel *model) {
   hexModel = model;
+  hexCell->set_file_size(model->file->span().size());
   auto size = hexCell->get_cell_size();
   auto vert_header = verticalHeader();
   vert_header->setMinimumSectionSize(size.height());
   vert_header->setSectionResizeMode(QHeaderView::Fixed);
   vert_header->setDefaultSectionSize(size.height());
-  vert_header->setFixedWidth(hexCell->get_header_size().width());
+  auto header_size = hexCell->get_header_size();
+  vert_header->setFixedWidth(header_size.width());
   auto horiz_header = horizontalHeader();
   horiz_header->setMinimumSectionSize(size.width());
   horiz_header->setSectionResizeMode(QHeaderView::Fixed);
   horiz_header->setDefaultSectionSize(size.width());
+  
   QTableView::setModel(model);
   auto scroll_bar = new ColorScrollBar(model);
   connect(scroll_bar, &ColorScrollBar::big_jump, this,

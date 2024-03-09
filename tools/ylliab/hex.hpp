@@ -4,9 +4,9 @@
 #include "rangemap.hpp"
 #include <QAbstractItemDelegate>
 #include <QAbstractTableModel>
-#include <QStyledItemDelegate>
 #include <QColor>
 #include <QPixmap>
+#include <QStyledItemDelegate>
 
 struct GlobalRow {
   size_t row;
@@ -15,8 +15,7 @@ struct GlobalRow {
 class HexTableModel : public QAbstractTableModel {
   Q_OBJECT
 public:
-  HexTableModel(FileRef file, NodeInfoProvider *node_info)
-      : file(file), node_info(node_info) {}
+  HexTableModel(FileRef file, NodeInfoProvider *node_info);
   int rowCount(const QModelIndex &parent = QModelIndex()) const override;
   int columnCount(const QModelIndex &parent = QModelIndex()) const override {
     return columns;
@@ -45,6 +44,8 @@ public:
   bool row_is_in_range(GlobalRow addr) const;
   void put_row_in_range(GlobalRow addr);
 
+  FileRef file;
+
 signals:
   void updated_minimap();
 
@@ -55,9 +56,9 @@ private:
   size_t global_row_count() const {
     return (file->span().size() + columns - 1) / columns;
   }
-  FileRef file;
   RangeMap ranges;
   int columns = 16;
+  int file_address_digit_count;
   size_t model_offset = 0;
   NodeInfoProvider *node_info;
 
@@ -69,13 +70,14 @@ private:
 class HexCell : public QStyledItemDelegate {
   Q_OBJECT
 public:
-  HexCell(QFont font);
+  HexCell(QFont font, size_t file_size);
   void paint(QPainter *painter, const QStyleOptionViewItem &option,
              const QModelIndex &index) const override;
   QSize sizeHint(const QStyleOptionViewItem &option,
                  const QModelIndex &index) const override;
   QSize get_cell_size() const { return cell_size; }
   QSize get_header_size() const { return header_size; }
+  void set_file_size(size_t file_size);
 
 private:
   QFont font;
