@@ -31,6 +31,7 @@ YphbtWindow::YphbtWindow(QWidget *parent, std::optional<QString> source,
           PNG_EXAMPLE, PNG_EXAMPLE + sizeof(PNG_EXAMPLE)))),
       file_requester(nullptr), treeModel(nullptr), hexModel(nullptr) {
   ui->setupUi(this);
+  ui->errorView->hide();
   auto compile_url_env = qEnvironmentVariable("YPHBT_COMPILE_URL");
   if (compile_url_env != "") {
     compile_url = QUrl(compile_url_env);
@@ -84,10 +85,13 @@ void YphbtWindow::load_compiled_file(QString file_path) {
   // by the file requester
   std::filesystem::remove(file_path.toStdString());
   set_new_file_requester(std::move(new_file_requester));
+  ui->errorView->hide();
+  ui->errorView->clear();
 }
 
 void YphbtWindow::compile_error(QString error) {
-  QMessageBox::critical(this, "Compile Error", error);
+  ui->errorView->set_error(error);
+  ui->errorView->show();
 }
 
 void YphbtWindow::set_new_file_requester(
