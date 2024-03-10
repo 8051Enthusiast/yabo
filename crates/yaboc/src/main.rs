@@ -4,7 +4,7 @@ use context::Driver;
 use yaboc_ast::import::Import;
 use yaboc_base::config::Config;
 
-use std::ffi::OsString;
+use std::{ffi::OsString, path::PathBuf};
 
 #[derive(clap::ValueEnum, Clone, Copy)]
 enum EmitKind {
@@ -29,6 +29,10 @@ struct Args {
     mir_emit_path: Option<String>,
     #[clap(long)]
     target: Option<String>,
+    #[clap(long)]
+    cc: Option<String>,
+    #[clap(long)]
+    sysroot: Option<PathBuf>,
     #[clap(short, long)]
     module: Vec<String>,
     infile: String,
@@ -60,6 +64,8 @@ fn main() {
         output_json: args.output_json,
         target_cpu: None,
         target_features: None,
+        sysroot: args.sysroot,
+        cc: args.cc,
     }) {
         Ok(ctx) => ctx,
         Err(e) => exit_with_message(&format!("Could not create context: {e}")),
