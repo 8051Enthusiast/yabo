@@ -37,6 +37,8 @@ public:
 
   void change_selected(const QModelIndex &current, const QModelIndex &previous);
 
+  constexpr static int NUM_COLUMNS = 3;
+
 signals:
   void expand(const QModelIndex &index);
 
@@ -56,5 +58,4 @@ private:
   bool inserting_rows = false;
   std::vector<RootIndex> undo_stack;
   size_t undo_stack_idx = 0;
-  constexpr static int NUM_COLUMNS = 3;
 };

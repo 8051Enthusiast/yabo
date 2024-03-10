@@ -27,7 +27,7 @@ ParserView::ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req)
           &Graph::update_graph, Qt::QueuedConnection);
   connect(fileRequester.get(), &FileRequester::root_changed, scene.get(),
           &GraphScene::select_node);
-  connect_hex_and_tree(ui->tableView, ui->treeView, hexModel.get(),
+  init_hex_and_tree(ui->tableView, ui->treeView, hexModel.get(),
                        treeModel.get(), fileRequester.get());
   ui->graphicsView->setScene(scene.get());
   QOpenGLWidget *glWidget = new QOpenGLWidget();
