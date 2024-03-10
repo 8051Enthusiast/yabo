@@ -52,7 +52,7 @@ impl Driver {
             "Could not find yaboc library path. Please set the YABO_LIB_PATH environment variable",
         )?;
         lib_path.push("rt.c");
-        let target = yaboc_target::target(&config.target_triple, lib_path).ok_or_else(|| {
+        let target = yaboc_target::target(&config, &lib_path).ok_or_else(|| {
             format!(
                 "Target triple {} is not supported by yabo",
                 config.target_triple
