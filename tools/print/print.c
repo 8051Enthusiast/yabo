@@ -254,7 +254,7 @@ int main(int argc, char **argv) {
   }
   void *lib = dlopen(argv[1], RTLD_NOW);
   if (!lib) {
-    perror("could not open library");
+    fprintf(stderr, "could not open library: %s", dlerror());
     exit(1);
   }
   size_t *max_dyn_size_ptr = (size_t *)dlsym(lib, "yabo_max_buf_size");
