@@ -4,6 +4,6 @@
 #include <QTreeView>
 void init_meta_types();
 
-void connect_hex_and_tree(HexTableView *hex_view, QTreeView *tree_view,
+void init_hex_and_tree(HexTableView *hex_view, QTreeView *tree_view,
                           HexTableModel *hex_model, YaboTreeModel *tree_model,
                           FileRequester *file_requester);
