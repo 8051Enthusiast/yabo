@@ -84,7 +84,7 @@ struct NamedYaboVal {
     if (start_cmp != 0) {
       return start_cmp;
     }
-    auto len_cmp = ~val.span.size() <=> ~other.val.span.size();
+    auto len_cmp = -val.span.size() <=> -other.val.span.size();
     if (len_cmp != 0) {
       return len_cmp;
     }
