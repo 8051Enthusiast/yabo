@@ -243,16 +243,18 @@ struct Slice map_file(char *filename) {
   return (struct Slice){(const uint8_t *)file, (const uint8_t *)file + length};
 }
 
-int main(int argc, char **argv) {
-  if (argc != 4) {
-    fprintf(stderr, "usage: %s SOFILE PARSERNAME FILE\n", argv[0]);
-    exit(1);
-  }
-  struct Slice file = map_file(argv[3]);
-  if (!file.start) {
-    exit(1);
-  }
-  void *lib = dlopen(argv[1], RTLD_NOW);
+struct LibInfo {
+  size_t max_dyn_size;
+  struct Slice *global_address;
+  int64_t (*global_init)(void);
+  ParseFun *parser;
+};
+
+#ifndef STATIC_PARSER
+
+struct LibInfo dynamic_lib(char *filename, char *parser_name) {
+  struct LibInfo ret;
+  void *lib = dlopen(filename, RTLD_NOW);
   if (!lib) {
     fprintf(stderr, "could not open library: %s", dlerror());
     exit(1);
@@ -262,13 +264,65 @@ int main(int argc, char **argv) {
     perror("could not find yabo_max_buf_size (is this a yabo library?)");
     exit(1);
   }
-  struct Slice *yabo_global_address = dlsym(lib, "yabo_global_address");
-  if (yabo_global_address) {
-    *yabo_global_address = file;
+  ret.max_dyn_size = *max_dyn_size_ptr;
+  ret.global_address = dlsym(lib, "yabo_global_address");
+  ret.global_init = dlsym(lib, "yabo_global_init");
+  ret.parser = (ParseFun *)dlsym(lib, parser_name);
+  return ret;
+}
+
+#else
+
+struct LibInfo static_lib() {
+  struct LibInfo ret;
+  extern size_t yabo_max_buf_size;
+  __attribute__((weak)) extern struct Slice yabo_global_address;
+  extern int64_t yabo_global_init(void);
+  extern ParseFun STATIC_PARSER;
+  ret.global_address = &yabo_global_address;
+  ret.max_dyn_size = yabo_max_buf_size;  
+  ret.global_init = yabo_global_init;
+  ret.parser = &STATIC_PARSER;
+  return ret;
+}
+
+#endif
+
+int main(int argc, char *argv[argc]) {
+
+  #ifndef STATIC_PARSER
+
+  if (argc != 4) {
+    fprintf(stderr, "usage: %s SOFILE PARSERNAME FILE\n", argv[0]);
+    exit(1);
   }
-  int64_t (*yabo_global_init)(void) = dlsym(lib, "yabo_global_init");
-  if (yabo_global_init) {
-    int64_t status = yabo_global_init();
+  struct LibInfo lib = dynamic_lib(argv[1], argv[2]);
+
+  #else
+
+  if (argc != 2) {
+    fprintf(stderr, "usage: %s FILE\n", argv[0]);
+    exit(1);
+  }
+
+  struct LibInfo lib = static_lib();
+
+  #endif
+
+  struct Slice file = map_file(argv[argc - 1]);
+  if (!file.start) {
+    exit(1);
+  }
+
+  if (!lib.parser) {
+    perror("could not find parser");
+    exit(1);
+  }
+  if (lib.global_address) {
+    *lib.global_address = file;
+  }
+  if (lib.global_init) {
+    int64_t status = lib.global_init();
     if (status != 0) {
       fprintf(stderr,
               "failed to initialize yabo library with status %" PRId64 "\n",
@@ -276,13 +330,8 @@ int main(int argc, char **argv) {
       exit(1);
     }
   }
-  ParseFun *parser = (ParseFun *)dlsym(lib, argv[2]);
-  if (!parser) {
-    perror("could not find parser");
-    exit(1);
-  }
-  Stack stack = init_stack(*max_dyn_size_ptr);
-  dyn_parse_bytes(stack.current, file, *parser);
+  Stack stack = init_stack(lib.max_dyn_size);
+  dyn_parse_bytes(stack.current, file, *lib.parser);
   print_recursive(0, stack, stdout);
   free_stack(stack);
   putchar('\n');
