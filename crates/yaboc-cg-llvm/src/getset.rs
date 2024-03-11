@@ -484,7 +484,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 self.deref_level(ty)
             }
             None => self
-                .vtable_get::<vtable::VTableHeader, usize>(
+                .vtable_get::<vtable::VTableHeader, i64>(
                     ptr,
                     &[VTableHeaderFields::deref_level as u64],
                 )?
