@@ -120,6 +120,7 @@ int print_block(DynValue *val, int indent, Stack stack, FILE *out) {
   if (fputs("{\n", out) == EOF)
     return EOF;
   int64_t (**access_impl)(void *, const void *, uint64_t) = vtable->access_impl;
+  int first = 1;
   while (field_desc != field_end) {
     DynValue *sub_value = (DynValue *)stack.current;
     int64_t return_val =
@@ -132,6 +133,12 @@ int print_block(DynValue *val, int indent, Stack stack, FILE *out) {
     if (return_val != 0) {
       return -1;
     }
+    if (!first) {
+      if (fputs(",\n", out) == EOF) {
+        return EOF;
+      }
+    }
+    first = 0;
     if (print_indent(indent + 2, out) == EOF)
       return EOF;
     if (fprintf(out, "\"%s\": ", *field_desc) < 0)
@@ -140,15 +147,9 @@ int print_block(DynValue *val, int indent, Stack stack, FILE *out) {
       return EOF;
     access_impl++;
     field_desc++;
-    if (field_desc != field_end) {
-      if (fputs(",\n", out) == EOF) {
-        return EOF;
-      }
-    } else {
-      if (fputs("\n", out) == EOF) {
-        return EOF;
-      }
-    }
+  }
+  if (fputs("\n", out) == EOF) {
+    return EOF;
   }
   if (print_indent(indent, out) == EOF)
     return EOF;
@@ -163,20 +164,19 @@ int print_array(DynValue *val, int indent, Stack stack, FILE *out) {
   for (int64_t i = 0; i < len; i++) {
     DynValue *sub_value = stack.current;
     dyn_array_current_element(sub_value, val);
+    if (i) {
+      if (fputs(",\n", out) == EOF) {
+        return EOF;
+      }
+    }
     if (print_indent(indent + 2, out) == EOF)
       return EOF;
     if (print_recursive(indent + 2, stack, out) < 0)
       return EOF;
-    if (i + 1 < len) {
-      if (fputs(",\n", out) == EOF) {
-        return EOF;
-      }
-    } else {
-      if (fputs("\n", out) == EOF) {
-        return EOF;
-      }
-    }
     dyn_array_single_forward(val);
+  }
+  if (fputs("\n", out) == EOF) {
+    return EOF;
   }
   if (print_indent(indent, out) == EOF)
     return EOF;
