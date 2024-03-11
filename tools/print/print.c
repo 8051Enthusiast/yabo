@@ -138,10 +138,17 @@ int print_block(DynValue *val, int indent, Stack stack, FILE *out) {
       return EOF;
     if (print_recursive(indent + 2, stack, out) < 0)
       return EOF;
-    if (fputs(",\n", out) == EOF)
-      return EOF;
     access_impl++;
     field_desc++;
+    if (field_desc != field_end) {
+      if (fputs(",\n", out) == EOF) {
+        return EOF;
+      }
+    } else {
+      if (fputs("\n", out) == EOF) {
+        return EOF;
+      }
+    }
   }
   if (print_indent(indent, out) == EOF)
     return EOF;
@@ -160,8 +167,15 @@ int print_array(DynValue *val, int indent, Stack stack, FILE *out) {
       return EOF;
     if (print_recursive(indent + 2, stack, out) < 0)
       return EOF;
-    if (fputs(",\n", out) == EOF)
-      return EOF;
+    if (i + 1 < len) {
+      if (fputs(",\n", out) == EOF) {
+        return EOF;
+      }
+    } else {
+      if (fputs("\n", out) == EOF) {
+        return EOF;
+      }
+    }
     dyn_array_single_forward(val);
   }
   if (print_indent(indent, out) == EOF)
@@ -280,7 +294,7 @@ struct LibInfo static_lib() {
   extern int64_t yabo_global_init(void);
   extern ParseFun STATIC_PARSER;
   ret.global_address = &yabo_global_address;
-  ret.max_dyn_size = yabo_max_buf_size;  
+  ret.max_dyn_size = yabo_max_buf_size;
   ret.global_init = yabo_global_init;
   ret.parser = &STATIC_PARSER;
   return ret;
@@ -290,7 +304,7 @@ struct LibInfo static_lib() {
 
 int main(int argc, char *argv[argc]) {
 
-  #ifndef STATIC_PARSER
+#ifndef STATIC_PARSER
 
   if (argc != 4) {
     fprintf(stderr, "usage: %s SOFILE PARSERNAME FILE\n", argv[0]);
@@ -298,7 +312,7 @@ int main(int argc, char *argv[argc]) {
   }
   struct LibInfo lib = dynamic_lib(argv[1], argv[2]);
 
-  #else
+#else
 
   if (argc != 2) {
     fprintf(stderr, "usage: %s FILE\n", argv[0]);
@@ -307,7 +321,7 @@ int main(int argc, char *argv[argc]) {
 
   struct LibInfo lib = static_lib();
 
-  #endif
+#endif
 
   struct Slice file = map_file(argv[argc - 1]);
   if (!file.start) {
