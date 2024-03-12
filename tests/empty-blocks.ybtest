@@ -3,6 +3,7 @@ export
 fun *test = {{}}
 
 ====[ text 1 ]====
+does not matter
 
 ====[ output 1 ]====
 {}
