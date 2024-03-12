@@ -45,6 +45,7 @@ compiler_env['YABO_LIB_PATH'] = lib_path
 compiler_env['RUST_BACKTRACE'] = '1'
 compiler_dir = os.path.join(current_script_dir, 'crates', 'yaboc')
 compiler_bin = "yaboc" 
+wasm_factory = None
 
 class ErrorLocation:
     contained_message: str
@@ -117,22 +118,37 @@ class CompiledSource:
     source: str
     stderr: str
 
-    def __init__(self, source):
+    def __init__(self, source: str, wasm: bool):
         tmp_dir = tempfile.mkdtemp()
         self.source = source
         self.dir = tmp_dir
         try:
-            self.compiled = os.path.join(tmp_dir, 'target.so')
+            if wasm:
+                self.compiled = os.path.join(tmp_dir, 'target.o')
+            else:
+                self.compiled = os.path.join(tmp_dir, 'target.so')
+            
             sourcepath = os.path.join(tmp_dir, 'source.yb')
             with open(sourcepath, 'w', encoding='utf-8') as sourcefile:
                 sourcefile.write(source)
-            with subprocess.Popen(
-                [compiler_bin, "--output-json",
-                 "--module", f"core={core_path}",
-                 sourcepath, self.compiled],
-                stderr=subprocess.PIPE,
-                env=compiler_env
-            ) as compiler:
+            if wasm:
+                proc = subprocess.Popen(
+                    [compiler_bin, "--output-json",
+                     "--target=wasm32-wasi", "--emit=object",
+                     "--module", f"core={core_path}",
+                     sourcepath, self.compiled],
+                    stderr=subprocess.PIPE,
+                    env=compiler_env
+                )
+            else:
+                proc = subprocess.Popen(
+                    [compiler_bin, "--output-json",
+                     "--module", f"core={core_path}",
+                     sourcepath, self.compiled],
+                    stderr=subprocess.PIPE,
+                    env=compiler_env
+                )
+            with proc as compiler:
                 self.stderr = compiler.communicate()[1].decode('utf-8')
         except Exception as e:
             shutil.rmtree(self.dir)
@@ -164,7 +180,7 @@ class CompiledSource:
                 'but none of the errors matched'
             )
 
-    def check_errors(self):
+    def check_errors(self) -> None:
         diagnostics: dict[int, list[ErrorLocation]] = defaultdict(list)
         total = 0
         for error in self.stderr.splitlines():
@@ -355,6 +371,60 @@ def diff(left, right) -> Tuple[MatchingHead | DiffHead | DictHead | ListHead, bo
 
     return (MatchingHead(left), False)
 
+class WasmRunner:
+    exec: tempfile._TemporaryFileWrapper
+    
+    def __init__(self, exec: tempfile._TemporaryFileWrapper):
+        self.exec = exec
+
+    def run(self, input: bytes) -> str:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            inputpath = os.path.join(tmpdir, 'input')
+            with open(inputpath, 'wb') as inputfile:
+                inputfile.write(input)
+            proc = subprocess.run(['wasmtime', '--dir', tmpdir, self.exec.name, inputpath],
+                                  stdout=subprocess.PIPE)
+            return proc.stdout.decode('utf-8')
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, _exc_type, _exc_value, _traceback):
+        self.exec.close()
+        
+
+class WasmRunnerFactory:
+    cc: str
+    sysroot: str
+    printer: tempfile._TemporaryFileWrapper
+
+    def __init__(self, wasi_sdk_path: str):
+        self.cc = os.path.join(wasi_sdk_path, 'bin', 'clang')
+        self.sysroot = os.path.join(wasi_sdk_path, 'share', 'wasi-sysroot')
+        self.printer = tempfile.NamedTemporaryFile(suffix='.o')
+        compiler_args = [
+            self.cc, '--sysroot', self.sysroot, '-c',
+            '-DSTATIC_PARSER=test',
+            '-I', os.path.join(current_script_dir, 'include'),
+            '-D_WASI_EMULATED_MMAN',
+            '-o', self.printer.name,
+            os.path.join(current_script_dir, 'tools', 'print', 'print.c')
+        ]
+        subprocess.run(compiler_args, check=True)
+
+    def new_runner(self, compiled: str) -> WasmRunner:
+        execpath = tempfile.NamedTemporaryFile()
+        compiler_args = [
+            self.cc, '--sysroot', self.sysroot,
+            '-lwasi-emulated-mman',
+            '-o', execpath.name, compiled, self.printer.name
+        ]
+        try:
+            subprocess.run(compiler_args, check=True)
+        except Exception as e:
+            execpath.close()
+            raise e
+        return WasmRunner(execpath)
 
 class TestFile:
     source: str
@@ -405,24 +475,27 @@ class TestFile:
             raise Exception('Extra output cases: ' +
                             ', '.join(output_cases.keys()))
 
+    def check_errors(self, compiled_source: CompiledSource, output: str):
+        try:
+            compiled_source.check_errors()
+        except Exception as e:
+            output += f'{RED} {e}{CLEAR}'
+            print(output)
+            return 1
+        if len(self.cases) > 0:
+            output += f'{RED} Expected no errors, but got some{CLEAR}'
+            print(output)
+            return 1
+        output += f'{GREEN} Errortest passed{CLEAR}'
+        print(output)
+        return 0
+
     def run(self) -> int:
         output: str = f'Running test {self.name}\n'
         failed_tests = 0
-        with CompiledSource(self.source) as compiled_source:
+        with CompiledSource(self.source, False) as compiled_source:
             if compiled_source.has_errors():
-                try:
-                    compiled_source.check_errors()
-                except Exception as e:
-                    output += f'{RED} {e}{CLEAR}'
-                    print(output)
-                    return 1
-                if len(self.cases) > 0:
-                    output += f'{RED} Expected no errors, but got some{CLEAR}'
-                    print(output)
-                    return 1
-                output += f'{GREEN} Errortest passed{CLEAR}'
-                print(output)
-                return 0
+                return self.check_errors(compiled_source, output)
             compiled = compiled_source.compiled
             for (test_name, pair) in self.cases.items():
                 buf = bytearray(pair.input)
@@ -443,6 +516,32 @@ class TestFile:
                     failed_tests += 1
                 else:
                     output += f'{GREEN} Test {test_name} passed{CLEAR}\n'
+        if not wasm_factory:
+            print(output, end='')
+            return failed_tests
+        with CompiledSource(self.source, True) as compiled_source:
+            if compiled_source.has_errors():
+                return self.check_errors(compiled_source, output)
+            compiled = compiled_source.compiled
+            with wasm_factory.new_runner(compiled) as wasm_runner:
+                for (test_name, pair) in self.cases.items():
+                    try:
+                        test_output = wasm_runner.run(pair.input)
+                    except Exception as e:
+                        output += f'{RED} Wasm Test {test_name} failed:{CLEAR}\n'
+                        output += f'{RED} {e}{CLEAR}\n'
+                        failed_tests += 1
+                        continue
+                    parsed_json = json.loads(pair.output)
+                    parsed_output = json.loads(test_output)
+                    (diffed, is_different) = diff(parsed_json, parsed_output)
+                    if is_different:
+                        output += f'{RED} Wasm Test {test_name} failed:{CLEAR}\n'
+                        output += diffed.diff()
+                        failed_tests += 1
+                    else:
+                        output += f'{GREEN} Wasm Test {test_name} passed{CLEAR}\n'
+            
         print(output, end='')
         return failed_tests
 
@@ -473,9 +572,14 @@ def run_tests(files: list[str]) -> int:
         return total_failed
         
 def main():
-    global compiler_bin
+    global compiler_bin, wasm_factory
     arg_list = [ os.path.abspath(file) for file in sys.argv[1:] ]
     compiler_bin = build_compiler_binary()
+    wasi_sdk_path = os.environ.get('WASI_SDK_PATH')
+    if wasi_sdk_path:
+        wasm_factory = WasmRunnerFactory(wasi_sdk_path)
+    else:
+        wasm_factory = None
     if len(arg_list) == 0:
         run_clippy()
 
