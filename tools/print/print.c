@@ -224,6 +224,9 @@ int print_recursive(int indent, Stack stack, FILE *out) {
     case YABO_BLOCK:
       status = print_block(val, indent, substack, out);
       break;
+    case YABO_UNIT:
+      status = fputs("\"unit\"", out);
+      break;
     }
   }
   return status;
