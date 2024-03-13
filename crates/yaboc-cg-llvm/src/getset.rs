@@ -1,4 +1,5 @@
 use inkwell::types::FunctionType;
+use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{represent::ParserFunKind, vtable::NominalVTableFields};
 use yaboc_types::TypeId;
 
@@ -493,10 +494,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub(super) fn build_return_value(
         &mut self,
-        layout: CgValue<'comp, 'llvm>,
+        val: CgValue<'comp, 'llvm>,
     ) -> IResult<CgReturnValue<'llvm>> {
-        let head = self.build_deref_level_get(layout.layout.maybe_mono(), layout.ptr)?;
-        Ok(CgReturnValue::new(head, layout.ptr))
+        let mut head = self.build_deref_level_get(val.layout.maybe_mono(), val.ptr)?;
+        if val.layout.is_multi() {
+            let tag = self.const_i64(1 << VTABLE_BIT);
+            head = self.builder.build_or(head, tag, "vtable_tag")?;
+        }
+        Ok(CgReturnValue::new(head, val.ptr))
     }
 
     pub(super) fn build_check_i64_bit_set(
