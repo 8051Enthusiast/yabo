@@ -111,12 +111,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             }
             mir::Place::Front(outer) => {
                 let inner = self.place_ptr(outer)?;
-                if self.mir_fun.place(placeref).is_multi() {
-                    let word_size = self.cg.const_i64(self.cg.word_size() as i64);
-                    self.cg.build_byte_gep(inner, word_size, "front")?
-                } else {
-                    inner
-                }
+                self.cg
+                    .build_center_gep(inner, self.mir_fun.place(placeref))?
             }
             mir::Place::Stack(stack_ref) => self.stack[stack_ref.as_index()],
             mir::Place::Field(outer, a) | mir::Place::Captured(outer, a) => {
@@ -156,12 +152,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             Strictness::Static(level) => level,
         };
         let mut level = deref_level.into_shifted_runtime_value();
-        if place_layout.is_multi() {
-            level |= 1 << VTABLE_BIT;
-        }
-        if remove_bt {
-            level |= 1 << NOBACKTRACK_BIT;
-        }
+        level |= (place_layout.is_multi() as u64) << VTABLE_BIT;
+        level |= (remove_bt as u64) << NOBACKTRACK_BIT;
         self.cg.const_i64(level as i64)
     }
 

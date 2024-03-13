@@ -105,28 +105,32 @@ mod tests {
         assert_eq!(
             VTableHeader::tsize(&data),
             SizeAlign {
-                size: 48,
+                before: 0,
+                after: 48,
                 align_mask: 0b111
             }
         );
         assert_eq!(
             BlockVTable::tsize(&data),
             SizeAlign {
-                size: 56,
+                before: 0,
+                after: 56,
                 align_mask: 0b111,
             }
         );
         assert_eq!(
             ParserVTable::tsize(&data),
             SizeAlign {
-                size: 56,
+                before: 0,
+                after: 56,
                 align_mask: 0b111,
             }
         );
         assert_eq!(
             ArrayVTable::tsize(&data),
             SizeAlign {
-                size: 96,
+                before: 0,
+                after: 96,
                 align_mask: 0b111,
             }
         );

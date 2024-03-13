@@ -82,7 +82,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         if !tail_info.has_tailsites {
             return Ok(None);
         }
-        let fun_copy_ptr = self.build_sa_alloca(tail_info.sa, Some(false), "fun_copy")?;
+        let fun_copy_ptr = self.build_sa_alloca(tail_info.sa, "fun_copy")?;
         let fun_buf = CgMonoValue::new(fun.layout, fun_copy_ptr);
         self.build_copy_invariant(fun_buf.into(), fun.into())?;
         Ok(Some(fun_buf))
@@ -199,7 +199,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.add_entry_block(fun);
         let sa = layout.inner().size_align(self.layouts).unwrap();
         self.builder
-            .build_return(Some(&self.const_size_t(sa.size as i64)))?;
+            .build_return(Some(&self.const_size_t(sa.after as i64)))?;
         Ok(())
     }
 
@@ -211,15 +211,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let fun = self.mask_fun_val(layout);
         self.add_entry_block(fun);
         let [arg] = get_fun_args(fun).map(|x| x.into_pointer_value());
-        let sa = layout
-            .inner()
-            .size_align_without_vtable(self.layouts)
-            .unwrap();
-        let offset = self.layout_inner_offset(inner);
+        let inner_sa = inner.size_align(self.layouts).unwrap();
+        let offset = inner_sa.allocation_center_offset();
         let inner_ptr = self.build_byte_gep(arg, self.const_i64(offset as i64), "inner_ptr")?;
         self.call_mask_fun(CgValue::new(inner, inner_ptr))?;
         self.builder
-            .build_return(Some(&self.const_size_t(sa.size as i64)))?;
+            .build_return(Some(&self.const_size_t(inner_sa.allocation_size() as i64)))?;
         Ok(())
     }
 
@@ -231,27 +228,25 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let fun = self.mask_fun_val(layout);
         self.add_entry_block(fun);
         let [arg] = get_fun_args(fun).map(|x| x.into_pointer_value());
+        let inner_sa = inner.map(|x| x.size_align(self.layouts).unwrap());
+        let offsets = SizeAlign::offsets(inner_sa);
         let sa = layout
             .inner()
             .size_align_without_vtable(self.layouts)
             .unwrap();
-        let inner_sa = inner.map(|x| x.size_align(self.layouts).unwrap());
-        let padding_size = sa.size - (inner_sa[0].size + inner_sa[1].size);
-        let padding_size = self.const_i64(padding_size as i64);
+        let padding_range = (offsets[0] + inner_sa[0].after)..(offsets[1] - inner_sa[1].before);
+        let padding_size = self.const_i64(padding_range.clone().count() as i64);
         let zero = self.llvm.i8_type().const_zero();
         let padding_ptr =
-            self.build_byte_gep(arg, self.const_i64(inner_sa[0].size as i64), "padding")?;
+            self.build_byte_gep(arg, self.const_i64(padding_range.start as i64), "padding")?;
         self.builder
             .build_memset(padding_ptr, 1, zero, padding_size)?;
-        let offsets = [0, sa.size - inner_sa[1].size];
         for (offset, inner) in offsets.iter().zip(inner.iter()) {
-            let inner_offset = offset + self.layout_inner_offset(*inner);
-            let inner_ptr =
-                self.build_byte_gep(arg, self.const_i64(inner_offset as i64), "inner")?;
+            let inner_ptr = self.build_byte_gep(arg, self.const_i64(*offset as i64), "inner")?;
             self.call_mask_fun(CgValue::new(*inner, inner_ptr))?;
         }
         self.builder
-            .build_return(Some(&self.const_size_t(sa.size as i64)))?;
+            .build_return(Some(&self.const_size_t(sa.after as i64)))?;
         Ok(())
     }
 
@@ -304,20 +299,23 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 self.builder
                     .build_conditional_branch(is_nonzero, cont_bb, zero_bb)?;
                 self.builder.position_at_end(zero_bb);
-                let val_ptr = self.build_byte_gep(arg, self.const_i64(offset as i64), "val_ptr")?;
-                let size = inner.size_align(self.layouts).unwrap().size;
-                let size = self.const_i64(size as i64);
+                let inner_sa = inner.size_align(self.layouts).unwrap();
+                let val_ptr = self.build_byte_gep(
+                    arg,
+                    self.const_i64((offset - inner_sa.before) as i64),
+                    "val_ptr",
+                )?;
+                let size = self.const_i64(inner_sa.total_size() as i64);
                 let val = self.llvm.i8_type().const_zero();
-                self.builder.build_memset(val_ptr, 1, val, size)?;
+                self.builder
+                    .build_memset(val_ptr, inner_sa.start_alignment() as u32, val, size)?;
                 self.builder.build_unconditional_branch(cont_bb)?;
                 self.builder.position_at_end(mask_bb);
                 Some(cont_bb)
             } else {
                 None
             };
-            let inner_offset = offset + self.layout_inner_offset(inner);
-            let inner_ptr =
-                self.build_byte_gep(arg, self.const_i64(inner_offset as i64), "inner")?;
+            let inner_ptr = self.build_byte_gep(arg, self.const_i64(offset as i64), "inner")?;
             self.call_mask_fun(CgValue::new(inner, inner_ptr))?;
             if let Some(cont_bb) = cont_bb {
                 self.builder.build_unconditional_branch(cont_bb)?;
@@ -325,7 +323,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             }
         }
         self.builder
-            .build_return(Some(&self.const_size_t(manifestation.size.size as i64)))?;
+            .build_return(Some(&self.const_size_t(manifestation.size.after as i64)))?;
         Ok(())
     }
 
@@ -1451,9 +1449,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             let level = self.layouts.db.deref_level(ret).unwrap();
             let global = self.global_constant(*pd);
             let mut head = level.into_shifted_runtime_value();
-            if layout.is_multi() {
-                head |= 1 << VTABLE_BIT;
-            }
+            head |= (layout.is_multi() as u64) << VTABLE_BIT;
             let ret_val = CgReturnValue::new(self.const_i64(head as i64), global);
             let fun_val = CgValue::new(fun.inner(), self.any_ptr().const_null());
             let status = self.call_eval_fun_fun(ret_val, fun_val, ParserFunKind::Wrapper)?;

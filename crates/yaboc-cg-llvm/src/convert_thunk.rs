@@ -53,7 +53,7 @@ impl<'comp, 'llvm> TypecastThunk<'comp, 'llvm> {
                 sa,
             } = cg.collected_layouts.tail_sa[&(from, layout)]
             {
-                let sa_alloc = cg.build_sa_alloca(sa, Some(false), "fun_copy")?;
+                let sa_alloc = cg.build_sa_alloca(sa, "tail_storage")?;
                 Some(CgMonoValue::new(layout, sa_alloc))
             } else {
                 None
@@ -228,8 +228,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for ValThunk<'comp> {
                     .unwrap()
                     .into_pointer_value();
                 let sa = from.size_align(cg.layouts).unwrap();
-                let arg_obj_ptr = cg.get_object_start(CgValue::new(from, arg_ptr))?;
-                Some((arg_obj_ptr, sa))
+                Some((arg_ptr, sa))
             }
             (Some(_), 1) | (None, 0) => {
                 let fun_ptr = cg
@@ -428,25 +427,31 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
         let mut i = 0u8;
         let mut offset = 0u64;
         while let Some((ptr, sa)) = self.kind.build_copy_region_ptr(self.cg, i)? {
-            if sa.size > 0 {
-                offset = (offset + sa.align_mask) & !sa.align_mask;
-                let llvm_offset = self.cg.const_i64(offset as i64);
-                let real_target = self
-                    .cg
-                    .build_byte_gep(target_ptr, llvm_offset, "real_target")?;
+            offset = sa.next_offset(offset);
+            if sa.total_size() > 0 {
+                let llvm_start_offset = self.cg.const_i64((offset - sa.before) as i64);
+                let real_target =
+                    self.cg
+                        .build_byte_gep(target_ptr, llvm_start_offset, "real_target")?;
+                let real_source = self.cg.build_byte_gep(
+                    ptr,
+                    self.cg.const_i64(-(sa.before as i64)),
+                    "real_source",
+                )?;
+                let align = sa.start_alignment();
                 // it is nice to be able to pass an invalid pointer
                 // for ZSTs, but calling memcpy with a null pointer
                 // is UB, therefore we simply don't generate it for ZSTs
                 self.cg.builder.build_memcpy(
                     real_target,
-                    sa.align() as u32,
-                    ptr,
-                    sa.align() as u32,
-                    self.cg.const_size_t(sa.size as i64),
+                    align as u32,
+                    real_source,
+                    align as u32,
+                    self.cg.const_size_t(sa.total_size() as i64),
                 )?;
             }
+            offset += sa.after;
             i += 1;
-            offset += sa.size;
         }
         let after = self.typecast_tail(true, target_ptr)?;
         self.cg.builder.build_unconditional_branch(after)?;

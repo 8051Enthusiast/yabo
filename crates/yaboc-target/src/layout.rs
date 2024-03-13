@@ -25,13 +25,20 @@ pub(crate) const fn max(a: PSize, b: PSize) -> PSize {
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug, Hash)]
 pub struct SizeAlign {
-    /// total size (not including potential alignment padding at the end)
-    pub size: PSize,
+    /// total size before center (not including potential alignment padding at the start)
+    pub before: PSize,
+    /// total size after center (not including potential alignment padding at the end)
+    pub after: PSize,
     /// mask of alignment
     pub align_mask: PSize,
 }
 
 impl SizeAlign {
+    pub const ZST: SizeAlign = SizeAlign {
+        before: 0,
+        after: 0,
+        align_mask: 0,
+    };
     pub const fn align(&self) -> PSize {
         self.align_mask + 1
     }
@@ -40,27 +47,63 @@ impl SizeAlign {
         self.align_mask.count_ones()
     }
     pub const fn stride(&self) -> PSize {
-        (self.size + self.align_mask) & !self.align_mask
+        (self.after + self.before + self.align_mask) & !self.align_mask
     }
     pub const fn cat(self, other: Self) -> Self {
-        let other_start = (other.align_mask + self.size) & !other.align_mask;
+        let other_center = (other.align_mask + self.after + other.before) & !other.align_mask;
         let align_mask = max(self.align_mask, other.align_mask);
         SizeAlign {
-            size: other_start + other.size,
+            before: self.before,
+            after: other_center + other.after,
             align_mask,
         }
     }
-    pub const fn union(self, other: Self) -> Self {
-        let size = max(self.size, other.size);
+    pub const fn tac(self, other: Self) -> Self {
+        let other_center = (other.align_mask + self.before + other.after) & !other.align_mask;
         let align_mask = max(self.align_mask, other.align_mask);
-        SizeAlign { size, align_mask }
+        SizeAlign {
+            before: other_center + other.before,
+            after: self.after,
+            align_mask,
+        }
+    }
+    pub const fn allocation_size(self) -> PSize {
+        Self::ZST.cat(self).after
+    }
+    pub const fn total_size(self) -> PSize {
+        self.before + self.after
+    }
+    pub const fn next_offset(self, offset: PSize) -> PSize {
+        (offset + self.before + self.align_mask) & !self.align_mask
+    }
+    pub const fn allocation_center_offset(self) -> PSize {
+        (self.before + self.align_mask) & !self.align_mask
+    }
+    pub const fn start_alignment(self) -> PSize {
+        let before_align_mask = (self.before ^ (self.before.wrapping_sub(1))) / 2;
+        (before_align_mask & self.align_mask) + 1
+    }
+    pub const fn union(self, other: Self) -> Self {
+        let after = max(self.after, other.after);
+        let before = max(self.before, other.before);
+        let align_mask = max(self.align_mask, other.align_mask);
+        SizeAlign {
+            before,
+            after,
+            align_mask,
+        }
     }
     pub const fn array(self, len: PSize) -> Self {
         if len == 0 {
-            return SizeAlign { size: 0, ..self };
+            return SizeAlign {
+                after: 0,
+                before: 0,
+                align_mask: self.align_mask,
+            };
         }
         SizeAlign {
-            size: self.stride() * (len - 1) + self.size,
+            before: self.before,
+            after: self.stride() * (len - 1) + self.after,
             align_mask: self.align_mask,
         }
     }
@@ -69,9 +112,18 @@ impl SizeAlign {
     }
     pub const fn int_sa(size_log: u8) -> Self {
         SizeAlign {
-            size: 1 << size_log,
+            before: 0,
+            after: 1 << size_log,
             align_mask: (1 << size_log) - 1,
         }
+    }
+    pub fn offsets<const N: usize>(layouts: [SizeAlign; N]) -> [PSize; N] {
+        let mut current = Self::ZST;
+        layouts.map(|sa| {
+            let offset = sa.next_offset(current.after);
+            current = current.cat(sa);
+            offset
+        })
     }
 }
 
@@ -179,7 +231,8 @@ fn_impl!(A, B, C, D, E);
 impl TargetSized for Zst {
     fn tsize(_: &TargetLayoutData) -> SizeAlign {
         SizeAlign {
-            size: 0,
+            before: 0,
+            after: 0,
             align_mask: 0,
         }
     }
@@ -299,49 +352,23 @@ macro_rules! target_struct {
 }
 
 pub const POINTER64: TargetLayoutData = TargetLayoutData {
-    pointer_sa: SizeAlign {
-        size: 8,
-        align_mask: 7,
-    },
-    int_sa: SizeAlign {
-        size: 8,
-        align_mask: 7,
-    },
-    byte_sa: SizeAlign {
-        size: 1,
-        align_mask: 0,
-    },
-    bit_sa: SizeAlign {
-        size: 1,
-        align_mask: 0,
-    },
-    char_sa: SizeAlign {
-        size: 4,
-        align_mask: 3,
-    },
+    pointer_sa: SizeAlign::int_sa(3),
+    int_sa: SizeAlign::int_sa(3),
+    byte_sa: SizeAlign::int_sa(0),
+    bit_sa: SizeAlign::int_sa(0),
+    char_sa: SizeAlign::int_sa(2),
 };
 
 pub const POINTER32: TargetLayoutData = TargetLayoutData {
-    pointer_sa: SizeAlign {
-        size: 4,
-        align_mask: 3,
-    },
+    pointer_sa: SizeAlign::int_sa(2),
     int_sa: SizeAlign {
-        size: 8,
-        align_mask: 3,
+        before: 0,
+        after: 8,
+        align_mask: 7,
     },
-    byte_sa: SizeAlign {
-        size: 1,
-        align_mask: 0,
-    },
-    bit_sa: SizeAlign {
-        size: 1,
-        align_mask: 0,
-    },
-    char_sa: SizeAlign {
-        size: 4,
-        align_mask: 3,
-    },
+    byte_sa: SizeAlign::int_sa(0),
+    bit_sa: SizeAlign::int_sa(0),
+    char_sa: SizeAlign::int_sa(2),
 };
 
 #[cfg(test)]
@@ -363,9 +390,21 @@ mod tests {
         assert_eq!(
             Test::tsize(&data),
             SizeAlign {
-                size: 17,
+                before: 0,
+                after: 17,
                 align_mask: 7
             }
         );
+    }
+    #[test]
+    fn before() {
+        let sa = SizeAlign::int_sa(3).tac(SizeAlign::int_sa(2));
+        assert_eq!(sa.before, 4);
+        assert_eq!(sa.after, 8);
+        assert_eq!(sa.align_mask, 7);
+        assert_eq!(sa.allocation_size(), 16);
+        assert_eq!(sa.allocation_center_offset(), 8);
+        assert_eq!(sa.start_alignment(), 4);
+        assert_eq!(sa.stride(), 16);
     }
 }
