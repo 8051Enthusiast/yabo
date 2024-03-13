@@ -92,12 +92,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         val: CgValue<'comp, 'llvm>,
     ) -> IResult<PointerValue<'llvm>> {
-        match val.layout.maybe_mono() {
-            Some(_) => Ok(val.ptr),
-            None => {
-                self.build_byte_gep(val.ptr, self.const_i64(-(self.word_size() as i64)), "start")
-            }
+        let sa = val.layout.size_align(self.layouts).unwrap();
+        if sa.before == 0 {
+            return Ok(val.ptr);
         }
+        self.build_byte_gep(val.ptr, self.const_i64(-(sa.before as i64)), "start")
     }
 
     pub(super) fn call_typecast_fun(
@@ -229,7 +228,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         parent_fun: Option<CgMonoValue<'comp, 'llvm>>,
     ) -> IResult<IntValue<'llvm>> {
         let sa = fun.layout.size_align_without_vtable(self.layouts).unwrap();
-        let size = self.const_i64(sa.size as i64);
+        let size = self.const_i64(sa.after as i64);
         let parser = match fun.layout.maybe_mono() {
             Some(mono) => {
                 let part =
@@ -404,7 +403,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 .layout
                 .size_align_without_vtable(self.layouts)
                 .unwrap()
-                .size;
+                .after;
             let whole_size = self.const_size_t(whole_size as i64);
             let mask_size = self.builder.build_int_sub(whole_size, size, "mask_size")?;
             let zero = self.llvm.i8_type().const_int(0, false);
@@ -607,15 +606,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         else {
             panic!("array_parser_field called on non-array");
         };
-        let ptr = if parser.is_multi() {
-            self.build_byte_gep(
-                array.ptr,
-                self.const_i64(self.word_size() as i64),
-                "content_ptr",
-            )?
-        } else {
-            array.ptr
-        };
+        let ptr = self.build_center_gep(array.ptr, *parser)?;
         Ok(CgValue::new(*parser, ptr))
     }
 
@@ -631,8 +622,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .inner()
             .size_align_without_vtable(self.layouts)
             .unwrap()
-            .size
-            - slice.size_align_without_vtable(self.layouts).unwrap().size;
+            .after
+            - slice.size_align_without_vtable(self.layouts).unwrap().after;
         let ptr = self.build_byte_gep(array.ptr, self.const_i64(offset as i64), "slice_ptr")?;
         Ok(CgValue::new(*slice, ptr))
     }

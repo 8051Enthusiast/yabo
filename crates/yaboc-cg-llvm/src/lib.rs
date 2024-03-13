@@ -49,7 +49,7 @@ use yaboc_layout::{
         self, ArrayVTableFields, BlockVTableFields, FunctionVTableFields, ParserFun,
         ParserVTableFields, VTableHeaderFields,
     },
-    AbsLayoutCtx, ILayout, IMonoLayout, Layout, LayoutError, MonoLayout,
+    AbsLayoutCtx, ILayout, IMonoLayout, LayoutError, MonoLayout,
 };
 use yaboc_mir::{CallMeta, Mirs, ReturnStatus};
 use yaboc_req::RequirementSet;
@@ -246,19 +246,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn word_size(&self) -> u64 {
-        <*const u8>::tsize(&self.yabo_target.data).size
-    }
-
-    fn layout_inner_offset(&self, layout: ILayout<'comp>) -> u64 {
-        if layout.is_multi() {
-            self.word_size()
-        } else {
-            0
-        }
+        <*const u8>::tsize(&self.yabo_target.data).after
     }
 
     fn sa_type(&mut self, sa: SizeAlign) -> ArrayType<'llvm> {
-        self.llvm.i8_type().array_type(sa.size as u32)
+        self.llvm.i8_type().array_type(sa.allocation_size() as u32)
     }
 
     fn set_last_instr_align(&mut self, sa: SizeAlign) -> Option<()> {
@@ -278,31 +270,29 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         CgValue::new(layout, undef_ptr)
     }
 
-    fn build_sa_alloca(
+    fn build_center_gep(
         &mut self,
-        sa: SizeAlign,
-        vtable: Option<bool>,
-        name: &str,
+        outer_ptr: PointerValue<'llvm>,
+        layout: ILayout<'comp>,
     ) -> IResult<PointerValue<'llvm>> {
+        let sa = layout.size_align(self.layouts).unwrap();
+        let offset = sa.allocation_center_offset();
+        if offset == 0 {
+            return Ok(outer_ptr);
+        }
+        self.build_byte_gep(outer_ptr, self.const_i64(offset as i64), "alloc_center")
+    }
+
+    fn build_sa_alloca(&mut self, sa: SizeAlign, name: &str) -> IResult<PointerValue<'llvm>> {
         let ty = self.sa_type(sa);
         let ptr = self.builder.build_alloca(ty, "alloca")?;
         self.set_last_instr_align(sa).unwrap();
-        let u8_ptr_ty = self.any_ptr();
-        Ok(match vtable {
-            None => self.invalid_ptr(),
-            Some(false) => self
-                .builder
-                .build_bitcast(ptr, u8_ptr_ty, name)?
-                .into_pointer_value(),
-            Some(true) => {
-                let cast_ptr = self
-                    .builder
-                    .build_bitcast(ptr, u8_ptr_ty, name)?
-                    .into_pointer_value();
-                let ptr_width = self.any_ptr().size_of();
-                self.build_byte_gep(cast_ptr, ptr_width, name)?
-            }
-        })
+        let cast_ptr = self.build_cast::<*mut u8, _>(ptr)?;
+        let offset = sa.allocation_center_offset();
+        if offset == 0 {
+            return Ok(cast_ptr);
+        }
+        self.build_byte_gep(cast_ptr, self.const_i64(offset as i64), name)
     }
 
     fn build_layout_alloca(
@@ -313,12 +303,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let sa = layout
             .size_align(self.layouts)
             .expect("Could not get size/alignment of layout");
-        let vtable = match layout.layout.1 {
-            Layout::None => None,
-            Layout::Mono(_, _) => Some(false),
-            Layout::Multi(_) => Some(true),
-        };
-        self.build_sa_alloca(sa, vtable, name)
+        self.build_sa_alloca(sa, name)
     }
 
     fn build_alloca_value(
@@ -589,10 +574,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         val: CgValue<'comp, 'llvm>,
         field_layout: ILayout<'comp>,
     ) -> IResult<CgValue<'comp, 'llvm>> {
-        let mut offset = self.layouts.dcx.manifestation(val.layout).field_offsets[&field];
-        if field_layout.is_multi() {
-            offset += self.word_size();
-        }
+        let offset = self.layouts.dcx.manifestation(val.layout).field_offsets[&field];
         let offset_llvm_int = self.llvm.i64_type().const_int(offset, false);
 
         let field_ptr = self.build_byte_gep(val.ptr, offset_llvm_int, "gepfield")?;
@@ -630,7 +612,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let sa = dest.layout.size_align(self.layouts).unwrap();
         let src_ptr = self.get_object_start(src)?;
         let dest_ptr = self.get_object_start(dest)?;
-        let size = self.const_i64(sa.size as i64);
+        let size = self.const_i64(sa.total_size() as i64);
         let align = sa.align() as u32;
         self.builder
             .build_memcpy(dest_ptr, align, src_ptr, align, size)?;
@@ -679,8 +661,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     pub fn create_max_buf_size(&mut self) {
-        let size =
-            self.const_size_t(self.collected_layouts.max_sa.size as i64 + self.word_size() as i64);
+        let size = self.const_size_t(self.collected_layouts.max_sa.total_size() as i64);
         let buf_size = self
             .module
             .add_global(size.get_type(), None, "yabo_max_buf_size");

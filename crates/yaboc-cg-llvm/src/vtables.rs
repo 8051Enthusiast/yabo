@@ -22,7 +22,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .mask_fun_val(layout)
             .as_global_value()
             .as_pointer_value();
-        let size = self.const_size_t(size_align.size as i64);
+        let size = self.const_size_t(size_align.after as i64);
         let align = self.const_size_t(size_align.align() as i64);
         if named {
             let vtable_ty = self.vtable_ty(layout);

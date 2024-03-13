@@ -253,22 +253,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 );
             };
             if argnum == 1 {
-                return Some(if parser.is_multi() {
-                    (1 << VTABLE_BIT, self.word_size())
-                } else {
-                    (0, 0)
-                });
+                let offset = parser.size_align(self.layouts).unwrap().next_offset(0);
+                return Some(((parser.is_multi() as i64) << VTABLE_BIT, offset));
             }
             assert!(argnum == 0);
-            let Some(l) = maybe_len else {
+            let Some(len_layout) = maybe_len else {
                 dbpanic!(
                     &self.compiler_database.db,
                     "trying to non-existent int arg struct for array parser layout {}",
                     &layout.inner()
                 );
             };
-            let int_size = l.size_align(self.layouts).unwrap().size;
-            let whole_size = layout.inner().size_align(self.layouts).unwrap().size;
+            let int_size = len_layout.size_align(self.layouts).unwrap().after;
+            let whole_size = layout.inner().size_align(self.layouts).unwrap().after;
             return Some((0, whole_size - int_size));
         }
         None
@@ -294,7 +291,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let parserdef_args = pd.lookup(&self.compiler_database.db).unwrap().args.unwrap();
         let arg_index = parserdef_args.len() - argnum as usize - 1;
         let (arg_layout, ty) = args[arg_index];
-        let is_multi = matches!(&arg_layout.layout.1, Layout::Multi(_));
+        let is_multi = arg_layout.is_multi();
         let head = self
             .compiler_database
             .db
@@ -308,7 +305,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let arg_defid = parserdef_args[arg_index];
         let mut field_offset = manifestation.field_offsets[&arg_defid.0];
         if is_multi {
-            field_offset += self.word_size();
+            field_offset += arg_layout
+                .size_align(self.layouts)
+                .unwrap()
+                .allocation_center_offset();
         }
         (head, field_offset)
     }
@@ -370,20 +370,21 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let hash = truncated_hex(&self.compiler_database.db.def_hash(pd.0));
         let name = pd.0.unwrap_name(&self.compiler_database.db);
         let sym = dbformat!(&self.compiler_database.db, "g${}${}", &hash, &name);
+        let sa = layout.size_align(self.layouts).unwrap();
         let global_val = if let Some(x) = self.module.get_global(&sym) {
             x
         } else {
-            let sa = layout.size_align(self.layouts).unwrap();
             let llvm_ty = self.sa_type(sa);
             let global = self.module.add_global(llvm_ty, None, &sym);
             global.set_alignment(sa.align() as u32);
             global.set_initializer(&llvm_ty.const_zero());
             global
         };
-        self.const_byte_gep(
-            global_val.as_pointer_value(),
-            self.layout_inner_offset(layout) as i64,
-        )
+        let center_offset = sa.allocation_center_offset();
+        if center_offset == 0 {
+            return global_val.as_pointer_value();
+        }
+        self.const_byte_gep(global_val.as_pointer_value(), center_offset as i64)
     }
 
     pub(super) fn create_all_statics(&mut self) -> IResult<()> {

@@ -48,10 +48,13 @@ impl UnfinishedManifestation {
     }
     pub fn add_field(&mut self, id: DefId, field_size: SizeAlign) {
         self.0.size = self.0.size.cat(field_size);
-        let offset = self.0.size.size - field_size.size;
+        let offset = self.0.size.after - field_size.after;
         self.0.field_offsets.insert(id, offset);
-        self.0.padding_mask.resize(self.0.size.size as usize, 0);
-        for i in offset..self.0.size.size {
+        self.0.padding_mask.resize(self.0.size.after as usize, 0);
+        // note that this is only the padding we need to care about,
+        // the padding in the individual fields is taken care of by calls
+        // to the mask funs of those fields
+        for i in (offset - field_size.before)..(offset + field_size.after) {
             self.0.padding_mask[i as usize] = 0xff;
         }
     }
@@ -63,17 +66,18 @@ impl UnfinishedManifestation {
         manifest.discriminant_mapping = discriminant_mapping;
         manifest.discriminant_offset = 0;
         let disc_sa = SizeAlign {
-            size: ((manifest.discriminant_mapping.len() + 7) / 8) as PSize,
+            before: 0,
+            after: ((manifest.discriminant_mapping.len() + 7) / 8) as PSize,
             align_mask: 0,
         };
-        let size = manifest.size.size;
+        let size = manifest.size.after;
         manifest.size = disc_sa.cat(manifest.size);
-        let added_offset = manifest.size.size - size;
+        let added_offset = manifest.size.after - size;
         for offset in manifest.field_offsets.values_mut() {
             *offset += added_offset;
         }
         let mut disc_padding = vec![0; added_offset as usize];
-        for i in 0..disc_sa.size {
+        for i in 0..disc_sa.after {
             disc_padding[i as usize] = 0xff;
         }
         if manifest.discriminant_mapping.len() % 8 != 0 {
@@ -696,13 +700,15 @@ impl<'a> ILayout<'a> {
             }
             Layout::Mono(MonoLayout::IfParser(inner, _, _), _)
             | Layout::Mono(MonoLayout::ArrayParser(Some((inner, None))), _) => {
-                inner.size_align(ctx)?
+                SizeAlign::ZST.cat(inner.size_align(ctx)?)
             }
             Layout::Mono(
                 MonoLayout::ArrayParser(Some((parser, Some(l))))
                 | MonoLayout::Array { parser, slice: l },
                 _,
-            ) => parser.size_align(ctx)?.cat(l.size_align(ctx)?),
+            ) => SizeAlign::ZST
+                .cat(parser.size_align(ctx)?)
+                .cat(l.size_align(ctx)?),
             Layout::Mono(MonoLayout::Nominal(id, from, args), _) => {
                 self.nominal_manifestation(ctx, *id, *from, args)?.size
             }
@@ -721,7 +727,7 @@ impl<'a> ILayout<'a> {
                 | MonoLayout::Regex(_, _)
                 | MonoLayout::ArrayParser(None),
                 _,
-            ) => Zst::tsize(data),
+            ) => SizeAlign::ZST,
             Layout::Mono(MonoLayout::Tuple(elements), _) => {
                 let mut size = Zst::tsize(data);
                 for element in elements {
@@ -740,7 +746,7 @@ impl<'a> ILayout<'a> {
     pub fn size_align(self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> SResult<SizeAlign> {
         let size = self.size_align_without_vtable(ctx)?;
         Ok(if let Layout::Multi(_) = self.layout.1 {
-            <&Zst>::tsize(&ctx.dcx.target_data).cat(size)
+            size.tac(<*const u8>::tsize(&ctx.dcx.target_data))
         } else {
             size
         })

@@ -27,14 +27,14 @@ pub fn deref_type(db: &dyn TyHirs, ty: TypeId) -> SResult<Option<TypeId>> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct DerefLevel(usize);
+pub struct DerefLevel(u64);
 
 const RESERVED_DEREF_METADATA_BITS: u8 = 8;
 pub const VTABLE_BIT: u8 = 0;
 pub const NOBACKTRACK_BIT: u8 = 1;
 
 impl DerefLevel {
-    pub fn into_shifted_runtime_value(self) -> usize {
+    pub fn into_shifted_runtime_value(self) -> u64 {
         self.0 << RESERVED_DEREF_METADATA_BITS
     }
     pub fn is_deref(self) -> bool {
@@ -44,7 +44,7 @@ impl DerefLevel {
         DerefLevel(0)
     }
     pub fn max() -> Self {
-        DerefLevel(usize::MAX >> RESERVED_DEREF_METADATA_BITS)
+        DerefLevel(u64::MAX >> RESERVED_DEREF_METADATA_BITS)
     }
     pub fn inc(self) -> Self {
         DerefLevel(self.0 + 1)
