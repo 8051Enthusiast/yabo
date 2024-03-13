@@ -613,7 +613,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let src_ptr = self.get_object_start(src)?;
         let dest_ptr = self.get_object_start(dest)?;
         let size = self.const_i64(sa.total_size() as i64);
-        let align = sa.align() as u32;
+        let align = sa.start_alignment() as u32;
         self.builder
             .build_memcpy(dest_ptr, align, src_ptr, align, size)?;
         Ok(dest_ptr)
