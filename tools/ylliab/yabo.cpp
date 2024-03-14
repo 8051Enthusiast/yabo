@@ -34,8 +34,7 @@ DynValue *YaboValStorage::next_val_ptr() {
   auto next_ptr = static_cast<void *>(fresh_storage.get() + current_offset);
   auto old_space_left = current_free_space();
   auto new_space_left = old_space_left;
-  auto res =
-      std::align(alignof(max_align_t), max_size, next_ptr, new_space_left);
+  auto res = std::align(YABO_MAX_ALIGN, max_size, next_ptr, new_space_left);
   if (!res) {
     expand_storage();
     // this should only recurse once since we have enough space for at least one
