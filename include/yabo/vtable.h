@@ -5,6 +5,7 @@ extern "C" {
 
 #include <stdint.h>
 #include <sys/types.h>
+#include <stdalign.h>
 
 enum YaboHead {
   YABO_INTEGER = 0x100,
@@ -19,6 +20,8 @@ enum YaboHead {
   YABO_ANY = UINT64_MAX & ~0xff,
   YABO_VTABLE = 1,
 };
+
+#define YABO_MAX_ALIGN ((alignof(int64_t) - 1 | alignof(void *) - 1) + 1)
 
 enum ReturnStatus {
   OK = 0,

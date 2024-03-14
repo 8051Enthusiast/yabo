@@ -35,7 +35,7 @@ void free_stack(Stack stack) { free(stack.current); }
 Stack bump(Stack stack) {
   size_t size = dyn_val_size(stack.current);
   size_t aligned_size =
-      (size + _Alignof(DynValue) - 1) & ~(_Alignof(DynValue) - 1);
+      (size + alignof(DynValue) - 1) & ~(alignof(DynValue) - 1);
   if ((size_t)(stack.limit - (char *)stack.current) < aligned_size) {
     fprintf(stderr, "Value stack overflow\n");
     exit(1);

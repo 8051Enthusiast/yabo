@@ -7,13 +7,18 @@ extern "C" {
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdalign.h>
 
 struct Slice {
   const uint8_t *start;
   const uint8_t *end;
 };
 
-typedef struct {
+typedef  struct Name {
+  // padding such that the vtable is directly infront of data without
+  // padding, and such that 
+  alignas(YABO_MAX_ALIGN)
+  char padding[YABO_MAX_ALIGN - sizeof(void *)];
   struct VTableHeader *vtable;
   char data[];
 } DynValue;
@@ -110,9 +115,13 @@ static inline int64_t dyn_int(const DynValue *integer) {
   return *(int64_t *)integer->data;
 }
 
-static inline int32_t dyn_char(const DynValue *chr) { return *(int32_t *)chr->data; }
+static inline int32_t dyn_char(const DynValue *chr) {
+  return *(int32_t *)chr->data;
+}
 
-static inline int8_t dyn_bit(const DynValue *bit) { return *(int8_t *)bit->data; }
+static inline int8_t dyn_bit(const DynValue *bit) {
+  return *(int8_t *)bit->data;
+}
 
 #ifdef __cplusplus
 }

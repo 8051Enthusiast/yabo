@@ -20,14 +20,14 @@ YaboValStorage::YaboValStorage(size_t max_s) {
   current_offset = 0;
   old_storage = std::vector<std::unique_ptr<uint8_t[]>>{};
   fresh_storage = std::make_unique<uint8_t[]>(fresh_storage_size());
-  auto space = max_s + alignof(max_align_t);
+  auto space = max_s + YABO_MAX_ALIGN;
   auto space2 = space;
   tmp_storage = std::make_unique<uint8_t[]>(space);
   void *ptr = tmp_storage.get();
-  std::align(alignof(max_align_t), max_s, ptr, space);
+  std::align(YABO_MAX_ALIGN, max_s, ptr, space);
   tmp_storage2 = std::make_unique<uint8_t[]>(space2);
   void *ptr2 = tmp_storage2.get();
-  std::align(alignof(max_align_t), max_s, ptr2, space2);
+  std::align(YABO_MAX_ALIGN, max_s, ptr2, space2);
 };
 
 DynValue *YaboValStorage::next_val_ptr() {
