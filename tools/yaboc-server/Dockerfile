@@ -96,8 +96,12 @@ RUN mkdir /home/emscripten && chown 1000:1000 /home/emscripten
 ENV HOME=/home/emscripten
 
 USER 1000:1000
+COPY ./lib/rt.c /home/emscripten/rt.c
+ENV YABO_RUNTIME=/home/emscripten/rt.o
 # initialize emcc's cache by running once
-RUN bash -c '. /opt/emsdk/emsdk_env.sh && /opt/bin/build.sh <(echo "export def *main = ~") /dev/null'
+RUN bash -c '. /opt/emsdk/emsdk_env.sh \
+ && emcc -O3 -c /home/emscripten/rt.c -fvisibility=hidden -o /home/emscripten/rt.o \
+ && /opt/bin/build.sh <(echo "export def *main = ~") /dev/null'
 
 WORKDIR /tmp
 EXPOSE 8000
