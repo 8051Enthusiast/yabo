@@ -6,9 +6,9 @@ from copy import copy
 import ctypes
 import threading
 from os import getenv
-from ctypes import (addressof, c_char_p, c_int64, c_int8, c_ubyte,
-                    c_uint32, c_uint64, c_size_t, c_char, Structure,
-                    CFUNCTYPE, POINTER, byref, c_void_p, pointer)
+from ctypes import (addressof, alignment, sizeof, c_char_p, c_int64,
+                    c_int8, c_ubyte, c_uint32, c_uint64, c_size_t, c_char,
+                    Structure, CFUNCTYPE, POINTER, byref, c_void_p, pointer)
 import tempfile
 from shutil import copyfileobj
 
@@ -172,6 +172,8 @@ class ArrayVTable(Structure):
         ('inner_array_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64)),
     ]
 
+MAX_ALIGNMENT = max(alignment(_voidptr), alignment(c_int64))
+
 class Slice(Structure):
     __slots__ = [
         'start',
@@ -206,10 +208,12 @@ class DynValue(Structure):
 def sized_dyn_value(size: int):
     class SizedDynValue(DynValue):
         __slots__ = [
+            'padding',
             'vtable',
             'data',
         ]
         _fields_ = [
+            ('padding', c_char * (MAX_ALIGNMENT - sizeof(_voidptr))),
             ('vtable', POINTER(VTableHeader)),
             ('data', c_char * size),
         ]
