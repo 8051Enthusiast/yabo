@@ -461,16 +461,15 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.add_entry_block(llvm_fun);
         let [ret, nom, head] = get_fun_args(llvm_fun);
         let [ret, nom] = [ret, nom].map(|x| x.into_pointer_value());
-        let ret = CgReturnValue::new(head.into_int_value(), ret);
+        let ret_val = CgReturnValue::new(head.into_int_value(), ret);
         let nom = CgMonoValue::new(layout, nom);
-        // this should never fail, as arrays are not deref
-        self.call_start_fun(ret, nom.into())?;
         let (from, fun) = self.build_nominal_components(nom)?;
+        let from_copy = self.build_alloca_value(from.layout, "from_copy")?;
+        self.build_copy_invariant(from_copy, from)?;
         let no_ret = self.undef_ret();
-        let from_ret = from.with_ptr(ret.ptr);
-        let ret = self.build_parser_call(no_ret, fun.into(), from_ret, pd_len_req())?;
-        self.builder.build_return(Some(&ret))?;
-        Ok(())
+        let ret = self.build_parser_call(no_ret, fun.into(), from_copy, pd_len_req())?;
+        self.non_zero_early_return(llvm_fun, ret)?;
+        self.terminate_tail_typecast(from_copy, ret_val)
     }
 
     fn create_pd_start(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
