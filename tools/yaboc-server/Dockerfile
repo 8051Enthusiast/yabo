@@ -51,7 +51,7 @@ RUN unzip /src/v6.6.2.zip -d /src
 RUN --mount=type=tmpfs,target=/build \
     cd /build \
  && /src/qtbase-6.6.2/configure -prefix /opt/qt6 -nomake examples -nomake tests \
- && cmake --build . -t qtbase \
+ && cmake --build . -t qtbase --parallel $(nproc)\
  && cmake --install . --prefix /opt/qt6
 
 COPY --from=emscripten /opt/emsdk/ /opt/emsdk/
@@ -73,6 +73,7 @@ COPY include/yabo/* /src/include/yabo/
 
 RUN --mount=type=tmpfs,target=/build bash -c '\
     . /opt/emsdk/emsdk_env.sh \
+ && export EMCC_FORCE_STDLIBS=1 \
  && cd /build \
  && /opt/qt6-wasm/bin/qt-cmake -DCMAKE_BUILD_TYPE=Release /src/tools/ylliab \
  && /opt/qt6-wasm/bin/qt-cmake -DDARK_STYLE_QRC_PATH=/src/QDarkStyleSheet-3.2.2/qdarkstyle/dark/darkstyle.qrc /src/tools/yphbt . \
@@ -94,13 +95,13 @@ COPY ./tools/yaboc-server/index.html /opt/yphbt/index.html
 ENV YABO_LIB_PATH=/opt/lib
 RUN mkdir /home/emscripten && chown 1000:1000 /home/emscripten
 ENV HOME=/home/emscripten
+RUN bash -c '. /opt/emsdk/emsdk_env.sh \
+ && emcc -O3 -c /opt/lib/rt.c -fvisibility=hidden -o /opt/lib/rt.o'
+
 
 USER 1000:1000
-COPY ./lib/rt.c /home/emscripten/rt.c
-ENV YABO_RUNTIME=/home/emscripten/rt.o
 # initialize emcc's cache by running once
 RUN bash -c '. /opt/emsdk/emsdk_env.sh \
- && emcc -O3 -c /home/emscripten/rt.c -fvisibility=hidden -o /home/emscripten/rt.o \
  && /opt/bin/build.sh <(echo "export def *main = ~") /dev/null'
 
 WORKDIR /tmp
