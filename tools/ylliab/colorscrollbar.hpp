@@ -21,6 +21,7 @@ protected:
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
 
 private:
     int marker_offset() const;
@@ -30,4 +31,5 @@ private:
     HexTableModel *model;
     QPixmap minimap;
     bool minimap_updated;
+    bool dragging;
 };
