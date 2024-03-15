@@ -71,7 +71,7 @@ struct YaboValBytes {
   YaboValBytes(FileSpan byte_span) noexcept : bytes(byte_span){};
 
   YaboValBytes(const DynValue *x) noexcept {
-    bytes = std::span((uint8_t *)&x->vtable, dyn_val_size((DynValue *)x));
+    bytes = std::span((uint8_t *)&x->vtable, dyn_val_size(x));
   }
 
   FileSpan bytes;
