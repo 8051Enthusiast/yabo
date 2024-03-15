@@ -41,7 +41,7 @@ private slots:
   void
   set_new_file_requester(std::unique_ptr<FileRequester> &&new_file_requester);
 
-  void set_font(QFont font);
+  void set_font(const QFont &font);
 
   Ui::YphbtWindow *ui;
   std::unique_ptr<FileRequester> file_requester;

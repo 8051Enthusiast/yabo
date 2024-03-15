@@ -137,9 +137,13 @@ void YphbtWindow::on_actionBack_triggered() { treeModel->undo(); }
 
 void YphbtWindow::on_actionForth_triggered() { treeModel->redo(); }
 
-void YphbtWindow::set_font(QFont font) {
+void YphbtWindow::set_font(const QFont &font) {
   setFont(font);
   ui->tableView->set_font(font);
+  ui->treeView->setFont(font);
+  ui->plainTextEdit->setFont(font);
+  ui->errorView->setFont(font);
+  ui->toolBar->setFont(font);
 }
 
 void YphbtWindow::on_actionEnsizen_triggered() {
