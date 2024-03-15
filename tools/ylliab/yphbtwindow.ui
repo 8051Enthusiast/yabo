@@ -106,18 +106,39 @@
    </attribute>
    <addaction name="actionCompile"/>
    <addaction name="actionLoadFile"/>
+   <addaction name="actionBack"/>
+   <addaction name="actionForth"/>
   </widget>
   <action name="actionCompile">
    <property name="text">
     <string>Compile</string>
    </property>
    <property name="shortcut">
-    <string>F5</string>
+    <string>Ctrl+S</string>
    </property>
   </action>
   <action name="actionLoadFile">
    <property name="text">
-    <string>Load File</string>
+    <string>Open File</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+O</string>
+   </property>
+  </action>
+  <action name="actionBack">
+   <property name="text">
+    <string>Back</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Z</string>
+   </property>
+  </action>
+  <action name="actionForth">
+   <property name="text">
+    <string>Forth</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+R</string>
    </property>
   </action>
  </widget>
