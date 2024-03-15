@@ -51,21 +51,33 @@ void ColorScrollBar::paintEvent(QPaintEvent *event) {
 
 // directly move to the position where the mouse is at
 void ColorScrollBar::mousePressEvent(QMouseEvent *event) {
-  auto offset = event->pos().y() - 1;
-  set_val(offset);
+  if (event->buttons() == Qt::LeftButton) {
+    auto offset = event->pos().y() - 1;
+    set_val(offset);
+    dragging = true;
+  }
 }
 
 void ColorScrollBar::mouseMoveEvent(QMouseEvent *event) {
-  auto offset = event->pos().y() - 1;
-  set_val(offset);
+  if (event->buttons() & Qt::LeftButton && dragging) {
+    auto offset = event->pos().y() - 1;
+    set_val(offset);
+  }
 }
+
+void ColorScrollBar::mouseReleaseEvent(QMouseEvent *event) {
+  if (event->button() == Qt::LeftButton) {
+    dragging = false;
+  }
+}
+
 void ColorScrollBar::set_val(int offset) {
   auto min_pos = 1;
   auto max_pos = this->size().height() - 1;
   auto clamped_offset = std::clamp(offset, min_pos, max_pos);
   auto offset_range = max_pos - min_pos;
-  auto [row, _] =
-      model->pixel_offset_global_row_range(clamped_offset - min_pos, offset_range);
+  auto [row, _] = model->pixel_offset_global_row_range(clamped_offset - min_pos,
+                                                       offset_range);
   if (model->row_is_in_range(row)) {
     auto local_row = model->local_row(row);
     this->setValue(local_row);
