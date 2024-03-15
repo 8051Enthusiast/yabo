@@ -178,7 +178,6 @@ QPixmap HexTableModel::node_minimap(int len, QColor background_color) const {
 void HexCell::paint(QPainter *painter, const QStyleOptionViewItem &option,
                     const QModelIndex &index) const {
   auto data = index.data().toString();
-  painter->save();
   painter->setPen(Qt::transparent);
   auto background = index.data(Qt::BackgroundRole);
   QBrush brush;
@@ -202,7 +201,6 @@ void HexCell::paint(QPainter *painter, const QStyleOptionViewItem &option,
   }
   painter->setFont(font);
   painter->drawText(option.rect, Qt::AlignCenter, data);
-  painter->restore();
 }
 
 QSize HexCell::sizeHint(const QStyleOptionViewItem &option,
