@@ -209,11 +209,12 @@ QSize HexCell::sizeHint(const QStyleOptionViewItem &option,
   return cell_size;
 }
 
-HexCell::HexCell(QFont font, size_t file_size) : font(font) {
+HexCell::HexCell(QFont font, size_t file_size)
+    : font(font), current_file_size(file_size) {
   auto metrics = QFontMetrics(font);
   cell_size = metrics.size(0, "00");
-  cell_size.setHeight(cell_size.height() + 6);
-  cell_size.setWidth(cell_size.width() + 10);
+  cell_size.setHeight(padded(cell_size).height());
+  cell_size.setWidth(padded(cell_size).width());
   set_file_size(file_size);
 }
 int HexTableModel::rowCount(const QModelIndex &parent) const {
@@ -235,10 +236,29 @@ GlobalRow HexTableModel::global_row(int row) const {
   return GlobalRow{row + model_offset};
 }
 void HexCell::set_file_size(size_t file_size) {
+  current_file_size = file_size;
   auto metrics = QFontMetrics(font);
   auto addr_string = QString("0x%1").arg(
       file_size, address_digit_count(file_size), 16, QChar('0'));
   header_size = metrics.size(0, addr_string);
-  header_size.setHeight(header_size.height() + 6);
-  header_size.setWidth(header_size.width() + 10);
+  header_size.setHeight(padded(header_size).height());
+  header_size.setWidth(padded(header_size).width());
+}
+void HexCell::set_font(QFont font) {
+  this->font = font;
+  auto metrics = QFontMetrics(font);
+  cell_size = metrics.size(0, "00");
+  cell_size.setHeight(padded(cell_size).height());
+  cell_size.setWidth(padded(cell_size).width());
+  auto addr_string = QString("0x%1").arg(current_file_size,
+                                         address_digit_count(current_file_size),
+                                         16, QChar('0'));
+  header_size = metrics.size(0, addr_string);
+  header_size.setHeight(padded(header_size).height());
+  header_size.setWidth(padded(header_size).width());
+}
+QSize HexCell::padded(QSize size) const {
+  auto added_height = size.height() / 3;
+  auto added_width = added_height * 4 / 3;
+  return size + QSize(added_width, added_height);
 }
