@@ -78,11 +78,12 @@ public:
   QSize get_cell_size() const { return cell_size; }
   QSize get_header_size() const { return header_size; }
   void set_file_size(size_t file_size);
+  void set_font(QFont font);
 
 private:
+  QSize padded(QSize size) const;
   QFont font;
   QSize cell_size;
   QSize header_size;
-  constexpr static int corner_size = 6;
-  constexpr static int margin = 1;
+  size_t current_file_size;
 };

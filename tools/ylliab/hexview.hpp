@@ -2,6 +2,7 @@
 
 #include "hex.hpp"
 
+#include <QFont>
 #include <QTableView>
 
 class HexTableView : public QTableView {
@@ -9,6 +10,7 @@ class HexTableView : public QTableView {
 public:
   HexTableView(QWidget *parent = nullptr);
   void setModel(HexTableModel *model);
+  void set_font(QFont font);
 
 public slots:
   void goto_addr(size_t addr);
@@ -16,6 +18,7 @@ public slots:
   void select_addr_range(size_t start, size_t end);
 
 private:
+  void update_dimensions();
   HexTableModel *hexModel;
   std::unique_ptr<HexCell> hexCell;
 };
