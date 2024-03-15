@@ -231,6 +231,7 @@ void YaboTreeModel::redo() {
   beginResetModel();
   root_id = undo_stack[++undo_stack_idx];
   endResetModel();
+  emit expand(to_qindex(root_id.tree_index, 0));
   emit file_requester->root_changed(root_id);
 }
 
@@ -241,6 +242,7 @@ void YaboTreeModel::undo() {
   beginResetModel();
   root_id = undo_stack[--undo_stack_idx];
   endResetModel();
+  emit expand(to_qindex(root_id.tree_index, 0));
   emit file_requester->root_changed(root_id);
 }
 
