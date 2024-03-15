@@ -105,7 +105,7 @@ void YphbtWindow::set_new_file_requester(
   hexModel = std::move(newHexModel);
   file_requester = std::move(new_file_requester);
   init_hex_and_tree(ui->tableView, ui->treeView, hexModel.get(),
-                       treeModel.get(), file_requester.get());
+                    treeModel.get(), file_requester.get());
   file_requester->start_executor_thread();
 }
 
@@ -116,3 +116,7 @@ void YphbtWindow::on_tableView_doubleClicked(const QModelIndex &index) {
 void YphbtWindow::on_treeView_doubleClicked(const QModelIndex &index) {
   treeModel->handle_doubleclick(index);
 }
+
+void YphbtWindow::on_actionBack_triggered() { treeModel->undo(); }
+
+void YphbtWindow::on_actionForth_triggered() { treeModel->redo(); }
