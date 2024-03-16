@@ -35,6 +35,7 @@ YphbtWindow::YphbtWindow(QWidget *parent, std::optional<QString> source,
       file_requester(nullptr), treeModel(nullptr), hexModel(nullptr) {
   ui->setupUi(this);
   ui->errorView->hide();
+  current_font.setPointSize(default_font_size);
   set_font(current_font);
   auto compile_url_env = qEnvironmentVariable("YPHBT_COMPILE_URL");
   if (compile_url_env != "") {
@@ -140,7 +141,9 @@ void YphbtWindow::on_actionForth_triggered() { treeModel->redo(); }
 void YphbtWindow::set_font(const QFont &font) {
   setFont(font);
   ui->tableView->set_font(font);
+  ui->tableView->verticalHeader()->setFont(font);
   ui->treeView->setFont(font);
+  ui->treeView->header()->setFont(font);
   ui->plainTextEdit->setFont(font);
   ui->errorView->setFont(font);
   ui->toolBar->setFont(font);
