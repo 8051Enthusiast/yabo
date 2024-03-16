@@ -30,7 +30,7 @@
        <property name="orientation">
         <enum>Qt::Vertical</enum>
        </property>
-       <widget class="QPlainTextEdit" name="plainTextEdit">
+       <widget class="SourceEditor" name="plainTextEdit">
         <property name="plainText">
          <string>export def *main = ~</string>
         </property>
@@ -169,6 +169,11 @@
    <class>CompilerErrorView</class>
    <extends>QTextEdit</extends>
    <header>compiler_error_view.hpp</header>
+  </customwidget>
+  <customwidget>
+   <class>SourceEditor</class>
+   <extends>QPlainTextEdit</extends>
+   <header>sourceeditor.hpp</header>
   </customwidget>
  </customwidgets>
  <resources/>
