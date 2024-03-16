@@ -7,6 +7,7 @@
 #include <QRunnable>
 #include <QTemporaryFile>
 #include <QUrl>
+#include <QFontDatabase>
 
 namespace Ui {
 class YphbtWindow;
@@ -49,7 +50,7 @@ private slots:
   std::unique_ptr<HexTableModel> hexModel;
   FileRef file;
   std::optional<QUrl> compile_url;
-  static constexpr int default_font_size = 12;
+  static constexpr int default_font_size = 13;
   static constexpr int minimum_font_size = 4;
-  QFont current_font = QFont("Monospace", default_font_size);
+  QFont current_font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
 };
