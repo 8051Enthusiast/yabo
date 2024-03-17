@@ -32,7 +32,41 @@
        </property>
        <widget class="SourceEditor" name="plainTextEdit">
         <property name="plainText">
-         <string>export def *main = ~</string>
+         <string>import list
+
+# a parser for the rough structure of a png
+
+def *chunk(ty: *[u8]) = {
+  length: u32b
+  type: [4] |&gt; ty?
+  return: [length]
+  crc: u32b
+}
+
+def *head = {
+  width: u32b
+  height: u32b
+  bit_depth: u8
+  color_type: u8
+  compression_method: u8
+  filter_method: u8
+  interlace_method: u8
+}
+
+export
+def *main = {
+  [1], /PNG/, /\r\n/, /\x1A/, /\n/
+
+  header: chunk(/IHDR/)! |&gt; head
+
+  chunks: list.list({
+    | palette: chunk(/PLTE/)?
+    | data: chunk(/IDAT/)?
+    | optional: chunk(/[a-z]/)?
+  })
+  chunk(/IEND/)!
+}
+</string>
         </property>
        </widget>
        <widget class="CompilerErrorView" name="errorView">
