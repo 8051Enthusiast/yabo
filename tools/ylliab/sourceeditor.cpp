@@ -23,7 +23,6 @@ void SourceEditor::keyPressEvent(QKeyEvent *event) {
     info = current_line_info();
     if (info.cursor_offset <= info.indent && info.indent >= tab_width &&
         info.cursor_offset % tab_width == 0) {
-      qDebug() << info.cursor_offset << info.indent;
       auto cursor = textCursor();
       cursor.movePosition(QTextCursor::Left, QTextCursor::KeepAnchor,
                           tab_width);
