@@ -84,6 +84,10 @@ void YphbtWindow::on_actionCompile_triggered() {
 void YphbtWindow::on_actionLoadFile_triggered() {
   QFileDialog::getOpenFileContent(
       "*.*", [this](const QString &file_path, const QByteArray &content) {
+        // this happens if you cancel on chrome
+        if (file_path.isEmpty()) {
+          return;
+        }
         file = std::make_shared<FileContent>(
             std::vector<uint8_t>(content.begin(), content.end()));
         on_actionCompile_triggered();
