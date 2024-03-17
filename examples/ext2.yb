@@ -73,8 +73,9 @@ def *ext2_group_desc = {
   reserved: u32l[3]
 }
 
-static group_descs = ext2_group_desc[superblock.blocks_count / superblock.blocks_per_group] at
-                                                              math.max(2048, block_size)
+static group_descs = ext2_group_desc[
+    (superblock.blocks_count + superblock.blocks_per_group - 1) / superblock.blocks_per_group
+] at math.max(2048, block_size)
 
 fun inode_at(idx: int) = {:
   let group = idx / superblock.inodes_per_group
