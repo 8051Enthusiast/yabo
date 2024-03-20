@@ -190,17 +190,17 @@ def *u16l: int = {
 Note that the language currently only has a single signed integer type with 64 bits called `int`.
 Here is an overview of the types:
 
-| type         | description                                                        |
-| ------------ | ------------------------------------------------------------------ |
-| `int`        | signed 64-bit integer                                              |
-| `bit`        | single bit (boolean)                                               | 
-| `u8`         | byte in memory                                                     |
-| `'t`         | generic type (can have any identifier)                             |
-| `['t]`       | array of `t`                                                       |
-| `'t *> 'r`   | parser that takes a `'t` and returns an `'r` (advancing `'t`)      |
-| `*'t`        | desugars to `[u8] *> 't`                                           |
-| `'a('b, 'c)` | function that takes `'b` and `'c` and returns an `'a`, see below   |
-| identifier   | refers to a parser definition (for example `u16_pair` refers to the value returned by the `u16_pair` parser) |
+| type            | description                                                         |
+| --------------- | ------------------------------------------------------------------- |
+| `int`           | signed 64-bit integer                                               |
+| `bit`           | single bit (boolean)                                                | 
+| `u8`            | byte in memory (a byte pointer), is a subtype of `int` by dereferencing into the byte value (not the address!) |
+| `'t`            | generic type (can have any identifier)                              |
+| `[foo]`         | array of `foo`                                                      |
+| `foo *> bar`    | parser that takes a `foo` and returns an `bar` (advancing `foo`)    |
+| `*foo`          | desugars to `[u8] *> foo`                                           |
+| `foo(bar, baz)` | function that takes `bar` and `baz` and returns an `foo`, see below |
+| identifier      | refers to a parser definition (for example `u16_pair` refers to the value returned by the `u16_pair` parser) |
 
 Function Arguments
 ------------------
