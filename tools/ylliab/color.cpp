@@ -1,5 +1,4 @@
 #include "color.hpp"
-#include <QDebug>
 #include <complex>
 #include <random>
 
@@ -7,37 +6,35 @@ bool use_dark_random_colors = false;
 
 struct ColorSpaceSlice {
   float luminance;
-  // parallelogram with minimum(-ish) area that covers the srgb gamut in CIELAB
+  // parallelogram with minimum(-ish) area that covers the srgb gamut in Oklab
   // at luminance
   std::complex<float> start_pos;
   std::complex<float> first_axis;
   std::complex<float> second_axis;
 };
 
-static constexpr ColorSpaceSlice LIGHT_SPACE = {85.0,
-                                                {-54.02480553, -26.8951105},
-                                                {87.04113298, 4.56163248},
-                                                {-31.00257534, 108.11882904}};
+static constexpr ColorSpaceSlice LIGHT_SPACE = {0.8,
+                                                {-0.10987016, -0.09824207},
+                                                {0.27845253, -0.00972378},
+                                                {-0.109307, 0.27054431}};
 
-static constexpr ColorSpaceSlice DARK_SPACE = {70.0,
-                                               {-36.02653126, -51.09285043},
-                                               {108.65374119, 5.69430129},
-                                               {-37.05923352, 121.21529099}};
+static constexpr ColorSpaceSlice DARK_SPACE = {0.7,
+                                               {-0.07429381, -0.15805215},
+                                               {0.35207526, -0.01229474},
+                                               {-0.11949073, 0.31128398}};
 
 static ColorSpaceSlice const &current_slice() {
   return use_dark_random_colors ? DARK_SPACE : LIGHT_SPACE;
 }
 
 struct Color {
-  float component[3];
-  float &operator[](size_t i) { return component[i]; }
+  std::array<float, 3> component;
+  float &operator[](size_t i) { return component.at(i); }
 };
 
 static Color lin_srgb_to_srgb(Color srgb) {
   Color rgb;
   for (size_t i = 0; i < 3; i++) {
-    // our linear srgb has range 0..100, but conversion needs 0..1
-    srgb[i] /= 100.0;
     if (srgb[i] <= 0.0031308) {
       rgb[i] = 12.92 * srgb[i];
     } else {
@@ -47,41 +44,49 @@ static Color lin_srgb_to_srgb(Color srgb) {
   return rgb;
 }
 
-constexpr float xyz_to_srgb_matrix[3][3] = {{3.2406, -1.5372, -0.4986},
-                                            {-0.9689, 1.8758, 0.0415},
-                                            {0.0557, -0.2040, 1.0570}};
-static Color xyz_to_lin_srgb(Color xyz) {
-  Color srgb = {0, 0, 0};
+constexpr std::array<std::array<float, 3>, 3> xyz_to_srgb_matrix = {
+    {{3.2406, -1.5372, -0.4986},
+     {-0.9689, 1.8758, 0.0415},
+     {0.0557, -0.2040, 1.0570}}};
+
+constexpr std::array<std::array<float, 3>, 3> m1_inv = {
+    {{1.22701385110352, -0.557799980651822, 0.281256148966468},
+     {-0.0405801784232806, 1.11225686961683, -0.0716766786656012},
+     {-0.0763812845057069, -0.421481978418013, 1.58616322044079}}};
+
+constexpr std::array<std::array<float, 3>, 3> m2_inv = {
+    {{0.999999998450521, 0.396337792173768, 0.215803758060759},
+     {1.00000000888176, -0.105561342323656, -0.0638541747717059},
+     {1.00000005467241, -0.0894841820949657, -1.29148553786409}}};
+
+static Color matrix_multiply(const std::array<std::array<float, 3>, 3> &m,
+                             Color c) {
+  Color res = {0, 0, 0};
   for (size_t i = 0; i < 3; i++) {
-    for (size_t j = 0; j < 3; ++j) {
-      srgb[i] += xyz[j] * xyz_to_srgb_matrix[i][j];
+    for (size_t j = 0; j < 3; j++) {
+      res[i] += m[i][j] * c[j];
     }
   }
-  return srgb;
+  return res;
 }
 
-// D65 white point
-constexpr float x_n = 95.0489;
-constexpr float y_n = 100.0;
-constexpr float z_n = 108.884;
+static Color xyz_to_lin_srgb(Color xyz) {
+  return matrix_multiply(xyz_to_srgb_matrix, xyz);
+}
 
-static Color cielab_to_xyz(Color lab) {
-  Color xyz;
-  float fy = (lab[0] + 16.0) / 116.0;
-  float fx = fy + lab[1] / 500.0;
-  float fz = fy - lab[2] / 200.0;
-  // we ignore the linear part since we only deal with high luminance
-  // values
-  xyz[0] = x_n * fx * fx * fx;
-  xyz[1] = y_n * fy * fy * fy;
-  xyz[2] = z_n * fz * fz * fz;
+static Color oklab_to_xyz(Color lab) {
+  auto lms = matrix_multiply(m2_inv, lab);
+  for (float &comp : lms.component) {
+    comp = comp * comp * comp;
+  }
+  auto xyz = matrix_multiply(m1_inv, lms);
   return xyz;
 }
 
 // check whether our color falls within the srgb gamut
-static bool in_100_range(Color srgb) {
+static bool in_range(Color srgb) {
   for (auto comp : srgb.component) {
-    if (comp < 0 || comp > 100) {
+    if (comp < 0 || comp > 1) {
       return false;
     }
   }
@@ -102,9 +107,9 @@ QColor random_color(size_t seed) {
                slice.second_axis * dist(rng);
     lab[1] = val.real();
     lab[2] = val.imag();
-    auto xyz = cielab_to_xyz(lab);
+    auto xyz = oklab_to_xyz(lab);
     lin_srgb = xyz_to_lin_srgb(xyz);
-  } while (!in_100_range(lin_srgb));
+  } while (!in_range(lin_srgb));
   auto srgb = lin_srgb_to_srgb(lin_srgb);
   auto color = QColor::fromRgbF(srgb[0], srgb[1], srgb[2]);
   return color;
