@@ -506,11 +506,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         ctrl: ControlFlow,
     ) -> IResult<()> {
         let error = ctrl.error.map(|x| self.bb(x)).unwrap_or(self.undefined);
-        let Type::FunctionArg(_, arg_tys) = self
-            .cg
-            .compiler_database
-            .db
-            .lookup_intern_type(self.mir_fun.f.place(fun).ty)
+        let ty = self.mir_fun.place_type(fun);
+        let Type::FunctionArg(_, arg_tys) = self.cg.compiler_database.db.lookup_intern_type(ty)
         else {
             panic!("apply_args on non-function");
         };
