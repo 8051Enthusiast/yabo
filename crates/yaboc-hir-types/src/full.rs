@@ -1,13 +1,5 @@
-use std::rc::Rc;
-
-use yaboc_base::{
-    dbformat, dbpanic,
-    error::{SResult, Silencable, SilencedError},
-    interner::{DefId, PathComponent},
-};
+use yaboc_base::{dbformat, dbpanic, interner::PathComponent};
 use yaboc_expr::FetchKindData;
-use yaboc_hir::walk::ChildIter;
-use yaboc_types::inference::{InfTypeId, NominalInfHead, TypeResolver};
 
 use super::*;
 
@@ -199,7 +191,6 @@ impl<'a, 'intern> TypeResolver<'intern> for FullResolver<'a, 'intern> {
 
 #[cfg(test)]
 mod tests {
-    use crate::hir::Hirs;
     use hir::Parser;
     use yaboc_ast::import::Import;
     use yaboc_base::databased_display::DatabasedDisplay;

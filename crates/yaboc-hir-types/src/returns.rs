@@ -1,11 +1,7 @@
 use std::fmt::Display;
 
 use fxhash::FxHashSet;
-use yaboc_base::{
-    dbformat,
-    error::{SResult, SilencedError},
-    interner::DefId,
-};
+use yaboc_base::dbformat;
 use yaboc_resolve::parserdef_ssc::FunctionSscId;
 
 use super::*;

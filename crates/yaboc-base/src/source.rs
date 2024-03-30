@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::io::Error;
@@ -258,7 +257,7 @@ impl<'collection> FileResolver<'collection> {
 
     fn add_file(
         &mut self,
-        db: &mut (impl Interner + Files + ?Sized),
+        db: &mut (impl Interner + ?Sized),
         path: PathBuf,
         origin: FileId,
         span: Span,
@@ -284,7 +283,7 @@ impl<'collection> FileResolver<'collection> {
 
     pub fn resolve(
         &mut self,
-        db: &mut (impl Interner + Files + ?Sized),
+        db: &mut (impl Interner + ?Sized),
         origin: FileId,
         name: Identifier,
         span: Span,
@@ -328,7 +327,7 @@ impl<'collection> FileResolver<'collection> {
 
     pub fn add_std(
         &mut self,
-        db: &mut (impl Interner + Files + ?Sized),
+        db: &mut (impl Interner + ?Sized),
         kind: LibKind,
     ) -> Result<(), FileLoadError> {
         let std_ident = db.intern_identifier(IdentifierName::new(kind.name().into()));
@@ -361,7 +360,7 @@ impl<'collection> FileResolver<'collection> {
 
     pub fn add_absolute_mod_path(
         &mut self,
-        db: &mut (impl Interner + Files + ?Sized),
+        db: &mut (impl Interner + ?Sized),
         path: PathBuf,
         name: &str,
     ) -> Result<(), FileLoadError> {
@@ -539,7 +538,7 @@ pub enum FileLoadError {
 }
 
 impl FileLoadError {
-    pub fn into_report(self, db: &(impl ?Sized + Files + Interner)) -> Option<Report> {
+    pub fn into_report(self, db: &(impl ?Sized + Interner)) -> Option<Report> {
         match self {
             FileLoadError::LoadError {
                 source,

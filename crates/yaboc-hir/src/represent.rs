@@ -1,4 +1,3 @@
-use yaboc_ast::ArrayKind;
 use yaboc_base::{databased_display::DatabasedDisplay, dbwrite};
 use yaboc_expr::Expression as NewExpression;
 

@@ -45,7 +45,7 @@ impl<DB: Dependents + ?Sized> DatabasedDisplay<DB> for DependencyGraph {
                 let color = [&reachable_val, &reachable_back, &reachable_bt]
                     .map(|set| if set.contains(&subval) { "ff" } else { "a8" })
                     .concat();
-                if self.val_map.get(&subval).is_some() {
+                if self.val_map.contains_key(&subval) {
                     write!(
                         f,
                         "\t\t{ident_str}_{kind} [label=\"{kind}\", color=black fillcolor=\"#{color}\" style=filled",

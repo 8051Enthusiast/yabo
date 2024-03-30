@@ -7,7 +7,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::Arc;
 
-use expr::{Unused, *};
+use expr::*;
 
 use yaboc_base::{
     error::{SResult, Silencable},

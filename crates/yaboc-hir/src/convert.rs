@@ -3,10 +3,10 @@ use std::collections::HashMap;
 
 use ast::expr::Ignorable;
 use fxhash::FxHashSet;
-use yaboc_expr::{DataExpr, ExprHead};
+use yaboc_expr::ExprHead;
 
 use super::*;
-use yaboc_ast::{self as ast, TopLevelStatement};
+use yaboc_ast as ast;
 use yaboc_base::{error::Silencable, error_type};
 
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]

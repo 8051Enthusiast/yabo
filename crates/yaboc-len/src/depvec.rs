@@ -1,5 +1,3 @@
-use std;
-
 use std::ops::Index;
 
 use smallvec::SmallVec;

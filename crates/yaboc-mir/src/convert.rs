@@ -224,7 +224,7 @@ impl<'a> ConvertCtx<'a> {
         if self.returns_self {
             if let Some(ret) = self.w.f.fun.ret() {
                 for field in context_data.affected_discriminants {
-                    let has_field = context_data.field_ids.get(&field).is_some();
+                    let has_field = context_data.field_ids.contains_key(&field);
                     self.w
                         .f
                         .append_ins(MirInstr::SetDiscriminant(ret, field, has_field));

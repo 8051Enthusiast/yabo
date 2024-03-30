@@ -1219,7 +1219,7 @@ mod tests {
     use yaboc_mir::MirDatabase;
     use yaboc_req::NeededBy;
     use yaboc_resolve::ResolveDatabase;
-    use yaboc_types::{TypeInterner, TypeInternerDatabase};
+    use yaboc_types::TypeInternerDatabase;
 
     #[salsa::database(
         InternerDatabase,

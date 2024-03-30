@@ -2,9 +2,7 @@ use std::collections::HashSet;
 
 use hir::DefKind;
 use yaboc_ast::expr::Atom;
-use yaboc_base::interner::{DefId, FieldName, Identifier};
-use yaboc_expr::{ExprHead, Expression, TakeRef};
-use yaboc_hir::{walk, HirIdWrapper, HirNode};
+use yaboc_hir::{walk, HirNode};
 
 use super::*;
 
