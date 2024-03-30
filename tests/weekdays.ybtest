@@ -14,7 +14,7 @@ def *fixed_num = {
     let return = whole * 1000 +
                  math.ipow(10, 3 - fract_len) * fract_val
   # no fractional part
-  | let return = whole * 10000
+  | let return = whole * 1000
 }
 
 export
@@ -35,9 +35,9 @@ Monday: 20.5
 Tuesday: 21.3
 Wednesday: 22.1
 Thursday: 23.4
-Friday: 24.0
-Saturday: 25.0
-Sunday: 26.0
+Friday: 24
+Saturday: 25
+Sunday: 26
 
 ====[ output 1 ]====
 23160
