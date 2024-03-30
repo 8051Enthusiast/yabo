@@ -1,0 +1,56 @@
+====[ source code ]====
+import text
+import math
+import list
+def *ws = /\s*/
+
+def *fixed_num = {
+  whole: text.num?
+  | u8 if '.'
+    fract: /[0-9]+/
+    let fract_val = fract *> text.num!
+    let fract_len = list.len(fract *> list.list(u8 if !eof))
+    # use 3 digits behind comma
+    let return = whole * 1000 +
+                 math.ipow(10, 3 - fract_len) * fract_val
+  # no fractional part
+  | let return = whole * 10000
+}
+
+export
+fun *test = {
+  days: list.list({
+    /(Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day:/, ws
+    return: fixed_num!, ws
+  })
+  let num_days = list.len(days)
+  let minimum = list.fold(days, days.this, math.min)
+  let maximum = list.fold(days, days.this, math.max)
+  let sum = list.fold(days, 0, math.add)
+  let return = (sum - maximum - minimum) / (num_days - 2)
+}
+
+====[ text 1 ]====
+Monday: 20.5
+Tuesday: 21.3
+Wednesday: 22.1
+Thursday: 23.4
+Friday: 24.0
+Saturday: 25.0
+Sunday: 26.0
+
+====[ output 1 ]====
+23160
+
+====[ text 2 ]====
+Monday:    22.5
+Tuesday:   25.7
+Wednesday: 23.9
+Thursday:  22.4
+Friday:    20.3
+
+Saturday:  16.2
+Sunday:    21.1
+
+====[ output 2 ]====
+22040
