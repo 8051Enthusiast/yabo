@@ -1,5 +1,3 @@
-use yaboc_base::{error::SilencedError, interner::DefId};
-
 use super::*;
 
 pub fn fun_arg_count(db: &dyn TyHirs, ty: TypeId) -> SResult<Option<u32>> {

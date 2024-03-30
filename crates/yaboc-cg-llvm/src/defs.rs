@@ -1,7 +1,6 @@
 use yaboc_base::dbformat;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::represent::ParserFunKind;
-use yaboc_mir::CallMeta;
 use yaboc_resolve::Resolves;
 
 use super::*;

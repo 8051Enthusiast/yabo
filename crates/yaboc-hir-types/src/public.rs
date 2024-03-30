@@ -1,9 +1,5 @@
-use yaboc_base::{
-    dbformat,
-    error::{SResult, Silencable, SilencedError},
-    interner::DefId,
-};
-use yaboc_expr::{FetchExpr, FetchKindData, TakeRef};
+use yaboc_base::dbformat;
+use yaboc_expr::{FetchExpr, FetchKindData};
 
 use super::*;
 
@@ -216,7 +212,6 @@ impl<'a, 'intern> TypeResolver<'intern> for PublicResolver<'a, 'intern> {
 
 #[cfg(test)]
 mod tests {
-    use crate::hir::Hirs;
     use crate::tests::HirTypesTestDatabase;
     use hir::Parser;
     use yaboc_ast::import::Import;

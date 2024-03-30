@@ -13,7 +13,6 @@ use yaboc_resolve::Resolves;
 use crate::{
     convert_regex::RegexTranslator,
     convert_thunk::{BlockThunk, TransmuteCopyThunk, TypecastThunk, ValThunk},
-    IResult,
 };
 
 use super::*;

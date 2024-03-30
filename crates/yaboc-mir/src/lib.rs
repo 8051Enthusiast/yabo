@@ -1037,7 +1037,6 @@ mod tests {
     use yaboc_dependents::DependentsDatabase;
     use yaboc_hir::{HirDatabase, Hirs, Parser};
     use yaboc_hir_types::HirTypesDatabase;
-    use yaboc_req::NeededBy;
     use yaboc_resolve::ResolveDatabase;
     use yaboc_types::TypeInternerDatabase;
 

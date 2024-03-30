@@ -1,10 +1,9 @@
 use hir::ExprId;
 use yaboc_ast::expr::{FieldAccessMode, WiggleKind};
-use yaboc_expr::{FetchKindData, ShapedData};
+use yaboc_expr::FetchKindData;
 use yaboc_resolve::expr::{ValBinOp, ValUnOp};
 
 use super::*;
-use yaboc_expr::Expression;
 
 pub fn expr_reqs(
     db: &dyn Dependents,

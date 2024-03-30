@@ -875,9 +875,7 @@ impl<DB: Hirs + Default> Parser for Context<DB> {
 mod tests {
     use super::*;
     use yaboc_ast::{import::Import, AstDatabase};
-    use yaboc_base::{
-        config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase, Context,
-    };
+    use yaboc_base::{config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase};
     #[salsa::database(
         InternerDatabase,
         ConfigDatabase,

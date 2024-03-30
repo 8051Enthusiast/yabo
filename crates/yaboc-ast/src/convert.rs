@@ -1,17 +1,11 @@
-use std::sync::Arc;
-
 use tree_sitter::{Node, Parser, TreeCursor};
 use tree_sitter_yabo::language;
 
 use super::*;
 use yaboc_base::error::SilencedError;
-use yaboc_base::interner::FieldName;
-use yaboc_base::interner::Identifier;
 use yaboc_base::interner::IdentifierName;
-use yaboc_base::interner::TypeVar;
 use yaboc_base::interner::TypeVarName;
-use yaboc_base::source::FieldSpan;
-use yaboc_base::source::{FileId, IdSpan, Span, Spanned};
+use yaboc_base::source::Spanned;
 
 macro_rules! inner_string {
     ($n:ident) => {stringify!($n)};

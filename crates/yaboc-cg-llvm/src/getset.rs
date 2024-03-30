@@ -3,8 +3,6 @@ use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::represent::ParserFunKind;
 use yaboc_types::TypeId;
 
-use crate::val::CgReturnValue;
-
 use super::*;
 
 pub(crate) enum Callable<'llvm> {

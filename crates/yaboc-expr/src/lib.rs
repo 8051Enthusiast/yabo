@@ -360,13 +360,13 @@ pub trait Expression<K: ExprKind>: Sized {
     }
 }
 
-fn print_impl<K: ExprKind, Expr: Expression<K>, E>(
+fn print_impl<K: ExprKind, Expr, E>(
     expr: &Expr,
     idx: ExprIdx<K>,
     f: &mut impl FnMut(WriteEvent<K>) -> Result<(), E>,
 ) -> Result<(), E>
 where
-    Expr: Index<ExprIdx<K>, Output = ExprHead<K, ExprIdx<K>>>,
+    Expr: Index<ExprIdx<K>, Output = ExprHead<K, ExprIdx<K>>> + Expression<K>,
 {
     let part = &expr[idx];
     match part {
