@@ -1,0 +1,14 @@
+diff --git a/src/corelib/platform/wasm/qstdweb.cpp b/src/corelib/platform/wasm/qstdweb.cpp
+index 75e76a6806..b0319042ae 100644
+--- a/src/corelib/platform/wasm/qstdweb.cpp
++++ b/src/corelib/platform/wasm/qstdweb.cpp
+@@ -361,7 +361,7 @@ void WebPromiseManager::adoptPromise(emscripten::val target, PromiseCallbacks ca
+         registerPromise(std::move(allocation), std::move(callbacks));
+     });
+ }
+-#if defined(QT_STATIC)
++#if 0 //defined(QT_STATIC)
+
+ EM_JS(bool, jsHaveAsyncify, (), { return typeof Asyncify !== "undefined"; });
+ EM_JS(bool, jsHaveJspi, (),
+
