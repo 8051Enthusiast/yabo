@@ -97,14 +97,12 @@ QColor random_color(size_t seed) {
   Color lab, lin_srgb;
   std::mt19937 rng(seed);
   std::uniform_real_distribution<float> dist(0, 1);
-  // superstition
-  dist(rng);
   auto &slice = current_slice();
   lab[0] = slice.luminance;
   // rejection sampling by generating a random point in the parallelogram
   do {
-    auto val = slice.start_pos + slice.first_axis * dist(rng) +
-               slice.second_axis * dist(rng);
+    auto val = slice.start_pos + slice.first_axis * dist(rng)
+	     + slice.second_axis * dist(rng);
     lab[1] = val.real();
     lab[2] = val.imag();
     auto xyz = oklab_to_xyz(lab);
