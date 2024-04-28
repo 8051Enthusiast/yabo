@@ -79,7 +79,7 @@ RUN --mount=type=tmpfs,target=/build bash -c '\
  && cd /build \
  && /opt/qt6-wasm/bin/qt-cmake -DCMAKE_BUILD_TYPE=Release /src/tools/ylliab \
  && /opt/qt6-wasm/bin/qt-cmake -DDARK_STYLE_QRC_PATH=/src/QDarkStyleSheet-3.2.2/qdarkstyle/dark/darkstyle.qrc /src/tools/yphbt . \
- && make -j $(nproc) yphbt && mkdir -p /opt/yphbt \
+ && make VERBOSE=1 -j $(nproc) yphbt && mkdir -p /opt/yphbt \
  && cp yphbt.js yphbt.worker.js yphbt.html yphbt.wasm qtlogo.svg qtloader.js /opt/yphbt'
 
 FROM debian:bookworm-slim

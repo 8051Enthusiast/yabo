@@ -63,10 +63,7 @@ target_link_libraries(yphbt PRIVATE
 
 if(EMSCRIPTEN)
     target_link_options(ylliab PUBLIC -sMAIN_MODULE=2)
-    # for safari-based browsers, there seems to be a bug where a higher MAXIMUM_MEMORY makes
-    # the browser say it is out of memory even though the memory is not yet used, so we set
-    # it to a lower value
-    target_link_options(yphbt PUBLIC -sMAIN_MODULE=2 -sSTACK_SIZE=5MB -pthread -sEXPORTED_FUNCTIONS=_main,__emscripten_thread_crashed,__embind_initialize_bindings -sMAXIMUM_MEMORY=500MB)
+    target_link_options(yphbt PUBLIC -sMAIN_MODULE=2 -sSTACK_SIZE=5MB -pthread)
     set_target_properties(yphbt PROPERTIES QT_WASM_EXTRA_EXPORTED_METHODS "ENV")
     target_compile_options(ylliab_core PUBLIC -fPIC -pthread)
     target_compile_options(ylliab PUBLIC -fPIC -pthread)
