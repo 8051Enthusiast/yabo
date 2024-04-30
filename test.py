@@ -135,6 +135,7 @@ class CompiledSource:
                 proc = subprocess.Popen(
                     [compiler_bin, "--output-json",
                      "--target=wasm32-wasi", "--emit=object",
+                     "--target-features=+tail-call",
                      "--module", f"core={core_path}",
                      sourcepath, self.compiled],
                     stderr=subprocess.PIPE,
