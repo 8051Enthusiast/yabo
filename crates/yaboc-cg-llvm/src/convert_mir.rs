@@ -2,7 +2,6 @@ use std::rc::Rc;
 
 use inkwell::{
     basic_block::BasicBlock,
-    types::IntType,
     values::{FunctionValue, IntValue, PointerValue},
     AddressSpace, IntPredicate,
 };
@@ -420,9 +419,9 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let casted_ret_ptr = self
             .cg
             .builder
-            .build_bitcast(
+            .build_bit_cast(
                 ret_ptr,
-                llvm_val.get_type().ptr_type(AddressSpace::default()),
+                self.cg.llvm.ptr_type(AddressSpace::default()),
                 "cast_store_val",
             )?
             .into_pointer_value();
@@ -430,16 +429,12 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         Ok(())
     }
 
-    fn build_typed_place_ptr(
-        &mut self,
-        place: PlaceRef,
-        ty: IntType<'llvm>,
-    ) -> IResult<PointerValue<'llvm>> {
+    fn build_typed_place_ptr(&mut self, place: PlaceRef) -> IResult<PointerValue<'llvm>> {
         let ptr = self.place_ptr(place)?;
         Ok(self
             .cg
             .builder
-            .build_bitcast(ptr, ty.ptr_type(AddressSpace::default()), "int")?
+            .build_bit_cast(ptr, self.cg.llvm.ptr_type(AddressSpace::default()), "int")?
             .into_pointer_value())
     }
 
@@ -465,7 +460,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             self.cg.llvm.i8_type(),
             "zext_bool_to_u8",
         )?;
-        let ret_ptr = self.build_typed_place_ptr(ret, self.cg.llvm.i8_type())?;
+        let ret_ptr = self.build_typed_place_ptr(ret)?;
         self.cg.builder.build_store(ret_ptr, zext_res)?;
         Ok(())
     }
@@ -563,7 +558,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             IntUnOp::Not => self.cg.builder.build_not(rhs, "not")?,
             IntUnOp::Neg => self.cg.builder.build_int_neg(rhs, "neg")?,
         };
-        let ret_ptr = self.build_typed_place_ptr(ret, self.cg.llvm.i64_type())?;
+        let ret_ptr = self.build_typed_place_ptr(ret)?;
         self.cg.builder.build_store(ret_ptr, value)?;
         Ok(())
     }
@@ -590,7 +585,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             IntBinOp::Modulo => b.build_int_signed_rem(lhs, rhs, "mod"),
             IntBinOp::Mul => b.build_int_mul(lhs, rhs, "mul"),
         }?;
-        let ret_ptr = self.build_typed_place_ptr(ret, self.cg.llvm.i64_type())?;
+        let ret_ptr = self.build_typed_place_ptr(ret)?;
         self.cg.builder.build_store(ret_ptr, value)?;
         Ok(())
     }

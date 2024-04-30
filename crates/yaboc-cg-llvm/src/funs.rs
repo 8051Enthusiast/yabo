@@ -65,8 +65,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.add_entry_block(wrapper);
         }
         let call = self.builder.build_call(fun, &args, "call")?;
-        call.set_tail_call(tail);
-        call.set_call_convention(self.tailcc());
+        self.set_tail_call(call, tail);
         let ret = call.try_as_basic_value().left().unwrap().into_int_value();
         self.builder.build_return(Some(&ret))?;
         Ok(wrapper)
@@ -1163,7 +1162,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         // if the block function does not return itself, we do not need to write the block vtable
         if block.returns {
             let llvm_fun = self.eval_fun_fun_val_wrapper(layout);
-            self.wrap_direct_call(impl_fun, llvm_fun, true)?;
+            self.wrap_direct_call(impl_fun, llvm_fun, false)?;
             return Ok(());
         }
 
@@ -1234,7 +1233,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             ),
         };
         let llvm_fun = self.eval_fun_fun_val_wrapper(layout);
-        self.wrap_direct_call(impl_fun, llvm_fun, true)?;
+        self.wrap_direct_call(impl_fun, llvm_fun, false)?;
         Ok(())
     }
 

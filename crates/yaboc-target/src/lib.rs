@@ -17,6 +17,7 @@ pub struct Target {
     pub default_features: &'static str,
     pub default_cpu: &'static str,
     pub use_tailcc: bool,
+    pub use_musttail: bool,
 }
 
 pub fn target(config: &Config, rt_path: &Path) -> Option<Target> {
@@ -31,6 +32,7 @@ pub fn target(config: &Config, rt_path: &Path) -> Option<Target> {
             default_features: "",
             default_cpu: "x86-64-v2",
             use_tailcc: true,
+            use_musttail: true,
         }),
         "wasm32-unknown-unknown" => Some(Target {
             data: layout::POINTER32,
@@ -41,6 +43,7 @@ pub fn target(config: &Config, rt_path: &Path) -> Option<Target> {
             default_features: "",
             default_cpu: "generic",
             use_tailcc: false,
+            use_musttail: false,
         }),
         "wasm32-unknown-emscripten" | "wasm32-emscripten" => Some(Target {
             data: layout::POINTER32,
@@ -50,6 +53,7 @@ pub fn target(config: &Config, rt_path: &Path) -> Option<Target> {
             default_features: "",
             default_cpu: "generic",
             use_tailcc: false,
+            use_musttail: false,
         }),
         "wasm32-unknown-wasi" | "wasm32-wasi" => Some(Target {
             data: layout::POINTER32,
@@ -61,6 +65,7 @@ pub fn target(config: &Config, rt_path: &Path) -> Option<Target> {
             default_features: "",
             default_cpu: "generic",
             use_tailcc: false,
+            use_musttail: false,
         }),
         _ => None,
     }

@@ -238,7 +238,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn any_ptr(&self) -> PointerType<'llvm> {
-        self.llvm.i8_type().ptr_type(AddressSpace::default())
+        self.llvm.ptr_type(AddressSpace::default())
     }
 
     fn invalid_ptr(&self) -> PointerValue<'llvm> {
@@ -423,17 +423,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn module_string(&mut self, s: &str) -> PointerValue<'llvm> {
         let sym_name = format!("s${s}");
         if let Some(sym) = self.module.get_global(&sym_name) {
-            return sym
-                .as_pointer_value()
-                .const_cast(self.llvm.i8_type().ptr_type(AddressSpace::default()));
+            return sym.as_pointer_value().const_cast(self.any_ptr());
         }
+        // TODO
         let cstr = self.llvm.const_string(s.as_bytes(), true);
         let global_value = self.module.add_global(cstr.get_type(), None, &sym_name);
         global_value.set_visibility(GlobalVisibility::Hidden);
         global_value.set_initializer(&cstr);
-        global_value
-            .as_pointer_value()
-            .const_cast(self.llvm.i8_type().ptr_type(AddressSpace::default()))
+        global_value.as_pointer_value().const_cast(self.any_ptr())
     }
 
     fn field_info(&mut self, name: Identifier) -> PointerValue<'llvm> {
@@ -449,9 +446,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let hash = self.compiler_database.db.def_hash(block.0);
         let info_sym = format!("block_info${}", &truncated_hex(&hash));
         if let Some(val) = self.module.get_global(&info_sym) {
-            return val.as_pointer_value().const_cast(
-                vtable::BlockFields::struct_type(self).ptr_type(AddressSpace::default()),
-            );
+            // TODO
+            return val.as_pointer_value().const_cast(self.any_ptr());
         }
 
         let fields = self
@@ -481,9 +477,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let global = self.module.add_global(info_type, None, &info_sym);
         global.set_initializer(&info_val);
         global.set_visibility(GlobalVisibility::Hidden);
-        global
-            .as_pointer_value()
-            .const_cast(vtable::BlockFields::struct_type(self).ptr_type(AddressSpace::default()))
+        // TODO
+        global.as_pointer_value().const_cast(self.any_ptr())
     }
 
     fn build_discriminant_info(
@@ -542,7 +537,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         R::Error: Debug,
     {
         let ty = T::codegen_ty(self);
-        let casted = self.builder.build_bitcast(v, ty, "cast")?;
+        let casted = self.builder.build_bit_cast(v, ty, "cast")?;
         Ok(R::try_from(casted).expect("could not cast"))
     }
 
@@ -760,8 +755,8 @@ impl<'llvm, 'comp> CodegenTypeContext for CodeGenCtx<'llvm, 'comp> {
         self.llvm.i32_type().into()
     }
 
-    fn ptr(&mut self, inner: Self::Type) -> Self::Type {
-        inner.ptr_type(AddressSpace::default()).into()
+    fn ptr(&mut self, _: Self::Type) -> Self::Type {
+        self.llvm.ptr_type(AddressSpace::default()).into()
     }
 
     fn zst(&mut self) -> Self::Type {
@@ -779,11 +774,8 @@ impl<'llvm, 'comp> CodegenTypeContext for CodeGenCtx<'llvm, 'comp> {
         self.llvm.struct_type(fields, false)
     }
 
-    fn fun_ptr(&mut self, args: &[Self::Type], ret: Self::Type) -> Self::Type {
-        let args: Vec<_> = args.iter().map(|x| (*x).into()).collect();
-        ret.fn_type(&args, false)
-            .ptr_type(AddressSpace::default())
-            .into()
+    fn fun_ptr(&mut self, _: &[Self::Type], _: Self::Type) -> Self::Type {
+        self.llvm.ptr_type(AddressSpace::default()).into()
     }
 }
 
