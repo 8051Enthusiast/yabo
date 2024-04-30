@@ -30,6 +30,10 @@ struct Args {
     #[clap(long)]
     target: Option<String>,
     #[clap(long)]
+    target_cpu: Option<String>,
+    #[clap(long)]
+    target_features: Option<String>,
+    #[clap(long)]
     cc: Option<String>,
     #[clap(long)]
     sysroot: Option<PathBuf>,
@@ -62,8 +66,8 @@ fn main() {
     let mut context = match Driver::new(Config {
         target_triple,
         output_json: args.output_json,
-        target_cpu: None,
-        target_features: None,
+        target_cpu: args.target_cpu,
+        target_features: args.target_features,
         sysroot: args.sysroot,
         cc: args.cc,
     }) {

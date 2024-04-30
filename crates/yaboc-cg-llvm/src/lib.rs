@@ -49,7 +49,7 @@ use yaboc_layout::{
         self, ArrayVTableFields, BlockVTableFields, FunctionVTableFields, ParserFun,
         ParserVTableFields, VTableHeaderFields,
     },
-    AbsLayoutCtx, ILayout, IMonoLayout, LayoutError, MonoLayout,
+    AbsLayoutCtx, ILayout, IMonoLayout, MonoLayout,
 };
 use yaboc_mir::{CallMeta, Mirs, ReturnStatus};
 use yaboc_req::RequirementSet;
@@ -79,7 +79,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         compiler_database: &'comp yaboc_base::Context<YabocDatabase>,
         layouts: &'comp mut AbsLayoutCtx<'comp>,
         yabo_target: yaboc_target::Target,
-    ) -> Result<Self, LayoutError> {
+    ) -> Result<Self, String> {
         let pds = compiler_database.db.all_exported_parserdefs();
         let collected_layouts =
             Rc::new(yaboc_layout::collect::collected_layouts(layouts, &pds).unwrap());
@@ -96,18 +96,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let cfg = compiler_database.db.config();
         let triple = TargetTriple::create(&cfg.target_triple);
         let target = Target::from_triple(&triple)
-            .unwrap()
+            .map_err(|e| e.to_string())?
             .create_target_machine(
                 &triple,
-                cfg.target_cpu.as_deref().unwrap_or(yabo_target.default_cpu),
-                cfg.target_features
-                    .as_deref()
-                    .unwrap_or(yabo_target.default_features),
+                &yabo_target.cpu,
+                &yabo_target.features,
                 OptimizationLevel::Aggressive,
                 RelocMode::PIC,
                 CodeModel::Default,
             )
-            .expect("Could not get target machine");
+            .ok_or_else(|| String::from("Could not create target machine"))?;
         let target_data = target.get_target_data();
         module.set_data_layout(&target.get_target_data().get_data_layout());
         module.set_triple(&triple);
