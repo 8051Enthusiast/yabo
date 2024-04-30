@@ -6,5 +6,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-timeout 15s /opt/bin/yaboc --target=wasm32-unknown-emscripten --emit=object "$1" "$tmp_file"
+case "$1" in
+    --target-features=*) 
+        features="$1"
+        shift
+        ;;
+    *)
+        features=""
+        ;;
+esac
+
+timeout 15s /opt/bin/yaboc --target=wasm32-unknown-emscripten --emit=object $features "$1" "$tmp_file"
 emcc -shared -sSIDE_MODULE=1 -pthread "$YABO_LIB_PATH/rt.o" "$tmp_file" -o "$2"

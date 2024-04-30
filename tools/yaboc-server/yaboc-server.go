@@ -39,7 +39,7 @@ func get_config() config {
 	return conf
 }
 
-func compile(code []byte, cmd []string) ([]byte, error) {
+func compile(code []byte, cmd []string, tail bool) ([]byte, error) {
 	infile, err := os.CreateTemp("", "yabo_*.yb")
 	if err != nil {
 		return nil, err
@@ -58,7 +58,11 @@ func compile(code []byte, cmd []string) ([]byte, error) {
 	defer outfile.Close()
 	defer os.Remove(outfile.Name())
 
+	if tail {
+		cmd = append(cmd, "--target-features=+tail-call")
+	}
 	cmd = append(cmd, infile.Name(), outfile.Name())
+
 	compileCmd := exec.Command(cmd[0], cmd[1:]...)
 	_, err = compileCmd.Output()
 	if err != nil {
@@ -94,10 +98,11 @@ func compileHandler(w http.ResponseWriter, r *http.Request, conf config, cmd []s
 		http.Error(w, "Error reading request body", http.StatusBadRequest)
 		return
 	}
+	tail := r.URL.Query().Get("tail") == "1"
 	res := make(chan []byte, 1)
 	errChan := make(chan error, 1)
 	go func() {
-		out, err := compile(code, cmd)
+		out, err := compile(code, cmd, tail)
 		if err != nil {
 			errChan <- err
 		} else {
