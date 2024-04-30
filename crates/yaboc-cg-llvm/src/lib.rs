@@ -423,7 +423,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         if let Some(sym) = self.module.get_global(&sym_name) {
             return sym.as_pointer_value().const_cast(self.any_ptr());
         }
-        // TODO
         let cstr = self.llvm.const_string(s.as_bytes(), true);
         let global_value = self.module.add_global(cstr.get_type(), None, &sym_name);
         global_value.set_visibility(GlobalVisibility::Hidden);
@@ -444,8 +443,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let hash = self.compiler_database.db.def_hash(block.0);
         let info_sym = format!("block_info${}", &truncated_hex(&hash));
         if let Some(val) = self.module.get_global(&info_sym) {
-            // TODO
-            return val.as_pointer_value().const_cast(self.any_ptr());
+            return val.as_pointer_value();
         }
 
         let fields = self
@@ -475,8 +473,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let global = self.module.add_global(info_type, None, &info_sym);
         global.set_initializer(&info_val);
         global.set_visibility(GlobalVisibility::Hidden);
-        // TODO
-        global.as_pointer_value().const_cast(self.any_ptr())
+        global.as_pointer_value()
     }
 
     fn build_discriminant_info(
