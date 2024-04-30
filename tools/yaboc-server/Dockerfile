@@ -10,15 +10,17 @@ FROM rust:1-bookworm AS compiler
 
 RUN apt-get update && apt-get install -y cmake
 
-ADD https://github.com/llvm/llvm-project/releases/download/llvmorg-17.0.6/llvm-project-17.0.6.src.tar.xz \
+ARG LLVM_VERSION=18.1.4
+
+ADD https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/llvm-project-${LLVM_VERSION}.src.tar.xz \
     /src/
 RUN --mount=type=tmpfs,target=/build \
     cd /build \
- && tar -xf /src/llvm-project-17.0.6.src.tar.xz -C /src \
- && cmake -DLLVM_ENABLE_PROJECTS=polly -DCMAKE_BUILD_TYPE=Release -DLLVM_TARGETS_TO_BUILD="X86;WebAssembly" /src/llvm-project-17.0.6.src/llvm \
+ && tar -xf /src/llvm-project-${LLVM_VERSION}.src.tar.xz -C /src \
+ && cmake -DLLVM_ENABLE_PROJECTS=polly -DCMAKE_BUILD_TYPE=Release -DLLVM_TARGETS_TO_BUILD="WebAssembly" /src/llvm-project-${LLVM_VERSION}.src/llvm \
  && make -j$(nproc) \
  && make install \
- && rm -rf /src/llvm-project-17.0.6.src
+ && rm -rf /src/llvm-project-${LLVM_VERSION}.src
 
 COPY Cargo.toml Cargo.lock /src/yabo/
 ADD crates /src/yabo/crates/
