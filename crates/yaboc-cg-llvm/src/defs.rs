@@ -1,3 +1,4 @@
+use inkwell::values::{CallSiteValue, LLVMTailCallKind};
 use yaboc_base::dbformat;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::represent::ParserFunKind;
@@ -14,6 +15,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             18
         } else {
             0
+        }
+    }
+    pub(crate) fn set_tail_call(&self, call: CallSiteValue<'llvm>, tail: bool) {
+        call.set_call_convention(self.tailcc());
+        if tail && self.yabo_target.use_musttail {
+            call.set_tail_call_kind(LLVMTailCallKind::LLVMTailCallKindMustTail);
         }
     }
     fn fun_val(
@@ -235,6 +242,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub(super) fn eval_fun_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
         let ret = self.ppi_fun_val(layout, LayoutPart::EvalFun(ParserFunKind::Worker));
+        ret.set_call_conventions(self.tailcc());
         ret
     }
 

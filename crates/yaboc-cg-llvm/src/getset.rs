@@ -198,8 +198,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             ],
             "impl_tail_call",
         )?;
-        call_ret.set_tail_call(tail);
-        call_ret.set_call_convention(self.tailcc());
+        self.set_tail_call(call_ret, tail);
         let ret = call_ret
             .try_as_basic_value()
             .left()
@@ -261,31 +260,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         } else {
             fun
         };
+        let args = &[
+            ret.ptr.into(),
+            fun.ptr.into(),
+            ret.head.into(),
+            arg.ptr.into(),
+        ];
         let call_ret = match parser {
-            Callable::Pointer(ptr, ty) => self.builder.build_indirect_call(
-                ty,
-                ptr,
-                &[
-                    ret.ptr.into(),
-                    fun.ptr.into(),
-                    ret.head.into(),
-                    arg.ptr.into(),
-                ],
-                "tail_call",
-            ),
-            Callable::Function(func_val) => self.builder.build_call(
-                func_val,
-                &[
-                    ret.ptr.into(),
-                    fun.ptr.into(),
-                    ret.head.into(),
-                    arg.ptr.into(),
-                ],
-                "tail_call",
-            ),
+            Callable::Pointer(ptr, ty) => {
+                self.builder.build_indirect_call(ty, ptr, args, "tail_call")
+            }
+            Callable::Function(func_val) => self.builder.build_call(func_val, args, "tail_call"),
         }?;
-        call_ret.set_tail_call(true);
-        call_ret.set_call_convention(self.tailcc());
+        self.set_tail_call(call_ret, true);
         let ret = call_ret
             .try_as_basic_value()
             .left()
@@ -366,7 +353,21 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 &[FunctionVTableFields::eval_fun_impl as u64],
             )?,
         };
-        self.build_call_with_int_ret(eval_fun, &[ret.ptr.into(), arg.ptr.into(), ret.head.into()])
+        let args = &[ret.ptr.into(), arg.ptr.into(), ret.head.into()];
+        let call = match eval_fun {
+            Callable::Pointer(ptr, ty) => {
+                self.builder.build_indirect_call(ty, ptr, args, "call")?
+            }
+            Callable::Function(fun) => self.builder.build_call(fun, args, "call")?,
+        };
+        if let ParserFunKind::TailWrapper | ParserFunKind::Worker = kind {
+            self.set_tail_call(call, false);
+        }
+        Ok(call
+            .try_as_basic_value()
+            .left()
+            .expect("function shuold not return void")
+            .into_int_value())
     }
 
     pub(super) fn call_eval_fun_fun_wrapper(

@@ -32,7 +32,9 @@ impl<T: ?Sized> PartialOrd for Uniq<T> {
 }
 impl<T: ?Sized> Ord for Uniq<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        (self as *const Uniq<T>).cmp(&(other as *const _))
+        (self as *const Uniq<T>)
+            .cast::<()>()
+            .cmp(&(other as *const Uniq<T>).cast::<()>())
     }
 }
 impl<T: ?Sized> Hash for Uniq<T> {

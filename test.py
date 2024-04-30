@@ -382,7 +382,8 @@ class WasmRunner:
             inputpath = os.path.join(tmpdir, 'input')
             with open(inputpath, 'wb') as inputfile:
                 inputfile.write(input)
-            proc = subprocess.run(['wasmtime', '--dir', tmpdir, self.exec.name, inputpath],
+            proc = subprocess.run(['wasmtime', '--dir', tmpdir, '--wasm=tail-call',
+                                   self.exec.name, inputpath],
                                   stdout=subprocess.PIPE)
             return proc.stdout.decode('utf-8')
     
