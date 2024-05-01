@@ -108,6 +108,7 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<DB> for ZstVal {
             ZstVal::Nil => write!(f, "+"),
             ZstVal::Single => write!(f, "~"),
             ZstVal::Array => write!(f, "[]"),
+            ZstVal::ArrayFill => write!(f, "[..]"),
             ZstVal::Regex(regex) => dbwrite!(f, db, "/{}/", regex),
             ZstVal::ParserDef(pd) => dbwrite!(f, db, "parserdef {}", &pd.0),
         }

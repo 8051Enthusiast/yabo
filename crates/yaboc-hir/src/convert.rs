@@ -136,7 +136,7 @@ fn val_expression(
                 ast::ParserAtom::Atom(atom) => ParserAtom::Atom(atom.clone()),
                 ast::ParserAtom::Single => ParserAtom::Single,
                 ast::ParserAtom::Nil => ParserAtom::Nil,
-                ast::ParserAtom::Array => ParserAtom::Array,
+                ast::ParserAtom::ArrayFill => ParserAtom::ArrayFill,
                 ast::ParserAtom::Regex(re) => ParserAtom::Regex(*re),
                 ast::ParserAtom::Block(b) => {
                     let nid = BlockId(new_id());

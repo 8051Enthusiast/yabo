@@ -596,7 +596,7 @@ astify! {
         Niladic(with_span_data(block)),
         Niladic(with_span_data(single)),
         Niladic(with_span_data(nil)),
-        Niladic(with_span_data(array)),
+        Niladic(with_span_data(array_fill)),
         Niladic(with_span_data(regex_literal)),
         Niladic(with_span_data(atom..)),
     };
@@ -797,8 +797,8 @@ fn nil(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ParserAtom> {
     Ok(ParserAtom::Nil)
 }
 
-fn array(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ParserAtom> {
-    Ok(ParserAtom::Array)
+fn array_fill(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ParserAtom> {
+    Ok(ParserAtom::ArrayFill)
 }
 
 fn not_eof(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ConstraintAtom> {

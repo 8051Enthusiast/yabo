@@ -197,6 +197,7 @@ module.exports = grammar({
       $.parser_block,
       $.block,
       $.single,
+      $.array_fill,
       $.nil,
       seq('(', $._expression, ')'),
       $._atom,
@@ -304,6 +305,10 @@ module.exports = grammar({
       ),
       prec(PREC.POSTFIX, seq(
         field('right', $._expression),
+        field('op', $.array_fill)
+      )),
+      prec(PREC.POSTFIX, seq(
+        field('right', $._expression),
         '.',
         field('op', 'sizeof')
       )),
@@ -311,7 +316,7 @@ module.exports = grammar({
         field('op', '['),
         field('right', $._expression),
         ']'
-      ))
+      )),
     ),
     _type_atom: $ => choice(
       $.primitive_type,
@@ -386,6 +391,7 @@ module.exports = grammar({
     byte_slice: $ => prec(PREC.BYTE_SLICE, '*'),
     single: $ => '~',
     nil: $ => '+',
+    array_fill: $ => '[..]',
     not_eof: $ => '!eof',
     type_var: $ => /\'[A-Za-z_][A-Za-z_0-9]*/,
     _field_name: $ => choice(

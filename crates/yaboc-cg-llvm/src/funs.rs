@@ -1,5 +1,4 @@
 use fxhash::FxHashSet;
-use yaboc_base::low_effort_interner::Uniq;
 use yaboc_constraint::Constraints;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{
@@ -25,8 +24,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         fun: FunctionValue<'llvm>,
         status: IntValue<'llvm>,
     ) -> IResult<()> {
-        let success_bb = self.llvm.append_basic_block(fun, "deref_succ");
-        let fail_bb = self.llvm.append_basic_block(fun, "deref_fail");
+        let success_bb = self.llvm.append_basic_block(fun, "succ");
+        let fail_bb = self.llvm.append_basic_block(fun, "fail");
         let is_not_zero = self.builder.build_int_compare(
             IntPredicate::NE,
             status,
@@ -334,10 +333,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             | MonoLayout::Single
             | MonoLayout::Nil
             | MonoLayout::Regex(_, _)
-            | MonoLayout::ArrayParser(None) => self.create_mask_simple(layout),
-            MonoLayout::IfParser(inner, _, _) | MonoLayout::ArrayParser(Some((inner, None))) => {
-                self.create_mask_single(layout, *inner)
-            }
+            | MonoLayout::ArrayParser(None)
+            | MonoLayout::ArrayFillParser(None) => self.create_mask_simple(layout),
+            MonoLayout::IfParser(inner, _, _)
+            | MonoLayout::ArrayParser(Some((inner, None)))
+            | MonoLayout::ArrayFillParser(Some(inner)) => self.create_mask_single(layout, *inner),
             MonoLayout::ArrayParser(Some((first, Some(second))))
             | MonoLayout::Array {
                 parser: first,
@@ -965,44 +965,65 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         self.build_copy_invariant(arg_copy, arg)?;
 
-        let status = self.call_len_fun(int_buf.ptr, parser.into())?;
-        self.non_zero_early_return(llvm_fun, status)?;
-        let full_len = self.build_i64_load(int_buf.ptr, "parser_len")?;
         let slice_len = self.call_array_len_fun(arg)?;
-        let is_out_of_bounds = self.builder.build_int_compare(
-            IntPredicate::ULT,
-            slice_len,
-            full_len,
-            "is_out_of_bounds",
-        )?;
-        let succ_block = self.llvm.append_basic_block(llvm_fun, "succ");
-        let fail_block = self.llvm.append_basic_block(llvm_fun, "fail");
-        self.builder
-            .build_conditional_branch(is_out_of_bounds, fail_block, succ_block)?;
-        self.builder.position_at_end(fail_block);
-        self.builder
-            .build_return(Some(&self.const_i64(ReturnStatus::Eof as i64)))?;
-        self.builder.position_at_end(succ_block);
+        let (full_len, inner_parser_layout) = match layout.mono_layout().0 {
+            MonoLayout::ArrayParser(Some((inner_parser, _))) => {
+                let status = self.call_len_fun(int_buf.ptr, parser.into())?;
+                self.non_zero_early_return(llvm_fun, status)?;
+                let full_len = self.build_i64_load(int_buf.ptr, "parser_len")?;
+                let is_out_of_bounds = self.builder.build_int_compare(
+                    IntPredicate::ULT,
+                    slice_len,
+                    full_len,
+                    "is_out_of_bounds",
+                )?;
+                let succ_block = self.llvm.append_basic_block(llvm_fun, "succ");
+                let fail_block = self.llvm.append_basic_block(llvm_fun, "fail");
+                self.builder
+                    .build_conditional_branch(is_out_of_bounds, fail_block, succ_block)?;
+                self.builder.position_at_end(fail_block);
+                self.builder
+                    .build_return(Some(&self.const_i64(ReturnStatus::Eof as i64)))?;
+                self.builder.position_at_end(succ_block);
+                (full_len, *inner_parser)
+            }
+            MonoLayout::ArrayFillParser(Some(_)) => {
+                let inner_parser = self.build_array_parser_get(parser)?;
+                let status = self.call_len_fun(int_buf.ptr, inner_parser)?;
+                self.non_zero_early_return(llvm_fun, status)?;
+                let len = self.build_i64_load(int_buf.ptr, "len")?;
+                let is_nonzero = self.builder.build_int_compare(
+                    IntPredicate::NE,
+                    len,
+                    self.const_i64(0),
+                    "is_nonzero",
+                )?;
+                let succ_block = self.llvm.append_basic_block(llvm_fun, "succ");
+                let fail_block = self.llvm.append_basic_block(llvm_fun, "fail");
+                self.builder
+                    .build_conditional_branch(is_nonzero, succ_block, fail_block)?;
+                self.builder.position_at_end(fail_block);
+                self.builder
+                    .build_return(Some(&self.const_i64(ReturnStatus::Error as i64)))?;
+                self.builder.position_at_end(succ_block);
+                let leftover_len = self.builder.build_int_unsigned_rem(slice_len, len, "leftover")?;
+                let full_len = self.builder.build_int_sub(slice_len, leftover_len, "full_len")?;
+                (full_len, inner_parser.layout)
+            }
+            _ => panic!("called create_array_parse on non-array parser"),
+        };
         let ret = self.call_skip_fun(arg, full_len)?;
         self.non_zero_early_return(llvm_fun, ret)?;
         if req.contains(NeededBy::Val) {
-            let inner_slice = if let (
-                MonoLayout::ArrayParser(Some((
-                    ILayout {
-                        layout: Uniq(_, Layout::Mono(MonoLayout::Single, _)),
-                    },
-                    _,
-                ))),
-                _,
-            ) = layout.mono_layout()
-            {
-                CgValue::new(result_layout.inner(), ret_buf.ptr)
-            } else {
-                let inner_parser = self.build_array_parser_get(parser)?;
-                let result_parser = self.build_array_parser_get(ret_buf)?;
-                self.build_copy_invariant(result_parser, inner_parser)?;
-                self.build_array_slice_get(ret_buf)?
-            };
+            let inner_slice =
+                if let Layout::Mono(MonoLayout::Single, _) = inner_parser_layout.layout.1 {
+                    CgValue::new(result_layout.inner(), ret_buf.ptr)
+                } else {
+                    let inner_parser = self.build_array_parser_get(parser)?;
+                    let result_parser = self.build_array_parser_get(ret_buf)?;
+                    self.build_copy_invariant(result_parser, inner_parser)?;
+                    self.build_array_slice_get(ret_buf)?
+                };
             let inner_slice_ret = self.build_return_value(inner_slice)?;
             let ret = self.call_span_fun(inner_slice_ret, arg_copy, arg)?;
             self.non_zero_early_return(llvm_fun, ret)?;
@@ -1143,6 +1164,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     self.create_fail_len_fun(layout)
                 }
             }
+            MonoLayout::ArrayFillParser(_) => self.create_fail_len_fun(layout),
             MonoLayout::ArrayParser(_) => self.create_array_parser_len_fun(layout),
             MonoLayout::IfParser(_, _, _)
             | MonoLayout::NominalParser(_, _, _)
@@ -1228,7 +1250,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn create_eval_fun_fun(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
         let impl_fun = match layout.mono_layout().0 {
-            MonoLayout::ArrayParser(_) => return self.create_eval_fun_fun_copy(layout),
+            MonoLayout::ArrayParser(_) | MonoLayout::ArrayFillParser(_) => {
+                return self.create_eval_fun_fun_copy(layout)
+            }
             MonoLayout::NominalParser(pd, ..) => {
                 let pd = pd.lookup(&self.compiler_database.db).unwrap();
                 if pd.from.is_some() {
@@ -1333,6 +1357,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 MonoLayout::Regex(..) => Self::create_regex_parse,
                 MonoLayout::IfParser(..) => Self::create_if_parse,
                 MonoLayout::ArrayParser(..) => Self::create_array_parse,
+                MonoLayout::ArrayFillParser(..) => Self::create_array_parse,
                 _ => panic!("non-parser in parser layout collection"),
             };
             // if the from arg is an integer, that means that we created a int parse during

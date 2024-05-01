@@ -445,6 +445,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         ResolvedAtom::Single => self.infctx.single(),
                         ResolvedAtom::Nil => self.infctx.nil(),
                         ResolvedAtom::Array => self.infctx.array_parser(),
+                        ResolvedAtom::ArrayFill => self.infctx.array_fill_parser(),
                         ResolvedAtom::Regex(..) => self.infctx.regex(),
                         ResolvedAtom::Block(b, kind) => self.infer_block(*b, *kind)?,
                         ResolvedAtom::ParserDef(pd) | ResolvedAtom::Global(pd) => {

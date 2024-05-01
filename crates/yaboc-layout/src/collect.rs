@@ -185,7 +185,9 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         dbeprintln!(self.ctx.db, "[collection] registered block {}", &mono);
                     }
                 }
-                MonoLayout::NominalParser(_, _, _) | MonoLayout::BlockParser(..) => {
+                MonoLayout::NominalParser(_, _, _)
+                | MonoLayout::BlockParser(..)
+                | MonoLayout::ArrayFillParser(Some(_)) => {
                     self.register_parser_or_function(mono);
                 }
                 MonoLayout::ArrayParser(Some((inner_parser, Some(_)))) => {
@@ -202,7 +204,8 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         }
                     }
                 }
-                MonoLayout::ArrayParser(Some((_, None)) | None) => {
+                MonoLayout::ArrayParser(Some((_, None)) | None)
+                | MonoLayout::ArrayFillParser(None) => {
                     for bt_status in mono.backtrack_statuses(self.ctx) {
                         if self.functions.insert(bt_status) && TRACE_COLLECTION {
                             dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
@@ -287,7 +290,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         ));
                     }
                 }
-                MonoLayout::ArrayParser(..) => {
+                MonoLayout::ArrayParser(..) | MonoLayout::ArrayFillParser(..) => {
                     let result = parser.apply_arg(self.ctx, arg).unwrap();
                     self.register_layouts(result);
                 }
