@@ -1,10 +1,12 @@
 use fxhash::FxHashSet;
+use yaboc_base::low_effort_interner::Uniq;
 use yaboc_constraint::Constraints;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{
     collect::{fun_req, pd_len_req, pd_val_req},
     mir_subst::function_substitute,
     represent::ParserFunKind,
+    Layout,
 };
 use yaboc_mir::{FunKind, MirKind};
 use yaboc_req::NeededBy;
@@ -984,7 +986,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let ret = self.call_skip_fun(arg, full_len)?;
         self.non_zero_early_return(llvm_fun, ret)?;
         if req.contains(NeededBy::Val) {
-            let inner_slice = if let (MonoLayout::SlicePtr, _) = result_layout.mono_layout() {
+            let inner_slice = if let (
+                MonoLayout::ArrayParser(Some((
+                    ILayout {
+                        layout: Uniq(_, Layout::Mono(MonoLayout::Single, _)),
+                    },
+                    _,
+                ))),
+                _,
+            ) = layout.mono_layout()
+            {
                 CgValue::new(result_layout.inner(), ret_buf.ptr)
             } else {
                 let inner_parser = self.build_array_parser_get(parser)?;
