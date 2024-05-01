@@ -107,6 +107,7 @@ pub enum MonoLayout<Inner> {
     Regex(Regex, bool),
     IfParser(Inner, HirConstraintId, WiggleKind),
     ArrayParser(Option<(Inner, Option<Inner>)>),
+    ArrayFillParser(Option<Inner>),
     Nominal(
         hir::ParserDefId,
         Option<(Inner, TypeId)>,
@@ -201,6 +202,8 @@ impl<'a> IMonoLayout<'a> {
             MonoLayout::ArrayParser(Some((_, Some(_)))) => Ok(Some((2, 2))),
             MonoLayout::ArrayParser(Some((_, None))) => Ok(Some((2, 1))),
             MonoLayout::ArrayParser(None) => Ok(Some((2, 0))),
+            MonoLayout::ArrayFillParser(Some(_)) => Ok(Some((1, 1))),
+            MonoLayout::ArrayFillParser(None) => Ok(Some((1, 0))),
             _ => Ok(None),
         }
     }
@@ -516,21 +519,13 @@ impl<'a> ILayout<'a> {
                     ))),
                     MonoLayout::Regex(..) => Ok(from),
                     MonoLayout::IfParser(inner, ..) => inner.apply_arg(ctx, from),
-                    MonoLayout::ArrayParser(Some((
-                        ILayout {
-                            layout: Uniq(_, Layout::Mono(MonoLayout::Single, _)),
-                        },
-                        Some(_),
-                    ))) => {
-                        if from.is_int() {
-                            Ok(ctx.dcx.intern(Layout::None))
-                        } else {
-                            Ok(from)
-                        }
-                    }
-                    MonoLayout::ArrayParser(Some((parser, Some(_)))) => {
+                    MonoLayout::ArrayParser(Some((parser, Some(_))))
+                    | MonoLayout::ArrayFillParser(Some(parser)) => {
                         if from.is_int() {
                             return Ok(ctx.dcx.intern(Layout::None));
+                        }
+                        if let Layout::Mono(MonoLayout::Single, _) = parser.layout.1 {
+                            return Ok(from);
                         }
                         Ok(ctx.dcx.intern(Layout::Mono(
                             MonoLayout::Array {
@@ -565,6 +560,12 @@ impl<'a> ILayout<'a> {
                 MonoLayout::ArrayParser(Some((parser, Some(int)))) => {
                     return Ok(ctx.dcx.intern(Layout::Mono(
                         MonoLayout::ArrayParser(Some((*parser, Some(*int)))),
+                        result_type,
+                    )))
+                }
+                MonoLayout::ArrayFillParser(Some(parser)) => {
+                    return Ok(ctx.dcx.intern(Layout::Mono(
+                        MonoLayout::ArrayFillParser(Some(*parser)),
                         result_type,
                     )))
                 }
@@ -624,6 +625,20 @@ impl<'a> ILayout<'a> {
                         _ => panic!("Invalid number of arguments for array parser"),
                     };
                     let layout = MonoLayout::ArrayParser(new_args);
+                    let ty = ctx.db.intern_type(Type::FunctionArg(
+                        result_type,
+                        Arc::new(arg_types[typecast_args.len()..].to_vec()),
+                    ));
+                    let res = ctx.dcx.intern(Layout::Mono(layout, ty));
+                    Ok(res)
+                }
+                MonoLayout::ArrayFillParser(arg) => {
+                    let new_arg = match (arg, typecast_args.as_slice()) {
+                        (arg, []) => *arg,
+                        (None, [(parser, _)]) => Some(*parser),
+                        _ => panic!("Invalid number of arguments for array fill parser"),
+                    };
+                    let layout = MonoLayout::ArrayFillParser(new_arg);
                     let ty = ctx.db.intern_type(Type::FunctionArg(
                         result_type,
                         Arc::new(arg_types[typecast_args.len()..].to_vec()),
@@ -698,10 +713,12 @@ impl<'a> ILayout<'a> {
             Layout::Mono(MonoLayout::BlockParser(_, captures, ..), _) => {
                 self.block_parser_manifestation(ctx, captures)?.size
             }
-            Layout::Mono(MonoLayout::IfParser(inner, _, _), _)
-            | Layout::Mono(MonoLayout::ArrayParser(Some((inner, None))), _) => {
-                SizeAlign::ZST.cat(inner.size_align(ctx)?)
-            }
+            Layout::Mono(
+                MonoLayout::IfParser(inner, _, _)
+                | MonoLayout::ArrayFillParser(Some(inner))
+                | MonoLayout::ArrayParser(Some((inner, None))),
+                _,
+            ) => SizeAlign::ZST.cat(inner.size_align(ctx)?),
             Layout::Mono(
                 MonoLayout::ArrayParser(Some((parser, Some(l))))
                 | MonoLayout::Array { parser, slice: l },
@@ -725,7 +742,8 @@ impl<'a> ILayout<'a> {
                 MonoLayout::Single
                 | MonoLayout::Nil
                 | MonoLayout::Regex(_, _)
-                | MonoLayout::ArrayParser(None),
+                | MonoLayout::ArrayParser(None)
+                | MonoLayout::ArrayFillParser(None),
                 _,
             ) => SizeAlign::ZST,
             Layout::Mono(MonoLayout::Tuple(elements), _) => {
@@ -1078,6 +1096,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ResolvedAtom::Single => make_layout(MonoLayout::Single),
                 ResolvedAtom::Nil => make_layout(MonoLayout::Nil),
                 ResolvedAtom::Array => make_layout(MonoLayout::ArrayParser(None)),
+                ResolvedAtom::ArrayFill => make_layout(MonoLayout::ArrayFillParser(None)),
                 ResolvedAtom::Regex(r) => make_layout(MonoLayout::Regex(r, true)),
                 ResolvedAtom::ParserDef(pd) => {
                     make_layout(MonoLayout::NominalParser(pd, Vec::new(), true))

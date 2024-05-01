@@ -1,0 +1,27 @@
+====[ source code ]====
+def *rgb = {
+  red: u8
+  green: u8
+  blue: u8
+}
+
+export
+fun *test = {
+  colors: [3][..] |> (~ |> rgb)[..]
+  leftover: [..] |> [..] |> [..] |> [..]
+}
+
+====[ binary 1 ]====
+5B CE FA F5 A9 B8 FF FF FF F5 A9 B8 5B CE FA 00
+
+====[ output 1 ]====
+{
+  "colors": [
+    { "red": 91, "green": 206, "blue": 250 },
+    { "red": 245, "green": 169, "blue": 184 },
+    { "red": 255, "green": 255, "blue": 255 },
+    { "red": 245, "green": 169, "blue": 184 },
+    { "red": 91, "green": 206, "blue": 250 }
+  ],
+  "leftover": [0]
+}

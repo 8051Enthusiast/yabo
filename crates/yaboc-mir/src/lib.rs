@@ -179,6 +179,7 @@ pub enum ZstVal {
     Nil,
     Single,
     Array,
+    ArrayFill,
     Regex(Regex),
     ParserDef(ParserDefId),
 }

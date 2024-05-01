@@ -817,6 +817,10 @@
         },
         {
           "type": "SYMBOL",
+          "name": "array_fill"
+        },
+        {
+          "type": "SYMBOL",
           "name": "nil"
         },
         {
@@ -1909,6 +1913,31 @@
                 }
               },
               {
+                "type": "FIELD",
+                "name": "op",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "array_fill"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "PREC",
+          "value": 14,
+          "content": {
+            "type": "SEQ",
+            "members": [
+              {
+                "type": "FIELD",
+                "name": "right",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "_expression"
+                }
+              },
+              {
                 "type": "STRING",
                 "value": "."
               },
@@ -2285,6 +2314,10 @@
     "nil": {
       "type": "STRING",
       "value": "+"
+    },
+    "array_fill": {
+      "type": "STRING",
+      "value": "[..]"
     },
     "not_eof": {
       "type": "STRING",

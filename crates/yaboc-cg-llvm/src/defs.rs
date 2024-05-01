@@ -251,31 +251,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         argnum: u64,
     ) -> Option<(i64, u64)> {
-        if let MonoLayout::ArrayParser(s) = layout.mono_layout().0 {
-            let Some((parser, maybe_len)) = s else {
-                dbpanic!(
-                    &self.compiler_database.db,
-                    "trying to get arg struct for non-array parser layout {}",
-                    &layout.inner()
-                );
-            };
-            if argnum == 1 {
+        match (layout.mono_layout().0, argnum) {
+            (MonoLayout::ArrayParser(Some((parser, _))), 1)
+            | (MonoLayout::ArrayFillParser(Some(parser)), 0) => {
                 let offset = parser.size_align(self.layouts).unwrap().next_offset(0);
-                return Some(((parser.is_multi() as i64) << VTABLE_BIT, offset));
+                Some(((parser.is_multi() as i64) << VTABLE_BIT, offset))
             }
-            assert!(argnum == 0);
-            let Some(len_layout) = maybe_len else {
-                dbpanic!(
-                    &self.compiler_database.db,
-                    "trying to non-existent int arg struct for array parser layout {}",
-                    &layout.inner()
-                );
-            };
-            let int_size = len_layout.size_align(self.layouts).unwrap().after;
-            let whole_size = layout.inner().size_align(self.layouts).unwrap().after;
-            return Some((0, whole_size - int_size));
+            (MonoLayout::ArrayParser(Some((_, Some(len_layout)))), 0) => {
+                let int_size = len_layout.size_align(self.layouts).unwrap().after;
+                let whole_size = layout.inner().size_align(self.layouts).unwrap().after;
+                Some((0, whole_size - int_size))
+            }
+            _ => None,
         }
-        None
     }
 
     pub(super) fn arg_level_and_offset(

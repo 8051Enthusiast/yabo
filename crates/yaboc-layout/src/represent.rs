@@ -121,6 +121,10 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
                     }
                 }
                 MonoLayout::ArrayParser(None) => dbwrite!(f, db, "array-parser[{}]()", ty),
+                MonoLayout::ArrayFillParser(Some(inner)) => {
+                    dbwrite!(f, db, "array-fill-parser[{}]({})", ty, inner)
+                }
+                MonoLayout::ArrayFillParser(None) => dbwrite!(f, db, "array-fill-parser[{}]()", ty),
                 MonoLayout::Array { parser, slice } => {
                     dbwrite!(f, db, "array[{}]({}, {})", ty, parser, slice)
                 }
@@ -327,6 +331,13 @@ impl<'a> LayoutHasher<'a> {
                 state.update(self.hash(*parser, db));
                 state.update(self.hash(*slice, db));
             }
+            MonoLayout::ArrayFillParser(Some(inner)) => {
+                state.update([13, 1]);
+                state.update(self.hash(*inner, db));
+            }
+            MonoLayout::ArrayFillParser(None) => {
+                state.update([13, 0]);
+            }
         }
     }
 }
@@ -462,6 +473,8 @@ impl<'a> LayoutSymbol<'a> {
             MonoLayout::Array { .. } => String::from("array"),
             MonoLayout::ArrayParser(Some((_, Some(_)))) => String::from("parse_array"),
             MonoLayout::ArrayParser(Some((_, None)) | None) => String::from("fun_parse_array"),
+            MonoLayout::ArrayFillParser(Some(_)) => String::from("parse_array_fill"),
+            MonoLayout::ArrayFillParser(None) => String::from("fun_parse_array_fill"),
             MonoLayout::Primitive(_)
             | MonoLayout::SlicePtr
             | MonoLayout::Single

@@ -467,6 +467,25 @@ def *padded_to_1024 = {
 }
 ```
 
+### `parser[..]`
+Sometimes we do not have a specific length we want the array to be, but instead parse until the end of the current input.
+In this case, we can use `parser[..]`, and the shortened version of `~[..]` is `[..]`:
+```
+fun *rgb = {
+  red: u8
+  green: u8
+  blue: u8
+}
+
+def *rgb_array = {
+  colors: rgb[..]
+  rest: [..]
+}
+```
+
+Each rgb value is 3 bytes, and `rgb[..]` makes the array as long as possible.
+In case the input is 16 bytes, this would mean that the `colors` field of `rgb_array` would contain 5 rgb values (as 5 \* 3 = 15), and the `rest` field would contain just one value, the last byte.
+
 ### Operators woking with arrays
 The `*>` operator allows applying a parser to an array:
 ```

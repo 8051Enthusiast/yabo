@@ -589,8 +589,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         array: CgMonoValue<'comp, 'llvm>,
     ) -> IResult<CgValue<'comp, 'llvm>> {
-        let (MonoLayout::Array { parser, .. } | MonoLayout::ArrayParser(Some((parser, _)))) =
-            array.layout.mono_layout().0
+        let (MonoLayout::Array { parser, .. }
+        | MonoLayout::ArrayParser(Some((parser, _)))
+        | MonoLayout::ArrayFillParser(Some(parser))) = array.layout.mono_layout().0
         else {
             panic!("array_parser_field called on non-array");
         };

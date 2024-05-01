@@ -28,6 +28,7 @@ pub enum ResolvedAtom {
     Single,
     Nil,
     Array,
+    ArrayFill,
     Block(hir::BlockId, hir::BlockKind),
 }
 
@@ -60,6 +61,7 @@ pub enum Origin {
     Compose,
     Index,
     Array,
+    ArrayFill,
 }
 
 impl TryFrom<expr::ValBinOp> for ValBinOp {
@@ -120,6 +122,7 @@ impl<C> TryFrom<expr::ValUnOp<C>> for ValUnOp<C> {
             expr::ValUnOp::Size => Ok(ValUnOp::Size),
             expr::ValUnOp::BtMark(k) => Ok(ValUnOp::BtMark(k)),
             expr::ValUnOp::Array => Err(expr::ValUnOp::Array),
+            expr::ValUnOp::ArrayFill => Err(expr::ValUnOp::ArrayFill),
         }
     }
 }
@@ -228,7 +231,7 @@ fn resolve_expr_modules(
                     hir::ParserAtom::Atom(Atom::Bool(s)) => ResolvedAtom::Bool(s),
                     hir::ParserAtom::Single => ResolvedAtom::Single,
                     hir::ParserAtom::Nil => ResolvedAtom::Nil,
-                    hir::ParserAtom::Array => ResolvedAtom::Array,
+                    hir::ParserAtom::ArrayFill => ResolvedAtom::ArrayFill,
                     hir::ParserAtom::Regex(r) => ResolvedAtom::Regex(r),
                     hir::ParserAtom::Block(b, kind) => ResolvedAtom::Block(b, kind),
                     hir::ParserAtom::Atom(Atom::Field(f)) => {
@@ -263,6 +266,7 @@ pub fn resolve_expr_error(
         Cont(Idx),
         Item(Idx, hir::CoreItem),
         Block(Idx, hir::BlockId, hir::BlockKind),
+        N(Idx, fn(Idx, &ResolvedAtom) -> ExprHead<Resolved, Continue>),
         M(
             Idx,
             fn(Idx, &expr::ValUnOp<HirConstraintId>, Idx) -> ExprHead<Resolved, Continue>,
@@ -284,15 +288,17 @@ pub fn resolve_expr_error(
     let zip_expr = resolved.into_expr().zip(sugar_spans);
     let core_items = db.core_items()?;
     let desugared = ZipExpr::new_from_unfold(Cont(zip_expr.root()), |cont| {
-        let (Cont(id) | Item(id, _) | M(id, _) | D(id, _) | V(id, _) | Block(id, ..)) = cont;
+        let (Cont(id) | Item(id, _) | N(id, _) | M(id, _) | D(id, _) | V(id, _) | Block(id, ..)) =
+            cont;
         let (head, span) = zip_expr.index_expr(id);
         let desugared = match (cont, head) {
             (Item(_, item), _) => ExprHead::Niladic(ResolvedAtom::ParserDef(core_items[item])),
             (Block(_, id, kind), _) => ExprHead::Niladic(ResolvedAtom::Block(id, kind)),
+            (N(_, f), ExprHead::Niladic(atom)) => f(id, &atom),
             (M(_, f), ExprHead::Monadic(op, inner)) => f(id, op, *inner),
             (D(_, f), ExprHead::Dyadic(op, [lhs, rhs])) => f(id, op, [*lhs, *rhs]),
             (V(_, f), ExprHead::Variadic(op, inner)) => f(id, op, inner),
-            (M(..) | D(..) | V(..), _) => unreachable!(),
+            (N(..) | M(..) | D(..) | V(..), _) => unreachable!(),
             (Cont(_), ExprHead::Dyadic(expr::ValBinOp::Compose, _)) => ExprHead::Monadic(
                 ValUnOp::EvalFun,
                 D(id, |id, _, [lhs, rhs]| {
@@ -355,7 +361,6 @@ pub fn resolve_expr_error(
                     )
                 }),
             ),
-
             (Cont(_), ExprHead::Dyadic(expr::ValBinOp::Array, _)) => ExprHead::Monadic(
                 ValUnOp::EvalFun,
                 D(id, |id, _, [lhs, rhs]| {
@@ -366,6 +371,34 @@ pub fn resolve_expr_error(
                                 D(id, |_, _, _| ExprHead::Niladic(ResolvedAtom::Array)),
                                 Cont(lhs),
                                 Cont(rhs),
+                            ][..],
+                        ),
+                    )
+                }),
+            ),
+            (Cont(_), ExprHead::Monadic(expr::ValUnOp::ArrayFill, _)) => ExprHead::Monadic(
+                ValUnOp::EvalFun,
+                M(id, |id, _, inner| {
+                    ExprHead::Variadic(
+                        ValVarOp::PartialApply(Origin::ArrayFill),
+                        SmallVec::from(
+                            &[
+                                M(id, |_, _, _| ExprHead::Niladic(ResolvedAtom::ArrayFill)),
+                                Cont(inner),
+                            ][..],
+                        ),
+                    )
+                }),
+            ),
+            (Cont(_), ExprHead::Niladic(ResolvedAtom::ArrayFill)) => ExprHead::Monadic(
+                ValUnOp::EvalFun,
+                N(id, |id, _| {
+                    ExprHead::Variadic(
+                        ValVarOp::PartialApply(Origin::ArrayFill),
+                        SmallVec::from(
+                            &[
+                                N(id, |_, _| ExprHead::Niladic(ResolvedAtom::ArrayFill)),
+                                N(id, |_, _| ExprHead::Niladic(ResolvedAtom::Single)),
                             ][..],
                         ),
                     )

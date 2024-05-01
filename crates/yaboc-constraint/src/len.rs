@@ -188,6 +188,7 @@ impl<'a> SizeTermBuilder<'a> {
                                 self.push_term(Term::Opaque, src)
                             }
                         }
+                        ResolvedAtom::ArrayFill => self.push_term(Term::Opaque, src),
                         ResolvedAtom::Number(n) => self.push_term(Term::Const(n.into()), src),
                         ResolvedAtom::Char(c) => self.push_term(Term::Const(c.into()), src),
                         ResolvedAtom::Bool(b) => self.push_term(Term::Const(b.into()), src),
