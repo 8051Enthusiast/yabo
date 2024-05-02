@@ -197,6 +197,7 @@ int print_recursive(int indent, Stack stack, FILE *out) {
     return fputs("null", out);
   }
   struct VTableHeader *vtable = val->vtable;
+  vtable->mask_impl(val->data);
   int64_t head = vtable->head;
   Stack substack = bump(stack);
   if (head < 0 || head == YABO_U8) {
