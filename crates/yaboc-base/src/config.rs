@@ -8,6 +8,8 @@ pub struct Config {
     pub sysroot: Option<PathBuf>,
     pub cc: Option<String>,
     pub output_json: bool,
+    pub asan: bool,
+    pub msan: bool,
 }
 
 #[salsa::query_group(ConfigDatabase)]

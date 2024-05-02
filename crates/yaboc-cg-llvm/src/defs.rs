@@ -11,7 +11,7 @@ pub const YABO_GLOBAL_INIT: &str = "yabo_global_init";
 
 impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub(crate) fn tailcc(&self) -> u32 {
-        if self.yabo_target.use_tailcc {
+        if self.options.target.use_tailcc {
             18
         } else {
             0
@@ -19,7 +19,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
     pub(crate) fn set_tail_call(&self, call: CallSiteValue<'llvm>, tail: bool) {
         call.set_call_convention(self.tailcc());
-        if tail && self.yabo_target.use_musttail {
+        if tail && self.options.target.use_musttail {
             call.set_tail_call_kind(LLVMTailCallKind::LLVMTailCallKindMustTail);
         }
     }
@@ -44,6 +44,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             if ty.is_pointer_type() {
                 fun.add_attribute(AttributeLoc::Param(i as u32), noalias_attr);
             }
+        }
+        if self.options.asan {
+            let sanitize_address = Attribute::get_named_enum_kind_id("sanitize_address");
+            let sanitize_address_attr = self.llvm.create_enum_attribute(sanitize_address, 1);
+            fun.add_attribute(AttributeLoc::Function, sanitize_address_attr);
+        }
+        if self.options.msan {
+            let sanitize_memory = Attribute::get_named_enum_kind_id("sanitize_memory");
+            let sanitize_memory_attr = self.llvm.create_enum_attribute(sanitize_memory, 1);
+            fun.add_attribute(AttributeLoc::Function, sanitize_memory_attr);
         }
         fun.as_global_value()
             .set_unnamed_address(UnnamedAddress::Global);

@@ -18,6 +18,12 @@ enum EmitKind {
     SharedLib,
 }
 
+#[derive(Clone, PartialEq, Eq, clap::ValueEnum)]
+pub enum Sanitizer {
+    Address,
+    Memory,
+}
+
 #[derive(Parser)]
 #[clap(author, version, about)]
 struct Args {
@@ -33,6 +39,8 @@ struct Args {
     target_cpu: Option<String>,
     #[clap(long)]
     target_features: Option<String>,
+    #[clap(long)]
+    sanitize: Option<Sanitizer>,
     #[clap(long)]
     cc: Option<String>,
     #[clap(long)]
@@ -70,6 +78,8 @@ fn main() {
         target_features: args.target_features,
         sysroot: args.sysroot,
         cc: args.cc,
+        asan: args.sanitize == Some(Sanitizer::Address),
+        msan: args.sanitize == Some(Sanitizer::Memory),
     }) {
         Ok(ctx) => ctx,
         Err(e) => exit_with_message(&format!("Could not create context: {e}")),
