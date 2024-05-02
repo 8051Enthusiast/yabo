@@ -1,0 +1,84 @@
+====[ source code ]====
+import list
+
+# a parser for the rough structure of a png
+
+def *chunk(ty: *[u8], data_parser: *'t) = {
+  length: u32b
+  type: [4] |> ty?
+  value: [length] |> data_parser
+  crc: u32b
+}
+
+def *head = {
+  width: u32b
+  height: u32b
+  bit_depth: u8
+  color_type: u8
+  compression_method: u8
+  filter_method: u8
+  interlace_method: u8
+}
+
+def *rgb = {
+  red: u8
+  green: u8
+  blue: u8
+}
+
+export
+def *main = {
+  [1], /PNG/, /\r\n/, /\x1A/, /\n/
+
+  header: chunk(/IHDR/, head)!
+
+  chunks: list.list({
+    | palette: chunk(/PLTE/, rgb[..])?
+    | data: chunk(/IDAT/, [..])?
+    | optional: chunk(/[a-z].{3}/, [..])?
+  })
+  end: chunk(/IEND/, nil)!
+}
+
+====[ binary 1 ]====
+89 50 4e 47 0d 0a 1a 0a 00 00 00 0d
+49 48 44 52 00 00 00 01 00 00 00 01
+01 00 00 00 00 37 6e f9 24 00 00 00
+0a 49 44 41 54 78 01 63 60 00 00 00
+02 00 01 73 75 01 18 00 00 00 00 49
+45 4e 44 ae 42 60 82
+
+====[ output 1 ]====
+{
+  "chunks": {
+    "this": {
+      "data": {
+        "length": 10,
+        "type": [73, 68, 65, 84],
+        "value": [120, 1, 99, 96, 0, 0, 0, 2, 0, 1]
+        "crc": 1937047832,
+      }
+    },
+    "next": {}
+  },
+  "end": {
+    "length": 0,
+    "type": [73, 69, 78, 68],
+    "value": "unit"
+    "crc": 2923585666,
+  },
+  "header": {
+    "length": 13,
+    "type": [73, 72, 68, 82],
+    "value": {
+      "bit_depth": 1,
+      "color_type": 0,
+      "compression_method": 0,
+      "filter_method": 0,
+      "height": 1,
+      "interlace_method": 0,
+      "width": 1
+    }
+    "crc": 930019620,
+  }
+}
