@@ -27,7 +27,7 @@ def *rgb = {
 }
 
 export
-def *main = {
+def *test = {
   [1], /PNG/, /\r\n/, /\x1A/, /\n/
 
   header: chunk(/IHDR/, head)!
@@ -55,8 +55,8 @@ def *main = {
       "data": {
         "length": 10,
         "type": [73, 68, 65, 84],
-        "value": [120, 1, 99, 96, 0, 0, 0, 2, 0, 1]
-        "crc": 1937047832,
+        "value": [120, 1, 99, 96, 0, 0, 0, 2, 0, 1],
+        "crc": 1937047832
       }
     },
     "next": {}
@@ -64,8 +64,8 @@ def *main = {
   "end": {
     "length": 0,
     "type": [73, 69, 78, 68],
-    "value": "unit"
-    "crc": 2923585666,
+    "value": "unit",
+    "crc": 2923585666
   },
   "header": {
     "length": 13,
@@ -78,7 +78,7 @@ def *main = {
       "height": 1,
       "interlace_method": 0,
       "width": 1
-    }
-    "crc": 930019620,
+    },
+    "crc": 930019620
   }
 }
