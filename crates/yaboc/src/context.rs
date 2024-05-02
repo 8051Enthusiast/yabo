@@ -11,13 +11,12 @@ use yaboc_base::{
 };
 use yaboc_cg_llvm::{
     inkwell::{self, support::LLVMString},
-    CodeGenCtx,
+    CodeGenCtx, CodeGenOptions,
 };
 use yaboc_database::YabocDatabase;
 use yaboc_hir::represent::HirGraph;
 use yaboc_layout::{InternedLayout, LayoutContext};
 use yaboc_mir::{print_all_mir, print_all_mir_graphs};
-use yaboc_target::Target;
 const ERROR_FNS: &[fn(&YabocDatabase) -> Vec<Report>] = &[
     yaboc_ast::error::errors,
     yaboc_hir::error::errors,
@@ -29,7 +28,7 @@ const ERROR_FNS: &[fn(&YabocDatabase) -> Vec<Report>] = &[
 
 pub struct Driver {
     ctx: Context<YabocDatabase>,
-    target: Target,
+    options: CodeGenOptions,
 }
 
 impl std::ops::Deref for Driver {
@@ -59,9 +58,14 @@ impl Driver {
             )
         })?;
         let mut ctx = Context::<YabocDatabase>::default();
+        let options = CodeGenOptions {
+            target,
+            asan: config.asan,
+            msan: config.msan,
+        };
         let config = Arc::new(config);
         ctx.db.set_config(config);
-        Ok(Self { ctx, target })
+        Ok(Self { ctx, options })
     }
     fn diagnostics(&self) -> Vec<Report> {
         let mut ret = self.collection_reports.clone();
@@ -142,10 +146,10 @@ impl Driver {
         let llvm = inkwell::context::Context::create();
         let bump = Bump::new();
         let intern = low_effort_interner::Interner::<InternedLayout>::new(&bump);
-        let layout_ctx = LayoutContext::new(intern, self.target.data);
+        let layout_ctx = LayoutContext::new(intern, self.options.target.data);
         let mut layouts = yaboc_layout::AbsLayoutCtx::new(&self.db, layout_ctx);
         let mut codegen =
-            match yaboc_cg_llvm::CodeGenCtx::new(&llvm, self, &mut layouts, self.target.clone()) {
+            match yaboc_cg_llvm::CodeGenCtx::new(&llvm, self, &mut layouts, self.options.clone()) {
                 Ok(x) => x,
                 Err(e) => panic!("Error while creating codegen context: {e:#?}"),
             };
@@ -166,7 +170,8 @@ impl Driver {
         let temp_path = temp_object_file.into_temp_path();
         let temp_path = temp_path.to_path_buf();
         self.codegen_and_then(|codegen| codegen.object_file(temp_path.as_os_str()))?;
-        self.target
+        self.options
+            .target
             .linker
             .link_shared(&temp_path, outfile.as_ref())
             .map_err(|e| e.to_string())?;

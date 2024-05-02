@@ -64,7 +64,7 @@ pub struct CodeGenCtx<'llvm, 'comp> {
     llvm: &'llvm Context,
     target: TargetMachine,
     target_data: TargetData,
-    yabo_target: yaboc_target::Target,
+    options: CodeGenOptions,
     builder: Builder<'llvm>,
     pass_options: PassBuilderOptions,
     module: Module<'llvm>,
@@ -73,12 +73,19 @@ pub struct CodeGenCtx<'llvm, 'comp> {
     collected_layouts: Rc<LayoutCollection<'comp>>,
 }
 
+#[derive(Clone)]
+pub struct CodeGenOptions {
+    pub target: yaboc_target::Target,
+    pub asan: bool,
+    pub msan: bool,
+}
+
 impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub fn new(
         llvm_context: &'llvm Context,
         compiler_database: &'comp yaboc_base::Context<YabocDatabase>,
         layouts: &'comp mut AbsLayoutCtx<'comp>,
-        yabo_target: yaboc_target::Target,
+        options: CodeGenOptions,
     ) -> Result<Self, String> {
         let pds = compiler_database.db.all_exported_parserdefs();
         let collected_layouts =
@@ -99,8 +106,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .map_err(|e| e.to_string())?
             .create_target_machine(
                 &triple,
-                &yabo_target.cpu,
-                &yabo_target.features,
+                &options.target.cpu,
+                &options.target.features,
                 OptimizationLevel::Aggressive,
                 RelocMode::PIC,
                 CodeModel::Default,
@@ -118,7 +125,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         Ok(CodeGenCtx {
             llvm: llvm_context,
             target,
-            yabo_target,
+            options,
             builder,
             pass_options: pbo,
             module,
@@ -240,11 +247,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn invalid_ptr(&self) -> PointerValue<'llvm> {
-        self.any_ptr().get_undef()
+        self.any_ptr().const_null()
     }
 
     fn word_size(&self) -> u64 {
-        <*const u8>::tsize(&self.yabo_target.data).after
+        <*const u8>::tsize(&self.options.target.data).after
     }
 
     fn sa_type(&mut self, sa: SizeAlign) -> ArrayType<'llvm> {
@@ -678,8 +685,15 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub fn object_file(self, outfile: &OsStr) -> Result<(), LLVMString> {
         self.module.verify()?;
+        let mut passes = String::from("always-inline,default<O3>");
+        if self.options.asan {
+            passes.push_str(",asan");
+        }
+        if self.options.msan {
+            passes.push_str(",msan");
+        }
         self.module
-            .run_passes("always-inline,default<O3>", &self.target, self.pass_options)?;
+            .run_passes(&passes, &self.target, self.pass_options)?;
         self.target
             .write_to_file(&self.module, FileType::Object, Path::new(outfile))?;
         Ok(())
