@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Test runner for yabo
+
 from collections import defaultdict
 from dataclasses import dataclass
 import os
@@ -43,6 +45,8 @@ lib_path = os.path.join(current_script_dir, 'lib')
 compiler_env = os.environ.copy()
 compiler_env['YABO_LIB_PATH'] = lib_path
 compiler_env['RUST_BACKTRACE'] = '1'
+# filter out LD_PRELOAD from the environment
+compiler_env['LD_PRELOAD'] = ''
 compiler_dir = os.path.join(current_script_dir, 'crates', 'yaboc')
 compiler_bin = "yaboc" 
 wasm_factory = None
@@ -565,8 +569,8 @@ def run_tests(files: list[str]) -> int:
         with futures.ProcessPoolExecutor() as executor:
             results = executor.map(run_test, files)
             return sum(results)
-    except (futures.process.BrokenProcessPool, ValueError):
-        print('Encountered segfault, running tests sequentially')
+    except (futures.process.BrokenProcessPool, ValueError) as e:
+        print(f'Encountered error ({e}), running tests sequentially')
         total_failed = 0
         for file in files:
             print(f'Running {file}')
