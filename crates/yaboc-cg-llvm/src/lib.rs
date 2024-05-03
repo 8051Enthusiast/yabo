@@ -531,6 +531,45 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         Ok(comp)
     }
 
+    fn branch<T, E>(
+        &mut self,
+        cond: IntValue<'llvm>,
+        then: impl FnOnce(&mut Self) -> IResult<T>,
+        else_: impl FnOnce(&mut Self) -> IResult<E>,
+    ) -> IResult<(T, E)> {
+        let fun = self.current_function();
+        let then_bb = self.llvm.append_basic_block(fun, "then");
+        let else_bb = self.llvm.append_basic_block(fun, "else");
+        self.builder
+            .build_conditional_branch(cond, then_bb, else_bb)?;
+        self.builder.position_at_end(then_bb);
+        let t = then(self)?;
+        let then_cont_bb = self.builder.get_insert_block().unwrap();
+        let then_unterminated = then_cont_bb.get_terminator().is_none();
+
+        self.builder.position_at_end(else_bb);
+        let e = else_(self)?;
+        let else_cont_bb = self.builder.get_insert_block().unwrap();
+        let else_unterminated = else_cont_bb.get_terminator().is_none();
+        match (then_unterminated, else_unterminated) {
+            // both branches need a terminator, so we need to add a branch to a common continuation block
+            (true, true) => {
+                let cont_bb = self.llvm.append_basic_block(fun, "cont");
+                self.builder.build_unconditional_branch(cont_bb)?;
+                self.builder.position_at_end(then_cont_bb);
+                self.builder.build_unconditional_branch(cont_bb)?;
+                self.builder.position_at_end(cont_bb);
+            }
+            // only the `then` branch is unterminated, so we can just continue there
+            (true, false) => {
+                self.builder.position_at_end(then_cont_bb);
+            }
+            // only the `else` branch is unterminated, and we are already there
+            (false, _) => {}
+        }
+        Ok((t, e))
+    }
+
     fn build_cast<T: TargetSized, R: TryFrom<BasicValueEnum<'llvm>>>(
         &mut self,
         v: impl BasicValue<'llvm>,

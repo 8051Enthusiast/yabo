@@ -19,26 +19,18 @@ use crate::{
 use super::*;
 
 impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
-    fn non_zero_early_return(
-        &mut self,
-        fun: FunctionValue<'llvm>,
-        status: IntValue<'llvm>,
-    ) -> IResult<()> {
-        let success_bb = self.llvm.append_basic_block(fun, "succ");
-        let fail_bb = self.llvm.append_basic_block(fun, "fail");
+    fn non_zero_early_return(&mut self, status: IntValue<'llvm>) -> IResult<()> {
         let is_not_zero = self.builder.build_int_compare(
             IntPredicate::NE,
             status,
             self.const_i64(ReturnStatus::Ok as i64),
             "deref_status_is_zero",
         )?;
-        self.builder
-            .build_conditional_branch(is_not_zero, fail_bb, success_bb)?;
-
-        self.builder.position_at_end(fail_bb);
-        self.builder.build_return(Some(&status))?;
-
-        self.builder.position_at_end(success_bb);
+        self.branch(
+            is_not_zero,
+            |this| this.builder.build_return(Some(&status)),
+            |_| Ok(()),
+        )?;
         Ok(())
     }
 
@@ -275,10 +267,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         for (&id, &offset) in manifestation.field_offsets.iter() {
             let inner = layouts(id);
-            let cont_bb = if let Some(bit_offset) = manifestation.discriminant_mapping.get(&id) {
-                let cont_bb = self.llvm.append_basic_block(fun, "cont");
-                let zero_bb = self.llvm.append_basic_block(fun, "zero");
-                let mask_bb = self.llvm.append_basic_block(fun, "mask");
+            let call_mask = |this: &mut Self| -> IResult<()> {
+                let inner_ptr = this.build_byte_gep(arg, this.const_i64(offset as i64), "inner")?;
+                this.call_mask_fun(CgValue::new(inner, inner_ptr))
+            };
+            if let Some(bit_offset) = manifestation.discriminant_mapping.get(&id) {
                 let byte_offset = bit_offset / 8;
                 let inner_bit_offset = bit_offset % 8;
                 let disc_byte_ptr =
@@ -295,31 +288,22 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     self.llvm.i8_type().const_zero(),
                     "is_nonzero",
                 )?;
-                self.builder
-                    .build_conditional_branch(is_nonzero, mask_bb, zero_bb)?;
-                self.builder.position_at_end(zero_bb);
-                let inner_sa = inner.size_align(self.layouts).unwrap();
-                let val_ptr = self.build_byte_gep(
-                    arg,
-                    self.const_i64((offset - inner_sa.before) as i64),
-                    "val_ptr",
-                )?;
-                let size = self.const_i64(inner_sa.total_size() as i64);
-                let val = self.llvm.i8_type().const_zero();
-                self.builder
-                    .build_memset(val_ptr, inner_sa.start_alignment() as u32, val, size)?;
-                self.builder.build_unconditional_branch(cont_bb)?;
-                self.builder.position_at_end(mask_bb);
-                Some(cont_bb)
+
+                self.branch(is_nonzero, call_mask, |this| {
+                    let inner_sa = inner.size_align(this.layouts).unwrap();
+                    let val_ptr = this.build_byte_gep(
+                        arg,
+                        this.const_i64((offset - inner_sa.before) as i64),
+                        "val_ptr",
+                    )?;
+                    let size = this.const_i64(inner_sa.total_size() as i64);
+                    let val = this.llvm.i8_type().const_zero();
+                    this.builder
+                        .build_memset(val_ptr, inner_sa.start_alignment() as u32, val, size)
+                })?;
             } else {
-                None
+                call_mask(self)?;
             };
-            let inner_ptr = self.build_byte_gep(arg, self.const_i64(offset as i64), "inner")?;
-            self.call_mask_fun(CgValue::new(inner, inner_ptr))?;
-            if let Some(cont_bb) = cont_bb {
-                self.builder.build_unconditional_branch(cont_bb)?;
-                self.builder.position_at_end(cont_bb);
-            }
         }
         self.builder
             .build_return(Some(&self.const_size_t(manifestation.size.after as i64)))?;
@@ -468,7 +452,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.build_copy_invariant(from_copy, from)?;
         let no_ret = self.undef_ret();
         let ret = self.build_parser_call(no_ret, fun.into(), from_copy, pd_len_req())?;
-        self.non_zero_early_return(llvm_fun, ret)?;
+        self.non_zero_early_return(ret)?;
         self.terminate_tail_typecast(from_copy, ret_val)
     }
 
@@ -609,11 +593,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         array: CgMonoValue<'comp, 'llvm>,
         int_buf: CgMonoValue<'comp, 'llvm>,
-        fun: FunctionValue<'llvm>,
     ) -> IResult<IntValue<'llvm>> {
         let parser = self.build_array_parser_get(array)?;
         let status = self.call_len_fun(int_buf.ptr, parser)?;
-        self.non_zero_early_return(fun, status)?;
+        self.non_zero_early_return(status)?;
         self.build_i64_load(int_buf.ptr, "item_len")
     }
 
@@ -623,7 +606,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let [arg] = get_fun_args(fun).map(|x| x.into_pointer_value());
         let array = CgMonoValue::new(layout, arg);
         let int_buf = self.build_alloca_int("item_len_buf")?;
-        let len = self.build_array_item_len_get(array, int_buf, fun)?;
+        let len = self.build_array_item_len_get(array, int_buf)?;
         let slice = self.build_array_slice_get(array)?;
         let ret = self.call_skip_fun(slice, len)?;
         self.builder.build_return(Some(&ret))?;
@@ -657,7 +640,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let [arg] = get_fun_args(fun).map(|x| x.into_pointer_value());
         let array = CgMonoValue::new(layout, arg);
         let int_buf = self.build_alloca_int("item_len_buf")?;
-        let len = self.build_array_item_len_get(array, int_buf, fun)?;
+        let len = self.build_array_item_len_get(array, int_buf)?;
         let slice = self.build_array_slice_get(array)?;
         let slice_len = self.call_array_len_fun(slice)?;
         let ret = self.builder.build_int_signed_div(slice_len, len, "ret")?;
@@ -673,7 +656,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let arg = arg.into_pointer_value();
         let array = CgMonoValue::new(layout, arg);
         let int_buf = self.build_alloca_int("item_len_buf")?;
-        let item_len = self.build_array_item_len_get(array, int_buf, fun)?;
+        let item_len = self.build_array_item_len_get(array, int_buf)?;
         let slice = self.build_array_slice_get(array)?;
         let skip_len = self.builder.build_int_mul(item_len, len, "skip_len")?;
         let ret = self.call_skip_fun(slice, skip_len)?;
@@ -790,8 +773,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.set_always_inline(llvm_fun);
         self.add_entry_block(llvm_fun);
         let (ret, _, arg) = parser_values(llvm_fun, layout, from);
-        let fail_block = self.llvm.append_basic_block(llvm_fun, "fail");
-        let ok_block = self.llvm.append_basic_block(llvm_fun, "ok");
         let ptr_diff = self.call_array_len_fun(arg)?;
         let is_zero = self.builder.build_int_compare(
             IntPredicate::EQ,
@@ -799,22 +780,25 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.const_i64(0),
             "is_zero",
         )?;
-        self.builder
-            .build_conditional_branch(is_zero, fail_block, ok_block)?;
-        self.builder.position_at_end(fail_block);
-        self.builder
-            .build_return(Some(&self.const_i64(ReturnStatus::Eof as i64)))?;
-        self.builder.position_at_end(ok_block);
-        if req.contains(NeededBy::Val) {
-            let ret = self.call_current_element_fun(ret, arg)?;
-            self.non_zero_early_return(llvm_fun, ret)?;
-        }
-        if req.contains(NeededBy::Len) {
-            let ret = self.call_single_forward_fun(arg)?;
-            self.builder.build_return(Some(&ret))?;
-        } else {
-            self.builder.build_return(Some(&self.const_i64(0)))?;
-        }
+        self.branch(
+            is_zero,
+            |this| {
+                let ret = this.const_i64(ReturnStatus::Eof as i64);
+                this.builder.build_return(Some(&ret))
+            },
+            |this| {
+                if req.contains(NeededBy::Val) {
+                    let ret = this.call_current_element_fun(ret, arg)?;
+                    this.non_zero_early_return(ret)?;
+                }
+                if req.contains(NeededBy::Len) {
+                    let ret = this.call_single_forward_fun(arg)?;
+                    this.builder.build_return(Some(&ret))
+                } else {
+                    this.builder.build_return(Some(&this.const_i64(0)))
+                }
+            },
+        )?;
         Ok(llvm_fun)
     }
 
@@ -970,7 +954,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let (full_len, inner_parser_layout) = match layout.mono_layout().0 {
             MonoLayout::ArrayParser(Some((inner_parser, _))) => {
                 let status = self.call_len_fun(int_buf.ptr, parser.into())?;
-                self.non_zero_early_return(llvm_fun, status)?;
+                self.non_zero_early_return(status)?;
                 let full_len = self.build_i64_load(int_buf.ptr, "parser_len")?;
                 let is_out_of_bounds = self.builder.build_int_compare(
                     IntPredicate::ULT,
@@ -978,20 +962,20 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     full_len,
                     "is_out_of_bounds",
                 )?;
-                let succ_block = self.llvm.append_basic_block(llvm_fun, "succ");
-                let fail_block = self.llvm.append_basic_block(llvm_fun, "fail");
-                self.builder
-                    .build_conditional_branch(is_out_of_bounds, fail_block, succ_block)?;
-                self.builder.position_at_end(fail_block);
-                self.builder
-                    .build_return(Some(&self.const_i64(ReturnStatus::Eof as i64)))?;
-                self.builder.position_at_end(succ_block);
+                self.branch(
+                    is_out_of_bounds,
+                    |this| {
+                        this.builder
+                            .build_return(Some(&this.const_i64(ReturnStatus::Eof as i64)))
+                    },
+                    |_| Ok(()),
+                )?;
                 (full_len, *inner_parser)
             }
             MonoLayout::ArrayFillParser(Some(_)) => {
                 let inner_parser = self.build_array_parser_get(parser)?;
                 let status = self.call_len_fun(int_buf.ptr, inner_parser)?;
-                self.non_zero_early_return(llvm_fun, status)?;
+                self.non_zero_early_return(status)?;
                 let len = self.build_i64_load(int_buf.ptr, "len")?;
                 let is_nonzero = self.builder.build_int_compare(
                     IntPredicate::NE,
@@ -999,26 +983,26 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     self.const_i64(0),
                     "is_nonzero",
                 )?;
-                let succ_block = self.llvm.append_basic_block(llvm_fun, "succ");
-                let fail_block = self.llvm.append_basic_block(llvm_fun, "fail");
-                self.builder
-                    .build_conditional_branch(is_nonzero, succ_block, fail_block)?;
-                self.builder.position_at_end(fail_block);
-                self.builder
-                    .build_return(Some(&self.const_i64(ReturnStatus::Error as i64)))?;
-                self.builder.position_at_end(succ_block);
-                let leftover_len = self
-                    .builder
-                    .build_int_unsigned_rem(slice_len, len, "leftover")?;
-                let full_len = self
-                    .builder
-                    .build_int_sub(slice_len, leftover_len, "full_len")?;
+                let (full_len, _) = self.branch(
+                    is_nonzero,
+                    |this| {
+                        let leftover_len = this
+                            .builder
+                            .build_int_unsigned_rem(slice_len, len, "leftover")?;
+                        this.builder
+                            .build_int_sub(slice_len, leftover_len, "full_len")
+                    },
+                    |this| {
+                        this.builder
+                            .build_return(Some(&this.const_i64(ReturnStatus::Error as i64)))
+                    },
+                )?;
                 (full_len, inner_parser.layout)
             }
             _ => panic!("called create_array_parse on non-array parser"),
         };
         let ret = self.call_skip_fun(arg, full_len)?;
-        self.non_zero_early_return(llvm_fun, ret)?;
+        self.non_zero_early_return(ret)?;
         if req.contains(NeededBy::Val) {
             let inner_slice =
                 if let Layout::Mono(MonoLayout::Single, _) = inner_parser_layout.layout.1 {
@@ -1033,7 +1017,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 self.const_i64(DerefLevel::zero().into_shifted_runtime_value() as i64);
             let inner_slice_ret = self.build_return_value(inner_slice, deref_level)?;
             let ret = self.call_span_fun(inner_slice_ret, arg_copy, arg)?;
-            self.non_zero_early_return(llvm_fun, ret)?;
+            self.non_zero_early_return(ret)?;
             self.terminate_tail_typecast(ret_buf.into(), ret_val)?;
         } else {
             self.builder
@@ -1068,15 +1052,15 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         if let Some((ptr, mask)) =
             self.build_discriminant_info(*id, block.into(), FieldName::Ident(name))?
         {
-            let next_bb = self.llvm.append_basic_block(fun, "next");
-            let early_exit_bb = self.llvm.append_basic_block(fun, "early_exit");
             let is_disc_set = self.build_discriminant_check(ptr, mask)?;
-            self.builder
-                .build_conditional_branch(is_disc_set, next_bb, early_exit_bb)?;
-            self.builder.position_at_end(early_exit_bb);
-            self.builder
-                .build_return(Some(&self.const_i64(ReturnStatus::Backtrack as i64)))?;
-            self.builder.position_at_end(next_bb);
+            self.branch(
+                is_disc_set,
+                |_| Ok(()),
+                |this| {
+                    this.builder
+                        .build_return(Some(&this.const_i64(ReturnStatus::Backtrack as i64)))
+                },
+            )?;
         }
         let field = self.build_field_gep(field, block.into(), inner_layout)?;
         self.terminate_tail_typecast(field, return_val)
@@ -1115,7 +1099,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
         let inner_parser = self.build_array_parser_get(parser)?;
         let status = self.call_len_fun(int_buf.ptr, inner_parser)?;
-        self.non_zero_early_return(fun, status)?;
+        self.non_zero_early_return(status)?;
         let parser_len = self.build_i64_load(int_buf.ptr, "parser_len")?;
 
         let full_len = self.builder.build_int_mul(len, parser_len, "full_len")?;
@@ -1493,7 +1477,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             let ret_val = CgReturnValue::new(self.const_i64(head as i64), global);
             let fun_val = CgValue::new(fun.inner(), self.any_ptr().const_null());
             let status = self.call_eval_fun_fun(ret_val, fun_val, ParserFunKind::Wrapper)?;
-            self.non_zero_early_return(llvm_fun, status)?;
+            self.non_zero_early_return(status)?;
         }
         let zero = self.const_i64(0);
         self.builder.build_return(Some(&zero))?;
