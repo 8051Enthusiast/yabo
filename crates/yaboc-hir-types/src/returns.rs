@@ -53,6 +53,25 @@ impl Display for DerefLevel {
     }
 }
 
+/// Removes top-level `fun` and `static` nominals from the type
+pub fn normalize_head(db: &dyn TyHirs, ty: TypeId) -> SResult<TypeId> {
+    match db.lookup_intern_type(ty) {
+        Type::Nominal(nom) => {
+            let NominalId::Def(_) = NominalId::from_nominal_head(&nom) else {
+                return Ok(ty);
+            };
+            if nom.kind == NominalKind::Def {
+                return Ok(ty);
+            }
+            let Some(deref_ty) = db.deref_type(ty)? else {
+                return Ok(ty);
+            };
+            db.normalize_head(deref_ty)
+        }
+        _ => Ok(ty),
+    }
+}
+
 pub fn deref_level(db: &dyn TyHirs, ty: TypeId) -> SResult<DerefLevel> {
     match db.lookup_intern_type(ty) {
         Type::Primitive(PrimitiveType::U8) => Ok(DerefLevel::zero().inc()),
