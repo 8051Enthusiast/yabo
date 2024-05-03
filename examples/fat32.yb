@@ -53,7 +53,9 @@ def *fat_table = fat_entry[header.fat_sz32 * header.byts_per_sec / u32l.sizeof]
 static fat = fat_table at (header.byts_per_sec * header.rsvd_sec_cnt)
 
 static blocks = {
+  # skip the reserved sectors
   [header.byts_per_sec * header.rsvd_sec_cnt]
+  # skip the fat table
   fat_table[header.num_fats]
   let data_sec = header.tot_sec32 - (header.rsvd_sec_cnt + header.fat_sz32 * header.num_fats)
   let count_of_clusters = data_sec / header.sec_per_clus
@@ -97,18 +99,18 @@ def *dir_entry = [32] |> {
   | empty: u8 if 0 or 0xE5
   | long: long_entry?
   | short: short_entry
-    | assert(short.name.[0] == 0x2E)?
-      let hidden = 1
     | assert(short.attr & 0x10 != 0)?
+      # we have a subdirectory
       let subdir = parse_block(short.cluster, dir_entries)
-    | let file = parse_block(short.cluster, file_entry)
+    | # otherwise it's a regular file
+      let file = parse_block(short.cluster, file_entry)
 }
 
 # a chain of directory entries
-def *dir_entries(idx: int) = entry(dir_entry[header.byts_per_sec / dir_entry.sizeof], idx)
+def *dir_entries(idx: int) = entry(dir_entry[..], idx)
 
 # a chain of file entries
-def *file_entry(idx: int) = entry([header.bytes_per_cluster], idx)
+def *file_entry(idx: int) = entry([..], idx)
 
 # takes a data type and returns a linked list of entries using the FAT
 def *entry(data_type: *'t, idx: int) = {
