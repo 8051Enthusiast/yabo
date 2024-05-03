@@ -478,13 +478,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub(super) fn build_return_value(
         &mut self,
         val: CgValue<'comp, 'llvm>,
+        mut deref_level: IntValue<'llvm>,
     ) -> IResult<CgReturnValue<'llvm>> {
-        let mut head = self.build_deref_level_get(val.layout.maybe_mono(), val.ptr)?;
         if val.layout.is_multi() {
             let tag = self.const_i64(1 << VTABLE_BIT);
-            head = self.builder.build_or(head, tag, "vtable_tag")?;
+            deref_level = self.builder.build_or(deref_level, tag, "vtable_tag")?;
         }
-        Ok(CgReturnValue::new(head, val.ptr))
+        Ok(CgReturnValue::new(deref_level, val.ptr))
     }
 
     pub(super) fn build_check_i64_bit_set(
