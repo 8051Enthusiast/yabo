@@ -697,7 +697,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let start_slice = self.build_array_slice_get(start)?;
         let end_slice = self.build_array_slice_get(end)?;
         let buf_slice = self.build_array_slice_get(bufsl)?;
-        let buf_slice_ret = self.build_return_value(buf_slice)?;
+        let deref_level = self.const_i64(DerefLevel::zero().into_shifted_runtime_value() as i64);
+        let buf_slice_ret = self.build_return_value(buf_slice, deref_level)?;
         self.call_span_fun(buf_slice_ret, start_slice, end_slice)?;
         self.terminate_tail_typecast(bufsl.into(), ret)?;
         Ok(())
@@ -1028,7 +1029,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     self.build_copy_invariant(result_parser, inner_parser)?;
                     self.build_array_slice_get(ret_buf)?
                 };
-            let inner_slice_ret = self.build_return_value(inner_slice)?;
+            let deref_level =
+                self.const_i64(DerefLevel::zero().into_shifted_runtime_value() as i64);
+            let inner_slice_ret = self.build_return_value(inner_slice, deref_level)?;
             let ret = self.call_span_fun(inner_slice_ret, arg_copy, arg)?;
             self.non_zero_early_return(llvm_fun, ret)?;
             self.terminate_tail_typecast(ret_buf.into(), ret_val)?;
