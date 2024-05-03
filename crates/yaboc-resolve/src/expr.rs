@@ -294,7 +294,7 @@ pub fn resolve_expr_error(
         let desugared = match (cont, head) {
             (Item(_, item), _) => ExprHead::Niladic(ResolvedAtom::ParserDef(core_items[item])),
             (Block(_, id, kind), _) => ExprHead::Niladic(ResolvedAtom::Block(id, kind)),
-            (N(_, f), ExprHead::Niladic(atom)) => f(id, &atom),
+            (N(_, f), ExprHead::Niladic(atom)) => f(id, atom),
             (M(_, f), ExprHead::Monadic(op, inner)) => f(id, op, *inner),
             (D(_, f), ExprHead::Dyadic(op, [lhs, rhs])) => f(id, op, [*lhs, *rhs]),
             (V(_, f), ExprHead::Variadic(op, inner)) => f(id, op, inner),
