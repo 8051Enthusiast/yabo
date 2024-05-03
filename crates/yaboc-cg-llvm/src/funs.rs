@@ -296,7 +296,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     "is_nonzero",
                 )?;
                 self.builder
-                    .build_conditional_branch(is_nonzero, cont_bb, zero_bb)?;
+                    .build_conditional_branch(is_nonzero, mask_bb, zero_bb)?;
                 self.builder.position_at_end(zero_bb);
                 let inner_sa = inner.size_align(self.layouts).unwrap();
                 let val_ptr = self.build_byte_gep(
@@ -1006,8 +1006,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 self.builder
                     .build_return(Some(&self.const_i64(ReturnStatus::Error as i64)))?;
                 self.builder.position_at_end(succ_block);
-                let leftover_len = self.builder.build_int_unsigned_rem(slice_len, len, "leftover")?;
-                let full_len = self.builder.build_int_sub(slice_len, leftover_len, "full_len")?;
+                let leftover_len = self
+                    .builder
+                    .build_int_unsigned_rem(slice_len, len, "leftover")?;
+                let full_len = self
+                    .builder
+                    .build_int_sub(slice_len, leftover_len, "full_len")?;
                 (full_len, inner_parser.layout)
             }
             _ => panic!("called create_array_parse on non-array parser"),
