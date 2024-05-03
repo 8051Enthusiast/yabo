@@ -146,10 +146,13 @@ class CompiledSource:
                     env=compiler_env
                 )
             else:
+                args = [compiler_bin, "--output-json",
+                     "--module", f"core={core_path}"]
+                sanitize = os.environ.get('YABO_TEST_SANITIZE')
+                if sanitize:
+                    args.append(f'--sanitize={sanitize}')
                 proc = subprocess.Popen(
-                    [compiler_bin, "--output-json",
-                     "--module", f"core={core_path}",
-                     sourcepath, self.compiled],
+                    args + [sourcepath, self.compiled],
                     stderr=subprocess.PIPE,
                     env=compiler_env
                 )
