@@ -259,7 +259,10 @@ impl<'intern> SubInfo<ILayout<'intern>> {
                 .map(|subst| ctx.db.substitute_typevar(place_info.ty, subst.clone()))
                 .unwrap_or(place_info.ty);
 
-            let strict = if let Type::TypeVarRef(..) = ctx.db.lookup_intern_type(place_info.ty) {
+            let strict = if let Type::TypeVarRef(..) = ctx
+                .db
+                .lookup_intern_type(ctx.db.normalize_head(place_info.ty)?)
+            {
                 Strictness::Static(ctx.db.deref_level(ty)?)
             } else {
                 strictness[p.as_index()]

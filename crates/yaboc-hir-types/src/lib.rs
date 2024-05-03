@@ -47,7 +47,8 @@ use full::{parser_expr_at, parser_full_types, parser_type_at, ParserFullTypes};
 use public::{ambient_type, public_expr_type, public_type};
 pub use returns::DerefLevel;
 use returns::{
-    deref_level, deref_type, least_deref_type, parser_returns, parser_returns_ssc, ParserDefType,
+    deref_level, deref_type, least_deref_type, normalize_head, parser_returns, parser_returns_ssc,
+    ParserDefType,
 };
 pub use returns::{NOBACKTRACK_BIT, VTABLE_BIT};
 use signature::{fun_arg_count, get_signature, parser_args, parser_args_error};
@@ -63,6 +64,7 @@ pub trait TyHirs: Hirs + yaboc_types::TypeInterner + resolve::Resolves {
     ) -> Vec<Result<ParserDefType, SpannedTypeError>>;
     fn deref_type(&self, ty: TypeId) -> SResult<Option<TypeId>>;
     fn deref_level(&self, ty: TypeId) -> SResult<DerefLevel>;
+    fn normalize_head(&self, ty: TypeId) -> SResult<TypeId>;
     fn least_deref_type(&self, ty: TypeId) -> SResult<TypeId>;
     fn fun_arg_count(&self, ty: TypeId) -> SResult<Option<u32>>;
     fn public_type(&self, loc: DefId) -> SResult<TypeId>;
