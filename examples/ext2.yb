@@ -93,10 +93,10 @@ def *inode_ptr = {
 def *block_ptr(data: *'t) = {
   block: u32l
   | block if 0 then nil
-  | let pointee = data at (block * block_size)
+  | let pointee = ([block_size] |> data) at (block * block_size)
 }
 
-def *indirect(data: *'t) = block_ptr(data)[block_size / u32l.sizeof]
+def *indirect(data: *'t) = block_ptr(data)[..]
 
 def *data_blocks(data: *'t) = {
   direct: block_ptr(data)[12]
@@ -117,7 +117,7 @@ fun inode_type(mode: int) = {:
   | let unknown = masked
 :}
 
-def *byte_block = [block_size]
+def *byte_block = [..]
 
 def *dir_entry = {
   inode_idx: inode_ptr if !eof and pointee
