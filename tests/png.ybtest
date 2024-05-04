@@ -3,11 +3,24 @@ import list
 
 # a parser for the rough structure of a png
 
+fun crc_shift(poly: int, n: int) =
+  (n & 1) if 1 then (n >> 1 ^ poly) else (n >> 1)
+
+fun *crc32_impl(acc: int): int = {
+  | next: u8 if !eof
+    let s = crc_shift(0xedb88320, ..)
+    return: crc32_impl(s(s(s(s(s(s(s(s(next ^ acc)))))))))
+  | let return = acc ^ 0xffffffff
+}
+
+fun crc32(arr: [u8]) = arr *> crc32_impl(0xffffffff)
+
 def *chunk(ty: *[u8], data_parser: *'t) = {
   length: u32b
   type: [4] |> ty?
   value: [length] |> data_parser
   crc: u32b
+  let crc_valid = crc32(span type..value) == crc
 }
 
 def *head = {
@@ -56,7 +69,8 @@ def *test = {
         "length": 10,
         "type": [73, 68, 65, 84],
         "value": [120, 1, 99, 96, 0, 0, 0, 2, 0, 1],
-        "crc": 1937047832
+        "crc": 1937047832,
+        "crc_valid": true
       }
     },
     "next": {}
@@ -65,7 +79,8 @@ def *test = {
     "length": 0,
     "type": [73, 69, 78, 68],
     "value": "unit",
-    "crc": 2923585666
+    "crc": 2923585666,
+    "crc_valid": true
   },
   "header": {
     "length": 13,
@@ -79,6 +94,7 @@ def *test = {
       "interlace_method": 0,
       "width": 1
     },
-    "crc": 930019620
+    "crc": 930019620,
+    "crc_valid": true
   }
 }
