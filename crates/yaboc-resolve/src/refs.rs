@@ -59,14 +59,20 @@ pub fn resolve_var_ref(
     loc: DefId,
     ident: FieldName,
     use_core: bool,
+    outside_block: bool,
 ) -> SResult<Resolved> {
     let mut current_id = loc;
     loop {
         current_id = match &db.hir_node(current_id)? {
-            HirNode::Block(b) => match b.super_context {
-                Some(id) => id.id(),
-                None => db.hir_parent_parserdef(current_id)?.id(),
-            },
+            HirNode::Block(b) => {
+                if !outside_block {
+                    return Ok(Resolved::Unresolved);
+                }
+                match b.super_context {
+                    Some(id) => id.id(),
+                    None => db.hir_parent_parserdef(current_id)?.id(),
+                }
+            }
             HirNode::Module(m) => {
                 let ident = match ident {
                     FieldName::Ident(n) => n,
@@ -130,7 +136,7 @@ fn expr_parser_refs<'a>(
 ) -> impl Iterator<Item = hir::ParserDefId> + 'a {
     expr_idents(expr)
         .into_iter()
-        .flat_map(move |ident| resolve_var_ref(db, context, ident, false).ok())
+        .flat_map(move |ident| resolve_var_ref(db, context, ident, false, true).ok())
         .flat_map(|resolved| match resolved {
             Resolved::Value(id, VarType::ParserDef | VarType::Static) => Some(hir::ParserDefId(id)),
             _ => None,

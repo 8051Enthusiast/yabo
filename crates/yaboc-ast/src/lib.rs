@@ -190,6 +190,7 @@ pub enum ParserAtom {
     Single,
     Nil,
     ArrayFill,
+    Span(FieldName, FieldName),
     Regex(Regex),
     Block(Block),
 }

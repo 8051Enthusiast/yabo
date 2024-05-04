@@ -1097,6 +1097,9 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ResolvedAtom::Nil => make_layout(MonoLayout::Nil),
                 ResolvedAtom::Array => make_layout(MonoLayout::ArrayParser(None)),
                 ResolvedAtom::ArrayFill => make_layout(MonoLayout::ArrayFillParser(None)),
+                ResolvedAtom::Span(..) => {
+                    ctx.active_ambience().expect("Span in non-parser context").0
+                }
                 ResolvedAtom::Regex(r) => make_layout(MonoLayout::Regex(r, true)),
                 ResolvedAtom::ParserDef(pd) => {
                     make_layout(MonoLayout::NominalParser(pd, Vec::new(), true))

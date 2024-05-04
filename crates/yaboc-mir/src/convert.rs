@@ -476,6 +476,13 @@ impl<'a> ConvertCtx<'a> {
         Ok(())
     }
 
+    fn copy_arg(&mut self, b: hir::Block) -> SResult<()> {
+        let arg_place = self.w.f.fun.arg().unwrap();
+        let current_place = self.w.front_place_at_def(b.id.0).unwrap();
+        self.w.copy(arg_place, current_place);
+        Ok(())
+    }
+
     fn block_len(&mut self, b: hir::Block) -> SResult<()> {
         // if the last call is a tail call, we don't need this
         let bb = self.w.f.current_bb;
@@ -549,11 +556,11 @@ impl<'a> ConvertCtx<'a> {
             }
             // choice indirections are pushed by individual contexts and not pulled
             hir::HirNode::ChoiceIndirection(_) => return Ok(()),
-            // arg and return place already have this function
-            hir::HirNode::Block(b) if sub_value.kind == SubValueKind::Back => {
-                return self.block_len(b)
-            }
-            hir::HirNode::Block(_) => return Ok(()),
+            hir::HirNode::Block(b) => match sub_value.kind {
+                SubValueKind::Front => return self.copy_arg(b),
+                SubValueKind::Back => return self.block_len(b),
+                SubValueKind::Bt | SubValueKind::Val => {}
+            },
             hir::HirNode::Module(_)
             | hir::HirNode::Context(_)
             | hir::HirNode::TExpr(_)

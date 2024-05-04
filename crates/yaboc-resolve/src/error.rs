@@ -86,6 +86,30 @@ fn make_report(db: &(impl Resolves + ?Sized), err: &ResolveError) -> Option<Repo
             report.add_label(Label::new(span).with_message("static defined here"));
             Some(report)
         }
+        ResolveError::UnorderedSpan(expr, span) => {
+            let span = hir_span(db, *expr, *span).expect("could not find span for unresolved expr");
+            let file = span.file;
+            let report = Report::new(
+                DiagnosticKind::Error,
+                file,
+                "end of span is not after start of span",
+            )
+            .with_code(305)
+            .with_label(Label::new(span).with_message("span here"));
+            Some(report)
+        }
+        ResolveError::NonParserRefInSpan(expr, span) => {
+            let span = hir_span(db, *expr, *span).expect("could not find span for unresolved expr");
+            let file = span.file;
+            let report = Report::new(
+                DiagnosticKind::Error,
+                file,
+                "span may only reference identifiers of parse statements in the current or ancestor scope",
+            )
+            .with_code(306)
+            .with_label(Label::new(span).with_message("span here"));
+            Some(report)
+        }
         ResolveError::Silenced(_) => None,
     }
 }

@@ -204,6 +204,9 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
             MirInstr::GetAddr(target, addr, cont) => {
                 dbwrite!(f, db, "{} = get_addr {}, {}", target, addr, cont)
             }
+            MirInstr::Span(target, start, end, cont) => {
+                dbwrite!(f, db, "{} = span {}..{}, {}", target, start, end, cont)
+            }
             MirInstr::ApplyArgs(target, origin, args, arg_start, cont) => {
                 dbwrite!(f, db, "{} = apply_args {}, (", target, origin)?;
                 for (i, (arg, used)) in args.iter().enumerate() {

@@ -24,13 +24,17 @@ fn public_expr_type_impl(
     let bump = Bump::new();
     let mut ctx = PublicResolver::new_typing_context_and_loc(db, loc.0, &bump)?;
     let parent = loc.0.parent(db).unwrap();
-    let (ambient, ret) = match db.hir_node(parent)? {
-        hir::HirNode::Let(l) => (None, ctx.let_statement_types(&l)?),
-        hir::HirNode::Parse(p) => (ctx.parse_statement_types(&p)?, None),
+    let node = db.hir_node(parent)?;
+    let (ambient, ret) = match &node {
+        hir::HirNode::Let(l) => (
+            ctx.parse_statement_types(parent)?,
+            ctx.let_statement_types(l)?,
+        ),
+        hir::HirNode::Parse(_) => (ctx.parse_statement_types(parent)?, None),
         hir::HirNode::ParserDef(pd) => {
             let ret = db.parser_returns(pd.id)?.deref;
             let ret = ctx.infctx.convert_type_into_inftype(ret);
-            (ctx.parserdef_types(&pd)?, Some(ret))
+            (ctx.parserdef_types(pd)?, Some(ret))
         }
         _ => panic!("expected parse statement, let statement or parser def"),
     };
@@ -44,7 +48,16 @@ fn public_expr_type_impl(
     ctx.set_ambient_type(ambient);
     let val_expr = loc.lookup(db)?;
     let expr_ret = ctx.type_expr(&val_expr)?;
-    ctx.infctx.constrain(expr_ret, ret).map_err(spanned)?;
+    let inferred_type = if let Some(am) = ambient {
+        if !node.is_kind(hir::HirNodeKind::Let.into()) {
+            ctx.infctx.parser_apply(expr_ret, am).map_err(spanned)?
+        } else {
+            expr_ret
+        }
+    } else {
+        expr_ret
+    };
+    ctx.infctx.constrain(inferred_type, ret).map_err(spanned)?;
     let ret = ctx.inftype_to_concrete_type(ret).map_err(spanned)?;
     let expr = ctx.inf_expressions[&loc].clone();
     Ok((Arc::new(ctx.expr_to_concrete_type(&expr, loc)?), ret))
@@ -79,17 +92,17 @@ fn public_type_impl(db: &dyn TyHirs, loc: DefId) -> Result<TypeId, TypeError> {
 
 /// finds the public ambient type (ie the type that gets applied as the from argument
 /// to the parser) for the parser at loc, which is inside a block
-pub fn ambient_type(db: &dyn TyHirs, loc: hir::ParseId) -> SResult<TypeId> {
+pub fn ambient_type(db: &dyn TyHirs, loc: DefId) -> SResult<Option<TypeId>> {
     ambient_type_impl(db, loc).silence()
 }
 
-fn ambient_type_impl(db: &dyn TyHirs, loc: hir::ParseId) -> Result<TypeId, TypeError> {
-    let block = loc
-        .lookup(db)?
-        .parent_context
-        .lookup(db)?
-        .block_id
-        .lookup(db)?;
+fn ambient_type_impl(db: &dyn TyHirs, loc: DefId) -> Result<Option<TypeId>, TypeError> {
+    let parent_context = match db.hir_node(loc)? {
+        hir::HirNode::Parse(p) => p.parent_context,
+        hir::HirNode::Let(l) => l.context,
+        _ => panic!("expected parse or let"),
+    };
+    let block = parent_context.lookup(db)?.block_id.lookup(db)?;
     let expr = Resolved::expr_with_data::<(SpanIndex, PubTypeId)>(db, block.enclosing_expr)?;
     let block_ty = expr
         .take_ref()
@@ -99,26 +112,21 @@ fn ambient_type_impl(db: &dyn TyHirs, loc: hir::ParseId) -> Result<TypeId, TypeE
             _ => None,
         })
         .ok_or_else(SilencedError::new)?;
-    let block_type = match db.lookup_intern_type(block_ty) {
-        Type::ParserArg { result, .. } => result,
-        _ => panic!("expected parser arg"),
+    let arg = match db.lookup_intern_type(block_ty) {
+        Type::ParserArg { arg, .. } => arg,
+        _ => return Ok(None),
     };
-    match db.lookup_intern_type(block_type) {
-        Type::Nominal(NominalTypeHead {
-            kind: NominalKind::Block,
-            parse_arg: Some(parse_ty),
-            ..
-        }) => Ok(parse_ty),
-        _ => panic!("expected block"),
-    }
+    Ok(Some(arg))
 }
 
 impl<'a, 'intern> TypingContext<'a, 'intern, PublicResolver<'a, 'intern>> {
     pub fn parse_statement_types(
         &mut self,
-        parse: &ParseStatement,
+        id: DefId,
     ) -> Result<Option<InfTypeId<'intern>>, SpannedTypeError> {
-        let from = self.db.ambient_type(parse.id)?;
+        let Some(from) = self.db.ambient_type(id)? else {
+            return Ok(None);
+        };
         let infty = self.infctx.convert_type_into_inftype(from);
         Ok(Some(infty))
     }

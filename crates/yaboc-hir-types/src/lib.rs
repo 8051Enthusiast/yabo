@@ -71,7 +71,7 @@ pub trait TyHirs: Hirs + yaboc_types::TypeInterner + resolve::Resolves {
     fn parser_type_at(&self, loc: DefId) -> SResult<TypeId>;
     fn parser_expr_at(&self, loc: hir::ExprId) -> SResult<Arc<ExprTypeData>>;
     fn public_expr_type(&self, loc: hir::ExprId) -> SResult<(Arc<ExprTypeData>, TypeId)>;
-    fn ambient_type(&self, id: hir::ParseId) -> SResult<TypeId>;
+    fn ambient_type(&self, id: DefId) -> SResult<Option<TypeId>>;
     fn parser_full_types(
         &self,
         id: hir::ParserDefId,
@@ -448,6 +448,10 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         ResolvedAtom::Nil => self.infctx.nil(),
                         ResolvedAtom::Array => self.infctx.array_parser(),
                         ResolvedAtom::ArrayFill => self.infctx.array_fill_parser(),
+                        // the ambient type can only be none if we had another error before it,
+                        // since we are necessarily referencing local parse statements for it
+                        // to resolve correctly
+                        ResolvedAtom::Span(..) => self.ambient_type().ok_or(SilencedError::new())?,
                         ResolvedAtom::Regex(..) => self.infctx.regex(),
                         ResolvedAtom::Block(b, kind) => self.infer_block(*b, *kind)?,
                         ResolvedAtom::ParserDef(pd) | ResolvedAtom::Global(pd) => {
@@ -597,9 +601,12 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         self.set_ambient_type(ambient);
 
         let expr = parserdef.to.lookup(self.db)?;
-        let ret = self.type_expr(&expr)?;
-        let previous_ret = self.infty_at(pd.0);
+        let mut ret = self.type_expr(&expr)?;
         let return_spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(pd.0));
+        if let Some(am) = ambient {
+            ret = self.infctx.parser_apply(ret, am).map_err(return_spanned)?
+        }
+        let previous_ret = self.infty_at(pd.0);
         self.infctx
             .constrain(ret, previous_ret)
             .map_err(return_spanned)?;
@@ -609,15 +616,9 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         &mut self,
         expr: &hir::ValExpression,
     ) -> Result<InfTypeId<'intern>, SpannedTypeError> {
-        let spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(expr.id.0));
         let resolved_expr = self.db.resolve_expr(expr.id)?;
         let inf_expression = self.val_expression_type(&resolved_expr, expr.id)?;
-        let root = inf_expression[inf_expression.root()];
-        let ret = if let Some(ambient) = self.ambient_type() {
-            self.infctx.parser_apply(root, ambient).map_err(spanned)?
-        } else {
-            root
-        };
+        let ret = inf_expression[inf_expression.root()];
         for (part, (span, ty)) in resolved_expr
             .take_ref()
             .zip(inf_expression.as_ref())
@@ -683,15 +684,18 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
     }
     fn type_parse(&mut self, parse: &ParseStatement) -> Result<(), SpannedTypeError> {
         let expr = parse.expr.lookup(self.db)?;
+        let with_span = |e| SpannedTypeError::new(e, IndirectSpan::default_span(parse.id.0));
         let ty = self.type_expr(&expr)?;
+        let ret = self
+            .infctx
+            .parser_apply(ty, self.ambient_type().unwrap())
+            .map_err(with_span)?;
         let self_ty = self.infty_at(parse.id.0);
-        self.infctx
-            .constrain(ty, self_ty)
-            .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(parse.id.0)))
+        self.infctx.constrain(ret, self_ty).map_err(with_span)
     }
     fn type_let(&mut self, let_statement: &hir::LetStatement) -> Result<(), SpannedTypeError> {
         let expr = let_statement.expr.lookup(self.db)?;
-        let ty = self.with_ambient_type(None, |ctx| ctx.type_expr(&expr))?;
+        let ty = self.type_expr(&expr)?;
         let self_ty = self.infty_at(let_statement.id.0);
         self.infctx
             .constrain(ty, self_ty)

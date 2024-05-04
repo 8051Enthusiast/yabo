@@ -28,6 +28,7 @@ impl<T: std::fmt::Debug> std::fmt::Display for Term<T> {
             Term::Size(false, inner) => write!(f, "size [{}]", inner),
             Term::BlockEnd(_, len_loc) => write!(f, "block [{}]", len_loc),
             Term::Parsed => write!(f, "parsed"),
+            Term::Span => write!(f, "span"),
             Term::Backtracking(inner) => write!(f, "backtrack [{}]", inner),
         }
     }

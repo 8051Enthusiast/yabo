@@ -254,6 +254,10 @@
             "named": true
           },
           {
+            "type": "parser_span",
+            "named": true
+          },
+          {
             "type": "regex_literal",
             "named": true
           },
@@ -435,6 +439,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "parser_span",
             "named": true
           },
           {
@@ -669,6 +677,10 @@
             "named": true
           },
           {
+            "type": "parser_span",
+            "named": true
+          },
+          {
             "type": "regex_literal",
             "named": true
           },
@@ -773,6 +785,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "parser_span",
             "named": true
           },
           {
@@ -928,6 +944,10 @@
             "named": true
           },
           {
+            "type": "parser_span",
+            "named": true
+          },
+          {
             "type": "regex_literal",
             "named": true
           },
@@ -1007,6 +1027,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "parser_span",
             "named": true
           },
           {
@@ -1121,6 +1145,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "parser_span",
             "named": true
           },
           {
@@ -1288,6 +1316,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "parser_span",
             "named": true
           },
           {
@@ -1569,6 +1601,10 @@
             "named": true
           },
           {
+            "type": "parser_span",
+            "named": true
+          },
+          {
             "type": "regex_literal",
             "named": true
           },
@@ -1613,6 +1649,40 @@
           "named": true
         }
       ]
+    }
+  },
+  {
+    "type": "parser_span",
+    "named": true,
+    "fields": {
+      "end": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "retvrn",
+            "named": true
+          }
+        ]
+      },
+      "start": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "retvrn",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {
@@ -2179,6 +2249,10 @@
             "named": true
           },
           {
+            "type": "parser_span",
+            "named": true
+          },
+          {
             "type": "regex_literal",
             "named": true
           },
@@ -2326,6 +2400,10 @@
           },
           {
             "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "parser_span",
             "named": true
           },
           {
@@ -2626,6 +2704,10 @@
   },
   {
     "type": "sizeof",
+    "named": false
+  },
+  {
+    "type": "span",
     "named": false
   },
   {

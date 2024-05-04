@@ -197,6 +197,7 @@ module.exports = grammar({
       $.parser_block,
       $.block,
       $.single,
+      $.parser_span,
       $.array_fill,
       $.nil,
       seq('(', $._expression, ')'),
@@ -327,6 +328,12 @@ module.exports = grammar({
       field('start', $._int_literal),
       '..',
       field('end', $._int_literal),
+    ),
+    parser_span: $ => seq(
+      'span',
+      field('start', $._field_name),
+      '..',
+      field('end', $._field_name),
     ),
     _constraint_atom: $ => choice(
       $._atom,

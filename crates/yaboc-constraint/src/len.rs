@@ -195,6 +195,7 @@ impl<'a> SizeTermBuilder<'a> {
                         ResolvedAtom::Single => self.push_term(Term::Const(1), src),
                         ResolvedAtom::Nil => self.push_term(Term::Const(0), src),
                         ResolvedAtom::Array => self.push_term(Term::Arr, src),
+                        ResolvedAtom::Span(..) => self.push_term(Term::Span, src),
                         ResolvedAtom::Block(bid, _) => {
                             self.arg_depth += 1;
                             let ret = self.create_block(bid);
