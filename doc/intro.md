@@ -241,7 +241,7 @@ def *small_int = {
   | let return = lo if 0x00..0x7f
 
   | hi: u8
-    let return = lo | (hi << 8)
+    let return = (lo & 0x7f) | (hi << 7)
 }
 ```
 There are two new things here:
@@ -265,17 +265,18 @@ Let's see how this works with some examples:
    `lo` is `0xaa`, which does not match the pattern `0x00..0x7f`, so the expression fails.
    The first whole branch fails, and the next branch is tried.
    In the second branch, the `hi` field is parsed, evluating to `0x55`.
-   The `return` expression is evaluated, which returns `0x55aa`.
+   The `return` expression is evaluated, which returns `0x2aaa`.
    The parser after the `small_int` would continue parsing at `10 ..`.
 
 The `if` expression can also be applied directly to parsers, in which case a new parser is created that fails if the original parser does not return a value that matches the pattern:
 ```
 def *small_int = {
   | return: u8 if 0x00..0x7f
-  | return: u16l
+  | lo: u8
+    hi: u8
+    let return = (lo & 0x7f) | (hi << 7)
 }
 ```
-As an exercise, it might be useful to think about why this is equivalent to the previous example for a bit.
 
 On parser specifically, we can also use the `!eof` condition:
 ```
@@ -285,24 +286,26 @@ def *default_value_if_eof = {
 }
 ```
 Normally, `eof` is an error condition, but with `if !eof` this can be used to backtrack.
+Here, the `return` field is only parsed if there is still data left, otherwise it returns `0`.
 
-If a parser as the whole can fail, the callar is required to mark it with the `?` operator:
+If a parser as the whole can fail, the caller is required to mark it with the `?` operator:
 ```
 def *tag = u8 if 0x00..0x7f
 def *big_structure = {
   | tag?
-    return: some_complex_structure
-  | return: some_other_complex_structure
+    return: some_complex_parser
+  | return: some_other_complex_parser
 }
 ```
 As we can see from the example before that, this is not required if the parser is an `if` expression or it is a block, as the fallibility can already be seen by looking at the current parser definition.
-The reasoning behind this is that we want to avoid checking that `some_complex_structure` fails when determining the branch, as that would require parsing the whole structure.
+The reasoning behind this is that we want to avoid checking that `some_complex_parser` fails when determining the branch, as that would require parsing the whole structure.
 
 A fallible parser can be made non-fallible by using the `!` operator:
 ```
 def *foo = {
   | u8 if 0..0x7f
-    # we already know this is the right branch, so if `tag` fails it is an error
+    # assume we already know this is the right branch
+    # so we want `tag` to fail if it does not match
     return: tag!
   | return: u16l
 }
