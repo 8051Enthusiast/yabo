@@ -73,6 +73,7 @@ impl<'a, DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeId<'a> {
                 write!(f, ": ")?;
                 dbwrite!(f, db, "{}, {}>", inner_type, cont)
             }
+            InferenceType::SizeOf => write!(f, "<SizeOf>"),
         }
     }
 }
@@ -191,6 +192,7 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeHead {
                 }
             },
             InfTypeHead::InferIfResult(_) => write!(f, "if result"),
+            InfTypeHead::SizeOf => write!(f, "array or parser"),
             InfTypeHead::Var(_) => todo!(),
         }
     }

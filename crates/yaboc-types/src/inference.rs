@@ -7,6 +7,8 @@ use yaboc_base::low_effort_interner::{self, Uniq};
 
 use super::*;
 
+// subtype inference based on SimpleSub
+
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct InfTypeId<'intern>(pub &'intern Uniq<InferenceType<'intern>>);
 
@@ -37,6 +39,7 @@ pub enum InferenceType<'intern> {
         InfTypeId<'intern>,
         InfTypeId<'intern>,
     ),
+    SizeOf,
 }
 
 impl<'intern> InferenceType<'intern> {
@@ -102,6 +105,7 @@ pub enum InfTypeHead {
     Unknown,
     InferField(FieldName),
     InferIfResult(bool),
+    SizeOf,
     Var(VarId),
 }
 
@@ -121,6 +125,7 @@ impl<'intern> From<InfTypeId<'intern>> for InfTypeHead {
             InferenceType::Unknown => InfTypeHead::Unknown,
             InferenceType::InferField(name, _) => InfTypeHead::InferField(*name),
             InferenceType::InferIfResult(a, ..) => InfTypeHead::InferIfResult(a.is_some()),
+            InferenceType::SizeOf => InfTypeHead::SizeOf,
             InferenceType::Var(var) => InfTypeHead::Var(*var),
         }
     }
@@ -317,6 +322,7 @@ impl<'intern> InfTypeId<'intern> {
             | (InferenceType::Var(_), InferenceType::Var(_))
             | (InferenceType::Unknown, InferenceType::Unknown)
             | (InferenceType::TypeVarRef(_, _), InferenceType::TypeVarRef(_, _))
+            | (InferenceType::SizeOf, InferenceType::SizeOf)
                 if self == other => {}
             _ => return Err(None),
         };
@@ -385,7 +391,8 @@ impl<'intern> TryFrom<&InferenceType<'intern>> for TypeHead {
             InferenceType::Unknown => TypeHead::Unknown,
             InferenceType::Var(_)
             | InferenceType::InferField(..)
-            | InferenceType::InferIfResult(..) => return Err(()),
+            | InferenceType::InferIfResult(..)
+            | InferenceType::SizeOf => return Err(()),
         })
     }
 }
@@ -716,6 +723,8 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                 self.constrain(orig, *infer_res)
             }
 
+            (ParserArg { .. } | Loop(ArrayKind::Each, ..), SizeOf) => Ok(()),
+
             _ => Err(TypeError::HeadMismatch(lower.into(), upper.into())),
         }
     }
@@ -800,6 +809,12 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     pub fn type_var(&mut self, id: DefId, index: u32) -> InfTypeId<'intern> {
         let inftype = InferenceType::TypeVarRef(id, index);
         self.intern_infty(inftype)
+    }
+    pub fn check_size_of(&mut self, ty: InfTypeId<'intern>) -> Result<InfTypeId<'intern>, TypeError> {
+        let t = self.intern_infty(InferenceType::SizeOf);
+        self.constrain(ty, t)?;
+        let int = self.int();
+        Ok(int)
     }
     pub fn parser(
         &mut self,
