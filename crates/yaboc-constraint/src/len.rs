@@ -13,10 +13,12 @@ use yaboc_dependents::{
 };
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
 use yaboc_hir as hir;
+use yaboc_hir_types::FullTypeId;
 use yaboc_len::{depvec::SmallBitVec, BlockInfo, BlockInfoIdx, BlockKind, SizeExpr, Term};
 use yaboc_req::NeededBy;
 use yaboc_resolve::expr::{Resolved, ResolvedAtom};
 use yaboc_resolve::expr::{ValBinOp, ValUnOp, ValVarOp};
+use yaboc_types::Type;
 
 pub struct SizeTermBuilder<'a> {
     db: &'a dyn Constraints,
@@ -162,14 +164,20 @@ impl<'a> SizeTermBuilder<'a> {
     }
 
     fn create_expr(&mut self, expr_id: hir::ExprId) -> SResult<usize> {
-        let expr = Resolved::expr_with_data::<(ExprIdx<Resolved>, (ExprDepData, BacktrackStatus))>(
-            self.db, expr_id,
-        )?;
-        let mapped = expr
-            .take_ref()
-            .map(|(idx, (dep, bt))| (Origin::Expr(expr_id, idx), dep.reqs, bt.can_backtrack()));
+        let expr = Resolved::expr_with_data::<(
+            (ExprIdx<Resolved>, FullTypeId),
+            (ExprDepData, BacktrackStatus),
+        )>(self.db, expr_id)?;
+        let mapped = expr.take_ref().map(|((idx, ty), (dep, bt))| {
+            (
+                Origin::Expr(expr_id, idx),
+                *ty,
+                dep.reqs,
+                bt.can_backtrack(),
+            )
+        });
         mapped
-            .try_fold(|(head, (src, dep, bt))| {
+            .try_fold(|(head, (src, ty, dep, bt))| {
                 let needs_bt = (dep * !!NeededBy::Val).contains(NeededBy::Backtrack);
                 let ret = match head {
                     ExprHead::Niladic(n) => match n {
@@ -203,7 +211,7 @@ impl<'a> SizeTermBuilder<'a> {
                             ret?
                         }
                     },
-                    ExprHead::Monadic(m, (inner, inner_bt)) => match m {
+                    ExprHead::Monadic(m, (inner, inner_bt, inner_ty)) => match m {
                         ValUnOp::Neg => self.push_term(Term::Neg(inner), src),
                         ValUnOp::Wiggle(_, WiggleKind::If) if needs_bt => {
                             self.push_term(Term::Backtracking(inner), src)
@@ -212,7 +220,23 @@ impl<'a> SizeTermBuilder<'a> {
                             self.push_term(Term::Backtracking(inner), src)
                         }
                         ValUnOp::Wiggle(_, _) | ValUnOp::BtMark(_) | ValUnOp::EvalFun => inner,
-                        ValUnOp::Size => self.push_term(Term::Size(true, inner), src),
+                        ValUnOp::Size => {
+                            let ldt = self
+                                .db
+                                .lookup_intern_type(self.db.least_deref_type(inner_ty)?);
+                            match ldt {
+                                Type::ParserArg { .. } => {
+                                    self.push_term(Term::Size(true, inner), src)
+                                }
+                                Type::Loop(..) => {
+                                    // for arrays we handle .sizeof as an opaque op
+                                    self.push_term(Term::OpaqueUn(inner), src)
+                                }
+                                otherwise => {
+                                    panic!("unexpected type for .sizeof: {:?}", &otherwise)
+                                }
+                            }
+                        }
                         ValUnOp::Dot(_, FieldAccessMode::Backtrack) if needs_bt => {
                             let res = self.push_term(Term::OpaqueUn(inner), src);
                             self.push_term(Term::Backtracking(res), src)
@@ -221,7 +245,7 @@ impl<'a> SizeTermBuilder<'a> {
                         ValUnOp::Not => self.push_term(Term::OpaqueUn(inner), src),
                         ValUnOp::GetAddr => self.push_term(Term::OpaqueUn(inner), src),
                     },
-                    ExprHead::Dyadic(d, [(lhs, _), (rhs, rhs_bt)]) => match d {
+                    ExprHead::Dyadic(d, [(lhs, _, _), (rhs, rhs_bt, _)]) => match d {
                         ValBinOp::Mul => self.push_term(Term::Mul([lhs, rhs]), src),
                         ValBinOp::Plus => self.push_term(Term::Add([lhs, rhs]), src),
                         ValBinOp::Minus => {
@@ -250,18 +274,18 @@ impl<'a> SizeTermBuilder<'a> {
                         | ValBinOp::ParserApply => self.push_term(Term::OpaqueBin([lhs, rhs]), src),
                     },
                     ExprHead::Variadic(ValVarOp::PartialApply(_), args) => {
-                        let (f, _) = args[0];
+                        let (f, ..) = args[0];
                         let mut ret = f;
-                        for (arg, _) in args[1..].iter() {
+                        for (arg, ..) in args[1..].iter() {
                             ret = self.push_term(Term::Apply([ret, *arg]), src);
                         }
                         *self.call_arities.last_mut().unwrap() = args.len() - 1;
                         ret
                     }
                 };
-                Ok((ret, bt))
+                Ok((ret, bt, ty))
             })
-            .map(|(x, _)| x)
+            .map(|(x, ..)| x)
     }
 
     fn create_pd(&mut self, pd: hir::ParserDefId) -> SResult<usize> {

@@ -413,10 +413,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                             self.infctx.constrain(inner, int)?;
                             int
                         }
-                        ValUnOp::Size => {
-                            self.infctx.check_parser(inner)?;
-                            self.infctx.int()
-                        }
+                        ValUnOp::Size => self.infctx.check_size_of(inner)?,
                         ValUnOp::Wiggle(c, _) => {
                             let (inner, cont) = self.infctx.if_checked(inner)?;
                             let expr = self.db.lookup_intern_hir_constraint(*c);

@@ -242,9 +242,12 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
         let res = match (lhs.value(), rhs.value()) {
             (Unknown, _) | (_, Unknown) => Unknown,
             (x, _) | (_, x) if x == &P::SAT_TYPE => P::SAT_TYPE,
-            (InferField(..) | InferIfResult(..), InferField(..) | InferIfResult(..)) => Any,
-            (InferField(..) | InferIfResult(..), other)
-            | (other, InferField(..) | InferIfResult(..)) => other.clone(),
+            (
+                InferField(..) | InferIfResult(..) | SizeOf,
+                InferField(..) | InferIfResult(..) | SizeOf,
+            ) => Any,
+            (InferField(..) | InferIfResult(..) | SizeOf, other)
+            | (other, InferField(..) | InferIfResult(..) | SizeOf) => other.clone(),
             (id, other) | (other, id) if id == &P::ID_TYPE => other.clone(),
             (Primitive(p), Primitive(q)) if p == q => Primitive(*p),
             (TypeVarRef(def, idx), TypeVarRef(def2, idx2)) if def == def2 && idx == idx2 => {
@@ -446,8 +449,10 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                     .collect::<Result<_, _>>()?;
                 Type::FunctionArg(self.convert_to_type_internal(*result)?, Arc::new(args))
             }
-            InferenceType::InferField(_, _) | InferenceType::InferIfResult(..) => {
-                panic!("Internal Compiler Error: Infer type in normalized inference type")
+            InferenceType::InferField(_, _)
+            | InferenceType::InferIfResult(..)
+            | InferenceType::SizeOf => {
+                panic!("Internal Compiler Error: virtual type in normalized inference type")
             }
         };
         self.convert

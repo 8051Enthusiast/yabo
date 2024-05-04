@@ -1,0 +1,23 @@
+====[ source code ]====
+export
+fun *test = {
+  a: [2][3]
+  let b = a.sizeof
+  let c = [2][3].sizeof
+  let d = span a..a.sizeof
+}
+
+====[ binary 1 ]====
+00 01 02 03 04 05
+
+====[ output 1 ]====
+{
+  "a": [
+    [0, 1],
+    [2, 3],
+    [4, 5]
+  ],
+  "b": 3,
+  "c": 6,
+  "d": 6
+}

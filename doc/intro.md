@@ -470,6 +470,15 @@ def *padded_to_1024 = {
 }
 ```
 
+Sizeof can also be applied to arrays and will return the length of the array:
+```
+def *padded_to_1024 = {
+  len: u8
+  field: [len]
+  u8[1024 - field.sizeof - 1]
+}
+```
+
 ### `parser[..]`
 Sometimes we do not have a specific length we want the array to be, but instead parse until the end of the current input.
 In this case, we can use `parser[..]`, and the shortened version of `~[..]` is `[..]`:
@@ -564,5 +573,14 @@ def *foo = {
   | bar: u8
   baz: u8
   let spanned = span bar..baz
+}
+```
+
+`span` can also be useful if you want to pad a structure to a certain alignment:
+```
+def *padded_to_1024_align = {
+  len: u16l
+  field: [len]
+  [1023 - (span len..field.sizeof - 1) % 1024]
 }
 ```

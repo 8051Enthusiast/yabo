@@ -349,7 +349,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             }
             FieldName::Ident(ident) => ident,
         };
-        let ty = self.mir_fun.f.place(place).ty;
+        let ty = self.mir_fun.place_type(place);
         let ldt_ty = self.cg.compiler_database.db.least_deref_type(ty).unwrap();
         let block = match self.cg.compiler_database.db.lookup_intern_type(ldt_ty) {
             Type::Nominal(nom) => NominalId::from_nominal_head(&nom).unwrap_block(),
@@ -364,10 +364,26 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     }
 
     fn len_call(&mut self, ret: PlaceRef, fun: PlaceRef, ctrl: ControlFlow) -> IResult<()> {
-        let fun_val = self.place_val(fun)?;
-        let ret_val = self.return_val(ret)?.ptr;
-        let ret = self.cg.call_len_fun(ret_val, fun_val)?;
-        self.controlflow_case(ret, ctrl)
+        let len_val = self.place_val(fun)?;
+        let ty = self.mir_fun.place_type(fun);
+        match self.cg.compiler_database.db.lookup_intern_type(ty) {
+            Type::ParserArg { .. } => {
+                let ret_val = self.return_val(ret)?.ptr;
+                let ret = self.cg.call_len_fun(ret_val, len_val)?;
+                self.controlflow_case(ret, ctrl)
+            }
+            Type::Loop(..) => {
+                let ret_ptr = self.place_ptr(ret)?;
+                let ret_int = self.cg.call_array_len_fun(len_val)?;
+                self.cg.builder.build_store(ret_ptr, ret_int)?;
+                // we don't have any errors to handle here
+                self.cg
+                    .builder
+                    .build_unconditional_branch(self.bb(ctrl.next))?;
+                Ok(())
+            }
+            _ => panic!("len called on non-sized value"),
+        }
     }
 
     fn parse_call(
