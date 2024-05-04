@@ -124,7 +124,7 @@ pub fn add_term_val_refs<DB: Dependents + ?Sized>(
     db: &DB,
     parent_block: Option<hir::BlockId>,
     term: &ExprHead<Resolved, ExprIdx<Resolved>>,
-    mut add_val: impl FnMut(DefId),
+    mut add_subval: impl FnMut(SubValue),
 ) {
     match term {
         ExprHead::Niladic(ResolvedAtom::Block(b, _)) => db
@@ -138,8 +138,13 @@ pub fn add_term_val_refs<DB: Dependents + ?Sized>(
                     true
                 }
             })
-            .for_each(add_val),
-        ExprHead::Niladic(ResolvedAtom::Val(v)) => add_val(*v),
+            .map(SubValue::new_val)
+            .for_each(add_subval),
+        ExprHead::Niladic(ResolvedAtom::Val(v)) => add_subval(SubValue::new_val(*v)),
+        ExprHead::Niladic(ResolvedAtom::Span(start, end)) => {
+            add_subval(SubValue::new_front(*start));
+            add_subval(SubValue::new_back(*end));
+        }
         _ => {}
     }
 }
@@ -160,7 +165,7 @@ fn val_refs(
             let rexpr = Resolved::fetch_expr(db, expr.id)?;
             for term in rexpr.take_ref().iter_parts() {
                 add_term_val_refs(db, Some(parent_block), &term, |v| {
-                    ret.insert((SubValue::new_val(v), DepType::Data));
+                    ret.insert((v, DepType::Data));
                 });
             }
             Ok(ret)

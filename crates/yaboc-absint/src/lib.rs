@@ -147,6 +147,8 @@ pub struct AbsIntCtx<'a, Dom: AbstractDomain<'a>> {
 
     type_substitutions: Arc<Vec<TypeId>>,
 
+    current_ambience: Option<(Dom, TypeId)>,
+
     current_pd: Dom,
     depth: usize,
     call_needs_fixpoint: FxHashSet<usize>,
@@ -170,6 +172,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             current_pd: bottom,
             cache_epoch: Default::default(),
             type_substitutions: Default::default(),
+            current_ambience: Default::default(),
             depth: Default::default(),
             call_needs_fixpoint: Default::default(),
             active_calls: Default::default(),
@@ -244,33 +247,25 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
     fn eval_expr_with_ambience<'b, 'c>(
         &'b mut self,
         expr: impl Expression<Resolved, Part = (ExprHead<Resolved, ExprIdx<Resolved>>, &'c TypeId)>,
-        from: (Dom, TypeId),
         result_type: TypeId,
     ) -> Result<(Dom, AbstractData<Dom>), Dom::Err> {
         let res = self.eval_expr(expr)?;
         let root = res.root_data().clone();
+        let Some(from) = self.current_ambience.clone() else {
+            panic!("called eval_expr_with_ambience without ambience")
+        };
         let applied = ExprHead::new_dyadic(expr::ValBinOp::ParserApply, [&from, &root]);
         let ret_val = Dom::eval_expr(self, applied, result_type)?;
         let casted_ret = ret_val.typecast(self, result_type)?.0;
         Ok((casted_ret, res))
     }
 
-    fn eval_pd_expr(
-        &mut self,
-        val: Dom,
-        parserdef: &hir::ParserDef,
-        from_ty: Option<TypeId>,
-    ) -> Result<PdEvaluated<Dom>, Dom::Err> {
+    fn eval_pd_expr(&mut self, parserdef: &hir::ParserDef) -> Result<PdEvaluated<Dom>, Dom::Err> {
         let expr = Resolved::expr_with_data::<FullTypeId>(self.db, parserdef.to)?;
         let result_type = self.subst_type(self.db.parser_returns(parserdef.id)?.deref);
-        let ((ret_val, expr_vals), from) = if let Some(from_ty) = from_ty {
-            let from = val.get_arg(self, Arg::From)?;
+        let ((ret_val, expr_vals), from) = if let Some((from, _)) = self.current_ambience.clone() {
             (
-                self.eval_expr_with_ambience(
-                    expr.take_ref(),
-                    (from.clone(), from_ty),
-                    result_type,
-                )?,
+                self.eval_expr_with_ambience(expr.take_ref(), result_type)?,
                 Some(from),
             )
         } else {
@@ -289,14 +284,12 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
 
     fn eval_pd_fixpoint(
         &mut self,
-        pd: Dom,
         mut ret: Option<Dom>,
         parserdef: &hir::ParserDef,
-        from_ty: Option<TypeId>,
     ) -> Option<Dom> {
         loop {
             let old_ret = ret?;
-            let evaluated = self.eval_pd_expr(pd.clone(), parserdef, from_ty);
+            let evaluated = self.eval_pd_expr(parserdef);
             let widened_return = self.strip_error(evaluated).and_then(|mut evaluated| {
                 let widened = old_ret.widen(self, evaluated.returned.clone());
                 let (ret, changed) = self.strip_error(widened)?;
@@ -360,20 +353,25 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         let old_pd = std::mem::replace(&mut self.current_pd, pd.clone());
         let old_type_substitutions =
             std::mem::replace(&mut self.type_substitutions, new_type_substitutions);
-        let from_ty = self.db.parser_args(parserdef.id).ok()?.from.map(|from_ty| {
-            self.db
-                .substitute_typevar(from_ty, self.type_substitutions.clone())
+        let from = self.db.parser_args(parserdef.id).ok()?.from.map(|from_ty| {
+            let ty = self
+                .db
+                .substitute_typevar(from_ty, self.type_substitutions.clone());
+            let from = pd.clone().get_arg(self, Arg::From)?;
+            Ok((from, ty))
         });
+        let from = self.strip_error(from.transpose())?;
+        let old_ambienece = std::mem::replace(&mut self.current_ambience, from);
         // to make sure
         self.call_needs_fixpoint.remove(&self.depth);
         let old_active_block = self.active_block.take();
 
-        let result = self.eval_pd_expr(pd.clone(), &parserdef, from_ty);
+        let result = self.eval_pd_expr(&parserdef);
         let result = self.strip_error(result);
 
         let mut ret = self.set_pd_ret(result);
         if self.call_needs_fixpoint.remove(&self.depth) {
-            ret = self.eval_pd_fixpoint(pd.clone(), ret, &parserdef, from_ty);
+            ret = self.eval_pd_fixpoint(ret, &parserdef);
         }
         if self.call_needs_fixpoint.is_empty() {
             // update the epoch since we are not in a fixpoint computation
@@ -383,6 +381,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         }
 
         self.active_block = old_active_block;
+        self.current_ambience = old_ambienece;
         self.type_substitutions = old_type_substitutions;
         self.current_pd = old_pd;
         self.active_calls.remove(&pd);
@@ -414,10 +413,13 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         &self.current_pd
     }
 
+    pub fn active_ambience(&self) -> &Option<(Dom, TypeId)> {
+        &self.current_ambience
+    }
+
     fn eval_block_impl(
         &mut self,
         block_id: hir::BlockId,
-        from: Option<(Dom, TypeId)>,
         result_type: TypeId,
     ) -> Result<Dom, Dom::Err> {
         let block = block_id.lookup(self.db)?;
@@ -451,13 +453,8 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                 }
                 hir::HirNode::Parse(statement) => {
                     let expr = Resolved::expr_with_data::<FullTypeId>(self.db, statement.expr)?;
-                    let (from, arg_type) =
-                        from.clone().expect("parse statement in non-parse block");
-                    let (res, res_expr) = self.eval_expr_with_ambience(
-                        expr.take_ref(),
-                        (from.clone(), arg_type),
-                        result_ty,
-                    )?;
+                    let (res, res_expr) =
+                        self.eval_expr_with_ambience(expr.take_ref(), result_ty)?;
                     self.set_block_var(statement.expr.0, res_expr.root_data().0.clone());
                     self.block_expr_vals.insert(statement.expr, res_expr);
                     res
@@ -517,10 +514,12 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         let old_block = std::mem::replace(&mut self.active_block, Some(block.clone()));
         let old_type_substitutions =
             std::mem::replace(&mut self.type_substitutions, typesubst.clone());
+        let old_ambience = std::mem::replace(&mut self.current_ambience, from.clone());
 
-        let res = self.eval_block_impl(block_id, from.clone(), result_type);
+        let res = self.eval_block_impl(block_id, result_type);
         let res = self.strip_error(res);
 
+        self.current_ambience = old_ambience;
         self.type_substitutions = old_type_substitutions;
         self.active_block = old_block;
         std::mem::swap(&mut self.block_expr_vals, &mut old_block_expr);

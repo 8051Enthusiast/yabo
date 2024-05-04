@@ -77,7 +77,7 @@ impl<'a> LenMirCtx<'a> {
             .filter_map(|(t, u)| u.then_some(t))
         {
             yaboc_dependents::add_term_val_refs(self.db, self.block, &term, |val| {
-                self.is_dep.insert(SubValue::new_val(val));
+                self.is_dep.insert(val);
             })
         }
         Ok(())

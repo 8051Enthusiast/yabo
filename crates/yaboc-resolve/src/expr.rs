@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::refs;
 use hir::{ExprId, HirConstraintId};
 use yaboc_ast::expr::{self, Atom, BtMarkKind, FieldAccessMode, WiggleKind};
-use yaboc_base::error::SilencedError;
+use yaboc_base::error::{SResult, SilencedError};
 use yaboc_base::interner::{DefId, FieldName, Regex};
 use yaboc_base::source::SpanIndex;
 use yaboc_expr::{
@@ -21,6 +21,7 @@ pub enum ResolvedAtom {
     Captured(DefId),
     ParserDef(hir::ParserDefId),
     Global(hir::ParserDefId),
+    Span(DefId, DefId),
     Regex(Regex),
     Number(i64),
     Char(u32),
@@ -184,6 +185,70 @@ impl<DB: Resolves + ?Sized> FetchKindData<SpanIndex, ExprId, DB> for Resolved {
     }
 }
 
+fn resolve_span(
+    db: &dyn Resolves,
+    start: FieldName,
+    end: FieldName,
+    expr_id: ExprId,
+    span: SpanIndex,
+) -> Result<(DefId, DefId), ResolveError> {
+    let refs::Resolved::Value(start, refs::VarType::Value) =
+        refs::resolve_var_ref(db, expr_id.0, start, false, false)?
+    else {
+        return Err(ResolveError::Unresolved(expr_id, span, start));
+    };
+    if !db.hir_node(start)?.is_kind(hir::HirNodeKind::Parse.into()) {
+        return Err(ResolveError::NonParserRefInSpan(expr_id, span));
+    }
+    let refs::Resolved::Value(end, refs::VarType::Value) =
+        refs::resolve_var_ref(db, expr_id.0, end, false, false)?
+    else {
+        return Err(ResolveError::Unresolved(expr_id, span, end));
+    };
+    if !db.hir_node(end)?.is_kind(hir::HirNodeKind::Parse.into()) {
+        return Err(ResolveError::NonParserRefInSpan(expr_id, span));
+    }
+    if start == end {
+        return Ok((start, end));
+    }
+    let next: fn(_, _) -> _ = |db: &dyn Resolves, id| -> SResult<Option<DefId>> {
+        match db.hir_node(id)? {
+            hir::HirNode::Parse(hir::ParseStatement { back: next, .. })
+            | hir::HirNode::Choice(hir::StructChoice {
+                endpoints: Some([_, next]),
+                ..
+            }) => Ok(match next {
+                hir::ParserPredecessor::ChildOf(ctx) => ctx.lookup(db)?.parent_choice.map(|x| x.0),
+                hir::ParserPredecessor::After(next_id) => Some(next_id),
+            }),
+            _ => Ok(None),
+        }
+    };
+    let prev = |db: &dyn Resolves, id| -> SResult<Option<DefId>> {
+        match db.hir_node(id)? {
+            hir::HirNode::Parse(hir::ParseStatement { front: prev, .. })
+            | hir::HirNode::Choice(hir::StructChoice {
+                endpoints: Some([prev, _]),
+                ..
+            }) => Ok(match prev {
+                hir::ParserPredecessor::ChildOf(ctx) => ctx.lookup(db)?.parent_choice.map(|x| x.0),
+                hir::ParserPredecessor::After(prev_id) => Some(prev_id),
+            }),
+            _ => Ok(None),
+        }
+    };
+    for (first, step, last) in [(start, next, end), (end, prev, start)] {
+        let mut current = first;
+        while let Some(next) = step(db, current)? {
+            if next == last {
+                return Ok((start, end));
+            }
+            current = next;
+        }
+    }
+    Err(ResolveError::UnorderedSpan(expr_id, span))
+}
+
 fn resolve_expr_modules(
     db: &dyn Resolves,
     expr_id: ExprId,
@@ -192,7 +257,7 @@ fn resolve_expr_modules(
     let parent_block = db.hir_parent_block(expr_id.0)?;
 
     let new_resolved_atom = |loc, name, span, use_core| {
-        let (id, kind) = match refs::resolve_var_ref(db, loc, name, use_core)? {
+        let (id, kind) = match refs::resolve_var_ref(db, loc, name, use_core, true)? {
             refs::Resolved::Value(id, kind) => (id, kind),
             refs::Resolved::Module(m) => return Ok(PartialEval::Eval(m)),
             refs::Resolved::Unresolved => {
@@ -234,6 +299,10 @@ fn resolve_expr_modules(
                     hir::ParserAtom::ArrayFill => ResolvedAtom::ArrayFill,
                     hir::ParserAtom::Regex(r) => ResolvedAtom::Regex(r),
                     hir::ParserAtom::Block(b, kind) => ResolvedAtom::Block(b, kind),
+                    hir::ParserAtom::Span(start, end) => {
+                        let (start, end) = resolve_span(db, start, end, expr_id, *span)?;
+                        ResolvedAtom::Span(start, end)
+                    }
                     hir::ParserAtom::Atom(Atom::Field(f)) => {
                         match new_resolved_atom(expr_id.0, f, *span, true)? {
                             PartialEval::Uneval(k) => k,

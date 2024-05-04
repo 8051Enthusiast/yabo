@@ -597,6 +597,7 @@ astify! {
         Niladic(with_span_data(single)),
         Niladic(with_span_data(nil)),
         Niladic(with_span_data(array_fill)),
+        Niladic(parser_span),
         Niladic(with_span_data(regex_literal)),
         Niladic(with_span_data(atom..)),
     };
@@ -623,6 +624,28 @@ astify! {
         Niladic(with_span_data(type_array)),
         Niladic(with_span_data(type_var)),
         Niladic(with_span_data(byte_slice)),
+    };
+}
+
+struct ParserSpan {
+    start: FieldName,
+    end: FieldName,
+    span: Span,
+}
+
+impl From<ParserSpan> for OpWithData<ParserAtom, Span> {
+    fn from(value: ParserSpan) -> Self {
+        OpWithData {
+            inner: ParserAtom::Span(value.start, value.end),
+            data: value.span,
+        }
+    }
+}
+
+astify! {
+    struct parser_span = ParserSpan {
+        start: field_name[!],
+        end: field_name[!],
     };
 }
 

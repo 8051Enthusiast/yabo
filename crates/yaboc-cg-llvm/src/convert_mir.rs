@@ -613,6 +613,20 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         self.controlflow_case(status, ctrl)
     }
 
+    fn span(
+        &mut self,
+        ret: PlaceRef,
+        start: PlaceRef,
+        end: PlaceRef,
+        ctrl: ControlFlow,
+    ) -> IResult<()> {
+        let ret_val = self.return_val(ret)?;
+        let start_val = self.place_val(start)?;
+        let end_val = self.place_val(end)?;
+        let ret = self.cg.call_span_fun(ret_val, start_val, end_val)?;
+        self.controlflow_case(ret, ctrl)
+    }
+
     fn mir_ins(&mut self, ins: MirInstr) -> IResult<()> {
         match ins {
             MirInstr::IntBin(ret, op, left, right) => self.int_bin(ret, op, left, right),
@@ -631,6 +645,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::EvalFun(to, from, ctrl) => self.eval_fun(to, from, ctrl),
             MirInstr::Copy(to, from, ctrl) => self.copy(to, from, ctrl),
             MirInstr::GetAddr(ret, place, ctrl) => self.get_addr(ret, place, ctrl),
+            MirInstr::Span(ret, start, end, ctrl) => self.span(ret, start, end, ctrl),
             MirInstr::ApplyArgs(ret, fun, args, first_index, ctrl) => {
                 self.apply_args(ret, fun, &args, first_index, ctrl)
             }

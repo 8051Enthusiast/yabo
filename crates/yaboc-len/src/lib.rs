@@ -96,6 +96,7 @@ pub enum Term<ParserRef> {
     Size(bool, usize),
     BlockEnd(BlockInfoIdx, usize),
     Parsed,
+    Span,
     Cat([usize; 2]),
     Backtracking(usize),
 }
@@ -108,7 +109,8 @@ impl<ParserRef> Term<ParserRef> {
             | Term::Const(_)
             | Term::Opaque
             | Term::Arr
-            | Term::Parsed => &[],
+            | Term::Parsed
+            | Term::Span => &[],
             Term::OpaqueUn(x)
             | Term::Neg(x)
             | Term::Copy(x)
@@ -418,6 +420,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 f(self, *inner, req);
             }
             Term::Parsed
+            | Term::Span
             | Term::Arg(_)
             | Term::Pd(_)
             | Term::Const(_)
@@ -745,7 +748,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 self.deps[pos].len().set_len(idx);
                 self.deps[pos].val().set_val(idx);
             }
-            Term::Parsed => {
+            Term::Parsed | Term::Span => {
                 let idx = self.size_expr.arg_depth[pos] as usize - 1;
                 self.deps[pos].len().set_len(idx);
                 self.deps[pos].val().set_val(idx);
@@ -762,9 +765,11 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 Term::Arg(a) => Val::Arg(self.args[*a as usize].0, *a),
                 Term::Apply([fun, arg]) => self.apply_fun(*fun, *arg),
                 Term::Const(c) => Val::Const(0, *c, Default::default()),
-                Term::OpaqueBin(..) | Term::Opaque | Term::Parsed | Term::OpaqueUn(_) => {
-                    Val::Unsized
-                }
+                Term::OpaqueBin(..)
+                | Term::Opaque
+                | Term::Parsed
+                | Term::Span
+                | Term::OpaqueUn(_) => Val::Unsized,
                 Term::Mul(ops) => self.poly_op(
                     *ops,
                     |[lhs, rhs]| lhs.overflowing_mul(rhs),

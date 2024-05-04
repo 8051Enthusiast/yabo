@@ -1,0 +1,9 @@
+====[ source code ]====
+fun test(a: int, b: int) = {
+  a: ~
+  {
+    b: ~
+    let t = span a..b
+    #~^ error[301] could not resolve name a
+  }
+}

@@ -40,6 +40,7 @@
     "or"
     "and"
     "at"
+    "span"
 ] @keyword.operator
 
 [

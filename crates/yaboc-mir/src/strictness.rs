@@ -191,12 +191,13 @@ impl<'a> StrictnessCtx<'a> {
             | MirInstr::Comp(ret, _, _, _)
             | MirInstr::StoreVal(ret, _)
             | MirInstr::GetAddr(ret, _, _)
-            | MirInstr::ApplyArgs(ret, _, _, _, _)
+            | MirInstr::ApplyArgs(ret, ..)
             | MirInstr::Copy(ret, _, _)
             | MirInstr::LenCall(ret, _, _)
             | MirInstr::EvalFun(ret, _, _)
-            | MirInstr::Field(ret, _, _, _) => (Some(*ret), None),
-            MirInstr::ParseCall(ret, retlen, _, _, _, _) => (*ret, *retlen),
+            | MirInstr::Field(ret, _, _, _)
+            | MirInstr::Span(ret, ..) => (Some(*ret), None),
+            MirInstr::ParseCall(ret, retlen, ..) => (*ret, *retlen),
             MirInstr::AssertVal(_, _, _)
             | MirInstr::Branch(_)
             | MirInstr::Return(_)
@@ -222,6 +223,7 @@ impl<'a> StrictnessCtx<'a> {
         match ins {
             MirInstr::IntBin(_, _, a, b)
             | MirInstr::Comp(_, _, a, b)
+            | MirInstr::Span(_, a, b, _)
             | MirInstr::ParseCall(_, _, _, a, b, _) => {
                 insert(*a, Use::new_static(DerefLevel::zero()));
                 insert(*b, Use::new_static(DerefLevel::zero()));

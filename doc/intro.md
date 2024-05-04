@@ -537,3 +537,29 @@ If we look closer at the `u8ptr` parser, we see how the `at` operator is used - 
 The `at` operator evaluates eagerly, but since `linked_list` is defined via `def` and not `fun`, the `linked_list` parser is a thunk and `parser at addr` only returns the thunk, which consists of just the address.
 
 If the address is out of range, the `at` operator returns an error.
+
+The `span` Operator
+-------------------
+
+The `span` operator allows getting an array spanning a range of the input corresponding to a range of fields in the current block.
+For example, say we have a function `crc32: int([u8])` for calculating a CRC32 checksum and want to have the expected checksum for a PNG chunk:
+```
+def *png_chunk = {
+  length: u32l
+  type: u32l
+  data: u8[length]
+  crc: u32l
+  let expected_crc = crc32(span type..data)
+}
+```
+The result of `span type..data` would be an array containing the bytes from the start of the `type` field until the end of the `data` field, meaning it is inclusive.
+It can only be used inside blocks and contain fields of parse statements of the current block that are in the current scope or a parent scope.
+For example, the following is not possible because `bar` is not in the top scope of the block:
+```
+def *foo = {
+  | bar: u8 if 1
+  | bar: u8
+  baz: u8
+  let spanned = span bar..baz
+}
+```

@@ -285,6 +285,7 @@ pub enum MirInstr {
     LenCall(PlaceRef, PlaceRef, ControlFlow),
     Field(PlaceRef, PlaceRef, FieldName, ControlFlow),
     AssertVal(PlaceRef, ConstraintAtom, ControlFlow),
+    Span(PlaceRef, PlaceRef, PlaceRef, ControlFlow),
     Branch(BBRef),
     Return(ReturnStatus),
 }
@@ -303,6 +304,7 @@ impl MirInstr {
                 | MirInstr::ApplyArgs(..)
                 | MirInstr::Copy(..)
                 | MirInstr::EvalFun(..)
+                | MirInstr::Span(..)
         )
     }
     pub fn control_flow(&self) -> Option<ControlFlow> {
@@ -315,12 +317,13 @@ impl MirInstr {
             }),
             MirInstr::AssertVal(_, _, control_flow)
             | MirInstr::Field(_, _, _, control_flow)
-            | MirInstr::ParseCall(_, _, _, _, _, Some(control_flow))
+            | MirInstr::ParseCall(.., Some(control_flow))
             | MirInstr::LenCall(_, _, control_flow)
             | MirInstr::GetAddr(_, _, control_flow)
-            | MirInstr::ApplyArgs(_, _, _, _, control_flow)
+            | MirInstr::ApplyArgs(.., control_flow)
             | MirInstr::Copy(_, _, control_flow)
-            | MirInstr::EvalFun(_, _, control_flow) => Some(*control_flow),
+            | MirInstr::EvalFun(_, _, control_flow)
+            | MirInstr::Span(.., control_flow) => Some(*control_flow),
             _ => None,
         }
     }
@@ -357,6 +360,9 @@ impl MirInstr {
             }
             MirInstr::EvalFun(ret, val, control_flow) => {
                 MirInstr::EvalFun(*ret, *val, control_flow.map_bb(f))
+            }
+            MirInstr::Span(ret, start, end, control_flow) => {
+                MirInstr::Span(*ret, *start, *end, control_flow.map_bb(f))
             }
             _ => {
                 assert!(self.control_flow().is_none());
@@ -987,6 +993,17 @@ impl FunctionWriter {
             remove_bt: true,
         };
         self.add_place(place_info)
+    }
+
+    fn span(&mut self, target: PlaceRef, start_place: PlaceRef, end_place: PlaceRef, err: BBRef) {
+        let new_block = self.new_bb();
+        self.append_ins(MirInstr::Span(
+            target,
+            start_place,
+            end_place,
+            ControlFlow::new_with_error(new_block, err),
+        ));
+        self.set_bb(new_block);
     }
 }
 

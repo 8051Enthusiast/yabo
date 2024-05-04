@@ -134,6 +134,8 @@ pub enum ResolveError {
     CyclicImport(Arc<Vec<FileId>>),
     ModuleInExpression(ExprId, SpanIndex),
     CyclicGlobal(hir::ParserDefId),
+    UnorderedSpan(ExprId, SpanIndex),
+    NonParserRefInSpan(ExprId, SpanIndex),
     Silenced(SilencedError),
 }
 

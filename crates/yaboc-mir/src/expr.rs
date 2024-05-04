@@ -12,7 +12,10 @@ use yaboc_base::{
 };
 use yaboc_dependents::{requirements::ExprDepData, SubValue, SubValueKind};
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchKindData, IdxExpression, IndexExpr, ZipExpr};
-use yaboc_hir::{BlockId, ExprId, HirConstraint, HirConstraintId, ParserDefId};
+use yaboc_hir::{
+    BlockId, ExprId, HirConstraint, HirConstraintId, HirIdWrapper, HirNode, ParseStatement,
+    ParserDefId, ParserPredecessor,
+};
 use yaboc_hir_types::FullTypeId;
 use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_resolve::expr::{Resolved, ResolvedAtom, ValBinOp, ValUnOp, ValVarOp};
@@ -449,6 +452,30 @@ impl<'a> ConvertExpr<'a> {
         Ok(place_ref)
     }
 
+    fn convert_span(&mut self, loc: ExpressionLoc, start: DefId, end: DefId) -> SResult<PlaceRef> {
+        // the front typically gets modified by parser, so we have to get the back value of the
+        // previous parse statement, or the block/choice front if we are at the start of a ctx
+        let HirNode::Parse(ParseStatement { front, .. }) = self.db.hir_node(start)? else {
+            panic!("Span does not start with parse statement")
+        };
+        let start_place = match front {
+            ParserPredecessor::After(p) => self.back_place_at_def(p).unwrap(),
+            ParserPredecessor::ChildOf(ctx) => {
+                let ctx = ctx.lookup(self.db)?;
+                if let Some(choice) = ctx.parent_choice {
+                    self.front_place_at_def(choice.0).unwrap()
+                } else {
+                    self.front_place_at_def(ctx.block_id.0).unwrap()
+                }
+            }
+        };
+        let end_place = self.back_place_at_def(end).unwrap();
+        let place_ref = self.unwrap_or_stack(loc);
+        self.f
+            .span(place_ref, start_place, end_place, self.retreat.error);
+        Ok(place_ref)
+    }
+
     fn convert_niladic(&mut self, atom: &ResolvedAtom, loc: ExpressionLoc) -> SResult<PlaceRef> {
         Ok(match atom {
             ResolvedAtom::Val(val) => self
@@ -464,6 +491,7 @@ impl<'a> ConvertExpr<'a> {
             ResolvedAtom::Nil => self.load_zst(ZstVal::Nil, loc),
             ResolvedAtom::Array => self.load_zst(ZstVal::Array, loc),
             ResolvedAtom::ArrayFill => self.load_zst(ZstVal::ArrayFill, loc),
+            ResolvedAtom::Span(start, end) => self.convert_span(loc, *start, *end)?,
             ResolvedAtom::Regex(regex) => self.load_zst(ZstVal::Regex(*regex), loc),
             ResolvedAtom::Block(block, _) => self.init_block_captures(*block, loc)?,
         })
