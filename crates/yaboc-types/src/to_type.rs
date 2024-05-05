@@ -1,6 +1,6 @@
 use std::{collections::HashMap, hash::Hash, sync::Arc};
 
-use crate::{inference::NominalInfHead, PrimitiveType, TypeHead};
+use crate::{inference::NominalInfHead, PrimitiveType, TypeHead, TypeVarRef};
 use yaboc_base::interner::DefId;
 
 use super::{
@@ -250,9 +250,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
             | (other, InferField(..) | InferIfResult(..) | SizeOf) => other.clone(),
             (id, other) | (other, id) if id == &P::ID_TYPE => other.clone(),
             (Primitive(p), Primitive(q)) if p == q => Primitive(*p),
-            (TypeVarRef(def, idx), TypeVarRef(def2, idx2)) if def == def2 && idx == idx2 => {
-                TypeVarRef(*def, *idx)
-            }
+            (TypeVarRef(var1), TypeVarRef(var2)) if var1 == var2 => TypeVarRef(*var1),
             (Loop(kind1, inner1), Loop(kind2, inner2)) => {
                 let kind = P::combine(*kind1, *kind2);
                 let inner = self.combine::<P>(*inner1, *inner2)?;
@@ -374,7 +372,9 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                 }
                 if !contains_non_var {
                     if let Some((id, ref mut n)) = self.var_count {
-                        result = self.ctx.intern_infty(InferenceType::TypeVarRef(id, *n));
+                        result = self
+                            .ctx
+                            .intern_infty(InferenceType::TypeVarRef(TypeVarRef(id, *n)));
                         self.ctx.equal(result, infty)?;
                         *n += 1;
                     }
@@ -396,7 +396,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
         let res = match infty.value() {
             InferenceType::Any => Type::Any,
             InferenceType::Bot => Type::Bot,
-            InferenceType::TypeVarRef(loc, index) => Type::TypeVarRef(*loc, *index),
+            InferenceType::TypeVarRef(varref) => Type::TypeVarRef(*varref),
             InferenceType::Primitive(p) => Type::Primitive(*p),
             InferenceType::Var(..) => {
                 panic!("Internal Compiler Error: normalized inference type contains variable");
