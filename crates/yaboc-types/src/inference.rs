@@ -19,7 +19,7 @@ pub enum InferenceType<'intern> {
     Any,
     Bot,
     Primitive(PrimitiveType),
-    TypeVarRef(DefId, u32),
+    TypeVarRef(TypeVarRef),
     Var(VarId),
     Unknown,
     Nominal(NominalInfHead<'intern>),
@@ -97,7 +97,7 @@ pub enum InfTypeHead {
     Any,
     Bot,
     Primitive(PrimitiveType),
-    TypeVarRef(DefId, u32),
+    TypeVarRef(TypeVarRef),
     Nominal(DefId),
     Loop(ArrayKind),
     ParserArg,
@@ -115,7 +115,7 @@ impl<'intern> From<InfTypeId<'intern>> for InfTypeHead {
             InferenceType::Any => InfTypeHead::Any,
             InferenceType::Bot => InfTypeHead::Bot,
             InferenceType::Primitive(p) => InfTypeHead::Primitive(*p),
-            InferenceType::TypeVarRef(def, id) => InfTypeHead::TypeVarRef(*def, *id),
+            InferenceType::TypeVarRef(var) => InfTypeHead::TypeVarRef(*var),
             InferenceType::Nominal(head) => InfTypeHead::Nominal(head.def),
             InferenceType::Loop(kind, _) => InfTypeHead::Loop(*kind),
             InferenceType::ParserArg { .. } => InfTypeHead::ParserArg,
@@ -321,7 +321,7 @@ impl<'intern> InfTypeId<'intern> {
             | (InferenceType::Primitive(_), InferenceType::Primitive(_))
             | (InferenceType::Var(_), InferenceType::Var(_))
             | (InferenceType::Unknown, InferenceType::Unknown)
-            | (InferenceType::TypeVarRef(_, _), InferenceType::TypeVarRef(_, _))
+            | (InferenceType::TypeVarRef(_), InferenceType::TypeVarRef(_))
             | (InferenceType::SizeOf, InferenceType::SizeOf)
                 if self == other => {}
             _ => return Err(None),
@@ -383,7 +383,7 @@ impl<'intern> TryFrom<&InferenceType<'intern>> for TypeHead {
             InferenceType::Any => TypeHead::Any,
             InferenceType::Bot => TypeHead::Bot,
             &InferenceType::Primitive(p) => TypeHead::Primitive(p),
-            &InferenceType::TypeVarRef(id, idx) => TypeHead::TypeVarRef(id, idx),
+            &InferenceType::TypeVarRef(var) => TypeHead::TypeVarRef(var),
             InferenceType::Nominal(NominalInfHead { def, .. }) => TypeHead::Nominal(*def),
             InferenceType::Loop(kind, _) => TypeHead::Loop(*kind),
             InferenceType::ParserArg { .. } => TypeHead::ParserArg,
@@ -807,10 +807,13 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         self.function(returned_parser, args, Application::Full)
     }
     pub fn type_var(&mut self, id: DefId, index: u32) -> InfTypeId<'intern> {
-        let inftype = InferenceType::TypeVarRef(id, index);
+        let inftype = InferenceType::TypeVarRef(TypeVarRef(id, index));
         self.intern_infty(inftype)
     }
-    pub fn check_size_of(&mut self, ty: InfTypeId<'intern>) -> Result<InfTypeId<'intern>, TypeError> {
+    pub fn check_size_of(
+        &mut self,
+        ty: InfTypeId<'intern>,
+    ) -> Result<InfTypeId<'intern>, TypeError> {
         let t = self.intern_infty(InferenceType::SizeOf);
         self.constrain(ty, t)?;
         let int = self.int();
@@ -993,10 +996,12 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
             Type::Bot => InferenceType::Bot,
             Type::Unknown => InferenceType::Unknown,
             Type::Primitive(p) => InferenceType::Primitive(*p),
-            Type::TypeVarRef(loc, index) => match var_stack.and_then(|x| x.resolve(*index)) {
-                Some(x) => return x,
-                None => InferenceType::TypeVarRef(*loc, *index),
-            },
+            Type::TypeVarRef(TypeVarRef(loc, index)) => {
+                match var_stack.and_then(|x| x.resolve(*index)) {
+                    Some(x) => return x,
+                    None => InferenceType::TypeVarRef(TypeVarRef(*loc, *index)),
+                }
+            }
             Type::Nominal(NominalTypeHead {
                 kind,
                 def,

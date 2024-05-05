@@ -176,7 +176,7 @@ pub fn parser_returns_ssc(
 
 fn check_for_typevar(db: &dyn TyHirs, ty: TypeId) -> Result<TypeId, TypeError> {
     match db.lookup_intern_type(ty) {
-        Type::TypeVarRef(pd, idx) => {
+        Type::TypeVarRef(TypeVarRef(pd, idx)) => {
             let hir::HirNode::ParserDef(pd) = db.hir_node(pd)? else {
                 panic!("typevarref points to non-parserdef")
             };

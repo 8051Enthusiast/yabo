@@ -64,13 +64,16 @@ pub struct NominalTypeHead {
     pub ty_args: Arc<Vec<TypeId>>,
 }
 
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub struct TypeVarRef(pub DefId, pub u32);
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Type {
     Any,
     Bot,
     Unknown,
     Primitive(PrimitiveType),
-    TypeVarRef(DefId, u32),
+    TypeVarRef(TypeVarRef),
     Nominal(NominalTypeHead),
     Loop(ArrayKind, TypeId),
     ParserArg { result: TypeId, arg: TypeId },
@@ -79,7 +82,7 @@ pub enum Type {
 
 pub fn type_contains_unknown(db: &dyn TypeInterner, id: TypeId) -> bool {
     match db.lookup_intern_type(id) {
-        Type::Any | Type::Bot | Type::Primitive(_) | Type::TypeVarRef(_, _) => false,
+        Type::Any | Type::Bot | Type::Primitive(_) | Type::TypeVarRef(_) => false,
         Type::Unknown => true,
         Type::Nominal(NominalTypeHead {
             parse_arg,
@@ -102,7 +105,7 @@ pub fn type_contains_unknown(db: &dyn TypeInterner, id: TypeId) -> bool {
 pub fn type_contains_typevar(db: &dyn TypeInterner, id: TypeId) -> bool {
     match db.lookup_intern_type(id) {
         Type::Any | Type::Bot | Type::Unknown | Type::Primitive(_) => false,
-        Type::TypeVarRef(_, _) => true,
+        Type::TypeVarRef(_) => true,
         Type::Nominal(NominalTypeHead {
             parse_arg,
             fun_args,
@@ -126,7 +129,7 @@ pub enum TypeHead {
     Any,
     Bot,
     Primitive(PrimitiveType),
-    TypeVarRef(DefId, u32),
+    TypeVarRef(TypeVarRef),
     Nominal(DefId),
     Loop(ArrayKind),
     ParserArg,
@@ -217,7 +220,7 @@ pub fn substitute_typevar(
     replacements: Arc<Vec<TypeId>>,
 ) -> TypeId {
     match db.lookup_intern_type(ty) {
-        Type::TypeVarRef(_, i) => replacements[i as usize],
+        Type::TypeVarRef(TypeVarRef(_, i)) => replacements[i as usize],
         Type::Nominal(mut nom) => {
             let parse_arg = nom
                 .parse_arg

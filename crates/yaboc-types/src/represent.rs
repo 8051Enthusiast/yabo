@@ -4,7 +4,7 @@ use yaboc_base::{databased_display::DatabasedDisplay, hash::StableHash, interner
 
 use crate::{
     inference::{Application, InfTypeHead},
-    NominalTypeHead, Type, TypeId,
+    NominalTypeHead, Type, TypeId, TypeVarRef,
 };
 
 use super::{inference::InferenceType, InfTypeId, NominalKind, PrimitiveType, TypeInterner};
@@ -17,7 +17,7 @@ impl<'a, DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeId<'a> {
             InferenceType::Any => write!(f, "any"),
             InferenceType::Bot => write!(f, "bot"),
             InferenceType::Primitive(p) => write!(f, "{}", &p),
-            InferenceType::TypeVarRef(loc, index) => {
+            InferenceType::TypeVarRef(TypeVarRef(loc, index)) => {
                 dbwrite!(f, db, "<Var Ref ({}, {})>", loc, index)
             }
             InferenceType::Nominal(n) => {
@@ -115,7 +115,7 @@ impl<DB: TypeInterner + ?Sized> StableHash<DB> for TypeId {
                 state.update([3]);
                 p.update_hash(state, db)
             }
-            Type::TypeVarRef(def, index) => {
+            Type::TypeVarRef(TypeVarRef(def, index)) => {
                 state.update([4]);
                 def.update_hash(state, db);
                 index.update_hash(state, db);
@@ -170,7 +170,7 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeHead {
             InfTypeHead::Any => write!(f, "any type"),
             InfTypeHead::Bot => write!(f, "bottom type"),
             InfTypeHead::Primitive(p) => p.db_fmt(f, db),
-            InfTypeHead::TypeVarRef(_, index) => {
+            InfTypeHead::TypeVarRef(TypeVarRef(_, index)) => {
                 dbwrite!(f, db, "'{}", &index)
             }
             InfTypeHead::Nominal(def) => {
@@ -205,7 +205,7 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for TypeId {
             Type::Any => write!(f, "any"),
             Type::Bot => write!(f, "bot"),
             Type::Primitive(p) => p.db_fmt(f, db),
-            Type::TypeVarRef(_, index) => {
+            Type::TypeVarRef(TypeVarRef(_, index)) => {
                 dbwrite!(f, db, "'{}", &index)
             }
             Type::Nominal(n) => {

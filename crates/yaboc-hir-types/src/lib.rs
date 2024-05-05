@@ -31,6 +31,7 @@ use yaboc_resolve::{
     expr::{ResolvedAtom, ValBinOp, ValUnOp, ValVarOp},
 };
 use yaboc_types::inference::Application;
+use yaboc_types::TypeVarRef;
 use yaboc_types::{
     inference::{
         InfTypeId, InfTypeInterner, InferenceContext, InferenceType, NominalInfHead, TypeResolver,
@@ -120,7 +121,7 @@ pub fn head_discriminant(db: &dyn TyHirs, ty: TypeId) -> i64 {
             // the lowest eight bits are for flags so they get zeroed out
             i64::from_le_bytes(def_hash) & DISCRIMINANT_MASK | i64::MIN
         }
-        Type::TypeVarRef(_, _) | Type::Any | Type::Bot | Type::Unknown => 0,
+        Type::TypeVarRef(_) | Type::Any | Type::Bot | Type::Unknown => 0,
     }
 }
 pub type ExprTypeData = ShapedData<Vec<TypeId>, Resolved>;
@@ -217,7 +218,10 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         SpannedTypeError::new(TypeError::UnknownTypeVar(*v), span)
                     })?;
                 self.infctx
-                    .intern_infty(InferenceType::TypeVarRef(self.loc.pd.0, var_idx))
+                    .intern_infty(InferenceType::TypeVarRef(TypeVarRef(
+                        self.loc.pd.0,
+                        var_idx,
+                    )))
             }
             ExprHead::Variadic(expr::TypeVarOp::Call, inner) => {
                 let mut inner_ty = Vec::with_capacity(inner.len());
@@ -371,7 +375,10 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         } else {
             let pd = self.db.hir_parent_parserdef(b.0)?;
             let ty_vars = (0..self.loc.vars.defs.len() as u32)
-                .map(|i| self.infctx.intern_infty(InferenceType::TypeVarRef(pd.0, i)))
+                .map(|i| {
+                    self.infctx
+                        .intern_infty(InferenceType::TypeVarRef(TypeVarRef(pd.0, i)))
+                })
                 .collect::<Vec<_>>();
             self.infctx
                 .block(b.0, kind == BlockKind::Parser, &ty_vars)?
@@ -753,7 +760,7 @@ impl TypeVarCollection {
 
 fn n_type_vars(db: &(impl TyHirs + ?Sized), id: hir::ParserDefId, n: u32) -> Vec<TypeId> {
     (0..n)
-        .map(|i| db.intern_type(Type::TypeVarRef(id.0, i)))
+        .map(|i| db.intern_type(Type::TypeVarRef(TypeVarRef(id.0, i))))
         .collect()
 }
 
