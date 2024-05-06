@@ -12,4 +12,4 @@ yaboc-expr = { path = "../yaboc-expr" }
 yaboc-ast = { path = "../yaboc-ast" }
 yaboc-hir = { path = "../yaboc-hir" }
 fxhash = "0.2.1"
-petgraph = "0.6.3"
+petgraph = { workspace = true }

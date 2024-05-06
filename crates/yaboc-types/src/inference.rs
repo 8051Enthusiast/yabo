@@ -438,7 +438,7 @@ pub trait TypeResolver<'intern> {
     ) -> Result<EitherType<'intern>, TypeError>;
     fn deref(&self, ty: &NominalInfHead<'intern>)
         -> Result<Option<EitherType<'intern>>, TypeError>;
-    fn signature(&self, pd: DefId) -> Result<Signature, TypeError>;
+    fn signature(&self, pd: DefId) -> Result<(Signature, bool), TypeError>;
     fn lookup(&self, val: DefId) -> Result<EitherType<'intern>, TypeError>;
     fn name(&self) -> String;
 }
@@ -492,9 +492,6 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                 EitherType::Regular(deref_ty) => {
                     self.convert_type_into_inftype_with_args(deref_ty, ty.ty_args)
                 }
-                // if we return an inference type, inference variables as return types from recursive calls
-                // would cause weird higher-ranked inference which i don't want to deal with so the variables
-                // are replaced with unknowns
                 EitherType::Inference(deref_ty) => {
                     let unknown = self.unknown();
                     let mut replacements = FxHashMap::default();
@@ -521,7 +518,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         }
     }
     pub fn signature(&self, pd: DefId) -> Result<Signature, TypeError> {
-        self.tr.signature(pd)
+        Ok(self.tr.signature(pd)?.0)
     }
     pub fn lookup(&mut self, val: DefId) -> Result<InfTypeId<'intern>, TypeError> {
         let ret = match self.tr.lookup(val) {
@@ -545,9 +542,13 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         Ok(ret)
     }
     pub fn parserdef(&mut self, pd: DefId) -> Result<InfTypeId<'intern>, TypeError> {
-        let sig = self.tr.signature(pd)?;
+        let (sig, local) = self.tr.signature(pd)?;
         let ret = self.tr.db().intern_type(Type::Nominal(sig.thunk));
-        let vars = sig.ty_args.iter().map(|_| self.var()).collect::<Vec<_>>();
+        let vars = if local {
+            Vec::new()
+        } else {
+            sig.ty_args.iter().map(|_| self.var()).collect::<Vec<_>>()
+        };
         let mut ret = self.convert_type_into_inftype_with_args(ret, &vars);
         if let Some(parser_arg) = sig.from {
             let parser_arg = self.convert_type_into_inftype_with_args(parser_arg, &vars);
@@ -1050,8 +1051,8 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         };
         self.intern_infty(ret)
     }
-    pub fn to_type(&mut self, infty: InfTypeId<'intern>) -> Result<TypeId, TypeError> {
-        let mut converter = TypeConvertMemo::new(self);
+    pub fn to_type(&mut self, infty: InfTypeId<'intern>, at: DefId) -> Result<TypeId, TypeError> {
+        let mut converter = TypeConvertMemo::new(self, at);
         converter.convert_to_type_internal(infty)
     }
     pub fn to_types_with_vars(
@@ -1060,11 +1061,10 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         mut n_vars: u32,
         at: DefId,
     ) -> Result<(Vec<TypeId>, u32), TypeError> {
-        let mut converter = TypeConvertMemo::new(self);
+        let mut converter = TypeConvertMemo::new(self, at);
         let mut ret = Vec::new();
         for infty in inftys {
-            let (new_ty, new_n) =
-                converter.convert_to_type_internal_with_vars(*infty, n_vars, at)?;
+            let (new_ty, new_n) = converter.convert_to_type_internal_with_vars(*infty, n_vars)?;
             n_vars = new_n;
             ret.push(new_ty);
         }

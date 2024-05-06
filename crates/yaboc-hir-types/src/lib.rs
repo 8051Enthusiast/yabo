@@ -1,7 +1,7 @@
 pub mod error;
-mod full;
+//mod full;
 pub mod id_cursor;
-mod public;
+//mod public;
 mod returns;
 mod signature;
 
@@ -12,6 +12,7 @@ use fxhash::FxHashMap;
 
 use hir::{BlockKind, DefKind, HirConstraint};
 use resolve::expr::Resolved;
+use resolve::parserdef_ssc::FunctionSscId;
 use yaboc_ast::expr::{self, Atom, TypeBinOp, TypeUnOp};
 use yaboc_ast::{ArrayKind, ConstraintAtom};
 use yaboc_base::{
@@ -44,12 +45,11 @@ use yaboc_hir::{self, Hirs};
 pub struct FullTypeId;
 pub struct PubTypeId;
 
-use full::{parser_expr_at, parser_full_types, parser_type_at, ParserFullTypes};
-use public::{ambient_type, public_expr_type, public_type};
+//use public::{ambient_type, public_expr_type, public_type};
 pub use returns::DerefLevel;
 use returns::{
-    deref_level, deref_type, least_deref_type, normalize_head, parser_returns, parser_returns_ssc,
-    ParserDefType,
+    deref_level, deref_type, least_deref_type, normalize_head, parser_expr_at, parser_returns,
+    parser_type_at, ssc_types, ParserDefType, SscTypes,
 };
 pub use returns::{NOBACKTRACK_BIT, VTABLE_BIT};
 use signature::{fun_arg_count, get_signature, parser_args, parser_args_error};
@@ -59,24 +59,14 @@ pub trait TyHirs: Hirs + yaboc_types::TypeInterner + resolve::Resolves {
     fn parser_args(&self, id: hir::ParserDefId) -> SResult<Signature>;
     fn parser_args_error(&self, id: hir::ParserDefId) -> Result<Signature, SpannedTypeError>;
     fn parser_returns(&self, id: hir::ParserDefId) -> SResult<ParserDefType>;
-    fn parser_returns_ssc(
-        &self,
-        id: resolve::parserdef_ssc::FunctionSscId,
-    ) -> Vec<Result<ParserDefType, SpannedTypeError>>;
+    fn ssc_types(&self, id: FunctionSscId) -> Result<SscTypes, SpannedTypeError>;
     fn deref_type(&self, ty: TypeId) -> SResult<Option<TypeId>>;
     fn deref_level(&self, ty: TypeId) -> SResult<DerefLevel>;
     fn normalize_head(&self, ty: TypeId) -> SResult<TypeId>;
     fn least_deref_type(&self, ty: TypeId) -> SResult<TypeId>;
     fn fun_arg_count(&self, ty: TypeId) -> SResult<Option<u32>>;
-    fn public_type(&self, loc: DefId) -> SResult<TypeId>;
     fn parser_type_at(&self, loc: DefId) -> SResult<TypeId>;
     fn parser_expr_at(&self, loc: hir::ExprId) -> SResult<Arc<ExprTypeData>>;
-    fn public_expr_type(&self, loc: hir::ExprId) -> SResult<(Arc<ExprTypeData>, TypeId)>;
-    fn ambient_type(&self, id: DefId) -> SResult<Option<TypeId>>;
-    fn parser_full_types(
-        &self,
-        id: hir::ParserDefId,
-    ) -> Result<Arc<ParserFullTypes>, SpannedTypeError>;
     fn head_discriminant(&self, ty: TypeId) -> i64;
 }
 
@@ -134,17 +124,10 @@ pub struct TypingContext<'a, 'intern, TR: TypeResolver<'intern>> {
     inftypes: Rc<FxHashMap<DefId, InfTypeId<'intern>>>,
     inf_expressions: FxHashMap<hir::ExprId, Rc<ExprInfTypeData<'intern>>>,
     current_ambient: Option<InfTypeId<'intern>>,
-    recurse_blocks: bool,
 }
 
 impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
-    fn new(
-        db: &'a dyn TyHirs,
-        tr: TR,
-        loc: TypingLocation,
-        bump: &'intern Bump,
-        recurse_blocks: bool,
-    ) -> Self {
+    fn new(db: &'a dyn TyHirs, tr: TR, loc: TypingLocation, bump: &'intern Bump) -> Self {
         Self {
             db,
             infctx: InferenceContext::new(tr, bump),
@@ -152,7 +135,6 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
             inftypes: Default::default(),
             inf_expressions: Default::default(),
             current_ambient: None,
-            recurse_blocks,
         }
     }
 
@@ -480,7 +462,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         Ok(rc_expr)
     }
     fn inftype_to_concrete_type(&mut self, infty: InfTypeId<'intern>) -> Result<TypeId, TypeError> {
-        self.infctx.to_type(infty)
+        self.infctx.to_type(infty, self.loc.pd.0)
     }
     fn expr_to_concrete_type(
         &mut self,
@@ -542,9 +524,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                     }
                 }
                 hir::HirNode::Block(block) => {
-                    if block.returns {
-                        self.initialize_vars_at(block.root_context.0, vars)?;
-                    }
+                    self.initialize_vars_at(block.root_context.0, vars)?;
                     continue;
                 }
                 _ => continue,
@@ -638,9 +618,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
             } else {
                 None
             };
-            if block.returns || self.recurse_blocks {
-                self.with_ambient_type(ambient, |ctx| ctx.type_block(&block))?;
-            }
+            self.with_ambient_type(ambient, |ctx| ctx.type_block(&block))?;
         }
         Ok(ret)
     }

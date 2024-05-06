@@ -16,4 +16,4 @@ yaboc-types = { path = "../yaboc-types" }
 yaboc-hir-types = { path = "../yaboc-hir-types" }
 yaboc-req = { path = "../yaboc-req" }
 fxhash = "0.2.1"
-petgraph = "0.6.3"
+petgraph = { workspace = true }
