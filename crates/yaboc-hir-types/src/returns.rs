@@ -160,10 +160,16 @@ pub fn ssc_types(db: &dyn TyHirs, id: FunctionSscId) -> Result<SscTypes, Spanned
     let mut ctx = TypingContext::new(db, resolver, loc, &bump);
 
     let mut inftypes = FxHashMap::default();
+    let mut local_inftypes = FxHashMap::default();
+    let mut inftype_def = FxHashMap::default();
     for def in defs.iter() {
         // in this loop we do not directly type the inference variables we are creating yet
-        ctx.initialize_vars_at(def.id.0, &mut inftypes)?;
-        ctx.initialize_parserdef_args(def.id, &mut inftypes)?;
+        ctx.initialize_vars_at(def.id.0, &mut local_inftypes)?;
+        ctx.initialize_parserdef_args(def.id, &mut local_inftypes)?;
+        for (id, inftype) in local_inftypes.drain() {
+            inftypes.insert(id, inftype);
+            inftype_def.insert(id, def.id);
+        }
     }
     ctx.inftypes = Rc::new(inftypes);
     ctx.infctx.tr.inftypes = ctx.inftypes.clone();
@@ -174,11 +180,15 @@ pub fn ssc_types(db: &dyn TyHirs, id: FunctionSscId) -> Result<SscTypes, Spanned
     }
     let mut rets = Vec::new();
     let mut types = SscTypes::default();
+    let inftypes = ctx.inftypes.clone();
+    let inf_expressions = ctx.inf_expressions.clone();
+    let mut converter = ctx.infctx.type_converter(placeholder_id.0);
     for def in defs.iter() {
         let spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(def.to.0));
         // here we are finished with inference so we can convert to actual types
-        let mut deref = ctx
-            .inftype_to_concrete_type(ctx.inftypes[&def.id.0])
+        converter.set_id(def.id.0);
+        let mut deref = converter
+            .convert_to_type(ctx.inftypes[&def.id.0])
             .map_err(spanned)?;
         if def.kind.thunky() {
             deref = check_for_typevar(db, deref).map_err(spanned)?;
@@ -188,9 +198,11 @@ pub fn ssc_types(db: &dyn TyHirs, id: FunctionSscId) -> Result<SscTypes, Spanned
         }
         rets.push(ParserDefType { id: def.id, deref });
     }
-    for (&id, &infty) in ctx.infctx.tr.inftypes.clone().iter() {
-        let ty = ctx
-            .inftype_to_concrete_type(infty)
+    for (&id, &infty) in inftypes.iter() {
+        let def = inftype_def[&id];
+        converter.set_id(def.0);
+        let ty = converter
+            .convert_to_type(infty)
             .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(id)))?;
         types.types.insert(id, ty);
     }
@@ -199,8 +211,21 @@ pub fn ssc_types(db: &dyn TyHirs, id: FunctionSscId) -> Result<SscTypes, Spanned
         types.types.insert(id.0, *deref);
     }
     // the context does not need the expressions anymore, so we can just mem::take them
-    for (&id, expr) in std::mem::take(&mut ctx.inf_expressions).iter() {
-        let expr = ctx.expr_to_concrete_type(expr, id)?;
+    for (id, expr) in inf_expressions {
+        let def = db.hir_parent_parserdef(id.0)?;
+        converter.set_id(def.0);
+        let expr = &expr;
+        let spans = db.resolve_expr(id)?;
+        let expr = expr
+            .as_slice()
+            .zip(spans.data.as_slice())
+            .map(|(ty, span)| {
+                let result = converter
+                    .convert_to_type(*ty)
+                    .map_err(|e| SpannedTypeError::new(e, IndirectSpan::new(id.0, *span)));
+                result
+            })
+            .try_collect()?;
         types.exprs.insert(id, expr);
     }
     find_cyclic_return_types(db, &rets)?;

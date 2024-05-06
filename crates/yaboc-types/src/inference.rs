@@ -1053,22 +1053,10 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     }
     pub fn to_type(&mut self, infty: InfTypeId<'intern>, at: DefId) -> Result<TypeId, TypeError> {
         let mut converter = TypeConvertMemo::new(self, at);
-        converter.convert_to_type_internal(infty)
+        converter.convert_to_type(infty)
     }
-    pub fn to_types_with_vars(
-        &mut self,
-        inftys: &[InfTypeId<'intern>],
-        mut n_vars: u32,
-        at: DefId,
-    ) -> Result<(Vec<TypeId>, u32), TypeError> {
-        let mut converter = TypeConvertMemo::new(self, at);
-        let mut ret = Vec::new();
-        for infty in inftys {
-            let (new_ty, new_n) = converter.convert_to_type_internal_with_vars(*infty, n_vars)?;
-            n_vars = new_n;
-            ret.push(new_ty);
-        }
-        Ok((ret, n_vars))
+    pub fn type_converter(&mut self, at: DefId) -> TypeConvertMemo<'_, 'intern, TR> {
+        TypeConvertMemo::new(self, at)
     }
 }
 impl<'intern, TR: TypeResolver<'intern>> InfTypeInterner<'intern>
