@@ -27,7 +27,7 @@ pub fn parser_args_error(
     };
     let arg_resolver = ArgResolver::new(db);
     let bump = Bump::new();
-    let mut tcx = TypingContext::new(db, arg_resolver, loc, &bump, false);
+    let mut tcx = TypingContext::new(db, arg_resolver, loc, &bump);
     let mut arg_inftys = pd
         .args
         .as_ref()
@@ -107,8 +107,8 @@ impl<'a> TypeResolver<'a> for ArgResolver<'a> {
         Ok(Some(EitherType::Regular(self.0.intern_type(Type::Unknown))))
     }
 
-    fn signature(&self, id: DefId) -> Result<Signature, TypeError> {
-        get_signature(self.0, id)
+    fn signature(&self, id: DefId) -> Result<(Signature, bool), TypeError> {
+        Ok((get_signature(self.0, id)?, false))
     }
 
     fn lookup(&self, _val: DefId) -> Result<EitherType<'a>, TypeError> {

@@ -21,6 +21,6 @@ yaboc-absint = { path = "../yaboc-absint" }
 yaboc-mir = { path = "../yaboc-mir" }
 yaboc-req = { path = "../yaboc-req" }
 fxhash = "0.2.1"
-petgraph = "0.6.3"
+petgraph = { workspace = true }
 sha2 = "0.10.7"
 bumpalo = "3.13.0"

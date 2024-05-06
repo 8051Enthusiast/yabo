@@ -64,7 +64,7 @@ pub struct NominalTypeHead {
     pub ty_args: Arc<Vec<TypeId>>,
 }
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TypeVarRef(pub DefId, pub u32);
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -176,6 +176,7 @@ pub enum TypeError {
     TypeVarReturn(TypeVar),
     CyclicReturnThunks(Arc<Vec<DefId>>),
     NonThunkReference(Identifier),
+    PolymorphicRecursion(TypeVarRef, TypeVarRef),
     Silenced(SilencedError),
 }
 

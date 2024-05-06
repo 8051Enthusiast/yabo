@@ -164,15 +164,20 @@ impl std::fmt::Display for PrimitiveType {
         }
     }
 }
+
+impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for TypeVarRef {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, _: &DB) -> std::fmt::Result {
+        write!(f, "'{}", &self.1)
+    }
+}
+
 impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeHead {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
             InfTypeHead::Any => write!(f, "any type"),
             InfTypeHead::Bot => write!(f, "bottom type"),
             InfTypeHead::Primitive(p) => p.db_fmt(f, db),
-            InfTypeHead::TypeVarRef(TypeVarRef(_, index)) => {
-                dbwrite!(f, db, "'{}", &index)
-            }
+            InfTypeHead::TypeVarRef(var) => var.db_fmt(f, db),
             InfTypeHead::Nominal(def) => {
                 dbwrite!(f, db, "{}", def)
             }
@@ -205,9 +210,7 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for TypeId {
             Type::Any => write!(f, "any"),
             Type::Bot => write!(f, "bot"),
             Type::Primitive(p) => p.db_fmt(f, db),
-            Type::TypeVarRef(TypeVarRef(_, index)) => {
-                dbwrite!(f, db, "'{}", &index)
-            }
+            Type::TypeVarRef(var) => var.db_fmt(f, db),
             Type::Nominal(n) => {
                 if let NominalKind::Block = n.kind {
                     write!(f, "<anonymous block ")?;

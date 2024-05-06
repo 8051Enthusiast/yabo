@@ -180,18 +180,20 @@ pub struct TypeConvertMemo<'a, 'intern, TR: TypeResolver<'intern>> {
     normalize: MemoRecursor<InfTypeId<'intern>, InfTypeId<'intern>>,
     meet: MemoRecursor<(InfTypeId<'intern>, InfTypeId<'intern>), InfTypeId<'intern>>,
     join: MemoRecursor<(InfTypeId<'intern>, InfTypeId<'intern>), InfTypeId<'intern>>,
-    var_count: Option<(DefId, u32)>,
+    id: DefId,
+    var_count: Option<u32>,
     ctx: &'a mut InferenceContext<'intern, TR>,
 }
 
 impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
-    pub fn new(ctx: &'a mut InferenceContext<'intern, TR>) -> Self {
+    pub fn new(ctx: &'a mut InferenceContext<'intern, TR>, id: DefId) -> Self {
         TypeConvertMemo {
             convert: Default::default(),
             normalize: Default::default(),
             meet: Default::default(),
             join: Default::default(),
             var_count: None,
+            id,
             ctx,
         }
     }
@@ -364,17 +366,15 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                 let var_store = self.ctx.var_store.clone();
                 let mut contains_non_var = false;
                 for ty in var_store.get(*v).lower().iter() {
-                    if !matches!(ty.value(), InferenceType::Var(_)) {
-                        contains_non_var = true;
-                    }
+                    contains_non_var |= !matches!(ty.value(), InferenceType::Var(_));
                     let normalized = self.normalize_children(*ty)?;
                     result = self.join_inftype(result, normalized)?;
                 }
                 if !contains_non_var {
-                    if let Some((id, ref mut n)) = self.var_count {
+                    if let Some(ref mut n) = self.var_count {
                         result = self
                             .ctx
-                            .intern_infty(InferenceType::TypeVarRef(TypeVarRef(id, *n)));
+                            .intern_infty(InferenceType::TypeVarRef(TypeVarRef(self.id, *n)));
                         self.ctx.equal(result, infty)?;
                         *n += 1;
                     }
@@ -462,11 +462,10 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
         &mut self,
         infty: InfTypeId<'intern>,
         n_vars: u32,
-        at: DefId,
     ) -> Result<(TypeId, u32), TypeError> {
-        self.var_count = Some((at, n_vars));
+        self.var_count = Some(n_vars);
         let ret = self.convert_to_type_internal(infty);
-        let new_var_count = self.var_count.take().unwrap().1;
+        let new_var_count = self.var_count.take().unwrap();
         ret.map(|x| (x, new_var_count))
     }
 }

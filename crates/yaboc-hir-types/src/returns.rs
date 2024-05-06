@@ -1,7 +1,8 @@
 use std::fmt::Display;
 
 use fxhash::FxHashSet;
-use yaboc_base::dbformat;
+use yaboc_base::{dbformat, dbpanic, interner::PathComponent};
+use yaboc_expr::FetchKindData;
 use yaboc_resolve::parserdef_ssc::FunctionSscId;
 
 use super::*;
@@ -101,77 +102,109 @@ pub fn least_deref_type(db: &dyn TyHirs, mut ty: TypeId) -> SResult<TypeId> {
     })
 }
 
-pub fn parser_returns(db: &dyn TyHirs, id: hir::ParserDefId) -> SResult<ParserDefType> {
-    db.parser_returns_ssc(db.parser_ssc(id)?)
-        .into_iter()
-        .flatten()
-        .find(|x| x.id.0 == id.0)
-        .ok_or_else(SilencedError::new)
+pub fn parser_type_at(db: &dyn TyHirs, id: DefId) -> SResult<TypeId> {
+    let parent_pd = db.hir_parent_parserdef(id)?;
+    let types = db.ssc_types(db.parser_ssc(parent_pd)?).silence()?;
+    let res = types.types.get(&id).copied().ok_or_else(SilencedError::new);
+    res
 }
 
-pub fn parser_returns_ssc(
-    db: &dyn TyHirs,
-    id: FunctionSscId,
-) -> Vec<Result<ParserDefType, SpannedTypeError>> {
+pub fn parser_expr_at(db: &dyn TyHirs, id: hir::ExprId) -> SResult<Arc<ExprTypeData>> {
+    let parent_pd = db.hir_parent_parserdef(id.0)?;
+    let types = db.ssc_types(db.parser_ssc(parent_pd)?).silence()?;
+    Ok(Arc::new(
+        types
+            .exprs
+            .get(&id)
+            .cloned()
+            .ok_or_else(SilencedError::new)?,
+    ))
+}
+
+impl<DB: TyHirs + ?Sized> FetchKindData<FullTypeId, ExprId, DB> for Resolved {
+    type Err = SilencedError;
+    type Data = Arc<ExprTypeData>;
+
+    fn fetch_kind_data(db: &DB, id: ExprId) -> Result<Self::Data, Self::Err> {
+        db.parser_expr_at(id)
+    }
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+pub struct SscTypes {
+    pub types: BTreeMap<DefId, TypeId>,
+    pub exprs: BTreeMap<hir::ExprId, ExprTypeData>,
+}
+
+pub fn parser_returns(db: &dyn TyHirs, id: hir::ParserDefId) -> SResult<ParserDefType> {
+    let ssc_types = db.ssc_types(db.parser_ssc(id)?).silence()?;
+    let ty = ssc_types
+        .types
+        .get(&id.0)
+        .copied()
+        .unwrap_or_else(|| dbpanic!(db, "parser_returns: no type for parserdef {}", &id.0));
+    Ok(ParserDefType { id, deref: ty })
+}
+
+pub fn ssc_types(db: &dyn TyHirs, id: FunctionSscId) -> Result<SscTypes, SpannedTypeError> {
     let def_ids = db.lookup_intern_recursion_scc(id);
     let defs = def_ids
         .iter()
-        .flat_map(|fun: &hir::ParserDefId| fun.lookup(db))
-        .collect::<Vec<_>>();
+        .map(|fun: &hir::ParserDefId| fun.lookup(db))
+        .collect::<Result<Vec<_>, _>>()?;
 
     let resolver = ReturnResolver::new(db);
     let bump = Bump::new();
     let placeholder_id = defs[0].id;
-    let loc = match TypingLocation::at_id(db, placeholder_id.0) {
-        Ok(loc) => loc,
-        Err(e) => return vec![Err(e.into())],
-    };
-    let mut ctx = TypingContext::new(db, resolver, loc, &bump, false);
+    let loc = TypingLocation::at_id(db, placeholder_id.0)?;
+    let mut ctx = TypingContext::new(db, resolver, loc, &bump);
 
-    let mut vars = FxHashMap::default();
-    let defs: Vec<_> = defs
-        .into_iter()
-        .map(|def| {
-            // in this loop we do not directly the inference variables we are creating yet
-            ctx.initialize_vars_at(def.id.0, &mut vars)?;
-            ctx.initialize_parserdef_args(def.id, &mut vars)?;
-            Ok(def)
-        })
-        .collect();
-    ctx.inftypes = Rc::new(vars);
-    ctx.infctx.tr.return_infs = ctx.inftypes.clone();
-    let defs = defs
-        .into_iter()
-        .map(|def| -> Result<hir::ParserDef, SpannedTypeError> {
-            def.and_then(|def| {
-                // in this separate loop we do the actual type inference
-                ctx.loc = TypingLocation::at_id(db, def.id.0)?;
-                ctx.type_parserdef(def.id)?;
-                Ok(def)
-            })
-        })
-        .collect::<Vec<_>>();
-    let mut ret: Vec<_> = defs
-        .into_iter()
-        .map(|def| -> Result<ParserDefType, SpannedTypeError> {
-            def.and_then(|def| {
-                let spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(def.to.0));
-                // here we are finished with inference so we can convert to actual types
-                let mut deref = ctx
-                    .inftype_to_concrete_type(ctx.inftypes[&def.id.0])
-                    .map_err(spanned)?;
-                if def.kind.thunky() {
-                    deref = check_for_typevar(db, deref).map_err(spanned)?;
-                }
-                if def.kind == DefKind::Static && def.ret_ty.is_none() {
-                    deref = db.least_deref_type(deref)?;
-                }
-                Ok(ParserDefType { id: def.id, deref })
-            })
-        })
-        .collect();
-    find_cyclic_return_types(db, &mut ret);
-    ret
+    let mut inftypes = FxHashMap::default();
+    for def in defs.iter() {
+        // in this loop we do not directly type the inference variables we are creating yet
+        ctx.initialize_vars_at(def.id.0, &mut inftypes)?;
+        ctx.initialize_parserdef_args(def.id, &mut inftypes)?;
+    }
+    ctx.inftypes = Rc::new(inftypes);
+    ctx.infctx.tr.inftypes = ctx.inftypes.clone();
+    for def in defs.iter() {
+        // in this separate loop we do the actual type inference
+        ctx.loc = TypingLocation::at_id(db, def.id.0)?;
+        ctx.type_parserdef(def.id)?;
+    }
+    let mut rets = Vec::new();
+    let mut types = SscTypes::default();
+    for def in defs.iter() {
+        let spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(def.to.0));
+        // here we are finished with inference so we can convert to actual types
+        let mut deref = ctx
+            .inftype_to_concrete_type(ctx.inftypes[&def.id.0])
+            .map_err(spanned)?;
+        if def.kind.thunky() {
+            deref = check_for_typevar(db, deref).map_err(spanned)?;
+        }
+        if def.kind == DefKind::Static && def.ret_ty.is_none() {
+            deref = db.least_deref_type(deref)?;
+        }
+        rets.push(ParserDefType { id: def.id, deref });
+    }
+    for (&id, &infty) in ctx.infctx.tr.inftypes.clone().iter() {
+        let ty = ctx
+            .inftype_to_concrete_type(infty)
+            .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(id)))?;
+        types.types.insert(id, ty);
+    }
+    // make sure we get the modified return
+    for ParserDefType { id, deref } in rets.iter() {
+        types.types.insert(id.0, *deref);
+    }
+    // the context does not need the expressions anymore, so we can just mem::take them
+    for (&id, expr) in std::mem::take(&mut ctx.inf_expressions).iter() {
+        let expr = ctx.expr_to_concrete_type(expr, id)?;
+        types.exprs.insert(id, expr);
+    }
+    find_cyclic_return_types(db, &rets)?;
+    Ok(types)
 }
 
 fn check_for_typevar(db: &dyn TyHirs, ty: TypeId) -> Result<TypeId, TypeError> {
@@ -187,10 +220,12 @@ fn check_for_typevar(db: &dyn TyHirs, ty: TypeId) -> Result<TypeId, TypeError> {
     }
 }
 
-fn find_cyclic_return_types(db: &dyn TyHirs, tys: &mut [Result<ParserDefType, SpannedTypeError>]) {
+fn find_cyclic_return_types(
+    db: &dyn TyHirs,
+    tys: &[ParserDefType],
+) -> Result<(), SpannedTypeError> {
     let mut targets: FxHashMap<DefId, Option<DefId>> = FxHashMap::default();
-    for mty in tys.iter() {
-        let Ok(pdty) = *mty else { continue };
+    for pdty in tys.iter() {
         let target = match db.lookup_intern_type(pdty.deref) {
             Type::Nominal(nom) => Some(nom.def),
             _ => None,
@@ -223,10 +258,9 @@ fn find_cyclic_return_types(db: &dyn TyHirs, tys: &mut [Result<ParserDefType, Sp
         for i in stack[..first_occurence].iter() {
             on_stack.remove(i);
         }
-        for ty in tys.iter_mut() {
-            let Ok(pdty) = ty else { continue };
+        for pdty in tys.iter() {
             if on_stack.contains(&pdty.id.0) {
-                *ty = Err(SpannedTypeError::new(
+                return Err(SpannedTypeError::new(
                     error,
                     IndirectSpan::default_span(pdty.id.0),
                 ));
@@ -235,25 +269,26 @@ fn find_cyclic_return_types(db: &dyn TyHirs, tys: &mut [Result<ParserDefType, Sp
         }
         next_target = next(&mut targets);
     }
+    Ok(())
 }
 
-pub struct ReturnResolver<'a> {
-    db: &'a dyn TyHirs,
-    return_infs: Rc<FxHashMap<DefId, InfTypeId<'a>>>,
+pub struct ReturnResolver<'intern> {
+    db: &'intern dyn TyHirs,
+    inftypes: Rc<FxHashMap<DefId, InfTypeId<'intern>>>,
 }
 
-impl<'a> ReturnResolver<'a> {
+impl<'intern> ReturnResolver<'intern> {
     #[must_use]
-    pub fn new(db: &'a dyn TyHirs) -> Self {
+    pub fn new(db: &'intern dyn TyHirs) -> Self {
         Self {
             db,
-            return_infs: Default::default(),
+            inftypes: Default::default(),
         }
     }
 }
 
-impl<'a> TypeResolver<'a> for ReturnResolver<'a> {
-    type DB = dyn TyHirs + 'a;
+impl<'intern> TypeResolver<'intern> for ReturnResolver<'intern> {
+    type DB = dyn TyHirs + 'intern;
 
     fn db(&self) -> &Self::DB {
         self.db
@@ -261,14 +296,35 @@ impl<'a> TypeResolver<'a> for ReturnResolver<'a> {
 
     fn field_type(
         &self,
-        _: &NominalInfHead<'a>,
-        _: FieldName,
-    ) -> Result<EitherType<'a>, TypeError> {
-        Ok(self.db.intern_type(Type::Unknown).into())
+        ty: &NominalInfHead<'intern>,
+        name: FieldName,
+    ) -> Result<EitherType<'intern>, TypeError> {
+        let block = match NominalId::from_nominal_inf_head(ty) {
+            NominalId::Def(pd) => {
+                dbpanic!(self.db, "field_type called on parser def {}", &pd.0)
+            }
+            NominalId::Block(b) => b,
+        }
+        .lookup(self.db)?;
+        let child_id = block
+            .root_context
+            .0
+            .child(self.db, PathComponent::Named(name));
+        if ty.internal {
+            self.inftypes
+                .get(&child_id)
+                .map(|&id| id.into())
+                .ok_or_else(|| TypeError::UnknownField(name))
+        } else {
+            Ok(self.db.parser_type_at(child_id).map(|t| t.into())?)
+        }
     }
 
-    fn deref(&self, ty: &NominalInfHead<'a>) -> Result<Option<EitherType<'a>>, TypeError> {
-        if let Some(deref_ty) = self.return_infs.get(&ty.def) {
+    fn deref(
+        &self,
+        ty: &NominalInfHead<'intern>,
+    ) -> Result<Option<EitherType<'intern>>, TypeError> {
+        if let Some(deref_ty) = self.inftypes.get(&ty.def) {
             Ok(Some(EitherType::Inference(*deref_ty)))
         } else {
             let id = match NominalId::from_nominal_inf_head(ty) {
@@ -279,19 +335,18 @@ impl<'a> TypeResolver<'a> for ReturnResolver<'a> {
         }
     }
 
-    fn signature(&self, id: DefId) -> Result<Signature, TypeError> {
-        get_signature(self.db, id)
+    fn signature(&self, id: DefId) -> Result<(Signature, bool), TypeError> {
+        let local = self.inftypes.get(&id).is_some();
+        Ok((get_signature(self.db, id)?, local))
     }
 
-    fn lookup(&self, val: DefId) -> Result<EitherType<'a>, TypeError> {
-        self.return_infs
-            .get(&val)
-            .map_or_else(|| Err(SilencedError::new().into()), |inf| Ok((*inf).into()))
+    fn lookup(&self, val: DefId) -> Result<EitherType<'intern>, TypeError> {
+        Ok(self.inftypes[&val].into())
     }
 
     fn name(&self) -> String {
         let mut ret = String::from("returns for (");
-        for (i, id) in self.return_infs.keys().enumerate() {
+        for (i, id) in self.inftypes.keys().enumerate() {
             if i > 0 {
                 ret.push_str(", ");
             }
@@ -315,6 +370,7 @@ mod tests {
     use yaboc_ast::import::Import;
     use yaboc_base::databased_display::DatabasedDisplay;
     use yaboc_base::Context;
+    use yaboc_types::TypeInterner;
 
     use super::*;
     #[test]
@@ -358,5 +414,83 @@ def *u16l = {
         let parser = ctx.parser("u16l");
         let ret = ctx.db.parser_returns(parser).unwrap().deref;
         assert_eq!(ret.to_db_string(&ctx.db), "int");
+    }
+    #[test]
+    fn test_type_expr() {
+        let ctx = Context::<HirTypesTestDatabase>::mock(
+            r#"
+def ['t] *> nil = {}
+def ['t] *> expr1 = {
+  a: ~
+  b: {
+    | let c: int = 2
+      d: ~
+    | let c: int = 1
+  }
+}
+def *expr2 = {
+  x: expr1
+  let y: int = 3 + x.a
+}
+def [[u8]] *> expr4 = {
+  x: ~ |> ~
+  let b: *int = ~
+  y: ~ |> b
+  let a: int = x + y
+}
+def *expr5 = {
+  x: expr2
+  let b: expr2 = x
+}
+def *expr6 = {
+  let expr3: *expr5 = expr5
+  b: expr3
+  inner: {
+    let expr3: *expr2 = expr2
+    b: expr3
+  }
+}
+            "#,
+        );
+        let full_type = |name: &str, fields: &[&str]| {
+            let p = ctx.parser(name);
+            let mut ret = ctx.db.parser_returns(p).unwrap().deref;
+            for x in fields {
+                let block = ctx.db.lookup_intern_type(ret);
+                let def_id = match &block {
+                    Type::Nominal(n) => n.def,
+                    _ => panic!("expected nominal type"),
+                };
+                let block = hir::BlockId::extract(ctx.db.hir_node(def_id).unwrap());
+                let root_context = block.root_context;
+                let ident_field = ctx.id(x);
+                let child = root_context
+                    .0
+                    .child(&ctx.db, PathComponent::Named(FieldName::Ident(ident_field)));
+                ret = ctx.db.parser_type_at(child).unwrap();
+            }
+            ret.to_db_string(&ctx.db)
+        };
+        assert_eq!(full_type("expr1", &["a"]), "'0");
+        assert_eq!(full_type("expr1", &["b", "c"]), "int");
+        assert_eq!(full_type("expr1", &["b", "d"]), "'0");
+        assert_eq!(full_type("expr2", &["x"]), "[u8] &> file[_].expr1");
+        assert_eq!(full_type("expr2", &["y"]), "int");
+        //assert_eq!(full_type("expr4", &["x"]), "int");
+        assert_eq!(full_type("expr4", &["b"]), "[u8] *> int");
+        //assert_eq!(full_type("expr4", &["y"]), "int");
+        assert_eq!(full_type("expr4", &["a"]), "int");
+        assert_eq!(full_type("expr5", &["x"]), "[u8] &> file[_].expr2");
+        assert_eq!(full_type("expr5", &["b"]), "[u8] &> file[_].expr2");
+        assert_eq!(
+            full_type("expr6", &["expr3"]),
+            "[u8] *> [u8] &> file[_].expr5"
+        );
+        assert_eq!(full_type("expr6", &["b"]), "[u8] &> file[_].expr5");
+        assert_eq!(
+            full_type("expr6", &["inner", "expr3"]),
+            "[u8] *> [u8] &> file[_].expr2"
+        );
+        assert_eq!(full_type("expr6", &["inner", "b"]), "[u8] &> file[_].expr2");
     }
 }

@@ -24,26 +24,13 @@ pub fn errors(db: &(impl TyHirs + ?Sized)) -> Vec<Report> {
         }
     }
     let mut errors = Vec::new();
-    let mut success: FxHashSet<_> = Default::default();
     for ssc in sscs {
-        for ret in db.parser_returns_ssc(ssc) {
-            match ret {
-                Ok(x) => {
-                    success.insert(x.id);
-                }
-                Err(e) => errors.push(e),
-            }
+        if let Err(e) = db.ssc_types(ssc) {
+            errors.push(e)
         }
     }
     for parser in parsers {
         if let Err(e) = db.parser_args_error(parser) {
-            errors.push(e);
-        }
-        if let Err(e) = db.parser_full_types(parser) {
-            // avoid duplicate errors
-            if !success.contains(&parser) {
-                continue;
-            }
             errors.push(e);
         }
     }
@@ -102,6 +89,10 @@ fn make_report(db: &(impl TyHirs + ?Sized), error: SpannedTypeError) -> Option<R
         TypeError::NonThunkReference(name) => (
             511,
             dbformat!(db, "typename reference to non-thunk function {}", &name),
+        ),
+        TypeError::PolymorphicRecursion(var1, var2) => (
+            512,
+            dbformat!(db, "polymorphic recursion between {} and {}", &var1, &var2),
         ),
     };
     let mut rbuild = Report::new(DiagnosticKind::Error, spans[0].file, &message).with_code(code);
