@@ -48,11 +48,17 @@ pub fn parser_args_error(
         let from_infty = tcx.resolve_type_expr(from_expr.expr.take_ref(), from)?;
         arg_inftys.push(from_infty);
     }
-    // i don't think an error can happen here, but i'm not sure
-    let (mut args, count) = tcx
-        .infctx
-        .to_types_with_vars(&arg_inftys, tcx.loc.vars.defs.len() as u32, id.0)
-        .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(pd.id.0)))?;
+    let inftys = &arg_inftys;
+    let mut count = tcx.loc.vars.defs.len() as u32;
+    let mut converter = tcx.infctx.type_converter(id.0);
+    let mut args = Vec::new();
+    for infty in inftys {
+        let (new_ty, new_n) = converter
+            .convert_to_type_with_vars(*infty, count)
+            .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(pd.id.0)))?;
+        count = new_n;
+        args.push(new_ty);
+    }
     tcx.loc.vars.fill_anon_vars(db, count);
     let ty_args = tcx.loc.vars.var_types(db, id);
     let from_ty = if pd.from.is_some() {

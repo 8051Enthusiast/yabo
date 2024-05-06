@@ -1,6 +1,6 @@
 pub mod inference;
 pub mod represent;
-mod to_type;
+pub mod to_type;
 
 use std::{collections::HashSet, hash::Hash, sync::Arc};
 

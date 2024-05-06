@@ -461,23 +461,6 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         self.inf_expressions.insert(id, rc_expr.clone());
         Ok(rc_expr)
     }
-    fn inftype_to_concrete_type(&mut self, infty: InfTypeId<'intern>) -> Result<TypeId, TypeError> {
-        self.infctx.to_type(infty, self.loc.pd.0)
-    }
-    fn expr_to_concrete_type(
-        &mut self,
-        expr: &ExprInfTypeData<'intern>,
-        id: ExprId,
-    ) -> Result<ExprTypeData, SpannedTypeError> {
-        let spans = self.db.resolve_expr(id)?;
-        expr.as_slice()
-            .zip(spans.data.as_slice())
-            .map(|(ty, span)| {
-                self.inftype_to_concrete_type(*ty)
-                    .map_err(|e| SpannedTypeError::new(e, IndirectSpan::new(id.0, *span)))
-            })
-            .try_collect()
-    }
     fn set_current_loc(&mut self, loc: DefId) {
         // sets loc to loc
         self.loc.loc = loc;
