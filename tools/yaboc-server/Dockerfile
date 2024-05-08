@@ -61,11 +61,12 @@ COPY --from=emscripten /opt/emsdk/ /opt/emsdk/
 RUN apt-get update && apt-get install -y python3 git
 COPY tools/yaboc-server/qt.patch /src/qt.patch
 
+# draganddrop requires asyncify so we disable it
 RUN --mount=type=tmpfs,target=/build bash -c "\
     . /opt/emsdk/emsdk_env.sh \
  && patch -p1 -d /src/qtbase-$QT_VERSION < /src/qt.patch \
  && cd /build \
- && /src/qtbase-$QT_VERSION/configure -prefix /opt/qt6-wasm -qt-host-path /opt/qt6 -feature-thread -no-warnings-are-errors -platform wasm-emscripten \
+ && /src/qtbase-$QT_VERSION/configure -prefix /opt/qt6-wasm -qt-host-path /opt/qt6 -feature-thread -no-warnings-are-errors -platform wasm-emscripten -no-feature-draganddrop \
  && cmake --build . -t qtbase --parallel $(nproc)\
  && cmake --install . --prefix /opt/qt6-wasm"
 
