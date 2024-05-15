@@ -94,6 +94,15 @@ fn make_report(db: &(impl TyHirs + ?Sized), error: SpannedTypeError) -> Option<R
             512,
             dbformat!(db, "polymorphic recursion between {} and {}", &var1, &var2),
         ),
+        TypeError::NonInferTypeVar(var) => (
+            513,
+            dbformat!(
+                db,
+                "could not find type variable of current function corresponding to {} of {}",
+                &var,
+                &var.0
+            ),
+        ),
     };
     let mut rbuild = Report::new(DiagnosticKind::Error, spans[0].file, &message).with_code(code);
     for (i, span) in spans.iter().enumerate() {

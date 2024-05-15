@@ -178,7 +178,7 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeHead {
             InfTypeHead::Bot => write!(f, "bottom type"),
             InfTypeHead::Primitive(p) => p.db_fmt(f, db),
             InfTypeHead::TypeVarRef(var) => var.db_fmt(f, db),
-            InfTypeHead::Nominal(def) => {
+            InfTypeHead::Nominal(def, ..) => {
                 dbwrite!(f, db, "{}", def)
             }
             InfTypeHead::Loop(ArrayKind::Each) => write!(f, "array"),

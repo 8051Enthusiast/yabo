@@ -4,6 +4,7 @@ use fxhash::FxHashSet;
 use yaboc_base::{dbformat, dbpanic, interner::PathComponent};
 use yaboc_expr::FetchKindData;
 use yaboc_resolve::parserdef_ssc::FunctionSscId;
+use yaboc_types::inference::InternedNomHead;
 
 use super::*;
 
@@ -182,7 +183,10 @@ pub fn ssc_types(db: &dyn TyHirs, id: FunctionSscId) -> Result<SscTypes, Spanned
     let mut types = SscTypes::default();
     let inftypes = ctx.inftypes.clone();
     let inf_expressions = ctx.inf_expressions.clone();
-    let mut converter = ctx.infctx.type_converter(placeholder_id.0);
+    let mut converter = match ctx.infctx.type_converter(placeholder_id.0) {
+        Ok(c) => c,
+        Err((err, def)) => return Err(SpannedTypeError::new(err, IndirectSpan::default_span(def))),
+    };
     for def in defs.iter() {
         let spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(def.to.0));
         // here we are finished with inference so we can convert to actual types
@@ -190,9 +194,6 @@ pub fn ssc_types(db: &dyn TyHirs, id: FunctionSscId) -> Result<SscTypes, Spanned
         let mut deref = converter
             .convert_to_type(ctx.inftypes[&def.id.0])
             .map_err(spanned)?;
-        if def.kind.thunky() {
-            deref = check_for_typevar(db, deref).map_err(spanned)?;
-        }
         if def.kind == DefKind::Static && def.ret_ty.is_none() {
             deref = db.least_deref_type(deref)?;
         }
@@ -220,29 +221,15 @@ pub fn ssc_types(db: &dyn TyHirs, id: FunctionSscId) -> Result<SscTypes, Spanned
             .as_slice()
             .zip(spans.data.as_slice())
             .map(|(ty, span)| {
-                let result = converter
+                converter
                     .convert_to_type(*ty)
-                    .map_err(|e| SpannedTypeError::new(e, IndirectSpan::new(id.0, *span)));
-                result
+                    .map_err(|e| SpannedTypeError::new(e, IndirectSpan::new(id.0, *span)))
             })
             .try_collect()?;
         types.exprs.insert(id, expr);
     }
     find_cyclic_return_types(db, &rets)?;
     Ok(types)
-}
-
-fn check_for_typevar(db: &dyn TyHirs, ty: TypeId) -> Result<TypeId, TypeError> {
-    match db.lookup_intern_type(ty) {
-        Type::TypeVarRef(TypeVarRef(pd, idx)) => {
-            let hir::HirNode::ParserDef(pd) = db.hir_node(pd)? else {
-                panic!("typevarref points to non-parserdef")
-            };
-            let var_name = TypeVarCollection::at_id(db, pd.id)?.defs[idx as usize];
-            Err(TypeError::TypeVarReturn(var_name))
-        }
-        _ => Ok(ty),
-    }
 }
 
 fn find_cyclic_return_types(
@@ -279,7 +266,7 @@ fn find_cyclic_return_types(
             continue;
         }
         let first_occurence = stack.iter().position(|x| *x == id).unwrap();
-        let mut error = TypeError::CyclicReturnThunks(Arc::new(stack[first_occurence..].to_vec()));
+        let mut error = TypeError::CyclicReturnThunks(stack[first_occurence..].to_vec());
         for i in stack[..first_occurence].iter() {
             on_stack.remove(i);
         }
@@ -321,7 +308,7 @@ impl<'intern> TypeResolver<'intern> for ReturnResolver<'intern> {
 
     fn field_type(
         &self,
-        ty: &NominalInfHead<'intern>,
+        ty: &InternedNomHead<'intern>,
         name: FieldName,
     ) -> Result<EitherType<'intern>, TypeError> {
         let block = match NominalId::from_nominal_inf_head(ty) {
@@ -347,7 +334,7 @@ impl<'intern> TypeResolver<'intern> for ReturnResolver<'intern> {
 
     fn deref(
         &self,
-        ty: &NominalInfHead<'intern>,
+        ty: &InternedNomHead<'intern>,
     ) -> Result<Option<EitherType<'intern>>, TypeError> {
         if let Some(deref_ty) = self.inftypes.get(&ty.def) {
             Ok(Some(EitherType::Inference(*deref_ty)))
@@ -360,9 +347,12 @@ impl<'intern> TypeResolver<'intern> for ReturnResolver<'intern> {
         }
     }
 
-    fn signature(&self, id: DefId) -> Result<(Signature, bool), TypeError> {
-        let local = self.inftypes.get(&id).is_some();
-        Ok((get_signature(self.db, id)?, local))
+    fn signature(&self, id: DefId) -> Result<Signature, TypeError> {
+        get_signature(self.db, id)
+    }
+
+    fn is_local(&self, pd: DefId) -> bool {
+        self.inftypes.get(&pd).is_some()
     }
 
     fn lookup(&self, val: DefId) -> Result<EitherType<'intern>, TypeError> {

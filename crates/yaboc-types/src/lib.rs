@@ -173,10 +173,11 @@ pub enum TypeError {
     ParseDefFromMismatch,
     ParserDefArgCountMismatch(usize, usize),
     UnknownTypeVar(TypeVar),
-    TypeVarReturn(TypeVar),
-    CyclicReturnThunks(Arc<Vec<DefId>>),
+    TypeVarReturn(DefId),
+    CyclicReturnThunks(Vec<DefId>),
     NonThunkReference(Identifier),
     PolymorphicRecursion(TypeVarRef, TypeVarRef),
+    NonInferTypeVar(TypeVarRef),
     Silenced(SilencedError),
 }
 
