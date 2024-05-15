@@ -1,3 +1,5 @@
+use yaboc_types::inference::InternedNomHead;
+
 use super::*;
 
 pub fn fun_arg_count(db: &dyn TyHirs, ty: TypeId) -> SResult<Option<u32>> {
@@ -50,7 +52,10 @@ pub fn parser_args_error(
     }
     let inftys = &arg_inftys;
     let mut count = tcx.loc.vars.defs.len() as u32;
-    let mut converter = tcx.infctx.type_converter(id.0);
+    let mut converter = match tcx.infctx.type_converter(id.0) {
+        Ok(c) => c,
+        Err((err, def)) => return Err(SpannedTypeError::new(err, IndirectSpan::default_span(def))),
+    };
     let mut args = Vec::new();
     for infty in inftys {
         let (new_ty, new_n) = converter
@@ -103,18 +108,22 @@ impl<'a> ArgResolver<'a> {
 impl<'a> TypeResolver<'a> for ArgResolver<'a> {
     fn field_type(
         &self,
-        _ty: &NominalInfHead<'a>,
+        _ty: &InternedNomHead<'a>,
         _name: FieldName,
     ) -> Result<EitherType<'a>, TypeError> {
         Ok(self.0.intern_type(Type::Unknown).into())
     }
 
-    fn deref(&self, _ty: &NominalInfHead<'a>) -> Result<Option<EitherType<'a>>, TypeError> {
+    fn deref(&self, _ty: &InternedNomHead<'a>) -> Result<Option<EitherType<'a>>, TypeError> {
         Ok(Some(EitherType::Regular(self.0.intern_type(Type::Unknown))))
     }
 
-    fn signature(&self, id: DefId) -> Result<(Signature, bool), TypeError> {
-        Ok((get_signature(self.0, id)?, false))
+    fn signature(&self, id: DefId) -> Result<Signature, TypeError> {
+        get_signature(self.0, id)
+    }
+
+    fn is_local(&self, _: DefId) -> bool {
+        false
     }
 
     fn lookup(&self, _val: DefId) -> Result<EitherType<'a>, TypeError> {

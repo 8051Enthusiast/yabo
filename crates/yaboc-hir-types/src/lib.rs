@@ -31,7 +31,7 @@ use yaboc_resolve::{
     self as resolve,
     expr::{ResolvedAtom, ValBinOp, ValUnOp, ValVarOp},
 };
-use yaboc_types::inference::Application;
+use yaboc_types::inference::{Application, InternedNomHead};
 use yaboc_types::TypeVarRef;
 use yaboc_types::{
     inference::{
@@ -45,7 +45,6 @@ use yaboc_hir::{self, Hirs};
 pub struct FullTypeId;
 pub struct PubTypeId;
 
-//use public::{ambient_type, public_expr_type, public_type};
 pub use returns::DerefLevel;
 use returns::{
     deref_level, deref_type, least_deref_type, normalize_head, parser_expr_at, parser_returns,
@@ -752,7 +751,7 @@ pub enum NominalId {
 }
 
 impl NominalId {
-    pub fn from_nominal_inf_head(head: &NominalInfHead) -> Self {
+    pub fn from_nominal_inf_head(head: &InternedNomHead) -> Self {
         match head.kind {
             NominalKind::Def | NominalKind::Fun | NominalKind::Static => {
                 NominalId::Def(hir::ParserDefId(head.def))

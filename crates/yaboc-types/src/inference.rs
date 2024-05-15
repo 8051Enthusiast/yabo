@@ -10,39 +10,70 @@ use super::*;
 // subtype inference based on SimpleSub
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct InfTypeId<'intern>(pub &'intern Uniq<InferenceType<'intern>>);
+pub struct InfTypeId<'intern>(pub &'intern Uniq<InferenceType<InfTypeId<'intern>>>);
 
 pub type InfSlice<'intern> = &'intern Uniq<[InfTypeId<'intern>]>;
 
+pub trait AsArray: Sized {
+    type ArrayType: Clone + std::fmt::Debug + Hash + PartialEq + Eq;
+    fn slice(arr: &Self::ArrayType) -> &[Self];
+}
+
+impl<'intern> AsArray for InfTypeId<'intern> {
+    type ArrayType = InfSlice<'intern>;
+    fn slice(arr: &Self::ArrayType) -> &[Self] {
+        &arr.1
+    }
+}
+
+impl<T: Clone + std::fmt::Debug + Hash + PartialEq + Eq> AsArray for Vec<T> {
+    type ArrayType = Vec<Vec<T>>;
+    fn slice(arr: &Self::ArrayType) -> &[Self] {
+        arr
+    }
+}
+
+pub trait MakeArray<Elements: AsArray> {
+    fn make_array(&mut self, elements: &[Elements]) -> Elements::ArrayType;
+}
+
+impl<'intern, I: InfTypeInterner<'intern>> MakeArray<InfTypeId<'intern>> for I {
+    fn make_array(&mut self, elements: &[InfTypeId<'intern>]) -> InfSlice<'intern> {
+        self.intern_infty_slice(elements)
+    }
+}
+
+impl<T: Clone + std::fmt::Debug + Hash + PartialEq + Eq> MakeArray<Vec<T>> for () {
+    fn make_array(&mut self, elements: &[Vec<T>]) -> Vec<Vec<T>> {
+        elements.to_vec()
+    }
+}
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub enum InferenceType<'intern> {
+pub enum InferenceType<Ty: AsArray> {
     Any,
     Bot,
     Primitive(PrimitiveType),
     TypeVarRef(TypeVarRef),
     Var(VarId),
     Unknown,
-    Nominal(NominalInfHead<'intern>),
-    Loop(ArrayKind, InfTypeId<'intern>),
+    Nominal(NominalInfHead<Ty>),
+    Loop(ArrayKind, Ty),
     ParserArg {
-        result: InfTypeId<'intern>,
-        arg: InfTypeId<'intern>,
+        result: Ty,
+        arg: Ty,
     },
     FunctionArgs {
-        result: InfTypeId<'intern>,
-        args: InfSlice<'intern>,
+        result: Ty,
+        args: <Ty as AsArray>::ArrayType,
         partial: Application,
     },
-    InferField(FieldName, InfTypeId<'intern>),
-    InferIfResult(
-        Option<InfTypeId<'intern>>,
-        InfTypeId<'intern>,
-        InfTypeId<'intern>,
-    ),
+    InferField(FieldName, Ty),
+    InferIfResult(Option<Ty>, Ty, Ty),
     SizeOf,
 }
 
-impl<'intern> InferenceType<'intern> {
+impl<Inner: AsArray> InferenceType<Inner> {
     pub(crate) fn is_fun(&self) -> bool {
         matches!(
             self,
@@ -52,17 +83,98 @@ impl<'intern> InferenceType<'intern> {
             })
         )
     }
+
+    pub fn try_map<Out: AsArray, Ctx: MakeArray<Out>, E>(
+        self,
+        ctx: &mut Ctx,
+        mut f: impl FnMut(&mut Ctx, Inner, ChildLocation) -> Result<Out, E>,
+    ) -> Result<InferenceType<Out>, E>
+    where
+        Inner: Clone,
+    {
+        Ok(match self {
+            InferenceType::ParserArg { result, arg } => InferenceType::ParserArg {
+                result: f(ctx, result, ChildLocation::ParserResult)?,
+                arg: f(ctx, arg, ChildLocation::ParserArg)?,
+            },
+            InferenceType::FunctionArgs {
+                result,
+                args,
+                partial,
+            } => {
+                let result = f(ctx, result, ChildLocation::FunResult)?;
+                let args = AsArray::slice(&args)
+                    .iter()
+                    .map(|arg: &Inner| f(ctx, arg.clone(), ChildLocation::FunArg(0)))
+                    .collect::<Result<Vec<_>, _>>()?;
+                InferenceType::FunctionArgs {
+                    result,
+                    args: ctx.make_array(&args),
+                    partial,
+                }
+            }
+            InferenceType::Loop(kind, body) => {
+                InferenceType::Loop(kind, f(ctx, body, ChildLocation::LoopBody)?)
+            }
+            InferenceType::Nominal(NominalInfHead {
+                kind,
+                def,
+                parse_arg,
+                fun_args,
+                ty_args,
+                internal,
+            }) => {
+                let parse_arg = parse_arg
+                    .map(|x| f(ctx, x, ChildLocation::NomParseArg))
+                    .transpose()?;
+                let fun_args = Inner::slice(&fun_args)
+                    .iter()
+                    .map(|arg| f(ctx, arg.clone(), ChildLocation::NomFunArg(0)))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let ty_args = Inner::slice(&ty_args)
+                    .iter()
+                    .map(|arg| f(ctx, arg.clone(), ChildLocation::NomTyArg(0)))
+                    .collect::<Result<Vec<_>, _>>()?;
+                InferenceType::Nominal(NominalInfHead {
+                    kind,
+                    def,
+                    parse_arg,
+                    fun_args: ctx.make_array(&fun_args),
+                    ty_args: ctx.make_array(&ty_args),
+                    internal,
+                })
+            }
+            InferenceType::InferField(name, inner) => {
+                InferenceType::InferField(name, f(ctx, inner, ChildLocation::FieldResult)?)
+            }
+            InferenceType::InferIfResult(a, b, c) => {
+                let a = a.map(|x| f(ctx, x, ChildLocation::IfSaved)).transpose()?;
+                let b = f(ctx, b, ChildLocation::IfBound)?;
+                let c = f(ctx, c, ChildLocation::IfCont)?;
+                InferenceType::InferIfResult(a, b, c)
+            }
+            InferenceType::Any => InferenceType::Any,
+            InferenceType::Bot => InferenceType::Bot,
+            InferenceType::Primitive(p) => InferenceType::Primitive(p),
+            InferenceType::TypeVarRef(v) => InferenceType::TypeVarRef(v),
+            InferenceType::Var(v) => InferenceType::Var(v),
+            InferenceType::Unknown => InferenceType::Unknown,
+            InferenceType::SizeOf => InferenceType::SizeOf,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct NominalInfHead<'intern> {
+pub struct NominalInfHead<Ty: AsArray> {
     pub kind: NominalKind,
     pub def: DefId,
-    pub parse_arg: Option<InfTypeId<'intern>>,
-    pub fun_args: InfSlice<'intern>,
-    pub ty_args: InfSlice<'intern>,
+    pub parse_arg: Option<Ty>,
+    pub fun_args: <Ty as AsArray>::ArrayType,
+    pub ty_args: <Ty as AsArray>::ArrayType,
     pub internal: bool,
 }
+
+pub type InternedNomHead<'intern> = NominalInfHead<InfTypeId<'intern>>;
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum ChildLocation {
@@ -98,7 +210,7 @@ pub enum InfTypeHead {
     Bot,
     Primitive(PrimitiveType),
     TypeVarRef(TypeVarRef),
-    Nominal(DefId),
+    Nominal(DefId, bool, usize),
     Loop(ArrayKind),
     ParserArg,
     FunctionArgs(usize, Application),
@@ -116,7 +228,9 @@ impl<'intern> From<InfTypeId<'intern>> for InfTypeHead {
             InferenceType::Bot => InfTypeHead::Bot,
             InferenceType::Primitive(p) => InfTypeHead::Primitive(*p),
             InferenceType::TypeVarRef(var) => InfTypeHead::TypeVarRef(*var),
-            InferenceType::Nominal(head) => InfTypeHead::Nominal(head.def),
+            InferenceType::Nominal(head) => {
+                InfTypeHead::Nominal(head.def, head.parse_arg.is_some(), head.fun_args.len())
+            }
             InferenceType::Loop(kind, _) => InfTypeHead::Loop(*kind),
             InferenceType::ParserArg { .. } => InfTypeHead::ParserArg,
             InferenceType::FunctionArgs { args, partial, .. } => {
@@ -141,93 +255,25 @@ impl InfTypeHead {
 }
 
 impl<'intern> InfTypeId<'intern> {
-    pub fn value(self) -> &'intern InferenceType<'intern> {
+    pub fn value(self) -> &'intern InferenceType<InfTypeId<'intern>> {
         &self.0 .1
+    }
+    pub fn child_arrays(self) -> InferenceType<Vec<Self>> {
+        self.value()
+            .clone()
+            .try_map(&mut (), |_, x, _| Ok::<_, Infallible>(vec![x]))
+            .unwrap()
     }
     pub fn try_map_children<I: InfTypeInterner<'intern>, E>(
         self,
         interner: &mut I,
         mut f: impl FnMut(&mut I, Self, ChildLocation) -> Result<Self, E>,
     ) -> Result<Self, E> {
-        match self.value() {
-            InferenceType::ParserArg { result, arg } => {
-                let result = f(interner, *result, ChildLocation::ParserResult)?;
-                let arg = f(interner, *arg, ChildLocation::ParserArg)?;
-                Ok(interner.intern_infty(InferenceType::ParserArg { result, arg }))
-            }
-            InferenceType::FunctionArgs {
-                result,
-                args,
-                partial,
-            } => {
-                let fun_args = args
-                    .iter()
-                    .enumerate()
-                    .map(|(index, arg)| f(interner, *arg, ChildLocation::FunArg(index)))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let args = interner.intern_infty_slice(&fun_args);
-                let result = f(interner, *result, ChildLocation::FunResult)?;
-                Ok(interner.intern_infty(InferenceType::FunctionArgs {
-                    result,
-                    args,
-                    partial: *partial,
-                }))
-            }
-            InferenceType::Loop(kind, body) => {
-                let body = f(interner, *body, ChildLocation::LoopBody)?;
-                Ok(interner.intern_infty(InferenceType::Loop(*kind, body)))
-            }
-            InferenceType::Nominal(NominalInfHead {
-                kind,
-                def,
-                parse_arg,
-                fun_args,
-                ty_args,
-                internal,
-            }) => {
-                let parse_arg = match parse_arg {
-                    Some(parse_arg) => Some(f(interner, *parse_arg, ChildLocation::NomParseArg)?),
-                    None => None,
-                };
-                let fun_args = fun_args
-                    .iter()
-                    .enumerate()
-                    .map(|(index, arg)| f(interner, *arg, ChildLocation::NomFunArg(index)))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let fun_args = interner.intern_infty_slice(&fun_args);
-                let ty_args = ty_args
-                    .iter()
-                    .enumerate()
-                    .map(|(index, arg)| f(interner, *arg, ChildLocation::NomTyArg(index)))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let ty_args = interner.intern_infty_slice(&ty_args);
-                Ok(
-                    interner.intern_infty(InferenceType::Nominal(NominalInfHead {
-                        kind: *kind,
-                        def: *def,
-                        parse_arg,
-                        fun_args,
-                        ty_args,
-                        internal: *internal,
-                    })),
-                )
-            }
-            InferenceType::InferField(name, result) => {
-                let result = f(interner, *result, ChildLocation::FieldResult)?;
-                Ok(interner.intern_infty(InferenceType::InferField(*name, result)))
-            }
-            InferenceType::InferIfResult(a, b, c) => {
-                let a = if let Some(a) = a {
-                    Some(f(interner, *a, ChildLocation::IfSaved)?)
-                } else {
-                    None
-                };
-                let b = f(interner, *b, ChildLocation::IfBound)?;
-                let c = f(interner, *c, ChildLocation::IfCont)?;
-                Ok(interner.intern_infty(InferenceType::InferIfResult(a, b, c)))
-            }
-            _ => Ok(self),
-        }
+        let res = self
+            .value()
+            .clone()
+            .try_map(interner, |ctx, x, loc| f(ctx, x, loc))?;
+        Ok(interner.intern_infty(res))
     }
     pub fn try_for_each_child_pair<E>(
         self,
@@ -331,7 +377,7 @@ impl<'intern> InfTypeId<'intern> {
 }
 
 impl<'intern> Deref for InfTypeId<'intern> {
-    type Target = InferenceType<'intern>;
+    type Target = InferenceType<InfTypeId<'intern>>;
 
     fn deref(&self) -> &Self::Target {
         self.0
@@ -339,7 +385,7 @@ impl<'intern> Deref for InfTypeId<'intern> {
 }
 
 pub trait InfTypeInterner<'intern> {
-    fn intern_infty(&mut self, infty: InferenceType<'intern>) -> InfTypeId<'intern>;
+    fn intern_infty(&mut self, infty: InferenceType<InfTypeId<'intern>>) -> InfTypeId<'intern>;
     fn intern_infty_slice(&mut self, slice: &[InfTypeId<'intern>]) -> InfSlice<'intern>;
 }
 
@@ -375,10 +421,10 @@ impl<'intern> InferenceVar<'intern> {
     }
 }
 
-impl<'intern> TryFrom<&InferenceType<'intern>> for TypeHead {
+impl<'intern> TryFrom<&InferenceType<InfTypeId<'intern>>> for TypeHead {
     type Error = ();
 
-    fn try_from(value: &InferenceType) -> Result<Self, Self::Error> {
+    fn try_from(value: &InferenceType<InfTypeId<'_>>) -> Result<Self, Self::Error> {
         Ok(match value {
             InferenceType::Any => TypeHead::Any,
             InferenceType::Bot => TypeHead::Bot,
@@ -422,7 +468,7 @@ impl<'intern> VarStore<'intern> {
 pub struct InferenceContext<'intern, TR: TypeResolver<'intern>> {
     pub var_store: VarStore<'intern>,
     pub tr: TR,
-    pub interner: low_effort_interner::Interner<'intern, InferenceType<'intern>>,
+    pub interner: low_effort_interner::Interner<'intern, InferenceType<InfTypeId<'intern>>>,
     pub slice_interner: low_effort_interner::Interner<'intern, [InfTypeId<'intern>]>,
     cache: HashSet<(InfTypeId<'intern>, InfTypeId<'intern>)>,
     trace: bool,
@@ -433,12 +479,15 @@ pub trait TypeResolver<'intern> {
     fn db(&self) -> &Self::DB;
     fn field_type(
         &self,
-        ty: &NominalInfHead<'intern>,
+        ty: &InternedNomHead<'intern>,
         name: FieldName,
     ) -> Result<EitherType<'intern>, TypeError>;
-    fn deref(&self, ty: &NominalInfHead<'intern>)
-        -> Result<Option<EitherType<'intern>>, TypeError>;
-    fn signature(&self, pd: DefId) -> Result<(Signature, bool), TypeError>;
+    fn deref(
+        &self,
+        ty: &InternedNomHead<'intern>,
+    ) -> Result<Option<EitherType<'intern>>, TypeError>;
+    fn signature(&self, pd: DefId) -> Result<Signature, TypeError>;
+    fn is_local(&self, pd: DefId) -> bool;
     fn lookup(&self, val: DefId) -> Result<EitherType<'intern>, TypeError>;
     fn name(&self) -> String;
 }
@@ -456,13 +505,16 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
             slice_interner: low_effort_interner::Interner::new(bump),
         }
     }
-    pub fn intern_infty(&mut self, infty: InferenceType<'intern>) -> InfTypeId<'intern> {
+    pub fn intern_infty(
+        &'_ mut self,
+        infty: InferenceType<InfTypeId<'intern>>,
+    ) -> InfTypeId<'intern> {
         InfTypeId(self.interner.intern(infty))
     }
 
     pub fn field_type(
         &mut self,
-        ty: &NominalInfHead<'intern>,
+        ty: &InternedNomHead<'intern>,
         name: FieldName,
     ) -> Result<InfTypeId<'intern>, TypeError> {
         let ret = match self.tr.field_type(ty, name)? {
@@ -485,7 +537,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     }
     pub fn deref(
         &mut self,
-        ty: &NominalInfHead<'intern>,
+        ty: &InternedNomHead<'intern>,
     ) -> Result<Option<InfTypeId<'intern>>, TypeError> {
         if let Some(deref_ty) = self.tr.deref(ty)? {
             let ret = match deref_ty {
@@ -518,7 +570,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         }
     }
     pub fn signature(&self, pd: DefId) -> Result<Signature, TypeError> {
-        Ok(self.tr.signature(pd)?.0)
+        self.tr.signature(pd)
     }
     pub fn lookup(&mut self, val: DefId) -> Result<InfTypeId<'intern>, TypeError> {
         let ret = match self.tr.lookup(val) {
@@ -542,7 +594,8 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         Ok(ret)
     }
     pub fn parserdef(&mut self, pd: DefId) -> Result<InfTypeId<'intern>, TypeError> {
-        let (sig, local) = self.tr.signature(pd)?;
+        let sig = self.tr.signature(pd)?;
+        let local = self.tr.is_local(pd);
         let ret = self.tr.db().intern_type(Type::Nominal(sig.thunk));
         let vars = if local {
             Vec::new()
@@ -701,7 +754,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                     self.constrain(deref, upper)
                 } else {
                     Err(TypeError::HeadMismatch(
-                        InfTypeHead::Nominal(l.def),
+                        InfTypeHead::Nominal(l.def, l.parse_arg.is_some(), l.fun_args.len()),
                         upper.into(),
                     ))
                 }
@@ -1051,18 +1104,17 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         };
         self.intern_infty(ret)
     }
-    pub fn to_type(&mut self, infty: InfTypeId<'intern>, at: DefId) -> Result<TypeId, TypeError> {
-        let mut converter = TypeConvertMemo::new(self, at);
-        converter.convert_to_type(infty)
-    }
-    pub fn type_converter(&mut self, at: DefId) -> TypeConvertMemo<'_, 'intern, TR> {
-        TypeConvertMemo::new(self, at)
+    pub fn type_converter(
+        &mut self,
+        at: DefId,
+    ) -> Result<TypeConvertMemo<'_, 'intern, TR>, (TypeError, DefId)> {
+        Ok(TypeConvertMemo::new(self, at))
     }
 }
 impl<'intern, TR: TypeResolver<'intern>> InfTypeInterner<'intern>
     for InferenceContext<'intern, TR>
 {
-    fn intern_infty(&mut self, infty: InferenceType<'intern>) -> InfTypeId<'intern> {
+    fn intern_infty(&mut self, infty: InferenceType<InfTypeId<'intern>>) -> InfTypeId<'intern> {
         self.intern_infty(infty)
     }
 

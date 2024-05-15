@@ -72,8 +72,8 @@ trait Polarity {
         other: InfTypeId<'intern>,
     ) -> Result<InfTypeId<'intern>, TypeError>;
     const IS_POSITIVE: bool;
-    const SAT_TYPE: InferenceType<'static>;
-    const ID_TYPE: InferenceType<'static>;
+    fn sat_type<'intern>() -> InferenceType<InfTypeId<'intern>>;
+    fn id_type<'intern>() -> InferenceType<InfTypeId<'intern>>;
 }
 
 impl Polarity for PositivePolarity {
@@ -83,8 +83,12 @@ impl Polarity for PositivePolarity {
     }
 
     const IS_POSITIVE: bool = true;
-    const SAT_TYPE: InferenceType<'static> = InferenceType::Any;
-    const ID_TYPE: InferenceType<'static> = InferenceType::Bot;
+    fn sat_type<'intern>() -> InferenceType<InfTypeId<'intern>> {
+        InferenceType::Any
+    }
+    fn id_type<'intern>() -> InferenceType<InfTypeId<'intern>> {
+        InferenceType::Bot
+    }
 
     fn combine_nom<'a, 'intern, TR: TypeResolver<'intern>>(
         ctx: &mut TypeConvertMemo<'a, 'intern, TR>,
@@ -139,8 +143,12 @@ impl Polarity for NegativePolarity {
         lhs.min(rhs)
     }
     const IS_POSITIVE: bool = false;
-    const SAT_TYPE: InferenceType<'static> = InferenceType::Bot;
-    const ID_TYPE: InferenceType<'static> = InferenceType::Any;
+    fn sat_type<'intern>() -> InferenceType<InfTypeId<'intern>> {
+        InferenceType::Bot
+    }
+    fn id_type<'intern>() -> InferenceType<InfTypeId<'intern>> {
+        InferenceType::Any
+    }
 
     fn combine_nom<'a, 'intern, TR: TypeResolver<'intern>>(
         ctx: &mut TypeConvertMemo<'a, 'intern, TR>,
@@ -151,7 +159,7 @@ impl Polarity for NegativePolarity {
         let other = rhs.value();
         let nomhead = TypeHead::try_from(nom).unwrap();
         let otherhead = TypeHead::try_from(other).unwrap();
-        let mut next = |ty: &_| -> Result<Option<&InferenceType>, TypeError> {
+        let mut next = |ty: &_| -> Result<Option<&_>, TypeError> {
             match ty {
                 InferenceType::Nominal(nom) => Ok(ctx.ctx.deref(nom)?.map(|x| x.value())),
                 InferenceType::Primitive(PrimitiveType::U8) => Ok(Some(ctx.ctx.int().value())),
@@ -251,22 +259,22 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
     ) -> Result<InfTypeId<'intern>, TypeError> {
         self.combine::<PositivePolarity>(lhs, rhs)
     }
-    fn combine_impl<P: Polarity>(
-        &mut self,
+    fn combine_impl<'b, P: Polarity>(
+        &'b mut self,
         lhs: InfTypeId<'intern>,
         rhs: InfTypeId<'intern>,
     ) -> Result<InfTypeId<'intern>, TypeError> {
         use InferenceType::*;
         let res = match (lhs.value(), rhs.value()) {
             (Unknown, _) | (_, Unknown) => Unknown,
-            (x, _) | (_, x) if x == &P::SAT_TYPE => P::SAT_TYPE,
+            (x, _) | (_, x) if x == &P::sat_type() => P::sat_type(),
             (
                 InferField(..) | InferIfResult(..) | SizeOf,
                 InferField(..) | InferIfResult(..) | SizeOf,
             ) => Any,
             (InferField(..) | InferIfResult(..) | SizeOf, other)
             | (other, InferField(..) | InferIfResult(..) | SizeOf) => other.clone(),
-            (id, other) | (other, id) if id == &P::ID_TYPE => other.clone(),
+            (id, other) | (other, id) if id == &P::id_type() => other.clone(),
             (Primitive(p), Primitive(q)) if p == q => Primitive(*p),
             (TypeVarRef(var1), TypeVarRef(var2)) if var1 == var2 => TypeVarRef(*var1),
             (Loop(kind1, inner1), Loop(kind2, inner2)) => {
@@ -511,7 +519,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
 impl<'a, 'intern, TR: TypeResolver<'intern>> InfTypeInterner<'intern>
     for TypeConvertMemo<'a, 'intern, TR>
 {
-    fn intern_infty(&mut self, infty: InferenceType<'intern>) -> InfTypeId<'intern> {
+    fn intern_infty(&mut self, infty: InferenceType<InfTypeId<'intern>>) -> InfTypeId<'intern> {
         InfTypeId(self.ctx.interner.intern(infty))
     }
 
