@@ -21,14 +21,14 @@ def *dynamic = {
   x: ~, [x]
 }
 export def *test = {
-  let a = +
-  let b = ~
-  let c = { d, b, b }
-  let d = [10]
-  let e = g([10], ~)
-  let h = poly_unify(4, 3)
-  let k = static_len(31)
-  let l = g(dynamic, +)
+  let a: *_ = +
+  let b: *_ = ~
+  let c: *_ = { d, b, b }
+  let d: *_ = [10]
+  let e: *_ = g([10], ~)
+  let h: *_ = poly_unify(4, 3)
+  let k: *_ = static_len(31)
+  let l: *_ = g(dynamic, +)
 }
 
 ====[ binary 1 ]====

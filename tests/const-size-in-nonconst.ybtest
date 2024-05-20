@@ -1,12 +1,13 @@
 ====[ source code ]====
 export
 def *test = {
-  let return = {
+  let parser: *_ = {
     a: u32l
     b: u32l
     c: u32l
     [0]
-  }.sizeof
+  }
+  let return = parser.sizeof
 }
 
 

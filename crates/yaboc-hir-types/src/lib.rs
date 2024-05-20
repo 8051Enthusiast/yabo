@@ -110,7 +110,7 @@ pub fn head_discriminant(db: &dyn TyHirs, ty: TypeId) -> i64 {
             // the lowest eight bits are for flags so they get zeroed out
             i64::from_le_bytes(def_hash) & DISCRIMINANT_MASK | i64::MIN
         }
-        Type::TypeVarRef(_) | Type::Any | Type::Bot | Type::Unknown => 0,
+        Type::TypeVarRef(_) | Type::Unknown => 0,
     }
 }
 pub type ExprTypeData = ShapedData<Vec<TypeId>, Resolved>;

@@ -58,8 +58,6 @@ impl<T: Clone + std::fmt::Debug + Hash + PartialEq + Eq> MakeArray<Vec<T>> for (
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum InferenceType<Ty: AsArray> {
-    Any,
-    Bot,
     Primitive(PrimitiveType),
     TypeVarRef(TypeVarRef),
     Var(VarId),
@@ -150,8 +148,6 @@ impl<Inner: AsArray> InferenceType<Inner> {
                 let c = f(ctx, c, ChildLocation::IfCont)?;
                 InferenceType::InferIfResult(a, b, c)
             }
-            InferenceType::Any => InferenceType::Any,
-            InferenceType::Bot => InferenceType::Bot,
             InferenceType::Primitive(p) => InferenceType::Primitive(p),
             InferenceType::TypeVarRef(v) => InferenceType::TypeVarRef(v),
             InferenceType::Var(v) => InferenceType::Var(v),
@@ -203,8 +199,6 @@ pub enum Application {
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum InfTypeHead {
-    Any,
-    Bot,
     Primitive(PrimitiveType),
     TypeVarRef(TypeVarRef),
     Nominal(DefId, bool, usize),
@@ -221,8 +215,6 @@ pub enum InfTypeHead {
 impl<T: AsArray> From<&InferenceType<T>> for InfTypeHead {
     fn from(ty: &InferenceType<T>) -> Self {
         match ty {
-            InferenceType::Any => InfTypeHead::Any,
-            InferenceType::Bot => InfTypeHead::Bot,
             InferenceType::Primitive(p) => InfTypeHead::Primitive(*p),
             InferenceType::TypeVarRef(var) => InfTypeHead::TypeVarRef(*var),
             InferenceType::Nominal(head) => InfTypeHead::Nominal(
@@ -367,9 +359,7 @@ impl<'intern> InfTypeId<'intern> {
                 call_f(*b1, *b2, ChildLocation::IfBound)?;
                 call_f(*c1, *c2, ChildLocation::IfCont)?;
             }
-            (InferenceType::Any, InferenceType::Any)
-            | (InferenceType::Bot, InferenceType::Bot)
-            | (InferenceType::Primitive(_), InferenceType::Primitive(_))
+            (InferenceType::Primitive(_), InferenceType::Primitive(_))
             | (InferenceType::Var(_), InferenceType::Var(_))
             | (InferenceType::Unknown, InferenceType::Unknown)
             | (InferenceType::TypeVarRef(_), InferenceType::TypeVarRef(_))
@@ -431,8 +421,6 @@ impl<'intern> TryFrom<&InferenceType<InfTypeId<'intern>>> for TypeHead {
 
     fn try_from(value: &InferenceType<InfTypeId<'_>>) -> Result<Self, Self::Error> {
         Ok(match value {
-            InferenceType::Any => TypeHead::Any,
-            InferenceType::Bot => TypeHead::Bot,
             &InferenceType::Primitive(p) => TypeHead::Primitive(p),
             &InferenceType::TypeVarRef(var) => TypeHead::TypeVarRef(var),
             InferenceType::Nominal(NominalInfHead { def, .. }) => TypeHead::Nominal(*def),
@@ -664,10 +652,6 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
             return res.map_err(|x| x.unwrap().0);
         }
         match (lower.value(), upper.value()) {
-            (_, Any) => Ok(()),
-
-            (Bot, _) => Ok(()),
-
             (Var(var_id), _) => {
                 self.var_store.get_mut(*var_id).upper.push(upper);
                 // idx is needed because var.lower may change during the loop
@@ -1061,8 +1045,6 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
             self.convert_type_into_inftype_internal(&self.tr.db().lookup_intern_type(x), var_stack)
         };
         let ret = match ty {
-            Type::Any => InferenceType::Any,
-            Type::Bot => InferenceType::Bot,
             Type::Unknown => InferenceType::Unknown,
             Type::Primitive(p) => InferenceType::Primitive(*p),
             Type::TypeVarRef(TypeVarRef(loc, index)) => {

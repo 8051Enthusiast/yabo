@@ -14,8 +14,6 @@ use yaboc_base::dbwrite;
 impl<'a, DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeId<'a> {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self.value() {
-            InferenceType::Any => write!(f, "any"),
-            InferenceType::Bot => write!(f, "bot"),
             InferenceType::Primitive(p) => write!(f, "{}", &p),
             InferenceType::TypeVarRef(TypeVarRef(loc, index)) => {
                 dbwrite!(f, db, "<Var Ref ({}, {})>", loc, index)
@@ -108,8 +106,6 @@ impl<DB: TypeInterner + ?Sized> StableHash<DB> for TypeId {
         let sub_update =
             |id: TypeId, state: &mut sha2::Sha256| db.type_hash(id).update_hash(state, db);
         match db.lookup_intern_type(*self) {
-            Type::Any => state.update([0]),
-            Type::Bot => state.update([1]),
             Type::Unknown => state.update([2]),
             Type::Primitive(p) => {
                 state.update([3]);
@@ -174,8 +170,6 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for TypeVarRef {
 impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeHead {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
-            InfTypeHead::Any => write!(f, "any type"),
-            InfTypeHead::Bot => write!(f, "bottom type"),
             InfTypeHead::Primitive(p) => p.db_fmt(f, db),
             InfTypeHead::TypeVarRef(var) => var.db_fmt(f, db),
             InfTypeHead::Nominal(def, ..) => {
@@ -207,8 +201,6 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for TypeId {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         let ty = db.lookup_intern_type(*self);
         match ty {
-            Type::Any => write!(f, "any"),
-            Type::Bot => write!(f, "bot"),
             Type::Primitive(p) => p.db_fmt(f, db),
             Type::TypeVarRef(var) => var.db_fmt(f, db),
             Type::Nominal(n) => {

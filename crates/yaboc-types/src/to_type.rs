@@ -147,9 +147,7 @@ pub fn collect_homogenous_children<'intern>(
                 b.push(*other_b);
                 c.push(*other_c);
             }
-            (InferenceType::Any, InferenceType::Any)
-            | (InferenceType::Bot, InferenceType::Bot)
-            | (InferenceType::Primitive(_), InferenceType::Primitive(_))
+            (InferenceType::Primitive(_), InferenceType::Primitive(_))
             | (InferenceType::Var(_), InferenceType::Var(_))
             | (InferenceType::Unknown, InferenceType::Unknown)
             | (InferenceType::TypeVarRef(_), InferenceType::TypeVarRef(_))
@@ -170,13 +168,9 @@ trait Polarity {
         nom: InfSlice<'intern>,
     ) -> Result<InfTypeId<'intern>, TypeError>;
     const IS_POSITIVE: bool;
-    fn sat_type<'intern>() -> InferenceType<InfTypeId<'intern>>;
     fn check_dominating_ty<'intern>(tys: &[InfTypeId<'intern>]) -> Option<InfTypeId<'intern>> {
         if let Some(unknown) = tys.iter().find(|x| x.value() == &InferenceType::Unknown) {
             return Some(*unknown);
-        }
-        if let Some(sat) = tys.iter().find(|x| x.value() == &Self::sat_type()) {
-            return Some(*sat);
         }
         None
     }
@@ -186,10 +180,6 @@ impl Polarity for PositivePolarity {
     type Opposite = NegativePolarity;
 
     const IS_POSITIVE: bool = true;
-    fn sat_type<'intern>() -> InferenceType<InfTypeId<'intern>> {
-        InferenceType::Any
-    }
-
     fn combine_impl<'a, 'intern, TR: TypeResolver<'intern>>(
         ctx: &mut TypeConvertMemo<'a, 'intern, TR>,
         combinee: InfSlice<'intern>,
@@ -201,11 +191,10 @@ impl Polarity for PositivePolarity {
         let normalized_homogenous = homogenous
             .iter()
             .copied()
-            .filter(|x| x.value() != &InferenceType::Bot)
             .map(|x| ctx.normalize_typevar(x))
             .collect::<Result<Vec<_>, _>>()?;
         if normalized_homogenous.is_empty() {
-            return Ok(ctx.ctx.intern_infty(InferenceType::Bot));
+            return Err(TypeError::NonInfer);
         }
         let homogenous_children = collect_homogenous_children(&normalized_homogenous)
             .map_err(|[lhs, rhs]| TypeError::HeadIncompatible(lhs, rhs))?;
@@ -225,10 +214,6 @@ impl Polarity for PositivePolarity {
 impl Polarity for NegativePolarity {
     type Opposite = PositivePolarity;
     const IS_POSITIVE: bool = false;
-    fn sat_type<'intern>() -> InferenceType<InfTypeId<'intern>> {
-        InferenceType::Bot
-    }
-
     fn combine_impl<'a, 'intern, TR: TypeResolver<'intern>>(
         ctx: &mut TypeConvertMemo<'a, 'intern, TR>,
         combinee: InfSlice<'intern>,
@@ -238,19 +223,18 @@ impl Polarity for NegativePolarity {
             .map(|ty| ctx.deref_cache.deref_level(*ty, ctx.ctx))
             .collect::<Result<Vec<_>, _>>()?;
         let Some(max_level) = levels.iter().max() else {
-            return Ok(ctx.ctx.intern_infty(InferenceType::Any));
+            return Err(TypeError::NonInfer);
         };
         let highest_level_subset = combinee
             .iter()
             .copied()
             .zip(levels.iter())
             .filter_map(|(ty, level)| (level == max_level).then_some(ty))
-            .filter(|ty| ty.value() != &InferenceType::Any)
             .map(|ty| ctx.normalize_typevar(ty))
             .collect::<Result<Vec<_>, _>>()?;
         let homogenous = ctx.deref_cache.homogenize(&highest_level_subset, ctx.ctx)?;
         if homogenous.is_empty() {
-            return Ok(ctx.ctx.intern_infty(InferenceType::Any));
+            return Err(TypeError::NonInfer);
         }
         if let Some(dom) = Self::check_dominating_ty(&homogenous) {
             return Ok(dom);
@@ -442,8 +426,6 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
     fn convert_to_type_impl(&mut self, infty: InfTypeId<'intern>) -> Result<TypeId, TypeError> {
         let infty = self.normalize_inftype(infty)?;
         let res = match infty.value() {
-            InferenceType::Any => Type::Any,
-            InferenceType::Bot => Type::Bot,
             InferenceType::TypeVarRef(varref) => Type::TypeVarRef(*varref),
             InferenceType::Primitive(p) => Type::Primitive(*p),
             InferenceType::Var(..) => {
