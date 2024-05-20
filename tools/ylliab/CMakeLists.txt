@@ -28,6 +28,7 @@ qt_add_library(ylliab_core STATIC
     hexview.hpp hexview.cpp
     compiler_error_view.hpp compiler_error_view.cpp
     sourceeditor.cpp sourceeditor.hpp
+    executor.hpp executor.cpp
     filerequester.hpp filerequester.cpp
     yabotreemodel.hpp yabotreemodel.cpp
     init.hpp init.cpp
