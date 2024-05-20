@@ -63,6 +63,18 @@ impl std::hash::Hash for SilencedError {
     }
 }
 
+impl Ord for SilencedError {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
+
+impl PartialOrd for SilencedError {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 pub trait Silencable {
     type Out;
     fn silence(self) -> Self::Out;

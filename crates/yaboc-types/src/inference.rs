@@ -3,11 +3,18 @@ use std::{convert::Infallible, ops::Deref};
 use bumpalo::Bump;
 use fxhash::FxHashMap;
 
-use yaboc_base::low_effort_interner::{self, Uniq};
+use yaboc_base::{
+    error::SResult,
+    low_effort_interner::{self, Uniq},
+};
+
+use self::{connections::Connections, deref_levels::DerefCache};
 
 use super::*;
 
 // subtype inference based on SimpleSub
+
+pub const TRACING_ENABLED: bool = false;
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct InfTypeId<'intern>(pub &'intern Uniq<InferenceType<InfTypeId<'intern>>>);
@@ -74,16 +81,6 @@ pub enum InferenceType<Ty: AsArray> {
 }
 
 impl<Inner: AsArray> InferenceType<Inner> {
-    pub(crate) fn is_fun(&self) -> bool {
-        matches!(
-            self,
-            InferenceType::Nominal(NominalInfHead {
-                kind: NominalKind::Fun | NominalKind::Static,
-                ..
-            })
-        )
-    }
-
     pub fn try_map<Out: AsArray, Ctx: MakeArray<Out>, E>(
         self,
         ctx: &mut Ctx,
@@ -221,20 +218,22 @@ pub enum InfTypeHead {
     Var(VarId),
 }
 
-impl<'intern> From<InfTypeId<'intern>> for InfTypeHead {
-    fn from(ty: InfTypeId<'intern>) -> Self {
-        match ty.value() {
+impl<T: AsArray> From<&InferenceType<T>> for InfTypeHead {
+    fn from(ty: &InferenceType<T>) -> Self {
+        match ty {
             InferenceType::Any => InfTypeHead::Any,
             InferenceType::Bot => InfTypeHead::Bot,
             InferenceType::Primitive(p) => InfTypeHead::Primitive(*p),
             InferenceType::TypeVarRef(var) => InfTypeHead::TypeVarRef(*var),
-            InferenceType::Nominal(head) => {
-                InfTypeHead::Nominal(head.def, head.parse_arg.is_some(), head.fun_args.len())
-            }
+            InferenceType::Nominal(head) => InfTypeHead::Nominal(
+                head.def,
+                head.parse_arg.is_some(),
+                T::slice(&head.fun_args).len(),
+            ),
             InferenceType::Loop(kind, _) => InfTypeHead::Loop(*kind),
             InferenceType::ParserArg { .. } => InfTypeHead::ParserArg,
             InferenceType::FunctionArgs { args, partial, .. } => {
-                InfTypeHead::FunctionArgs(args.len(), *partial)
+                InfTypeHead::FunctionArgs(T::slice(args).len(), *partial)
             }
             InferenceType::Unknown => InfTypeHead::Unknown,
             InferenceType::InferField(name, _) => InfTypeHead::InferField(*name),
@@ -242,6 +241,12 @@ impl<'intern> From<InfTypeId<'intern>> for InfTypeHead {
             InferenceType::SizeOf => InfTypeHead::SizeOf,
             InferenceType::Var(var) => InfTypeHead::Var(*var),
         }
+    }
+}
+
+impl<'intern> From<InfTypeId<'intern>> for InfTypeHead {
+    fn from(ty: InfTypeId<'intern>) -> Self {
+        ty.value().into()
     }
 }
 
@@ -472,6 +477,7 @@ pub struct InferenceContext<'intern, TR: TypeResolver<'intern>> {
     pub slice_interner: low_effort_interner::Interner<'intern, [InfTypeId<'intern>]>,
     cache: HashSet<(InfTypeId<'intern>, InfTypeId<'intern>)>,
     trace: bool,
+    connections: Connections,
 }
 
 pub trait TypeResolver<'intern> {
@@ -482,17 +488,12 @@ pub trait TypeResolver<'intern> {
         ty: &InternedNomHead<'intern>,
         name: FieldName,
     ) -> Result<EitherType<'intern>, TypeError>;
-    fn deref(
-        &self,
-        ty: &InternedNomHead<'intern>,
-    ) -> Result<Option<EitherType<'intern>>, TypeError>;
-    fn signature(&self, pd: DefId) -> Result<Signature, TypeError>;
+    fn deref(&self, ty: &InternedNomHead<'intern>) -> SResult<Option<EitherType<'intern>>>;
+    fn signature(&self, pd: DefId) -> SResult<Signature>;
     fn is_local(&self, pd: DefId) -> bool;
     fn lookup(&self, val: DefId) -> Result<EitherType<'intern>, TypeError>;
     fn name(&self) -> String;
 }
-
-const TRACING_ENABLED: bool = false;
 
 impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     pub fn new(tr: TR, bump: &'intern Bump) -> Self {
@@ -503,6 +504,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
             trace: TRACING_ENABLED,
             interner: low_effort_interner::Interner::new(bump),
             slice_interner: low_effort_interner::Interner::new(bump),
+            connections: Connections::new(),
         }
     }
     pub fn intern_infty(
@@ -535,25 +537,13 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         }
         Ok(ret)
     }
-    pub fn deref(
-        &mut self,
-        ty: &InternedNomHead<'intern>,
-    ) -> Result<Option<InfTypeId<'intern>>, TypeError> {
+    pub fn deref(&mut self, ty: &InternedNomHead<'intern>) -> SResult<Option<InfTypeId<'intern>>> {
         if let Some(deref_ty) = self.tr.deref(ty)? {
             let ret = match deref_ty {
                 EitherType::Regular(deref_ty) => {
                     self.convert_type_into_inftype_with_args(deref_ty, ty.ty_args)
                 }
-                EitherType::Inference(deref_ty) => {
-                    let unknown = self.unknown();
-                    let mut replacements = FxHashMap::default();
-                    // also replace the type variables with the ones in the infhead
-                    for (i, replacement) in ty.ty_args.iter().enumerate() {
-                        let ty_var = self.type_var(ty.def, i as u32);
-                        replacements.insert(ty_var, *replacement);
-                    }
-                    self.replace_infvars_with(deref_ty, &mut replacements, unknown)
-                }
+                EitherType::Inference(deref_ty) => deref_ty,
             };
             if self.trace {
                 dbeprintln!(
@@ -568,9 +558,6 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         } else {
             Ok(None)
         }
-    }
-    pub fn signature(&self, pd: DefId) -> Result<Signature, TypeError> {
-        self.tr.signature(pd)
     }
     pub fn lookup(&mut self, val: DefId) -> Result<InfTypeId<'intern>, TypeError> {
         let ret = match self.tr.lookup(val) {
@@ -593,7 +580,28 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         };
         Ok(ret)
     }
-    pub fn parserdef(&mut self, pd: DefId) -> Result<InfTypeId<'intern>, TypeError> {
+    pub fn thunk(&mut self, pd: DefId) -> SResult<InfTypeId<'intern>> {
+        let sig = self.tr.signature(pd)?;
+        let local = self.tr.is_local(pd);
+        let ret = self.tr.db().intern_type(Type::Nominal(sig.thunk));
+        let vars = if local {
+            Vec::new()
+        } else {
+            sig.ty_args.iter().map(|_| self.var()).collect::<Vec<_>>()
+        };
+        let ret = self.convert_type_into_inftype_with_args(ret, &vars);
+        if self.trace {
+            dbeprintln!(
+                self.tr.db(),
+                "[{}] thunk {}: {}",
+                &self.tr.name(),
+                &pd,
+                &ret
+            );
+        }
+        Ok(ret)
+    }
+    pub fn parserdef(&mut self, pd: DefId) -> SResult<InfTypeId<'intern>> {
         let sig = self.tr.signature(pd)?;
         let local = self.tr.is_local(pd);
         let ret = self.tr.db().intern_type(Type::Nominal(sig.thunk));
@@ -778,6 +786,11 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
             }
 
             (ParserArg { .. } | Loop(ArrayKind::Each, ..), SizeOf) => Ok(()),
+
+            (TypeVarRef(var1), TypeVarRef(var2)) if var1.0 != var2.0 => {
+                self.connections.add_edge(*var1, *var2);
+                Ok(())
+            }
 
             _ => Err(TypeError::HeadMismatch(lower.into(), upper.into())),
         }
@@ -1027,10 +1040,12 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                 .iter()
                 .map(|id| dbformat!(self.tr.db(), "{}, ", id))
                 .collect::<String>();
-            eprintln!(
-                "[{}] from_type_with_args: forall [{}]",
+            dbeprintln!(
+                self.tr.db(),
+                "[{}] from_type_with_args: forall [{}] {}",
                 &self.tr.name(),
-                &args
+                &args,
+                &ty,
             );
         }
         let ty = self.tr.db().lookup_intern_type(ty);
@@ -1107,8 +1122,15 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     pub fn type_converter(
         &mut self,
         at: DefId,
-    ) -> Result<TypeConvertMemo<'_, 'intern, TR>, (TypeError, DefId)> {
-        Ok(TypeConvertMemo::new(self, at))
+        locals: &[DefId],
+    ) -> Result<TypeConvertMemo<'_, 'intern, TR>, TypeConvError> {
+        let map = self.connections.connections_map()?;
+        let locals = locals
+            .iter()
+            .map(|x| self.thunk(*x))
+            .collect::<Result<Vec<_>, _>>()?;
+        let deref_cache = DerefCache::new(self, &locals)?;
+        Ok(TypeConvertMemo::new(self, at, map, deref_cache))
     }
 }
 impl<'intern, TR: TypeResolver<'intern>> InfTypeInterner<'intern>

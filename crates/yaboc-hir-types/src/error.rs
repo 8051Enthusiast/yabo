@@ -6,11 +6,14 @@ use yaboc_base::{
         diagnostic::{DiagnosticKind, Label},
         Report, SResult,
     },
+    interner::{DefId, TypeVar},
     source::{IndirectSpan, Span},
 };
 use yaboc_hir::HirNodeKind;
 use yaboc_resolve::parserdef_ssc::FunctionSscId;
-use yaboc_types::TypeError;
+use yaboc_types::{TypeConvError, TypeError, TypeVarRef};
+
+use crate::TypeVarCollection;
 
 use super::{SpannedTypeError, TyHirs};
 
@@ -41,11 +44,87 @@ pub fn errors(db: &(impl TyHirs + ?Sized)) -> Vec<Report> {
 }
 
 fn make_report(db: &(impl TyHirs + ?Sized), error: SpannedTypeError) -> Option<Report> {
-    let (err, span) = match error {
-        SpannedTypeError::Spanned(err, span) => (err, span),
-        SpannedTypeError::Silenced(_) => return None,
+    match error {
+        SpannedTypeError::Spanned(err, span) => {
+            let spans = spans(db, span).expect("error getting error spans");
+            make_type_error(err, db, spans)
+        }
+        SpannedTypeError::Conv(err) => make_type_conv_error(err, db),
+        SpannedTypeError::Silenced(_) => None,
+    }
+}
+
+fn get_var_name(db: &(impl TyHirs + ?Sized), var: TypeVarRef) -> TypeVar {
+    TypeVarCollection::at_id(db, yaboc_hir::ParserDefId(var.0))
+        .unwrap()
+        .defs[var.1 as usize]
+}
+
+fn make_type_conv_error(err: TypeConvError, db: &(impl TyHirs + ?Sized)) -> Option<Report> {
+    let def_span = |id: DefId| spans(db, IndirectSpan::default_span(id)).unwrap();
+    let (code, spans, message) = match err {
+        TypeConvError::TypeVarReturn(def, var) => {
+            let var_name = get_var_name(db, var);
+            (
+                509,
+                def_span(def),
+                dbformat!(
+                    db,
+                    "cannot have a type variable {} as return type of {}",
+                    &var_name,
+                    &def
+                ),
+            )
+        }
+        TypeConvError::CyclicReturnThunks(cyclic_ids) => {
+            let mut spans = Vec::new();
+            for id in cyclic_ids.iter() {
+                spans.extend(def_span(*id));
+            }
+            let mut msg = String::from("cyclic return that can never terminate: ");
+            for (i, id) in cyclic_ids.iter().enumerate() {
+                if i != 0 {
+                    msg.push_str(" -> ");
+                }
+                msg.push_str(&dbformat!(db, "{}", id));
+            }
+            (510, spans, msg)
+        }
+
+        TypeConvError::PolymorphicRecursion(var1, var2) => {
+            let def = var1.0;
+            let spans = def_span(def);
+            let name1 = get_var_name(db, var1);
+            let name2 = get_var_name(db, var2);
+            (
+                512,
+                spans,
+                dbformat!(
+                    db,
+                    "polymorphic recursion between {} and {}",
+                    &name1,
+                    &name2
+                ),
+            )
+        }
+        TypeConvError::Silenced(_) => return None,
     };
-    let spans = spans(db, span).expect("error getting error spans");
+    let mut rbuild = Report::new(DiagnosticKind::Error, spans[0].file, &message).with_code(code);
+    for (i, span) in spans.iter().enumerate() {
+        let label = Label::new(*span);
+        if i == spans.len() - 1 {
+            rbuild.add_label(label.with_message("error introduced here"));
+        } else {
+            rbuild.add_label(label);
+        }
+    }
+    Some(rbuild)
+}
+fn make_type_error(
+    err: TypeError,
+    db: &(impl TyHirs + ?Sized),
+    spans: Vec<Span>,
+) -> Option<Report> {
     let (code, message) = match err {
         TypeError::Silenced(_) => return None,
         TypeError::UnknownTypeVar(var) => (501, dbformat!(db, "unknown type variable {}", &var)),
@@ -72,37 +151,22 @@ fn make_report(db: &(impl TyHirs + ?Sized), error: SpannedTypeError) -> Option<R
             508,
             dbformat!(db, "cannot unify {} and {}", &first, &second),
         ),
-        TypeError::TypeVarReturn(var) => (
-            509,
-            dbformat!(db, "cannot have a type variable {} as return type", &var),
-        ),
-        TypeError::CyclicReturnThunks(cyclic_ids) => (510, {
-            let mut ret = String::from("cyclic return that can never terminate: ");
-            for (i, id) in cyclic_ids.iter().enumerate() {
-                if i != 0 {
-                    ret.push_str(" -> ");
-                }
-                ret.push_str(&dbformat!(db, "{}", id));
-            }
-            ret
-        }),
         TypeError::NonThunkReference(name) => (
             511,
             dbformat!(db, "typename reference to non-thunk function {}", &name),
         ),
-        TypeError::PolymorphicRecursion(var1, var2) => (
-            512,
-            dbformat!(db, "polymorphic recursion between {} and {}", &var1, &var2),
-        ),
-        TypeError::NonInferTypeVar(var) => (
-            513,
-            dbformat!(
-                db,
-                "could not find type variable of current function corresponding to {} of {}",
-                &var,
-                &var.0
-            ),
-        ),
+        TypeError::NonInferTypeVar(var) => {
+            let varname = get_var_name(db, var);
+            (
+                513,
+                dbformat!(
+                    db,
+                    "could not find type variable of current function corresponding to {} of {}",
+                    &varname,
+                    &var.0
+                ),
+            )
+        }
     };
     let mut rbuild = Report::new(DiagnosticKind::Error, spans[0].file, &message).with_code(code);
     for (i, span) in spans.iter().enumerate() {

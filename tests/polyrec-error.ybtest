@@ -1,0 +1,8 @@
+====[ source code ]====
+fun *a(x: 't, y: 'T) = {
+#~^ error[512] polymorphic recursion between 't and 'T
+  let next = b(x, y)
+}
+fun *b(x: 'r, y: 'R) = {
+  let next = a(y, x)
+}
