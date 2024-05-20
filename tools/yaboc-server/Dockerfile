@@ -97,7 +97,8 @@ COPY --from=emscripten /opt/emsdk/ /opt/emsdk/
 COPY --from=qt /opt/yphbt/ /opt/yphbt/
 COPY ./tools/yaboc-server/index.html /opt/yphbt/index.html
 
-ENV YABO_LIB_PATH=/opt/lib
+ENV YABO_LIB_PATH='/opt/lib'
+ENV PATH="${PATH}:/opt/bin"
 RUN mkdir /home/emscripten && chown 1000:1000 /home/emscripten
 ENV HOME=/home/emscripten
 RUN bash -c '. /opt/emsdk/emsdk_env.sh \
@@ -107,7 +108,7 @@ RUN bash -c '. /opt/emsdk/emsdk_env.sh \
 USER 1000:1000
 # initialize emcc's cache by running once
 RUN bash -c '. /opt/emsdk/emsdk_env.sh \
- && /opt/bin/build.sh <(echo "export def *main = ~") /tmp/out.wasm \
+ && build.sh <(echo "export def *main = ~") /tmp/out.wasm \
  && rm /tmp/out.wasm'
 
 WORKDIR /tmp

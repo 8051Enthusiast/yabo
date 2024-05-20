@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"errors"
 	"io"
 	"net/http"
@@ -8,6 +9,8 @@ import (
 	"os/exec"
 	"strconv"
 	"time"
+
+	lru "github.com/hashicorp/golang-lru/v2"
 )
 
 type config struct {
@@ -15,12 +18,15 @@ type config struct {
 	CompileTimeout time.Duration
 	// The port the server listens on
 	Port int
+	// The cache size
+	CacheSize int
 }
 
 func get_config() config {
 	conf := config{
 		CompileTimeout: 10 * time.Second,
 		Port:           8000,
+		CacheSize:      128,
 	}
 	if compileTimeout := os.Getenv("YABOCSERV_COMPILE_TIMEOUT"); compileTimeout != "" {
 		compileTimeout, err := time.ParseDuration(compileTimeout)
@@ -36,7 +42,18 @@ func get_config() config {
 		}
 		conf.Port = port
 	}
+	if cacheSize := os.Getenv("YABOCSERV_CACHE_SIZE"); cacheSize != "" {
+		cacheSize, err := strconv.Atoi(cacheSize)
+		if err != nil {
+			panic(err)
+		}
+		conf.CacheSize = cacheSize
+	}
 	return conf
+}
+
+func evict(_ requestHash, file string) {
+	os.Remove(file)
 }
 
 func compile(code []byte, cmd []string, tail bool) ([]byte, error) {
@@ -84,7 +101,51 @@ func set_cors(w http.ResponseWriter) {
 	w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
 }
 
-func compileHandler(w http.ResponseWriter, r *http.Request, conf config, cmd []string) {
+type requestHash struct {
+	sourceHash [32]byte
+	tail       bool
+}
+
+type server struct {
+	cache  *lru.Cache[requestHash, string]
+	config config
+}
+
+func hash(source []byte, tail bool) requestHash {
+	hash := sha256.Sum256(source)
+	return requestHash{
+		sourceHash: hash,
+		tail:       tail,
+	}
+}
+
+func (serv *server) addCacheEntry(hash requestHash, compiled []byte) {
+	file, err := os.CreateTemp("", "yabo_*.so")
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	_, err = file.Write(compiled)
+	if err != nil {
+		return
+	}
+	serv.cache.Add(hash, file.Name())
+}
+
+func (serv *server) getCacheEntry(hash requestHash) []byte {
+	file, ok := serv.cache.Get(hash)
+	if !ok {
+		return nil
+	}
+	compiled, err := os.ReadFile(file)
+	if err != nil {
+		serv.cache.Remove(hash)
+		return nil
+	}
+	return compiled
+}
+
+func (serv *server) compileHandler(w http.ResponseWriter, r *http.Request, cmd []string) {
 	set_cors(w)
 	if r.Method == http.MethodOptions {
 		return
@@ -99,6 +160,11 @@ func compileHandler(w http.ResponseWriter, r *http.Request, conf config, cmd []s
 		return
 	}
 	tail := r.URL.Query().Get("tail") == "1"
+	hash := hash(code, tail)
+	if compiled := serv.getCacheEntry(hash); compiled != nil {
+		w.Write(compiled)
+		return
+	}
 	res := make(chan []byte, 1)
 	errChan := make(chan error, 1)
 	go func() {
@@ -111,6 +177,7 @@ func compileHandler(w http.ResponseWriter, r *http.Request, conf config, cmd []s
 	}()
 	select {
 	case out := <-res:
+		serv.addCacheEntry(hash, out)
 		w.Write(out)
 	case err := <-errChan:
 		compileError := &exec.ExitError{}
@@ -120,7 +187,7 @@ func compileHandler(w http.ResponseWriter, r *http.Request, conf config, cmd []s
 		} else {
 			http.Error(w, "Error compiling", http.StatusInternalServerError)
 		}
-	case <-time.After(conf.CompileTimeout):
+	case <-time.After(serv.config.CompileTimeout):
 		http.Error(w, "Compile timeout", http.StatusRequestTimeout)
 	}
 }
@@ -144,8 +211,16 @@ func main() {
 	}
 	compileCommand := os.Args[1:]
 	conf := get_config()
+	cache, err := lru.NewWithEvict(conf.CacheSize, evict)
+	if err != nil {
+		panic("Could not create cache: " + err.Error())
+	}
+	server := &server{
+		config: conf,
+		cache:  cache,
+	}
 	http.HandleFunc("/compile", func(w http.ResponseWriter, r *http.Request) {
-		compileHandler(w, r, conf, compileCommand)
+		server.compileHandler(w, r, compileCommand)
 	})
 	root := "."
 	if env_root := os.Getenv("YABOCSERV_ROOT"); env_root != "" {
