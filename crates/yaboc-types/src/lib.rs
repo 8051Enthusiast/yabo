@@ -71,8 +71,6 @@ pub struct TypeVarRef(pub DefId, pub u32);
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Type {
-    Any,
-    Bot,
     Unknown,
     Primitive(PrimitiveType),
     TypeVarRef(TypeVarRef),
@@ -84,7 +82,7 @@ pub enum Type {
 
 pub fn type_contains_unknown(db: &dyn TypeInterner, id: TypeId) -> bool {
     match db.lookup_intern_type(id) {
-        Type::Any | Type::Bot | Type::Primitive(_) | Type::TypeVarRef(_) => false,
+        Type::Primitive(_) | Type::TypeVarRef(_) => false,
         Type::Unknown => true,
         Type::Nominal(NominalTypeHead {
             parse_arg,
@@ -106,7 +104,7 @@ pub fn type_contains_unknown(db: &dyn TypeInterner, id: TypeId) -> bool {
 
 pub fn type_contains_typevar(db: &dyn TypeInterner, id: TypeId) -> bool {
     match db.lookup_intern_type(id) {
-        Type::Any | Type::Bot | Type::Unknown | Type::Primitive(_) => false,
+        Type::Unknown | Type::Primitive(_) => false,
         Type::TypeVarRef(_) => true,
         Type::Nominal(NominalTypeHead {
             parse_arg,
@@ -128,8 +126,6 @@ pub fn type_contains_typevar(db: &dyn TypeInterner, id: TypeId) -> bool {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum TypeHead {
-    Any,
-    Bot,
     Primitive(PrimitiveType),
     TypeVarRef(TypeVarRef),
     Nominal(DefId),
@@ -177,6 +173,7 @@ pub enum TypeError {
     UnknownTypeVar(TypeVar),
     NonThunkReference(Identifier),
     NonInferTypeVar(TypeVarRef),
+    NonInfer,
     Silenced(SilencedError),
 }
 
@@ -286,7 +283,7 @@ pub fn substitute_typevar(
             );
             db.intern_type(Type::FunctionArg(result, args))
         }
-        Type::Any | Type::Bot | Type::Unknown | Type::Primitive(_) => ty,
+        Type::Unknown | Type::Primitive(_) => ty,
     }
 }
 

@@ -1,9 +1,10 @@
 ====[ source code ]====
 export
 fun *test = {
-  a: [2][3]
+  let parser = [2][3]
+  a: parser
   let b = a.sizeof
-  let c = [2][3].sizeof
+  let c = parser.sizeof
   let d = span a..a.sizeof
 }
 
@@ -12,6 +13,7 @@ fun *test = {
 
 ====[ output 1 ]====
 {
+  "parser": "parser(6)",
   "a": [
     [0, 1],
     [2, 3],

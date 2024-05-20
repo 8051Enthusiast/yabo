@@ -167,6 +167,7 @@ fn make_type_error(
                 ),
             )
         }
+        TypeError::NonInfer => (514, String::from("could not infer type")),
     };
     let mut rbuild = Report::new(DiagnosticKind::Error, spans[0].file, &message).with_code(code);
     for (i, span) in spans.iter().enumerate() {

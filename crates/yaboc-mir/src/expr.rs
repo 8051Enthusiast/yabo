@@ -156,10 +156,12 @@ impl<'a> ConvertExpr<'a> {
         if let Some(place) = loc.place {
             return place;
         }
-        let bottom_ty = self.db.intern_type(Type::Bot);
+        let placeholder_ty = self
+            .db
+            .intern_type(Type::Primitive(yaboc_types::PrimitiveType::Unit));
         let place_info = PlaceInfo {
             place: Place::Undefined,
-            ty: bottom_ty,
+            ty: placeholder_ty,
             remove_bt: false,
         };
         self.f.add_place(place_info)
