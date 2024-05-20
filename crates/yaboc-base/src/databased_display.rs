@@ -60,6 +60,20 @@ pub trait DatabasedDisplay<DB: ?Sized> {
     }
 }
 
+impl<DB: ?Sized, T: DatabasedDisplay<DB>> DatabasedDisplay<DB> for [T] {
+    fn db_fmt(&self, f: &mut fmt::Formatter<'_>, db: &DB) -> fmt::Result {
+        write!(f, "[")?;
+        let mut iter = self.iter();
+        if let Some(first) = iter.next() {
+            write!(f, "{}", first.db_wrap(db))?;
+            for elem in iter {
+                write!(f, ", {}", elem.db_wrap(db))?;
+            }
+        }
+        write!(f, "]")
+    }
+}
+
 impl<DB: ?Sized, T: Display> DatabasedDisplay<DB> for T {
     fn db_fmt(&self, f: &mut fmt::Formatter<'_>, _: &DB) -> fmt::Result {
         write!(f, "{self}")

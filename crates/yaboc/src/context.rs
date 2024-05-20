@@ -5,7 +5,6 @@ use tempfile::NamedTempFile;
 use yaboc_base::{
     config::{Config, Configs},
     error::Report,
-    low_effort_interner,
     source::{AriadneCache, FileId},
     Context,
 };
@@ -15,7 +14,7 @@ use yaboc_cg_llvm::{
 };
 use yaboc_database::YabocDatabase;
 use yaboc_hir::represent::HirGraph;
-use yaboc_layout::{InternedLayout, LayoutContext};
+use yaboc_layout::LayoutContext;
 use yaboc_mir::{print_all_mir, print_all_mir_graphs};
 const ERROR_FNS: &[fn(&YabocDatabase) -> Vec<Report>] = &[
     yaboc_ast::error::errors,
@@ -145,8 +144,7 @@ impl Driver {
     ) -> Result<(), String> {
         let llvm = inkwell::context::Context::create();
         let bump = Bump::new();
-        let intern = low_effort_interner::Interner::<InternedLayout>::new(&bump);
-        let layout_ctx = LayoutContext::new(intern, self.options.target.data);
+        let layout_ctx = LayoutContext::new(&bump, self.options.target.data);
         let mut layouts = yaboc_layout::AbsLayoutCtx::new(&self.db, layout_ctx);
         let mut codegen =
             match yaboc_cg_llvm::CodeGenCtx::new(&llvm, self, &mut layouts, self.options.clone()) {

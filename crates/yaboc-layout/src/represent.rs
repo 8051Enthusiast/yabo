@@ -91,16 +91,6 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
                     }
                     Ok(())
                 }
-                MonoLayout::Tuple(elements) => {
-                    dbwrite!(f, db, "tuple[{}](", ty)?;
-                    for (i, layout) in elements.iter().enumerate() {
-                        if i > 0 {
-                            write!(f, ", ")?;
-                        }
-                        dbwrite!(f, db, "{}", layout)?;
-                    }
-                    write!(f, ")")
-                }
                 MonoLayout::IfParser(inner, referenced, wiggle) => {
                     dbwrite!(
                         f,
@@ -292,13 +282,7 @@ impl<'a> LayoutHasher<'a> {
             MonoLayout::Nil => {
                 state.update([8]);
             }
-            MonoLayout::Tuple(elements) => {
-                state.update([9]);
-                elements.len().update_hash(state, db);
-                for layout in elements.iter() {
-                    state.update(self.hash(*layout, db));
-                }
-            }
+            // 9 used to be Tuple
             MonoLayout::Regex(regex, bt) => {
                 state.update([10]);
                 let regex_str = db.lookup_intern_regex(*regex);
@@ -481,7 +465,6 @@ impl<'a> LayoutSymbol<'a> {
             | MonoLayout::Nil => {
                 dbformat!(db, "{}", &self.layout.0)
             }
-            MonoLayout::Tuple(_) => String::from("tuple"),
         };
         let layout_hex = truncated_hex(&hasher.hash(self.layout.0, db));
         dbformat!(db, "{}${}${}", &name_prefix, &layout_hex, &self.part)
