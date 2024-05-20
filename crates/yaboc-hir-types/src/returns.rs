@@ -1,6 +1,5 @@
 use std::fmt::Display;
 
-use fxhash::FxHashSet;
 use yaboc_base::{dbformat, dbpanic, interner::PathComponent};
 use yaboc_expr::FetchKindData;
 use yaboc_resolve::parserdef_ssc::FunctionSscId;
@@ -183,10 +182,8 @@ pub fn ssc_types(db: &dyn TyHirs, id: FunctionSscId) -> Result<SscTypes, Spanned
     let mut types = SscTypes::default();
     let inftypes = ctx.inftypes.clone();
     let inf_expressions = ctx.inf_expressions.clone();
-    let mut converter = match ctx.infctx.type_converter(placeholder_id.0) {
-        Ok(c) => c,
-        Err((err, def)) => return Err(SpannedTypeError::new(err, IndirectSpan::default_span(def))),
-    };
+    let locals = defs.iter().map(|d| d.id.0).collect::<Vec<_>>();
+    let mut converter = ctx.infctx.type_converter(placeholder_id.0, &locals)?;
     for def in defs.iter() {
         let spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(def.to.0));
         // here we are finished with inference so we can convert to actual types
@@ -228,60 +225,7 @@ pub fn ssc_types(db: &dyn TyHirs, id: FunctionSscId) -> Result<SscTypes, Spanned
             .try_collect()?;
         types.exprs.insert(id, expr);
     }
-    find_cyclic_return_types(db, &rets)?;
     Ok(types)
-}
-
-fn find_cyclic_return_types(
-    db: &dyn TyHirs,
-    tys: &[ParserDefType],
-) -> Result<(), SpannedTypeError> {
-    let mut targets: FxHashMap<DefId, Option<DefId>> = FxHashMap::default();
-    for pdty in tys.iter() {
-        let target = match db.lookup_intern_type(pdty.deref) {
-            Type::Nominal(nom) => Some(nom.def),
-            _ => None,
-        };
-        targets.insert(pdty.id.0, target);
-    }
-    let mut stack = Vec::<DefId>::new();
-    let mut on_stack = FxHashSet::default();
-    let next =
-        |targets: &mut FxHashMap<_, _>| targets.iter().next().map(|(id, target)| (*id, *target));
-    let mut next_target = next(&mut targets);
-    while let Some((id, target)) = next_target {
-        stack.push(id);
-        if on_stack.insert(id) {
-            targets.remove(&id);
-            match target {
-                Some(target) => {
-                    next_target = Some((target, targets.get(&target).copied().flatten()));
-                }
-                None => {
-                    stack.clear();
-                    on_stack.clear();
-                    next_target = next(&mut targets);
-                }
-            }
-            continue;
-        }
-        let first_occurence = stack.iter().position(|x| *x == id).unwrap();
-        let mut error = TypeError::CyclicReturnThunks(stack[first_occurence..].to_vec());
-        for i in stack[..first_occurence].iter() {
-            on_stack.remove(i);
-        }
-        for pdty in tys.iter() {
-            if on_stack.contains(&pdty.id.0) {
-                return Err(SpannedTypeError::new(
-                    error,
-                    IndirectSpan::default_span(pdty.id.0),
-                ));
-            }
-            error = TypeError::Silenced(SilencedError::new());
-        }
-        next_target = next(&mut targets);
-    }
-    Ok(())
 }
 
 pub struct ReturnResolver<'intern> {
@@ -332,10 +276,7 @@ impl<'intern> TypeResolver<'intern> for ReturnResolver<'intern> {
         }
     }
 
-    fn deref(
-        &self,
-        ty: &InternedNomHead<'intern>,
-    ) -> Result<Option<EitherType<'intern>>, TypeError> {
+    fn deref(&self, ty: &InternedNomHead<'intern>) -> SResult<Option<EitherType<'intern>>> {
         if let Some(deref_ty) = self.inftypes.get(&ty.def) {
             Ok(Some(EitherType::Inference(*deref_ty)))
         } else {
@@ -347,7 +288,7 @@ impl<'intern> TypeResolver<'intern> for ReturnResolver<'intern> {
         }
     }
 
-    fn signature(&self, id: DefId) -> Result<Signature, TypeError> {
+    fn signature(&self, id: DefId) -> SResult<Signature> {
         get_signature(self.db, id)
     }
 

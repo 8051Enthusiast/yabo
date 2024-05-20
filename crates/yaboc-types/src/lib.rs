@@ -1,3 +1,5 @@
+mod connections;
+mod deref_levels;
 pub mod inference;
 pub mod represent;
 pub mod to_type;
@@ -173,10 +175,7 @@ pub enum TypeError {
     ParseDefFromMismatch,
     ParserDefArgCountMismatch(usize, usize),
     UnknownTypeVar(TypeVar),
-    TypeVarReturn(DefId),
-    CyclicReturnThunks(Vec<DefId>),
     NonThunkReference(Identifier),
-    PolymorphicRecursion(TypeVarRef, TypeVarRef),
     NonInferTypeVar(TypeVarRef),
     Silenced(SilencedError),
 }
@@ -195,6 +194,31 @@ impl Silencable for TypeError {
 impl From<SilencedError> for TypeError {
     fn from(x: SilencedError) -> Self {
         TypeError::Silenced(x)
+    }
+}
+
+#[derive(Clone, Hash, Debug, PartialEq, Eq)]
+pub enum TypeConvError {
+    TypeVarReturn(DefId, TypeVarRef),
+    CyclicReturnThunks(Vec<DefId>),
+    PolymorphicRecursion(TypeVarRef, TypeVarRef),
+    Silenced(SilencedError),
+}
+
+impl Silencable for TypeConvError {
+    type Out = SilencedError;
+
+    fn silence(self) -> Self::Out {
+        match self {
+            TypeConvError::Silenced(e) => e,
+            _ => SilencedError::new(),
+        }
+    }
+}
+
+impl From<SilencedError> for TypeConvError {
+    fn from(x: SilencedError) -> Self {
+        TypeConvError::Silenced(x)
     }
 }
 

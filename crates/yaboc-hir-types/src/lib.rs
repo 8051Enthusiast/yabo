@@ -32,13 +32,13 @@ use yaboc_resolve::{
     expr::{ResolvedAtom, ValBinOp, ValUnOp, ValVarOp},
 };
 use yaboc_types::inference::{Application, InternedNomHead};
-use yaboc_types::TypeVarRef;
 use yaboc_types::{
     inference::{
         InfTypeId, InfTypeInterner, InferenceContext, InferenceType, NominalInfHead, TypeResolver,
     },
     EitherType, NominalKind, NominalTypeHead, PrimitiveType, Signature, Type, TypeError, TypeId,
 };
+use yaboc_types::{TypeConvError, TypeVarRef};
 
 use yaboc_hir::{self, Hirs};
 
@@ -784,6 +784,7 @@ impl NominalId {
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub enum SpannedTypeError {
     Spanned(TypeError, IndirectSpan),
+    Conv(TypeConvError),
     Silenced(SilencedError),
 }
 
@@ -799,15 +800,19 @@ impl From<SilencedError> for SpannedTypeError {
     }
 }
 
+impl From<TypeConvError> for SpannedTypeError {
+    fn from(e: TypeConvError) -> Self {
+        SpannedTypeError::Conv(e)
+    }
+}
+
 impl Silencable for SpannedTypeError {
     type Out = SilencedError;
 
     fn silence(self) -> Self::Out {
         match self {
-            SpannedTypeError::Spanned(inner, _) => match inner {
-                TypeError::Silenced(s) => s,
-                _ => SilencedError::new(),
-            },
+            SpannedTypeError::Spanned(inner, _) => inner.silence(),
+            SpannedTypeError::Conv(e) => e.silence(),
             SpannedTypeError::Silenced(s) => s,
         }
     }
