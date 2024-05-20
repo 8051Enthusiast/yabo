@@ -36,13 +36,13 @@ void RangeMap::insert(size_t start, size_t end, Node value) {
     // updated with the current range later in the loop
     split_entry(current, start);
   }
-  auto it = ranges.lower_bound(end);
+  auto it = ranges.lower_bound(start);
   while (it != ranges.end() && it->first < end) {
     // the little known barbed arrow operator,,,
     current = &it++->second;
     // there is space before the next range, so we need to
     // insert our ranges for that section
-    if (current->start < start) {
+    if (start < current->start) {
       auto new_entry = RangeMap::MapEntry(start, current->start, {value});
       ranges.insert({start, new_entry});
     }
@@ -71,7 +71,8 @@ std::optional<NodeRange> RangeMap::get(size_t index) const {
   if (!current) {
     return {};
   }
-  return NodeRange{current->start, current->end, current->value[0]};
+  auto last = current->value.size() - 1;
+  return NodeRange{current->start, current->end, current->value[last]};
 }
 
 std::optional<NodeRange> RangeMap::get_next(size_t index) const {
@@ -84,5 +85,6 @@ std::optional<NodeRange> RangeMap::get_next(size_t index) const {
     return {};
   }
   auto &entry = it->second;
-  return NodeRange{entry.start, entry.end, entry.value[0]};
+  auto last = entry.value.size() - 1;
+  return NodeRange{entry.start, entry.end, entry.value[last]};
 };
