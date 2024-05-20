@@ -23,8 +23,8 @@ void *memmove(void *dest, const void *src, size_t n) {
     while (n--)
       *d++ = *s++;
   } else {
-    char *d = dest + n;
-    const char *s = src + n;
+    char *d = (char*)dest + n;
+    const char *s = (const char*)src + n;
     while (n--)
       *--d = *--s;
   }
