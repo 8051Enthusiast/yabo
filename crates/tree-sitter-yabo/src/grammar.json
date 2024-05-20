@@ -2001,6 +2001,10 @@
         {
           "type": "SYMBOL",
           "name": "parserdef_ref"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "placeholder"
         }
       ]
     },
@@ -2347,6 +2351,10 @@
     "nil": {
       "type": "STRING",
       "value": "+"
+    },
+    "placeholder": {
+      "type": "STRING",
+      "value": "_"
     },
     "array_fill": {
       "type": "STRING",

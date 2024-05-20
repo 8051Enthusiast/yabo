@@ -137,6 +137,7 @@ pub enum TypeAtom {
     Primitive(TypePrimitive),
     Array(Box<TypeArray>),
     TypeVar(TypeVar),
+    Placeholder,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]

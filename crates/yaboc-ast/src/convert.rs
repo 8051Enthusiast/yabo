@@ -624,6 +624,7 @@ astify! {
         Niladic(with_span_data(type_array)),
         Niladic(with_span_data(type_var)),
         Niladic(with_span_data(byte_slice)),
+        Niladic(with_span_data(placeholder)),
     };
 }
 
@@ -830,6 +831,10 @@ fn not_eof(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ConstraintAtom
 
 fn retvrn(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<FieldName> {
     Ok(FieldName::Return)
+}
+
+fn placeholder(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<TypeAtom> {
+    Ok(TypeAtom::Placeholder)
 }
 
 fn partial_indicator(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<()> {

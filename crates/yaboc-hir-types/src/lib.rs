@@ -204,6 +204,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         var_idx,
                     )))
             }
+            ExprHead::Niladic(hir::TypeAtom::Placeholder) => self.infctx.var(),
             ExprHead::Variadic(expr::TypeVarOp::Call, inner) => {
                 let mut inner_ty = Vec::with_capacity(inner.len());
                 for arg in inner {

@@ -96,6 +96,7 @@
 (regex_literal) @string.regexp
 
 (type_var) @type
+(placeholder) @type
 (parserdef_ref
     name: (identifier) @type)
 

@@ -323,6 +323,7 @@ module.exports = grammar({
       $.primitive_type,
       $.type_var,
       $.parserdef_ref,
+      $.placeholder,
     ),
     range: $ => seq(
       field('start', $._int_literal),
@@ -398,6 +399,7 @@ module.exports = grammar({
     byte_slice: $ => prec(PREC.BYTE_SLICE, '*'),
     single: $ => '~',
     nil: $ => '+',
+    placeholder: $ => '_',
     array_fill: $ => '[..]',
     not_eof: $ => '!eof',
     type_var: $ => /\'[A-Za-z_][A-Za-z_0-9]*/,
