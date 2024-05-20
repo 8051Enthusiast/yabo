@@ -216,6 +216,7 @@ fn convert_type_expression(
                     })))
                 }
                 ast::TypeAtom::TypeVar(v) => ExprHead::Niladic(TypeAtom::TypeVar(*v)),
+                ast::TypeAtom::Placeholder => ExprHead::Niladic(TypeAtom::Placeholder),
             },
             ExpressionHead::Monadic(monadic) => {
                 let new_op = monadic

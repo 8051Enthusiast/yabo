@@ -1,0 +1,14 @@
+====[ source code ]====
+fun *once(parser: *_) = parser
+
+export
+def *test = {
+  let parser: *_ = ~
+  return: once(parser)
+}
+
+====[ binary 1 ]====
+2a
+
+====[ output 1 ]====
+42

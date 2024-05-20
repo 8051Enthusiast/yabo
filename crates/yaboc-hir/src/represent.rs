@@ -86,6 +86,7 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for TypeAtom {
             TypeAtom::Array(arr) => arr.db_fmt(f, db),
             TypeAtom::Primitive(p) => p.db_fmt(f, db),
             TypeAtom::TypeVar(v) => v.db_fmt(f, db),
+            TypeAtom::Placeholder => write!(f, "_"),
         }
     }
 }

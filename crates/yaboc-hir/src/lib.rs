@@ -820,6 +820,7 @@ pub enum TypeAtom {
     ParserDef(Box<ParserDefRef>),
     Array(Box<TypeArray>),
     TypeVar(TypeVar),
+    Placeholder,
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
