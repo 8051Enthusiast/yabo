@@ -354,7 +354,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 let field = id.unwrap_name(&self.compiler_database.db);
                 layouts[&FieldName::Ident(field)]
             }),
-            MonoLayout::Tuple(_) => unreachable!(),
         }
     }
 
@@ -1266,18 +1265,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_create_fun_args_fun(
         &mut self,
         layout: IMonoLayout<'comp>,
-        args: ILayout<'comp>,
+        args: &[ILayout<'comp>],
         slot: u64,
     ) -> IResult<()> {
-        let args = if let MonoLayout::Tuple(args) = args.maybe_mono().unwrap().mono_layout().0 {
-            args
-        } else {
-            dbpanic!(
-                &self.compiler_database.db,
-                "called create_fun_create with non-tuple args {}",
-                &args
-            );
-        };
         let fun_type = self
             .compiler_database
             .db
@@ -1383,7 +1373,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .unwrap_or_default()
             .iter()
         {
-            self.create_create_fun_args_fun(layout, *args, *slot)?;
+            self.create_create_fun_args_fun(layout, args, *slot)?;
         }
         Ok(())
     }

@@ -7,6 +7,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use bumpalo::Bump;
 use fxhash::FxHashMap;
 
 use hir::HirConstraintId;
@@ -116,7 +117,6 @@ pub enum MonoLayout<Inner> {
     NominalParser(hir::ParserDefId, Vec<(Inner, TypeId)>, bool),
     Block(hir::BlockId, BTreeMap<FieldName, Inner>),
     BlockParser(hir::BlockId, BTreeMap<DefId, Inner>, Arc<Vec<TypeId>>, bool),
-    Tuple(Vec<Inner>),
     Array {
         parser: Inner,
         slice: Inner,
@@ -746,13 +746,6 @@ impl<'a> ILayout<'a> {
                 | MonoLayout::ArrayFillParser(None),
                 _,
             ) => SizeAlign::ZST,
-            Layout::Mono(MonoLayout::Tuple(elements), _) => {
-                let mut size = Zst::tsize(data);
-                for element in elements {
-                    size = size.cat(element.size_align(ctx)?);
-                }
-                size
-            }
             Layout::Multi(m) => m.layouts.iter().try_fold(Zst::tsize(data), |sa, layout| {
                 Ok::<_, SilencedError>(sa.union(layout.size_align(ctx)?))
             })?,
@@ -945,8 +938,11 @@ impl IsSilenced for LayoutError {
 
 pub type AbsLayoutCtx<'a> = AbsIntCtx<'a, ILayout<'a>>;
 
+type LayoutSlice<'a> = &'a Uniq<[ILayout<'a>]>;
+
 pub struct LayoutContext<'a> {
     pub intern: Interner<'a, InternedLayout<'a>>,
+    pub intern_slice: Interner<'a, [ILayout<'a>]>,
     sizes: FxHashMap<ILayout<'a>, SizeAlign>,
     manifestations: FxHashMap<ILayout<'a>, Arc<StructManifestation>>,
     hashes: LayoutHasher<'a>,
@@ -955,9 +951,12 @@ pub struct LayoutContext<'a> {
 }
 
 impl<'a> LayoutContext<'a> {
-    pub fn new(intern: Interner<'a, InternedLayout<'a>>, target_data: TargetLayoutData) -> Self {
+    pub fn new(bump: &'a Bump, target_data: TargetLayoutData) -> Self {
+        let intern = Interner::new(bump);
+        let intern_slice = Interner::new(bump);
         Self {
             intern,
+            intern_slice,
             sizes: Default::default(),
             manifestations: Default::default(),
             hashes: LayoutHasher::new(),
@@ -1287,8 +1286,7 @@ def *main = {
         ",
         );
         let bump = Bump::new();
-        let intern = Interner::<InternedLayout>::new(&bump);
-        let layout_ctx = LayoutContext::new(intern, yaboc_target::layout::POINTER64);
+        let layout_ctx = LayoutContext::new(&bump, yaboc_target::layout::POINTER64);
         let mut outlayer = AbsIntCtx::<ILayout>::new(&ctx.db, layout_ctx);
         let main = ctx.parser("main");
         let main_ty = ctx
@@ -1380,8 +1378,7 @@ def *test = [2][3][5]
             ",
         );
         let bump = Bump::new();
-        let intern = Interner::<InternedLayout>::new(&bump);
-        let layout_ctx = LayoutContext::new(intern, yaboc_target::layout::POINTER64);
+        let layout_ctx = LayoutContext::new(&bump, yaboc_target::layout::POINTER64);
         let mut outlayer = AbsIntCtx::<ILayout>::new(&ctx.db, layout_ctx);
         let test = ctx.parser("test");
         let test_ty = ctx

@@ -17,6 +17,7 @@ use yaboc_types::{PrimitiveType, Type, TypeId};
 use crate::{
     init_globals,
     mir_subst::{function_substitute, FunctionSubstitute},
+    LayoutSlice,
 };
 
 pub use self::tailsize::TailInfo;
@@ -56,7 +57,7 @@ pub struct LayoutCollection<'a> {
     pub lens: LayoutSet<'a>,
     pub globals: FxHashMap<ParserDefId, (IMonoLayout<'a>, ILayout<'a>)>,
     pub parser_slots: call_info::CallSlotResult<'a, (ILayout<'a>, CallMeta)>,
-    pub funcall_slots: call_info::CallSlotResult<'a, ILayout<'a>>,
+    pub funcall_slots: call_info::CallSlotResult<'a, LayoutSlice<'a>>,
     pub tail_sa: FxHashMap<(ILayout<'a>, IMonoLayout<'a>), TailInfo>,
     pub max_sa: SizeAlign,
 }
@@ -65,7 +66,7 @@ pub struct LayoutCollector<'a, 'b> {
     ctx: &'b mut AbsLayoutCtx<'a>,
     int: ILayout<'a>,
     parses: call_info::CallInfo<'a, (ILayout<'a>, CallMeta)>,
-    funcalls: call_info::CallInfo<'a, ILayout<'a>>,
+    funcalls: call_info::CallInfo<'a, LayoutSlice<'a>>,
     arrays: LayoutSet<'a>,
     blocks: LayoutSet<'a>,
     nominals: LayoutSet<'a>,
@@ -213,7 +214,6 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     }
                 }
                 MonoLayout::Primitive(_) => {}
-                MonoLayout::Tuple(_) => panic!("tuples not supported yet"),
             }
         }
     }
@@ -306,7 +306,6 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         args: Vec<ILayout<'a>>,
         fun_ty: TypeId,
     ) -> Result<(), LayoutError> {
-        let any_ty = self.ctx.db.intern_type(Type::Any);
         let Type::FunctionArg(_, arg_tys) = self.ctx.db.lookup_intern_type(fun_ty) else {
             panic!("register_funcall called with non-function type");
         };
@@ -314,18 +313,14 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             .iter()
             .zip(arg_tys.iter())
             .map(|(l, ty)| Ok(l.typecast(self.ctx, *ty)?.0))
-            .collect::<Result<_, LayoutError>>()?;
-        // hack: this is just a placeholder for the argument bundle
-        let arg_tuple = self
-            .ctx
-            .dcx
-            .intern(Layout::Mono(MonoLayout::Tuple(casted_args), any_ty));
+            .collect::<Result<Vec<_>, LayoutError>>()?;
+        let arg_tuple = self.ctx.dcx.intern_slice.intern_slice(&casted_args);
         if TRACE_COLLECTION {
             dbeprintln!(
                 self.ctx.db,
                 "[collection] registered funcall {}({})",
                 &fun,
-                &arg_tuple
+                &arg_tuple.1
             );
         }
         self.funcalls.add_call(arg_tuple, fun);
