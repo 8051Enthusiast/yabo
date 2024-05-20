@@ -36,10 +36,10 @@
 
 # a parser for the rough structure of a png
 
-def *chunk(ty: *[u8]) = {
+def *chunk(ty: *[u8], data_parser: *'t) = {
   length: u32b
   type: [4] |&gt; ty?
-  return: [length]
+  value: [length] |&gt; data_parser
   crc: u32b
 }
 
@@ -53,18 +53,24 @@ def *head = {
   interlace_method: u8
 }
 
+def *rgb = {
+  red: u8
+  green: u8
+  blue: u8
+}
+
 export
 def *main = {
   [1], /PNG/, /\r\n/, /\x1A/, /\n/
 
-  header: chunk(/IHDR/)! |&gt; head
+  header: chunk(/IHDR/, head)!
 
   chunks: list.list({
-    | palette: chunk(/PLTE/)?
-    | data: chunk(/IDAT/)?
-    | optional: chunk(/[a-z]/)?
+    | palette: chunk(/PLTE/, rgb[..])?
+    | data: chunk(/IDAT/, [..])?
+    | optional: chunk(/[a-z].{3}/, [..])?
   })
-  chunk(/IEND/)!
+  end: chunk(/IEND/, nil)!
 }
 </string>
         </property>
