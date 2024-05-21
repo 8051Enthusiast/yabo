@@ -16,6 +16,7 @@ public slots:
   void goto_addr(size_t addr);
   void goto_node(Node node);
   void select_addr_range(size_t start, size_t end);
+  void context_menu(const QPoint &pos);
 
 private:
   void update_dimensions();

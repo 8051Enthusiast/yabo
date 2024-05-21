@@ -44,6 +44,8 @@ public:
   bool row_is_in_range(GlobalRow addr) const;
   void put_row_in_range(GlobalRow addr);
 
+  QMenu *create_context_menu(const QModelIndex &index);
+
   FileRef file;
 
 signals:
@@ -56,6 +58,10 @@ private:
   size_t global_row_count() const {
     return (file->span().size() + columns - 1) / columns;
   }
+  size_t index_addr(const QModelIndex &index) const {
+    return row_addr(global_row(index.row())) + index.column();
+  }
+  std::vector<NodeRange> const &nodes_at(QModelIndex &index) const;
   RangeMap ranges;
   int columns = 16;
   int file_address_digit_count;
