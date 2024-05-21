@@ -1,9 +1,9 @@
 #include "hex.hpp"
+#include <QImage>
+#include <QMenu>
 #include <QPainter>
 #include <QPixmap>
-#include <qimage.h>
 #include <qnamespace.h>
-#include <qstyleditemdelegate.h>
 #include <vector>
 
 static uint8_t address_digit_count(uint64_t file_size) {
@@ -25,9 +25,7 @@ HexTableModel::HexTableModel(FileRef file, NodeInfoProvider *node_info)
 }
 
 QVariant HexTableModel::data(const QModelIndex &index, int role) const {
-  auto row = index.row();
-  auto col = index.column();
-  auto offset = row_addr(global_row(row)) + col;
+  auto offset = index_addr(index);
   if (role == Qt::DisplayRole) {
     if (offset >= file->span().size()) {
       return QVariant();
@@ -140,9 +138,7 @@ void HexTableModel::put_row_in_range(GlobalRow row) {
 }
 
 void HexTableModel::handle_doubleclick(const QModelIndex &index) {
-  auto row = index.row();
-  auto col = index.column();
-  auto offset = row_addr(global_row(row)) + col;
+  auto offset = index_addr(index);
   auto node = ranges.get(offset);
   if (!node) {
     return;
@@ -257,8 +253,38 @@ void HexCell::set_font(QFont font) {
   header_size.setHeight(padded(header_size).height());
   header_size.setWidth(padded(header_size).width());
 }
+
 QSize HexCell::padded(QSize size) const {
   auto added_height = size.height() / 3;
   auto added_width = added_height * 4 / 3;
   return size + QSize(added_width, added_height);
+}
+
+std::vector<NodeRange> const &
+HexTableModel::nodes_at(QModelIndex &index) const {
+  auto offset = index_addr(index);
+  return ranges.get_all(offset);
+}
+
+QMenu *HexTableModel::create_context_menu(const QModelIndex &index) {
+  auto addr = index_addr(index);
+  auto &nodes = ranges.get_all(addr);
+  if (nodes.empty()) {
+    return nullptr;
+  }
+  auto menu = new QMenu();
+  for (auto &node : nodes) {
+    auto action = new QAction(menu);
+    auto color = node_info->node_color(node.node);
+    auto pixmap = QPixmap(32, 32);
+    pixmap.fill(color);
+    action->setText(node_info->node_name(node.node));
+    action->setIcon(QIcon(pixmap));
+    action->connect(action, &QAction::triggered,
+                    [node_info = this->node_info, node]() {
+                      node_info->change_root(node.node);
+                    });
+    menu->addAction(action);
+  }
+  return menu;
 }

@@ -1,12 +1,13 @@
-#include "hexview.hpp"
+#include <QAbstractItemView>
+#include <QHeaderView>
+#include <QMenu>
+#include <QPalette>
+#include <QTableView>
+#include <QPoint>
 
 #include "colorscrollbar.hpp"
 #include "hex.hpp"
-
-#include <QAbstractItemView>
-#include <QHeaderView>
-#include <QTableView>
-#include <qpalette.h>
+#include "hexview.hpp"
 
 HexTableView::HexTableView(QWidget *parent) : QTableView(parent) {
   QFont hexfont("Monospace");
@@ -15,13 +16,16 @@ HexTableView::HexTableView(QWidget *parent) : QTableView(parent) {
   setFont(hexfont);
   hexCell = std::make_unique<HexCell>(hexfont, 0);
   setItemDelegate(hexCell.get());
+  connect(this, &QWidget::customContextMenuRequested, this,
+          &HexTableView::context_menu);
+  setContextMenuPolicy(Qt::CustomContextMenu);
 }
 
 void HexTableView::setModel(HexTableModel *model) {
   hexModel = model;
   hexCell->set_file_size(model->file->span().size());
   update_dimensions();
-  
+
   QTableView::setModel(model);
   auto scroll_bar = new ColorScrollBar(model);
   connect(scroll_bar, &ColorScrollBar::big_jump, this,
@@ -89,4 +93,16 @@ void HexTableView::select_addr_range(size_t start, size_t end) {
                      hexModel->index(last_local_row, last_column));
   }
   selectionModel()->select(selection, QItemSelectionModel::Select);
+}
+
+void HexTableView::context_menu(const QPoint &pos) {
+  auto index = indexAt(pos);
+  if (!index.isValid()) {
+    return;
+  }
+  auto menu = hexModel->create_context_menu(index);
+  if (!menu) {
+    return;
+  }
+  menu->popup(viewport()->mapToGlobal(pos));
 }

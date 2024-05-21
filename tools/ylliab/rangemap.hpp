@@ -11,6 +11,7 @@ public:
   void insert(NodeRange range) { insert(range.start, range.end, range.node); }
   std::optional<NodeRange> get(size_t index) const;
   std::optional<NodeRange> get_next(size_t index) const;
+  std::vector<NodeRange> const &get_all(size_t index) const;
 
 private:
   struct MapEntry {

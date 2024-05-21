@@ -108,3 +108,11 @@ std::optional<NodeRange> RangeMap::get_next(size_t index) const {
   }
   return NodeRange{entry.start, entry.end, *min};
 };
+std::vector<NodeRange> const &RangeMap::get_all(size_t index) const {
+  auto current = containing_entry(index);
+  if (!current) {
+    static constexpr std::vector<NodeRange> empty_vec = {};
+    return empty_vec;
+  }
+  return current->value;
+}
