@@ -263,8 +263,7 @@ struct Slice map_file(char *filename) {
 
 struct LibInfo {
   size_t max_dyn_size;
-  struct Slice *global_address;
-  int64_t (*global_init)(void);
+  InitFun global_init;
   ParseFun *parser;
 };
 
@@ -283,7 +282,6 @@ struct LibInfo dynamic_lib(char *filename, char *parser_name) {
     exit(1);
   }
   ret.max_dyn_size = *max_dyn_size_ptr;
-  ret.global_address = dlsym(lib, "yabo_global_address");
   ret.global_init = dlsym(lib, "yabo_global_init");
   ret.parser = (ParseFun *)dlsym(lib, parser_name);
   return ret;
@@ -295,9 +293,8 @@ struct LibInfo static_lib() {
   struct LibInfo ret;
   extern size_t yabo_max_buf_size;
   __attribute__((weak)) extern struct Slice yabo_global_address;
-  extern int64_t yabo_global_init(void);
+  extern int64_t yabo_global_init(const uint8_t *, const uint8_t *);
   extern ParseFun STATIC_PARSER;
-  ret.global_address = &yabo_global_address;
   ret.max_dyn_size = yabo_max_buf_size;
   ret.global_init = yabo_global_init;
   ret.parser = &STATIC_PARSER;
@@ -336,11 +333,8 @@ int main(int argc, char *argv[argc]) {
     perror("could not find parser");
     exit(1);
   }
-  if (lib.global_address) {
-    *lib.global_address = file;
-  }
   if (lib.global_init) {
-    int64_t status = lib.global_init();
+    int64_t status = lib.global_init(file.start, file.end);
     if (status != 0) {
       fprintf(stderr,
               "failed to initialize yabo library with status %" PRId64 "\n",

@@ -1448,6 +1448,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_init_fun(&mut self) -> IResult<()> {
         let llvm_fun = self.global_constant_init_fun_val();
         self.add_entry_block(llvm_fun);
+        let [start, end] = get_fun_args(llvm_fun);
+        let global_address = self.yabo_global_address();
+        let zero = self.const_i64(0);
+        let start_ptr = self.build_byte_gep(global_address.ptr, zero, "start_ptr")?;
+        let word = self.const_i64(self.word_size() as i64);
+        let end_ptr = self.build_byte_gep(global_address.ptr, word, "end_ptr")?;
+        self.builder
+            .build_store(start_ptr, start.into_pointer_value())?;
+        self.builder
+            .build_store(end_ptr, end.into_pointer_value())?;
+
         let global_sequence = self.compiler_database.db.global_sequence().unwrap();
         for pd in global_sequence.iter() {
             let Some(&(fun, layout)) = self.collected_layouts.globals.get(pd) else {

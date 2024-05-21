@@ -262,7 +262,7 @@ class Parser:
 
 class YaboLib(ctypes.CDLL):
     _loc: threading.local
-    def __init__(self, path: str, global_address: bytearray | None = None):
+    def __init__(self, path: str, global_address: bytearray):
         # we need to copy the library to a temporary path because
         # loading the same library twice will deduplicates globals
         # and cause a mess if it is overwritten
@@ -270,23 +270,8 @@ class YaboLib(ctypes.CDLL):
             with open(path, 'rb') as f:
                 copyfileobj(f, tmp_file)
             super().__init__(tmp_file.name)
-        if not global_address:
-            try:
-                getattr(self, YABO_GLOBAL_ADDRESS_NAME)
-                raise Exception("yabo lib requires a global address, probably because it uses the `at` operator")
-            except AttributeError:
-                pass
-        else:
-            slice_addr = Slice(global_address)
-            try:
-                global_address = Slice.in_dll(self, YABO_GLOBAL_ADDRESS_NAME)
-                global_address.start = slice_addr.start
-                global_address.end = slice_addr.end
-            except ValueError:
-                # if an unneeded global address is provided, we can just
-                # ignore it
-                pass
-        status = self[YABO_GLOBAL_INIT_NAME]()
+        slice_addr = Slice(global_address)
+        status = self[YABO_GLOBAL_INIT_NAME](slice_addr.start, slice_addr.end)
         _check_status(status)
         
         self._loc = threading.local()

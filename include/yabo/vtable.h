@@ -76,6 +76,8 @@ struct ArrayVTable {
   int64_t (*inner_array_impl)(void *, const void *, uint64_t);
 };
 
+typedef int64_t (*InitFun)(const uint8_t *, const uint8_t *);
+
 #ifdef __cplusplus
 }
 #endif

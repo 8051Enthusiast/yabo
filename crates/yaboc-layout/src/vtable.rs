@@ -93,6 +93,8 @@ target_struct! {
     }
 }
 
+pub type InitFun = fn(start: *const u8, end: *const u8) -> i64;
+
 #[cfg(test)]
 mod tests {
     use yaboc_target::layout::{SizeAlign, TargetSized};
