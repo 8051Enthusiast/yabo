@@ -16,7 +16,7 @@ private:
   struct MapEntry {
     size_t start;
     size_t end;
-    std::vector<Node> value;
+    std::vector<NodeRange> value;
   };
   std::map<size_t, MapEntry> ranges;
   MapEntry *containing_entry(size_t index);
