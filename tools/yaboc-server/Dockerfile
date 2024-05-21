@@ -1,6 +1,6 @@
 FROM golang:1-bookworm AS server
 
-ADD tools/yaboc-server /src
+COPY tools/yaboc-server/go.mod tools/yaboc-server/go.sum tools/yaboc-server/yaboc-server.go /src/
 WORKDIR /src
 
 RUN go build -o yaboc-server
@@ -96,6 +96,7 @@ COPY --from=compiler /src/yabo/target/release/yaboc /opt/bin/yaboc
 COPY --from=emscripten /opt/emsdk/ /opt/emsdk/
 COPY --from=qt /opt/yphbt/ /opt/yphbt/
 COPY ./tools/yaboc-server/index.html /opt/yphbt/index.html
+COPY ./tools/yaboc-server/favicon.ico /opt/yphbt/favicon.ico
 
 ENV YABO_LIB_PATH='/opt/lib'
 ENV PATH="${PATH}:/opt/bin"
