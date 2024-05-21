@@ -51,17 +51,11 @@ int64_t Executor::init_lib() {
     return -1;
   }
 
-  auto global_address =
-      reinterpret_cast<Slice *>(dlsym(lib, "yabo_global_address"));
-  if (global_address) {
-    auto span = file->span();
-    global_address->start = span.data();
-    global_address->end = span.data() + span.size();
-  }
+  auto span = file->span();
 
-  typedef int64_t (*init_fun)(void);
+  typedef InitFun init_fun;
   auto global_init = reinterpret_cast<init_fun>(dlsym(lib, YABO_GLOBAL_INIT));
-  int64_t status = global_init();
+  int64_t status = global_init(span.data(), span.data() + span.size());
   if (status) {
     // error = QString("Global init failed with status %1").arg(status);
     return -1;

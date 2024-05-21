@@ -362,6 +362,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         } else {
             let llvm_ty = <[*const u8; 2]>::codegen_ty(self);
             let global = self.module.add_global(llvm_ty, None, YABO_GLOBAL_ADDRESS);
+            global.set_linkage(Linkage::Internal);
             global.set_initializer(&llvm_ty.const_zero());
             global.as_pointer_value()
         };
@@ -407,7 +408,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         if let Some(x) = self.module.get_function(YABO_GLOBAL_INIT) {
             return x;
         }
-        let fun_type = self.llvm.i64_type().fn_type(&[], false);
+        let fun_type = self
+            .llvm
+            .i64_type()
+            .fn_type(&[self.any_ptr().into(); 2], false);
         let f = self
             .module
             .add_function(YABO_GLOBAL_INIT, fun_type, Some(Linkage::External));
