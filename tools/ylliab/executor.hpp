@@ -29,7 +29,7 @@ public:
   Executor &operator=(Executor &&) = delete;
 
   std::optional<Response> execute_request(Request req);
-  std::optional<Response> execute_parser(Meta meta, char const *func_name);
+  std::optional<Response> execute_parser(Meta meta, char const *func_name, size_t pos);
 public slots:
   void execute_request_slot(Request req) {
     if (init_lib()) {
@@ -43,13 +43,13 @@ public slots:
       emit response(Response(req.metadata));
     }
   }
-  void execute_parser_slot(Meta meta, QString func_name) {
+  void execute_parser_slot(Meta meta, QString func_name, size_t pos) {
     if (init_lib()) {
       emit response(Response(meta));
       return;
     }
     auto s = func_name.toStdString();
-    auto resp = execute_parser(meta, s.c_str());
+    auto resp = execute_parser(meta, s.c_str(), pos);
     if (resp.has_value()) {
       emit response(std::move(resp.value()));
     } else {

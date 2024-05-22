@@ -1,9 +1,13 @@
 #include <QAbstractItemView>
 #include <QHeaderView>
+#include <QLineEdit>
 #include <QMenu>
 #include <QPalette>
-#include <QTableView>
 #include <QPoint>
+#include <QShortcut>
+#include <QTableView>
+#include <QWidgetAction>
+#include <QMouseEvent>
 
 #include "colorscrollbar.hpp"
 #include "hex.hpp"
@@ -19,6 +23,9 @@ HexTableView::HexTableView(QWidget *parent) : QTableView(parent) {
   connect(this, &QWidget::customContextMenuRequested, this,
           &HexTableView::context_menu);
   setContextMenuPolicy(Qt::CustomContextMenu);
+  auto parse_shortcut = new QShortcut(QKeySequence("a"), this);
+  connect(parse_shortcut, &QShortcut::activated,
+          [this]() { parse_menu(QCursor::pos()); });
 }
 
 void HexTableView::setModel(HexTableModel *model) {
@@ -63,6 +70,9 @@ void HexTableView::goto_addr(size_t addr) {
 
 void HexTableView::goto_node(Node node) {
   auto addr = hexModel->node_addr(node);
+  if (!addr) {
+    return;
+  }
   goto_addr(*addr);
 }
 
@@ -105,4 +115,33 @@ void HexTableView::context_menu(const QPoint &pos) {
     return;
   }
   menu->popup(viewport()->mapToGlobal(pos));
+}
+
+void HexTableView::parse_menu(QPoint current_mouse_pos) {
+  if (!parseRequester) {
+    return;
+  }
+  auto index = indexAt(viewport()->mapFromGlobal(current_mouse_pos));
+  if (!index.isValid()) {
+    return;
+  }
+  auto addr = hexModel->index_addr(index);
+  auto menu = new QMenu(this);
+  auto widget_action = new QWidgetAction(menu);
+  auto line_edit = new QLineEdit(menu);
+  line_edit->setFont(font());
+  connect(line_edit, &QLineEdit::returnPressed, this,
+          [parseRequester = this->parseRequester, line_edit, menu, addr]() {
+            auto name = line_edit->text();
+            if (name.isEmpty()) {
+              return;
+            }
+            menu->close();
+            parseRequester->request_parse(name, addr);
+          });
+  widget_action->setDefaultWidget(line_edit);
+  menu->addAction(widget_action);
+  menu->popup(current_mouse_pos);
+  // make sure that line_edit gets the focus when the menu is shown
+  line_edit->setFocus();
 }

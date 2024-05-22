@@ -38,4 +38,5 @@ void init_hex_and_tree(HexTableView *hex_view, QTreeView *tree_view,
   header_view->setSectionResizeMode(YaboTreeModel::NUM_COLUMNS - 1,
                                     QHeaderView::Stretch);
   header_view->setMinimumSectionSize(100);
+  hex_view->set_parser_requester(file_requester);
 }
