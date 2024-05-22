@@ -133,7 +133,7 @@ public:
   std::optional<std::pair<size_t, size_t>> node_range(Node idx) const override;
   void select_idx(TreeIndex idx);
 
-  void request_parse(QString func_name, size_t pos) override {
+  void run_parse(QString func_name, size_t pos) override {
     set_parser(func_name, pos);
   }
 

@@ -127,9 +127,12 @@ void HexTableView::parse_menu(QPoint current_mouse_pos) {
   }
   auto addr = hexModel->index_addr(index);
   auto menu = new QMenu(this);
+  menu->setFont(font());
   auto widget_action = new QWidgetAction(menu);
   auto line_edit = new QLineEdit(menu);
   line_edit->setFont(font());
+  line_edit->setText(parseRequester->last_requested_parse());
+  line_edit->setSelection(0, line_edit->text().size());
   connect(line_edit, &QLineEdit::returnPressed, this,
           [this, line_edit, menu, addr]() {
             auto name = line_edit->text();
@@ -142,6 +145,16 @@ void HexTableView::parse_menu(QPoint current_mouse_pos) {
           });
   widget_action->setDefaultWidget(line_edit);
   menu->addAction(widget_action);
+  auto &recently_used = parseRequester->recently_used_funcs();
+  for (auto it = recently_used.rbegin(); it != recently_used.rend(); ++it) {
+    auto &name = *it;
+    auto action = menu->addAction(name);
+    connect(action, &QAction::triggered, this, [this, menu, name, addr]() {
+      menu->close();
+      activateWindow();
+      parseRequester->request_parse(name, addr);
+    });
+  }
   menu->popup(current_mouse_pos);
   // make sure that line_edit gets the focus when the menu is shown
   line_edit->setFocus();

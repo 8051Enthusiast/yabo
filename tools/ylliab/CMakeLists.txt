@@ -16,7 +16,7 @@ set(DARK_STYLE_QRC_PATH CACHE FILEPATH "Path to darkstyle.qrc.")
 find_package(Qt6 REQUIRED COMPONENTS Widgets Core OpenGL OpenGLWidgets Network)
 
 qt_add_library(ylliab_core STATIC
-    request.hpp
+    request.hpp request.cpp
     node.hpp
     color.hpp color.cpp
     rangemap.hpp rangemap.cpp
