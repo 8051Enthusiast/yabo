@@ -42,6 +42,7 @@ error_comment = re.compile(r'^.*#(~\^*)\s*error\[(\d+)\]\s*(.*)$')
 current_script_dir = os.path.dirname(os.path.realpath(__file__))
 core_path = os.path.join(current_script_dir, 'lib', 'core.yb')
 lib_path = os.path.join(current_script_dir, 'lib')
+example_path = os.path.join(current_script_dir, 'examples')
 compiler_env = os.environ.copy()
 compiler_env['YABO_LIB_PATH'] = lib_path
 compiler_env['RUST_BACKTRACE'] = '1'
@@ -579,6 +580,37 @@ def run_tests(files: list[str]) -> int:
             print(f'Running {file}')
             total_failed += run_test(file)
         return total_failed
+
+def compile_example(file):
+    output: str = f'Compiling example {file}\n'
+    failed: int = 0
+    with open(os.path.join(example_path, file), 'r', encoding='utf-8') as f:
+        source = f.read()
+    with CompiledSource(source, False) as compiled:
+        if compiled.has_errors():
+            output += f'{RED} Native compilation failed{CLEAR}\n'
+            output += compiled.stderr
+            failed += 1
+        else:
+            output += f'{GREEN} Native compilation passed{CLEAR}\n'
+    if wasm_factory:
+        with CompiledSource(source, True) as compiled:
+            if compiled.has_errors():
+                output += f'{RED} Wasm compilation failed{CLEAR}\n'
+                output += compiled.stderr
+                failed += 1
+            else:
+                output += f'{GREEN} Wasm compilation passed{CLEAR}\n'
+    print(output, end='')
+    return failed
+
+def compile_examples():
+    total_failed = 0
+    files = [x for x in os.listdir(example_path) if x.endswith('.yb')]
+    with futures.ProcessPoolExecutor() as executor:
+        results = executor.map(compile_example, files)
+        total_failed = sum(results)
+    return total_failed
         
 def main():
     global compiler_bin, wasm_factory
@@ -599,6 +631,8 @@ def main():
         total_failed = run_tests(files)
     else:
         total_failed = run_tests(arg_list)
+
+    total_failed += compile_examples()
 
     if total_failed != 0:
         print(f'{total_failed} tests failed')
