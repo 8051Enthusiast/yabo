@@ -24,4 +24,4 @@ yaboc-req = { path = "../yaboc-req" }
 fxhash = "0.2.1"
 bumpalo = "3.13.0"
 inkwell = { workspace = true }
-regex-automata = "0.1.10"
+regex-automata = "0.4.6"

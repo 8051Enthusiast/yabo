@@ -50,6 +50,7 @@ fn resolve_regex(
     let regex_str = db.lookup_intern_regex(regex);
     Ok(regex_syntax::ParserBuilder::new()
         .allow_invalid_utf8(true)
+        .unicode(false)
         .dot_matches_new_line(true)
         .case_insensitive(false)
         .build()
