@@ -1503,6 +1503,7 @@ version = "0.1.0"
 dependencies = [
  "fxhash",
  "petgraph",
+ "regex-syntax 0.6.29",
  "salsa",
  "yaboc-ast",
  "yaboc-base",

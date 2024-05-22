@@ -110,6 +110,29 @@ fn make_report(db: &(impl Resolves + ?Sized), err: &ResolveError) -> Option<Repo
             .with_label(Label::new(span).with_message("span here"));
             Some(report)
         }
+        ResolveError::RegexParseError(err_msg, expr, span, [start, end]) => {
+            let span = hir_span(db, *expr, *span).expect("could not find span for unresolved expr");
+            let file = span.file;
+            let span_start = span.lo + start;
+            let span_end = span.lo + end;
+            let real_span = Span {
+                file,
+                lo: span_start,
+                hi: span_end,
+            };
+            let report = Report::new(DiagnosticKind::Error, file, err_msg)
+                .with_code(307)
+                .with_label(Label::new(real_span).with_message("error here"));
+            Some(report)
+        }
+        ResolveError::OtherRegexError(err_msg, expr, span) => {
+            let span = hir_span(db, *expr, *span).expect("could not find span for unresolved expr");
+            let file = span.file;
+            let report = Report::new(DiagnosticKind::Error, file, err_msg)
+                .with_code(307)
+                .with_label(Label::new(span).with_message("regex here"));
+            Some(report)
+        }
         ResolveError::Silenced(_) => None,
     }
 }

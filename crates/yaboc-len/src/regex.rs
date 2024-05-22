@@ -2,17 +2,7 @@ use regex_syntax::hir::{Class, Hir, HirKind, Literal, RepetitionKind, Repetition
 
 pub type RegexError = regex_syntax::Error;
 
-pub fn regex_len(regex: &str) -> Result<Option<i128>, Box<RegexError>> {
-    let regex = regex_syntax::ParserBuilder::new()
-        .allow_invalid_utf8(true)
-        .dot_matches_new_line(true)
-        .case_insensitive(false)
-        .build()
-        .parse(regex)?;
-    Ok(regex_len_impl(&regex))
-}
-
-fn regex_len_impl(regex: &Hir) -> Option<i128> {
+pub fn regex_len(regex: &Hir) -> Option<i128> {
     match regex.kind() {
         HirKind::Empty => Some(0),
         HirKind::Literal(l) => match l {
@@ -35,25 +25,25 @@ fn regex_len_impl(regex: &Hir) -> Option<i128> {
         HirKind::WordBoundary(_) => Some(0),
         HirKind::Repetition(rep) => match rep.kind {
             RepetitionKind::Range(RepetitionRange::Exactly(c)) => {
-                Some(regex_len_impl(&rep.hir)?.checked_mul(c as i128)?)
+                Some(regex_len(&rep.hir)?.checked_mul(c as i128)?)
             }
             RepetitionKind::Range(RepetitionRange::Bounded(start, end)) if start == end => {
-                Some(regex_len_impl(&rep.hir)?.checked_mul(start as i128)?)
+                Some(regex_len(&rep.hir)?.checked_mul(start as i128)?)
             }
             _ => None,
         },
-        HirKind::Group(g) => regex_len_impl(&g.hir),
+        HirKind::Group(g) => regex_len(&g.hir),
         HirKind::Concat(cat) => {
             let mut len = 0i128;
             for hir in cat.iter() {
-                len = len.checked_add(regex_len_impl(hir)?)?;
+                len = len.checked_add(regex_len(hir)?)?;
             }
             Some(len)
         }
         HirKind::Alternation(alt) => {
             let mut len = None;
             for hir in alt.iter() {
-                let hir_len = regex_len_impl(hir)?;
+                let hir_len = regex_len(hir)?;
                 if let Some(l) = len {
                     if l != hir_len {
                         return None;
@@ -69,7 +59,18 @@ fn regex_len_impl(regex: &Hir) -> Option<i128> {
 
 #[cfg(test)]
 mod tests {
-    use super::regex_len;
+    use super::{regex_len as regex_len_impl, RegexError};
+
+    fn regex_len(regex: &str) -> Result<Option<i128>, Box<RegexError>> {
+        let regex = regex_syntax::ParserBuilder::new()
+            .allow_invalid_utf8(true)
+            .dot_matches_new_line(true)
+            .case_insensitive(false)
+            .build()
+            .parse(regex)?;
+        Ok(regex_len_impl(&regex))
+    }
+
     #[test]
     fn simple_string() {
         assert_eq!(regex_len("abc").unwrap(), Some(3));

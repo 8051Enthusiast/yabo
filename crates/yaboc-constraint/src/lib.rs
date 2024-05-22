@@ -17,7 +17,6 @@ use yaboc_hir as hir;
 use yaboc_len::{
     depvec,
     depvec::{ArgDeps, SmallBitVec},
-    regex::RegexError,
     ArgRank, Env, PolyCircuit, SizeCalcCtx, Term, Val,
 };
 use yaboc_resolve::{parserdef_ssc::FunctionSscId, Resolves};
@@ -28,7 +27,7 @@ use yaboc_types::{Type, TypeId};
 
 #[salsa::query_group(ConstraintDatabase)]
 pub trait Constraints: Interner + Resolves + Dependents {
-    fn regex_len(&self, regex: Regex) -> Result<Option<i128>, Box<RegexError>>;
+    fn regex_len(&self, regex: Regex) -> SResult<Option<i128>>;
     fn len_term(&self, pd: hir::ParserDefId) -> SResult<Arc<PdLenTerm>>;
     fn fun_len(&self, pd: hir::ParserDefId) -> LenVal;
     fn len_vals(&self, pd: hir::ParserDefId) -> Arc<LenVals>;
@@ -75,9 +74,11 @@ impl InternKey for PolyCircuitId {
     }
 }
 
-pub fn regex_len(db: &dyn Constraints, regex: Regex) -> Result<Option<i128>, Box<RegexError>> {
-    let regex_str = db.lookup_intern_regex(regex);
-    yaboc_len::regex::regex_len(&regex_str)
+pub fn regex_len(db: &dyn Constraints, regex: Regex) -> SResult<Option<i128>> {
+    let Ok(regex) = db.resolve_regex(regex) else {
+        return Err(SilencedError::new());
+    };
+    Ok(yaboc_len::regex::regex_len(&regex))
 }
 
 pub struct LenInferCtx<'a, DB: Constraints + ?Sized> {
