@@ -629,10 +629,9 @@ def main():
         target_dir = os.path.join(current_script_dir, 'tests')
         files = [os.path.join(target_dir, x) for x in os.listdir(target_dir)]
         total_failed = run_tests(files)
+        total_failed += compile_examples()
     else:
         total_failed = run_tests(arg_list)
-
-    total_failed += compile_examples()
 
     if total_failed != 0:
         print(f'{total_failed} tests failed')
