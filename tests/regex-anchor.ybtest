@@ -1,0 +1,20 @@
+====[ source code ]====
+export
+def *test = {
+  | res: /A$/
+  | +
+}
+
+====[ binary 1 ]====
+41
+
+====[ output 1 ]====
+{
+  "res": [65]
+}
+
+====[ binary 2 ]====
+41 41
+
+====[ output 2 ]====
+{}

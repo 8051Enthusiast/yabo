@@ -920,7 +920,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .syntax(syntax)
             .build(regex)
             .expect("invalid regex");
-        let mut trans = RegexTranslator::new(self, llvm_fun, &dfa, from, true)?;
+        let mut trans = RegexTranslator::new(self, llvm_fun, &dfa, from)?;
         trans.build()?;
         Ok(llvm_fun)
     }
