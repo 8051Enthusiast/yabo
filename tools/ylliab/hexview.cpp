@@ -161,4 +161,5 @@ void HexTableView::parse_menu(QPoint current_mouse_pos) {
   menu->popup(current_mouse_pos);
   // make sure that line_edit gets the focus when the menu is shown
   line_edit->setFocus();
+  menu->setActiveAction(widget_action);
 }
