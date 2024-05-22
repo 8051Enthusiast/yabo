@@ -910,12 +910,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             Some(f) => return Ok(f),
             None => self.parser_impl_fun_val(layout, from, req),
         };
-        let dfa = regex_automata::dense::Builder::new()
-            .anchored(true)
-            .allow_invalid_utf8(true)
+        let dfa_conf = regex_automata::dfa::dense::Config::new().minimize(true);
+        let syntax = regex_automata::util::syntax::Config::new()
             .dot_matches_new_line(true)
-            .case_insensitive(false)
-            .minimize(true)
+            .utf8(false)
+            .unicode(false);
+        let dfa = regex_automata::dfa::dense::Builder::new()
+            .configure(dfa_conf)
+            .syntax(syntax)
             .build(regex)
             .expect("invalid regex");
         let mut trans = RegexTranslator::new(self, llvm_fun, &dfa, from, true)?;

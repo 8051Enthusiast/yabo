@@ -3,7 +3,8 @@ use inkwell::{
     basic_block::BasicBlock,
     values::{FunctionValue, IntValue, PointerValue},
 };
-use regex_automata::DFA;
+use regex_automata::{dfa::dense::DFA, util::primitives::StateID};
+use regex_automata::{dfa::Automaton, util::start::Config};
 use yaboc_hir_types::DerefLevel;
 use yaboc_layout::{ILayout, IMonoLayout, MonoLayout};
 use yaboc_mir::{CallMeta, ReturnStatus};
@@ -16,27 +17,27 @@ use crate::{
     CodeGenCtx, IResult,
 };
 
-pub struct RegexTranslator<'llvm, 'comp, 'r, D: DFA<ID = usize>> {
+pub struct RegexTranslator<'llvm, 'comp, 'r> {
     cg: &'r mut CodeGenCtx<'llvm, 'comp>,
     llvm_fun: FunctionValue<'llvm>,
-    dfa: &'r D,
+    dfa: &'r DFA<Vec<u32>>,
     bt: BasicBlock<'llvm>,
     succ: BasicBlock<'llvm>,
     ret: CgReturnValue<'llvm>,
     tmp_ret: CgValue<'comp, 'llvm>,
     next_byte: CgValue<'comp, 'llvm>,
     greedy_info: Option<(PointerValue<'llvm>, CgValue<'comp, 'llvm>)>,
-    stateblock: FxHashMap<usize, BasicBlock<'llvm>>,
-    new_states: Vec<usize>,
+    stateblock: FxHashMap<StateID, BasicBlock<'llvm>>,
+    new_states: Vec<StateID>,
     parser_fun: FunctionValue<'llvm>,
     from: CgValue<'comp, 'llvm>,
 }
 
-impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> {
+impl<'llvm, 'comp, 'r> RegexTranslator<'llvm, 'comp, 'r> {
     pub fn new(
         cg: &'r mut CodeGenCtx<'llvm, 'comp>,
         llvm_fun: FunctionValue<'llvm>,
-        dfa: &'r D,
+        dfa: &'r DFA<Vec<u32>>,
         from: ILayout<'comp>,
         greedy: bool,
     ) -> IResult<Self> {
@@ -100,7 +101,7 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
         Ok(())
     }
 
-    fn state_bb(&mut self, state: usize) -> BasicBlock<'llvm> {
+    fn state_bb(&mut self, state: StateID) -> BasicBlock<'llvm> {
         if let Some(bb) = self.stateblock.get(&state) {
             *bb
         } else {
@@ -108,7 +109,7 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
             let bb = self
                 .cg
                 .llvm
-                .append_basic_block(self.llvm_fun, &format!("state{state}"));
+                .append_basic_block(self.llvm_fun, &format!("state{}", state.as_u64()));
             self.stateblock.insert(state, bb);
             self.new_states.push(state);
             if let Some(prev_bb) = prev_bb {
@@ -150,14 +151,15 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
         self.cg.build_i64_load(self.next_byte.ptr, "next_byte")
     }
 
-    fn add_state(&mut self, state: usize) -> IResult<()> {
+    fn add_state(&mut self, state: StateID) -> IResult<()> {
         let bb = self.state_bb(state);
         self.cg.builder.position_at_end(bb);
         if self.dfa.is_dead_state(state) {
             self.cg.builder.build_unconditional_branch(self.bt)?;
             return Ok(());
         }
-        if self.dfa.is_match_state(state) {
+        let next_state = self.dfa.next_eoi_state(state);
+        if self.dfa.is_match_state(next_state) {
             if let Some((has_no_match, last_match)) = self.greedy_info {
                 self.cg
                     .builder
@@ -214,7 +216,8 @@ impl<'llvm, 'comp, 'r, D: DFA<ID = usize>> RegexTranslator<'llvm, 'comp, 'r, D> 
 
     pub fn build(&mut self) -> IResult<()> {
         self.copy_position(self.tmp_ret, self.from)?;
-        let start_state_block = self.state_bb(self.dfa.start_state());
+        let config = Config::new().anchored(regex_automata::Anchored::Yes);
+        let start_state_block = self.state_bb(self.dfa.start_state(&config).unwrap());
         self.cg
             .builder
             .build_unconditional_branch(start_state_block)?;
