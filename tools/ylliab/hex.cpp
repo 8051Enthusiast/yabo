@@ -58,9 +58,11 @@ QVariant HexTableModel::headerData(int section, Qt::Orientation orientation,
   if (role == Qt::DisplayRole && orientation == Qt::Vertical) {
     return QString("%1").arg(row_addr(global_row(section)),
                              file_address_digit_count, 16, QChar('0'));
-  } else {
-    return QVariant();
   }
+  if (role == Qt::DisplayRole && orientation == Qt::Horizontal) {
+    return QString("%1").arg(section, 2, 16, QChar('0'));
+  }
+  return QVariant();
 }
 
 void HexTableModel::add_range(NodeRange range) {
