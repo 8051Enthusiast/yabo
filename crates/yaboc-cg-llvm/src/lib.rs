@@ -290,7 +290,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn build_sa_alloca(&mut self, sa: SizeAlign, name: &str) -> IResult<PointerValue<'llvm>> {
         let ty = self.sa_type(sa);
-        let ptr = self.builder.build_alloca(ty, "alloca")?;
+        let ptr = self.builder.build_alloca(ty, name)?;
         self.set_last_instr_align(sa).unwrap();
         let cast_ptr = self.build_cast::<*mut u8, _>(ptr)?;
         let offset = sa.allocation_center_offset();

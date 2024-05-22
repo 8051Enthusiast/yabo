@@ -1,0 +1,9 @@
+====[ source code ]====
+export
+fun *test = /.*l\b/
+
+====[ text 1 ]====
+parallel world
+
+====[ output 1]====
+[112, 97, 114, 97, 108, 108, 101, 108]
