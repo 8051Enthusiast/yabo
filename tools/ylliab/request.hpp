@@ -112,3 +112,9 @@ struct Response {
 };
 
 Q_DECLARE_METATYPE(Response)
+
+class ParseRequester {
+public:
+  virtual ~ParseRequester() = default;
+  virtual void request_parse(QString func_name, size_t pos) = 0;
+};

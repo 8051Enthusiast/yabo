@@ -13,12 +13,12 @@
 #include <vector>
 
 #include "color.hpp"
+#include "executor.hpp"
 #include "filecontent.hpp"
 #include "filerequester.hpp"
 #include "graph.hpp"
 #include "request.hpp"
 #include "yabo.hpp"
-#include "executor.hpp"
 #include "yabo/vtable.h"
 
 TreeIndex Arborist::add_node(ParentBranch parent, QString &field_name) {
@@ -219,13 +219,13 @@ FileSpan FileRequester::span(TreeIndex idx) const {
 void FileRequester::init_root(QString parser_name) {
   auto idx = arborist->add_root_node(root_count++, parser_name);
   root_info.push_back(
-      {parser_name, generate_new_node_color(parser_name), true});
-  parser_root.insert({parser_name, idx});
+      {parser_name, generate_new_node_color(parser_name, 0), true});
+  parser_root.insert({{parser_name, 0}, idx});
   graph_update.new_components.push_back(Node{idx});
   emit update_graph(std::move(graph_update));
   graph_update.new_components = {};
-  emit parse_request(Meta{idx.tree_index, MessageType::PARSE, idx},
-                     parser_name);
+  emit parse_request(Meta{idx.tree_index, MessageType::PARSE, idx}, parser_name,
+                     0);
 }
 
 bool FileRequester::can_fetch_children(TreeIndex idx) {
@@ -269,19 +269,19 @@ std::optional<QColor> FileRequester::color(TreeIndex idx) const {
   return {};
 }
 
-void FileRequester::set_parser(QString name) {
-  auto it = parser_root.find(name);
+void FileRequester::set_parser(QString name, size_t pos) {
+  auto it = parser_root.find({name, pos});
   if (it != parser_root.end()) {
     change_root(it->second);
     return;
   }
   auto idx = arborist->add_root_node(root_count++, name);
-  root_info.push_back({name, generate_new_node_color(name)});
-  parser_root.insert({name, idx});
+  root_info.push_back({name, generate_new_node_color(name, pos)});
+  parser_root.insert({{name, pos}, idx});
   graph_update.new_components.push_back(Node{idx});
   emit update_graph(std::move(graph_update));
   graph_update.new_components = {};
-  emit parse_request(Meta{idx.tree_index, MessageType::PARSE, idx}, name);
+  emit parse_request(Meta{idx.tree_index, MessageType::PARSE, idx}, name, pos);
   change_root(idx);
 }
 
@@ -390,8 +390,9 @@ QColor FileRequester::generate_new_node_color(YaboVal val) const {
   return random_color(hash);
 }
 
-QColor FileRequester::generate_new_node_color(QString val) const {
+QColor FileRequester::generate_new_node_color(QString val, size_t pos) const {
   size_t hash = std::hash<QString>()(val);
+  hash ^= std::hash<size_t>()(pos);
   return random_color(hash);
 }
 

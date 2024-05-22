@@ -1,8 +1,10 @@
 #pragma once
 
 #include "hex.hpp"
+#include "request.hpp"
 
 #include <QFont>
+#include <QPoint>
 #include <QTableView>
 
 class HexTableView : public QTableView {
@@ -11,6 +13,10 @@ public:
   HexTableView(QWidget *parent = nullptr);
   void setModel(HexTableModel *model);
   void set_font(QFont font);
+  void set_parser_requester(ParseRequester *parseRequester) {
+    this->parseRequester = parseRequester;
+  }
+  void parse_menu(QPoint pos);
 
 public slots:
   void goto_addr(size_t addr);
@@ -21,5 +27,6 @@ public slots:
 private:
   void update_dimensions();
   HexTableModel *hexModel;
+  ParseRequester *parseRequester = nullptr;
   std::unique_ptr<HexCell> hexCell;
 };

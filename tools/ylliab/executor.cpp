@@ -126,14 +126,19 @@ std::optional<Response> Executor::execute_request(Request req) {
   }
 }
 
-std::optional<Response> Executor::execute_parser(Meta meta,
-                                                 char const *func_name) {
+std::optional<Response>
+Executor::execute_parser(Meta meta, char const *func_name, size_t pos) {
   auto parser_ptr = reinterpret_cast<ParseFun const *>(dlsym(lib, func_name));
   if (!parser_ptr) {
     return {};
   }
   auto parser = *parser_ptr;
-  auto ret = vals.parse(parser, file->span());
+  auto span = file->span();
+  if (pos >= span.size()) {
+    return {};
+  }
+  span = span.subspan(pos, span.size() - pos);
+  auto ret = vals.parse(parser, span);
   if (ret.has_value()) {
     auto normalized = normalize(ret.value(), ret->span);
     return Response(meta, {func_name, normalized});

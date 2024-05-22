@@ -79,7 +79,9 @@ private:
 class YaboTreeModel;
 
 // communicates with Executor and maintains the tree structure
-class FileRequester : public QObject, public NodeInfoProvider {
+class FileRequester : public QObject,
+                      public NodeInfoProvider,
+                      public ParseRequester {
   Q_OBJECT
 public:
   FileRequester(std::filesystem::path path, FileRef file, QString parser_name,
@@ -124,12 +126,16 @@ public:
   FileRef file_ref() const noexcept { return file; }
   const uint8_t *file_base_addr() const noexcept { return file->span().data(); }
 
-  void set_parser(QString name);
+  void set_parser(QString name, size_t pos = 0);
   void set_bubble(TreeIndex idx);
   QString node_name(Node idx) const override;
   QColor node_color(Node idx) const override;
   std::optional<std::pair<size_t, size_t>> node_range(Node idx) const override;
   void select_idx(TreeIndex idx);
+
+  void request_parse(QString func_name, size_t pos) override {
+    set_parser(func_name, pos);
+  }
 
   void start_executor_thread() { executor_thread->start(); }
   void change_root(RootIndex node);
@@ -137,13 +143,12 @@ public:
   RootIndex root_idx(Node node) const;
   RootIndex get_current_root() const { return current_root; }
 
-
 public slots:
   void process_response(Response resp);
 
 signals:
   void request(Request req);
-  void parse_request(Meta meta, QString func_name);
+  void parse_request(Meta meta, QString func_name, size_t pos);
   void update_graph(GraphUpdate update);
   void root_changed(Node node);
   void new_node(NodeRange node);
@@ -156,13 +161,13 @@ signals:
 
 private:
   QColor generate_new_node_color(YaboVal val) const;
-  QColor generate_new_node_color(QString val) const;
+  QColor generate_new_node_color(QString val, size_t pos) const;
   void init_root(QString parser_name);
   void set_value(TreeIndex idx, SpannedVal val, RootIndex root);
 
   QThread *executor_thread;
   std::unique_ptr<Arborist> arborist;
-  std::unordered_map<QString, RootIndex> parser_root;
+  std::map<std::pair<QString, size_t>, RootIndex> parser_root;
   std::unordered_map<YaboVal, RootIndex> nominal_bubbles;
   size_t root_count = 0;
   RootIndex current_root = RootIndex(TreeIndex(0), 0);
