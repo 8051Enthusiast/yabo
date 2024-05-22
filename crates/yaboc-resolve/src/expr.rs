@@ -249,6 +249,28 @@ fn resolve_span(
     Err(ResolveError::UnorderedSpan(expr_id, span))
 }
 
+fn convert_regex_error(
+    err: &regex_syntax::Error,
+    expr_id: ExprId,
+    span: SpanIndex,
+) -> ResolveError {
+    let (subspan, msg) = match err {
+        regex_syntax::Error::Parse(parse_error) => {
+            let span = parse_error.span();
+            (span, parse_error.kind().to_string())
+        }
+        regex_syntax::Error::Translate(translate_error) => {
+            let span = translate_error.span();
+            (span, translate_error.kind().to_string())
+        }
+        otherwise => return ResolveError::OtherRegexError(otherwise.to_string(), expr_id, span),
+    };
+    // we need to add 1 to account for the leading '/'
+    let start = subspan.start.offset + 1;
+    let end = subspan.end.offset + 1;
+    ResolveError::RegexParseError(msg, expr_id, span, [start as u32, end as u32])
+}
+
 fn resolve_expr_modules(
     db: &dyn Resolves,
     expr_id: ExprId,
@@ -297,7 +319,12 @@ fn resolve_expr_modules(
                     hir::ParserAtom::Single => ResolvedAtom::Single,
                     hir::ParserAtom::Nil => ResolvedAtom::Nil,
                     hir::ParserAtom::ArrayFill => ResolvedAtom::ArrayFill,
-                    hir::ParserAtom::Regex(r) => ResolvedAtom::Regex(r),
+                    hir::ParserAtom::Regex(r) => {
+                        if let Err(e) = db.resolve_regex(r) {
+                            return Err(convert_regex_error(&e, expr_id, *span));
+                        }
+                        ResolvedAtom::Regex(r)
+                    }
                     hir::ParserAtom::Block(b, kind) => ResolvedAtom::Block(b, kind),
                     hir::ParserAtom::Span(start, end) => {
                         let (start, end) = resolve_span(db, start, end, expr_id, *span)?;

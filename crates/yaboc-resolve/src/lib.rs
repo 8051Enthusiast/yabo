@@ -13,7 +13,7 @@ use petgraph::Graph;
 
 use yaboc_base::error::SResult;
 use yaboc_base::error::{Silencable, SilencedError};
-use yaboc_base::interner::{DefId, DefinitionPath, FieldName, Identifier};
+use yaboc_base::interner::{DefId, DefinitionPath, FieldName, Identifier, Regex};
 use yaboc_base::source::{FileId, SpanIndex};
 use yaboc_expr::{ExprHead, Expression, TakeRef};
 use yaboc_hir::walk::ChildIter;
@@ -32,11 +32,28 @@ pub trait Resolves: crate::hir::Hirs {
     fn parser_ssc(&self, parser: hir::ParserDefId) -> SResult<FunctionSscId>;
     fn resolve_expr_error(&self, expr_id: hir::ExprId) -> Result<ResolvedExpr, ResolveError>;
     fn resolve_expr(&self, expr_id: hir::ExprId) -> SResult<ResolvedExpr>;
+    fn resolve_regex(
+        &self,
+        regex: Regex,
+    ) -> Result<regex_syntax::hir::Hir, Box<regex_syntax::Error>>;
     fn captures(&self, id: hir::BlockId) -> Arc<BTreeSet<DefId>>;
     fn parserdef_ref(&self, loc: DefId, name: Vec<Identifier>)
         -> SResult<Option<hir::ParserDefId>>;
     fn module_sequence(&self) -> Result<Arc<Vec<ModuleId>>, ResolveErrors>;
     fn global_sequence(&self) -> SResult<Arc<[hir::ParserDefId]>>;
+}
+
+fn resolve_regex(
+    db: &dyn Resolves,
+    regex: Regex,
+) -> Result<regex_syntax::hir::Hir, Box<regex_syntax::Error>> {
+    let regex_str = db.lookup_intern_regex(regex);
+    Ok(regex_syntax::ParserBuilder::new()
+        .allow_invalid_utf8(true)
+        .dot_matches_new_line(true)
+        .case_insensitive(false)
+        .build()
+        .parse(&regex_str)?)
 }
 
 fn module_sequence(db: &dyn Resolves) -> Result<Arc<Vec<ModuleId>>, ResolveErrors> {
@@ -136,6 +153,8 @@ pub enum ResolveError {
     CyclicGlobal(hir::ParserDefId),
     UnorderedSpan(ExprId, SpanIndex),
     NonParserRefInSpan(ExprId, SpanIndex),
+    RegexParseError(String, ExprId, SpanIndex, [u32; 2]),
+    OtherRegexError(String, ExprId, SpanIndex),
     Silenced(SilencedError),
 }
 

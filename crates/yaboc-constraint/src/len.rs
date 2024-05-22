@@ -5,7 +5,7 @@ use fxhash::FxHashMap;
 use hir::HirIdWrapper;
 use yaboc_ast::expr::{FieldAccessMode, WiggleKind};
 use yaboc_base::{
-    error::{SResult, Silencable, SilencedError},
+    error::{SResult, Silencable},
     interner::{DefId, FieldName},
 };
 use yaboc_dependents::{
@@ -189,7 +189,7 @@ impl<'a> SizeTermBuilder<'a> {
                             self.push_term(Term::Pd(pd), src)
                         }
                         ResolvedAtom::Regex(r) => {
-                            let len = self.db.regex_len(r).map_err(|_| SilencedError::new())?;
+                            let len = self.db.regex_len(r)?;
                             if let Some(len) = len {
                                 self.push_term(Term::Const(len), src)
                             } else {
