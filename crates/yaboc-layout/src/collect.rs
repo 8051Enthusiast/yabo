@@ -92,6 +92,9 @@ pub enum UnprocessedCall<'a> {
 impl<'a, 'b> LayoutCollector<'a, 'b> {
     pub fn new(ctx: &'b mut AbsLayoutCtx<'a>) -> Self {
         let int = ctx.dcx.int(ctx.db);
+        // even if no layout of ours has a vtable pointer, the caller may still request
+        // one
+        let max_sa = SizeAlign::default().tac(ctx.dcx.target_data.pointer_sa);
         LayoutCollector {
             ctx,
             int,
@@ -104,7 +107,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             functions: Default::default(),
             lens: Default::default(),
             globals: Default::default(),
-            max_sa: Default::default(),
+            max_sa,
             processed_calls: Default::default(),
             unprocessed: Default::default(),
             root: Default::default(),
