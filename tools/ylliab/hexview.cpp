@@ -2,12 +2,12 @@
 #include <QHeaderView>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QPalette>
 #include <QPoint>
 #include <QShortcut>
 #include <QTableView>
 #include <QWidgetAction>
-#include <QMouseEvent>
 
 #include "colorscrollbar.hpp"
 #include "hex.hpp"
@@ -131,12 +131,13 @@ void HexTableView::parse_menu(QPoint current_mouse_pos) {
   auto line_edit = new QLineEdit(menu);
   line_edit->setFont(font());
   connect(line_edit, &QLineEdit::returnPressed, this,
-          [parseRequester = this->parseRequester, line_edit, menu, addr]() {
+          [this, line_edit, menu, addr]() {
             auto name = line_edit->text();
             if (name.isEmpty()) {
               return;
             }
             menu->close();
+            activateWindow();
             parseRequester->request_parse(name, addr);
           });
   widget_action->setDefaultWidget(line_edit);
