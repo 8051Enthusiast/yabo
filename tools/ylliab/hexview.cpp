@@ -126,6 +126,9 @@ void HexTableView::parse_menu(QPoint current_mouse_pos) {
     return;
   }
   auto addr = hexModel->index_addr(index);
+  if (addr >= hexModel->file->span().size()) {
+    return;
+  }
   auto menu = new QMenu(this);
   menu->setFont(font());
   auto widget_action = new QWidgetAction(menu);
