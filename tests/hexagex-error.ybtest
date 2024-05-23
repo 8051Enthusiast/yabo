@@ -1,0 +1,3 @@
+====[ source code ]====
+fun *test = h/fg/
+#~^ error[307] hexagex error: invalid character

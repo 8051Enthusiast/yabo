@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::refs;
+use crate::{refs, RegexError};
 use hir::{ExprId, HirConstraintId};
 use yaboc_ast::expr::{self, Atom, BtMarkKind, FieldAccessMode, WiggleKind};
 use yaboc_base::error::{SResult, SilencedError};
@@ -320,8 +320,14 @@ fn resolve_expr_modules(
                     hir::ParserAtom::Nil => ResolvedAtom::Nil,
                     hir::ParserAtom::ArrayFill => ResolvedAtom::ArrayFill,
                     hir::ParserAtom::Regex(r) => {
-                        if let Err(e) = db.resolve_regex(r) {
-                            return Err(convert_regex_error(&e, expr_id, *span));
+                        match db.resolve_regex(r) {
+                            Err(RegexError::Syntax(e)) => {
+                                return Err(convert_regex_error(&e, expr_id, *span))
+                            }
+                            Err(RegexError::Opaque(e)) => {
+                                return Err(ResolveError::OtherRegexError(e, expr_id, *span))
+                            }
+                            _ => (),
                         }
                         ResolvedAtom::Regex(r)
                     }

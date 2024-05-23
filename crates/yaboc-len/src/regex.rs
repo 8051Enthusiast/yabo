@@ -1,14 +1,11 @@
-use regex_syntax::hir::{Class, Hir, HirKind, Literal, RepetitionKind, RepetitionRange};
+use regex_syntax::hir::{Class, Hir, HirKind};
 
 pub type RegexError = regex_syntax::Error;
 
 pub fn regex_len(regex: &Hir) -> Option<i128> {
     match regex.kind() {
         HirKind::Empty => Some(0),
-        HirKind::Literal(l) => match l {
-            Literal::Unicode(c) => Some(c.len_utf8() as i128),
-            Literal::Byte(_) => Some(1),
-        },
+        HirKind::Literal(l) => Some(l.0.len() as i128),
         HirKind::Class(class) => match class {
             Class::Unicode(r) => {
                 let first = r.ranges().first()?.start().len_utf8();
@@ -21,18 +18,16 @@ pub fn regex_len(regex: &Hir) -> Option<i128> {
             }
             Class::Bytes(_) => Some(1),
         },
-        HirKind::Anchor(_) => Some(0),
-        HirKind::WordBoundary(_) => Some(0),
-        HirKind::Repetition(rep) => match rep.kind {
-            RepetitionKind::Range(RepetitionRange::Exactly(c)) => {
-                Some(regex_len(&rep.hir)?.checked_mul(c as i128)?)
+        HirKind::Look(_) => Some(0),
+        HirKind::Repetition(rep) => {
+            let sub = regex_len(&rep.sub)?;
+            if rep.max? == rep.min {
+                sub.checked_mul(rep.min as i128)
+            } else {
+                None
             }
-            RepetitionKind::Range(RepetitionRange::Bounded(start, end)) if start == end => {
-                Some(regex_len(&rep.hir)?.checked_mul(start as i128)?)
-            }
-            _ => None,
-        },
-        HirKind::Group(g) => regex_len(&g.hir),
+        }
+        HirKind::Capture(g) => regex_len(&g.sub),
         HirKind::Concat(cat) => {
             let mut len = 0i128;
             for hir in cat.iter() {
@@ -63,7 +58,7 @@ mod tests {
 
     fn regex_len(regex: &str) -> Result<Option<i128>, Box<RegexError>> {
         let regex = regex_syntax::ParserBuilder::new()
-            .allow_invalid_utf8(true)
+            .utf8(false)
             .dot_matches_new_line(true)
             .case_insensitive(false)
             .build()

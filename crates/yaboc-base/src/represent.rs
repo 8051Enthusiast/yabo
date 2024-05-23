@@ -15,6 +15,10 @@ where
 
 impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for Regex {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
-        write!(f, "{}", db.lookup_intern_regex(*self))
+        let regex = db.lookup_intern_regex(*self);
+        match regex.kind {
+            crate::interner::RegexKind::Regular => write!(f, "/{}/", regex.regex),
+            crate::interner::RegexKind::Hexagex => write!(f, "h/{}/", regex.regex),
+        }
     }
 }

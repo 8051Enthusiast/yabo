@@ -1,0 +1,28 @@
+====[ source code ]====
+export
+fun *test = {
+  | a: h/i_oi f (1[a-f] | 00)* \xff/
+  | +
+}
+
+====[ binary 1 ]====
+9f 1d 00 ff 2b
+
+====[ output 1 ]====
+{
+  "a": [159, 29, 0, 255]
+}
+
+====[ binary 2 ]====
+df 1a ff aa
+
+====[ output 2 ]====
+{
+  "a": [223, 26, 255]
+}
+
+====[ binary 3 ]====
+ff ff ff
+
+====[ output 3 ]====
+{}

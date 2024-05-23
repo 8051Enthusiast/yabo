@@ -415,6 +415,6 @@ module.exports = grammar({
       'true',
       'false',
     ),
-    regex_literal: $ => /\/([^\/\\\n]|\\.)*\//,
+    regex_literal: $ => /h?\/([^\/\\\n]|\\.)*\//,
   }
 });

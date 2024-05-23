@@ -276,6 +276,18 @@ fn def_hash(db: &dyn Interner, defid: DefId) -> [u8; 32] {
     hasher.finalize().into()
 }
 
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
+pub enum RegexKind {
+    Regular,
+    Hexagex,
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct RegexData {
+    pub kind: RegexKind,
+    pub regex: String,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct Regex(InternId);
 
@@ -298,7 +310,7 @@ pub trait Interner: crate::source::Files {
     #[salsa::interned]
     fn intern_hir_path(&self, path: DefinitionPath) -> DefId;
     #[salsa::interned]
-    fn intern_regex(&self, regex: String) -> Regex;
+    fn intern_regex(&self, regex: RegexData) -> Regex;
 
     fn def_name(&self, defid: DefId) -> Option<FieldName>;
     fn def_hash(&self, defid: DefId) -> [u8; 32];

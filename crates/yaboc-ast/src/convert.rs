@@ -1,5 +1,6 @@
 use tree_sitter::{Node, Parser, TreeCursor};
 use tree_sitter_yabo::language;
+use yaboc_base::interner::RegexKind;
 
 use super::*;
 use yaboc_base::error::SilencedError;
@@ -944,8 +945,11 @@ fn bool_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<bool> {
 
 fn regex_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<ParserAtom> {
     let node = spanned(node_to_string)(db, fd, c)?;
-    let without_slashes = node
-        .inner
+    let (inner, kind) = match node.inner.strip_prefix('h') {
+        Some(inner) => (inner, RegexKind::Hexagex),
+        None => (node.inner.as_str(), RegexKind::Regular),
+    };
+    let without_slashes = inner
         .strip_prefix('/')
         .and_then(|s| s.strip_suffix('/'))
         .ok_or_else(|| vec![GenericParseError { loc: node.span }])?;
@@ -969,7 +973,10 @@ fn regex_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Parser
     if backslash {
         return Err(vec![GenericParseError { loc: node.span }]);
     }
-    let regex = db.intern_regex(unescaped_slashes);
+    let regex = db.intern_regex(yaboc_base::interner::RegexData {
+        kind,
+        regex: unescaped_slashes,
+    });
     Ok(ParserAtom::Regex(regex))
 }
 
