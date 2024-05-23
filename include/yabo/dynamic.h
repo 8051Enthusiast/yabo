@@ -14,9 +14,9 @@ struct Slice {
   const uint8_t *end;
 };
 
-typedef  struct Name {
+typedef struct {
   // padding such that the vtable is directly infront of data without
-  // padding, and such that 
+  // padding, and such that data[] has the necessary alignment
   alignas(YABO_MAX_ALIGN)
   char padding[YABO_MAX_ALIGN - sizeof(void *)];
   struct VTableHeader *vtable;
@@ -61,7 +61,7 @@ static inline int64_t dyn_deref(DynValue *ret, const DynValue *val) {
 
 static inline void dyn_copy(DynValue *ret, const DynValue *val) {
   size_t size = dyn_val_size(val);
-  memcpy(ret, val, size);
+  memcpy(&ret->vtable, &val->vtable, size);
 }
 
 static inline int64_t dyn_access_field(DynValue *ret, const DynValue *block,
