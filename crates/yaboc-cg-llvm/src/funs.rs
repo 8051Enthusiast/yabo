@@ -1,4 +1,5 @@
 use fxhash::FxHashSet;
+use yaboc_base::interner::{RegexData, RegexKind};
 use yaboc_constraint::Constraints;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{
@@ -901,7 +902,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        regex: &str,
+        regex: &RegexData,
         req: RequirementSet,
     ) -> IResult<FunctionValue<'llvm>> {
         let part = self.parser_layout_part(from, req, ParserFunKind::Worker);
@@ -909,6 +910,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let llvm_fun = match self.module.get_function(&sym) {
             Some(f) => return Ok(f),
             None => self.parser_impl_fun_val(layout, from, req),
+        };
+        let re_str = match regex.kind {
+            RegexKind::Regular => regex.regex.to_owned(),
+            RegexKind::Hexagex => hexagex::hexagex(&regex.regex).unwrap().to_string(),
         };
         let dfa_conf = regex_automata::dfa::dense::Config::new().minimize(true);
         let syntax = regex_automata::util::syntax::Config::new()
@@ -918,7 +923,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let dfa = regex_automata::dfa::dense::Builder::new()
             .configure(dfa_conf)
             .syntax(syntax)
-            .build(regex)
+            .build(&re_str)
             .expect("invalid regex");
         let mut trans = RegexTranslator::new(self, llvm_fun, &dfa, from)?;
         trans.build()?;

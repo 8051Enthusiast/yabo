@@ -13,7 +13,7 @@ use petgraph::Graph;
 
 use yaboc_base::error::SResult;
 use yaboc_base::error::{Silencable, SilencedError};
-use yaboc_base::interner::{DefId, DefinitionPath, FieldName, Identifier, Regex};
+use yaboc_base::interner::{DefId, DefinitionPath, FieldName, Identifier, Regex, RegexKind};
 use yaboc_base::source::{FileId, SpanIndex};
 use yaboc_expr::{ExprHead, Expression, TakeRef};
 use yaboc_hir::walk::ChildIter;
@@ -32,10 +32,7 @@ pub trait Resolves: crate::hir::Hirs {
     fn parser_ssc(&self, parser: hir::ParserDefId) -> SResult<FunctionSscId>;
     fn resolve_expr_error(&self, expr_id: hir::ExprId) -> Result<ResolvedExpr, ResolveError>;
     fn resolve_expr(&self, expr_id: hir::ExprId) -> SResult<ResolvedExpr>;
-    fn resolve_regex(
-        &self,
-        regex: Regex,
-    ) -> Result<regex_syntax::hir::Hir, Box<regex_syntax::Error>>;
+    fn resolve_regex(&self, regex: Regex) -> Result<regex_syntax::hir::Hir, RegexError>;
     fn captures(&self, id: hir::BlockId) -> Arc<BTreeSet<DefId>>;
     fn parserdef_ref(&self, loc: DefId, name: Vec<Identifier>)
         -> SResult<Option<hir::ParserDefId>>;
@@ -43,18 +40,30 @@ pub trait Resolves: crate::hir::Hirs {
     fn global_sequence(&self) -> SResult<Arc<[hir::ParserDefId]>>;
 }
 
-fn resolve_regex(
-    db: &dyn Resolves,
-    regex: Regex,
-) -> Result<regex_syntax::hir::Hir, Box<regex_syntax::Error>> {
-    let regex_str = db.lookup_intern_regex(regex);
-    Ok(regex_syntax::ParserBuilder::new()
-        .allow_invalid_utf8(true)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RegexError {
+    Syntax(Box<regex_syntax::Error>),
+    Opaque(String),
+}
+
+fn resolve_regex(db: &dyn Resolves, regex: Regex) -> Result<regex_syntax::hir::Hir, RegexError> {
+    let regex = db.lookup_intern_regex(regex);
+    let regex_str = match regex.kind {
+        RegexKind::Regular => regex.regex,
+        RegexKind::Hexagex => {
+            let r =
+                hexagex::hexagex(&regex.regex).map_err(|e| RegexError::Opaque(e.to_string()))?;
+            r.to_string()
+        }
+    };
+    regex_syntax::ParserBuilder::new()
+        .utf8(false)
         .unicode(false)
         .dot_matches_new_line(true)
         .case_insensitive(false)
         .build()
-        .parse(&regex_str)?)
+        .parse(&regex_str)
+        .map_err(|e| RegexError::Syntax(Box::new(e)))
 }
 
 fn module_sequence(db: &dyn Resolves) -> Result<Arc<Vec<ModuleId>>, ResolveErrors> {

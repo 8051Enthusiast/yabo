@@ -7,7 +7,7 @@ use yaboc_base::{
     databased_display::DatabasedDisplay,
     dbformat, dbwrite,
     hash::StableHash,
-    interner::{DefId, FieldName, Identifier},
+    interner::{DefId, FieldName, Identifier, RegexKind},
 };
 use yaboc_target::layout::PSize;
 
@@ -84,8 +84,7 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
                     write!(f, "}}")
                 }
                 MonoLayout::Regex(regex, bt) => {
-                    let regex_str = db.lookup_intern_regex(*regex);
-                    write!(f, "{regex_str}")?;
+                    regex.db_fmt(f, db)?;
                     if *bt {
                         write!(f, "?")?;
                     }
@@ -285,8 +284,16 @@ impl<'a> LayoutHasher<'a> {
             // 9 used to be Tuple
             MonoLayout::Regex(regex, bt) => {
                 state.update([10]);
-                let regex_str = db.lookup_intern_regex(*regex);
-                regex_str.update_hash(state, db);
+                let regex_data = db.lookup_intern_regex(*regex);
+                match regex_data.kind {
+                    RegexKind::Regular => {
+                        state.update([0]);
+                    }
+                    RegexKind::Hexagex => {
+                        state.update([1]);
+                    }
+                }
+                regex_data.regex.update_hash(state, db);
                 state.update([*bt as u8]);
             }
             MonoLayout::IfParser(inner, id, wiggle) => {
@@ -446,11 +453,17 @@ impl<'a> LayoutSymbol<'a> {
             }
             MonoLayout::Regex(re, backtracks) => {
                 let re_str = db.lookup_intern_regex(*re);
-                let ident_str = re_str.replace(|c: char| !c.is_ascii_alphanumeric(), "_");
+                let prefix = match re_str.kind {
+                    RegexKind::Regular => "",
+                    RegexKind::Hexagex => "h_",
+                };
+                let ident_str = re_str
+                    .regex
+                    .replace(|c: char| !c.is_ascii_alphanumeric(), "_");
                 if *backtracks {
-                    format!("parse_regex_{ident_str}_b")
+                    format!("parse_regex_{prefix}{ident_str}_b")
                 } else {
-                    format!("parse_regex_{ident_str}")
+                    format!("parse_regex_{prefix}{ident_str}")
                 }
             }
             MonoLayout::IfParser(..) => String::from("parser_if"),
