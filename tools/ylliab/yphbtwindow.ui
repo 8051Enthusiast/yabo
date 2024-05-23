@@ -61,7 +61,7 @@ def *rgb = {
 
 export
 def *main = {
-  [1], /PNG/, /\r\n/, /\x1A/, /\n/
+  h/89 50 4e 47 0d 0a 1a 0a/
 
   header: chunk(/IHDR/, head)!
 
