@@ -1,0 +1,15 @@
+====[ source code ]====
+fun *chunk = { let length = 1 }
+
+export
+fun *test = {
+  x: chunk
+  let return = x if length
+}
+
+====[ binary 1 ]====
+00
+====[ output 1 ]====
+{
+  "length": 1
+}
