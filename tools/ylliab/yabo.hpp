@@ -38,7 +38,7 @@ struct YaboVal {
   explicit YaboVal(const DynValue *v) : val(v) {}
   bool operator==(const YaboVal &) const noexcept = default;
   const DynValue *operator->() const noexcept { return val; }
-  YaboValKind kind();
+  YaboValKind kind() const noexcept;
 
   int64_t access_int() const noexcept { return *(int64_t *)val->data; }
 
