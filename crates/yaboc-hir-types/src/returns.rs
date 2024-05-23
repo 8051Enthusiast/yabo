@@ -325,8 +325,11 @@ mod tests {
     use yaboc_ast::import::Import;
     use yaboc_base::databased_display::DatabasedDisplay;
     use yaboc_base::interner::PathComponent;
+    use yaboc_base::source::FileId;
     use yaboc_base::Context;
     use yaboc_types::TypeInterner;
+
+    use self::id_cursor::IdCursor;
 
     use super::*;
     #[test]
@@ -448,5 +451,39 @@ def *expr6 = {
             "[u8] *> [u8] &> file[_].expr2"
         );
         assert_eq!(full_type("expr6", &["inner", "b"]), "[u8] &> file[_].expr2");
+    }
+    #[test]
+    fn uncached_normalization() {
+        let ctx = Context::<HirTypesTestDatabase>::mock(
+            r#"
+fun id(x: 't) = x
+def *entry = {}
+def *dir_entries = entry
+def *file_entry = entry
+
+def *dir_entry = {
+  let subdir: dir_entries = id(dir_entries at 0)
+  let file: file_entry = id(file_entry at 0)
+}
+            "#,
+        );
+        let block = IdCursor::at_file(&ctx.db, FileId::default())
+            .pd("dir_entry")
+            .expr()
+            .expr_block(0);
+        let subdir_expr = block.field("subdir").expr().id;
+        let subdir_ty = *ctx
+            .db
+            .parser_expr_at(ExprId(subdir_expr))
+            .unwrap()
+            .root_data();
+        assert_eq!(dbformat!(&ctx.db, "{}", &subdir_ty), "[u8] &> file[_].dir_entries");
+        let file_expr = block.field("file").expr().id;
+        let file_ty = *ctx
+            .db
+            .parser_expr_at(ExprId(file_expr))
+            .unwrap()
+            .root_data();
+        assert_eq!(dbformat!(&ctx.db, "{}", &file_ty), "[u8] &> file[_].file_entry");
     }
 }
