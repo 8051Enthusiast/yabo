@@ -28,16 +28,6 @@ enum DerefData {
 }
 
 impl DerefData {
-    fn normalized_of(&self, def: DefId) -> Self {
-        match self {
-            DerefData::Nominal { level, .. } => DerefData::Nominal { def, level: *level },
-            DerefData::U8 => DerefData::Nominal { def, level: 1 },
-            DerefData::Base => DerefData::Nominal { def, level: 0 },
-            DerefData::TypeVar(v) => DerefData::TypeVar(*v),
-            DerefData::Error(s) => DerefData::Error(s.clone()),
-        }
-    }
-
     fn deref_of(&self, def: DefId) -> Self {
         match self {
             DerefData::Nominal { level, .. } => DerefData::Nominal {
@@ -63,7 +53,6 @@ impl DerefData {
 
 pub struct DerefCache {
     deref_cache: FxHashMap<DefId, DerefData>,
-    normalize_cache: FxHashMap<DefId, DerefData>,
     local_deref: FxHashMap<DefId, State>,
 }
 
@@ -78,10 +67,7 @@ impl DerefCache {
     fn deref_data_to_level<'a>(&'a self, mut data: &'a DerefData, target_level: u32) -> &DerefData {
         assert!(data.level() >= target_level);
         while let DerefData::Nominal { def, .. } = data {
-            let deref = self
-                .deref_cache
-                .get(def)
-                .unwrap_or_else(|| &self.normalize_cache[def]);
+            let deref = &self.deref_cache[def];
             // this is the first one where the level is strictly smaller than
             // the target level, so the current one has the correct level
             if deref.level() < target_level {
@@ -132,9 +118,6 @@ impl DerefCache {
         if let Some(result) = self.deref_cache.get(&head.def) {
             return Ok(Some(result.deref_of(head.def)));
         }
-        if let Some(result) = self.normalize_cache.get(&head.def) {
-            return Ok(Some(result.normalized_of(head.def)));
-        }
         let is_local_def = ctx.tr.is_local(head.def);
         if is_local_def {
             let old_state = self.local_deref.insert(head.def, State::InProgress);
@@ -171,16 +154,11 @@ impl DerefCache {
                     Err(e) => Err(e),
                 }
             }
-            NominalKind::Fun | NominalKind::Static => {
-                if let Some(c) = cached_res {
-                    self.normalize_cache.insert(head.def, c);
-                }
-                match res {
-                    Ok(None) => Ok(Some(DerefData::Base)),
-                    Ok(Some(target)) => Ok(Some(target.normalized_of(head.def))),
-                    Err(e) => Err(e),
-                }
-            }
+            NominalKind::Fun | NominalKind::Static => match res {
+                Ok(None) => Ok(Some(DerefData::Base)),
+                Ok(Some(target)) => Ok(Some(target)),
+                Err(e) => Err(e),
+            },
             NominalKind::Block => unreachable!(),
         }
     }
@@ -289,7 +267,6 @@ impl DerefCache {
     ) -> Result<Self, TypeConvError> {
         let mut cache = Self {
             deref_cache: FxHashMap::default(),
-            normalize_cache: FxHashMap::default(),
             local_deref: FxHashMap::default(),
         };
         cache.check_locals(local_defs, ctx)?;
