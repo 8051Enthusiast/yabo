@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use yaboc_base::{dbformat, dbpanic, interner::PathComponent};
+use yaboc_base::{dbformat, dbpanic};
 use yaboc_expr::FetchKindData;
 use yaboc_resolve::parserdef_ssc::FunctionSscId;
 use yaboc_types::inference::InternedNomHead;
@@ -262,18 +262,17 @@ impl<'intern> TypeResolver<'intern> for ReturnResolver<'intern> {
             NominalId::Block(b) => b,
         }
         .lookup(self.db)?;
-        let child_id = block
-            .root_context
-            .0
-            .child(self.db, PathComponent::Named(name));
-        if ty.internal {
-            self.inftypes
-                .get(&child_id)
-                .map(|&id| id.into())
-                .ok_or_else(|| TypeError::UnknownField(name))
+        let root_context = block.root_context.lookup(self.db)?;
+        let Some(child_id) = root_context.vars.get(name) else {
+            return Err(TypeError::UnknownField(name));
+        };
+        Ok(if ty.internal {
+            self.inftypes[child_id.inner()].into()
         } else {
-            Ok(self.db.parser_type_at(child_id).map(|t| t.into())?)
-        }
+            self.db
+                .parser_type_at(*child_id.inner())
+                .map(|t| t.into())?
+        })
     }
 
     fn deref(&self, ty: &InternedNomHead<'intern>) -> SResult<Option<EitherType<'intern>>> {
@@ -325,6 +324,7 @@ mod tests {
     use hir::Parser;
     use yaboc_ast::import::Import;
     use yaboc_base::databased_display::DatabasedDisplay;
+    use yaboc_base::interner::PathComponent;
     use yaboc_base::Context;
     use yaboc_types::TypeInterner;
 
