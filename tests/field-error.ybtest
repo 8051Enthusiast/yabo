@@ -1,0 +1,15 @@
+====[ source code ]====
+
+fun block() = {:
+  a: u8
+:}
+
+def *access = {
+  let b = block().y
+  #~^ error[502] unknown field y
+}
+
+def *matching = {
+  let b = block() if y
+  #~^ error[502] unknown field y
+}
