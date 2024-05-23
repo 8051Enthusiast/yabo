@@ -1,8 +1,8 @@
 #include "yabo.hpp"
 #include "yabo/vtable.h"
 #include <algorithm>
+#include <unistd.h>
 
-constexpr uint64_t DEFAULT_LEVEL = YABO_ANY;
 YaboValKind YaboVal::kind() {
   if (!val->vtable) {
     return YaboValKind::YABOERROR;
@@ -13,6 +13,35 @@ YaboValKind YaboVal::kind() {
   }
 
   return static_cast<YaboValKind>(val->vtable->head);
+}
+
+std::optional<ptrdiff_t>
+YaboVal::field_offset(char const *name) const noexcept {
+  if (val->vtable->head != YABO_BLOCK) {
+    return {};
+  }
+
+  auto vtable = reinterpret_cast<BlockVTable *>(val->vtable);
+  auto start = vtable->fields->fields;
+  auto end = start + vtable->fields->number_fields;
+  auto cmp = [](const char *lhs, const char *rhs) {
+    return std::strcmp(lhs, rhs) < 0;
+  };
+  auto res = std::lower_bound(start, end, name, cmp);
+  if (res == end || std::strcmp(name, *res)) {
+    return {};
+  }
+  return res - start;
+}
+
+bool YaboVal::is_list_block() const noexcept {
+  if (val->vtable->head != YABO_BLOCK)
+    return false;
+  auto block_vtable = reinterpret_cast<BlockVTable *>(val->vtable);
+  if (block_vtable->fields->number_fields != 2)
+    return false;
+  return std::strcmp(block_vtable->fields->fields[0], list_tail) == 0 &&
+         std::strcmp(block_vtable->fields->fields[1], list_head) == 0;
 }
 
 YaboValStorage::YaboValStorage(size_t max_s) {
@@ -28,7 +57,7 @@ YaboValStorage::YaboValStorage(size_t max_s) {
   tmp_storage2 = std::make_unique<uint8_t[]>(space2);
   void *ptr2 = tmp_storage2.get();
   std::align(YABO_MAX_ALIGN, max_s, ptr2, space2);
-};
+}
 
 DynValue *YaboValStorage::next_val_ptr() {
   auto next_ptr = static_cast<void *>(fresh_storage.get() + current_offset);
@@ -97,27 +126,21 @@ SpannedVal YaboValStorage::with_span_and_return_buf(
   return SpannedVal(val, FileSpan(span.data(), size), true);
 }
 
-std::optional<YaboVal> YaboValCreator::access_field(YaboVal val,
-                                                    const char *name) {
+std::optional<YaboVal>
+YaboValCreator::access_field(YaboVal val, const char *name, int64_t level) {
   if (val.is_exceptional() || val->vtable->head != YABO_BLOCK) {
     return {};
   }
 
-  auto vtable = reinterpret_cast<BlockVTable *>(val->vtable);
-  auto start = vtable->fields->fields;
-  auto end = start + vtable->fields->number_fields;
-  auto cmp = [](const char *lhs, const char *rhs) {
-    return std::strcmp(lhs, rhs) < 0;
-  };
-  auto res = std::lower_bound(start, end, name, cmp);
-  if (res == end || std::strcmp(name, *res)) {
+  auto maybe_offset = val.field_offset(name);
+  if (!maybe_offset) {
     return {};
   }
-  ptrdiff_t offset = res - start;
+  auto offset = *maybe_offset;
+  auto vtable = reinterpret_cast<BlockVTable *>(val->vtable);
   auto impl = vtable->access_impl[offset];
-  auto ret = storage.with_return_buf([=](uint8_t *buf) {
-    return impl(buf, val->data, DEFAULT_LEVEL | YABO_VTABLE);
-  });
+  auto ret = storage.with_return_buf(
+      [=](uint8_t *buf) { return impl(buf, val->data, level | YABO_VTABLE); });
   if (ret.is_backtrack()) {
     return {};
   }
@@ -159,6 +182,21 @@ std::optional<YaboVal> YaboValCreator::index(YaboVal val, size_t idx) {
           return status;
         return vtable->current_element_impl(buf, val->data,
                                             DEFAULT_LEVEL | YABO_VTABLE);
+      });
+}
+
+std::optional<YaboVal> YaboValCreator::skip(YaboVal val, size_t offset) {
+  if (val.is_exceptional() || val->vtable->head != YABO_LOOP) {
+    return {};
+  }
+
+  return storage.with_address_and_return_buf(
+      val, [=](DynValue *val, uint8_t *buf) {
+        auto vtable = reinterpret_cast<ArrayVTable *>(val->vtable);
+        auto status = vtable->skip_impl(val->data, (uint64_t)offset);
+        if (status)
+          return status;
+        return vtable->head.typecast_impl(buf, val->data, YABO_VTABLE);
       });
 }
 

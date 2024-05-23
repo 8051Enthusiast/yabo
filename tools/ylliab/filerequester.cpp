@@ -22,7 +22,7 @@
 #include "yabo/vtable.h"
 
 TreeIndex Arborist::add_node(ParentBranch parent, QString &field_name) {
-  auto node = TreeNode{parent, TreeNodeState::LOADING, 0, field_name, {}};
+  auto node = TreeNode{parent, TreeNodeState::LOADING, 0, field_name, {}, {}};
   tree.push_back(node);
   auto idx = TreeIndex{tree.size() - 1};
   interner.insert({node.idx, idx});
@@ -60,6 +60,7 @@ void FileRequester::set_value(TreeIndex idx, SpannedVal val, RootIndex root) {
   if (val.kind() == YaboValKind::YABOARRAY ||
       val.kind() == YaboValKind::YABOBLOCK) {
     node.state = TreeNodeState::LOADED_INCOMPLETE_CHIlDREN;
+    node.continuation = val;
     // idx.idx == 0 so that the top root is loaded when it is first seen
     // so that we can expand it automatically
     if ((recursive_fetch && root_info.at(root.root_idx).visited) ||
@@ -99,27 +100,29 @@ void FileRequester::process_response(Response resp) {
   switch (resp.metadata.kind) {
   case MessageType::ARRAY_ELEMENTS:
   case MessageType::FIELDS: {
-    auto &vals = std::get<YaboValVec>(resp.data);
-    if (vals.empty()) {
+    auto &vals = std::get<ValVecResponse>(resp.data);
+    if (vals.vals.empty()) {
       arborist->get_node(resp.metadata.idx).state = TreeNodeState::LOADED;
       break;
     }
+    auto continuation = vals.continuation;
+    auto &val_vec = vals.vals;
     auto start = arborist->get_node(resp.metadata.idx).n_children;
     emit tree_begin_insert_rows(resp.metadata.idx, start,
-                                start + vals.size() - 1, resp.metadata.root);
-    for (size_t i = 0; i < vals.size(); i++) {
+                                start + val_vec.size() - 1, resp.metadata.root);
+    for (size_t i = 0; i < val_vec.size(); i++) {
       auto branch = ParentBranch{resp.metadata.idx, i + start};
-      auto tree_idx = arborist->add_node(branch, vals[i].name);
-      set_value(tree_idx, vals[i].val, resp.metadata.root);
+      auto tree_idx = arborist->add_node(branch, val_vec[i].name);
+      set_value(tree_idx, val_vec[i].val, resp.metadata.root);
     }
     auto &node = arborist->get_node(resp.metadata.idx);
-    node.n_children += vals.size();
-    if (vals.size() == array_fetch_size &&
-        resp.metadata.kind == MessageType::ARRAY_ELEMENTS) {
+    node.n_children += val_vec.size();
+    if (continuation) {
       node.state = TreeNodeState::LOADED_INCOMPLETE_CHIlDREN;
     } else {
       node.state = TreeNodeState::LOADED;
     }
+    node.continuation = continuation;
     emit tree_end_insert_rows(resp.metadata.idx, resp.metadata.root);
     break;
   }
@@ -243,7 +246,7 @@ void FileRequester::fetch_children(TreeIndex idx, RootIndex root) {
       !node.val.has_value()) {
     return;
   }
-  auto val = node.val.value();
+  auto val = SpannedVal{*node.continuation, node.val->span, node.val->active};
   auto start = node.n_children;
   MessageType message_type;
   switch (val.kind()) {
@@ -251,7 +254,11 @@ void FileRequester::fetch_children(TreeIndex idx, RootIndex root) {
     message_type = MessageType::ARRAY_ELEMENTS;
     break;
   case YaboValKind::YABOBLOCK:
-    message_type = MessageType::FIELDS;
+    if (val.is_list_block()) {
+      message_type = MessageType::ARRAY_ELEMENTS;
+    } else {
+      message_type = MessageType::FIELDS;
+    }
     break;
   default:
     return;

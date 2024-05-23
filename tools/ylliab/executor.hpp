@@ -63,6 +63,7 @@ private:
   int64_t init_lib();
   std::optional<Response> get_fields(Request &req);
   std::optional<Response> get_array_members(Request &req);
+  std::optional<Response> get_list_members(Request &req);
   SpannedVal normalize(YaboVal val, FileSpan parent_span);
   struct DerefInfo {
     std::optional<YaboVal> val;

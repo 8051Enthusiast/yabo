@@ -50,6 +50,8 @@ struct YaboVal {
     return *(const uint8_t **)val->data;
   }
 
+  std::optional<ptrdiff_t> field_offset(char const *name) const noexcept;
+
   uint64_t access_error() const noexcept { return *(uint64_t *)val->data; }
 
   bool is_exceptional() const noexcept { return !val->vtable; }
@@ -57,6 +59,9 @@ struct YaboVal {
   bool is_backtrack() const noexcept {
     return !val->vtable && access_error() == BACKTRACK;
   }
+  static constexpr char const *list_head = "this";
+  static constexpr char const *list_tail = "next";
+  bool is_list_block() const noexcept;
 };
 
 struct SpannedVal : public YaboVal {
@@ -159,14 +164,17 @@ template <> struct std::hash<YaboVal> {
   }
 };
 
+constexpr uint64_t DEFAULT_LEVEL = YABO_ANY;
 class YaboValCreator {
 public:
   YaboValCreator(YaboValStorage &&store) : storage(std::move(store)) {}
   YaboValCreator() = default;
-  std::optional<YaboVal> access_field(YaboVal val, const char *name);
+  std::optional<YaboVal> access_field(YaboVal val, const char *name,
+                                      int64_t level = DEFAULT_LEVEL);
   std::optional<YaboVal> deref(YaboVal val);
   int64_t array_len(YaboVal val);
   std::optional<YaboVal> index(YaboVal val, size_t idx);
+  std::optional<YaboVal> skip(YaboVal val, size_t offset);
   std::optional<SpannedVal> parse(ParseFun parser, FileSpan buf);
   std::optional<FileSpan> extent(YaboVal val);
 

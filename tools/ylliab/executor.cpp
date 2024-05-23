@@ -1,4 +1,5 @@
 #include "executor.hpp"
+#include "request.hpp"
 
 #include <dlfcn.h>
 #ifdef __EMSCRIPTEN__
@@ -72,34 +73,78 @@ Executor::~Executor() {
 }
 
 std::optional<Response> Executor::get_fields(Request &req) {
-  std::vector<NamedYaboVal> ret;
+  std::vector<NamedYaboVal> fields;
   auto vtable = reinterpret_cast<BlockVTable *>(req.val.val->vtable);
   for (size_t i = 0; i < vtable->fields->number_fields; i++) {
     auto name = vtable->fields->fields[i];
     auto field_val = vals.access_field(req.val, name);
     if (field_val.has_value()) {
       auto new_val = normalize(field_val.value(), req.val.span);
-      ret.push_back(NamedYaboVal{QString(name), new_val});
+      fields.push_back(NamedYaboVal{QString(name), new_val});
     }
   }
-  std::sort(ret.begin(), ret.end());
+  std::sort(fields.begin(), fields.end());
+  ValVecResponse ret{std::move(fields), {}};
   return Response(req.metadata, std::move(ret));
 }
 
 std::optional<Response> Executor::get_array_members(Request &req) {
-  std::vector<NamedYaboVal> ret;
+  std::vector<NamedYaboVal> elements;
   uint64_t len = vals.array_len(req.val);
   uint64_t start = req.array_start_index;
-  auto end = std::min(start + array_fetch_size, len);
-  for (size_t i = start; i < end; i++) {
+  uint64_t end = std::min((uint64_t)array_fetch_size, len);
+  for (uint64_t i = 0; i < end; i++) {
     auto idx_val = vals.index(req.val, i);
     if (idx_val.has_value()) {
       auto new_val = normalize(idx_val.value(), req.val.span);
-      ret.push_back(NamedYaboVal{QString::number(i), new_val});
+      elements.push_back(NamedYaboVal{QString::number(start + i), new_val});
     } else {
       return {};
     }
   }
+  std::optional<YaboVal> continuation = {};
+  if (array_fetch_size < len) {
+    continuation = vals.skip(req.val, array_fetch_size);
+  }
+  ValVecResponse ret{std::move(elements), continuation};
+  return Response(req.metadata, std::move(ret));
+}
+
+std::optional<Response> Executor::get_list_members(Request &req) {
+  std::vector<YaboVal> ret_vals;
+  YaboVal current = req.val;
+  uint64_t idx;
+  for (idx = 0; idx < array_fetch_size; idx++) {
+    if (!current.is_list_block()) {
+      ret_vals.push_back(current);
+      break;
+    }
+    auto head = vals.access_field(current, YaboVal::list_head);
+    auto tail = vals.access_field(current, YaboVal::list_tail, 0);
+    if (!head.has_value()) {
+      if (tail.has_value()) {
+        ret_vals.push_back(*tail);
+      }
+      break;
+    }
+    ret_vals.push_back(*head);
+    if (!tail.has_value()) {
+      break;
+    }
+    current = *tail;
+  }
+  std::vector<NamedYaboVal> elements;
+  elements.reserve(ret_vals.size());
+  for (size_t i = 0; i < ret_vals.size(); i++) {
+    auto new_val = normalize(ret_vals[i], req.val.span);
+    elements.push_back(
+        NamedYaboVal{QString::number(i + req.array_start_index), new_val});
+  }
+  std::optional<YaboVal> continuation = {};
+  if (idx == array_fetch_size) {
+    continuation = current;
+  }
+  ValVecResponse ret{std::move(elements), continuation};
   return Response(req.metadata, std::move(ret));
 }
 
@@ -109,6 +154,9 @@ std::optional<Response> Executor::execute_request(Request req) {
     return get_fields(req);
   }
   case MessageType::ARRAY_ELEMENTS: {
+    if (req.val.kind() == YaboValKind::YABOBLOCK) {
+      return get_list_members(req);
+    }
     return get_array_members(req);
   }
   case MessageType::DEREF: {
