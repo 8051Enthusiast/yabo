@@ -45,6 +45,7 @@ struct TreeNode {
   size_t n_children;
   QString field_name;
   std::optional<SpannedVal> val;
+  std::optional<YaboVal> continuation;
 };
 
 // turns a graph into a tree/forest

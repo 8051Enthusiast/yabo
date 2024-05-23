@@ -3,6 +3,7 @@
 #include "yabo.hpp"
 #include <QAbstractItemModel>
 #include <QThread>
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -97,18 +98,21 @@ struct NamedYaboVal {
     return std::strong_ordering::equal;
   }
 };
-using YaboValVec = std::vector<NamedYaboVal>;
+struct ValVecResponse {
+  std::vector<NamedYaboVal> vals;
+  std::optional<YaboVal> continuation;
+};
 
 struct Response {
   Response() : metadata(Meta()) {}
-  Response(Meta meta, YaboValVec &&vals)
+  Response(Meta meta, ValVecResponse &&vals)
       : metadata(meta), data(std::move(vals)) {}
   Response(Meta meta, NamedYaboVal &&val)
       : metadata(meta), data(std::move(val)) {}
   // emit an error
   Response(Meta meta) : metadata(meta) { metadata.kind = MessageType::ERROR; }
   Meta metadata;
-  std::variant<YaboValVec, NamedYaboVal> data;
+  std::variant<ValVecResponse, NamedYaboVal> data;
 };
 
 Q_DECLARE_METATYPE(Response)
