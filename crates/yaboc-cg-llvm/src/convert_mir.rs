@@ -273,7 +273,13 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             ConstraintAtom::Atom(Atom::Field(field)) => {
                 let (byte_ptr, shifted_bit) = match self.discriminant_info(place, field)? {
                     Some(x) => x,
-                    None => return Ok(()),
+                    None => {
+                        // the field is always there, so we have to insert a branch
+                        self.cg
+                            .builder
+                            .build_unconditional_branch(self.bb(ctrl.next))?;
+                        return Ok(());
+                    }
                 };
                 self.cg.build_discriminant_check(byte_ptr, shifted_bit)?
             }
