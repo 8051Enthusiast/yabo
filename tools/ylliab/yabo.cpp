@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <unistd.h>
 
-YaboValKind YaboVal::kind() {
+YaboValKind YaboVal::kind() const noexcept {
   if (!val->vtable) {
     return YaboValKind::YABOERROR;
   }
@@ -17,7 +17,7 @@ YaboValKind YaboVal::kind() {
 
 std::optional<ptrdiff_t>
 YaboVal::field_offset(char const *name) const noexcept {
-  if (val->vtable->head != YABO_BLOCK) {
+  if (kind() != YaboValKind::YABOBLOCK) {
     return {};
   }
 
@@ -35,7 +35,7 @@ YaboVal::field_offset(char const *name) const noexcept {
 }
 
 bool YaboVal::is_list_block() const noexcept {
-  if (val->vtable->head != YABO_BLOCK)
+  if (kind() != YaboValKind::YABOBLOCK)
     return false;
   auto block_vtable = reinterpret_cast<BlockVTable *>(val->vtable);
   if (block_vtable->fields->number_fields != 2)
@@ -66,8 +66,8 @@ DynValue *YaboValStorage::next_val_ptr() {
   auto res = std::align(YABO_MAX_ALIGN, max_size, next_ptr, new_space_left);
   if (!res) {
     expand_storage();
-    // this should only recurse once since we have enough space for at least one
-    // value plus padding
+    // this should only recurse once since we have enough space for at least
+    // one value plus padding
     return next_val_ptr();
   }
   auto diff = old_space_left - new_space_left;
@@ -128,7 +128,7 @@ SpannedVal YaboValStorage::with_span_and_return_buf(
 
 std::optional<YaboVal>
 YaboValCreator::access_field(YaboVal val, const char *name, int64_t level) {
-  if (val.is_exceptional() || val->vtable->head != YABO_BLOCK) {
+  if (val.kind() != YaboValKind::YABOBLOCK) {
     return {};
   }
 
@@ -161,7 +161,7 @@ std::optional<YaboVal> YaboValCreator::deref(YaboVal val) {
 }
 
 int64_t YaboValCreator::array_len(YaboVal val) {
-  if (val.is_exceptional() || val->vtable->head != YABO_LOOP) {
+  if (val.kind() != YaboValKind::YABOARRAY) {
     return 0;
   }
 
@@ -170,7 +170,7 @@ int64_t YaboValCreator::array_len(YaboVal val) {
 }
 
 std::optional<YaboVal> YaboValCreator::index(YaboVal val, size_t idx) {
-  if (val.is_exceptional() || val->vtable->head != YABO_LOOP) {
+  if (val.kind() != YaboValKind::YABOARRAY) {
     return {};
   }
 
@@ -186,7 +186,7 @@ std::optional<YaboVal> YaboValCreator::index(YaboVal val, size_t idx) {
 }
 
 std::optional<YaboVal> YaboValCreator::skip(YaboVal val, size_t offset) {
-  if (val.is_exceptional() || val->vtable->head != YABO_LOOP) {
+  if (val.kind() != YaboValKind::YABOARRAY) {
     return {};
   }
 
