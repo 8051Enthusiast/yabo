@@ -89,7 +89,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     }
 
     fn is_ret_place(&self, placeref: mir::PlaceRef) -> bool {
-        self.mir_fun.place_strictness(placeref) == Strictness::Return
+        Some(placeref) == self.mir_fun.f.ret()
+            || self.mir_fun.place_strictness(placeref) == Strictness::Return
     }
 
     fn place_ptr(&mut self, placeref: mir::PlaceRef) -> IResult<PointerValue<'llvm>> {
@@ -193,12 +194,22 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             self.cg.builder.build_unconditional_branch(block)?;
             return Ok(());
         }
-        let to = self.return_val(to)?;
         let from = self.place_val(from)?;
         if let Layout::None = from.layout.layout.1 {
             self.cg.builder.build_unreachable()?;
             return Ok(());
         }
+        if !self.is_ret_place(to) {
+            let to = self.place_val(to)?;
+            if from.layout == to.layout {
+                self.cg.build_copy_invariant(to, from)?;
+                self.cg
+                    .builder
+                    .build_unconditional_branch(self.bb(ctrl.next))?;
+                return Ok(());
+            }
+        }
+        let to = self.return_val(to)?;
         let ret = self.cg.call_typecast_fun(to, from)?;
         self.controlflow_case(ret, ctrl)
     }
