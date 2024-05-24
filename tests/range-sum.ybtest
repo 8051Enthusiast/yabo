@@ -1,0 +1,35 @@
+====[ source code ]====
+fun [int] *> sum(acc: int) = {
+  | x: ~ if !eof, return: sum(acc + x)
+  | let return = acc
+}
+export
+fun *test = {
+  start: u8
+  end: u8
+  let return = start..end *> sum(0)
+}
+
+====[ binary 1 ]====
+00 0a
+
+====[ output 1 ]====
+45
+
+====[ binary 2 ]====
+01 02
+
+====[ output 2 ]====
+1
+
+====[ binary 3 ]====
+ff ff
+
+====[ output 3 ]====
+0
+
+====[ binary 4 ]====
+00 00
+
+====[ output 4 ]====
+0

@@ -655,6 +655,42 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         self.controlflow_case(ret, ctrl)
     }
 
+    fn range(
+        &mut self,
+        ret: PlaceRef,
+        start: PlaceRef,
+        end: PlaceRef,
+        ctrl: ControlFlow,
+    ) -> IResult<()> {
+        let start_int = self.build_int_load(start)?;
+        let end_int = self.build_int_load(end)?;
+        let start_ptr = self.place_ptr(ret)?;
+        let end_ptr = unsafe {
+            self.cg.builder.build_gep(
+                self.cg.llvm.i64_type(),
+                start_ptr,
+                &[self.cg.const_i64(1)],
+                "range_end_ptr",
+            )?
+        };
+        self.cg.builder.build_store(start_ptr, start_int)?;
+        self.cg.builder.build_store(end_ptr, end_int)?;
+        let invalid_range = self.cg.builder.build_int_compare(
+            IntPredicate::SGT,
+            start_int,
+            end_int,
+            "invalid_range",
+        )?;
+        let zero = self.cg.const_i64(ReturnStatus::Ok as i64);
+        let err = self.cg.const_i64(ReturnStatus::Error as i64);
+        let ret = self
+            .cg
+            .builder
+            .build_select(invalid_range, err, zero, "range_select")?
+            .into_int_value();
+        self.controlflow_case(ret, ctrl)
+    }
+
     fn mir_ins(&mut self, ins: MirInstr) -> IResult<()> {
         match ins {
             MirInstr::IntBin(ret, op, left, right) => self.int_bin(ret, op, left, right),
@@ -674,6 +710,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::Copy(to, from, ctrl) => self.copy(to, from, ctrl),
             MirInstr::GetAddr(ret, place, ctrl) => self.get_addr(ret, place, ctrl),
             MirInstr::Span(ret, start, end, ctrl) => self.span(ret, start, end, ctrl),
+            MirInstr::Range(ret, start, end, ctrl) => self.range(ret, start, end, ctrl),
             MirInstr::ApplyArgs(ret, fun, args, first_index, ctrl) => {
                 self.apply_args(ret, fun, &args, first_index, ctrl)
             }

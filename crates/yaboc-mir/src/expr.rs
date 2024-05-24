@@ -611,6 +611,7 @@ impl<'a> ConvertExpr<'a> {
             }
             ValBinOp::Then
             | ValBinOp::ParserApply
+            | ValBinOp::Range
             | ValBinOp::And
             | ValBinOp::Xor
             | ValBinOp::Or
@@ -700,6 +701,13 @@ impl<'a> ConvertExpr<'a> {
                 let _ = lrecurse(self, None)?;
                 let place_ref = self.unwrap_or_stack(loc);
                 rrecurse(self, Some(place_ref))?
+            }
+            ValBinOp::Range => {
+                let left = self.copy_if_deref(lloc, lrecurse)?;
+                let right = self.copy_if_deref(rloc, rrecurse)?;
+                let place_ref = self.unwrap_or_stack(loc);
+                self.f.range(place_ref, left, right, self.retreat.error);
+                place_ref
             }
         })
     }

@@ -141,7 +141,8 @@ impl TryFrom<&ValBinOp> for IntBinOp {
             | ValBinOp::Equals
             | ValBinOp::ParserApply
             | ValBinOp::Else
-            | ValBinOp::Then => return Err(()),
+            | ValBinOp::Then
+            | ValBinOp::Range => return Err(()),
         })
     }
 }
@@ -169,7 +170,8 @@ impl TryFrom<&ValBinOp> for Comp {
             | ValBinOp::Mul
             | ValBinOp::ParserApply
             | ValBinOp::Else
-            | ValBinOp::Then => return Err(()),
+            | ValBinOp::Then
+            | ValBinOp::Range => return Err(()),
         })
     }
 }
@@ -270,6 +272,7 @@ pub enum MirInstr {
     Comp(PlaceRef, Comp, PlaceRef, PlaceRef),
     StoreVal(PlaceRef, Val),
     SetDiscriminant(PlaceRef, FieldName, bool),
+    Range(PlaceRef, PlaceRef, PlaceRef, ControlFlow),
     GetAddr(PlaceRef, PlaceRef, ControlFlow),
     ApplyArgs(PlaceRef, PlaceRef, Vec<(PlaceRef, bool)>, u64, ControlFlow),
     Copy(PlaceRef, PlaceRef, ControlFlow),
@@ -305,6 +308,7 @@ impl MirInstr {
                 | MirInstr::Copy(..)
                 | MirInstr::EvalFun(..)
                 | MirInstr::Span(..)
+                | MirInstr::Range(..)
         )
     }
     pub fn control_flow(&self) -> Option<ControlFlow> {
@@ -323,8 +327,15 @@ impl MirInstr {
             | MirInstr::ApplyArgs(.., control_flow)
             | MirInstr::Copy(_, _, control_flow)
             | MirInstr::EvalFun(_, _, control_flow)
-            | MirInstr::Span(.., control_flow) => Some(*control_flow),
-            _ => None,
+            | MirInstr::Span(.., control_flow)
+            | MirInstr::Range(.., control_flow) => Some(*control_flow),
+            MirInstr::IntBin(_, _, _, _)
+            | MirInstr::IntUn(_, _, _)
+            | MirInstr::Comp(_, _, _, _)
+            | MirInstr::StoreVal(_, _)
+            | MirInstr::SetDiscriminant(_, _, _)
+            | MirInstr::ParseCall(.., None)
+            | MirInstr::Return(_) => None,
         }
     }
     pub fn map_bb(&self, mut f: impl FnMut(BBRef) -> BBRef) -> Self {
@@ -364,7 +375,16 @@ impl MirInstr {
             MirInstr::Span(ret, start, end, control_flow) => {
                 MirInstr::Span(*ret, *start, *end, control_flow.map_bb(f))
             }
-            _ => {
+            MirInstr::Range(ret, start, end, control_flow) => {
+                MirInstr::Range(*ret, *start, *end, control_flow.map_bb(f))
+            }
+            MirInstr::IntBin(_, _, _, _)
+            | MirInstr::IntUn(_, _, _)
+            | MirInstr::Comp(_, _, _, _)
+            | MirInstr::StoreVal(_, _)
+            | MirInstr::SetDiscriminant(_, _, _)
+            | MirInstr::Return(_)
+            | MirInstr::ParseCall(.., None) => {
                 assert!(self.control_flow().is_none());
                 self.clone()
             }
@@ -998,6 +1018,17 @@ impl FunctionWriter {
     fn span(&mut self, target: PlaceRef, start_place: PlaceRef, end_place: PlaceRef, err: BBRef) {
         let new_block = self.new_bb();
         self.append_ins(MirInstr::Span(
+            target,
+            start_place,
+            end_place,
+            ControlFlow::new_with_error(new_block, err),
+        ));
+        self.set_bb(new_block);
+    }
+
+    fn range(&mut self, target: PlaceRef, start_place: PlaceRef, end_place: PlaceRef, err: BBRef) {
+        let new_block = self.new_bb();
+        self.append_ins(MirInstr::Range(
             target,
             start_place,
             end_place,

@@ -8,8 +8,10 @@ const PREC = {
   ADD: 6,
   MULTIPLY: 7,
   PARSE: 8,
-  ELSE: 11,
-  THEN: 12,
+  ELSE: 9,
+  THEN: 10,
+  RANGE: 11,
+  CONSTRAINT: 12,
   PREFIX: 13,
   POSTFIX: 14,
   ARGS: 15,
@@ -255,6 +257,7 @@ module.exports = grammar({
     )),
     binary_expression: $ => {
       const table = [
+        ['..', PREC.RANGE],
         ['then', PREC.THEN],
         ['else', PREC.ELSE],
         ['*>', PREC.PARSE],
@@ -325,11 +328,11 @@ module.exports = grammar({
       $.parserdef_ref,
       $.placeholder,
     ),
-    range: $ => seq(
+    range: $ => prec(PREC.CONSTRAINT, seq(
       field('start', $._int_literal),
       '..',
       field('end', $._int_literal),
-    ),
+    )),
     parser_span: $ => seq(
       'span',
       field('start', $._field_name),

@@ -103,6 +103,7 @@ pub enum Layout<Inner> {
 pub enum MonoLayout<Inner> {
     Primitive(PrimitiveType),
     SlicePtr,
+    Range,
     Single,
     Nil,
     Regex(Regex, bool),
@@ -212,6 +213,7 @@ impl<'a> IMonoLayout<'a> {
         let (mono, ty) = self.mono_layout();
         match mono {
             MonoLayout::SlicePtr => HeadDiscriminant::SlicePtr as i64,
+            MonoLayout::Range => HeadDiscriminant::Range as i64,
             _ => ty_head_discriminant(db, ty),
         }
     }
@@ -476,6 +478,7 @@ impl<'a> ILayout<'a> {
                     .dcx
                     .intern(Layout::Mono(MonoLayout::Primitive(u8), u8_ty)))
             }
+            MonoLayout::Range => Ok(ctx.dcx.int(ctx.db)),
             MonoLayout::Array { parser, slice } => parser.apply_arg(ctx, *slice),
             // for calculating the length of a parser, the argument is an int, and the result
             // of applying an int to a parser is never used, so here we use the bottom
@@ -741,6 +744,7 @@ impl<'a> ILayout<'a> {
                 self.nominal_parser_manifestation(ctx, *id, args)?.size
             }
             Layout::Mono(MonoLayout::SlicePtr, _) => <&Zst>::tsize(data).array(2),
+            Layout::Mono(MonoLayout::Range, _) => i64::tsize(data).array(2),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Bit), _) => bool::tsize(data),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Char), _) => char::tsize(data),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int), _) => i64::tsize(data),
@@ -1164,6 +1168,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ValBinOp::ParserApply => rhs.0.apply_arg(ctx, lhs.0)?,
                 ValBinOp::Else => lhs.0.join(ctx, rhs.0)?.0,
                 ValBinOp::Then => rhs.0,
+                ValBinOp::Range => make_layout(MonoLayout::Range),
                 ValBinOp::LesserEq
                 | ValBinOp::Lesser
                 | ValBinOp::GreaterEq
