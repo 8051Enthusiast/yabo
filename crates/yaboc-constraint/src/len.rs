@@ -271,6 +271,7 @@ impl<'a> SizeTermBuilder<'a> {
                         | ValBinOp::ShiftL
                         | ValBinOp::Div
                         | ValBinOp::Modulo
+                        | ValBinOp::Range
                         | ValBinOp::ParserApply => self.push_term(Term::OpaqueBin([lhs, rhs]), src),
                     },
                     ExprHead::Variadic(ValVarOp::PartialApply(_), args) => {

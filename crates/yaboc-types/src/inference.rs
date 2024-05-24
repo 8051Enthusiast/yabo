@@ -811,6 +811,10 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         let u8 = InferenceType::Primitive(PrimitiveType::U8);
         self.intern_infty(u8)
     }
+    pub fn range(&mut self) -> InfTypeId<'intern> {
+        let int = self.int();
+        self.intern_infty(InferenceType::Loop(ArrayKind::Each, int))
+    }
     pub fn single(&mut self) -> InfTypeId<'intern> {
         let ty_var = self.var();
         let for_loop = self.intern_infty(InferenceType::Loop(ArrayKind::Each, ty_var));

@@ -315,6 +315,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         match layout.mono_layout().0 {
             MonoLayout::Primitive(_)
             | MonoLayout::SlicePtr
+            | MonoLayout::Range
             | MonoLayout::Single
             | MonoLayout::Nil
             | MonoLayout::Regex(_, _)
@@ -522,7 +523,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         Ok(())
     }
 
-    fn create_sliceptr_span(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
+    fn create_span<T: TargetSized>(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
         let fun = self.span_fun_val(layout);
         self.set_always_inline(fun);
         self.add_entry_block(fun);
@@ -530,17 +531,109 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let [ret, start, end] = [ret, start, end].map(|x| x.into_pointer_value());
         let ret = CgReturnValue::new(head.into_int_value(), ret);
         let buf = self.build_alloca_value(layout.inner(), "buf")?;
-        let [start_ptr, _] = self.get_slice_ptrs(start)?;
-        let [end_ptr, _] = self.get_slice_ptrs(end)?;
-        let bufsl = self.build_cast::<*mut *const u8, _>(buf.ptr)?;
-        let ty = self.any_ptr();
-        self.builder.build_store(bufsl, start_ptr)?;
+        let ty = T::codegen_ty(self);
+        let start_val = self.builder.build_load(ty, start, "start")?;
+        let end_val = self.builder.build_load(ty, end, "end")?;
+        let bufsl = self.build_cast::<*mut T, _>(buf.ptr)?;
+        self.builder.build_store(bufsl, start_val)?;
         let bufsl = unsafe {
             self.builder
                 .build_in_bounds_gep(ty, bufsl, &[self.const_i64(1)], "ret")?
         };
-        self.builder.build_store(bufsl, end_ptr)?;
+        self.builder.build_store(bufsl, end_val)?;
         self.terminate_tail_typecast(buf, ret)
+    }
+
+    fn create_sliceptr_current_element(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
+        let fun = self.current_element_fun_val(layout);
+        self.set_always_inline(fun);
+        self.add_entry_block(fun);
+        let [return_ptr, from, target_head] = get_fun_args(fun);
+        let layout = self
+            .layouts
+            .dcx
+            .primitive(self.layouts.db, PrimitiveType::U8);
+        let ret = CgReturnValue::new(
+            target_head.into_int_value(),
+            return_ptr.into_pointer_value(),
+        );
+        let from = CgValue::new(layout, from.into_pointer_value());
+        self.terminate_tail_typecast(from, ret)
+    }
+
+    fn create_backtrack_inner_array(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
+        let fun = self.inner_array_fun_val(layout);
+        self.add_entry_block(fun);
+        let ret = self.const_i64(ReturnStatus::Backtrack as i64);
+        self.builder.build_return(Some(&ret))?;
+        Ok(())
+    }
+
+    fn get_range_vals(&mut self, arg: PointerValue<'llvm>) -> IResult<[IntValue<'llvm>; 2]> {
+        let start = self.build_i64_load(arg, "start")?;
+        let i64_ty = self.llvm.i64_type();
+        let end_ptr_ptr = unsafe {
+            self.builder
+                .build_in_bounds_gep(i64_ty, arg, &[self.const_i64(1)], "end_ptr")?
+        };
+        let end = self.build_i64_load(end_ptr_ptr, "end")?;
+        Ok([start, end])
+    }
+
+    fn create_range_single_forward(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
+        let fun = self.single_forward_fun_val(layout);
+        self.set_always_inline(fun);
+
+        let [arg] = get_fun_args(fun).map(|x| x.into_pointer_value());
+        self.add_entry_block(fun);
+        let arg_ptr = self.build_cast::<*mut i64, _>(arg)?;
+        let ptr = self.build_ptr_load(arg_ptr, "load_ptr")?;
+        let inc = self.build_byte_gep(ptr, self.const_i64(1), "inc_ptr")?;
+        self.builder.build_store(arg, inc)?;
+        self.builder
+            .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)))?;
+        Ok(())
+    }
+
+    fn create_range_len(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
+        let fun = self.array_len_fun_val(layout);
+        self.set_always_inline(fun);
+        self.add_entry_block(fun);
+        let [arg] = get_fun_args(fun).map(|x| x.into_pointer_value());
+        let [start, end] = self.get_range_vals(arg)?;
+        let len = self.builder.build_int_sub(end, start, "len")?;
+        self.builder.build_return(Some(&len))?;
+        Ok(())
+    }
+
+    fn create_range_skip(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
+        let fun = self.skip_fun_val(layout);
+        self.set_always_inline(fun);
+        self.add_entry_block(fun);
+        let [arg, len] = get_fun_args(fun);
+        let len = len.into_int_value();
+        let arg = arg.into_pointer_value();
+        let arg_ptr = self.build_cast::<*mut i64, _>(arg)?;
+        let [start, _] = self.get_range_vals(arg)?;
+        let inc = self.builder.build_int_add(start, len, "inc")?;
+        self.builder.build_store(arg_ptr, inc)?;
+        self.builder
+            .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)))?;
+        Ok(())
+    }
+
+    fn create_range_current_element(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
+        let fun = self.current_element_fun_val(layout);
+        self.set_always_inline(fun);
+        self.add_entry_block(fun);
+        let [return_ptr, from, target_head] = get_fun_args(fun);
+        let ret = CgReturnValue::new(
+            target_head.into_int_value(),
+            return_ptr.into_pointer_value(),
+        );
+        let i64_layout = self.layouts.dcx.int(self.layouts.db);
+        let i64_val = CgValue::new(i64_layout, from.into_pointer_value());
+        self.terminate_tail_typecast(i64_val, ret)
     }
 
     fn create_u8_current_element(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
@@ -562,31 +655,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let bitcasted_buf = self.build_cast::<*mut i64, _>(int_buf.ptr)?;
         self.builder.build_store(bitcasted_buf, int)?;
         self.terminate_tail_typecast(int_buf.into(), ret)
-    }
-
-    fn create_sliceptr_current_element(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
-        let fun = self.current_element_fun_val(layout);
-        self.set_always_inline(fun);
-        self.add_entry_block(fun);
-        let [return_ptr, from, target_head] = get_fun_args(fun);
-        let layout = self
-            .layouts
-            .dcx
-            .primitive(self.layouts.db, PrimitiveType::U8);
-        let ret = CgReturnValue::new(
-            target_head.into_int_value(),
-            return_ptr.into_pointer_value(),
-        );
-        let from = CgValue::new(layout, from.into_pointer_value());
-        self.terminate_tail_typecast(from, ret)
-    }
-
-    fn create_sliceptr_inner_array(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
-        let fun = self.inner_array_fun_val(layout);
-        self.add_entry_block(fun);
-        let ret = self.const_i64(ReturnStatus::Backtrack as i64);
-        self.builder.build_return(Some(&ret))?;
-        Ok(())
     }
 
     fn build_array_item_len_get(
@@ -1421,8 +1489,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 Self::create_sliceptr_single_forward,
                 Self::create_sliceptr_len,
                 Self::create_sliceptr_skip,
-                Self::create_sliceptr_span,
-                Self::create_sliceptr_inner_array,
+                Self::create_span::<*const u8>,
+                Self::create_backtrack_inner_array,
+            ],
+            MonoLayout::Range => [
+                Self::create_range_current_element,
+                Self::create_range_single_forward,
+                Self::create_range_len,
+                Self::create_range_skip,
+                Self::create_span::<i64>,
+                Self::create_backtrack_inner_array,
             ],
             MonoLayout::Array { .. } => [
                 Self::create_array_current_element,

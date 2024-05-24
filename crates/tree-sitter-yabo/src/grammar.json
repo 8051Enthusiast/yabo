@@ -1116,7 +1116,40 @@
           "members": [
             {
               "type": "PREC_LEFT",
-              "value": 12,
+              "value": 11,
+              "content": {
+                "type": "SEQ",
+                "members": [
+                  {
+                    "type": "FIELD",
+                    "name": "left",
+                    "content": {
+                      "type": "SYMBOL",
+                      "name": "_expression"
+                    }
+                  },
+                  {
+                    "type": "FIELD",
+                    "name": "op",
+                    "content": {
+                      "type": "STRING",
+                      "value": ".."
+                    }
+                  },
+                  {
+                    "type": "FIELD",
+                    "name": "right",
+                    "content": {
+                      "type": "SYMBOL",
+                      "name": "_expression"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "PREC_LEFT",
+              "value": 10,
               "content": {
                 "type": "SEQ",
                 "members": [
@@ -1149,7 +1182,7 @@
             },
             {
               "type": "PREC_LEFT",
-              "value": 11,
+              "value": 9,
               "content": {
                 "type": "SEQ",
                 "members": [
@@ -2009,29 +2042,33 @@
       ]
     },
     "range": {
-      "type": "SEQ",
-      "members": [
-        {
-          "type": "FIELD",
-          "name": "start",
-          "content": {
-            "type": "SYMBOL",
-            "name": "_int_literal"
+      "type": "PREC",
+      "value": 12,
+      "content": {
+        "type": "SEQ",
+        "members": [
+          {
+            "type": "FIELD",
+            "name": "start",
+            "content": {
+              "type": "SYMBOL",
+              "name": "_int_literal"
+            }
+          },
+          {
+            "type": "STRING",
+            "value": ".."
+          },
+          {
+            "type": "FIELD",
+            "name": "end",
+            "content": {
+              "type": "SYMBOL",
+              "name": "_int_literal"
+            }
           }
-        },
-        {
-          "type": "STRING",
-          "value": ".."
-        },
-        {
-          "type": "FIELD",
-          "name": "end",
-          "content": {
-            "type": "SYMBOL",
-            "name": "_int_literal"
-          }
-        }
-      ]
+        ]
+      }
     },
     "parser_span": {
       "type": "SEQ",

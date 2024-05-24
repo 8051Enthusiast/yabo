@@ -23,6 +23,7 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
             Layout::Mono(d, ty) => match d {
                 MonoLayout::Primitive(p) => p.db_fmt(f, db),
                 MonoLayout::SlicePtr => write!(f, "sliceptr"),
+                MonoLayout::Range => write!(f, "range"),
                 MonoLayout::Single => write!(f, "single"),
                 MonoLayout::Nil => write!(f, "nil"),
                 MonoLayout::Nominal(_, from, args) => {
@@ -281,7 +282,9 @@ impl<'a> LayoutHasher<'a> {
             MonoLayout::Nil => {
                 state.update([8]);
             }
-            // 9 used to be Tuple
+            MonoLayout::Range => {
+                state.update([9]);
+            }
             MonoLayout::Regex(regex, bt) => {
                 state.update([10]);
                 let regex_data = db.lookup_intern_regex(*regex);
@@ -474,6 +477,7 @@ impl<'a> LayoutSymbol<'a> {
             MonoLayout::ArrayFillParser(None) => String::from("fun_parse_array_fill"),
             MonoLayout::Primitive(_)
             | MonoLayout::SlicePtr
+            | MonoLayout::Range
             | MonoLayout::Single
             | MonoLayout::Nil => {
                 dbformat!(db, "{}", &self.layout.0)

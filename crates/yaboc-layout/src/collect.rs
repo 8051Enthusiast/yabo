@@ -155,7 +155,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 self.max_sa = self.max_sa.union(sa);
             }
             match &mono.mono_layout().0 {
-                MonoLayout::SlicePtr => {
+                MonoLayout::SlicePtr | MonoLayout::Range => {
                     if self.arrays.insert(mono) && TRACE_COLLECTION {
                         dbeprintln!(self.ctx.db, "[collection] registered array {}", &mono);
                     }

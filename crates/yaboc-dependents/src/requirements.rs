@@ -69,7 +69,8 @@ pub fn expr_reqs(
                         lhs_mat = bt_to_bt;
                     }
                     And | Xor | Or | LesserEq | Lesser | GreaterEq | Greater | Uneq | Equals
-                    | ShiftR | ShiftL | Minus | Plus | Div | Modulo | Mul | ParserApply => {}
+                    | ShiftR | ShiftL | Minus | Plus | Div | Modulo | Mul | ParserApply | Range => {
+                    }
                 }
                 ret[lhs].reqs = lhs_mat * current;
                 ret[rhs].reqs = rhs_mat * current;

@@ -54,6 +54,7 @@ pub enum ValBinOp {
     ParserApply,
     Else,
     Then,
+    Range,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -90,6 +91,7 @@ impl TryFrom<expr::ValBinOp> for ValBinOp {
             expr::ValBinOp::ParserApply => Ok(ValBinOp::ParserApply),
             expr::ValBinOp::Else => Ok(ValBinOp::Else),
             expr::ValBinOp::Then => Ok(ValBinOp::Then),
+            expr::ValBinOp::Range => Ok(ValBinOp::Range),
             expr::ValBinOp::Index(p) => Err(expr::ValBinOp::Index(p)),
             expr::ValBinOp::Compose => Err(expr::ValBinOp::Compose),
             expr::ValBinOp::At => Err(expr::ValBinOp::At),

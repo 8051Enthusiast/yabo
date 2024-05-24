@@ -1,0 +1,25 @@
+====[ source code ]====
+export
+def *test = {
+  bytes: [..]
+  let return = 0..(bytes.sizeof * 8) *> {
+    i: ~
+    let byte = bytes.[i / 8]
+    let bit = (byte >> (i & 7 ^ 7)) & 1
+    let return = bit == 1
+  }[..]
+}
+====[ binary 1 ]====
+01 23 45 67 89 ab cd ef
+
+====[ output 1 ]====
+[
+    false, false, false, false, false, false, false,  true,
+    false, false,  true, false, false, false,  true,  true,
+    false,  true, false, false, false,  true, false,  true,
+    false,  true,  true, false, false,  true,  true,  true,
+     true, false, false, false,  true, false, false,  true,
+     true, false,  true, false,  true, false,  true,  true,
+     true,  true, false, false,  true,  true, false,  true,
+     true,  true,  true, false,  true,  true,  true,  true
+]

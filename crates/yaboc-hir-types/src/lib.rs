@@ -75,6 +75,7 @@ pub enum HeadDiscriminant {
     Char = 0x300,
     Loop = 0x400,
     SlicePtr = 0x401,
+    Range = 0x402,
     Parser = 0x500,
     FunctionArgs = 0x600,
     Block = 0x700,
@@ -394,6 +395,12 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         }
                         Else => self.infctx.one_of(&[left, right])?,
                         Then => right,
+                        Range => {
+                            let int = self.infctx.int();
+                            self.infctx.constrain(left, int)?;
+                            self.infctx.constrain(right, int)?;
+                            self.infctx.range()
+                        }
                         ParserApply => self.infctx.parser_apply(right, left)?,
                     },
                     ExprHead::Monadic(op, &inner) => match &op {
