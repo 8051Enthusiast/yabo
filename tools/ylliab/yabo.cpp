@@ -12,7 +12,7 @@ YaboValKind YaboVal::kind() const noexcept {
     return YaboValKind::YABONOM;
   }
 
-  return static_cast<YaboValKind>(val->vtable->head);
+  return static_cast<YaboValKind>(val->vtable->head & YABO_DISC_MASK);
 }
 
 std::optional<ptrdiff_t>
@@ -202,13 +202,10 @@ std::optional<YaboVal> YaboValCreator::skip(YaboVal val, size_t offset) {
 
 static std::optional<FileSpan> primary_slice(DynValue *array, DynValue *buf) {
   auto cur = array, next = buf;
-  while (true) {
+  while (cur->vtable->head != YABO_SLICEPTR) {
     auto vtable = reinterpret_cast<const ArrayVTable *>(cur->vtable);
     auto status =
         vtable->inner_array_impl(next->data, cur->data, 0 | YABO_VTABLE);
-    if (status == BACKTRACK) {
-      break;
-    }
     if (status != OK) {
       return {};
     }

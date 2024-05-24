@@ -8,11 +8,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .inner()
             .size_align_without_vtable(self.layouts)
             .unwrap();
-        let head_discriminant = self
-            .compiler_database
-            .db
-            .head_discriminant(layout.mono_layout().1);
-        let head_disc_val = self.const_i64(head_discriminant);
+        let head_disc = layout.head_disc(&self.compiler_database.db);
+        let head_disc_val = self.const_i64(head_disc);
         let deref_level = self.deref_level(layout.mono_layout().1);
         let typecast = self
             .typecast_fun_val(layout)

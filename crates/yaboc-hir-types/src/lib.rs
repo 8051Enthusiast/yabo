@@ -66,7 +66,6 @@ pub trait TyHirs: Hirs + yaboc_types::TypeInterner + resolve::Resolves {
     fn fun_arg_count(&self, ty: TypeId) -> SResult<Option<u32>>;
     fn parser_type_at(&self, loc: DefId) -> SResult<TypeId>;
     fn parser_expr_at(&self, loc: hir::ExprId) -> SResult<Arc<ExprTypeData>>;
-    fn head_discriminant(&self, ty: TypeId) -> i64;
 }
 
 #[derive(Clone, Copy)]
@@ -75,6 +74,7 @@ pub enum HeadDiscriminant {
     Bit = 0x200,
     Char = 0x300,
     Loop = 0x400,
+    SlicePtr = 0x401,
     Parser = 0x500,
     FunctionArgs = 0x600,
     Block = 0x700,
@@ -84,7 +84,7 @@ pub enum HeadDiscriminant {
 
 pub const DISCRIMINANT_MASK: i64 = !0xff;
 
-pub fn head_discriminant(db: &dyn TyHirs, ty: TypeId) -> i64 {
+pub fn ty_head_discriminant<DB: TyHirs + ?Sized>(db: &DB, ty: TypeId) -> i64 {
     match db.lookup_intern_type(ty) {
         Type::Primitive(PrimitiveType::Int) => HeadDiscriminant::Int as i64,
         Type::Primitive(PrimitiveType::Bit) => HeadDiscriminant::Bit as i64,

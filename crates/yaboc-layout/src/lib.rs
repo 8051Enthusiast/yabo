@@ -20,7 +20,7 @@ use yaboc_base::interner::{DefId, FieldName, Regex};
 use yaboc_base::low_effort_interner::{Interner, Uniq};
 use yaboc_expr::ExprHead;
 use yaboc_hir::{self as hir, HirIdWrapper};
-use yaboc_hir_types::{DerefLevel, NominalId};
+use yaboc_hir_types::{ty_head_discriminant, DerefLevel, HeadDiscriminant, NominalId};
 use yaboc_mir::Mirs;
 use yaboc_resolve::expr::{Resolved, ResolvedAtom, ValBinOp, ValUnOp, ValVarOp};
 use yaboc_target::layout::{PSize, SizeAlign, TargetLayoutData, TargetSized, Zst};
@@ -205,6 +205,14 @@ impl<'a> IMonoLayout<'a> {
             MonoLayout::ArrayFillParser(Some(_)) => Ok(Some((1, 1))),
             MonoLayout::ArrayFillParser(None) => Ok(Some((1, 0))),
             _ => Ok(None),
+        }
+    }
+
+    pub fn head_disc<DB: Layouts + ?Sized>(&self, db: &DB) -> i64 {
+        let (mono, ty) = self.mono_layout();
+        match mono {
+            MonoLayout::SlicePtr => HeadDiscriminant::SlicePtr as i64,
+            _ => ty_head_discriminant(db, ty),
         }
     }
 
