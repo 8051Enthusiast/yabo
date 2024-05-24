@@ -3,21 +3,24 @@
 extern "C" {
 #endif
 
+#include <stdalign.h>
 #include <stdint.h>
 #include <sys/types.h>
-#include <stdalign.h>
+
+#define YABO_DISC_MASK (~(int64_t)0xff)
 
 enum YaboHead {
   YABO_INTEGER = 0x100,
   YABO_BIT = 0x200,
   YABO_CHAR = 0x300,
   YABO_LOOP = 0x400,
+  YABO_SLICEPTR = 0x401,
   YABO_PARSER = 0x500,
   YABO_FUN_ARGS = 0x600,
   YABO_BLOCK = 0x700,
   YABO_UNIT = 0x800,
   YABO_U8 = 0x900,
-  YABO_ANY = UINT64_MAX & ~0xff,
+  YABO_ANY = UINT64_MAX & YABO_DISC_MASK,
   YABO_VTABLE = 1,
 };
 

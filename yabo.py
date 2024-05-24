@@ -13,16 +13,19 @@ import tempfile
 from shutil import copyfileobj
 
 
+YABO_DISC_MASK = ((1 << 64) - 1) & ~0xff
+
 YABO_INTEGER = 0x100
 YABO_BIT = 0x200
 YABO_CHAR = 0x300
 YABO_LOOP = 0x400
+YABO_SLICE_PTR = 0x401
 YABO_PARSER = 0x500
 YABO_FUN_ARGS = 0x600
 YABO_BLOCK = 0x700
 YABO_UNIT = 0x800
 YABO_U8 = 0x900
-YABO_ANY = ((1 << 64) - 1) & ~0xff
+YABO_ANY = YABO_DISC_MASK
 YABO_VTABLE = 1
 
 YABO_GLOBAL_ADDRESS_NAME = "yabo_global_address"
@@ -452,24 +455,25 @@ def _new_value(val: DynValue, lib: YaboLib):
     head = val.get_vtable().head
     if head not in [YABO_INTEGER, YABO_BIT, YABO_CHAR]:
         val = copy(val)
-    if head == YABO_INTEGER:
-        return ctypes.cast(val.data_ptr(), POINTER(c_int64)).contents.value
-    if head == YABO_BIT:
-        return bool(ctypes.cast(val.data_ptr(), POINTER(c_int8)).contents.value)
-    if head == YABO_CHAR:
-        return chr(ctypes.cast(val.data_ptr(), POINTER(c_uint32)).contents.value)
-    if head == YABO_LOOP:
-        return ArrayValue(val, lib)
-    if head == YABO_PARSER:
-        return ParserValue(val, lib)
-    if head == YABO_FUN_ARGS:
-        return FunArgValue(val, lib)
-    if head == YABO_BLOCK:
-        return BlockValue(val, lib)
-    if head == YABO_UNIT:
-        return UnitValue(val, lib)
-    if head == YABO_U8:
-        return U8Value(val, lib)
     if head < 0:
         return NominalValue(val, lib)
+    masked_head = head & YABO_DISC_MASK
+    if masked_head == YABO_INTEGER:
+        return ctypes.cast(val.data_ptr(), POINTER(c_int64)).contents.value
+    if masked_head == YABO_BIT:
+        return bool(ctypes.cast(val.data_ptr(), POINTER(c_int8)).contents.value)
+    if masked_head == YABO_CHAR:
+        return chr(ctypes.cast(val.data_ptr(), POINTER(c_uint32)).contents.value)
+    if masked_head == YABO_LOOP:
+        return ArrayValue(val, lib)
+    if masked_head == YABO_PARSER:
+        return ParserValue(val, lib)
+    if masked_head == YABO_FUN_ARGS:
+        return FunArgValue(val, lib)
+    if masked_head == YABO_BLOCK:
+        return BlockValue(val, lib)
+    if masked_head == YABO_UNIT:
+        return UnitValue(val, lib)
+    if masked_head == YABO_U8:
+        return U8Value(val, lib)
     raise Exception("Unknown type")
