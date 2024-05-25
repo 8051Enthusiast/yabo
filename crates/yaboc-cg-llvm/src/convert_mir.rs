@@ -399,7 +399,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                     .build_unconditional_branch(self.bb(ctrl.next))?;
                 Ok(())
             }
-            _ => panic!("len called on non-sized value"),
+            ty => panic!("len called on non-sized value {ty:?}"),
         }
     }
 

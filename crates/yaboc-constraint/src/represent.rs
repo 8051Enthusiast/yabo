@@ -11,13 +11,7 @@ pub fn len_dot<DB: Constraints + Sized>(db: &DB) -> SResult<String> {
         let name = dbformat!(db, "{}", &pd.0);
         let prefix = name.replace(|c: char| !c.is_ascii_alphanumeric(), "_");
         write!(ret, "subgraph cluster_{prefix} {{\nlabel=\"{name}\";\n").unwrap();
-        let graph = len_graph(
-            &prefix,
-            &terms.expr,
-            &vals.vals,
-            &terms.call_arities,
-            &vals.deps,
-        );
+        let graph = len_graph(&prefix, &terms.expr, &vals.vals, terms.root, &vals.deps);
         ret.push_str(&graph);
         ret.push_str("}\n");
     }

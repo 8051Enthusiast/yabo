@@ -12,7 +12,7 @@ use yaboc_base::{
     interner::{DefId, FieldName, PathComponent},
 };
 use yaboc_dependents::{requirements::ExprDepData, BlockSerialization, SubValue, SubValueKind};
-use yaboc_expr::{ExprIdx, Expression, FetchExpr};
+use yaboc_expr::{ExprIdx, Expression, FetchExpr, TakeRef};
 use yaboc_hir::{
     self as hir, variable_set::VarStatus, BlockId, ChoiceId, ContextId, ExprId, HirIdWrapper,
     HirNode, ParserDefId, ParserPredecessor,
@@ -471,8 +471,13 @@ impl<'a> ConvertCtx<'a> {
         )>(self.db, e.id)?;
         let place = self.w.val_place_at_def(e.id.0).unwrap();
         let info = self.call_info_at_id(e.id.0);
+        let reqs: Vec<RequirementSet> = resolved_expr
+            .take_ref()
+            .map(|(_, req_info)| req_info.reqs * info.req)
+            .data
+            .collect();
         self.w
-            .convert_expr(e.id, &resolved_expr, Some(place), |_| true, info.req)?;
+            .convert_expr(e.id, &resolved_expr, Some(place), &reqs)?;
         Ok(())
     }
 

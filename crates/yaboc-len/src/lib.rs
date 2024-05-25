@@ -8,13 +8,7 @@ pub use represent::len_graph;
 
 use prob_array::{RandomArray, UNINIT};
 use smallvec::SmallVec;
-use std::{
-    cmp::Ordering,
-    collections::HashMap,
-    hash::{BuildHasher, Hash},
-    slice,
-    sync::Arc,
-};
+use std::{cmp::Ordering, hash::Hash, slice, sync::Arc};
 use yaboc_req::{NeededBy, RequirementMatrix, RequirementSet};
 
 pub mod depvec;
@@ -149,6 +143,123 @@ impl<Pd> SizeExpr<Pd> {
         self.terms.push(term);
         self.arg_depth.push(arg_depth);
         self.terms.len() - 1
+    }
+    fn for_each_dep<T: Clone + std::fmt::Debug>(
+        &self,
+        term_idx: usize,
+        vals: &[Val<T>],
+        mut f: impl FnMut(&Self, usize, RequirementMatrix),
+    ) {
+        let term = &self.terms[term_idx];
+        match term {
+            Term::Cat([lhs, rhs]) | Term::UnifyDyn([lhs, rhs]) => {
+                // this is only used for len functions to statically
+                // calculate their size and therefore only needs the length
+                let req = RequirementMatrix::diag(!!NeededBy::Len);
+                f(self, *lhs, req);
+                f(self, *rhs, req);
+            }
+            Term::Copy(inner) => {
+                // note that Backtrack is absent as it doesn't propagate accross expressions
+                let req = RequirementMatrix::diag(NeededBy::Len | NeededBy::Val);
+                f(self, *inner, req);
+            }
+            Term::Unify([lhs, rhs]) => {
+                // unlike other general ops, this one allows parsers
+                // to be passed through
+                let req = RequirementMatrix::id();
+                // the result also depends on backtracking of the left side
+                let lreq = req
+                    | RequirementMatrix::outer(
+                        !!NeededBy::Backtrack,
+                        NeededBy::Len | NeededBy::Val,
+                    );
+                f(self, *lhs, lreq);
+                f(self, *rhs, req);
+            }
+            Term::Size(_, inner) => {
+                // when we want the size val of something, we only need the length
+                // of the argument
+                let req = RequirementMatrix::diag(NeededBy::Len | NeededBy::Backtrack)
+                    | RequirementMatrix::outer(!!NeededBy::Len, !!NeededBy::Val);
+                f(self, *inner, req);
+            }
+            Term::Apply([lhs, rhs]) => {
+                f(self, *lhs, RequirementMatrix::id());
+                let val = &vals[*lhs];
+                // when we evaluate the value, we call the function with all its values,
+                // but when we want the length, we may not need everything
+                let mut req = RequirementMatrix::diag(NeededBy::Val | NeededBy::Backtrack);
+                req |= RequirementMatrix::outer(val.next_arg_uses(), !!NeededBy::Len);
+                f(self, *rhs, req);
+            }
+            Term::Then([lhs, rhs]) => {
+                // the value on the left side is ignored
+                let lreq = RequirementMatrix::diag(!!NeededBy::Backtrack);
+                f(self, *lhs, lreq);
+                let rreq = RequirementMatrix::id();
+                f(self, *rhs, rreq);
+            }
+            Term::BlockEnd(block_idx, len) => {
+                // note that we may iterate over the same value with different matrices twice
+                let block_info = &self.block_info[block_idx.0 as usize];
+                let kind = block_info.kind;
+                // if this is an inline block, we evaluate the whole block as an opaque
+                // value which needs all dependencies even in case we only want the len
+                let needs_val = match kind {
+                    BlockKind::Parser => !!NeededBy::Val,
+                    BlockKind::Inline => NeededBy::Len | NeededBy::Val,
+                };
+                let vreq = RequirementMatrix::outer(!!NeededBy::Val, needs_val);
+                for cap in block_info.captures.iter_ones() {
+                    f(self, cap, vreq);
+                }
+                let lreq = RequirementMatrix::diag(!!NeededBy::Len);
+                f(self, *len, lreq);
+            }
+            Term::Backtracking(inner) => {
+                // in case of backtracking, whether it backtracks depends on the value
+                // dependencies
+                let mut req = RequirementMatrix::id();
+                req |= RequirementMatrix::outer(!!NeededBy::Val, !!NeededBy::Backtrack);
+                f(self, *inner, req);
+            }
+            Term::Parsed
+            | Term::Span
+            | Term::Arg(_)
+            | Term::Pd(_)
+            | Term::Const(_)
+            | Term::Opaque
+            | Term::OpaqueUn(_)
+            | Term::OpaqueBin(_)
+            | Term::Mul(_)
+            | Term::Add(_)
+            | Term::Neg(_)
+            | Term::Arr => {
+                // these operations don't allow parsers to be passed through (or are niladic)
+                let req = RequirementMatrix::diag(NeededBy::Backtrack | NeededBy::Val);
+                for dep in term.ref_indices() {
+                    f(self, *dep, req);
+                }
+            }
+        }
+    }
+    pub fn reqs<T: Clone + std::fmt::Debug>(
+        &self,
+        root: usize,
+        vals: &[Val<T>],
+    ) -> Vec<RequirementSet> {
+        let mut idx = root + 1;
+        let mut reqs = vec![RequirementSet::empty(); idx];
+        reqs[root] = NeededBy::Len.into();
+        while idx > 0 {
+            idx -= 1;
+            self.for_each_dep(idx, vals, |_, dep, mat| {
+                let r = reqs[idx];
+                reqs[dep] |= mat * r;
+            });
+        }
+        reqs
     }
 }
 
@@ -345,99 +456,10 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
     }
 
     fn for_each_dep(&self, term_idx: usize, mut f: impl FnMut(&Self, usize, RequirementMatrix)) {
-        let term = &self.size_expr.terms[term_idx];
-        match term {
-            Term::Cat([lhs, rhs]) | Term::UnifyDyn([lhs, rhs]) => {
-                // this is only used for len functions to statically
-                // calculate their size and therefore only needs the length
-                let req = RequirementMatrix::diag(!!NeededBy::Len);
-                f(self, *lhs, req);
-                f(self, *rhs, req);
-            }
-            Term::Copy(inner) => {
-                // note that Backtrack is absent as it doesn't propagate accross expressions
-                let req = RequirementMatrix::diag(NeededBy::Len | NeededBy::Val);
-                f(self, *inner, req);
-            }
-            Term::Unify([lhs, rhs]) => {
-                // unlike other general ops, this one allows parsers
-                // to be passed through
-                let req = RequirementMatrix::id();
-                // the result also depends on backtracking of the left side
-                let lreq = req
-                    | RequirementMatrix::outer(
-                        !!NeededBy::Backtrack,
-                        NeededBy::Len | NeededBy::Val,
-                    );
-                f(self, *lhs, lreq);
-                f(self, *rhs, req);
-            }
-            Term::Size(_, inner) => {
-                // when we want the size val of something, we only need the length
-                // of the argument
-                let req = RequirementMatrix::diag(NeededBy::Len | NeededBy::Backtrack)
-                    | RequirementMatrix::outer(!!NeededBy::Len, !!NeededBy::Val);
-                f(self, *inner, req);
-            }
-            Term::Apply([lhs, rhs]) => {
-                f(self, *lhs, RequirementMatrix::id());
-                let val = &self.vals[*lhs];
-                // when we evaluate the value, we call the function with all its values,
-                // but when we want the length, we may not need everything
-                let mut req = RequirementMatrix::diag(NeededBy::Val | NeededBy::Backtrack);
-                req |= RequirementMatrix::outer(val.next_arg_uses(), !!NeededBy::Len);
-                f(self, *rhs, req);
-            }
-            Term::Then([lhs, rhs]) => {
-                // the value on the left side is ignored
-                let lreq = RequirementMatrix::diag(!!NeededBy::Backtrack);
-                f(self, *lhs, lreq);
-                let rreq = RequirementMatrix::id();
-                f(self, *rhs, rreq);
-            }
-            Term::BlockEnd(block_idx, len) => {
-                // note that we may iterate over the same value with different matrices twice
-                let block_info = &self.size_expr.block_info[block_idx.0 as usize];
-                let kind = block_info.kind;
-                // if this is an inline block, we evaluate the whole block as an opaque
-                // value which needs all dependencies even in case we only want the len
-                let needs_val = match kind {
-                    BlockKind::Parser => !!NeededBy::Val,
-                    BlockKind::Inline => NeededBy::Len | NeededBy::Val,
-                };
-                let vreq = RequirementMatrix::outer(!!NeededBy::Val, needs_val);
-                for cap in block_info.captures.iter_ones() {
-                    f(self, cap, vreq);
-                }
-                let lreq = RequirementMatrix::diag(!!NeededBy::Len);
-                f(self, *len, lreq);
-            }
-            Term::Backtracking(inner) => {
-                // in case of backtracking, whether it backtracks depends on the value
-                // dependencies
-                let mut req = RequirementMatrix::id();
-                req |= RequirementMatrix::outer(!!NeededBy::Val, !!NeededBy::Backtrack);
-                f(self, *inner, req);
-            }
-            Term::Parsed
-            | Term::Span
-            | Term::Arg(_)
-            | Term::Pd(_)
-            | Term::Const(_)
-            | Term::Opaque
-            | Term::OpaqueUn(_)
-            | Term::OpaqueBin(_)
-            | Term::Mul(_)
-            | Term::Add(_)
-            | Term::Neg(_)
-            | Term::Arr => {
-                // these operations don't allow parsers to be passed through (or are niladic)
-                let req = RequirementMatrix::diag(NeededBy::Backtrack | NeededBy::Val);
-                for dep in term.ref_indices() {
-                    f(self, *dep, req);
-                }
-            }
-        }
+        self.size_expr
+            .for_each_dep(term_idx, &self.vals, |_, dep, mat| {
+                f(self, dep, mat);
+            })
     }
 
     fn poly_args_impl(&mut self, fun: Val<Γ::PolyCircuitId>) -> Vec<Option<Parameter>> {
@@ -906,49 +928,6 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             gates,
             deps: self.deps[root].len().clone(),
         })
-    }
-
-    pub fn call_site_deps<T: Copy + Eq + Hash, H: BuildHasher + Default>(
-        &self,
-        origins: &[T],
-        sizes: &[usize],
-        root: usize,
-    ) -> HashMap<T, depvec::SmallBitVec, H> {
-        let mut idx = sizes.len();
-        let mut deps = <HashMap<T, depvec::SmallBitVec, H>>::default();
-        let mut reqs = vec![RequirementSet::empty(); sizes.len()];
-        reqs[root] = NeededBy::Len.into();
-        while idx > 0 {
-            idx -= 1;
-            self.for_each_dep(idx, |_, dep, mat| {
-                let r = reqs[idx];
-                reqs[dep] |= mat * r;
-            });
-            let size @ 1.. = sizes[idx] else {
-                continue;
-            };
-            // if we need the value of the applied parser, we need all arguments
-            if reqs[idx].contains(NeededBy::Val) {
-                let call_deps = depvec::SmallBitVec::ones(size);
-                let origin = origins[idx];
-                deps.insert(origin, call_deps);
-                continue;
-            }
-            let mut call_deps = depvec::SmallBitVec::default();
-            let mut f_idx = idx;
-            for i in (0..size).rev() {
-                let Term::Apply([f, _]) = &self.size_expr.terms[f_idx] else {
-                    panic!("call site does not consist of apply terms")
-                };
-                if !self.vals[*f].next_arg_uses().is_empty() {
-                    call_deps.set(i);
-                }
-                f_idx = *f;
-            }
-            let origin = origins[idx];
-            deps.insert(origin, call_deps);
-        }
-        deps
     }
 
     pub fn vals(self) -> Vals<Γ::PolyCircuitId> {

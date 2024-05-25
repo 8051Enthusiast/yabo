@@ -11,7 +11,7 @@ use yaboc_base::{
 use yaboc_dependents::{
     requirements::ExprDepData, BacktrackStatus, BlockSerialization, SubValue, SubValueKind,
 };
-use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
+use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, ShapedData, TakeRef};
 use yaboc_hir as hir;
 use yaboc_hir_types::FullTypeId;
 use yaboc_len::{depvec::SmallBitVec, BlockInfo, BlockInfoIdx, BlockKind, SizeExpr, Term};
@@ -23,10 +23,10 @@ use yaboc_types::Type;
 pub struct SizeTermBuilder<'a> {
     db: &'a dyn Constraints,
     terms: SizeExpr<hir::ParserDefId>,
-    call_arities: Vec<usize>,
     term_spans: Vec<Origin>,
     vals: FxHashMap<SubValue, usize>,
     block_locs: FxHashMap<hir::BlockId, usize>,
+    expr_locs: FxHashMap<hir::ExprId, ShapedData<Vec<usize>, Resolved>>,
     arg_depth: u32,
 }
 
@@ -41,10 +41,10 @@ impl<'a> SizeTermBuilder<'a> {
         Self {
             db,
             terms: SizeExpr::new(),
-            call_arities: Vec::new(),
             term_spans: Vec::new(),
             vals: FxHashMap::default(),
             block_locs: FxHashMap::default(),
+            expr_locs: FxHashMap::default(),
             arg_depth,
         }
     }
@@ -52,7 +52,6 @@ impl<'a> SizeTermBuilder<'a> {
     fn push_term(&mut self, term: Term<hir::ParserDefId>, span: Origin) -> usize {
         let index = self.terms.push(term, self.arg_depth);
         self.term_spans.push(span);
-        self.call_arities.push(0);
         index
     }
 
@@ -176,8 +175,8 @@ impl<'a> SizeTermBuilder<'a> {
                 bt.can_backtrack(),
             )
         });
-        mapped
-            .try_fold(|(head, (src, ty, dep, bt))| {
+        let locs = mapped
+            .try_scan(|(head, (src, ty, dep, bt))| -> SResult<_> {
                 let needs_bt = (dep * !!NeededBy::Val).contains(NeededBy::Backtrack);
                 let ret = match head {
                     ExprHead::Niladic(n) => match n {
@@ -211,7 +210,7 @@ impl<'a> SizeTermBuilder<'a> {
                             ret?
                         }
                     },
-                    ExprHead::Monadic(m, (inner, inner_bt, inner_ty)) => match m {
+                    ExprHead::Monadic(m, &(inner, inner_bt, inner_ty)) => match m {
                         ValUnOp::Neg => self.push_term(Term::Neg(inner), src),
                         ValUnOp::Wiggle(_, WiggleKind::If) if needs_bt => {
                             self.push_term(Term::Backtracking(inner), src)
@@ -245,7 +244,7 @@ impl<'a> SizeTermBuilder<'a> {
                         ValUnOp::Not => self.push_term(Term::OpaqueUn(inner), src),
                         ValUnOp::GetAddr => self.push_term(Term::OpaqueUn(inner), src),
                     },
-                    ExprHead::Dyadic(d, [(lhs, _, _), (rhs, rhs_bt, _)]) => match d {
+                    ExprHead::Dyadic(d, [&(lhs, _, _), &(rhs, rhs_bt, _)]) => match d {
                         ValBinOp::Mul => self.push_term(Term::Mul([lhs, rhs]), src),
                         ValBinOp::Plus => self.push_term(Term::Add([lhs, rhs]), src),
                         ValBinOp::Minus => {
@@ -276,17 +275,20 @@ impl<'a> SizeTermBuilder<'a> {
                     },
                     ExprHead::Variadic(ValVarOp::PartialApply(_), args) => {
                         let (f, ..) = args[0];
-                        let mut ret = f;
+                        let mut ret = *f;
                         for (arg, ..) in args[1..].iter() {
                             ret = self.push_term(Term::Apply([ret, *arg]), src);
                         }
-                        *self.call_arities.last_mut().unwrap() = args.len() - 1;
                         ret
                     }
                 };
                 Ok((ret, bt, ty))
-            })
+            })?
             .map(|(x, ..)| x)
+            .collect();
+        let root_loc = *locs.root_data();
+        self.expr_locs.insert(expr_id, locs);
+        Ok(root_loc)
     }
 
     fn create_pd(&mut self, pd: hir::ParserDefId) -> SResult<usize> {
@@ -309,9 +311,9 @@ impl<'a> SizeTermBuilder<'a> {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PdLenTerm {
     pub expr: SizeExpr<hir::ParserDefId>,
-    pub call_arities: Vec<usize>,
     pub term_spans: Vec<Origin>,
     pub vals: Arc<FxHashMap<SubValue, usize>>,
+    pub expr_locs: Arc<FxHashMap<hir::ExprId, ShapedData<Vec<usize>, Resolved>>>,
     pub root: usize,
     pub block_locs: FxHashMap<hir::BlockId, usize>,
     pub is_val_fun: bool,
@@ -321,20 +323,20 @@ pub fn len_term(db: &dyn Constraints, pd: hir::ParserDefId) -> SResult<Arc<PdLen
     let arg_count = db.argnum(pd)?.unwrap_or(0);
     let mut ctx = SizeTermBuilder::new(db, arg_count as u32);
     let root = ctx.create_pd(pd)?;
-    let call_arities = ctx.call_arities;
     let expr = ctx.terms;
     let term_spans = ctx.term_spans;
     let block_locs = ctx.block_locs;
+    let expr_locs = Arc::new(ctx.expr_locs);
     let vals = Arc::new(ctx.vals);
     let parserdef = pd.lookup(db)?;
     let val_fun = parserdef.from.is_none();
     Ok(Arc::new(PdLenTerm {
         expr,
         root,
-        call_arities,
         vals,
         term_spans,
         block_locs,
+        expr_locs,
         is_val_fun: val_fun,
     }))
 }

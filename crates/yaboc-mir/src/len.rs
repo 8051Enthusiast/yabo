@@ -5,21 +5,18 @@ use yaboc_base::{
     error::{SResult, Silencable},
     interner::DefId,
 };
+use yaboc_constraint::PdLenTerm;
 use yaboc_constraint::{LenVal, LenVals};
-use yaboc_constraint::{Origin, PdLenTerm};
-use yaboc_dependents::{
-    requirements::ExprDepData, BacktrackStatus, BlockSerialization, SubValue, SubValueKind,
-};
-use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
+use yaboc_dependents::{requirements::ExprDepData, BlockSerialization, SubValue, SubValueKind};
+use yaboc_expr::{ExprIdx, Expression, FetchExpr, ShapedData, TakeRef};
 use yaboc_hir::{
     BlockId, ContextId, ExprId, HirIdWrapper, HirNode, LetStatement, ParseStatement, ParserDef,
     ParserDefId, ParserPredecessor, StructChoice,
 };
 use yaboc_hir_types::FullTypeId;
 use yaboc_len::Val;
-use yaboc_req::NeededBy;
+use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_resolve::expr::Resolved;
-use yaboc_resolve::expr::ValVarOp;
 use yaboc_types::{Type, TypeId};
 
 use crate::{
@@ -32,7 +29,8 @@ pub struct LenMirCtx<'a> {
     db: &'a dyn Mirs,
     vals: Arc<LenVals>,
     terms: Arc<PdLenTerm>,
-    expr_use: FxHashMap<ExprId, Rc<[bool]>>,
+    term_req: Vec<RequirementSet>,
+    expr_req: FxHashMap<ExprId, Rc<[RequirementSet]>>,
     // the vectors in this hash table are in reverse order
     subctx_rev_orders: FxHashMap<ContextId, Vec<SubValue>>,
     is_dep: FxHashSet<SubValue>,
@@ -41,40 +39,40 @@ pub struct LenMirCtx<'a> {
 }
 
 impl<'a> LenMirCtx<'a> {
-    fn expr_use(&mut self, expr_id: ExprId) -> SResult<Rc<[bool]>> {
-        if let Some(used) = self.expr_use.get(&expr_id) {
+    fn expr_reqs(&mut self, expr_id: ExprId) -> SResult<Rc<[RequirementSet]>> {
+        if let Some(used) = self.expr_req.get(&expr_id) {
             return Ok(used.clone());
         }
-        let expr = Resolved::expr_with_data::<BacktrackStatus>(self.db, expr_id)?;
-        let expr_ref = expr.take_ref();
-        let mut used = vec![true; expr_ref.len()];
-        for (idx, (term, _)) in expr_ref.iter_parts().enumerate().rev() {
-            if let ExprHead::Variadic(ValVarOp::PartialApply(_), args) = term {
-                let call_site = Origin::Expr(expr_id, ExprIdx::new_from_usize(idx));
-                let call_deps = if args.len() > 1 {
-                    self.vals.call_sites[&call_site].clone()
-                } else {
-                    Default::default()
-                };
-                for (i, arg_idx) in args[1..].iter().enumerate() {
-                    let is_used = call_deps[i];
-                    used[arg_idx.as_usize()] = is_used;
+        let expr_data = &self.terms.expr_locs[&expr_id];
+        let bt_data = self.db.expr_reqs(expr_id)?;
+        let reqs: ShapedData<Vec<RequirementSet>, _> = expr_data
+            .take_ref()
+            .zip(bt_data.take_ref())
+            .map(|(&idx, bt)| {
+                let req = self.term_req[idx];
+                let mut ret = RequirementSet::empty();
+                if req.intersects(NeededBy::Val | NeededBy::Len) {
+                    ret |= NeededBy::Val;
                 }
-            }
-        }
-        let used: Rc<[bool]> = used.into();
-        self.expr_use.insert(expr_id, used.clone());
-        Ok(used)
+                if req.contains(NeededBy::Backtrack) && bt.bt.has_backtracked() {
+                    ret |= NeededBy::Backtrack;
+                }
+                ret
+            })
+            .collect();
+        let reqs: Rc<[RequirementSet]> = Rc::from(reqs.into_data());
+        self.expr_req.insert(expr_id, reqs.clone());
+        Ok(reqs)
     }
 
     fn expr_deps(&mut self, expr_id: ExprId) -> SResult<()> {
         let expr = Resolved::fetch_expr(self.db, expr_id)?;
-        let used = self.expr_use(expr_id)?;
+        let reqs = self.expr_reqs(expr_id)?;
         for term in expr
             .take_ref()
             .iter_parts()
-            .zip(used.iter())
-            .filter_map(|(t, u)| u.then_some(t))
+            .zip(reqs.iter())
+            .filter_map(|(t, u)| (!u.is_empty()).then_some(t))
         {
             yaboc_dependents::add_term_val_refs(self.db, self.block, &term, |val| {
                 self.is_dep.insert(val);
@@ -144,7 +142,7 @@ impl<'a> LenMirCtx<'a> {
                 (HirNode::Parse(p), SubValueKind::Back) => self.parse_deps(&p)?,
                 (HirNode::Let(l), SubValueKind::Val) => self.let_deps(&l)?,
                 (HirNode::Choice(c), SubValueKind::Back) => self.choice_deps(&c)?,
-                _ => panic!("unexpected node kind"),
+                otherwise => panic!("unexpected node kind {otherwise:?}"),
             };
             self.subctx_rev_orders
                 .entry(parent_context)
@@ -183,17 +181,11 @@ impl<'a> LenMirCtx<'a> {
     }
 
     fn build_expr(&mut self, expr_id: ExprId) -> SResult<PlaceRef> {
-        let used = self.expr_use(expr_id)?;
         let expr = Resolved::expr_with_data::<((ExprIdx<Resolved>, FullTypeId), ExprDepData)>(
             self.db, expr_id,
         )?;
-        self.w.convert_expr(
-            expr_id,
-            &expr,
-            None,
-            |idx| used[idx.as_usize()],
-            NeededBy::Val.into(),
-        )
+        let reqs = self.expr_reqs(expr_id)?;
+        self.w.convert_expr(expr_id, &expr, None, &reqs)
     }
 
     fn build_let(&mut self, subval: SubValue, let_statement: &LetStatement) -> SResult<()> {
@@ -339,6 +331,7 @@ impl<'a> LenMirCtx<'a> {
             w.f.ret(ReturnStatus::Error);
             return Ok(w.f.fun);
         }
+        let term_req = terms.expr.reqs(block_idx, &vals.vals);
         let mut lenctx = LenMirCtx {
             db,
             w,
@@ -347,7 +340,8 @@ impl<'a> LenMirCtx<'a> {
             int: db.int(),
             vals,
             terms,
-            expr_use: Default::default(),
+            term_req,
+            expr_req: Default::default(),
             is_dep: Default::default(),
         };
         lenctx.init_captures(id)?;
@@ -379,6 +373,7 @@ impl<'a> LenMirCtx<'a> {
             w.f.ret(ReturnStatus::Error);
             return Ok(w.f.fun);
         }
+        let term_req = terms.expr.reqs(terms.root, &vals.vals);
         let mut lenctx = LenMirCtx {
             db,
             w,
@@ -387,7 +382,8 @@ impl<'a> LenMirCtx<'a> {
             int: db.int(),
             vals,
             terms,
-            expr_use: Default::default(),
+            term_req,
+            expr_req: Default::default(),
             is_dep: Default::default(),
         };
         lenctx.init_args(&pd)?;
