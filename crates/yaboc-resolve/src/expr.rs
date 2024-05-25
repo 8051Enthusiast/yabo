@@ -146,7 +146,7 @@ impl TryFrom<expr::ValVarOp> for ValVarOp {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Resolved;
 
 impl ExprKind for Resolved {

@@ -37,29 +37,23 @@ type IndexTypeExpr =
         >>::Data,
     >;
 
-pub struct ExprInfo<'a, F: Fn(ExprIdx<Resolved>) -> bool> {
+pub struct ExprInfo<'a> {
     id: ExprId,
     content: &'a IndexTypeExpr,
-    req: RequirementSet,
-    f: &'a F,
+    reqs: &'a [RequirementSet],
 }
 
-impl<'a, F: Fn(ExprIdx<Resolved>) -> bool> Clone for ExprInfo<'a, F> {
+impl<'a> Clone for ExprInfo<'a> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'a, F: Fn(ExprIdx<Resolved>) -> bool> Copy for ExprInfo<'a, F> {}
+impl<'a> Copy for ExprInfo<'a> {}
 
-impl<'a, F: Fn(ExprIdx<Resolved>) -> bool> ExprInfo<'a, F> {
-    fn reqs(&self, idx: ExprIdx<Resolved>) -> RequirementSet {
-        let ((idx, _), bt) = self.content.data.index_expr(idx);
-        let mut req = bt.reqs * self.req;
-        if !(self.f)(idx) {
-            req &= !NeededBy::Val;
-        }
-        req
+impl<'a> ExprInfo<'a> {
+    fn req(&self, idx: ExprIdx<Resolved>) -> RequirementSet {
+        self.reqs[idx.as_usize()]
     }
 }
 
@@ -478,6 +472,10 @@ impl<'a> ConvertExpr<'a> {
         Ok(place_ref)
     }
 
+    fn convert_niladic_no_val(&mut self, loc: ExpressionLoc) -> SResult<PlaceRef> {
+        Ok(self.load_undef(loc))
+    }
+
     fn convert_niladic(&mut self, atom: &ResolvedAtom, loc: ExpressionLoc) -> SResult<PlaceRef> {
         Ok(match atom {
             ResolvedAtom::Val(val) => self
@@ -765,12 +763,12 @@ impl<'a> ConvertExpr<'a> {
 
     fn convert_expr_impl(
         &mut self,
-        expr: ExprInfo<impl Fn(ExprIdx<Resolved>) -> bool>,
+        expr: ExprInfo,
         idx: ExprIdx<Resolved>,
         place: Option<PlaceRef>,
     ) -> SResult<PlaceRef> {
         let (idx, &ty) = expr.content.data.index_expr(idx).0;
-        let req = expr.reqs(idx);
+        let req = expr.req(idx);
         let origin = PlaceOrigin::Expr(expr.id, idx);
         let loc = ExpressionLoc { ty, place, origin };
         if req.is_empty() {
@@ -778,8 +776,11 @@ impl<'a> ConvertExpr<'a> {
         }
         Ok(match expr.content.expr.index_expr(idx) {
             ExprHead::Niladic(n) => {
-                assert!(req.contains(NeededBy::Val));
-                self.convert_niladic(n, loc)?
+                if req.contains(NeededBy::Val) {
+                    self.convert_niladic(n, loc)?
+                } else {
+                    self.convert_niladic_no_val(loc)?
+                }
             }
             ExprHead::Monadic(op, inner) => {
                 let recurse = |ctx: &mut Self, plc| ctx.convert_expr_impl(expr, *inner, plc);
@@ -849,7 +850,7 @@ impl<'a> ConvertExpr<'a> {
                     // or leave them as undef places
                     // the subexpressions will just write undef to the place if it is present
                     // and they don't calculate the value
-                    if !expr.reqs(idx).contains(NeededBy::Val) {
+                    if !expr.req(idx).contains(NeededBy::Val) {
                         loc.place = Some(self.new_stack_place(loc.ty, loc.origin));
                     }
                     inner_locs.push(loc);
@@ -871,14 +872,12 @@ impl<'a> ConvertExpr<'a> {
         expr_id: ExprId,
         expr: &IndexTypeExpr,
         place: Option<PlaceRef>,
-        fun_dep: impl Fn(ExprIdx<Resolved>) -> bool,
-        req: RequirementSet,
+        reqs: &[RequirementSet],
     ) -> SResult<PlaceRef> {
         let info = ExprInfo {
             id: expr_id,
             content: expr,
-            f: &fun_dep,
-            req,
+            reqs,
         };
         self.convert_expr_impl(info, expr.expr.root(), place)
     }

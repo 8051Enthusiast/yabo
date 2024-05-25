@@ -93,10 +93,11 @@ pub fn len_graph<P: std::fmt::Debug, T: std::fmt::Debug + Clone>(
     prefix: &str,
     terms: &SizeExpr<P>,
     val: &[Val<T>],
-    arities: &[usize],
+    root: usize,
     arg_deps: &[depvec::ArgDeps],
 ) -> String {
     let mut ret = String::new();
+    let reqs = terms.reqs(root, val);
     for i in 0..terms.terms.len() {
         let arg_depth = terms.arg_depth[i] as usize;
         let mut dep_strings = [String::new(), String::new(), String::new()];
@@ -105,11 +106,11 @@ pub fn len_graph<P: std::fmt::Debug, T: std::fmt::Debug + Clone>(
             write_deps(dep_string, deps, arg_depth as u32).unwrap();
         }
         let [lendep, valdep, btdep] = dep_strings;
-        let arity = arities[i];
         let term = &terms.terms[i];
+        let req = &reqs[i];
         let val = &val[i];
         ret.push_str(&format!(
-            "{prefix}{i} [label=\"{{[{i}]|{arity}}}|<t>{term}|<v>{val}|{{l {lendep}|v {valdep}|b {btdep}}}\"];\n"
+            "{prefix}{i} [label=\"{{[{i}]|{req}}}|<t>{term}|<v>{val}|{{l {lendep}|v {valdep}|b {btdep}}}\"];\n"
         ));
     }
     for (i, val) in val.iter().enumerate() {

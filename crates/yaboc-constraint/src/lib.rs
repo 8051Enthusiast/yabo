@@ -14,11 +14,7 @@ use yaboc_base::{
 };
 use yaboc_dependents::Dependents;
 use yaboc_hir as hir;
-use yaboc_len::{
-    depvec,
-    depvec::{ArgDeps, SmallBitVec},
-    ArgRank, Env, PolyCircuit, SizeCalcCtx, Term, Val,
-};
+use yaboc_len::{depvec::ArgDeps, ArgRank, Env, PolyCircuit, SizeCalcCtx, Term, Val};
 use yaboc_resolve::{parserdef_ssc::FunctionSscId, Resolves};
 
 use len::len_term;
@@ -44,7 +40,6 @@ pub type LenVal = Val<PolyCircuitId>;
 pub struct LenVals {
     pub vals: Vec<LenVal>,
     pub deps: Vec<ArgDeps>,
-    pub call_sites: FxHashMap<Origin, SmallBitVec>,
     pub fun_val: LenVal,
     pub root: usize,
 }
@@ -54,7 +49,6 @@ impl Default for LenVals {
         Self {
             vals: Default::default(),
             deps: Default::default(),
-            call_sites: Default::default(),
             fun_val: Val::Undefined,
             root: Default::default(),
         }
@@ -100,16 +94,6 @@ impl<'a, DB: Constraints + ?Sized> LenInferCtx<'a, DB> {
         }
     }
 
-    fn call_deps(
-        &self,
-        pd: hir::ParserDefId,
-        size_ctx: &SizeCalcCtx<Self>,
-        root: usize,
-    ) -> FxHashMap<Origin, depvec::SmallBitVec> {
-        let terms = self.local_terms[&pd].as_ref().unwrap();
-        size_ctx.call_site_deps(&terms.term_spans, &terms.call_arities, root)
-    }
-
     pub fn infer(&mut self) {
         let mut changed = true;
         while changed {
@@ -126,12 +110,10 @@ impl<'a, DB: Constraints + ?Sized> LenInferCtx<'a, DB> {
                 changed |= new_val.has_expanded_from(&old_val);
 
                 let root = term.root;
-                let call_sites = self.call_deps(*pd, &subctx, term.root);
                 let vals = subctx.vals();
                 let new_term_vals = LenVals {
                     vals: vals.vals,
                     deps: vals.deps,
-                    call_sites,
                     fun_val: new_val,
                     root,
                 };
