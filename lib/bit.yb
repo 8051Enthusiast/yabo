@@ -1,0 +1,96 @@
+# Converts a byte array to a bit array.
+# Reads the input until the end.
+# Each byte is read strating from the most significant bit.
+fun *from_bytes_msb = {
+  bytes: [..]
+  let return = 0..(bytes.sizeof * 8) *> {
+    i: ~
+    let byte = bytes.[i / 8]
+    let bit = (byte << (i % 8)) & 0x80
+    let return = bit != 0
+  }[..]
+}
+
+# Converts a byte array to a bit array.
+# Reads the input until the end.
+# Each byte is read starting from the least significant bit.
+fun *from_bytes_lsb = {
+  bytes: [..]
+  let return = 0..(bytes.sizeof * 8) *> {
+    i: ~
+    let byte = bytes.[i / 8]
+    let bit = (byte >> (i % 8)) & 1
+    let return = bit != 0
+  }[..]
+}
+
+# Takes an int parser and the number of bits of the resulting integer.
+# The integer is parsed and split into num_bits, starting with the most significant bit.
+fun *from_int_msb(parser: *int, num_bits: int) = {
+  x: parser?
+  let return = (64 - num_bits)..64 *> {
+    i: ~
+    let bit = x << i
+    let return = bit < 0
+  }[..]
+}
+
+# Takes an int parser and the number of bits of the resulting integer.
+# The integer is parsed and split into num_bits, starting with the least significant bit.
+fun *from_int_lsb(parser: *int, num_bits: int) = {
+  x: parser?
+  let return = 0..num_bits *> {
+    i: ~
+    let bit = (x >> i) & 1
+    let return = bit != 0
+  }[..]
+}
+
+def *b8_msb   = from_int_msb(u8, 8)
+def *b8_lsb   = from_int_lsb(u8, 8)
+
+def *b16b_msb = from_int_msb(u16b, 16)
+def *b16b_lsb = from_int_lsb(u16b, 16)
+def *b16l_msb = from_int_msb(u16l, 16)
+def *b16l_lsb = from_int_lsb(u16l, 16)
+
+def *b32b_msb = from_int_msb(u32b, 32)
+def *b32b_lsb = from_int_lsb(u32b, 32)
+def *b32l_msb = from_int_msb(u32l, 32)
+def *b32l_lsb = from_int_lsb(u32l, 32)
+
+def *b64b_msb = from_int_msb(i64b, 64)
+def *b64b_lsb = from_int_lsb(i64b, 64)
+def *b64l_msb = from_int_msb(i64l, 64)
+def *b64l_lsb = from_int_lsb(i64l, 64)
+
+fun [bit] *> flag = ~
+
+fun as_int(b: bit) = b if true then 1 else 0
+
+fun [bit] *> uint_msb_impl(acc: int) = {
+  | b: ~ if !eof
+    return: uint_msb_impl(acc * 2 + as_int(b))
+  | let return = acc
+}
+
+fun [bit] *> uint_lsb_impl(acc: int, shift: int) = {
+  | b: ~ if !eof
+    return: uint_lsb_impl(acc + (as_int(b) << shift), shift + 1)
+  | let return = acc
+}
+
+def [bit] *> uint_msb(size: int) = [size] |> uint_msb_impl(0)
+def [bit] *> uint_lsb(size: int) = [size] |> uint_lsb_impl(0, 0)
+
+def [bit] *> sint_msb(size: int) = {
+  sign: ~
+  return: [size - 1] |> uint_msb_impl(-as_int(sign))
+}
+
+def [bit] *> sint_lsb(size: int) = {
+  unsigned_part: [size - 1] |> uint_lsb_impl(0, 0)
+  sign: ~
+  let signed_part = (-(as_int(sign) << (size - 1)))
+  let return = unsigned_part | signed_part
+}
