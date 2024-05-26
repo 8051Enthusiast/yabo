@@ -67,6 +67,7 @@ signals:
 private:
   void repeal_all();
   void attract_edges();
+  void gravity();
   void apply_force();
   void update_center();
   void add_graph_component(GraphComponent component);
@@ -93,6 +94,7 @@ private:
   static constexpr float repulse_const = 100.0;
   static constexpr float max_force = 10.0;
   static constexpr float spring_const = 0.1;
+  static constexpr float gravity_const = 0.03;
 };
 
 class GraphScene;

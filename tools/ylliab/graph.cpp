@@ -133,6 +133,15 @@ void Graph::attract_edges() {
   }
 }
 
+void Graph::gravity() {
+  for (size_t i = 0; i < x.size(); i++) {
+    auto dist = center - std::complex(x[i], y[i]);
+    auto force_vec = gravity_const * dist;
+    fx[i] += force_vec.real();
+    fy[i] += force_vec.imag();
+  }
+}
+
 void Graph::apply_force() {
   for (size_t i = 0; i < x.size(); i++) {
     if (std::fpclassify(fx[i]) != FP_NORMAL ||
@@ -159,6 +168,7 @@ void Graph::step() {
   for (int i = 0; i < 10; i++) {
     repeal_all();
     attract_edges();
+    gravity();
     apply_force();
     update_center();
   }
