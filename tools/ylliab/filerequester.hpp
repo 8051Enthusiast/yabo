@@ -166,7 +166,7 @@ private:
   void init_root(QString parser_name);
   void set_value(TreeIndex idx, SpannedVal val, RootIndex root);
 
-  QThread *executor_thread;
+  QThread *executor_thread = nullptr;
   std::unique_ptr<Arborist> arborist;
   std::map<std::pair<QString, size_t>, RootIndex> parser_root;
   std::unordered_map<YaboVal, RootIndex> nominal_bubbles;
