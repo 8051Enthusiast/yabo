@@ -1,3 +1,4 @@
+import bit
 # parser for gpt (GUID partition table)
 
 # logical block address (a logical block is assumed to be 512 here)
@@ -8,22 +9,23 @@ def *guid = [16]
 def *partition(blocks: int) = [blocks * 512]
 
 # flags, including those for windows
-def *flags = {
-  val: i64l
+def *flags = bit.b64l_lsb |> {
   # whether the partition is required for booting
-  let required_partition = val & 1 != 0
+  required_partition: bit.flag
   # whether the partition should be hidden from the os
-  let no_block_io_protocol = val >> 1 & 1 != 0
+  no_block_io_protocol: bit.flag
   # whether the partition is bootable in legacy bios
-  let legacy_bios_bootable = val >> 2 & 1 != 0
+  legacy_bios_bootable: bit.flag
+  # padding to offset 60
+  [60 - (span required_partition..legacy_bios_bootable).sizeof]
   # whether the partition is read-only (for windows)
-  let win_read_only = val >> 60 & 1 != 0
+  win_read_only: bit.flag
   # whether the partition is shadow copy (for windows)
-  let win_shadow_copy = val >> 61 & 1 != 0
+  win_shadow_copy: bit.flag
   # whether the partition is hidden (for windows)
-  let win_hidden = val >> 62 & 1 != 0
+  win_hidden: bit.flag
   # whether the partition has no drive letter (for windows)
-  let win_no_drive_letter = val >> 63 & 1 != 0
+  win_no_drive_letter: bit.flag
 }
 
 def *partition_entry = {
