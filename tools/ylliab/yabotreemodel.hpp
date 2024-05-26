@@ -56,6 +56,7 @@ private:
   FileRequester *file_requester;
   RootIndex root_id;
   bool inserting_rows = false;
+  bool inserting_root_start = false;
   std::vector<RootIndex> undo_stack;
   size_t undo_stack_idx = 0;
 };
