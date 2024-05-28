@@ -48,7 +48,7 @@
        </attribute>
       </widget>
      </widget>
-     <widget class="QGraphicsView" name="graphicsView">
+     <widget class="GraphView" name="graphicsView">
       <property name="sizePolicy">
        <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
         <horstretch>0</horstretch>
@@ -71,6 +71,11 @@
    <class>HexTableView</class>
    <extends>QTableView</extends>
    <header>hexview.hpp</header>
+  </customwidget>
+  <customwidget>
+   <class>GraphView</class>
+   <extends>QGraphicsView</extends>
+   <header>graphview.hpp</header>
   </customwidget>
  </customwidgets>
  <resources/>

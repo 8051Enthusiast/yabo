@@ -132,9 +132,13 @@ public:
                      &GraphScene::update_positions);
   }
   void node_double_clicked(Node node) { info_provider.change_root(node); }
+  GraphNodeItem *current_node() { return nodes.at(selected.idx); }
 public slots:
   void update_positions(PositionsUpdate update);
   void select_node(Node idx);
+
+signals:
+  void selected_node_moved(GraphNodeItem *node, bool node_changed);
 
 private:
   NodeInfoProvider &info_provider;

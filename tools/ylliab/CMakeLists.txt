@@ -24,6 +24,7 @@ qt_add_library(ylliab_core STATIC
     filecontent.hpp filecontent.cpp
     yabo.hpp yabo.cpp
     graph.hpp graph.cpp
+    graphview.hpp graphview.cpp
     colorscrollbar.hpp colorscrollbar.cpp
     hexview.hpp hexview.cpp
     compiler_error_view.hpp compiler_error_view.cpp

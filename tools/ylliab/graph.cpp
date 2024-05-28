@@ -211,6 +211,7 @@ void GraphScene::update_positions(PositionsUpdate update) {
     auto node = nodes[i];
     node->setCenterPos(update.x[i], update.y[i]);
   }
+  auto old_nodes_size = nodes.size();
   for (size_t i = nodes.size(); i < update.x.size(); i++) {
     auto idx = Node{i};
     auto name = info_provider.node_name(idx);
@@ -235,14 +236,22 @@ void GraphScene::update_positions(PositionsUpdate update) {
     edges.push_back({line, edge});
     addItem(line);
   }
+  if (selected.idx < nodes.size()) {
+    auto selected_pos = nodes[selected.idx];
+    emit selected_node_moved(selected_pos, selected.idx >= old_nodes_size);
+  }
 }
 void GraphScene::select_node(Node idx) {
   if (nodes.size() > selected.idx) {
     nodes[selected.idx]->setSelected(false);
   }
+  auto old = selected;
   selected = idx;
-  if (nodes.size() > idx.idx) {
+  if (nodes.size() > selected.idx) {
     nodes[idx.idx]->setSelected(true);
+    if (old != selected) {
+      emit selected_node_moved(nodes[selected.idx], true);
+    }
   }
 }
 
