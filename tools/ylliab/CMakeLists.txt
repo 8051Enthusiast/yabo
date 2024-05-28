@@ -32,6 +32,7 @@ qt_add_library(ylliab_core STATIC
     executor.hpp executor.cpp
     filerequester.hpp filerequester.cpp
     yabotreemodel.hpp yabotreemodel.cpp
+    compile.hpp compile.cpp
     init.hpp init.cpp
 )
 
@@ -44,7 +45,6 @@ qt_add_executable(ylliab
 
 qt_add_executable(yphbt
     ${DARK_STYLE_QRC_PATH}
-    compile.hpp compile.cpp
     yphbtwindow.hpp yphbtwindow.cpp yphbtwindow.ui
     yphbt.cpp
 )
@@ -53,7 +53,7 @@ include_directories("../../include")
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_libraries(ylliab_core PRIVATE
-    Qt6::Core Qt6::Widgets
+    Qt6::Core Qt6::Widgets Qt6::Network
 )
 
 target_link_libraries(ylliab PRIVATE
@@ -61,7 +61,7 @@ target_link_libraries(ylliab PRIVATE
 )
 
 target_link_libraries(yphbt PRIVATE
-    ylliab_core Qt6::Core Qt6::Widgets Qt6::Network
+    ylliab_core Qt6::Core Qt6::Widgets
 )
 
 if(EMSCRIPTEN)
