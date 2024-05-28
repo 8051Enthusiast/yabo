@@ -17,16 +17,11 @@ public:
   ~ParserView();
   void setParserName(QString fileRequester);
   void keyPressEvent(QKeyEvent *event) override;
+  void back();
+  void forth();
 
 private slots:
-  void on_lineEdit_returnPressed();
-
   void on_treeView_doubleClicked(const QModelIndex &index);
-
-  void on_undoButton_clicked();
-
-  void on_redoButton_clicked();
-
   void on_tableView_doubleClicked(const QModelIndex &index);
 
   private:

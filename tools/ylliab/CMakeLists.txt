@@ -37,6 +37,7 @@ qt_add_library(ylliab_core STATIC
 qt_add_executable(ylliab
     parserview.hpp parserview.cpp parserview.ui
     mainwindow.hpp mainwindow.cpp mainwindow.ui
+    newtab.hpp newtab.cpp newtab.ui
     main.cpp
 )
 

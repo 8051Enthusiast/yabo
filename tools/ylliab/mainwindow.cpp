@@ -1,6 +1,7 @@
 #include "mainwindow.hpp"
 #include "./ui_mainwindow.h"
 #include "filerequester.hpp"
+#include "newtab.hpp"
 #include "parserview.hpp"
 
 #include <QFileDialog>
@@ -9,54 +10,43 @@
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::MainWindow) {
   ui->setupUi(this);
+  new_tab = new NewTab(this);
 }
 
 MainWindow::~MainWindow() { delete ui; }
-void MainWindow::on_parserFileButton_clicked() {
-  auto fileName = QFileDialog::getOpenFileName(this, "Open Parser File...");
-  if (fileName != "") {
-    ui->parserFileEdit->setText(fileName);
-  }
-}
-
-void MainWindow::on_intputFileButton_clicked() {
-  auto fileName = QFileDialog::getOpenFileName(this, "Open Input File...");
-  if (fileName != "") {
-    ui->inputFileEdit->setText(fileName);
-  }
-}
-
-void MainWindow::on_createTabBox_accepted() {
-  auto showDialog = [](QString text) {
-    QMessageBox messageBox;
-    messageBox.setText(text);
-    messageBox.setStandardButtons(QMessageBox::Close);
-    return messageBox.exec();
-  };
-  if (ui->parserFileEdit->text() == "") {
-    showDialog("Parser file empty!");
+void MainWindow::on_actionNewTab_triggered() {
+  new_tab->exec();
+  if (new_tab->result() != QDialog::Accepted) {
     return;
   }
-  if (ui->inputFileEdit->text() == "") {
-    showDialog("Input file empty!");
-    return;
-  }
-  if (ui->parserNameEdit->text() == "") {
-    showDialog("Parser name empty!");
-    return;
-  }
-  auto factory = FileRequesterFactory();
-  auto fileRequester = factory.create_file_requester(
-      ui->parserFileEdit->text(), ui->inputFileEdit->text(),
-      ui->parserNameEdit->text(), ui->fetchEager->checkState());
-  auto error = fileRequester->error_message();
-  if (error != "") {
-    showDialog(error);
-    return;
-  }
+  auto fileRequester = new_tab->get_file_requester();
   auto view = new ParserView(nullptr, std::move(fileRequester));
-  auto name = ui->inputFileEdit->text();
+  auto name = new_tab->get_input_file();
   ui->tabWidget->addTab(view, name);
   auto newTabIndex = ui->tabWidget->count() - 1;
   ui->tabWidget->setCurrentIndex(newTabIndex);
+}
+
+void MainWindow::on_tabWidget_tabCloseRequested(int index) {
+  auto view = ui->tabWidget->widget(index);
+  ui->tabWidget->removeTab(index);
+  delete view;
+}
+
+void MainWindow::on_actionBack_triggered() {
+  auto widget = current_parser_view();
+  if (!widget)
+    return;
+  widget->back();
+}
+
+void MainWindow::on_actionForth_triggered() {
+  auto widget = current_parser_view();
+  if (!widget)
+    return;
+  widget->forth();
+}
+
+ParserView *MainWindow::current_parser_view() const {
+  return static_cast<ParserView *>(ui->tabWidget->currentWidget());
 }
