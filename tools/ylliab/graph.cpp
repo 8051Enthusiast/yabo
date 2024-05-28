@@ -2,6 +2,7 @@
 #include <QPainter>
 #include <QTimer>
 #include <cmath>
+#include <qtransform.h>
 
 using namespace std::complex_literals;
 
@@ -11,7 +12,7 @@ Graph::Graph(Node root, QObject *parent)
   std::random_device rd;
   rng = std::mt19937(rd());
   timer = new QTimer(this);
-  timer->setInterval(100);
+  timer->setInterval(50);
   connect(timer, &QTimer::timeout, this, &Graph::step);
   timer->start();
 }
@@ -38,6 +39,7 @@ void Graph::add_node(Node node, complex pos) {
   fx.push_back(0);
   fy.push_back(0);
   outdegree.push_back(0);
+  pinned.push_back(false);
 }
 
 void Graph::add_edge_with_new_node(EdgeWithNewNode edge) {
@@ -85,6 +87,12 @@ void Graph::update_graph(GraphUpdate update) {
   for (auto component : update.new_components) {
     add_graph_component(component);
   }
+}
+
+void Graph::override_position(PositionOverride override) {
+  x[override.node.idx] = override.pos.real();
+  y[override.node.idx] = override.pos.imag();
+  pinned[override.node.idx] = override.pin;
 }
 
 static void repeal(float *xs, float *ys, float *fxs, float *fys, size_t len) {
@@ -151,6 +159,9 @@ void Graph::gravity() {
 
 void Graph::apply_force() {
   for (size_t i = 0; i < x.size(); i++) {
+    if (pinned[i]) {
+      continue;
+    }
     if (std::fpclassify(fx[i]) != FP_NORMAL ||
         std::fpclassify(fy[i]) != FP_NORMAL) {
       fx[i] = fy[i] = 0;
@@ -196,12 +207,19 @@ void GraphNodeItem::paint(QPainter *painter,
                           const QStyleOptionGraphicsItem *option,
                           QWidget *widget) {
   auto rect = boundingRect();
+  QPen pen(Qt::black);
   if (selected) {
-    painter->setPen(Qt::red);
-  } else {
-    painter->setPen(Qt::black);
+    pen.setColor(Qt::red);
   }
-  painter->setBrush(color);
+  if (pinned) {
+    pen.setStyle(Qt::DotLine);
+  }
+  painter->setPen(std::move(pen));
+  auto used_color = color;
+  if (pinned) {
+    used_color = used_color.lighter(120);
+  }
+  painter->setBrush(used_color);
   painter->drawRect(rect);
   QGraphicsSimpleTextItem::paint(painter, option, widget);
 }
@@ -255,6 +273,41 @@ void GraphScene::select_node(Node idx) {
   }
 }
 
+GraphNodeItem *GraphScene::node(Node idx) const {
+  if (idx.idx >= nodes.size()) {
+    return nullptr;
+  }
+  return nodes[idx.idx];
+}
+
+void GraphScene::move_node(QPointF pos, Node idx, bool pinned) {
+  auto node = nodes[idx.idx];
+  node->setPinned(pinned);
+  node->setCenterPos(pos, true);
+  complex point = {static_cast<float>(pos.x()), static_cast<float>(pos.y())};
+  auto override = PositionOverride{idx, point, pinned};
+  emit position_override(override);
+}
+
 void GraphNodeItem::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event) {
   scene.node_double_clicked(idx);
+}
+
+void GraphNodeItem::setCenterPos(QPointF pos, bool move_pinned) {
+  if (move_pinned || !pinned) {
+    setPos(pos - boundingRect().center());
+  }
+}
+
+void GraphNodeItem::setCenterPos(float x, float y, bool move_pinned) {
+  setCenterPos({x, y}, move_pinned);
+}
+
+QPointF GraphNodeItem::centerPos() const {
+  return pos() + boundingRect().center();
+}
+
+void GraphNodeItem::setPinned(bool pinned) {
+  this->pinned = pinned;
+  update();
 }

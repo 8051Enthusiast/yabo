@@ -6,6 +6,7 @@
 #include "yabotreemodel.hpp"
 #include <QHeaderView>
 #include <QObject>
+
 void init_meta_types() {
   qRegisterMetaType<Meta>();
   qRegisterMetaType<Request>();
@@ -15,6 +16,7 @@ void init_meta_types() {
   qRegisterMetaType<NodeRange>();
   qRegisterMetaType<GraphUpdate>();
   qRegisterMetaType<PositionsUpdate>();
+  qRegisterMetaType<PositionOverride>();
 }
 void init_hex_and_tree(HexTableView *hex_view, QTreeView *tree_view,
                        HexTableModel *hex_model, YaboTreeModel *tree_model,

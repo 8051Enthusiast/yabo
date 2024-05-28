@@ -3,6 +3,7 @@
 
 #include <complex>
 #include <memory>
+#include <qgraphicsitem.h>
 #include <random>
 #include <unordered_set>
 
@@ -33,7 +34,7 @@ struct EdgeWithNewNode {
   Node end;
 };
 
-typedef std::variant<Node, Edge, EdgeWithNewNode> GraphComponent;
+using GraphComponent = std::variant<Node, Edge, EdgeWithNewNode>;
 
 struct GraphUpdate {
   GraphUpdate() : new_components() {}
@@ -41,6 +42,14 @@ struct GraphUpdate {
 };
 
 Q_DECLARE_METATYPE(GraphUpdate)
+
+struct PositionOverride {
+  Node node;
+  complex pos;
+  bool pin;
+};
+
+Q_DECLARE_METATYPE(PositionOverride)
 
 struct PositionsUpdate {
   std::vector<float> x;
@@ -56,6 +65,7 @@ public:
   Graph(Node root, QObject *parent = nullptr);
 public slots:
   void update_graph(GraphUpdate update);
+  void override_position(PositionOverride override);
 private slots:
   void step();
 signals:
@@ -84,6 +94,7 @@ private:
   std::vector<float> y;
   std::vector<float> fx;
   std::vector<float> fy;
+  std::vector<bool> pinned;
   complex center;
   QTimer *timer;
   std::mt19937 rng;
@@ -105,12 +116,17 @@ public:
   QRectF boundingRect() const override {
     return QGraphicsSimpleTextItem::boundingRect().adjusted(-5, -2, 5, 2);
   }
-  void setCenterPos(QPointF pos) { setPos(pos - boundingRect().center()); }
-  void setCenterPos(float x, float y) { setCenterPos({x, y}); }
+  void setCenterPos(QPointF pos, bool move_pinned = false);
+  void setCenterPos(float x, float y, bool move_pinned = false);
+  QPointF centerPos() const;
   void setSelected(bool selected) {
     this->selected = selected;
     update();
   }
+  void setPinned(bool pinned);
+  enum { Type = UserType + 1 };
+  int type() const override { return Type; }
+  Node node() const noexcept { return idx; }
 
 protected:
   void mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event) override;
@@ -120,6 +136,7 @@ private:
   GraphScene &scene;
   QColor color;
   bool selected = false;
+  bool pinned = false;
 };
 
 class GraphScene : public QGraphicsScene {
@@ -130,15 +147,19 @@ public:
         selected(Node{0}) {
     QObject::connect(&graph, &Graph::positions_update, this,
                      &GraphScene::update_positions);
+    QObject::connect(this, &GraphScene::position_override, &graph,
+                     &Graph::override_position);
   }
   void node_double_clicked(Node node) { info_provider.change_root(node); }
-  GraphNodeItem *current_node() { return nodes.at(selected.idx); }
+  void move_node(QPointF pos, Node idx, bool pinned);
+  GraphNodeItem *node(Node idx) const;
 public slots:
   void update_positions(PositionsUpdate update);
   void select_node(Node idx);
 
 signals:
   void selected_node_moved(GraphNodeItem *node, bool node_changed);
+  void position_override(PositionOverride override);
 
 private:
   NodeInfoProvider &info_provider;

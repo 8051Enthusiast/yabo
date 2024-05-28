@@ -1,5 +1,6 @@
 #pragma once
 
+#include "node.hpp"
 #include <QGraphicsView>
 
 class GraphScene;
@@ -14,7 +15,15 @@ public:
 private slots:
   void on_selected_moved(GraphNodeItem *node, bool node_changed);
   void scrollContentsBy(int dx, int dy) override;
+  void mouseMoveEvent(QMouseEvent *event) override;
+  void mousePressEvent(QMouseEvent *event) override;
+  void mouseReleaseEvent(QMouseEvent *event) override;
 
 private:
-  bool follow_node;
+  GraphNodeItem *node_at(QPoint pos) const;
+  GraphScene *scene = nullptr;
+  bool follow_node = false;
+  std::optional<Node> dragged_node = {};
+  bool pin_dragged_node;
+  QPointF last_pos;
 };
