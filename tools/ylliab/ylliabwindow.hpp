@@ -6,16 +6,16 @@ class NewTab;
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
-class MainWindow;
+class YlliabWindow;
 }
 QT_END_NAMESPACE
 
-class MainWindow : public QMainWindow {
+class YlliabWindow : public QMainWindow {
   Q_OBJECT
 
 public:
-  MainWindow(QWidget *parent = nullptr);
-  ~MainWindow();
+  YlliabWindow(QWidget *parent = nullptr);
+  ~YlliabWindow();
 
 private slots:
   void on_actionNewTab_triggered();
@@ -24,7 +24,7 @@ private slots:
   void on_actionForth_triggered();
 
 private:
-  Ui::MainWindow *ui;
+  Ui::YlliabWindow *ui;
   NewTab *new_tab;
   ParserView *current_parser_view() const;
 };
