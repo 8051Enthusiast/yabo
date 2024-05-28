@@ -95,7 +95,7 @@ void Graph::override_position(PositionOverride override) {
   pinned[override.node.idx] = override.pin;
 }
 
-static void repeal(float *xs, float *ys, float *fxs, float *fys, size_t len) {
+static void repel(float *xs, float *ys, float *fxs, float *fys, size_t len) {
   float rfx_acc = 0.0, rfy_acc = 0.0;
   for (size_t i = 1; i < len; i++) {
     float dist_x = xs[i] - xs[0];
@@ -113,13 +113,13 @@ static void repeal(float *xs, float *ys, float *fxs, float *fys, size_t len) {
   fys[0] -= rfy_acc;
 }
 
-void Graph::repeal_all() {
+void Graph::repel_all() {
   float *xs = x.data();
   float *ys = y.data();
   float *fxs = fx.data();
   float *fys = fy.data();
   for (size_t len = x.size(); len > 0; --len) {
-    repeal(xs, ys, fxs, fys, len);
+    repel(xs, ys, fxs, fys, len);
     xs++;
     ys++;
     fxs++;
@@ -184,7 +184,7 @@ void Graph::update_center() {
 
 void Graph::step() {
   for (int i = 0; i < 10; i++) {
-    repeal_all();
+    repel_all();
     attract_edges();
     gravity();
     apply_force();
