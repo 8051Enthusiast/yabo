@@ -1,5 +1,5 @@
-#include "mainwindow.hpp"
-#include "./ui_mainwindow.h"
+#include "ylliabwindow.hpp"
+#include "./ui_ylliabwindow.h"
 #include "filerequester.hpp"
 #include "newtab.hpp"
 #include "parserview.hpp"
@@ -7,14 +7,14 @@
 #include <QFileDialog>
 #include <QMessageBox>
 
-MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), ui(new Ui::MainWindow) {
+YlliabWindow::YlliabWindow(QWidget *parent)
+    : QMainWindow(parent), ui(new Ui::YlliabWindow) {
   ui->setupUi(this);
   new_tab = new NewTab(this);
 }
 
-MainWindow::~MainWindow() { delete ui; }
-void MainWindow::on_actionNewTab_triggered() {
+YlliabWindow::~YlliabWindow() { delete ui; }
+void YlliabWindow::on_actionNewTab_triggered() {
   new_tab->exec();
   if (new_tab->result() != QDialog::Accepted) {
     return;
@@ -27,26 +27,26 @@ void MainWindow::on_actionNewTab_triggered() {
   ui->tabWidget->setCurrentIndex(newTabIndex);
 }
 
-void MainWindow::on_tabWidget_tabCloseRequested(int index) {
+void YlliabWindow::on_tabWidget_tabCloseRequested(int index) {
   auto view = ui->tabWidget->widget(index);
   ui->tabWidget->removeTab(index);
   delete view;
 }
 
-void MainWindow::on_actionBack_triggered() {
+void YlliabWindow::on_actionBack_triggered() {
   auto widget = current_parser_view();
   if (!widget)
     return;
   widget->back();
 }
 
-void MainWindow::on_actionForth_triggered() {
+void YlliabWindow::on_actionForth_triggered() {
   auto widget = current_parser_view();
   if (!widget)
     return;
   widget->forth();
 }
 
-ParserView *MainWindow::current_parser_view() const {
+ParserView *YlliabWindow::current_parser_view() const {
   return static_cast<ParserView *>(ui->tabWidget->currentWidget());
 }
