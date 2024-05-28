@@ -1,12 +1,15 @@
 #include "graph.hpp"
+#include <QPainter>
+#include <QTimer>
 #include <cmath>
-#include <qpainter.h>
 
 using namespace std::complex_literals;
 
 Graph::Graph(Node root, QObject *parent)
     : QObject(parent), outdegree(1, 0), center(0) {
-  add_node(root);
+  add_node(root, 0);
+  std::random_device rd;
+  rng = std::mt19937(rd());
   timer = new QTimer(this);
   timer->setInterval(100);
   connect(timer, &QTimer::timeout, this, &Graph::step);
@@ -26,8 +29,12 @@ void Graph::add_edge(Edge edge) {
 }
 
 void Graph::add_node(Node node, complex pos) {
-  x.push_back(pos.real());
-  y.push_back(pos.imag());
+  // we need to add some randomness to prevent nodes from being
+  // at the exact same position and not moving from each other
+  // because they each repel each other infinitely strong
+  std::uniform_real_distribution<float> dist(-1, 1);
+  x.push_back(pos.real() + dist(rng));
+  y.push_back(pos.imag() + dist(rng));
   fx.push_back(0);
   fy.push_back(0);
   outdegree.push_back(0);
@@ -64,7 +71,7 @@ void Graph::add_graph_component(GraphComponent component) {
       [this](auto &&arg) {
         using T = std::decay_t<decltype(arg)>;
         if constexpr (std::is_same_v<T, Node>) {
-          add_node(arg);
+          add_node(arg, center);
         } else if constexpr (std::is_same_v<T, Edge>) {
           add_edge(arg);
         } else if constexpr (std::is_same_v<T, EdgeWithNewNode>) {

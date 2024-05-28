@@ -2,15 +2,12 @@
 #include "node.hpp"
 
 #include <complex>
-#include <qgraphicsscene.h>
+#include <memory>
+#include <random>
 #include <unordered_set>
 
 #include <QGraphicsItem>
 #include <QGraphicsScene>
-#include <QObject>
-#include <QTimer>
-#include <qcolor.h>
-#include <qwindowdefs.h>
 
 using complex = std::complex<float>;
 
@@ -73,7 +70,6 @@ private:
   void add_graph_component(GraphComponent component);
   void add_edge(Edge);
   void add_node(Node, complex pos);
-  void add_node(Node node) { add_node(node, 0); }
   void add_edge_with_new_node(EdgeWithNewNode);
   complex node_pos(Node idx) const { return {x[idx.idx], y[idx.idx]}; }
   complex node_force(Node idx) const { return {fx[idx.idx], fy[idx.idx]}; }
@@ -90,6 +86,7 @@ private:
   std::vector<float> fy;
   complex center;
   QTimer *timer;
+  std::mt19937 rng;
   static constexpr float scale_factor = 100.0;
   static constexpr float repulse_const = 100.0;
   static constexpr float max_force = 10.0;
