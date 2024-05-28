@@ -72,7 +72,7 @@ signals:
   void positions_update(PositionsUpdate update);
 
 private:
-  void repeal_all();
+  void repel_all();
   void attract_edges();
   void gravity();
   void apply_force();
