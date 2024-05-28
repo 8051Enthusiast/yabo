@@ -23,6 +23,8 @@ public:
 private slots:
   void on_intputFileButton_clicked();
   void on_parserFileButton_clicked();
+  void load_compiled_file(QString file_path);
+  void show_error(QString text);
 
 protected:
   void done(int r) override;

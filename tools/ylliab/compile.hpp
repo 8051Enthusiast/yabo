@@ -5,9 +5,8 @@
 #include <filesystem>
 #include <memory>
 
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
 #include <QThreadPool>
+#include <QUrl>
 
 class LocalCompilerRunner : public QObject, public QRunnable {
   Q_OBJECT

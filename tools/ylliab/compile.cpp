@@ -3,6 +3,9 @@
 
 #include <QFile>
 #include <QTemporaryFile>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+
 
 
 LocalCompilerRunner::LocalCompilerRunner(QString program) : program(program) {}
