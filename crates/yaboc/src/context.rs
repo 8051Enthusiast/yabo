@@ -12,18 +12,10 @@ use yaboc_cg_llvm::{
     inkwell::{self, support::LLVMString},
     CodeGenCtx, CodeGenOptions,
 };
-use yaboc_database::YabocDatabase;
+use yaboc_database::{YabocDatabase, ERROR_FNS};
 use yaboc_hir::represent::HirGraph;
 use yaboc_layout::LayoutContext;
 use yaboc_mir::{print_all_mir, print_all_mir_graphs};
-const ERROR_FNS: &[fn(&YabocDatabase) -> Vec<Report>] = &[
-    yaboc_ast::error::errors,
-    yaboc_hir::error::errors,
-    yaboc_resolve::error::errors,
-    yaboc_dependents::error::errors,
-    yaboc_hir_types::error::errors,
-    yaboc_constraint::error::errors,
-];
 
 pub struct Driver {
     ctx: Context<YabocDatabase>,

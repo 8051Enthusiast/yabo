@@ -1344,6 +1344,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "yaboc-check"
+version = "0.1.0"
+dependencies = [
+ "bumpalo",
+ "clap",
+ "salsa",
+ "yaboc-ast",
+ "yaboc-base",
+ "yaboc-database",
+]
+
+[[package]]
 name = "yaboc-constraint"
 version = "0.1.0"
 dependencies = [

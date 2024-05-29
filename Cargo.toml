@@ -12,3 +12,9 @@ salsa = "0.16.1"
 smallvec = { version = "1.10.0", features = ["union", "const_generics"] }
 inkwell = { git = "https://github.com/TheDan64/inkwell", rev = "5d5a531", features = ["llvm18-0"] }
 petgraph = "0.6.3"
+
+[profile.dist]
+inherits = "release"
+strip = "debuginfo"
+lto = true
+codegen-units = 1
