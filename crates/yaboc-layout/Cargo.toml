@@ -6,7 +6,7 @@ license.workspace = true
 description.workspace = true
 
 [dependencies]
-salsa = "0.16.1"
+salsa = { workspace = true }
 yaboc-base = { path = "../yaboc-base" }
 yaboc-target = { path = "../yaboc-target" }
 yaboc-expr = { path = "../yaboc-expr" }
