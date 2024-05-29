@@ -1,0 +1,14 @@
+[package]
+name = "yaboc-check"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+
+[dependencies]
+salsa = "0.16.1"
+yaboc-ast = { path = "../yaboc-ast" }
+yaboc-base = { path = "../yaboc-base" }
+yaboc-database = { path = "../yaboc-database" }
+bumpalo = "3.13.0"
+clap = { version = "4.3.9", features = ["default", "derive"] }
