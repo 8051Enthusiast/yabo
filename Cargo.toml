@@ -8,10 +8,13 @@ edition = "2021"
 description = "runtimeless functional language for defining binary parsers"
 license = "MIT"
 [workspace.dependencies]
-salsa = "0.16.1"
 smallvec = { version = "1.10.0", features = ["union", "const_generics"] }
 inkwell = { git = "https://github.com/TheDan64/inkwell", rev = "5d5a531", features = ["llvm18-0"] }
 petgraph = "0.6.3"
+
+[workspace.dependencies.salsa]
+git = "https://github.com/salsa-rs/salsa"
+rev = "05b4e3ebdcdc47730cdd359e7e97fb2470527279"
 
 [profile.dist]
 inherits = "release"

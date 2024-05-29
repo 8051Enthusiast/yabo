@@ -10,6 +10,6 @@ ariadne = "0.1.5"
 bumpalo = "3.13.0"
 dirs = "4.0.0"
 fxhash = "0.2.1"
-salsa = "0.16.1"
+salsa = { workspace = true }
 serde = { version = "1.0.164", features = ["derive"] }
 sha2 = "0.10.7"
