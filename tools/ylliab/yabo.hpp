@@ -65,9 +65,10 @@ struct YaboVal {
 };
 
 struct SpannedVal : public YaboVal {
-  SpannedVal(YaboVal val, FileSpan span, bool active)
+  SpannedVal(YaboVal val, FileSpan span, bool active) noexcept
       : YaboVal(val), span(span), active(active) {}
-  explicit SpannedVal() : YaboVal(nullptr), span(FileSpan()), active(false) {}
+  explicit SpannedVal() noexcept
+      : YaboVal(nullptr), span(FileSpan()), active(false) {}
   FileSpan span;
   bool active;
 };

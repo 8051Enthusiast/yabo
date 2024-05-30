@@ -44,8 +44,8 @@ struct TreeNode {
   TreeNodeState state;
   size_t n_children;
   QString field_name;
-  std::optional<SpannedVal> val;
-  std::optional<YaboVal> continuation;
+  std::optional<SpannedHandle> val;
+  std::optional<ValHandle> continuation;
 };
 
 // turns a graph into a tree/forest
@@ -58,10 +58,10 @@ public:
 
   TreeNode &get_node(TreeIndex idx) { return tree[idx.idx]; }
 
-  void set_val(TreeIndex idx, SpannedVal val) {
+  void set_val(TreeIndex idx, SpannedHandle val) {
     tree[idx.idx].val = val;
-    if (val.kind() == YaboValKind::YABOARRAY ||
-        val.kind() == YaboValKind::YABOBLOCK) {
+    if (val.kind == YaboValKind::YABOARRAY ||
+        val.kind == YaboValKind::YABOBLOCK) {
       tree[idx.idx].state = TreeNodeState::LOADED_INCOMPLETE_CHIlDREN;
     } else {
       tree[idx.idx].state = TreeNodeState::LOADED;
@@ -98,8 +98,8 @@ public:
     if (!val.has_value()) {
       return false;
     }
-    return val->kind() == YaboValKind::YABOARRAY ||
-           val->kind() == YaboValKind::YABOBLOCK;
+    return val->kind == YaboValKind::YABOARRAY ||
+           val->kind == YaboValKind::YABOBLOCK;
   }
   QVariant data(TreeIndex idx) const;
   FileSpan span(TreeIndex idx) const;
@@ -161,21 +161,22 @@ signals:
   void goto_addr(size_t addr);
 
 private:
-  QColor generate_new_node_color(YaboVal val) const;
+  QColor generate_new_node_color(ValHandle val) const;
   QColor generate_new_node_color(QString val, size_t pos) const;
   void init_root(QString parser_name);
-  void set_value(TreeIndex idx, SpannedVal val, RootIndex root);
+  void set_value(TreeIndex idx, SpannedHandle val, RootIndex root);
 
   QThread *executor_thread = nullptr;
   std::unique_ptr<Arborist> arborist;
   std::map<std::pair<QString, size_t>, RootIndex> parser_root;
-  std::unordered_map<YaboVal, RootIndex> nominal_bubbles;
+  std::unordered_map<ValHandle, RootIndex> nominal_bubbles;
   size_t root_count = 0;
   RootIndex current_root = RootIndex(TreeIndex(0), 0);
   GraphUpdate graph_update;
   FileRef file;
   struct RootInfo {
-    std::variant<QString, YaboVal> cause;
+    std::optional<ValHandle> cause;
+    QString name;
     QColor color;
     bool visited;
   };
