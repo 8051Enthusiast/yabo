@@ -10,10 +10,6 @@
 struct TreeIndex {
   size_t idx;
   bool operator==(const TreeIndex &other) const noexcept = default;
-  TreeIndex operator++() noexcept {
-    idx++;
-    return *this;
-  }
 };
 
 Q_DECLARE_METATYPE(TreeIndex)
@@ -37,6 +33,74 @@ struct RootIndex {
 
 Q_DECLARE_METATYPE(RootIndex)
 
+struct ValHandle {
+  ValHandle(YaboVal val) noexcept
+      : handle(reinterpret_cast<int64_t>(val.val)) {}
+  ValHandle(int64_t handle) noexcept : handle(handle) {}
+  int64_t handle;
+  bool operator==(const ValHandle &other) const noexcept = default;
+};
+
+template <> struct std::hash<ValHandle> {
+  std::size_t operator()(const ValHandle &k) const noexcept {
+    return std::hash<int64_t>()(k.handle);
+  }
+};
+
+struct ValFlags {
+  ValFlags() noexcept = default;
+  ValFlags(YaboVal) noexcept;
+  uint8_t is_list : 1;
+};
+
+struct SpannedHandle {
+  SpannedHandle(SpannedVal val) noexcept;
+  SpannedHandle(ValHandle val, FileSpan span, YaboValKind kind, bool active,
+                ValFlags flags) noexcept
+      : handle(val.handle), active(active), span(span), kind(kind),
+        name(QString()), flags(flags) {}
+  explicit SpannedHandle() noexcept
+      : handle(1), active(false), span(FileSpan()),
+        kind(YaboValKind::YABOERROR), name(QString()), flags(ValFlags()) {}
+  int64_t handle;
+  FileSpan span;
+  QString name;
+  YaboValKind kind;
+  bool active;
+  ValFlags flags;
+  std::optional<ValHandle> access_val() const noexcept;
+  std::optional<int64_t> access_error() const noexcept {
+    if (kind == YaboValKind::YABOERROR) {
+      return handle;
+    }
+    return {};
+  }
+  std::optional<bool> access_bool() const noexcept {
+    if (kind == YaboValKind::YABOUNIT) {
+      return handle == 1;
+    }
+    return {};
+  }
+  std::optional<int64_t> access_int() const noexcept {
+    if (kind == YaboValKind::YABOINTEGER) {
+      return handle;
+    }
+    return {};
+  }
+  std::optional<int32_t> access_char() const noexcept {
+    if (kind == YaboValKind::YABOCHAR) {
+      return handle;
+    }
+    return {};
+  }
+  std::optional<uint8_t> access_u8() const noexcept {
+    if (kind == YaboValKind::YABOU8) {
+      return handle;
+    }
+    return {};
+  }
+};
+
 enum class MessageType {
   FIELDS,
   ARRAY_ELEMENTS,
@@ -59,13 +123,13 @@ struct Meta {
 Q_DECLARE_METATYPE(Meta)
 
 struct Request {
-  Request(Meta meta, SpannedVal value)
+  Request(Meta meta, SpannedHandle value)
       : metadata(meta), val(value), array_start_index(0) {}
-  Request(Meta meta, SpannedVal value, size_t array_start_index)
+  Request(Meta meta, SpannedHandle value, size_t array_start_index)
       : metadata(meta), val(value), array_start_index(array_start_index) {}
-  Request() : metadata(Meta()), val(SpannedVal()) {}
+  Request() : metadata(Meta()), val(SpannedHandle()) {}
   Meta metadata;
-  SpannedVal val;
+  SpannedHandle val;
   // only used to indicate the start index of an array
   // with ARRAY_ELEMENTS
   size_t array_start_index;
@@ -75,7 +139,7 @@ Q_DECLARE_METATYPE(Request)
 
 struct NamedYaboVal {
   QString name;
-  SpannedVal val;
+  SpannedHandle val;
   std::strong_ordering operator<=>(const NamedYaboVal &other) const {
     auto active_cmp = !val.active <=> !other.val.active;
     if (active_cmp != 0) {
@@ -100,7 +164,7 @@ struct NamedYaboVal {
 };
 struct ValVecResponse {
   std::vector<NamedYaboVal> vals;
-  std::optional<YaboVal> continuation;
+  std::optional<ValHandle> continuation;
 };
 
 struct Response {

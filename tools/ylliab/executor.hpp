@@ -1,12 +1,11 @@
 #pragma once
-#include <filesystem>
-#include <cinttypes>
 #include <QObject>
+#include <cinttypes>
+#include <filesystem>
 
-#include "yabo.hpp"
-#include "request.hpp"
 #include "filecontent.hpp"
-
+#include "request.hpp"
+#include "yabo.hpp"
 
 struct ExecutorError : public std::exception {
   ExecutorError(std::string msg) : message(msg) {}
@@ -29,7 +28,8 @@ public:
   Executor &operator=(Executor &&) = delete;
 
   std::optional<Response> execute_request(Request req);
-  std::optional<Response> execute_parser(Meta meta, char const *func_name, size_t pos);
+  std::optional<Response> execute_parser(Meta meta, char const *func_name,
+                                         size_t pos);
 public slots:
   void execute_request_slot(Request req) {
     if (init_lib()) {
@@ -64,6 +64,8 @@ private:
   std::optional<Response> get_fields(Request &req);
   std::optional<Response> get_array_members(Request &req);
   std::optional<Response> get_list_members(Request &req);
+  YaboVal from_handle(ValHandle handle) const noexcept;
+  SpannedVal from_spanned_handle(SpannedHandle handle) const noexcept;
   SpannedVal normalize(YaboVal val, FileSpan parent_span);
   struct DerefInfo {
     std::optional<YaboVal> val;

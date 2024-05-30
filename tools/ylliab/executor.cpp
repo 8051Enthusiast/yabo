@@ -74,10 +74,11 @@ Executor::~Executor() {
 
 std::optional<Response> Executor::get_fields(Request &req) {
   std::vector<NamedYaboVal> fields;
-  auto vtable = reinterpret_cast<BlockVTable *>(req.val.val->vtable);
+  auto val = from_spanned_handle(req.val);
+  auto vtable = reinterpret_cast<BlockVTable *>(val->vtable);
   for (size_t i = 0; i < vtable->fields->number_fields; i++) {
     auto name = vtable->fields->fields[i];
-    auto field_val = vals.access_field(req.val, name);
+    auto field_val = vals.access_field(val, name);
     if (field_val.has_value()) {
       auto new_val = normalize(field_val.value(), req.val.span);
       fields.push_back(NamedYaboVal{QString(name), new_val});
@@ -90,11 +91,12 @@ std::optional<Response> Executor::get_fields(Request &req) {
 
 std::optional<Response> Executor::get_array_members(Request &req) {
   std::vector<NamedYaboVal> elements;
-  uint64_t len = vals.array_len(req.val);
+  auto val = from_spanned_handle(req.val);
+  uint64_t len = vals.array_len(val);
   uint64_t start = req.array_start_index;
   uint64_t end = std::min((uint64_t)array_fetch_size, len);
   for (uint64_t i = 0; i < end; i++) {
-    auto idx_val = vals.index(req.val, i);
+    auto idx_val = vals.index(val, i);
     if (idx_val.has_value()) {
       auto new_val = normalize(idx_val.value(), req.val.span);
       elements.push_back(NamedYaboVal{QString::number(start + i), new_val});
@@ -102,9 +104,10 @@ std::optional<Response> Executor::get_array_members(Request &req) {
       return {};
     }
   }
-  std::optional<YaboVal> continuation = {};
+  std::optional<ValHandle> continuation = {};
   if (array_fetch_size < len) {
-    continuation = vals.skip(req.val, array_fetch_size);
+    auto cont = vals.skip(val, array_fetch_size);
+    continuation = ValHandle(*cont);
   }
   ValVecResponse ret{std::move(elements), continuation};
   return Response(req.metadata, std::move(ret));
@@ -112,7 +115,7 @@ std::optional<Response> Executor::get_array_members(Request &req) {
 
 std::optional<Response> Executor::get_list_members(Request &req) {
   std::vector<YaboVal> ret_vals;
-  YaboVal current = req.val;
+  YaboVal current = from_spanned_handle(req.val);
   uint64_t idx;
   for (idx = 0; idx < array_fetch_size; idx++) {
     if (!current.is_list_block()) {
@@ -154,14 +157,15 @@ std::optional<Response> Executor::execute_request(Request req) {
     return get_fields(req);
   }
   case MessageType::ARRAY_ELEMENTS: {
-    if (req.val.kind() == YaboValKind::YABOBLOCK) {
+    if (req.val.kind == YaboValKind::YABOBLOCK) {
       return get_list_members(req);
     }
     return get_array_members(req);
   }
   case MessageType::DEREF: {
-    auto normalized = normalize(req.val, req.val.span);
-    auto name = reinterpret_cast<NominalVTable *>(req.val->vtable)->name;
+    auto val = from_spanned_handle(req.val);
+    auto normalized = normalize(val, req.val.span);
+    auto name = reinterpret_cast<NominalVTable *>(val->vtable)->name;
     return Response(req.metadata, {name, normalized});
   }
   case MessageType::PARSE:
@@ -242,4 +246,13 @@ SpannedVal Executor::normalize(YaboVal val, FileSpan parent_span) {
     return first_outside.value();
   }
   return SpannedVal(val, parent_span, active);
+}
+
+YaboVal Executor::from_handle(ValHandle handle) const noexcept {
+  return YaboVal(reinterpret_cast<DynValue *>(handle.handle));
+}
+
+SpannedVal Executor::from_spanned_handle(SpannedHandle handle) const noexcept {
+  auto val = from_handle(ValHandle(handle.handle));
+  return SpannedVal(val, handle.span, handle.active);
 }

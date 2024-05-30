@@ -53,14 +53,15 @@ FileRequester::FileRequester(std::filesystem::path path, FileRef file,
   init_root(parser_name);
 }
 
-void FileRequester::set_value(TreeIndex idx, SpannedVal val, RootIndex root) {
+void FileRequester::set_value(TreeIndex idx, SpannedHandle val,
+                              RootIndex root) {
   auto &node = arborist->get_node(idx);
   node.val = val;
   node.n_children = 0;
-  if (val.kind() == YaboValKind::YABOARRAY ||
-      val.kind() == YaboValKind::YABOBLOCK) {
+  if (val.kind == YaboValKind::YABOARRAY ||
+      val.kind == YaboValKind::YABOBLOCK) {
     node.state = TreeNodeState::LOADED_INCOMPLETE_CHIlDREN;
-    node.continuation = val;
+    node.continuation = val.access_val();
     // idx.idx == 0 so that the top root is loaded when it is first seen
     // so that we can expand it automatically
     if ((recursive_fetch && root_info.at(root.root_idx).visited) ||
@@ -76,21 +77,25 @@ void FileRequester::set_value(TreeIndex idx, SpannedVal val, RootIndex root) {
     size_t end = start + val.span.size();
     emit new_node({start, end, node});
   }
-  if (val.kind() != YaboValKind::YABONOM) {
+  if (val.kind != YaboValKind::YABONOM) {
     return;
   }
-  if (nominal_bubbles.contains(val)) {
-    auto end = nominal_bubbles.at(val);
+  auto val_handle = val.access_val();
+  assert(val_handle.has_value());
+  auto handle = *val_handle;
+  if (nominal_bubbles.contains(handle)) {
+    auto end = nominal_bubbles.at(handle);
     graph_update.new_components.push_back(Edge{root, end});
     return;
   }
   auto empty = QString("");
   auto new_nominal_bubble = arborist->add_root_node(root_count++, empty);
-  root_info.push_back({val, generate_new_node_color(val), false});
+  root_info.push_back(
+      {handle, val.name, generate_new_node_color(handle), false});
   auto req = Request{Meta{new_nominal_bubble.tree_index, MessageType::DEREF,
                           new_nominal_bubble},
                      val};
-  nominal_bubbles.insert({val, new_nominal_bubble});
+  nominal_bubbles.insert({handle, new_nominal_bubble});
   graph_update.new_components.push_back(
       EdgeWithNewNode{root, Node{new_nominal_bubble}});
   emit request(req);
@@ -160,9 +165,9 @@ QVariant FileRequester::data(TreeIndex idx) const {
 
   auto inner_val = val.value();
 
-  switch (inner_val.kind()) {
+  switch (inner_val.kind) {
   case YaboValKind::YABOERROR: {
-    auto err = inner_val.access_error();
+    auto err = *inner_val.access_error();
     if (err == BACKTRACK) {
       return QVariant("Backtrack");
     } else if (err == EOS) {
@@ -172,14 +177,13 @@ QVariant FileRequester::data(TreeIndex idx) const {
     }
   }
   case YaboValKind::YABOINTEGER:
-    return QVariant::fromValue(inner_val.access_int());
+    return QVariant::fromValue(*inner_val.access_int());
   case YaboValKind::YABOBIT:
-    return QVariant::fromValue((bool)inner_val.access_bool());
+    return QVariant::fromValue(*inner_val.access_bool());
   case YaboValKind::YABOCHAR:
-    return QVariant::fromValue(inner_val.access_char());
+    return QVariant::fromValue(*inner_val.access_char());
   case YaboValKind::YABONOM: {
-    auto name = reinterpret_cast<NominalVTable *>(inner_val->vtable)->name;
-    return QString::fromUtf8(name);
+    return inner_val.name;
   }
   case YaboValKind::YABOU8: {
     // we special-case u8 to print hex
@@ -222,7 +226,7 @@ FileSpan FileRequester::span(TreeIndex idx) const {
 void FileRequester::init_root(QString parser_name) {
   auto idx = arborist->add_root_node(root_count++, parser_name);
   root_info.push_back(
-      {parser_name, generate_new_node_color(parser_name, 0), true});
+      {{}, parser_name, generate_new_node_color(parser_name, 0), true});
   parser_root.insert({{parser_name, 0}, idx});
   graph_update.new_components.push_back(Node{idx});
   emit update_graph(std::move(graph_update));
@@ -236,8 +240,8 @@ bool FileRequester::can_fetch_children(TreeIndex idx) {
   return (node.state == TreeNodeState::LOADED_INCOMPLETE_CHIlDREN ||
           node.state == TreeNodeState::LOADING_CHILDREN) &&
          node.val.has_value() &&
-         (node.val->kind() == YaboValKind::YABOARRAY ||
-          node.val->kind() == YaboValKind::YABOBLOCK);
+         (node.val->kind == YaboValKind::YABOARRAY ||
+          node.val->kind == YaboValKind::YABOBLOCK);
 }
 
 void FileRequester::fetch_children(TreeIndex idx, RootIndex root) {
@@ -246,15 +250,16 @@ void FileRequester::fetch_children(TreeIndex idx, RootIndex root) {
       !node.val.has_value()) {
     return;
   }
-  auto val = SpannedVal{*node.continuation, node.val->span, node.val->active};
+  auto val = SpannedHandle(*node.continuation, node.val->span, node.val->kind,
+                           node.val->active, node.val->flags);
   auto start = node.n_children;
   MessageType message_type;
-  switch (val.kind()) {
+  switch (val.kind) {
   case YaboValKind::YABOARRAY:
     message_type = MessageType::ARRAY_ELEMENTS;
     break;
   case YaboValKind::YABOBLOCK:
-    if (val.is_list_block()) {
+    if (val.flags.is_list) {
       message_type = MessageType::ARRAY_ELEMENTS;
     } else {
       message_type = MessageType::FIELDS;
@@ -269,8 +274,8 @@ void FileRequester::fetch_children(TreeIndex idx, RootIndex root) {
 
 std::optional<QColor> FileRequester::color(TreeIndex idx) const {
   auto &node = arborist->get_node(idx);
-  if (node.val.has_value() && node.val->kind() == YaboValKind::YABONOM) {
-    auto bubble = nominal_bubbles.at(node.val.value());
+  if (node.val.has_value() && node.val->kind == YaboValKind::YABONOM) {
+    auto bubble = nominal_bubbles.at(*node.val->access_val());
     return node_color(bubble);
   }
   return {};
@@ -283,7 +288,7 @@ void FileRequester::set_parser(QString name, size_t pos) {
     return;
   }
   auto idx = arborist->add_root_node(root_count++, name);
-  root_info.push_back({name, generate_new_node_color(name, pos)});
+  root_info.push_back({{}, name, generate_new_node_color(name, pos)});
   parser_root.insert({{name, pos}, idx});
   graph_update.new_components.push_back(Node{idx});
   emit update_graph(std::move(graph_update));
@@ -302,10 +307,10 @@ void FileRequester::set_bubble(TreeIndex idx) {
   if (!node.val.has_value()) {
     return;
   }
-  if (node.val->kind() != YaboValKind::YABONOM) {
+  if (node.val->kind != YaboValKind::YABONOM) {
     return;
   }
-  auto root = nominal_bubbles.at(node.val.value());
+  auto root = nominal_bubbles.at(*node.val->access_val());
   change_root(root);
 }
 
@@ -363,13 +368,7 @@ FileRequesterFactory::create_file_requester(QString parser_lib_path,
 }
 
 QString FileRequester::node_name(Node idx) const {
-  auto cause = root_info.at(idx.idx).cause;
-  if (std::holds_alternative<QString>(cause)) {
-    return std::get<QString>(cause);
-  }
-  auto val = std::get<YaboVal>(cause);
-  auto name = reinterpret_cast<NominalVTable *>(val->vtable)->name;
-  return QString::fromUtf8(name);
+  return root_info.at(idx.idx).name;
 }
 
 QColor FileRequester::node_color(Node idx) const {
@@ -392,8 +391,8 @@ FileRequester::node_range(Node idx) const {
   return std::make_pair(start, end);
 }
 
-QColor FileRequester::generate_new_node_color(YaboVal val) const {
-  size_t hash = std::hash<YaboVal>()(val);
+QColor FileRequester::generate_new_node_color(ValHandle val) const {
+  size_t hash = std::hash<ValHandle>()(val);
   return random_color(hash);
 }
 
