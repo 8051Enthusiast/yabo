@@ -1,15 +1,17 @@
 #pragma once
-#include "node.hpp"
 #include "request.hpp"
 #include <QAbstractItemModel>
+#include <memory>
 #include <qabstractitemmodel.h>
 
 class FileRequester;
+class SelectionState;
 
 class YaboTreeModel : public QAbstractItemModel {
   Q_OBJECT
 public:
-  YaboTreeModel(FileRequester *file_requester);
+  YaboTreeModel(FileRequester *file_requester,
+                std::shared_ptr<SelectionState> select);
 
   // AbstractItemModel interface
   QModelIndex index(int row, int column,
@@ -28,35 +30,24 @@ public:
   bool canFetchMore(const QModelIndex &parent) const override;
   void fetchMore(const QModelIndex &parent) override;
 
-  void set_root(RootIndex new_root);
-
   void handle_doubleclick(const QModelIndex &index);
 
-  void undo();
-  void redo();
-
   void change_selected(const QModelIndex &current, const QModelIndex &previous);
+  TreeIndex to_tree_index(const QModelIndex &index) const;
+  QModelIndex to_qindex(TreeIndex idx, int column) const;
 
   constexpr static int NUM_COLUMNS = 3;
-
-signals:
-  void expand(const QModelIndex &index);
 
 private slots:
   void data_changed(TreeIndex idx, RootIndex root);
   void begin_insert_rows(TreeIndex parent, int first, int last, RootIndex root);
   void end_insert_rows(TreeIndex parent, RootIndex root);
-  void change_root(Node idx);
 
 private:
-  TreeIndex to_tree_index(const QModelIndex &index) const;
-  QModelIndex to_qindex(TreeIndex idx, int column) const;
   QVariant color(const QModelIndex &index) const;
+  std::optional<TreeIndex> current_root_tree_index() const;
 
   FileRequester *file_requester;
-  RootIndex root_id;
+  std::shared_ptr<SelectionState> select;
   bool inserting_rows = false;
-  bool inserting_root_start = false;
-  std::vector<RootIndex> undo_stack;
-  size_t undo_stack_idx = 0;
 };

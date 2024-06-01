@@ -48,5 +48,5 @@ void YlliabWindow::on_actionForth_triggered() {
 }
 
 ParserView *YlliabWindow::current_parser_view() const {
-  return static_cast<ParserView *>(ui->tabWidget->currentWidget());
+  return dynamic_cast<ParserView *>(ui->tabWidget->currentWidget());
 }

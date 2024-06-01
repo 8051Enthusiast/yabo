@@ -1,4 +1,6 @@
 #include "graph.hpp"
+#include "selectionstate.hpp"
+
 #include <QPainter>
 #include <QTimer>
 #include <cmath>
@@ -6,9 +8,7 @@
 
 using namespace std::complex_literals;
 
-Graph::Graph(Node root, QObject *parent)
-    : QObject(parent), outdegree(1, 0), center(0) {
-  add_node(root, 0);
+Graph::Graph(QObject *parent) : QObject(parent), outdegree(1, 0), center(0) {
   std::random_device rd;
   rng = std::mt19937(rd());
   timer = new QTimer(this);
@@ -177,6 +177,10 @@ void Graph::apply_force() {
 }
 
 void Graph::update_center() {
+  if (x.empty()) {
+    center = 0;
+    return;
+  }
   auto center_x = std::accumulate(x.begin(), x.end(), 0.0f) / x.size();
   auto center_y = std::accumulate(y.begin(), y.end(), 0.0f) / y.size();
   center = {center_x, center_y};
@@ -230,6 +234,7 @@ void GraphScene::update_positions(PositionsUpdate update) {
     node->setCenterPos(update.x[i], update.y[i]);
   }
   auto old_nodes_size = nodes.size();
+  auto selected = select->get_root();
   for (size_t i = nodes.size(); i < update.x.size(); i++) {
     auto idx = Node{i};
     auto name = info_provider.node_name(idx);
@@ -254,22 +259,15 @@ void GraphScene::update_positions(PositionsUpdate update) {
     edges.push_back({line, edge});
     addItem(line);
   }
-  if (selected.idx < nodes.size()) {
-    auto selected_pos = nodes[selected.idx];
-    emit selected_node_moved(selected_pos, selected.idx >= old_nodes_size);
+  if (selected && selected->idx < nodes.size()) {
+    auto selected_pos = nodes[selected->idx];
+    emit selected_node_moved(selected_pos, selected->idx >= old_nodes_size);
   }
 }
 void GraphScene::select_node(Node idx) {
-  if (nodes.size() > selected.idx) {
-    nodes[selected.idx]->setSelected(false);
-  }
-  auto old = selected;
-  selected = idx;
-  if (nodes.size() > selected.idx) {
+  if (nodes.size() > idx.idx) {
     nodes[idx.idx]->setSelected(true);
-    if (old != selected) {
-      emit selected_node_moved(nodes[selected.idx], true);
-    }
+    emit selected_node_moved(nodes[idx.idx], true);
   }
 }
 
@@ -278,6 +276,19 @@ GraphNodeItem *GraphScene::node(Node idx) const {
     return nullptr;
   }
   return nodes[idx.idx];
+}
+
+GraphScene::GraphScene(QObject *parent, NodeInfoProvider &info_provider,
+                       Graph &graph, std::shared_ptr<SelectionState> &select)
+    : QGraphicsScene(parent), info_provider(info_provider), select(select) {
+  connect(&graph, &Graph::positions_update, this,
+          &GraphScene::update_positions);
+  connect(this, &GraphScene::position_override, &graph,
+          &Graph::override_position);
+  connect(select.get(), &SelectionState::begin_root_change, this,
+          &GraphScene::clear_selection);
+  connect(select.get(), &SelectionState::root_changed, this,
+          &GraphScene::select_node);
 }
 
 void GraphScene::move_node(QPointF pos, Node idx, bool pinned) {
@@ -310,4 +321,18 @@ QPointF GraphNodeItem::centerPos() const {
 void GraphNodeItem::setPinned(bool pinned) {
   this->pinned = pinned;
   update();
+}
+
+void GraphScene::node_double_clicked(Node node) { select->set_root(node); }
+
+void GraphScene::clear_selection() {
+  auto node = select->get_root();
+  if (!node) {
+    return;
+  }
+  auto idx = node->idx;
+  if (idx >= nodes.size()) {
+    return;
+  }
+  nodes[idx]->setSelected(false);
 }

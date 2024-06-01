@@ -3,6 +3,7 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QPainter>
 #include <QPalette>
 #include <QPoint>
 #include <QShortcut>
@@ -12,8 +13,10 @@
 #include "colorscrollbar.hpp"
 #include "hex.hpp"
 #include "hexview.hpp"
+#include "selectionstate.hpp"
 
-HexTableView::HexTableView(QWidget *parent) : QTableView(parent) {
+HexTableView::HexTableView(QWidget *parent)
+    : QTableView(parent), select(nullptr) {
   QFont hexfont("Monospace");
   hexfont.setStyleHint(QFont::TypeWriter);
   hexfont.setPointSize(12);
@@ -28,7 +31,8 @@ HexTableView::HexTableView(QWidget *parent) : QTableView(parent) {
           [this]() { parse_menu(QCursor::pos()); });
 }
 
-void HexTableView::setModel(HexTableModel *model) {
+void HexTableView::set_model(HexTableModel *model,
+                             std::shared_ptr<SelectionState> &select) {
   hexModel = model;
   hexCell->set_file_size(model->file->span().size());
   update_dimensions();
@@ -38,6 +42,19 @@ void HexTableView::setModel(HexTableModel *model) {
   connect(scroll_bar, &ColorScrollBar::big_jump, this,
           &HexTableView::goto_addr);
   setVerticalScrollBar(scroll_bar);
+  if (this->select) {
+    disconnect(this->select.get(), &SelectionState::root_changed, this,
+               &HexTableView::goto_node);
+    disconnect(this->select.get(), &SelectionState::goto_addr, this,
+               &HexTableView::goto_addr);
+  }
+  connect(select.get(), &SelectionState::root_changed, this,
+          &HexTableView::goto_node);
+  connect(select.get(), &SelectionState::goto_addr, this,
+          &HexTableView::goto_addr);
+  this->select = select;
+  auto selection_model = new HexSelectionModel(hexModel, select);
+  setSelectionModel(selection_model);
 }
 
 void HexTableView::update_dimensions() {
@@ -76,41 +93,12 @@ void HexTableView::goto_node(Node node) {
   goto_addr(*addr);
 }
 
-void HexTableView::select_addr_range(size_t start, size_t end) {
-  selectionModel()->clearSelection();
-  if (start == end) {
-    return;
-  }
-  auto start_row = hexModel->addr_row(start);
-  auto last_row = hexModel->addr_row(end - 1);
-  auto start_local_row = hexModel->local_row(start_row);
-  auto last_local_row = hexModel->local_row(last_row);
-  auto col = hexModel->columnCount();
-  auto start_column = start % col;
-  auto last_column = (end - 1) % col;
-  auto selection = QItemSelection();
-  if (start_local_row == last_local_row) {
-    selection.select(hexModel->index(start_local_row, start_column),
-                     hexModel->index(start_local_row, last_column));
-  } else {
-    selection.select(hexModel->index(start_local_row, start_column),
-                     hexModel->index(start_local_row, col - 1));
-    if (last_local_row - start_local_row >= 2) {
-      selection.select(hexModel->index(start_local_row + 1, 0),
-                       hexModel->index(last_local_row - 1, col - 1));
-    }
-    selection.select(hexModel->index(last_local_row, 0),
-                     hexModel->index(last_local_row, last_column));
-  }
-  selectionModel()->select(selection, QItemSelectionModel::Select);
-}
-
 void HexTableView::context_menu(const QPoint &pos) {
   auto index = indexAt(pos);
-  if (!index.isValid()) {
+  if (!index.isValid() || !select) {
     return;
   }
-  auto menu = hexModel->create_context_menu(index);
+  auto menu = hexModel->create_context_menu(index, select);
   if (!menu) {
     return;
   }
@@ -144,7 +132,8 @@ void HexTableView::parse_menu(QPoint current_mouse_pos) {
             }
             menu->close();
             activateWindow();
-            parseRequester->request_parse(name, addr);
+            auto root = parseRequester->request_parse(name, addr);
+            select->set_root(root);
           });
   widget_action->setDefaultWidget(line_edit);
   menu->addAction(widget_action);
@@ -155,11 +144,85 @@ void HexTableView::parse_menu(QPoint current_mouse_pos) {
     connect(action, &QAction::triggered, this, [this, menu, name, addr]() {
       menu->close();
       activateWindow();
-      parseRequester->request_parse(name, addr);
+      auto root = parseRequester->request_parse(name, addr);
+      select->set_root(root);
     });
   }
   menu->popup(current_mouse_pos);
   // make sure that line_edit gets the focus when the menu is shown
   line_edit->setFocus();
   menu->setActiveAction(widget_action);
+}
+
+void HexCell::set_file_size(size_t file_size) {
+  current_file_size = file_size;
+  auto metrics = QFontMetrics(font);
+  auto addr_string = QString("0x%1").arg(
+      file_size, address_digit_count(file_size), 16, QChar('0'));
+  header_size = metrics.size(0, addr_string);
+  header_size.setHeight(padded(header_size).height());
+  header_size.setWidth(padded(header_size).width());
+}
+
+void HexCell::set_font(QFont font) {
+  this->font = font;
+  auto metrics = QFontMetrics(font);
+  cell_size = metrics.size(0, "00");
+  cell_size.setHeight(padded(cell_size).height());
+  cell_size.setWidth(padded(cell_size).width());
+  auto addr_string = QString("0x%1").arg(current_file_size,
+                                         address_digit_count(current_file_size),
+                                         16, QChar('0'));
+  header_size = metrics.size(0, addr_string);
+  header_size.setHeight(padded(header_size).height());
+  header_size.setWidth(padded(header_size).width());
+}
+
+QSize HexCell::padded(QSize size) const {
+  auto added_height = size.height() / 3;
+  auto added_width = added_height * 4 / 3;
+  return size + QSize(added_width, added_height);
+}
+
+void HexCell::paint(QPainter *painter, const QStyleOptionViewItem &option,
+                    const QModelIndex &index) const {
+  auto data = index.data().toString();
+  painter->setPen(Qt::transparent);
+  auto background = index.data(Qt::BackgroundRole);
+  QBrush brush;
+  if (background.isValid()) {
+    brush.setColor(background.value<QColor>());
+  } else {
+    brush.setColor(option.palette.color(QPalette::Base));
+  }
+  if (option.state & (QStyle::State_Selected | QStyle::State_MouseOver)) {
+    brush.setStyle(Qt::Dense4Pattern);
+  } else {
+    brush.setStyle(Qt::SolidPattern);
+  }
+  painter->setBrush(brush);
+  painter->drawRect(option.rect);
+  auto foreground = index.data(Qt::ForegroundRole);
+  if (foreground.isValid()) {
+    painter->setPen(foreground.value<QColor>());
+  } else {
+    painter->setPen(option.palette.color(QPalette::Text));
+  }
+  painter->setFont(font);
+  painter->drawText(option.rect, Qt::AlignCenter, data);
+}
+
+QSize HexCell::sizeHint(const QStyleOptionViewItem &option,
+                        const QModelIndex &index) const {
+
+  return cell_size;
+}
+
+HexCell::HexCell(QFont font, size_t file_size)
+    : font(font), current_file_size(file_size) {
+  auto metrics = QFontMetrics(font);
+  cell_size = metrics.size(0, "00");
+  cell_size.setHeight(padded(cell_size).height());
+  cell_size.setWidth(padded(cell_size).width());
+  set_file_size(file_size);
 }

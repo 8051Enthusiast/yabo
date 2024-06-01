@@ -1,6 +1,8 @@
 #include "parserview.hpp"
+#include "graph.hpp"
 #include "hex.hpp"
 #include "init.hpp"
+#include "selectionstate.hpp"
 #include "ui_parserview.h"
 #include "yabotreemodel.hpp"
 
@@ -15,25 +17,23 @@ ParserView::ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req)
     : QWidget(parent), ui(new Ui::ParserView), fileRequester(std::move(req)) {
   ui->setupUi(this);
   ui->graph_splitter->setSizes(QList<int>({INT_MAX / 1000, INT_MAX / 1000}));
-
-  treeModel = std::make_unique<YaboTreeModel>(fileRequester.get());
+  select = std::make_shared<SelectionState>();
+  treeModel = std::make_unique<YaboTreeModel>(fileRequester.get(), select);
   ui->treeView->setModel(treeModel.get());
 
   auto file = fileRequester->file_ref();
   hexModel = std::make_unique<HexTableModel>(file, fileRequester.get());
-  ui->tableView->setModel(hexModel.get());
+  ui->tableView->set_model(hexModel.get(), select);
 
-  auto graph = new Graph(Node{fileRequester->get_current_root()});
+  auto graph = new Graph;
   graph->moveToThread(&graph_thread);
-  scene = std::make_unique<GraphScene>(this, *fileRequester, *graph);
+  scene = std::make_unique<GraphScene>(this, *fileRequester, *graph, select);
 
   connect(&graph_thread, &QThread::finished, graph, &QObject::deleteLater);
   connect(fileRequester.get(), &FileRequester::update_graph, graph,
           &Graph::update_graph, Qt::QueuedConnection);
-  connect(fileRequester.get(), &FileRequester::root_changed, scene.get(),
-          &GraphScene::select_node);
   init_hex_and_tree(ui->tableView, ui->treeView, hexModel.get(),
-                    treeModel.get(), fileRequester.get());
+                    treeModel.get(), fileRequester.get(), select);
 
   ui->graphicsView->setScene(scene.get());
 
@@ -54,9 +54,9 @@ void ParserView::on_treeView_doubleClicked(const QModelIndex &index) {
   treeModel->handle_doubleclick(index);
 }
 
-void ParserView::back() { treeModel->undo(); }
+void ParserView::back() { select->undo(); }
 
-void ParserView::forth() { treeModel->redo(); }
+void ParserView::forth() { select->redo(); }
 
 void ParserView::keyPressEvent(QKeyEvent *event) {
   if ((event->modifiers() & Qt::ControlModifier) && event->key() == 'A' &&
@@ -66,5 +66,5 @@ void ParserView::keyPressEvent(QKeyEvent *event) {
 }
 
 void ParserView::on_tableView_doubleClicked(const QModelIndex &index) {
-  hexModel->handle_doubleclick(index);
+  hexModel->handle_doubleclick(index, select);
 }

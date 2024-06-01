@@ -85,7 +85,7 @@ class FileRequester : public QObject,
                       public ParseRequester {
   Q_OBJECT
 public:
-  FileRequester(std::filesystem::path path, FileRef file, QString parser_name,
+  FileRequester(std::filesystem::path path, FileRef file,
                 bool recursive_fetch = true);
   FileRequester(QString error_msg) : error_msg(error_msg) {}
   ~FileRequester() {
@@ -102,6 +102,7 @@ public:
            val->kind == YaboValKind::YABOBLOCK;
   }
   QVariant data(TreeIndex idx) const;
+  std::optional<Node> link(TreeIndex idx) const;
   FileSpan span(TreeIndex idx) const;
   TreeIndex index(TreeIndex parent, int row) const {
     return arborist->get_child(parent, row);
@@ -127,22 +128,19 @@ public:
   FileRef file_ref() const noexcept { return file; }
   const uint8_t *file_base_addr() const noexcept { return file->span().data(); }
 
-  void set_parser(QString name, size_t pos = 0);
-  void set_bubble(TreeIndex idx);
+  RootIndex set_parser(QString name, size_t pos = 0);
   QString node_name(Node idx) const override;
   QColor node_color(Node idx) const override;
   std::optional<std::pair<size_t, size_t>> node_range(Node idx) const override;
-  void select_idx(TreeIndex idx);
+  std::optional<std::pair<size_t, size_t>>
+  idx_range(TreeIndex idx) const override;
 
-  void run_parse(QString func_name, size_t pos) override {
-    set_parser(func_name, pos);
+  RootIndex run_parse(QString func_name, size_t pos) override {
+    return set_parser(func_name, pos);
   }
 
   void start_executor_thread() { executor_thread->start(); }
-  void change_root(RootIndex node);
-  void change_root(Node node) override;
-  RootIndex root_idx(Node node) const;
-  RootIndex get_current_root() const { return current_root; }
+  RootIndex root_idx(Node node) const override;
 
 public slots:
   void process_response(Response resp);
@@ -151,19 +149,15 @@ signals:
   void request(Request req);
   void parse_request(Meta meta, QString func_name, size_t pos);
   void update_graph(GraphUpdate update);
-  void root_changed(Node node);
   void new_node(NodeRange node);
   void tree_data_changed(TreeIndex idx, RootIndex root);
   void tree_begin_insert_rows(TreeIndex parent, int first, int last,
                               RootIndex root);
   void tree_end_insert_rows(TreeIndex parent, RootIndex root);
-  void select_range(size_t start, size_t end);
-  void goto_addr(size_t addr);
 
 private:
   QColor generate_new_node_color(ValHandle val) const;
   QColor generate_new_node_color(QString val, size_t pos) const;
-  void init_root(QString parser_name);
   void set_value(TreeIndex idx, SpannedHandle val, RootIndex root);
 
   QThread *executor_thread = nullptr;
@@ -171,7 +165,6 @@ private:
   std::map<std::pair<QString, size_t>, RootIndex> parser_root;
   std::unordered_map<ValHandle, RootIndex> nominal_bubbles;
   size_t root_count = 0;
-  RootIndex current_root = RootIndex(TreeIndex(0), 0);
   GraphUpdate graph_update;
   FileRef file;
   struct RootInfo {
@@ -193,10 +186,8 @@ public:
   FileRequesterFactory() = default;
   std::unique_ptr<FileRequester> create_file_requester(QString parser_lib_path,
                                                        QString file_path,
-                                                       QString parser_name,
                                                        bool recursive_fetch);
   std::unique_ptr<FileRequester> create_file_requester(QString parser_lib_path,
                                                        FileRef file,
-                                                       QString parser_name,
                                                        bool recursive_fetch);
 };

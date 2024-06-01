@@ -1,8 +1,10 @@
 #include "init.hpp"
 #include "graph.hpp"
+#include "hex.hpp"
 #include "hexview.hpp"
 #include "node.hpp"
 #include "request.hpp"
+#include "selectionstate.hpp"
 #include "yabotreemodel.hpp"
 #include <QHeaderView>
 #include <QObject>
@@ -20,17 +22,10 @@ void init_meta_types() {
 }
 void init_hex_and_tree(HexTableView *hex_view, QTreeView *tree_view,
                        HexTableModel *hex_model, YaboTreeModel *tree_model,
-                       FileRequester *file_requester) {
-  QObject::connect(file_requester, &FileRequester::root_changed, hex_view,
-                   &HexTableView::goto_node);
-  QObject::connect(file_requester, &FileRequester::select_range, hex_view,
-                   &HexTableView::select_addr_range);
+                       FileRequester *file_requester,
+                       std::shared_ptr<SelectionState> &select) {
   QObject::connect(file_requester, &FileRequester::new_node, hex_model,
                    &HexTableModel::add_range);
-  QObject::connect(file_requester, &FileRequester::goto_addr, hex_view,
-                   &HexTableView::goto_addr);
-  QObject::connect(tree_model, &YaboTreeModel::expand, tree_view,
-                   &QTreeView::expand);
   QObject::connect(tree_view->selectionModel(),
                    &QItemSelectionModel::currentChanged, tree_model,
                    &YaboTreeModel::change_selected);
