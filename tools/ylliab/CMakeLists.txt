@@ -32,6 +32,7 @@ qt_add_library(ylliab_core STATIC
     executor.hpp executor.cpp
     filerequester.hpp filerequester.cpp
     valtreemodel.hpp valtreemodel.cpp
+    valtreeview.hpp valtreeview.cpp
     selectionstate.hpp selectionstate.cpp
     compile.hpp compile.cpp
     init.hpp init.cpp
