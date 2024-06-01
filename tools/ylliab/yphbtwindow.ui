@@ -125,7 +125,7 @@ def *main = {
          <bool>false</bool>
         </attribute>
        </widget>
-       <widget class="QTreeView" name="treeView"/>
+       <widget class="ValTreeView" name="treeView"/>
       </widget>
      </widget>
     </item>
@@ -198,14 +198,19 @@ def *main = {
  </widget>
  <customwidgets>
   <customwidget>
+   <class>CompilerErrorView</class>
+   <extends>QTextEdit</extends>
+   <header>compiler_error_view.hpp</header>
+  </customwidget>
+  <customwidget>
    <class>HexTableView</class>
    <extends>QTableView</extends>
    <header>hexview.hpp</header>
   </customwidget>
   <customwidget>
-   <class>CompilerErrorView</class>
-   <extends>QTextEdit</extends>
-   <header>compiler_error_view.hpp</header>
+   <class>ValTreeView</class>
+   <extends>QTreeView</extends>
+   <header>valtreeview.hpp</header>
   </customwidget>
   <customwidget>
    <class>SourceEditor</class>

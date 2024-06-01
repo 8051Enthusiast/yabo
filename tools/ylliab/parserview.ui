@@ -23,7 +23,7 @@
       <property name="orientation">
        <enum>Qt::Vertical</enum>
       </property>
-      <widget class="QTreeView" name="treeView"/>
+      <widget class="ValTreeView" name="treeView"/>
       <widget class="HexTableView" name="tableView">
        <property name="verticalScrollBarPolicy">
         <enum>Qt::ScrollBarAlwaysOn</enum>
@@ -76,6 +76,11 @@
    <class>GraphView</class>
    <extends>QGraphicsView</extends>
    <header>graphview.hpp</header>
+  </customwidget>
+  <customwidget>
+   <class>ValTreeView</class>
+   <extends>QTreeView</extends>
+   <header>valtreeview.hpp</header>
   </customwidget>
  </customwidgets>
  <resources/>
