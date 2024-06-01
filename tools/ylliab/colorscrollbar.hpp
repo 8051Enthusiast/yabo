@@ -3,7 +3,7 @@
 #include <QObject>
 #include <QWidget>
 
-#include "hex.hpp"
+class HexTableModel;
 
 class ColorScrollBar : public QScrollBar
 {

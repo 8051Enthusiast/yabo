@@ -10,6 +10,8 @@
 #include <QGraphicsItem>
 #include <QGraphicsScene>
 
+class SelectionState;
+
 using complex = std::complex<float>;
 
 struct Edge {
@@ -62,7 +64,7 @@ Q_DECLARE_METATYPE(PositionsUpdate)
 class Graph : public QObject {
   Q_OBJECT
 public:
-  Graph(Node root, QObject *parent = nullptr);
+  Graph(QObject *parent = nullptr);
 public slots:
   void update_graph(GraphUpdate update);
   void override_position(PositionOverride override);
@@ -95,7 +97,7 @@ private:
   std::vector<float> fx;
   std::vector<float> fy;
   std::vector<bool> pinned;
-  complex center;
+  complex center = 0;
   QTimer *timer;
   std::mt19937 rng;
   static constexpr float scale_factor = 100.0;
@@ -142,20 +144,15 @@ private:
 class GraphScene : public QGraphicsScene {
   Q_OBJECT
 public:
-  GraphScene(QObject *parent, NodeInfoProvider &info_provider, Graph &graph)
-      : QGraphicsScene(parent), info_provider(info_provider),
-        selected(Node{0}) {
-    QObject::connect(&graph, &Graph::positions_update, this,
-                     &GraphScene::update_positions);
-    QObject::connect(this, &GraphScene::position_override, &graph,
-                     &Graph::override_position);
-  }
-  void node_double_clicked(Node node) { info_provider.change_root(node); }
+  GraphScene(QObject *parent, NodeInfoProvider &info_provider, Graph &graph,
+             std::shared_ptr<SelectionState> &select);
+  void node_double_clicked(Node node);
   void move_node(QPointF pos, Node idx, bool pinned);
   GraphNodeItem *node(Node idx) const;
 public slots:
   void update_positions(PositionsUpdate update);
   void select_node(Node idx);
+  void clear_selection();
 
 signals:
   void selected_node_moved(GraphNodeItem *node, bool node_changed);
@@ -163,7 +160,7 @@ signals:
 
 private:
   NodeInfoProvider &info_provider;
+  std::shared_ptr<SelectionState> select;
   std::vector<GraphNodeItem *> nodes;
   std::vector<std::pair<QGraphicsLineItem *, Edge>> edges;
-  Node selected;
 };

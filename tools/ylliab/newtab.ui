@@ -53,16 +53,6 @@
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout_2">
      <item>
-      <widget class="QLineEdit" name="parserNameEdit">
-       <property name="text">
-        <string>main</string>
-       </property>
-       <property name="placeholderText">
-        <string>Parser Name</string>
-       </property>
-      </widget>
-     </item>
-     <item>
       <widget class="QCheckBox" name="fetchEager">
        <property name="text">
         <string>Fetch Eagerly</string>

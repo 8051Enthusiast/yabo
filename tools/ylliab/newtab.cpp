@@ -1,7 +1,7 @@
 #include <QFile>
 #include <QFileDialog>
-#include <QMessageBox>
 #include <QFontDatabase>
+#include <QMessageBox>
 #include <filesystem>
 
 #include "./ui_newtab.h"
@@ -49,10 +49,6 @@ void NewTab::done(int r) {
     show_error("Input file empty!");
     return;
   }
-  if (ui->parserNameEdit->text() == "") {
-    show_error("Parser name empty!");
-    return;
-  }
   auto program_path = ui->parserFileEdit->text();
   auto file = QFile(program_path);
   if (!file.open(QIODevice::ReadOnly)) {
@@ -70,8 +66,7 @@ QString NewTab::get_input_file() { return ui->inputFileEdit->text(); }
 void NewTab::load_compiled_file(QString file_path) {
   auto factory = FileRequesterFactory();
   auto new_file_requester = factory.create_file_requester(
-      file_path, ui->inputFileEdit->text(), ui->parserNameEdit->text(),
-      ui->fetchEager->checkState());
+      file_path, ui->inputFileEdit->text(), ui->fetchEager->checkState());
   std::filesystem::remove(file_path.toStdString());
   auto error = new_file_requester->error_message();
   if (error != "") {

@@ -1,10 +1,10 @@
 #include "request.hpp"
 #include "yabo.hpp"
 
-void ParseRequester::request_parse(QString func_name, size_t pos) {
+RootIndex ParseRequester::request_parse(QString func_name, size_t pos) {
   last_parse = func_name;
   add_recently_used(func_name);
-  run_parse(func_name, pos);
+  return run_parse(func_name, pos);
 }
 
 std::vector<QString> const &ParseRequester::recently_used_funcs() const {

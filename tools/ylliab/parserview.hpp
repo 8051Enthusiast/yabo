@@ -1,9 +1,13 @@
 #pragma once
-#include "filerequester.hpp"
-#include "graph.hpp"
-#include "hex.hpp"
 
 #include <QWidget>
+#include <QThread>
+
+class HexTableModel;
+class FileRequester;
+class GraphScene;
+class YaboTreeModel;
+class SelectionState;
 
 namespace Ui {
 class ParserView;
@@ -30,5 +34,6 @@ private slots:
   std::unique_ptr<GraphScene> scene;
   std::unique_ptr<YaboTreeModel> treeModel;
   std::unique_ptr<HexTableModel> hexModel;
+  std::shared_ptr<SelectionState> select;
   QThread graph_thread;
 };

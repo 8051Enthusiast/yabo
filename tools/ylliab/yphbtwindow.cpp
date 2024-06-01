@@ -2,9 +2,12 @@
 #include "compile.hpp"
 #include "filecontent.hpp"
 #include "filerequester.hpp"
+#include "hex.hpp"
 #include "hexview.hpp"
 #include "init.hpp"
+#include "selectionstate.hpp"
 #include "ui_yphbtwindow.h"
+#include "yabotreemodel.hpp"
 
 #include <QFileDialog>
 #include <QMessageBox>
@@ -31,8 +34,7 @@ YphbtWindow::YphbtWindow(QWidget *parent, std::optional<QString> source,
                          std::optional<QByteArray> input)
     : QMainWindow(parent), ui(new Ui::YphbtWindow),
       file(std::make_shared<FileContent>(std::vector<uint8_t>(
-          PNG_EXAMPLE, PNG_EXAMPLE + sizeof(PNG_EXAMPLE)))),
-      file_requester(nullptr), treeModel(nullptr), hexModel(nullptr) {
+          PNG_EXAMPLE, PNG_EXAMPLE + sizeof(PNG_EXAMPLE)))) {
   ui->setupUi(this);
   ui->errorView->hide();
   current_font.setPointSize(default_font_size);
@@ -95,8 +97,8 @@ void YphbtWindow::on_actionLoadFile_triggered() {
 }
 
 void YphbtWindow::load_compiled_file(QString file_path) {
-  auto new_file_requester = FileRequesterFactory().create_file_requester(
-      file_path, file, "main", false);
+  auto new_file_requester =
+      FileRequesterFactory().create_file_requester(file_path, file, false);
   auto error_message = new_file_requester->error_message();
   if (error_message != "") {
     compile_error(error_message);
@@ -117,30 +119,35 @@ void YphbtWindow::compile_error(QString error) {
 
 void YphbtWindow::set_new_file_requester(
     std::unique_ptr<FileRequester> &&new_file_requester) {
-  auto newTreeModel = std::make_unique<YaboTreeModel>(new_file_requester.get());
-  ui->treeView->setModel(newTreeModel.get());
-  treeModel = std::move(newTreeModel);
-  auto newHexModel =
-      std::make_unique<HexTableModel>(file, new_file_requester.get());
-  ui->tableView->setModel(newHexModel.get());
-  hexModel = std::move(newHexModel);
+  select = std::make_shared<SelectionState>();
+  auto newTreeModel = new YaboTreeModel(new_file_requester.get(), select);
+  ui->treeView->setModel(newTreeModel);
+  auto newHexModel = new HexTableModel(file, new_file_requester.get(),
+                                       new_file_requester.get());
+  ui->tableView->set_model(newHexModel, select);
   file_requester = std::move(new_file_requester);
-  init_hex_and_tree(ui->tableView, ui->treeView, hexModel.get(),
-                    treeModel.get(), file_requester.get());
+  init_hex_and_tree(ui->tableView, ui->treeView, newHexModel, newTreeModel,
+                    file_requester.get(), select);
+  auto root = file_requester->request_parse("main", 0);
+  select->set_root(root);
   file_requester->start_executor_thread();
 }
 
 void YphbtWindow::on_tableView_doubleClicked(const QModelIndex &index) {
-  hexModel->handle_doubleclick(index);
+  if (auto hex_model = dynamic_cast<HexTableModel *>(ui->tableView->model())) {
+    hex_model->handle_doubleclick(index, select);
+  }
 }
 
 void YphbtWindow::on_treeView_doubleClicked(const QModelIndex &index) {
-  treeModel->handle_doubleclick(index);
+  if (auto tree_model = dynamic_cast<YaboTreeModel *>(ui->treeView->model())) {
+    tree_model->handle_doubleclick(index);
+  }
 }
 
-void YphbtWindow::on_actionBack_triggered() { treeModel->undo(); }
+void YphbtWindow::on_actionBack_triggered() { select->undo(); }
 
-void YphbtWindow::on_actionForth_triggered() { treeModel->redo(); }
+void YphbtWindow::on_actionForth_triggered() { select->redo(); }
 
 void YphbtWindow::set_font(const QFont &font) {
   setFont(font);

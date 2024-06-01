@@ -184,12 +184,12 @@ Q_DECLARE_METATYPE(Response)
 class ParseRequester {
 public:
   virtual ~ParseRequester() = default;
-  void request_parse(QString func_name, size_t pos);
+  RootIndex request_parse(QString func_name, size_t pos);
   QString last_requested_parse() const { return last_parse; }
   std::vector<QString> const &recently_used_funcs() const;
 
 protected:
-  virtual void run_parse(QString func_name, size_t pos) = 0;
+  virtual RootIndex run_parse(QString func_name, size_t pos) = 0;
 
 private:
   void add_recently_used(QString func_name);

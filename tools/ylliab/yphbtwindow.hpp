@@ -1,17 +1,21 @@
 #pragma once
 
-#include "filerequester.hpp"
-#include "hex.hpp"
-#include "yabotreemodel.hpp"
+#include <QFontDatabase>
 #include <QMainWindow>
 #include <QRunnable>
 #include <QTemporaryFile>
 #include <QUrl>
-#include <QFontDatabase>
+
+#include "filecontent.hpp"
+#include "filerequester.hpp"
 
 namespace Ui {
 class YphbtWindow;
 }
+
+class YaboTreeModel;
+class HexTableModel;
+class SelectionState;
 
 class YphbtWindow : public QMainWindow {
   Q_OBJECT
@@ -38,16 +42,15 @@ private slots:
   void on_tableView_doubleClicked(const QModelIndex &index);
   void on_treeView_doubleClicked(const QModelIndex &index);
 
-  private:
+private:
   void
   set_new_file_requester(std::unique_ptr<FileRequester> &&new_file_requester);
 
   void set_font(const QFont &font);
 
   Ui::YphbtWindow *ui;
-  std::unique_ptr<FileRequester> file_requester;
-  std::unique_ptr<YaboTreeModel> treeModel;
-  std::unique_ptr<HexTableModel> hexModel;
+  std::unique_ptr<FileRequester> file_requester = nullptr;
+  std::shared_ptr<SelectionState> select = nullptr;
   FileRef file;
   std::optional<QUrl> compile_url;
   static constexpr int default_font_size = 13;

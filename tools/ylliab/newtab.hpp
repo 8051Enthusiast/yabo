@@ -1,4 +1,5 @@
 #pragma once
+#include "filerequester.hpp"
 #include <QDialog>
 #include <memory>
 

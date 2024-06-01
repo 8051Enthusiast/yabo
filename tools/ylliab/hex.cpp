@@ -1,26 +1,16 @@
 #include "hex.hpp"
+#include "selectionstate.hpp"
 #include <QImage>
 #include <QMenu>
 #include <QPainter>
 #include <QPixmap>
+#include <qitemselectionmodel.h>
 #include <qnamespace.h>
 #include <vector>
 
-static uint8_t address_digit_count(uint64_t file_size) {
-  if (!file_size) {
-    return 4;
-  }
-  if ((file_size - 1) >> 32) {
-    return 16;
-  }
-  if ((file_size - 1) >> 16) {
-    return 8;
-  }
-  return 4;
-}
-
-HexTableModel::HexTableModel(FileRef file, NodeInfoProvider *node_info)
-    : file(file), node_info(node_info) {
+HexTableModel::HexTableModel(FileRef file, NodeInfoProvider *node_info,
+                             QObject *parent)
+    : QAbstractTableModel(parent), file(file), node_info(node_info) {
   file_address_digit_count = address_digit_count(file->span().size());
 }
 
@@ -139,13 +129,14 @@ void HexTableModel::put_row_in_range(GlobalRow row) {
   endResetModel();
 }
 
-void HexTableModel::handle_doubleclick(const QModelIndex &index) {
+void HexTableModel::handle_doubleclick(
+    const QModelIndex &index, std::shared_ptr<SelectionState> &select) {
   auto offset = index_addr(index);
   auto node = ranges.get(offset);
   if (!node) {
     return;
   }
-  node_info->change_root(node->node);
+  select->set_root(node->node);
 }
 
 QPixmap HexTableModel::node_minimap(int len, QColor background_color) const {
@@ -172,49 +163,6 @@ QPixmap HexTableModel::node_minimap(int len, QColor background_color) const {
   }
   return QPixmap::fromImage(image);
 }
-
-void HexCell::paint(QPainter *painter, const QStyleOptionViewItem &option,
-                    const QModelIndex &index) const {
-  auto data = index.data().toString();
-  painter->setPen(Qt::transparent);
-  auto background = index.data(Qt::BackgroundRole);
-  QBrush brush;
-  if (background.isValid()) {
-    brush.setColor(background.value<QColor>());
-  } else {
-    brush.setColor(option.palette.color(QPalette::Base));
-  }
-  if (option.state & (QStyle::State_Selected | QStyle::State_MouseOver)) {
-    brush.setStyle(Qt::Dense4Pattern);
-  } else {
-    brush.setStyle(Qt::SolidPattern);
-  }
-  painter->setBrush(brush);
-  painter->drawRect(option.rect);
-  auto foreground = index.data(Qt::ForegroundRole);
-  if (foreground.isValid()) {
-    painter->setPen(foreground.value<QColor>());
-  } else {
-    painter->setPen(option.palette.color(QPalette::Text));
-  }
-  painter->setFont(font);
-  painter->drawText(option.rect, Qt::AlignCenter, data);
-}
-
-QSize HexCell::sizeHint(const QStyleOptionViewItem &option,
-                        const QModelIndex &index) const {
-
-  return cell_size;
-}
-
-HexCell::HexCell(QFont font, size_t file_size)
-    : font(font), current_file_size(file_size) {
-  auto metrics = QFontMetrics(font);
-  cell_size = metrics.size(0, "00");
-  cell_size.setHeight(padded(cell_size).height());
-  cell_size.setWidth(padded(cell_size).width());
-  set_file_size(file_size);
-}
 int HexTableModel::rowCount(const QModelIndex &parent) const {
   auto file_rows = global_row_count();
   return (int)std::min(file_rows, (size_t)max_view_size);
@@ -233,42 +181,15 @@ int HexTableModel::local_row(GlobalRow row) const {
 GlobalRow HexTableModel::global_row(int row) const {
   return GlobalRow{row + model_offset};
 }
-void HexCell::set_file_size(size_t file_size) {
-  current_file_size = file_size;
-  auto metrics = QFontMetrics(font);
-  auto addr_string = QString("0x%1").arg(
-      file_size, address_digit_count(file_size), 16, QChar('0'));
-  header_size = metrics.size(0, addr_string);
-  header_size.setHeight(padded(header_size).height());
-  header_size.setWidth(padded(header_size).width());
-}
-void HexCell::set_font(QFont font) {
-  this->font = font;
-  auto metrics = QFontMetrics(font);
-  cell_size = metrics.size(0, "00");
-  cell_size.setHeight(padded(cell_size).height());
-  cell_size.setWidth(padded(cell_size).width());
-  auto addr_string = QString("0x%1").arg(current_file_size,
-                                         address_digit_count(current_file_size),
-                                         16, QChar('0'));
-  header_size = metrics.size(0, addr_string);
-  header_size.setHeight(padded(header_size).height());
-  header_size.setWidth(padded(header_size).width());
-}
-
-QSize HexCell::padded(QSize size) const {
-  auto added_height = size.height() / 3;
-  auto added_width = added_height * 4 / 3;
-  return size + QSize(added_width, added_height);
-}
-
 std::vector<NodeRange> const &
 HexTableModel::nodes_at(QModelIndex &index) const {
   auto offset = index_addr(index);
   return ranges.get_all(offset);
 }
 
-QMenu *HexTableModel::create_context_menu(const QModelIndex &index) {
+QMenu *
+HexTableModel::create_context_menu(const QModelIndex &index,
+                                   std::shared_ptr<SelectionState> &select) {
   auto addr = index_addr(index);
   auto &nodes = ranges.get_all(addr);
   if (nodes.empty()) {
@@ -283,10 +204,58 @@ QMenu *HexTableModel::create_context_menu(const QModelIndex &index) {
     action->setText(node_info->node_name(node.node));
     action->setIcon(QIcon(pixmap));
     action->connect(action, &QAction::triggered,
-                    [node_info = this->node_info, node]() {
-                      node_info->change_root(node.node);
-                    });
+                    [select, node]() { select->set_root(node.node); });
     menu->addAction(action);
   }
   return menu;
+}
+
+HexSelectionModel::HexSelectionModel(
+    HexTableModel *model, std::shared_ptr<SelectionState> selection_state)
+    : QItemSelectionModel(model, model), model(model),
+      selection_state(selection_state) {
+  connect(selection_state.get(), &SelectionState::selection_changed, this,
+          &HexSelectionModel::set_selection);
+  set_selection(selection_state->get_selection());
+}
+
+void HexSelectionModel::set_selection(std::optional<TreeIndex> idx) {
+  if (!idx) {
+    clearSelection();
+    return;
+  }
+  auto addresses = model->get_node_info()->idx_range(*idx);
+  if (!addresses) {
+    clearSelection();
+    return;
+  }
+  auto [start, end] = *addresses;
+  if (start == end) {
+    clearSelection();
+    return;
+  }
+
+  auto node_info = model->get_node_info();
+  auto start_row = model->addr_row(start);
+  auto last_row = model->addr_row(end - 1);
+  auto start_local_row = model->local_row(start_row);
+  auto last_local_row = model->local_row(last_row);
+  auto col = model->columnCount();
+  auto start_column = start % col;
+  auto last_column = (end - 1) % col;
+  auto selection = QItemSelection();
+  if (start_local_row == last_local_row) {
+    selection.select(model->index(start_local_row, start_column),
+                     model->index(start_local_row, last_column));
+  } else {
+    selection.select(model->index(start_local_row, start_column),
+                     model->index(start_local_row, col - 1));
+    if (last_local_row - start_local_row >= 2) {
+      selection.select(model->index(start_local_row + 1, 0),
+                       model->index(last_local_row - 1, col - 1));
+    }
+    selection.select(model->index(last_local_row, 0),
+                     model->index(last_local_row, last_column));
+  }
+  select(selection, QItemSelectionModel::ClearAndSelect);
 }

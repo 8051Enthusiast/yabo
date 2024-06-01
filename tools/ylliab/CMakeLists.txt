@@ -32,6 +32,7 @@ qt_add_library(ylliab_core STATIC
     executor.hpp executor.cpp
     filerequester.hpp filerequester.cpp
     yabotreemodel.hpp yabotreemodel.cpp
+    selectionstate.hpp selectionstate.cpp
     compile.hpp compile.cpp
     init.hpp init.cpp
 )
