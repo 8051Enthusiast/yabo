@@ -77,7 +77,7 @@ private:
   std::unordered_map<ParentBranch, TreeIndex> interner;
 };
 
-class YaboTreeModel;
+class ValTreeModel;
 
 // communicates with Executor and maintains the tree structure
 class FileRequester : public QObject,

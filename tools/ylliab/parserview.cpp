@@ -4,7 +4,7 @@
 #include "init.hpp"
 #include "selectionstate.hpp"
 #include "ui_parserview.h"
-#include "yabotreemodel.hpp"
+#include "valtreemodel.hpp"
 
 #include <QHeaderView>
 #include <QKeyEvent>
@@ -18,7 +18,7 @@ ParserView::ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req)
   ui->setupUi(this);
   ui->graph_splitter->setSizes(QList<int>({INT_MAX / 1000, INT_MAX / 1000}));
   select = std::make_shared<SelectionState>();
-  treeModel = std::make_unique<YaboTreeModel>(fileRequester.get(), select);
+  treeModel = std::make_unique<ValTreeModel>(fileRequester.get(), select);
   ui->treeView->setModel(treeModel.get());
 
   auto file = fileRequester->file_ref();

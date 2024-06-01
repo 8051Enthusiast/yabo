@@ -7,11 +7,11 @@
 class FileRequester;
 class SelectionState;
 
-class YaboTreeModel : public QAbstractItemModel {
+class ValTreeModel : public QAbstractItemModel {
   Q_OBJECT
 public:
-  YaboTreeModel(FileRequester *file_requester,
-                std::shared_ptr<SelectionState> select);
+  ValTreeModel(FileRequester *file_requester,
+               std::shared_ptr<SelectionState> select);
 
   // AbstractItemModel interface
   QModelIndex index(int row, int column,

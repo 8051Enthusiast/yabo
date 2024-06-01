@@ -13,7 +13,7 @@ namespace Ui {
 class YphbtWindow;
 }
 
-class YaboTreeModel;
+class ValTreeModel;
 class HexTableModel;
 class SelectionState;
 

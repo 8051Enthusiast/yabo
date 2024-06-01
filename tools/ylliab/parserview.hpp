@@ -6,7 +6,7 @@
 class HexTableModel;
 class FileRequester;
 class GraphScene;
-class YaboTreeModel;
+class ValTreeModel;
 class SelectionState;
 
 namespace Ui {
@@ -32,7 +32,7 @@ private slots:
   Ui::ParserView *ui;
   std::unique_ptr<FileRequester> fileRequester;
   std::unique_ptr<GraphScene> scene;
-  std::unique_ptr<YaboTreeModel> treeModel;
+  std::unique_ptr<ValTreeModel> treeModel;
   std::unique_ptr<HexTableModel> hexModel;
   std::shared_ptr<SelectionState> select;
   QThread graph_thread;
