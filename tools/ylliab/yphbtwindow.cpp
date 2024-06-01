@@ -7,7 +7,7 @@
 #include "init.hpp"
 #include "selectionstate.hpp"
 #include "ui_yphbtwindow.h"
-#include "yabotreemodel.hpp"
+#include "valtreemodel.hpp"
 
 #include <QFileDialog>
 #include <QMessageBox>
@@ -120,7 +120,7 @@ void YphbtWindow::compile_error(QString error) {
 void YphbtWindow::set_new_file_requester(
     std::unique_ptr<FileRequester> &&new_file_requester) {
   select = std::make_shared<SelectionState>();
-  auto newTreeModel = new YaboTreeModel(new_file_requester.get(), select);
+  auto newTreeModel = new ValTreeModel(new_file_requester.get(), select);
   ui->treeView->setModel(newTreeModel);
   auto newHexModel = new HexTableModel(file, new_file_requester.get(),
                                        new_file_requester.get());
@@ -140,7 +140,7 @@ void YphbtWindow::on_tableView_doubleClicked(const QModelIndex &index) {
 }
 
 void YphbtWindow::on_treeView_doubleClicked(const QModelIndex &index) {
-  if (auto tree_model = dynamic_cast<YaboTreeModel *>(ui->treeView->model())) {
+  if (auto tree_model = dynamic_cast<ValTreeModel *>(ui->treeView->model())) {
     tree_model->handle_doubleclick(index);
   }
 }
