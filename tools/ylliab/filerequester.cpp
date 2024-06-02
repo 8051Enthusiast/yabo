@@ -112,8 +112,10 @@ void FileRequester::process_response(Response resp) {
     auto continuation = vals.continuation;
     auto &val_vec = vals.vals;
     auto start = arborist->get_node(resp.metadata.idx).children.size();
-    emit tree_begin_insert_rows(resp.metadata.idx, start,
-                                start + val_vec.size() - 1, resp.metadata.root);
+    auto total = start + val_vec.size();
+    arborist->get_node(resp.metadata.idx).children.reserve(total);
+    emit tree_begin_insert_rows(resp.metadata.idx, start, total - 1,
+                                resp.metadata.root);
     for (size_t i = 0; i < val_vec.size(); i++) {
       auto tree_idx = arborist->add_node(resp.metadata.idx, val_vec[i].name);
       set_value(tree_idx, val_vec[i].val, resp.metadata.root);
