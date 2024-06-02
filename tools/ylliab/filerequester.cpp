@@ -21,17 +21,22 @@
 #include "yabo.hpp"
 #include "yabo/vtable.h"
 
-TreeIndex Arborist::add_node(ParentBranch parent, QString &field_name) {
-  auto node = TreeNode{parent, TreeNodeState::LOADING, 0, field_name, {}, {}};
+TreeIndex Arborist::add_node(TreeIndex parent, QString &field_name) {
+  auto row = tree[parent.idx].children.size();
+  auto idx = TreeIndex{tree.size()};
+  auto branch = ParentBranch{parent, row};
+  auto node = TreeNode{branch, {}, field_name, {}, {}, TreeNodeState::LOADING};
   tree.push_back(node);
-  auto idx = TreeIndex{tree.size() - 1};
-  interner.insert({node.idx, idx});
+  tree[parent.idx].children.push_back(idx);
   return idx;
 }
 
-RootIndex Arborist::add_root_node(size_t root_count, QString &field_name) {
-  auto index = add_node(ParentBranch{INVALID_PARENT, root_count}, field_name);
-  return RootIndex(index, root_count);
+RootIndex Arborist::add_root_node(QString &field_name, RootInfo info) {
+  auto index = add_node(INVALID_PARENT, field_name);
+  auto row = get_node(index).idx.row;
+  assert(row == root_info.size());
+  root_info.push_back(info);
+  return RootIndex(index, row);
 }
 
 FileRequester::FileRequester(std::filesystem::path path, FileRef file,
@@ -56,12 +61,11 @@ void FileRequester::set_value(TreeIndex idx, SpannedHandle val,
                               RootIndex root) {
   auto &node = arborist->get_node(idx);
   node.val = val;
-  node.n_children = 0;
   if (val.kind == YaboValKind::YABOARRAY ||
       val.kind == YaboValKind::YABOBLOCK) {
     node.state = TreeNodeState::LOADED_INCOMPLETE_CHIlDREN;
     node.continuation = val.access_val();
-    if (recursive_fetch && root_info.at(root.root_idx).visited) {
+    if (recursive_fetch && arborist->get_root_info(root.root_idx).visited) {
       fetch_children(idx, root);
     }
   } else {
@@ -85,9 +89,8 @@ void FileRequester::set_value(TreeIndex idx, SpannedHandle val,
     return;
   }
   auto empty = QString("");
-  auto new_nominal_bubble = arborist->add_root_node(root_count++, empty);
-  root_info.push_back(
-      {handle, val.name, generate_new_node_color(handle), false});
+  auto new_nominal_bubble = arborist->add_root_node(
+      empty, {handle, val.name, generate_new_node_color(handle), false});
   auto req = Request{Meta{new_nominal_bubble.tree_index, MessageType::DEREF,
                           new_nominal_bubble},
                      val};
@@ -108,16 +111,14 @@ void FileRequester::process_response(Response resp) {
     }
     auto continuation = vals.continuation;
     auto &val_vec = vals.vals;
-    auto start = arborist->get_node(resp.metadata.idx).n_children;
+    auto start = arborist->get_node(resp.metadata.idx).children.size();
     emit tree_begin_insert_rows(resp.metadata.idx, start,
                                 start + val_vec.size() - 1, resp.metadata.root);
     for (size_t i = 0; i < val_vec.size(); i++) {
-      auto branch = ParentBranch{resp.metadata.idx, i + start};
-      auto tree_idx = arborist->add_node(branch, val_vec[i].name);
+      auto tree_idx = arborist->add_node(resp.metadata.idx, val_vec[i].name);
       set_value(tree_idx, val_vec[i].val, resp.metadata.root);
     }
     auto &node = arborist->get_node(resp.metadata.idx);
-    node.n_children += val_vec.size();
     if (continuation) {
       node.state = TreeNodeState::LOADED_INCOMPLETE_CHIlDREN;
     } else {
@@ -236,7 +237,7 @@ void FileRequester::fetch_children(TreeIndex idx, RootIndex root) {
   }
   auto val = SpannedHandle(*node.continuation, node.val->span, node.val->kind,
                            node.val->active, node.val->flags);
-  auto start = node.n_children;
+  auto start = node.children.size();
   MessageType message_type;
   switch (val.kind) {
   case YaboValKind::YABOARRAY:
@@ -253,7 +254,7 @@ void FileRequester::fetch_children(TreeIndex idx, RootIndex root) {
     return;
   }
   if (idx == root.tree_index) {
-    root_info.at(root.root_idx).visited = true;
+    arborist->get_root_info(root.root_idx).visited = true;
   }
   node.state = TreeNodeState::LOADING_CHILDREN;
   emit request(Request{Meta{idx, message_type, root}, val, start});
@@ -273,8 +274,8 @@ RootIndex FileRequester::set_parser(QString name, size_t pos) {
   if (it != parser_root.end()) {
     return it->second;
   }
-  auto idx = arborist->add_root_node(root_count++, name);
-  root_info.push_back({{}, name, generate_new_node_color(name, pos)});
+  auto idx = arborist->add_root_node(
+      name, {{}, name, generate_new_node_color(name, pos)});
   parser_root.insert({{name, pos}, idx});
   graph_update.new_components.push_back(Node{idx});
   emit update_graph(std::move(graph_update));
@@ -325,11 +326,11 @@ std::unique_ptr<FileRequester> FileRequesterFactory::create_file_requester(
 }
 
 QString FileRequester::node_name(Node idx) const {
-  return root_info.at(idx.idx).name;
+  return arborist->get_root_info(idx.idx).name;
 }
 
 QColor FileRequester::node_color(Node idx) const {
-  return root_info.at(idx.idx).color;
+  return arborist->get_root_info(idx.idx).color;
 }
 
 std::optional<std::pair<size_t, size_t>>

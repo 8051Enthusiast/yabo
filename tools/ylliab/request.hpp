@@ -20,7 +20,7 @@ template <> struct std::hash<TreeIndex> {
   }
 };
 
-constexpr TreeIndex INVALID_PARENT = TreeIndex{(size_t)-1};
+constexpr TreeIndex INVALID_PARENT = TreeIndex{0};
 
 struct RootIndex {
   RootIndex() = default;
