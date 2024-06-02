@@ -41,11 +41,18 @@ enum class TreeNodeState {
 
 struct TreeNode {
   ParentBranch idx;
-  TreeNodeState state;
-  size_t n_children;
+  std::vector<TreeIndex> children;
   QString field_name;
   std::optional<SpannedHandle> val;
   std::optional<ValHandle> continuation;
+  TreeNodeState state;
+};
+
+struct RootInfo {
+  std::optional<ValHandle> cause;
+  QString name;
+  QColor color;
+  bool visited;
 };
 
 // turns a graph into a tree/forest
@@ -53,8 +60,8 @@ class Arborist {
 public:
   Arborist() = default;
 
-  TreeIndex add_node(ParentBranch idx, QString &field_name);
-  RootIndex add_root_node(size_t root_count, QString &field_name);
+  TreeIndex add_node(TreeIndex idx, QString &field_name);
+  RootIndex add_root_node(QString &field_name, RootInfo info);
 
   TreeNode &get_node(TreeIndex idx) { return tree[idx.idx]; }
 
@@ -69,12 +76,25 @@ public:
   }
 
   TreeIndex get_child(TreeIndex parent, size_t row) const {
-    return interner.at(ParentBranch{parent, row});
+    return tree[parent.idx].children[row];
+  }
+  RootInfo &get_root_info(RootIndex root) {
+    return root_info.at(root.root_idx);
+  }
+  RootInfo const &get_root_info(RootIndex root) const {
+    return root_info.at(root.root_idx);
+  }
+  RootInfo &get_root_info(Node root) { return root_info.at(root.idx); }
+  RootInfo const &get_root_info(Node root) const {
+    return root_info.at(root.idx);
   }
 
 private:
-  std::vector<TreeNode> tree;
-  std::unordered_map<ParentBranch, TreeIndex> interner;
+  // the node representing the meta-root, where all other roots are children of.
+  // it corresponds to INVALID_PARENT
+  std::vector<TreeNode> tree = {TreeNode{
+      ParentBranch{INVALID_PARENT, 0}, {}, "", {}, {}, TreeNodeState::ERROR}};
+  std::vector<RootInfo> root_info;
 };
 
 class ValTreeModel;
@@ -114,7 +134,7 @@ public:
     return arborist->get_node(idx).idx.row;
   }
   int child_rows(TreeIndex idx) const {
-    return arborist->get_node(idx).n_children;
+    return arborist->get_node(idx).children.size();
   }
 
   QString field_name(TreeIndex idx) const {
@@ -164,16 +184,8 @@ private:
   std::unique_ptr<Arborist> arborist;
   std::map<std::pair<QString, size_t>, RootIndex> parser_root;
   std::unordered_map<ValHandle, RootIndex> nominal_bubbles;
-  size_t root_count = 0;
   GraphUpdate graph_update;
   FileRef file;
-  struct RootInfo {
-    std::optional<ValHandle> cause;
-    QString name;
-    QColor color;
-    bool visited;
-  };
-  std::vector<RootInfo> root_info;
   bool recursive_fetch;
   // for qml to handle errors
   QString error_msg;
