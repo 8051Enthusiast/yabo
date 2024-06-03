@@ -1,4 +1,5 @@
 import bit
+import mbr
 # parser for gpt (GUID partition table)
 
 # logical block address (a logical block is assumed to be 512 here)
@@ -46,7 +47,7 @@ def *partition_table(size: int, count: int) = ([size] |> partition_entry)[count]
 
 export def *gpt = {
   # protective mbr
-  mbr: [512]
+  protective_mbr: mbr.mbr
   signature: /EFI PART/
   # should be version 1.0
   version: u16l[2]
