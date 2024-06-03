@@ -1,0 +1,47 @@
+import bit
+
+def *primary_partition(size: int) = [size * 512]
+
+# while we define how CHS is parsed, we mostly
+# ignore it because it is mostly irrelevant nowadays
+def *chs = [3] |> bit.from_bytes_lsb |> {
+  head: bit.uint_lsb(8)
+  sector: bit.uint_lsb(6)
+  cylinder: bit.uint_lsb(10)
+}
+
+def *partition_entry(base: int) = {
+  # 0x80 = bootable, 0x00 = not bootable
+  status: u8
+  first_sector_chs: chs
+  # 0x07 = NTFS, 0x05 = extended, 0x0F = LBA extended, 0x00 = empty
+  partition_type: u8
+  last_sector_chs: chs
+  # LBA address of the first sector in the partition (one sector is 512 bytes)
+  first_sector_lba: u32l
+  sector_count: u32l
+  # absolute LBA address of the first sector in the partition
+  let real_sector = base + first_sector_lba
+  | partition_type if 0x00 then nil
+  | let extended = partition_type if 0x05 or 0x0f then ebr(real_sector) at (real_sector * 512)
+  | let primary = primary_partition(sector_count) at (real_sector * 512)
+}
+
+# extended boot record
+def *ebr(base: int) = {
+  [446]
+  entries: partition_entry(base)[2]
+  # the last 2 bytes of the EBR are unused
+  unused_entires:  partition_entry(base)[2]
+  ibm: h/55 aa/
+}
+
+# master boot record
+export
+def *mbr = {
+  bootcode: [440]
+  disk_signature: u32l
+  copy_protected: [2]
+  entries: partition_entry(0)[4]
+  ibm: h/55 aa/
+}
