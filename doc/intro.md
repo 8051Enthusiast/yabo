@@ -18,8 +18,27 @@ On the opposite side, these are some non-goals:
 * Being usable on changing data or MMIO
 
 Finally, being a good language is not a goal.
-The goal is to fuck around and find out.
-If this ends up a good language, then i didn't fuck around enough.
+The priority is to experiment around with some ideas and see what works.
+If it ends up being a good language, it means that I didn't experiment enough.
+
+Installation and Usage
+----------------------
+Right now, it is probably the best just to use the language playground at [yabo-lang.org](https://yabo-lang.org).
+The left side is the editor, the upper right corner contains a hex viewer of the file, and the lower right corner contains the output of the parser.
+
+Hex bytes, the scroll bar and the fields of the output are sometimes colored.
+The color indicates a contiguous segment of parsed bytes.
+Currently, a segment of parsed bytes is considered separate if a pointer points outside the current segment to a struct or array.
+
+If you want to compile the compiler locally, you will have to install LLVM 18 libraries and the Rust toolchain.
+To compile, run `cargo build --release` in the root directory.
+Note that the compiler currently only supports x86_64 Linux and WASM as targets.
+The compiler can be invoked with `./target/release/yaboc <input file>.yb <output file>.so` to output a shared library.
+You can use that shared library using the print tool in `tools/print` or the python bindings in `yabo.py` in the project root.
+
+Finally, the `ylliab` tool in `tools/ylliab` can be used to interactively explore the output of the parser.
+You'll need Qt6 installed to compile it using `cmake`.
+For it to compile your program, you will also need `yaboc` in your `PATH`.
 
 Parser Definitions
 ------------------
@@ -73,7 +92,7 @@ def *nested_block = {
 def *no_block = u16l
 ```
 
-There are two speical built-in parsers available: `~` and `+`:
+There are two special built-in parsers available: `~` and `+`:
 * `~` is a parser that returns a single element of the input array and advances the position by one.
 * `+` parses zero elements and returns the unit value.
 
@@ -105,7 +124,7 @@ def *interleaved = {
   b_hi: u8
 }
 ```
-The intent of this is to allow the parser to run in the backwords direction, which will hopefully get implemented sometime in the future.
+The intent of this is to allow the parser to run in the backwards direction, which will hopefully get implemented sometime in the future.
 
 Remember how blocks are expressions?
 This means we can assign it to a `let` binding and then reuse it:
@@ -124,7 +143,7 @@ the value returned from this will be something like `{block: (parser value), a: 
 Padding
 -------
 Oftentimes there's space between fields that is unused.
-In this case we can specify a pase without specifying a field name:
+In this case we can specify a parser without specifying a field name:
 ```
 def *padded = {
   small: u16l
@@ -134,7 +153,7 @@ def *padded = {
 }
 ```
 
-Because writing a new line every time we want to add a parser takes unnecessary space, we can also separate parsers with commas:
+Because writing a newline every time we want to add a parser takes unnecessary space, we can also separate parsers with commas:
 ```
 def *padded = {
   small: u16l
@@ -167,7 +186,7 @@ Indeed, this is how `u16l` is implemented in the standard library.
 (You might ask how `u8` is implemented and the answer to that is simply `fun *u8 = ~`.
 the difference between `def` and `fun` will be explained later, but they're mostly the same.)
 
-We can also write return in place of a field name:
+We can also write `return` in place of a field name:
 ```
 def *skip_four_bytes_u16l = {
   ignored_field: u8
@@ -178,7 +197,7 @@ def *skip_four_bytes_u16l = {
 
 Specifying Types
 ----------------
-Sometimes we want to specific the return type of parser definition or the type of a let binding.
+Sometimes we want to specify the return type of parser definition or the type of a let binding.
 In this case we can write the type after a colon:
 ```
 def *u16l: int = {
@@ -222,10 +241,8 @@ def *apply_with_u16l(applied_int: *int(int)) = {
 }
 def *runtime_bias_u16l = apply_with_u16l(biased_int(u16l, ..))
 ```
-Note the `*` before `int` in the type of `bias_int`:
+Note the `*` before `int(int)` in the signature of `apply_with_u16l`:
 The `*` binds thighter than the function argument types, so `*int(int)` takes an integer, and returns a byte parser returning an integer.
-
-
 
 Choices and Failing
 -------------------
@@ -245,9 +262,9 @@ def *small_int = {
 }
 ```
 There are two new things here:
-The `|` initiates a choice, which means the invididual branches are tried in order until one succeeds.
+The `|` initiates a choice, which means the individual branches are tried in order until one succeeds.
 If all branches fail, the whole choice fails.
-The extend of one branch is whitespce sensitive and ends at the next dedent, `|`, or end of block.
+The extent of one branch is whitespace sensitive and ends at the next dedent, `|`, or end of block.
 
 How does a branch fail?
 One way is the `if` expression:
@@ -256,15 +273,15 @@ The value to the left side is checked against the pattern on the right side and 
 If it does not match, the expression fails, which means the whole branch fails.
 
 Let's see how this works with some examples:
-1. When parsing `42 55 10 ..`, the `lo` field is first parsed, evluating to `0x42`.
+1. When parsing `42 55 10 ..`, the `lo` field is first parsed, evaluating to `0x42`.
    Next, the choice is entered and the `if` expression is evaluated.
    `lo` is `0x42`, which matches the pattern `0x00..0x7f`, so the value `0x42` is returned.
    The parser after the `small_int` would continue parsing at `55 10 ..`.
-2. When parsing `aa 55 10 ..`, the `lo` field is first parsed, evluating to `0xaa`.
+2. When parsing `aa 55 10 ..`, the `lo` field is first parsed, evaluating to `0xaa`.
    Next, the choice is entered and the `if` expression is evaluated.
    `lo` is `0xaa`, which does not match the pattern `0x00..0x7f`, so the expression fails.
    The first whole branch fails, and the next branch is tried.
-   In the second branch, the `hi` field is parsed, evluating to `0x55`.
+   In the second branch, the `hi` field is parsed, evaluating to `0x55`.
    The `return` expression is evaluated, which returns `0x2aaa`.
    The parser after the `small_int` would continue parsing at `10 ..`.
 
@@ -288,7 +305,7 @@ def *default_value_if_eof = {
 Normally, `eof` is an error condition, but with `if !eof` this can be used to backtrack.
 Here, the `return` field is only parsed if there is still data left, otherwise it returns `0`.
 
-If a parser as the whole can fail, the caller is required to mark it with the `?` operator:
+If the parser as a whole can fail, the caller is required to mark it with the `?` operator:
 ```
 def *tag = u8 if 0x00..0x7f
 def *big_structure = {
@@ -298,7 +315,7 @@ def *big_structure = {
 }
 ```
 As we can see from the example before that, this is not required if the parser is an `if` expression or it is a block, as the fallibility can already be seen by looking at the current parser definition.
-The reasoning behind this is that we want to avoid checking that `some_complex_parser` fails when determining the branch, as that would require parsing the whole structure.
+The reasoning behind this is that we want to avoid checking whether `some_complex_parser` fails when determining the branch, as that would require parsing the whole structure
 
 A fallible parser can be made non-fallible by using the `!` operator:
 ```
@@ -311,7 +328,7 @@ def *foo = {
 }
 ```
 
-If a `return` is in a branch it must be in every branch, however if there is no `return` in a block then the fields inside branches essentially become optional (except if they are in every branch):
+If a `return` is in a branch, it must be in every branch, however if there is no `return` in a block then the fields inside branches essentially become optional (except if they are in every branch):
 ```
 def *maybe(f: *'t) = {
   | some: f?
@@ -355,28 +372,29 @@ def *multiple_choice = {
   | d: qux
 }
 ```
-As `+` has a length of zero, the two choices are right after one other.
+As `+` has a length of zero, the two choices are placed right after one another.
 
 `if` patterns can be combined with `and` and `or`, like `multiple_choice if a and c or b and d`.
-Parens are not allowed to keep it in disjunctive normal form for easier semantic analysis.
+Parentheses are not allowed in order to keep the pattern in disjunctive normal form for easier semantic analysis.
 
 ### `then` and `else`
 There are two binary operators, `then` and `else`, that allow handling backtracking within one expression.
-`a then b` evaluates `a` and if it doesn't fail, evaluates `b` and returns the value of `b`.
-`a else b` evaluates `a` and if it succeeds, returns the value of `a`, otherwise evaluates `b` and returns the value of `b`.
-`then` has lower precedence than `else`, so it can essentially be used to replicate `if` statements:
-`x if 0 then foo else bar` would evaluate `foo` if `x` is `0`, and `bar` otherwise.
+`a then b` first evaluates `a` and if it succeeds, it then evaluates and returns the value of `b`.
+`a else b` first evaluates `a` and if it succeeds, it returns the value of `a`.
+Otherwise, it evaluates and returns the value of `b`.
+`then` has lower precedence than `else`, so it can essentially be used to replicate the functionality of `if` statements:
+`x if 0 then foo else bar` would evaluate `foo` if `x` is `0`, and to `bar` otherwise.
 
 Recursive Structures and Thunks
 -------------------------------
 One unusual aspect of yabo is the absence of recursive values.
-This makes yabo turing incomplete as every type can only contain finitely many values.
-However this is precisely what allows yabo to avoid allocations and garbage collection.
+This makes yabo Turing incomplete as every type can only contain finitely many values.
+However, this is precisely what allows yabo to avoid allocations and garbage collection.
 
-There is however a pointer-like construct that allows indirection, called a thunk.
-When we parse a `u16l` what is returned is not actually the value itself but is a thunk containing all the arguments to the `u16l` parser.
+However, there is a pointer-like construct that allows indirection, called a thunk.
+When we parse a `u16l`, what is returned is not actually the value itself but is a thunk containing all the arguments to the `u16l` parser.
 The arguments to the `u16l` consist of just the `[u8]` at the current position, which is represented by a pair of pointers most of the time.
-The type of this thunk is `u16l` (which is different to the type of the parser `u16l`, which is actually `[u8] *> u16l` - one `u16l` is a value, and the other a type).
+The type of this thunk is `u16l` (which is different from the type of the parser `u16l`, which is actually `[u8] *> u16l` - one `u16l` is a value, and the other a type).
 Values of type `u16l` can be used in any place where an `int` is expected, as `u16l` is a subtype of `int`.
 
 How does one define recursive structures then?
@@ -388,8 +406,8 @@ def *list(f: *'t) = {
   | +
 }
 ```
-If we naively tried to construct the resulting value without using thunks, we would end up with arbitrarily deep nested structures like (leaving `head` out) `{tail: {tail: {tail: {}}}}`.
-However since `list` is a thunk, the value is not actually recursive and the `tail` field just contains the `[u8]` slice where the next element starts, and the parser `f`.
+If we naively tried to construct the resulting value without using thunks, we would end up with arbitrarily deep nested structures like (leaving `head` out), `{tail: {tail: {tail: {}}}}`.
+However, since `list` is a thunk, the value is not actually recursive and the `tail` field just contains the `[u8]` slice where the next element starts, and the parser `f`.
 
 For example let's access the thunk returned by the list.
 ```
@@ -400,12 +418,12 @@ def *byte_3_of_c_string = {
   let return = s.?tail.?tail.?tail.?head
 }
 ```
-If we evaluate `list(u8 if 0x01..0xff)` (a C string) applied to `41 62 63 64 00`, we would only get back the thunk as a value, but it would still evaluate all the way as it still has to find out the end of the string.
-However when evaluating the thunk that was returned earlier from the parser, there's no need to recurse.
+If we evaluate `list(u8 if 0x01..0xff)` (a C string) applied to `41 62 63 64 00`, we would only get back the thunk as a value, but it would still evaluate completely as it still has to find out the end of the string.
+However, when evaluating the thunk that was returned earlier from the parser, there's no need to recurse.
 We do not need the length of the list to get the values of both fields.
 For `head`, `u8 if 0x01..0xff` does get evaluated, but the `tail` field is just a thunk and needs no further evaluation.
 
-If you use the `fun` keyword instead of the `def` keyword, then no thunk will be returned.
+If you use the `fun` keyword instead of the `def` keyword, no thunk will be returned.
 This is required especially if the return type is a type variable (for example, `[u8] *> 't`).
 It is meant more for calculations than data definitions.
 
@@ -418,11 +436,11 @@ def *pascal_string = {
   return: u8[len]
 }
 ```
-`parser[len]` takes a parser (`u8`) and the length of the array (`len`) and returns a parser for an array of that length with elements from the parser.
+`parser[len]` takes a parser (`u8`) and the length of the array (`len`), and returns a parser for an array of that length with elements from the parser.
 If `parser` is of type `'t *> 'r`, then `parser[len]` is of type `'t *> ['r]`.
 
-In order for the compiler to infer that two branches are of the same length (which is required for the length to be constant), it has the ability to reason about polynomial equality.
-For example, the following would be constant size
+In order for the compiler to infer that two branches are of the same length (which is a requirement for the length to be constant), it has the ability to reason about polynomial equality.
+For example, the following would have a constant size:
 ```
 def *const_sized(a: int, b: int) = {
   | u8[a * a]
@@ -433,7 +451,7 @@ def *const_sized(a: int, b: int) = {
 ```
 as a² + 2ab + b² = (a + b)² (binomial formula).
 
-The following works as well:
+The following also works:
 ```
 def *const_sized2(f: *'t, g: *'r) = {
   | f, f, g
@@ -452,7 +470,7 @@ def *matrix = {
 }
 ```
 
-If the parser is constant-sized, we can get the length of the parser without applying it by using `.sizeof`:
+If the parser has a constant size, we can get the length of the parser without applying it by using `.sizeof`:
 ```
 def *padded_to_1024 = {
   let parser = const_sized2(u8, u16l)
@@ -461,7 +479,7 @@ def *padded_to_1024 = {
 }
 ```
 
-In many cases, the parser underlying the array will be of the same type as the parsed array (for most cases, `u8`), so instead of using `~[len]` (which frankly does look a bit silly) we can just write `[len]`:
+In many cases, the parser underlying the array will be of the same type as the parsed array (in most cases, `u8`), so instead of using `~[len]` (which frankly does look a bit silly) we can just write `[len]`:
 ```
 def *padded_to_1024 = {
   let parser = const_sized2(u8, u16l)
@@ -470,7 +488,7 @@ def *padded_to_1024 = {
 }
 ```
 
-Sizeof can also be applied to arrays and will return the length of the array:
+The `.sizeof` operator can also be applied to arrays and will return the length of the array:
 ```
 def *padded_to_1024 = {
   len: u8
@@ -495,11 +513,11 @@ def *rgb_array = {
 }
 ```
 
-Each rgb value is 3 bytes, and `rgb[..]` makes the array as long as possible.
-In case the input is 16 bytes, this would mean that the `colors` field of `rgb_array` would contain 5 rgb values (as 5 \* 3 = 15), and the `rest` field would contain just one value, the last byte.
+Each `rgb` value is 3 bytes, and `rgb[..]` makes the array as long as possible.
+If the input is 16 bytes, this would mean that the `colors` field of `rgb_array` would contain 5 rgb values (as 5 \* 3 = 15), and the `rest` field would contain just one value, the last byte.
 
-### Operators woking with arrays
-The `*>` operator allows applying a parser to an array:
+### Operators working with arrays
+The `*>` operator allows for the application of a parser to an array:
 ```
 def *padded_to_1024 = {
   array: u8[1024]
@@ -510,14 +528,15 @@ Similarly, `|>` allows composition of parsers:
 ```
 def *padded_to_1024 = u8[1024] |> const_sized2(u8, u16l)
 ```
-`|>` actually just desugars to a call to this combinator:
+
+`|>` actually just desugars to a call to the following combinator:
 ```
 fun ['a] *> compose(a: ['a] *> ['b], b: ['b] *> 'c) = {
   x: a, let return = x *> b
 }
 ```
 
-We can also index into arrays with `.[index]`:
+We can also index into arrays using the `.[index]` operator:
 ```
 def *first_byte = {
   array: u8[1024]
@@ -528,7 +547,7 @@ def *first_byte = {
 The `at` Operator
 -----------------
 
-The `at` operator allows parsing at a specific location in the input specified via an integer address:
+The `at` operator allows parsing at a specific location in the input, specified via an integer address:
 ```
 fun *u8ptr(parser: *'t) = {
   addr: u8
@@ -543,10 +562,11 @@ def *linked_list = {
 }
 ```
 Here in this example, we define a linked list with byte addresses and byte values.
-The `u8 if 0` makes sure that we do not have a `next` field if the address is 0, and otherwise we parse an `u8ptr(linked_list)`.
-If we look closer at the `u8ptr` parser, we see how the `at` operator is used - it takes an address to the right side and a parser to the left side and returns the parsed value at the address.
+The `u8 if 0` ensures that we do not have a `next` field if the address is 0; otherwise we parse an `u8ptr(linked_list)`.
+Upon closer inspection of the `u8ptr` parser, we see how the `at` operator is used — it takes an address to the right side and a parser to the left side and returns the parsed value at the address.
 
-The `at` operator evaluates eagerly, but since `linked_list` is defined via `def` and not `fun`, the `linked_list` parser is a thunk and `parser at addr` only returns the thunk, which consists of just the address.
+The `at` operator evaluates eagerly.
+However, since `linked_list` is defined via `def` and not `fun`, the `linked_list` parser is a thunk, and `parser at addr` only returns the thunk which consists solely of the address.
 
 If the address is out of range, the `at` operator returns an error.
 
@@ -564,8 +584,8 @@ def *png_chunk = {
   let expected_crc = crc32(span type..data)
 }
 ```
-The result of `span type..data` would be an array containing the bytes from the start of the `type` field until the end of the `data` field, meaning it is inclusive.
-It can only be used inside blocks and contain fields of parse statements of the current block that are in the current scope or a parent scope.
+The result of `span type..data` would be an array containing the bytes from the start of the `type` field to the end of the `data` field, inclusive.
+It can only be used inside blocks and can contain fields of parse statements of the current block that are in the current scope or a parent scope.
 For example, the following is not possible because `bar` is not in the top scope of the block:
 ```
 def *foo = {
@@ -576,7 +596,7 @@ def *foo = {
 }
 ```
 
-`span` can also be useful if you want to pad a structure to a certain alignment:
+`span` can also be useful if you need to pad a structure to a certain alignment:
 ```
 def *padded_to_1024_align = {
   len: u16l
