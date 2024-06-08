@@ -224,7 +224,7 @@ Here is an overview of the types:
 Function Arguments
 ------------------
 Given that this is a parser combinator language, it is important to be able to define higher order functions.
-Arguments can be specified in parens after the name of the parser:
+Arguments can be specified in parentheses after the name of the parser:
 ```
 def *biased_int(int_parser: *int, bias: int) = {
   parsed_int: int_parser
@@ -232,8 +232,8 @@ def *biased_int(int_parser: *int, bias: int) = {
 }
 ```
 
-The parser combinator can then be applied by writing the arguments in parens after the name, like `biased_int(u16l, 42)`.
-We can also partially apply function arguments by writing two dots after the last given argument, like in this (a bit non-sensical) example:
+The parser combinator can then be applied by writing the arguments in parentheses after the name, like `biased_int(u16l, 42)`.
+We can also partially apply function arguments by writing two dots after the last given argument, like in this (a bit nonsensical) example:
 ```
 def *apply_with_u16l(applied_int: *int(int)) = {
   val: i16l
@@ -242,10 +242,71 @@ def *apply_with_u16l(applied_int: *int(int)) = {
 def *runtime_bias_u16l = apply_with_u16l(biased_int(u16l, ..))
 ```
 Note the `*` before `int(int)` in the signature of `apply_with_u16l`:
-The `*` binds thighter than the function argument types, so `*int(int)` takes an integer, and returns a byte parser returning an integer.
+The `*` binds tighter than the function argument types, so `*int(int)` takes an integer, and returns a byte parser returning an integer.
 
-Choices and Failing
--------------------
+Failing and Patterns
+--------------------
+An important task of parsing, other than returning the parsed data, is to recognize whether the input matches the expected format.
+The primary way to do this in yabo is the `if` operator:
+```
+def *ascii_byte = {
+  let byte = u8
+  let return = byte if 0x20..0x7e or '\n' or '\r' or '\t'
+}
+```
+The `if` operator takes a value to the left and a pattern to the right.
+If the value matches the pattern on the right, the parser fails.
+
+A failure signals that the input does not match the expected format and is forwarded until it is handled or the whole parse fails.
+Handling failures will be examined closer in the [Choices](#choices) section.
+
+Integers can be specified as ranges, like `0x20..0x7e`, or as single values, like `42` or `0x64`.
+Characters can be specified as single characters, like `'a'`, or as escape sequences, like `'\n'`, and match the corresponding byte value as defined by the ASCII.
+Patterns can be combined with `and` and `or`, like `multiple_choice if a and c or b and d`.
+(Parentheses are not allowed in order to keep the pattern in disjunctive normal form for easier semantic analysis.)
+
+The `if` expression can also be applied directly to parsers, in which case a new parser is created that fails if the original parser does not return a value that matches the pattern:
+```
+def *ascii_byte = u8 if 0x20..0x7e or '\n' or '\r' or '\t'
+```
+
+On parser specifically, we can also use the `!eof` pattern:
+```
+def *rgb_if_not_eof = {r: u8, g:u8, b: u8} if !eof
+```
+Normally, an `eof` is thrown when the parser reaches the end of the input (in the case of `rgb_if_not_eof`, if there are less than 3 bytes left).
+The `!eof` pattern fails if the parser reaches the end of the input prematurely, converting it into a failure condition that can be handled.
+
+If another parse that can fail is called, the `?` operator must be used to mark the call as fallible:
+```
+def *tag = u8 if 0x00..0x7f
+def *structure = {
+  signature: tag?
+  field: u16l
+}
+```
+This is not required if the parser is an `if` operator or it is a block, as the fallibility can already be seen by looking at the current parser definition.
+
+Besides failing, it is also possible for a parser to error.
+An error is a condition that is not expected to happen, like a division by zero or an out-of-bounds access, and it cannot be handled.
+A fallible parser can be made non-fallible by using the `!` operator:
+```
+def *foo = {
+  signature: tag?
+  # we already expect the signature to match, so if the following
+  # does not match, it is an error
+  some_other_data: tag!
+}
+```
+
+To summarize, there are four conditions:
+* A parser can succeed, returning a value.
+* A parser can throw an `eof` if it reaches the end of input, which can be handled with the `!eof` pattern.
+* A parser can fail, which can be converted into an error with the `!` operator.
+* A parser can error, which is a condition that is not expected to happen and cannot be handled.
+
+Choices
+-------
 Barely any binary format is just a fixed sequence of fields.
 Say we have an encoding of integers in the range `0x0000`-`0x7FFF` where many are small so we want to save space by encoding them in a single byte:
 1. Integers from `0x0000` to `0x007F` are encoded as a single byte of the form `0xxxxxxx`.
@@ -261,16 +322,11 @@ def *small_int = {
     let return = (lo & 0x7f) | (hi << 7)
 }
 ```
-There are two new things here:
 The `|` initiates a choice, which means the individual branches are tried in order until one succeeds.
 If all branches fail, the whole choice fails.
+Note that this is different to Prolog: `{small_int, u8 if 0}` does not try the other branch in `small_int` if `u8 if 0` fails; it just fails the whole parser.
+
 The extent of one branch is whitespace sensitive and ends at the next dedent, `|`, or end of block.
-
-How does a branch fail?
-One way is the `if` expression:
-
-The value to the left side is checked against the pattern on the right side and if it matches, the value is returned.
-If it does not match, the expression fails, which means the whole branch fails.
 
 Let's see how this works with some examples:
 1. When parsing `42 55 10 ..`, the `lo` field is first parsed, evaluating to `0x42`.
@@ -285,49 +341,6 @@ Let's see how this works with some examples:
    The `return` expression is evaluated, which returns `0x2aaa`.
    The parser after the `small_int` would continue parsing at `10 ..`.
 
-The `if` expression can also be applied directly to parsers, in which case a new parser is created that fails if the original parser does not return a value that matches the pattern:
-```
-def *small_int = {
-  | return: u8 if 0x00..0x7f
-  | lo: u8
-    hi: u8
-    let return = (lo & 0x7f) | (hi << 7)
-}
-```
-
-On parser specifically, we can also use the `!eof` condition:
-```
-def *default_value_if_eof = {
-  | return: u8 if !eof
-  | let return = 0
-}
-```
-Normally, `eof` is an error condition, but with `if !eof` this can be used to backtrack.
-Here, the `return` field is only parsed if there is still data left, otherwise it returns `0`.
-
-If the parser as a whole can fail, the caller is required to mark it with the `?` operator:
-```
-def *tag = u8 if 0x00..0x7f
-def *big_structure = {
-  | tag?
-    return: some_complex_parser
-  | return: some_other_complex_parser
-}
-```
-As we can see from the example before that, this is not required if the parser is an `if` expression or it is a block, as the fallibility can already be seen by looking at the current parser definition.
-The reasoning behind this is that we want to avoid checking whether `some_complex_parser` fails when determining the branch, as that would require parsing the whole structure
-
-A fallible parser can be made non-fallible by using the `!` operator:
-```
-def *foo = {
-  | u8 if 0..0x7f
-    # assume we already know this is the right branch
-    # so we want `tag` to fail if it does not match
-    return: tag!
-  | return: u16l
-}
-```
-
 If a `return` is in a branch, it must be in every branch, however if there is no `return` in a block then the fields inside branches essentially become optional (except if they are in every branch):
 ```
 def *maybe(f: *'t) = {
@@ -340,10 +353,10 @@ This returns a structure containing a single `some` field with the output of `f`
 
 ### Optional Fields
 
-Optional fields can be accessed either with `block.?field` (which fails) or `block.!field` (which errors):
+Optional fields can be accessed either with `block.?field` (which fails) or `block.field` (which errors):
 ```
 def *small_int = {
-  small: maybe(tag?)
+  small: maybe(tag)
   | let return = small.?some
   | return: u16l
 }
@@ -352,10 +365,9 @@ def *small_int = {
 Fields can also be checked with `if`:
 ```
 def *small_int = {
-  | small: maybe(tag?) if some
-    # this cannot fail as the existence of the `some` field was checked by the `if`,
-    # so we just use `!` for the sake of this example
-    let return = small.!some
+  | small: maybe(tag) if some
+    # this cannot fail as the existence of the `some` field was checked by the `if`
+    let return = small.some
   | return: u16l
 }
 ```
@@ -374,16 +386,16 @@ def *multiple_choice = {
 ```
 As `+` has a length of zero, the two choices are placed right after one another.
 
-`if` patterns can be combined with `and` and `or`, like `multiple_choice if a and c or b and d`.
-Parentheses are not allowed in order to keep the pattern in disjunctive normal form for easier semantic analysis.
-
 ### `then` and `else`
-There are two binary operators, `then` and `else`, that allow handling backtracking within one expression.
+There are two binary operators, `then` and `else`, that allow handling failing within one expression.
 `a then b` first evaluates `a` and if it succeeds, it then evaluates and returns the value of `b`.
 `a else b` first evaluates `a` and if it succeeds, it returns the value of `a`.
 Otherwise, it evaluates and returns the value of `b`.
-`then` has lower precedence than `else`, so it can essentially be used to replicate the functionality of `if` statements:
+`then` has lower precedence compared to `else`, so it can essentially be used to replicate the functionality of `if` statements:
 `x if 0 then foo else bar` would evaluate `foo` if `x` is `0`, and to `bar` otherwise.
+
+As a convenience, there's also the `when?` function, which fails if the argument is false:
+`when?(foo > bar) then foo else bar` would evaluate `foo` if `foo` is greater than `bar`, and to `bar` otherwise.
 
 Recursive Structures and Thunks
 -------------------------------
