@@ -4,6 +4,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 import os
+import pathlib
 import sys
 import shutil
 import re
@@ -39,18 +40,19 @@ case_title = re.compile(r'^(binary|text|output)\s+(.+)$')
 # with error code 301
 error_comment = re.compile(r'^.*#(~\^*)\s*error\[(\d+)\]\s*(.*)$')
 
-current_script_dir = os.path.dirname(os.path.realpath(__file__))
-core_path = os.path.join(current_script_dir, 'lib', 'core.yb')
-lib_path = os.path.join(current_script_dir, 'lib')
-example_path = os.path.join(current_script_dir, 'examples')
+current_script_dir = pathlib.Path(os.path.dirname(os.path.realpath(__file__)))
+core_path = current_script_dir / 'lib' / 'core.yb'
+lib_path = current_script_dir / 'lib'
+example_path = current_script_dir / 'examples'
 compiler_env = os.environ.copy()
 compiler_env['YABO_LIB_PATH'] = lib_path
 compiler_env['RUST_BACKTRACE'] = '1'
 # filter out LD_PRELOAD from the environment
 compiler_env['LD_PRELOAD'] = ''
-compiler_dir = os.path.join(current_script_dir, 'crates', 'yaboc')
-compiler_bin = "yaboc" 
+compiler_dir = current_script_dir / 'crates' / 'yaboc'
+compiler_bin = "yaboc"
 wasm_factory = None
+
 
 class ErrorLocation:
     contained_message: str
@@ -102,10 +104,12 @@ def build_compiler_binary():
         subprocess.run(cargo_args, check=True, env=compiler_env)
         return os.path.join(cargo_metadata_output['target_directory'], TARGET_RELEASE, BINARY_NAME)
 
+
 def run_clippy():
     os.chdir(current_script_dir)
     cargo_args = ['cargo', 'clippy', '--workspace']
     subprocess.run(cargo_args, check=False, env=compiler_env)
+
 
 def run_compiler_unit_tests():
     os.chdir(compiler_dir)
@@ -116,44 +120,50 @@ def run_compiler_unit_tests():
     return cargo_test.returncode == 0
 
 
-
 class CompiledSource:
     dir: str
     compiled: str
     source: str
     stderr: str
 
-    def __init__(self, source: str, wasm: bool):
+    def __init__(self, source: str | os.PathLike, wasm: bool):
         tmp_dir = tempfile.mkdtemp()
-        self.source = source
+        if isinstance(source, os.PathLike):
+            with open(source, 'r', encoding='utf-8') as sourcefile:
+                self.source = sourcefile.read()
+        else:
+            self.source = source
         self.dir = tmp_dir
         try:
             if wasm:
                 self.compiled = os.path.join(tmp_dir, 'target.o')
             else:
                 self.compiled = os.path.join(tmp_dir, 'target.so')
-            
-            sourcepath = os.path.join(tmp_dir, 'source.yb')
-            with open(sourcepath, 'w', encoding='utf-8') as sourcefile:
-                sourcefile.write(source)
+
+            if isinstance(source, os.PathLike):
+                source_path = source
+            else:
+                source_path = os.path.join(tmp_dir, 'source.yb')
+                with open(source_path, 'w', encoding='utf-8') as sourcefile:
+                    sourcefile.write(source)
             if wasm:
                 proc = subprocess.Popen(
                     [compiler_bin, "--output-json",
                      "--target=wasm32-wasi", "--emit=object",
                      "--target-features=+tail-call",
                      "--module", f"core={core_path}",
-                     sourcepath, self.compiled],
+                     source_path, self.compiled],
                     stderr=subprocess.PIPE,
                     env=compiler_env
                 )
             else:
                 args = [compiler_bin, "--output-json",
-                     "--module", f"core={core_path}"]
+                        "--module", f"core={core_path}"]
                 sanitize = os.environ.get('YABO_TEST_SANITIZE')
                 if sanitize:
                     args.append(f'--sanitize={sanitize}')
                 proc = subprocess.Popen(
-                    args + [sourcepath, self.compiled],
+                    args + [source_path, self.compiled],
                     stderr=subprocess.PIPE,
                     env=compiler_env
                 )
@@ -170,7 +180,8 @@ class CompiledSource:
                 'but no error was found'
             )
         line_diagnostics = diagnostics[expected.line]
-        found = any(expected.is_contained_in(actual) for actual in line_diagnostics)
+        found = any(expected.is_contained_in(actual)
+                    for actual in line_diagnostics)
         if not found:
             if len(line_diagnostics) == 1:
                 diag = line_diagnostics[0]
@@ -228,6 +239,7 @@ class InputOutputPair:
     input: bytes
     output: str
 
+
 def dictionarified_obj(obj):
     while isinstance(obj, (yabo.NominalValue, yabo.U8Value)):
         obj = obj.deref()
@@ -251,6 +263,7 @@ def dictionarified_obj(obj):
         for field in obj.fields():
             ret_dict[field] = dictionarified_obj(obj.get(field))
         return ret_dict
+
 
 def wrap_maybe_field(inner: str, indent: str, field: Optional[str] | list = None):
     if isinstance(field, list):
@@ -336,6 +349,7 @@ class DictHead:
         out += f'{indent}}}'
         return wrap_maybe_field(out, indent, field)
 
+
 class ListHead:
     __slot__ = ['data']
     data: list
@@ -362,7 +376,7 @@ def diff(left, right) -> Tuple[MatchingHead | DiffHead | DictHead | ListHead, bo
             (ret[field], is_field_diff) = diff(left_field, right_field)
             is_different |= is_field_diff
         return (DictHead(ret), is_different)
-    
+
     if isinstance(left, list) and isinstance(right, list):
         is_different = False
         max_len = max(len(left), len(right))
@@ -380,9 +394,10 @@ def diff(left, right) -> Tuple[MatchingHead | DiffHead | DictHead | ListHead, bo
 
     return (MatchingHead(left), False)
 
+
 class WasmRunner:
     exec: tempfile._TemporaryFileWrapper
-    
+
     def __init__(self, exec: tempfile._TemporaryFileWrapper):
         self.exec = exec
 
@@ -395,13 +410,13 @@ class WasmRunner:
                                    self.exec.name, inputpath],
                                   stdout=subprocess.PIPE)
             return proc.stdout.decode('utf-8')
-    
+
     def __enter__(self):
         return self
-    
+
     def __exit__(self, _exc_type, _exc_value, _traceback):
         self.exec.close()
-        
+
 
 class WasmRunnerFactory:
     cc: str
@@ -415,10 +430,10 @@ class WasmRunnerFactory:
         compiler_args = [
             self.cc, '--sysroot', self.sysroot, '-c',
             '-DSTATIC_PARSER=test',
-            '-I', os.path.join(current_script_dir, 'include'),
+            '-I', current_script_dir / 'include',
             '-D_WASI_EMULATED_MMAN',
             '-o', self.printer.name,
-            os.path.join(current_script_dir, 'tools', 'print', 'print.c')
+            current_script_dir / 'tools' / 'print' / 'print.c'
         ]
         subprocess.run(compiler_args, check=True)
 
@@ -435,6 +450,7 @@ class WasmRunnerFactory:
             execpath.close()
             raise e
         return WasmRunner(execpath)
+
 
 class TestFile:
     source: str
@@ -551,13 +567,13 @@ class TestFile:
                         failed_tests += 1
                     else:
                         output += f'{GREEN} Wasm Test {test_name} passed{CLEAR}\n'
-            
+
         print(output, end='')
         return failed_tests
 
 
-def run_test(path: str) -> int:
-    if not path.endswith('.ybtest'):
+def run_test(path: os.PathLike) -> int:
+    if path.suffix != '.ybtest':
         return 0
     with open(path, 'r', encoding='utf-8') as file:
         content = file.read()
@@ -568,7 +584,7 @@ def run_test(path: str) -> int:
 # goes through all files in the target directory ending in .ybtest
 
 
-def run_tests(files: list[str]) -> int:
+def run_tests(files: list[str | os.PathLike]) -> int:
     try:
         with futures.ProcessPoolExecutor() as executor:
             results = executor.map(run_test, files)
@@ -581,12 +597,11 @@ def run_tests(files: list[str]) -> int:
             total_failed += run_test(file)
         return total_failed
 
-def compile_example(file):
+
+def compile_example(file: os.PathLike):
     output: str = f'Compiling example {file}\n'
     failed: int = 0
-    with open(os.path.join(example_path, file), 'r', encoding='utf-8') as f:
-        source = f.read()
-    with CompiledSource(source, False) as compiled:
+    with CompiledSource(file, False) as compiled:
         if compiled.has_errors():
             output += f'{RED} Native compilation failed{CLEAR}\n'
             output += compiled.stderr
@@ -594,7 +609,7 @@ def compile_example(file):
         else:
             output += f'{GREEN} Native compilation passed{CLEAR}\n'
     if wasm_factory:
-        with CompiledSource(source, True) as compiled:
+        with CompiledSource(file, True) as compiled:
             if compiled.has_errors():
                 output += f'{RED} Wasm compilation failed{CLEAR}\n'
                 output += compiled.stderr
@@ -604,17 +619,20 @@ def compile_example(file):
     print(output, end='')
     return failed
 
+
 def compile_examples():
     total_failed = 0
-    files = [x for x in os.listdir(example_path) if x.endswith('.yb')]
+    files = [example_path /
+             x for x in os.listdir(example_path) if x.endswith('.yb')]
     with futures.ProcessPoolExecutor() as executor:
         results = executor.map(compile_example, files)
         total_failed = sum(results)
     return total_failed
-        
+
+
 def main():
     global compiler_bin, wasm_factory
-    arg_list = [ os.path.abspath(file) for file in sys.argv[1:] ]
+    arg_list = [os.path.abspath(file) for file in sys.argv[1:]]
     compiler_bin = build_compiler_binary()
     wasi_sdk_path = os.environ.get('WASI_SDK_PATH')
     if wasi_sdk_path:
@@ -626,8 +644,8 @@ def main():
 
         if not run_compiler_unit_tests():
             sys.exit(1)
-        target_dir = os.path.join(current_script_dir, 'tests')
-        files = [os.path.join(target_dir, x) for x in os.listdir(target_dir)]
+        target_dir = current_script_dir / 'tests'
+        files = [target_dir / x for x in os.listdir(target_dir)]
         total_failed = run_tests(files)
         total_failed += compile_examples()
     else:
@@ -639,6 +657,7 @@ def main():
     else:
         print('All tests passed')
         sys.exit(1)
+
 
 if __name__ == '__main__':
     main()
