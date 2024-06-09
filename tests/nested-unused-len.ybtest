@@ -6,7 +6,7 @@ fun [bit] *> sint_msb(size: int) = {
 }
 export
 fun *test = {
-  let return = (0..8 *> {~, let return = true}[8]) *> sint_msb(8)
+  let return = (0..<8 *> {~, let return = true}[8]) *> sint_msb(8)
 }
 
 ====[ binary 1 ]====

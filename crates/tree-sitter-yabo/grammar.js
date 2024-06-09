@@ -257,7 +257,7 @@ module.exports = grammar({
     )),
     binary_expression: $ => {
       const table = [
-        ['..', PREC.RANGE],
+        ['..<', PREC.RANGE],
         ['then', PREC.THEN],
         ['else', PREC.ELSE],
         ['*>', PREC.PARSE],

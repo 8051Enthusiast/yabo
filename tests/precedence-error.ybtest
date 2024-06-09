@@ -6,7 +6,7 @@ def *test = {
   #~^error[209] Operators without relative precedence
   let c = 1 - 2 - 3
   #~^error[209] Operators without relative precedence
-  let d = 1..2 + 3
+  let d = 1..<2 + 3
   #~^error[209] Operators without relative precedence
   let e = test at 1 + 2
   #~^error[209] Operators without relative precedence
