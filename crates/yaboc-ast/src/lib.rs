@@ -8,6 +8,7 @@ use std::hash::Hash;
 use std::sync::Arc;
 
 use expr::*;
+pub use expr::{ConstraintBinOp, ConstraintUnOp, ValBinOp, ValUnOp, TypeBinOp, TypeUnOp};
 
 use yaboc_base::{
     error::{SResult, Silencable},
@@ -111,7 +112,8 @@ impl ExpressionKind for AstConstraint {
 impl ExpressionKind for AstVal {
     type NiladicOp = ParserAtom;
     type MonadicOp = ValUnOp<Arc<ConstraintExpression>>;
-    type DyadicOp = ValBinOp;
+    // the booleans on the side indicate whether that side has parentheses
+    type DyadicOp = (bool, ValBinOp, bool);
     type VariadicOp = ValVarOp;
 }
 

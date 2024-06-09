@@ -158,22 +158,28 @@ fn parser_sequence(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Pars
     })
 }
 
-fn get_op<'a>(
-    db: &dyn Asts,
-    fd: FileId,
-    c: TreeCursor<'a>,
-) -> ParseResult<(Option<TreeCursor<'a>>, Spanned<String>, TreeCursor<'a>)> {
+struct OpInfo<'a> {
+    left: Option<TreeCursor<'a>>,
+    left_parens: bool,
+    op: Spanned<String>,
+    right: TreeCursor<'a>,
+    right_parens: bool,
+}
+
+fn get_op<'a>(db: &dyn Asts, fd: FileId, c: TreeCursor<'a>) -> ParseResult<OpInfo<'a>> {
     let mut left = None;
     let mut right = None;
+    let mut left_parens = false;
+    let mut right_parens = false;
     let mut op = None;
     iter_children(db, fd, c, |_, cursor| {
         let field = cursor.field_name();
         match field {
-            // hack: we want to skip parens
             Some("left") if cursor.node().is_named() => left = Some(cursor),
             Some("right") if cursor.node().is_named() => right = Some(cursor),
+            Some("left") if matches!(cursor.node().kind(), "(" | ")") => left_parens = true,
+            Some("right") if matches!(cursor.node().kind(), "(" | ")") => right_parens = true,
             Some("op") => op = Some(cursor),
-            Some("left" | "right") => (),
             Some(other) => panic!("Unknown field {other}"),
             None => (),
         }
@@ -181,7 +187,13 @@ fn get_op<'a>(
     })?;
     let right = right.unwrap();
     let op = spanned(node_to_string)(db, fd, op.unwrap())?;
-    Ok((left, op, right))
+    Ok(OpInfo {
+        left,
+        left_parens,
+        op,
+        right,
+        right_parens,
+    })
 }
 
 fn binary_type_expression(
@@ -190,7 +202,7 @@ fn binary_type_expression(
     c: TreeCursor,
 ) -> ParseResult<DyadicExpr<AstTypeSpanned>> {
     dyadic(
-        |x| TypeBinOp::parse_from_str(x).unwrap(),
+        |_, x, _| TypeBinOp::parse_from_str(x).unwrap(),
         expression(type_expression),
     )(db, fd, c)
 }
@@ -211,7 +223,7 @@ fn binary_constraint_expression(
     c: TreeCursor,
 ) -> ParseResult<DyadicExpr<AstConstraintSpanned>> {
     dyadic(
-        |x| ConstraintBinOp::parse_from_str(x).unwrap(),
+        |_, x, _| ConstraintBinOp::parse_from_str(x).unwrap(),
         expression(constraint_expression),
     )(db, fd, c)
 }
@@ -233,7 +245,7 @@ fn binary_expression(
     c: TreeCursor,
 ) -> ParseResult<DyadicExpr<AstValSpanned>> {
     dyadic(
-        |x| ValBinOp::parse_from_str(x).unwrap(),
+        |left, x, right| (left, ValBinOp::parse_from_str(x).unwrap(), right),
         expression(val_expression),
     )(db, fd, c)
 }
@@ -250,7 +262,7 @@ fn unary_expression(
 }
 
 fn dyadic<Kind: ExpressionKind>(
-    mut f: impl FnMut(&str) -> Kind::DyadicOp,
+    mut f: impl FnMut(bool, &str, bool) -> Kind::DyadicOp,
     mut sub_expr: impl FnMut(
         &dyn Asts,
         FileId,
@@ -259,14 +271,15 @@ fn dyadic<Kind: ExpressionKind>(
 ) -> impl FnMut(&dyn Asts, FileId, TreeCursor) -> ParseResult<DyadicExpr<KindWithData<Kind, Span>>>
 {
     move |db, fd, c| {
-        let (left, op, right) = get_op(db, fd, c)?;
-        let left = left.unwrap();
-        let span = op.span;
+        let op_info = get_op(db, fd, c)?;
+        let left = op_info.left.unwrap();
+        let right = op_info.right;
+        let span = op_info.op.span;
 
         Ok(Dyadic {
             op: OpWithData {
                 data: span,
-                inner: f(&op.inner),
+                inner: f(op_info.left_parens, &op_info.op.inner, op_info.right_parens),
             },
             inner: [sub_expr(db, fd, left)?, sub_expr(db, fd, right)?].map(Box::new),
         })
@@ -283,7 +296,7 @@ fn monadic<Kind: ExpressionKind>(
 ) -> impl FnOnce(&dyn Asts, FileId, TreeCursor) -> ParseResult<MonadicExpr<KindWithData<Kind, Span>>>
 {
     move |db, fd, c| {
-        let (_, op, right) = get_op(db, fd, c)?;
+        let OpInfo { op, right, .. } = get_op(db, fd, c)?;
         let span = op.span;
 
         Ok(Monadic {

@@ -4,7 +4,7 @@ import text
 import parse
 
 fun *wsnum = {
-  ~, n: u16l, let return = n * 0x10a >> 8 & 0x7f
+  ~, n: u16l, let return = (n * 0x10a) >> 8 & 0x7f
 }
 
 fun *points(lo: int, hi: int, acc: int): int = {

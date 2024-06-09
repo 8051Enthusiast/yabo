@@ -4,7 +4,7 @@ import list
 def *priority = {
   x: ~
   | let return = x if 0x61..0x7a - 0x60
-  | let return = x if 0x41..0x5a - 0x40 + 26
+  | let return = 26 + x if 0x41..0x5a - 0x40
 }
 
 fun bitset(xs: list.list[*priority], n: int, bits: int): int = n if 0 then bits else (

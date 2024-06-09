@@ -37,7 +37,7 @@ def *partition_entry = {
     first_lba: lba
     # inclusive
     last_lba: lba
-    let part = partition(last_lba - first_lba + 1) at (first_lba * 512)
+    let part = partition(last_lba + 1 - first_lba) at (first_lba * 512)
     partition_flags: flags
     # name encoded in utf-16le
     name: u16l[36]
