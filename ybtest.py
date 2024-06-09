@@ -208,7 +208,9 @@ class CompiledSource:
                 error_json = json.loads(error)
             except json.JSONDecodeError as e:
                 raise Exception(f'Error decoding {self.stderr}: {e}')
-            diagnostics.update(ErrorLocation.from_diagnostics(error_json))
+            #diagnostics.update(ErrorLocation.from_diagnostics(error_json))
+            for (line, errors) in ErrorLocation.from_diagnostics(error_json).items():
+                diagnostics[line].extend(errors)
 
         for (linenum, line) in enumerate(self.source.splitlines()):
             linenum = linenum + 1
@@ -630,9 +632,9 @@ def compile_examples():
     return total_failed
 
 
-def main():
+def main(args):
     global compiler_bin, wasm_factory
-    arg_list = [os.path.abspath(file) for file in sys.argv[1:]]
+    arg_list = [pathlib.Path(os.path.abspath(file)) for file in args]
     compiler_bin = build_compiler_binary()
     wasi_sdk_path = os.environ.get('WASI_SDK_PATH')
     if wasi_sdk_path:
@@ -660,4 +662,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv[1:])
