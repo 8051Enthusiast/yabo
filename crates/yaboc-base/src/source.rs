@@ -48,7 +48,7 @@ pub struct Span {
     pub file: FileId,
 }
 
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub struct Spanned<T: Clone + Hash + Eq> {
     pub inner: T,
     pub span: Span,

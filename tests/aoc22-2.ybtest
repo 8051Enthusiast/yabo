@@ -3,7 +3,7 @@ import aoc
 
 export def *test = aoc.summap({
   opp: ~, ~, own: ~, ~
-  let return = own - 0x57 + (own + 2 - opp) % 3 * 3
+  let return = ((own + 2 - opp) % 3) * 3 + own - 0x57
 } if !eof)
 ====[ binary 1 ]====
 43 20 5a 0a

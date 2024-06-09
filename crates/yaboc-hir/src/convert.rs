@@ -1,13 +1,14 @@
 use core::panic;
-use std::collections::HashMap;
+use std::{any::Any, collections::HashMap};
 
 use ast::expr::Ignorable;
+use expr::{Dyadic, OpWithData, ValBinOp};
 use fxhash::FxHashSet;
 use yaboc_expr::ExprHead;
 
 use super::*;
-use yaboc_ast as ast;
-use yaboc_base::{error::Silencable, error_type};
+use yaboc_ast::{self as ast, AstValSpanned};
+use yaboc_base::{error::Silencable, error_type, source::Spanned};
 
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum HirConversionError {
@@ -37,6 +38,10 @@ pub enum HirConversionError {
     },
     ReturnFieldUnsupported {
         span: Span,
+    },
+    UnparenthesizedDyadic {
+        upper: Spanned<ValBinOp>,
+        lower: Spanned<ValBinOp>,
     },
     Silenced,
 }
@@ -109,6 +114,83 @@ fn constraint_expression(
     })
 }
 
+fn compare_bin_precedence(
+    upper: OpWithData<ast::ValBinOp, Span>,
+    lower: &ExpressionHead<AstValSpanned, impl Any>,
+    is_lhs: bool,
+) -> Result<(), HirConversionError> {
+    let ExpressionHead::Dyadic(lower) = lower else {
+        return Ok(());
+    };
+    use ValBinOp::*;
+
+    // And, Xor, Or, LesserEq, Lesser, GreaterEq, Greater, Uneq, Equals, ShiftR, ShiftL, Minus, Plus, Div, Modulo, Mul, Compose, ParserApply, Else, Then, Range, Index(BtMarkKind), At, Array,
+    macro_rules! Comparison {
+        () => {
+            LesserEq | Lesser | GreaterEq | Greater | Equals | Uneq
+        };
+    }
+    macro_rules! IntegerOp {
+        () => {
+            Plus | Minus | Mul | Div | Modulo | ShiftL | ShiftR | And | Or | Xor
+        };
+    }
+    macro_rules! Control {
+        () => {
+            Else | Then
+        };
+    }
+    macro_rules! Closed {
+        () => {
+            Array | Index(_)
+        };
+    }
+    macro_rules! ParserOp {
+        () => {
+            Compose | ParserApply | At
+        };
+    }
+    #[allow(unused)]
+    fn ensure_exhaustive(
+        (Comparison!() | IntegerOp!() | Control!() | Closed!() | ParserOp!() | Range): ValBinOp,
+    ) {
+    }
+    match (upper.inner, lower.op.inner.1.clone()) {
+        (_, Closed!()) | (Closed!(), _) => Ok(()),
+        (Comparison!(), IntegerOp!()) => Ok(()),
+        (Control!(), _) if !is_lhs => Ok(()),
+        // associativity
+        (Plus, Plus) => Ok(()),
+        (Mul, Mul) => Ok(()),
+        (Or, Or) => Ok(()),
+        (Xor, Xor) => Ok(()),
+        (And, And) => Ok(()),
+        (Compose, Compose) => Ok(()),
+        (Then, Then) => Ok(()),
+        (Else, Else) => Ok(()),
+        // associative since (a + b) - c = a + (b - c)
+        (Minus, Plus) if is_lhs => Ok(()),
+        // distributivity
+        (Else, Then) => Ok(()),
+        (Plus | Minus, Mul | Div | Modulo) => Ok(()),
+        (Or | Xor, And) => Ok(()),
+        (Or | Xor | And, ShiftL | ShiftR) => Ok(()),
+        // common pattern
+        (ParserApply, Range) if is_lhs => Ok(()),
+        (up, lo) => {
+            let upper = Spanned {
+                inner: up,
+                span: upper.data,
+            };
+            let lower = Spanned {
+                inner: lo,
+                span: lower.op.data,
+            };
+            Err(HirConversionError::UnparenthesizedDyadic { upper, lower })
+        }
+    }
+}
+
 fn val_expression(
     expr: &ast::ValExpression,
     ctx: &HirConversionCtx,
@@ -155,8 +237,24 @@ fn val_expression(
                     .map_expr(|constr| constraint_expression(constr, ctx, &add_span)),
                 &*m.inner,
             ),
-            ExpressionHead::Dyadic(d) => {
-                ExprHead::Dyadic(d.op.inner.clone(), [&*d.inner[0], &*d.inner[1]])
+            ExpressionHead::Dyadic(Dyadic {
+                op,
+                inner: [lhs, rhs],
+            }) => {
+                let (left_parens, bin_op, right_parens) = &op.inner;
+                for (is_lhs, parens, inner) in
+                    [(true, left_parens, lhs), (false, right_parens, rhs)]
+                {
+                    if *parens {
+                        continue;
+                    }
+                    if let Err(e) =
+                        compare_bin_precedence(op.clone().map_inner(|x| x.1), &inner.0, is_lhs)
+                    {
+                        ctx.add_errors(Some(e));
+                    };
+                }
+                ExprHead::Dyadic(bin_op.clone(), [&**lhs, &**rhs])
             }
             ExpressionHead::Variadic(v) => {
                 ExprHead::Variadic(v.op.inner.clone(), v.inner.iter().map(|e| &**e).collect())

@@ -551,7 +551,7 @@ pub enum Atom {
     Bool(bool),
 }
 
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub enum ValBinOp {
     And,
     Xor,
@@ -670,7 +670,7 @@ impl Display for FieldAccessMode {
     }
 }
 
-#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub enum BtMarkKind {
     KeepBt,
     RemoveBt,

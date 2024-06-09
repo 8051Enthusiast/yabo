@@ -94,6 +94,20 @@ fn conversion_report(error: HirConversionError) -> Option<Report> {
                     Label::new(span).with_message("statics cannot be defined with arguments"),
                 ),
         ),
+        HirConversionError::UnparenthesizedDyadic { upper, lower } => Some(
+            Report::new(
+                DiagnosticKind::Error,
+                lower.span.file,
+                "Operators without relative precedence must have explicit parentheses",
+            )
+            .with_code(209)
+            .with_label(
+                Label::new(upper.span).with_message(&format!("this operator '{}'", upper.inner)),
+            )
+            .with_label(
+                Label::new(lower.span).with_message(&format!("this operator '{}'", lower.inner)),
+            ),
+        ),
         HirConversionError::Silenced => None,
     }
 }

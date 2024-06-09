@@ -48,7 +48,7 @@ def *fat_entry = {
 }
 
 # defines a fat table of a given size
-def *fat_table = fat_entry[header.fat_sz32 * header.byts_per_sec / u32l.sizeof]
+def *fat_table = fat_entry[(header.fat_sz32 * header.byts_per_sec) / u32l.sizeof]
 
 static fat = fat_table at (header.byts_per_sec * header.rsvd_sec_cnt)
 
