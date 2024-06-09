@@ -2,7 +2,7 @@
 export
 def *test = {
   bytes: [..]
-  let return = 0..(bytes.sizeof * 8) *> {
+  let return = 0..<(bytes.sizeof * 8) *> {
     i: ~
     let byte = bytes.[i / 8]
     let bit = (byte >> (i & 7 ^ 7)) & 1

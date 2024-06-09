@@ -603,7 +603,7 @@ impl ValBinOp {
             "*>" => ParserApply,
             "else" => Else,
             "then" => Then,
-            ".." => Range,
+            "..<" => Range,
             ".[" => Index(BtMarkKind::RemoveBt),
             ".?[" => Index(BtMarkKind::KeepBt),
             "[" => Array,
@@ -643,7 +643,7 @@ impl Display for ValBinOp {
                 ValBinOp::Index(BtMarkKind::KeepBt) => ".?[",
                 ValBinOp::Array => "[",
                 ValBinOp::At => "at",
-                ValBinOp::Range => "..",
+                ValBinOp::Range => "..<",
             }
         )
     }

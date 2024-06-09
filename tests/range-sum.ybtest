@@ -7,7 +7,7 @@ export
 fun *test = {
   start: u8
   end: u8
-  let return = start..end *> sum(0)
+  let return = start..<end *> sum(0)
 }
 
 ====[ binary 1 ]====
