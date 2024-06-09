@@ -124,7 +124,6 @@ fn compare_bin_precedence(
     };
     use ValBinOp::*;
 
-    // And, Xor, Or, LesserEq, Lesser, GreaterEq, Greater, Uneq, Equals, ShiftR, ShiftL, Minus, Plus, Div, Modulo, Mul, Compose, ParserApply, Else, Then, Range, Index(BtMarkKind), At, Array,
     macro_rules! Comparison {
         () => {
             LesserEq | Lesser | GreaterEq | Greater | Equals | Uneq

@@ -28,26 +28,37 @@ pub enum Sanitizer {
 #[clap(author, version, about)]
 struct Args {
     #[clap(short = 'j', long)]
+    /// Output diagnostics as json
     output_json: bool,
     #[clap(short, long, value_enum, default_value = "shared-lib")]
+    /// The kind of output to emit
     emit: EmitKind,
     #[clap(long)]
     mir_emit_path: Option<String>,
     #[clap(long)]
+    /// The target triplet to compile for
     target: Option<String>,
     #[clap(long)]
+    /// llvm target cpu
     target_cpu: Option<String>,
     #[clap(long)]
+    /// llvm target features
     target_features: Option<String>,
     #[clap(long)]
+    /// sanitize (memory or address), mostly for debugging the compiler itself
     sanitize: Option<Sanitizer>,
     #[clap(long)]
+    /// The C compiler to use as linker
     cc: Option<String>,
     #[clap(long)]
+    /// The sysroot to use (for WASI)
     sysroot: Option<PathBuf>,
     #[clap(short, long)]
+    /// List of module paths, formatted as comma-separated list of `name=path`
     module: Vec<String>,
+    /// The source file
     infile: String,
+    /// The output file
     outfile: OsString,
 }
 
