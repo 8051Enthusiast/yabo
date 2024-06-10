@@ -212,7 +212,7 @@ Here is an overview of the types:
 | type            | description                                                         |
 | --------------- | ------------------------------------------------------------------- |
 | `int`           | signed 64-bit integer                                               |
-| `bit`           | single bit (boolean)                                                | 
+| `bit`           | single bit (boolean)                                                |
 | `u8`            | byte in memory (a byte pointer), is a subtype of `int` by dereferencing into the byte value (not the address!) |
 | `'t`            | generic type (can have any identifier)                              |
 | `[foo]`         | array of `foo`                                                      |
@@ -438,6 +438,48 @@ For `head`, `u8 if 0x01..0xff` does get evaluated, but the `tail` field is just 
 If you use the `fun` keyword instead of the `def` keyword, no thunk will be returned.
 This is required especially if the return type is a type variable (for example, `[u8] *> 't`).
 It is meant more for calculations than data definitions.
+For example, the following calculates the sum of all bytes in a list:
+```
+fun *sum(f: *int, acc: int) = {
+  | head: f if !eof
+    return: sum_list(f, acc + head)
+  | let return = acc
+}
+```
+A `def` would be overkill here since a thunk would be returned.
+If we do not immediately evaluate it but instead evaluate the thunk multiple times later whenever accessing it, that would result in unnecessary work.
+
+Functions that are not parsers
+------------------------------
+Not everything is a parser.
+In order to define a function that is not a parser, we use the `fun` keyword, but leave out the `*`:
+```
+fun square(n: int) = n * n
+fun cube(n: int) = square(n) * n
+```
+Of course, we also want to use `let` to bind variables, but we cannot use `{` and `}` for this, as those define parsers.
+Instead, we use `{:` and `:}`:
+```
+fun cube(n: int) = {:
+  let square = n * n
+  let return = square * n
+:}
+```
+We can also define blocks with fields this way, and use choices:
+```
+fun maybe_zero(n: int) = {:
+  | let zero = n if 0
+  | let nonzero = n
+:}
+
+fun square(n: int) = maybe_zero(n).?zero else (n * n)
+```
+
+Note also that the operator `?` to mark something as backtracking needs to be placed before the application, so if use a backtracking function, we need to write `when?(foo)` instead of `when(foo)?` as with parsers:
+```
+fun when(condition: bool) = condition if true
+fun foo() = when?(1 == 2) then 1 else 2
+```
 
 Arrays
 ------
@@ -556,6 +598,24 @@ def *first_byte = {
 }
 ```
 
+Regex
+-----
+If we want to match a sequence of bytes specified by a regular expression, we can use the `/.../` syntax:
+```
+def *c_string = /[^\x00]*\x00/
+```
+Regex parsers are of type `[u8] *> [u8]` (i.e., they take a byte array and return a byte array, advancing the input until the end of the match).
+Just like with the `if` operator, they may backtrack but do not need a `?` to mark them as such, as regices are fallible in most cases anyway.
+The syntax is the same as the regex crate, documented [here](https://docs.rs/regex/latest/regex/).
+
+There is also a regex variant prefixed with `h` that matches hexadecimal strings:
+```
+def *elf = {
+  magic: h/7f 45 4c 46/
+  other_fields: [..]
+}
+```
+
 The `at` Operator
 -----------------
 
@@ -616,3 +676,80 @@ def *padded_to_1024_align = {
   [1023 - (span len..field.sizeof - 1) % 1024]
 }
 ```
+
+Ranges
+------
+The `foo ..< bar` operator allows creating a range of integers, ranging from `foo` to `bar - 1`.
+It can be parsed and indexed as with other kinds of array:
+```
+fun [int] *> sum(acc: int) = {
+  | val: ~ if !eof
+    return: sum(acc + val)
+  | let return = acc
+}
+
+fun range_sum(n: int) = 0..<n
+                     *> sum(0)
+```
+
+Together with `[..]`, this can be combined to a sort of loop:
+```
+fun bits_of(n: int, bit_count: int) = 0..<bit_count
+  *> { i: ~, let return = (n >> i) & 1 != 0 }[..]
+```
+Note what we are doing here:
+`{ i: ~, let return = (n >> i) & 1 != 0 }` is a parser of length 1 that takes an integer `i` and returns whether the `i`-th bit of `n` is set.
+The `[..]` then maps this parser over each element of the range `0..<bit_count`, returning array containing a boolean for each bit of `n`.
+(Hopefully, once lambdas are implemented, this can be written less weirdly using a `map` function).
+
+Appendix A: Overview expressions
+------------------------------------------------
+
+| Operator | Kind          | Description        |
+| -------- | ------------- | ------------------ |
+| `-`      | Prefix Unary  | Negation           |
+| `!`      | Prefix Unary  | Boolean negation   |
+| `?`      | Postfix Unary | Mark Fallibility   |
+| `!`      | Postfix Unary | Convert into Error |
+| `[..]`   | Postfix Unary | Array until end    |
+| `.sizeof`| Postfix Unary | Length of array or parser |
+| `.field`, `.?field` | Postfix Unary | Access field       |
+| `then`   | Control       | Evaluate lhs and return rhs if lhs succeeds |
+| `else`   | Control       | Evaluate lhs and return lhs if lhs succeeds, otherwise return rhs |
+| `+`, `-` | Integer       | Addition, Subtraction |
+| `*`, `/` | Integer       | Multiplication, Division |
+| `%`      | Integer       | Modulo             |
+| `<<`, `>>` | Integer     | Bit shift          |
+| `&`, `\|`, `^` | Integer  | Bitwise and, or, xor |
+| `==`, `!=` | Comparison  | Equality, Inequality |
+| `<`, `>`, `<=`, `>=` | Comparison | Less than, Greater than, Less or equal, Greater or equal |
+| `*>`     | Parser        | Apply parser on rhs to array on lhs |
+| `\|>`    | Parser        | Compose parsers    |
+| `at`     | Parser        | Parser at lhs at address on rhs  |
+| `foo[bar]` | Parser      | Array of length `bar` |
+| `foo.[bar]`, `foo.?[bar]` | Array | Index into array |
+| `..<`    | Array         | Make range from lhs to rhs - 1 |
+| `foo(bar, baz)` | Function Application | Call function `foo` with arguments `bar` and `baz` |
+| `foo(bar, ..)` | Function Application | Call function `foo` with arguments `bar`, currying the rest |
+| `true`, `false` | Literal | Boolean literals   |
+| `0x..`, `0..` | Literal  | Hexadecimal, Decimal literals |
+| `foo`   | Identifier    | Refer to a value    |
+| `/.../`, `h/.../` | Literal  | Create regex parser |
+| `span foo..bar` | Literal | Create span array of fields from `foo` to `bar` |
+| `+`      | Literal       | Unit parser        |
+| `~`      | Literal       | Single value parser |
+| `{...}`  | Block         | Create block parser |
+| `{: ... :}`| Inline Block  | Create block that is immediately evaluated |
+
+### Precedence
+Generally, postfix operators have higher precedence than prefix operators, and prefix operators have higher precedence than binary operators.
+Integer operators have a higher precedence than comparison operators.
+Associative operators (`+`, `*`, `&`, `^`, `|`, `then`, `else`, `|>`) don't need parentheses when chained.
+
+In most distributive operator pairs, the multiplicative operation has precedence over the additive one:
+* `+`, `-` has lower precedence than `*`, `/`, `%`
+* `&`, `^`, `|` has lower precedence than `<<`, `>>`
+* `|`, `^` has lower precedence than `&`
+* `else` has lower precedence than `than`
+
+Additionally, `else` and `than` have lower precedence than everything else on the rhs, and `..<` has higher precedence than `*>` on the lhs so that writing `0..<n *> foo` does not need parentheses.
