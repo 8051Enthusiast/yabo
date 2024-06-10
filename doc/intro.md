@@ -21,6 +21,35 @@ Finally, being a good language is not a goal.
 The priority is to experiment around with some ideas and see what works.
 If it ends up being a good language, it means that I didn't experiment enough.
 
+Table of Contents
+-----------------
+- [The Yabo Programming Language](#the-yabo-programming-language)
+  - [Table of Contents](#table-of-contents)
+  - [Installation and Usage](#installation-and-usage)
+  - [Parser Definitions](#parser-definitions)
+  - [Let Bindings](#let-bindings)
+  - [Padding](#padding)
+  - [Return](#return)
+  - [Specifying Types](#specifying-types)
+  - [Function Arguments](#function-arguments)
+  - [Failing and Patterns](#failing-and-patterns)
+  - [Choices](#choices)
+    - [Optional Fields](#optional-fields)
+    - [Multiple Choices](#multiple-choices)
+    - [`then` and `else`](#then-and-else)
+  - [Recursive Structures and Thunks](#recursive-structures-and-thunks)
+  - [Functions that are not parsers](#functions-that-are-not-parsers)
+  - [Arrays](#arrays)
+    - [`parser[..]`](#parser)
+    - [Operators working with arrays](#operators-working-with-arrays)
+  - [Regex](#regex)
+  - [The `at` Operator](#the-at-operator)
+  - [The `span` Operator](#the-span-operator)
+  - [Ranges](#ranges)
+  - [Imports](#imports)
+  - [Appendix A: Overview of Expressions](#appendix-a-overview-of-expressions)
+    - [Precedence](#precedence)
+
 Installation and Usage
 ----------------------
 Right now, it is probably the best just to use the language playground at [yabo-lang.org](https://yabo-lang.org).
@@ -735,8 +764,8 @@ When importing an identifier `foo`, the following paths are searched, in this or
 4. The standard library directory, either at `YABOC_LIB_PATH` or `~/.local/share/yabo/lib`, is searched for a file named `foo.yb`.
 5. The standard library directory is searched for a directory named `foo`, and then for a file named `mod.yb` inside that directory.
 
-Appendix A: Overview expressions
-------------------------------------------------
+Appendix A: Overview of Expressions
+-----------------------------------
 
 | Operator | Kind          | Description        |
 | -------- | ------------- | ------------------ |
