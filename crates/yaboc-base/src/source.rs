@@ -289,9 +289,6 @@ impl<'collection> FileResolver<'collection> {
         span: Span,
     ) -> Result<FileId, FileLoadError> {
         let name_str = db.lookup_intern_identifier(name).name;
-        if let Some(f) = self.absolute_mods.get(&name) {
-            return Ok(*f);
-        }
         let Some(origin_path) = self.files.path(origin) else {
             return Err(FileLoadError::DoesNotExist {
                 source: (origin, span),
@@ -310,6 +307,8 @@ impl<'collection> FileResolver<'collection> {
 
         let new_file_path = if let Some(path) = self.file_path(&path_dir, &name_str) {
             Ok(path)
+        } else if let Some(f) = self.absolute_mods.get(&name) {
+            return Ok(*f);
         } else {
             self.lib_path
                 .clone()
