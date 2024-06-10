@@ -29,7 +29,7 @@ Table of Contents
   - [Parser Definitions](#parser-definitions)
   - [Let Bindings](#let-bindings)
   - [Padding](#padding)
-  - [Return](#return)
+  - [Returning](#returning)
   - [Specifying Types](#specifying-types)
   - [Function Arguments](#function-arguments)
   - [Failing and Patterns](#failing-and-patterns)
@@ -38,11 +38,11 @@ Table of Contents
     - [Multiple Choices](#multiple-choices)
     - [`then` and `else`](#then-and-else)
   - [Recursive Structures and Thunks](#recursive-structures-and-thunks)
-  - [Functions that are not parsers](#functions-that-are-not-parsers)
+  - [Functions that are not Parsers](#functions-that-are-not-parsers)
   - [Arrays](#arrays)
     - [`parser[..]`](#parser)
     - [Operators working with arrays](#operators-working-with-arrays)
-  - [Regex](#regex)
+  - [Regexes](#regexes)
   - [The `at` Operator](#the-at-operator)
   - [The `span` Operator](#the-span-operator)
   - [Ranges](#ranges)
@@ -59,11 +59,11 @@ Hex bytes, the scroll bar and the fields of the output are sometimes colored.
 The color indicates a contiguous segment of parsed bytes.
 Currently, a segment of parsed bytes is considered separate if a pointer points outside the current segment to a struct or array.
 
-If you want to compile the compiler locally, you will have to install LLVM 18 libraries and the Rust toolchain.
+If you want to compile the compiler locally, you will have to install the LLVM 18 libraries and the Rust toolchain.
 To compile, run `cargo build --release` in the root directory.
 Note that the compiler currently only supports x86_64 Linux and WASM as targets.
+You will also have to set `YABOC_LIB_PATH` to point to the `lib` directory of this project for the compiler to work.
 The compiler can be invoked with `./target/release/yaboc <input file>.yb <output file>.so` to output a shared library.
-You will likely have to set `YABOC_LIB_PATH` to point to the `lib` directory of this project for the compiler to work.
 You can use that shared library using the print tool in `tools/print` or the python bindings in `yabo.py` in the project root.
 
 Finally, the `ylliab` tool in `tools/ylliab` can be used to interactively explore the output of the parser.
@@ -85,7 +85,7 @@ The `u16l` stands for <b>u</b>nsigned <b>16</b>-bit integer, <b>l</b>ittle endia
 We can also use `u16b` for the big endian version, or `i16l` for the signed version.
 
 Now you might ask what the `*` is for.
-For that, an explanation of what parser combinators are is necessary:
+For that, an explanation of parser combinators is necessary:
 
 Let's say we are parsing an array of bytes with an `u16_pair`.
 When starting to parse, we have our initial position in the array.
@@ -210,8 +210,8 @@ def *padded = {small: u16l, u8, u8, large: u32l}
 When parsing the string `01 02 03 04 05 06 07 08`, the value of `padded` will be `{small: 0x0201, large: 0x08070605}`.
 
 
-Return
-------
+Returning
+---------
 Sometimes we want to return values that are not structs.
 In this case, we can use the `return` keyword, which can be used in positions where normally an identifier would be expected:
 ```
@@ -303,7 +303,7 @@ Handling failures will be examined closer in the [Choices](#choices) section.
 
 Integers can be specified as ranges, like `0x20..0x7e`, or as single values, like `42` or `0x64`.
 Characters can be specified as single characters, like `'a'`, or as escape sequences, like `'\n'`, and match the corresponding byte value as defined by the ASCII.
-Patterns can be combined with `and` and `or`, like `multiple_choice if a and c or b and d`.
+Patterns can be combined with `and` and `or`, like `foo if a and c or b and d`.
 (Parentheses are not allowed in order to keep the pattern in disjunctive normal form for easier semantic analysis.)
 
 The `if` expression can also be applied directly to parsers, in which case a new parser is created that fails if the original parser does not return a value that matches the pattern:
@@ -318,7 +318,7 @@ def *rgb_if_not_eof = {r: u8, g:u8, b: u8} if !eof
 Normally, an `eof` is thrown when the parser reaches the end of the input (in the case of `rgb_if_not_eof`, if there are less than 3 bytes left).
 The `!eof` pattern fails if the parser reaches the end of the input prematurely, converting it into a failure condition that can be handled.
 
-If another parse that can fail is called, the `?` operator must be used to mark the call as fallible:
+If a parser that can fail is called, the `?` operator must be used to mark the call as fallible:
 ```
 def *tag = u8 if 0x00..0x7f
 def *structure = {
@@ -377,12 +377,12 @@ Let's see how this works with some examples:
 2. When parsing `aa 55 10 ..`, the `lo` field is first parsed, evaluating to `0xaa`.
    Next, the choice is entered and the `if` expression is evaluated.
    `lo` is `0xaa`, which does not match the pattern `0x00..0x7f`, so the expression fails.
-   The first whole branch fails, and the next branch is tried.
+   The whole first branch fails, and the next branch is tried.
    In the second branch, the `hi` field is parsed, evaluating to `0x55`.
    The `return` expression is evaluated, which returns `0x2aaa`.
    The parser after the `small_int` would continue parsing at `10 ..`.
 
-If a `return` is in a branch, it must be in every branch, however if there is no `return` in a block then the fields inside branches essentially become optional (except if they are in every branch):
+If a `return` is in a branch, it must be in every branch, however if there is no `return` in a block then the fields inside each branch become optional (except if they are in every branch):
 ```
 def *maybe(f: *'t) = {
   | some: f?
@@ -455,7 +455,7 @@ As an example, take a contiguous recursive list:
 ```
 def *list(f: *'t) = {
   | head: f?
-    tail: list(f?)
+    tail: list(f)
   | +
 }
 ```
@@ -490,7 +490,7 @@ fun *sum(f: *int, acc: int) = {
 A `def` would be overkill here since a thunk would be returned.
 If we do not immediately evaluate it but instead evaluate the thunk multiple times later whenever accessing it, that would result in unnecessary work.
 
-Functions that are not parsers
+Functions that are not Parsers
 ------------------------------
 Not everything is a parser.
 In order to define a function that is not a parser, we use the `fun` keyword, but leave out the `*`:
@@ -588,7 +588,7 @@ The `.sizeof` operator can also be applied to arrays and will return the length 
 def *padded_to_1024 = {
   len: u8
   field: [len]
-  u8[1024 - field.sizeof - 1]
+  u8[1024 - (field.sizeof + 1)]
 }
 ```
 
@@ -639,8 +639,8 @@ def *first_byte = {
 }
 ```
 
-Regex
------
+Regexes
+-------
 If we want to match a sequence of bytes specified by a regular expression, we can use the `/.../` syntax:
 ```
 def *c_string = /[^\x00]*\x00/
@@ -660,7 +660,7 @@ def *elf = {
 The `at` Operator
 -----------------
 
-The `at` operator allows parsing at a specific location in the input, specified via an integer address:
+The `at` operator allows parsing at a specific location in the input file, specified via an integer address:
 ```
 fun *u8ptr(parser: *'t) = {
   addr: u8
