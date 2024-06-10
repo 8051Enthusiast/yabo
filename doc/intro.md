@@ -34,6 +34,7 @@ If you want to compile the compiler locally, you will have to install LLVM 18 li
 To compile, run `cargo build --release` in the root directory.
 Note that the compiler currently only supports x86_64 Linux and WASM as targets.
 The compiler can be invoked with `./target/release/yaboc <input file>.yb <output file>.so` to output a shared library.
+You will likely have to set `YABOC_LIB_PATH` to point to the `lib` directory of this project for the compiler to work.
 You can use that shared library using the print tool in `tools/print` or the python bindings in `yabo.py` in the project root.
 
 Finally, the `ylliab` tool in `tools/ylliab` can be used to interactively explore the output of the parser.
@@ -95,6 +96,17 @@ def *no_block = u16l
 There are two special built-in parsers available: `~` and `+`:
 * `~` is a parser that returns a single element of the input array and advances the position by one.
 * `+` parses zero elements and returns the unit value.
+
+If we want to use a parser from the command line or playground, we have to add an `export` in front of the definition:
+```
+export
+def *u16_pair = {
+  fst: u16l
+  snd: u16l
+}
+```
+
+The playground applies the parser named `main` at offset 0 by default, but we can also apply a different parser to a different address by moving to the position in the hex view, pressing 'a', and entering the name of the parser.
 
 Let Bindings
 ------------
@@ -626,7 +638,6 @@ fun *u8ptr(parser: *'t) = {
   let return = parser at addr
 }
 
-export
 def *linked_list = {
   | u8 if 0
   | next: u8ptr(linked_list)?
@@ -680,6 +691,7 @@ def *padded_to_1024_align = {
 Ranges
 ------
 The `foo ..< bar` operator allows creating a range of integers, ranging from `foo` to `bar - 1`.
+(Inclusive ranges are not yet implemented).
 It can be parsed and indexed as with other kinds of array:
 ```
 fun [int] *> sum(acc: int) = {
@@ -701,6 +713,27 @@ Note what we are doing here:
 `{ i: ~, let return = (n >> i) & 1 != 0 }` is a parser of length 1 that takes an integer `i` and returns whether the `i`-th bit of `n` is set.
 The `[..]` then maps this parser over each element of the range `0..<bit_count`, returning array containing a boolean for each bit of `n`.
 (Hopefully, once lambdas are implemented, this can be written less weirdly using a `map` function).
+
+Imports
+-------
+The `import` keyword allows importing other files.
+It is a top-level statement and takes a single identifier as an argument:
+```
+import text
+def *num = {
+  | /0x/, return: text.basenum(16)?
+  | return: text.basenum(10)?
+}
+```
+The definitions from the imported file can be accessed via `.`, like `text.basenum` in the above example.
+Cycles in imports are not allowed.
+
+When importing an identifier `foo`, the following paths are searched, in this order:
+1. The directory of the source file is searched for a file named `foo.yb`.
+2. The directory of the source file is searched for a directory named `foo`, and then for a file named `mod.yb` inside that directory.
+3. The path specified on the `yaboc` command line via `-m foo=path` is used if present.
+4. The standard library directory, either at `YABOC_LIB_PATH` or `~/.local/share/yabo/lib`, is searched for a file named `foo.yb`.
+5. The standard library directory is searched for a directory named `foo`, and then for a file named `mod.yb` inside that directory.
 
 Appendix A: Overview expressions
 ------------------------------------------------
@@ -731,9 +764,9 @@ Appendix A: Overview expressions
 | `..<`    | Array         | Make range from lhs to rhs - 1 |
 | `foo(bar, baz)` | Function Application | Call function `foo` with arguments `bar` and `baz` |
 | `foo(bar, ..)` | Function Application | Call function `foo` with arguments `bar`, currying the rest |
+| `foo`    | Identifier    | Refer to a value    |
 | `true`, `false` | Literal | Boolean literals   |
 | `0x..`, `0..` | Literal  | Hexadecimal, Decimal literals |
-| `foo`   | Identifier    | Refer to a value    |
 | `/.../`, `h/.../` | Literal  | Create regex parser |
 | `span foo..bar` | Literal | Create span array of fields from `foo` to `bar` |
 | `+`      | Literal       | Unit parser        |
