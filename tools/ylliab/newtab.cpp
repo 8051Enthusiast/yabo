@@ -50,14 +50,8 @@ void NewTab::done(int r) {
     return;
   }
   auto program_path = ui->parserFileEdit->text();
-  auto file = QFile(program_path);
-  if (!file.open(QIODevice::ReadOnly)) {
-    show_error("Failed to open parser source");
-    return;
-  }
-  auto program = file.readAll();
-  start_local_compile(program, this, &NewTab::load_compiled_file,
-                      &NewTab::show_error);
+  start_local_compile(program_path, SourceKind::Path, this,
+                      &NewTab::load_compiled_file, &NewTab::show_error);
   setEnabled(false);
 }
 
