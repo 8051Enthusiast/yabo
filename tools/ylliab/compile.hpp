@@ -8,12 +8,18 @@
 #include <QThreadPool>
 #include <QUrl>
 
+enum class SourceKind {
+  Content,
+  Path,
+};
+
 class LocalCompilerRunner : public QObject, public QRunnable {
   Q_OBJECT
 public:
-  LocalCompilerRunner(QString program);
+  LocalCompilerRunner(QString source, SourceKind kind);
   ~LocalCompilerRunner() = default;
-  QString program;
+  QString source;
+  SourceKind kind;
   void run();
 signals:
   void send_error(QString error);
@@ -21,10 +27,11 @@ signals:
 };
 
 template <class T>
-static inline void start_local_compile(QString program, T *object,
+static inline void start_local_compile(QString source, SourceKind kind,
+                                       T *object,
                                        void (T::*load_compiled_file)(QString),
                                        void (T::*compile_error)(QString)) {
-  auto runner = new LocalCompilerRunner(program);
+  auto runner = new LocalCompilerRunner(source, kind);
   runner->setAutoDelete(true);
   object->connect(runner, &LocalCompilerRunner::compiled_file, object,
                   load_compiled_file, Qt::QueuedConnection);

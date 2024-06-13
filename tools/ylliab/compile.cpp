@@ -2,13 +2,12 @@
 #include "filecontent.hpp"
 
 #include <QFile>
-#include <QTemporaryFile>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
+#include <QTemporaryFile>
 
-
-
-LocalCompilerRunner::LocalCompilerRunner(QString program) : program(program) {}
+LocalCompilerRunner::LocalCompilerRunner(QString source, SourceKind kind)
+    : source(source), kind(kind) {}
 
 #ifndef __EMSCRIPTEN__
 #include <QProcess>
@@ -16,14 +15,20 @@ void LocalCompilerRunner::run() {
   auto temp_output_path =
       QString::fromStdString(tmp_file_name("yabo_", ".so").string());
   QTemporaryFile input_file;
-  if (!input_file.open()) {
-    emit send_error("Failed to create temporary file");
-    return;
+  QString path;
+  if (kind == SourceKind::Content) {
+    if (!input_file.open()) {
+      emit send_error("Failed to create temporary file");
+      return;
+    }
+    input_file.write(source.toUtf8());
+    input_file.flush();
+    path = input_file.fileName();
+  } else {
+    path = source;
   }
-  input_file.write(program.toUtf8());
-  input_file.flush();
   QProcess process;
-  process.start("yaboc", {input_file.fileName(), temp_output_path});
+  process.start("yaboc", {path, temp_output_path});
   process.waitForFinished();
   auto output = process.readAllStandardError();
   if (process.exitCode() != 0) {

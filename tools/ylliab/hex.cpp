@@ -235,7 +235,6 @@ void HexSelectionModel::set_selection(std::optional<TreeIndex> idx) {
     return;
   }
 
-  auto node_info = model->get_node_info();
   auto start_row = model->addr_row(start);
   auto last_row = model->addr_row(end - 1);
   auto start_local_row = model->local_row(start_row);

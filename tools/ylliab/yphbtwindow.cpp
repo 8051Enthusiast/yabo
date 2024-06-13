@@ -78,7 +78,8 @@ void YphbtWindow::on_actionCompile_triggered() {
                          &YphbtWindow::load_compiled_file,
                          &YphbtWindow::compile_error);
   } else {
-    start_local_compile(program, this, &YphbtWindow::load_compiled_file,
+    start_local_compile(program, SourceKind::Content, this,
+                        &YphbtWindow::load_compiled_file,
                         &YphbtWindow::compile_error);
   }
 }
