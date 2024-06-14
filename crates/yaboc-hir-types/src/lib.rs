@@ -747,12 +747,6 @@ impl TypingLocation {
     }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
-pub struct TypeInfo<Id> {
-    ty: Id,
-    span_index: SpanIndex,
-}
-
 pub enum NominalId {
     Def(hir::ParserDefId),
     Block(hir::BlockId),
