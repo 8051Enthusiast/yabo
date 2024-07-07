@@ -1,0 +1,12 @@
+[package]
+name = "yaboc-backtrack"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+license.workspace = true
+
+[dependencies]
+typed-arena = "2.0.2"
+yaboc-types = { path = "../yaboc-types" }
+fxhash = "0.2.1"
+smallvec = { workspace = true }

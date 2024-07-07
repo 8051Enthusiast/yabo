@@ -11,11 +11,12 @@ use salsa::InternId;
 
 use sha2::Digest;
 use yaboc_ast::{ArrayKind, Asts};
+pub use yaboc_base::interner::DefId;
 use yaboc_base::{
     dbeprintln, dbformat,
     error::{Silencable, SilencedError},
     hash::StableHash,
-    interner::{DefId, FieldName, Identifier, Interner, TypeVar},
+    interner::{FieldName, Identifier, Interner, TypeVar},
 };
 
 use self::{
