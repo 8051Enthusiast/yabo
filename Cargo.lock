@@ -1324,6 +1324,7 @@ dependencies = [
  "fxhash",
  "smallvec",
  "typed-arena",
+ "yaboc-base",
  "yaboc-types",
 ]
 
@@ -1385,6 +1386,7 @@ dependencies = [
  "fxhash",
  "salsa",
  "yaboc-ast",
+ "yaboc-backtrack",
  "yaboc-base",
  "yaboc-dependents",
  "yaboc-expr",

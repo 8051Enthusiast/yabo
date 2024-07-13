@@ -3,21 +3,24 @@ use std::sync::Arc;
 use matrix::{Matrix, Row, VarRow};
 use smallvec::SmallVec;
 use transform::{fun_ty_parts, MatrixInfo, MatrixShape, TypeBtInfo, TypeMatrixCtx};
+use yaboc_base::error::SResult;
 use yaboc_types::{DefId, Type, TypeId};
 
 mod builder;
 mod matrix;
 mod transform;
+mod represent;
 
 pub use builder::ExpressionBuilder;
 
 pub trait TypeLookup {
     fn lookup(&self, ty: TypeId) -> Type;
-    fn bound_types(&self, id: DefId) -> Arc<[TypeId]>;
+    fn bound_types(&self, id: DefId) -> SResult<Arc<[TypeId]>>;
     fn subst_ty(&self, ty: TypeId, subst: Arc<Vec<TypeId>>) -> TypeId;
-    fn least_deref_type(&self, ty: TypeId) -> TypeId;
+    fn least_deref_type(&self, ty: TypeId) -> SResult<TypeId>;
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Instruction {
     Apply(u32, SmallVec<[u32; 4]>),
     Eval(bool, u32),
@@ -30,14 +33,17 @@ pub enum Instruction {
     Deactivate(u32),
     Arg(u32),
     ParserDef(DefId),
+    GetField(u32, DefId),
     True,
     False,
     Identity,
     Array,
     Single,
     None,
+    Fail,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExprNode {
     row_range: std::ops::Range<usize>,
     ty: TypeId,
@@ -95,7 +101,11 @@ pub struct InferCtx<'a, Trans: TypeBtInfo<'a>> {
 }
 
 impl<'a, Trans: TypeBtInfo<'a>> InferCtx<'a, Trans> {
-    pub fn new(exprs: &'a [ExprNode], rows: &'a mut [Row], trans: TypeMatrixCtx<'a, Trans>) -> Self {
+    pub fn new(
+        exprs: &'a [ExprNode],
+        rows: &'a mut [Row],
+        trans: TypeMatrixCtx<'a, Trans>,
+    ) -> Self {
         Self {
             exprs,
             rows,
@@ -123,14 +133,14 @@ impl<'a, Trans: TypeBtInfo<'a>> InferCtx<'a, Trans> {
         to: MatrixShape,
         range: std::ops::Range<usize>,
         combine_fun: impl FnOnce(&mut [Row], &[Row]) -> T,
-    ) -> T {
+    ) -> SResult<T> {
         let (source_rows, target_rows) = self.rows.split_at_mut(range.start);
         let from = from_expr.info(source_rows);
-        let transformed_matrix = self.trans.transform_and_change_bound(from, to);
-        combine_fun(
+        let transformed_matrix = self.trans.transform_and_change_bound(from, to)?;
+        Ok(combine_fun(
             &mut target_rows[0..range.len()],
             transformed_matrix.matrix.rows(),
-        )
+        ))
     }
 
     fn copy_impl<T>(
@@ -138,7 +148,7 @@ impl<'a, Trans: TypeBtInfo<'a>> InferCtx<'a, Trans> {
         from: usize,
         to: usize,
         combine_fun: impl FnOnce(&mut [Row], &[Row]) -> T,
-    ) -> T {
+    ) -> SResult<T> {
         let from_expr = &self.exprs[from];
         let to_expr = &self.exprs[to];
         assert!(from_expr.row_range.end <= to_expr.row_range.start);
@@ -151,27 +161,30 @@ impl<'a, Trans: TypeBtInfo<'a>> InferCtx<'a, Trans> {
         )
     }
 
-    fn copy(&mut self, from: usize, to: usize) {
-        self.copy_impl(from, to, <[_]>::clone_from_slice);
+    fn copy(&mut self, from: usize, to: usize) -> SResult<()> {
+        self.copy_impl(from, to, <[_]>::clone_from_slice)
     }
 
-    fn or(&mut self, from: usize, to: usize) {
+    fn or(&mut self, from: usize, to: usize) -> SResult<()> {
         self.copy_impl(from, to, |to_rows, from_rows| {
             for (to_row, from_row) in to_rows.iter_mut().zip(from_rows.iter()) {
                 *to_row |= from_row;
             }
-        });
+        })
     }
 
-    fn get_arg(&mut self, idx: u32) {
+    fn get_arg(&mut self, idx: u32) -> SResult<()> {
         let from = self.arg_matrix(idx);
         let to_expr = &self.exprs[self.cursor.idx];
 
-        let transformed_matrix = self.trans.transform_and_change_bound(from, to_expr.shape());
+        let transformed_matrix = self
+            .trans
+            .transform_and_change_bound(from, to_expr.shape())?;
         self.rows[to_expr.row_range.clone()].clone_from_slice(transformed_matrix.matrix.rows());
+        Ok(())
     }
 
-    fn enter_scope(&mut self) {
+    fn enter_scope(&mut self) -> SResult<()> {
         let expr = &self.exprs[self.cursor.idx];
         let total_bound = expr.bound;
         let ty = self.trans.db.lookup(expr.ty);
@@ -183,20 +196,23 @@ impl<'a, Trans: TypeBtInfo<'a>> InferCtx<'a, Trans> {
             .get(self.cursor.idx - 1)
             .map(|expr| expr.bound)
             .unwrap_or(0);
+        self.cursor
+            .effect_stack
+            .push(Row::Vars(VarRow::empty(total_bound, total_bound)));
         for arg in args {
-            let matrix = self.trans.arg_matrix(*arg, total_bound, &mut current_bound);
+            let matrix = self
+                .trans
+                .arg_matrix(*arg, total_bound, &mut current_bound)?;
             self.cursor.arg_stack.push(Arg {
                 ty: *arg,
                 bound: total_bound,
                 matrix,
             });
         }
-        self.cursor
-            .effect_stack
-            .push(Row::Vars(VarRow::empty(total_bound, total_bound)));
+        Ok(())
     }
 
-    fn leave_scope(&mut self, from: u32) {
+    fn leave_scope(&mut self, from: u32) -> SResult<()> {
         let expr = &self.exprs[self.cursor.idx];
         let from_expr = &self.exprs[from as usize];
         let total_bound = expr.bound;
@@ -210,14 +226,15 @@ impl<'a, Trans: TypeBtInfo<'a>> InferCtx<'a, Trans> {
         };
         let cursor_range = expr.row_range.clone();
         let result_range = (cursor_range.start + 1)..cursor_range.end;
-        self.transform_into(from_expr, to_shape, result_range, <[_]>::clone_from_slice);
+        self.transform_into(from_expr, to_shape, result_range, <[_]>::clone_from_slice)?;
         self.rows[cursor_range.start] = self.cursor.effect_stack.pop().unwrap();
         for row in self.rows[cursor_range].iter_mut() {
             row.set_bound_bits(total_bound);
         }
+        Ok(())
     }
 
-    fn apply(&mut self, fun: u32, args: &SmallVec<[u32; 4]>) {
+    fn apply(&mut self, fun: u32, args: &SmallVec<[u32; 4]>) -> SResult<()> {
         let to_expr = &self.exprs[self.cursor.idx];
         let fun_expr = &self.exprs[fun as usize];
         let (source_rows, target_rows) = self.rows.split_at_mut(to_expr.row_range.start);
@@ -227,8 +244,9 @@ impl<'a, Trans: TypeBtInfo<'a>> InferCtx<'a, Trans> {
             .map(|&idx| self.cursor.arg_stack[idx as usize].info());
         let applied = self
             .trans
-            .partial_apply(fun_info, arg_infos, to_expr.shape());
+            .partial_apply(fun_info, arg_infos, to_expr.shape())?;
         target_rows[0..to_expr.row_range.len()].clone_from_slice(applied.rows());
+        Ok(())
     }
 
     fn add_effect(&mut self, effectful: bool, effect: Row) {
@@ -244,114 +262,132 @@ impl<'a, Trans: TypeBtInfo<'a>> InferCtx<'a, Trans> {
         }
     }
 
-    fn eval(&mut self, effectful: bool, from: u32) {
+    fn eval(&mut self, effectful: bool, from: u32) -> SResult<()> {
         let from_expr = &self.exprs[from as usize];
         let to_expr = &self.exprs[self.cursor.idx];
         let (source_rows, target_rows) = self.rows.split_at_mut(to_expr.row_range.start);
         let (result, effect) = self
             .trans
-            .eval(from_expr.info(source_rows), to_expr.shape());
+            .eval(from_expr.info(source_rows), to_expr.shape())?;
         target_rows[0..to_expr.row_range.len()].clone_from_slice(result.matrix.rows());
-        self.add_effect(effectful, effect);
+        if let Some(effect) = effect {
+            self.add_effect(effectful, effect);
+        }
+        Ok(())
     }
 
-    fn parse(&mut self, effectful: bool, fun: u32, arg: u32) {
+    fn parse(&mut self, effectful: bool, fun: u32, arg: u32) -> SResult<()> {
         let fun_expr = &self.exprs[fun as usize];
         let arg_expr = &self.exprs[arg as usize];
         let to_expr = &self.exprs[self.cursor.idx];
         let (source_rows, target_rows) = self.rows.split_at_mut(to_expr.row_range.start);
         let fun_info = fun_expr.info(source_rows);
         let arg_info = arg_expr.info(source_rows);
-        let (result, effect) = self.trans.parse(fun_info, arg_info, to_expr.shape());
+        let (result, effect) = self.trans.parse(fun_info, arg_info, to_expr.shape())?;
         target_rows[0..to_expr.row_range.len()].clone_from_slice(result.matrix.rows());
-        self.add_effect(effectful, effect);
+        if let Some(effect) = effect {
+            self.add_effect(effectful, effect);
+        }
+        Ok(())
     }
 
-    fn eval_expr(&mut self) {
+    fn get_field(&mut self, block: u32, field: DefId) -> SResult<()> {
+        let block_expr = &self.exprs[block as usize];
+        let to_expr = &self.exprs[self.cursor.idx];
+        let (source_rows, target_rows) = self.rows.split_at_mut(to_expr.row_range.start);
+        let matrix = self
+            .trans
+            .get_field(block_expr.info(source_rows), field, to_expr.shape())?;
+        target_rows[0..to_expr.row_range.len()].clone_from_slice(matrix.matrix.rows());
+        Ok(())
+    }
+
+    fn eval_expr(&mut self) -> SResult<()> {
         let expr = &self.exprs[self.cursor.idx];
         match &expr.instr {
-            Instruction::Apply(fun, args) => {
-                self.apply(*fun, args);
-            }
-            Instruction::Eval(effectful, from) => {
-                self.eval(*effectful, *from);
-            }
+            Instruction::Apply(fun, args) => self.apply(*fun, args),
+            Instruction::Eval(effectful, from) => self.eval(*effectful, *from),
             Instruction::Parse {
                 effectful,
                 fun,
                 arg,
-            } => {
-                self.parse(*effectful, *fun, *arg);
-            }
-            Instruction::Copy(from) => {
-                self.copy(*from as usize, self.cursor.idx);
-            }
+            } => self.parse(*effectful, *fun, *arg),
+            Instruction::Copy(from) => self.copy(*from as usize, self.cursor.idx),
             Instruction::Unify(froms) => {
                 if let Some(&first) = froms.first() {
-                    self.copy(first as usize, self.cursor.idx);
+                    self.copy(first as usize, self.cursor.idx)?;
                     for from in froms.iter().skip(1) {
-                        self.or(*from as usize, self.cursor.idx);
+                        self.or(*from as usize, self.cursor.idx)?;
                     }
                 }
+                Ok(())
             }
             Instruction::Activate(from) => {
-                self.copy(*from as usize, self.cursor.idx);
+                self.copy(*from as usize, self.cursor.idx)?;
                 self.rows[self.exprs[self.cursor.idx].row_range.start] = Row::True;
+                Ok(())
             }
             Instruction::Deactivate(from) => {
-                self.copy(*from as usize, self.cursor.idx);
+                self.copy(*from as usize, self.cursor.idx)?;
                 let expr = &self.exprs[self.cursor.idx];
                 self.rows[expr.row_range.start] = Row::Vars(VarRow::empty(expr.bound, expr.bound));
+                Ok(())
             }
             Instruction::True => {
                 let expr = &self.exprs[self.cursor.idx];
                 assert!(expr.row_range.len() == 1);
                 self.rows[expr.row_range.start] = Row::True;
+                Ok(())
             }
             Instruction::False => {
                 let expr = &self.exprs[self.cursor.idx];
                 assert!(expr.row_range.len() == 1);
                 self.rows[expr.row_range.start] = Row::Vars(VarRow::empty(expr.bound, expr.bound));
+                Ok(())
             }
             Instruction::Identity => {
                 let expr = &self.exprs[self.cursor.idx];
                 let shape = expr.shape();
-                let matrix = self.trans.identity(shape);
+                let matrix = self.trans.identity(shape)?;
                 self.rows[expr.row_range.clone()].clone_from_slice(matrix.rows());
+                Ok(())
             }
-            Instruction::Arg(idx) => {
-                self.get_arg(*idx);
-            }
+            Instruction::Arg(idx) => self.get_arg(*idx),
             Instruction::ParserDef(pd) => {
                 let expr = &self.exprs[self.cursor.idx];
-                let matrix = self.trans.pd_matrix(*pd, expr.shape());
+                let matrix = self.trans.pd_matrix(*pd, expr.shape())?;
                 self.rows[expr.row_range.clone()].clone_from_slice(matrix.rows());
+                Ok(())
             }
             Instruction::Single => {
                 let expr = &self.exprs[self.cursor.idx];
-                let matrix = self.trans.single_parser(expr.shape());
+                let matrix = self.trans.single_parser(expr.shape())?;
                 self.rows[expr.row_range.clone()].clone_from_slice(matrix.rows());
+                Ok(())
             }
             Instruction::Array => {
                 let expr = &self.exprs[self.cursor.idx];
-                let matrix = self.trans.array_parser_combinator(expr.shape());
+                let matrix = self.trans.array_parser_combinator(expr.shape())?;
                 self.rows[expr.row_range.clone()].clone_from_slice(matrix.rows());
+                Ok(())
             }
-            Instruction::EnterScope => {
-                self.enter_scope();
+            Instruction::GetField(block, field) => self.get_field(*block, *field),
+            Instruction::EnterScope => self.enter_scope(),
+            Instruction::LeaveScope(ret) => self.leave_scope(*ret),
+            Instruction::None => Ok(()),
+            Instruction::Fail => {
+                self.add_effect(true, Row::True);
+                Ok(())
             }
-            Instruction::LeaveScope(ret) => {
-                self.leave_scope(*ret);
-            }
-            Instruction::None => {}
         }
     }
 
-    pub fn infer(mut self) -> Vec<usize> {
+    pub fn infer(mut self) -> SResult<Vec<usize>> {
+        let mut has_err = Ok(());
         for idx in 0..self.exprs.len() {
             self.cursor.idx = idx;
-            self.eval_expr();
+            has_err = has_err.and(self.eval_expr());
         }
-        self.errors
+        has_err.map(|_| self.errors)
     }
 }

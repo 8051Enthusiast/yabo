@@ -12,6 +12,7 @@ yaboc-ast = { path = "../yaboc-ast" }
 yaboc-expr = { path = "../yaboc-expr" }
 yaboc-dependents = { path = "../yaboc-dependents" }
 yaboc-len = { path = "../yaboc-len" }
+yaboc-backtrack = { path = "../yaboc-backtrack" }
 yaboc-resolve = { path = "../yaboc-resolve" }
 yaboc-hir = { path = "../yaboc-hir" }
 yaboc-types = { path = "../yaboc-types" }

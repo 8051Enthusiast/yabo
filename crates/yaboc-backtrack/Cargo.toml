@@ -8,5 +8,6 @@ license.workspace = true
 [dependencies]
 typed-arena = "2.0.2"
 yaboc-types = { path = "../yaboc-types" }
+yaboc-base = { path = "../yaboc-base" }
 fxhash = "0.2.1"
 smallvec = { workspace = true }
