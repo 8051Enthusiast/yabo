@@ -1,5 +1,6 @@
 pub mod error;
 mod len;
+mod backtrack;
 pub mod represent;
 
 use std::sync::Arc;
@@ -19,6 +20,7 @@ use yaboc_resolve::{parserdef_ssc::FunctionSscId, Resolves};
 
 use len::len_term;
 pub use len::{Origin, PdLenTerm};
+use backtrack::{bt_term, BtTerm};
 use yaboc_types::{Type, TypeId};
 
 #[salsa::query_group(ConstraintDatabase)]
@@ -29,6 +31,8 @@ pub trait Constraints: Interner + Resolves + Dependents {
     fn len_vals(&self, pd: hir::ParserDefId) -> Arc<LenVals>;
     fn ssc_len_vals(&self, ssc: FunctionSscId) -> Arc<Vec<LenVals>>;
     fn len_errors(&self, pd: hir::ParserDefId) -> SResult<Vec<LenError>>;
+
+    fn bt_term(&self, pd: hir::ParserDefId) -> SResult<Arc<BtTerm>>;
 
     #[salsa::interned]
     fn intern_polycircuit(&self, circuit: Arc<PolyCircuit>) -> PolyCircuitId;

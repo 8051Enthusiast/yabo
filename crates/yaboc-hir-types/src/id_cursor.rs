@@ -23,7 +23,8 @@ impl<'db, DB: ?Sized + TyHirs> Clone for IdCursor<'db, DB> {
 impl<'db, DB: ?Sized + TyHirs> Copy for IdCursor<'db, DB> {}
 
 impl<'db, DB: ?Sized + TyHirs> IdCursor<'db, DB> {
-    pub fn new(db: &'db DB, id: DefId, kind: HirNodeKind) -> Self {
+    pub fn new(db: &'db DB, id: DefId) -> Self {
+        let kind = db.hir_node(id).unwrap().kind();
         Self { db, id, kind }
     }
 

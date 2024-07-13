@@ -1,6 +1,47 @@
+use hir::HirNode;
+use yaboc_expr::FetchExpr;
 use yaboc_types::inference::InternedNomHead;
 
 use super::*;
+
+pub fn bound_args(db: &dyn TyHirs, id: DefId) -> SResult<Arc<[TypeId]>> {
+    let (end, ancestor) = match db.hir_node(id)? {
+        HirNode::ParserDef(pd) => {
+            let args = parser_args(db, pd.id)?;
+            let mut ret = args
+                .args
+                .iter()
+                .flat_map(|x| x.iter().copied())
+                .collect::<Vec<TypeId>>();
+            ret.extend(args.from);
+            return Ok(Arc::from(ret));
+        }
+        HirNode::Import(_) => return Ok(Arc::from([])),
+        HirNode::Block(block) => {
+            let expr_id = block.enclosing_expr;
+            let expr = Resolved::expr_with_data::<FullTypeId>(db, expr_id)?;
+            let (_, ty) = expr
+                .take_ref()
+                .iter_parts()
+                .find(|(head, _)| matches!(head, ExprHead::Niladic(ResolvedAtom::Block(id, _)) if *id == block.id))
+                .expect("block not found in containing expr");
+            let arg_ty = match db.lookup_intern_type(*ty) {
+                Type::ParserArg { arg, .. } => Some(arg),
+                Type::FunctionArg(..) => None,
+                _ => panic!("block not in function or parser arg"),
+            };
+            (arg_ty, expr_id.0)
+        }
+        HirNode::Context(ctx) => (None, ctx.block_id.0),
+        _ => {
+            let parent = id.parent(db).unwrap();
+            (None, parent)
+        }
+    };
+    let mut ret = Vec::from(db.bound_args(ancestor)?.as_ref());
+    ret.extend(end);
+    Ok(Arc::from(ret))
+}
 
 pub fn fun_arg_count(db: &dyn TyHirs, ty: TypeId) -> SResult<Option<u32>> {
     let ldt_ty = db.least_deref_type(ty)?;
@@ -141,7 +182,7 @@ impl<'a> TypeResolver<'a> for ArgResolver<'a> {
 }
 
 pub fn get_signature(db: &dyn TyHirs, id: DefId) -> SResult<Signature> {
-    let hir::HirNode::ParserDef(pd) = db.hir_node(id)? else {
+    let HirNode::ParserDef(pd) = db.hir_node(id)? else {
         panic!("attempted to extract signature from non-parser-def")
     };
     db.parser_args(pd.id)

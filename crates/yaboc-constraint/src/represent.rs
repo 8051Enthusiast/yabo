@@ -1,9 +1,9 @@
 use std::fmt::Write;
-use yaboc_base::{dbformat, error::SResult};
+use yaboc_base::{dbformat, dbwrite, error::SResult};
 use yaboc_len::len_graph;
 
 use crate::Constraints;
-pub fn len_dot<DB: Constraints + Sized>(db: &DB) -> SResult<String> {
+pub fn len_dot<DB: Constraints + ?Sized>(db: &DB) -> SResult<String> {
     let mut ret = String::from("digraph {\nnode [shape=record];\nrankdir=LR;\n");
     for pd in db.all_parserdefs() {
         let terms = db.len_term(pd).unwrap();
@@ -16,5 +16,17 @@ pub fn len_dot<DB: Constraints + Sized>(db: &DB) -> SResult<String> {
         ret.push_str("}\n");
     }
     ret.push_str("}\n");
+    Ok(ret)
+}
+
+pub fn backtrack<DB: Constraints + ?Sized>(db: &DB) -> SResult<String> {
+    let mut ret = String::new();
+    for pd in db.all_parserdefs() {
+        let terms = db.bt_term(pd)?;
+        dbwrite!(ret, db, "Backtrack for {}\n", &pd.0).unwrap();
+        for (i, term) in terms.expr.iter().enumerate() {
+            dbwrite!(ret, db, "{i}: {}\n\n", term).unwrap();
+        }
+    }
     Ok(ret)
 }

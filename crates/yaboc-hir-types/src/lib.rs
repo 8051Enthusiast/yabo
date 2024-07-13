@@ -51,7 +51,7 @@ use returns::{
     parser_type_at, ssc_types, ParserDefType, SscTypes,
 };
 pub use returns::{NOBACKTRACK_BIT, VTABLE_BIT};
-use signature::{fun_arg_count, get_signature, parser_args, parser_args_error};
+use signature::{bound_args, fun_arg_count, get_signature, parser_args, parser_args_error};
 
 #[salsa::query_group(HirTypesDatabase)]
 pub trait TyHirs: Hirs + yaboc_types::TypeInterner + resolve::Resolves {
@@ -66,6 +66,7 @@ pub trait TyHirs: Hirs + yaboc_types::TypeInterner + resolve::Resolves {
     fn fun_arg_count(&self, ty: TypeId) -> SResult<Option<u32>>;
     fn parser_type_at(&self, loc: DefId) -> SResult<TypeId>;
     fn parser_expr_at(&self, loc: hir::ExprId) -> SResult<Arc<ExprTypeData>>;
+    fn bound_args(&self, id: DefId) -> SResult<Arc<[TypeId]>>;
 }
 
 #[derive(Clone, Copy)]
