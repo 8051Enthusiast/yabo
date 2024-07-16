@@ -36,23 +36,23 @@ struct YaboVal {
   // is not null
   const DynValue *val;
   explicit YaboVal(const DynValue *v) : val(v) {}
-  bool operator==(const YaboVal &) const noexcept = default;
+  bool operator==(const YaboVal &other) const noexcept {
+    return std::bit_cast<uintptr_t>(val) == std::bit_cast<uintptr_t>(other.val);
+  }
   const DynValue *operator->() const noexcept { return val; }
   YaboValKind kind() const noexcept;
 
-  int64_t access_int() const noexcept { return *(int64_t *)val->data; }
+  int64_t access_int() const noexcept { return dyn_int(val); }
 
-  int32_t access_char() const noexcept { return *(int32_t *)val->data; }
+  int32_t access_char() const noexcept { return dyn_char(val); }
 
-  int8_t access_bool() const noexcept { return *(int8_t *)val->data; }
+  int8_t access_bool() const noexcept { return dyn_bit(val); }
 
-  const uint8_t *access_u8() const noexcept {
-    return *(const uint8_t **)val->data;
-  }
+  const uint8_t *access_u8() const noexcept { return dyn_u8(val); }
 
   std::optional<ptrdiff_t> field_offset(char const *name) const noexcept;
 
-  uint64_t access_error() const noexcept { return *(uint64_t *)val->data; }
+  uint64_t access_error() const noexcept { return dyn_error(val); }
 
   bool is_exceptional() const noexcept { return !val->vtable; }
 

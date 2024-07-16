@@ -44,7 +44,7 @@ struct VTableHeader {
 
 struct BlockFields {
   size_t number_fields;
-  char *fields[];
+  const char *fields[];
 };
 
 struct BlockVTable {

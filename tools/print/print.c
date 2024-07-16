@@ -115,8 +115,8 @@ int print_fun_args(DynValue *val, int indent, Stack stack, FILE *out) {
 
 int print_block(DynValue *val, int indent, Stack stack, FILE *out) {
   struct BlockVTable *vtable = (struct BlockVTable *)val->vtable;
-  char **field_desc = vtable->fields->fields;
-  char **field_end = field_desc + vtable->fields->number_fields;
+  const char **field_desc = vtable->fields->fields;
+  const char **field_end = field_desc + vtable->fields->number_fields;
   if (fputs("{\n", out) == EOF)
     return EOF;
   int64_t (**access_impl)(void *, const void *, uint64_t) = vtable->access_impl;
