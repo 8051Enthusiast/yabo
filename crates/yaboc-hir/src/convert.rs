@@ -350,7 +350,7 @@ fn arg_def(ast: &ast::ArgDefinition, ctx: &HirConversionCtx, id: ArgDefId) {
     let argdef = ArgDef {
         id,
         name: ast.name.inner,
-        ty,
+        ty: Some(ty),
     };
     ctx.insert(id.0, HirNode::ArgDef(argdef), vec![ast.name.span]);
 }
