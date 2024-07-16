@@ -57,7 +57,7 @@ struct YaboVal {
   bool is_exceptional() const noexcept { return !val->vtable; }
 
   bool is_backtrack() const noexcept {
-    return !val->vtable && access_error() == BACKTRACK;
+    return !val->vtable && access_error() == YABO_STATUS_BACKTRACK;
   }
   static constexpr char const *list_head = "this";
   static constexpr char const *list_tail = "next";

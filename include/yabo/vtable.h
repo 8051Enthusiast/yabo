@@ -27,10 +27,10 @@ enum YaboHead {
 #define YABO_MAX_ALIGN ((alignof(int64_t) - 1 | alignof(void *) - 1) + 1)
 
 enum ReturnStatus {
-  OK = 0,
-  ERROR = 1,
-  EOS = 2,
-  BACKTRACK = 3,
+  YABO_STATUS_OK = 0,
+  YABO_STATUS_ERROR = 1,
+  YABO_STATUS_EOS = 2,
+  YABO_STATUS_BACKTRACK = 3,
 };
 
 struct VTableHeader {
