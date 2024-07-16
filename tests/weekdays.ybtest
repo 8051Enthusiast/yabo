@@ -2,7 +2,7 @@
 import text
 import math
 import list
-def *ws = /\s*/
+def *ws = /\s*/!
 
 def *fixed_num = {
   whole: text.num?

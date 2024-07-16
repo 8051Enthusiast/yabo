@@ -7,7 +7,7 @@ def *range = {
 }
 
 def *is_subrange = {
-  a: range?, ~, b: range, text.newline!
+  a: range?, ~, b: range!, text.newline!
   | | assert(a.start <= b.start)?
       assert(a.end >= b.end)?
     | assert(a.start >= b.start)?

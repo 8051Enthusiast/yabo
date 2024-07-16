@@ -262,29 +262,6 @@ Here is an overview of the types:
 | `foo(bar, baz)` | function that takes `bar` and `baz` and returns an `foo`, see below |
 | identifier      | refers to a parser definition (for example `u16_pair` refers to the value returned by the `u16_pair` parser) |
 
-Function Arguments
-------------------
-Given that this is a parser combinator language, it is important to be able to define higher order functions.
-Arguments can be specified in parentheses after the name of the parser:
-```
-def *biased_int(int_parser: *int, bias: int) = {
-  parsed_int: int_parser
-  let return = parsed_int + bias
-}
-```
-
-The parser combinator can then be applied by writing the arguments in parentheses after the name, like `biased_int(u16l, 42)`.
-We can also partially apply function arguments by writing two dots after the last given argument, like in this (a bit nonsensical) example:
-```
-def *apply_with_u16l(applied_int: *int(int)) = {
-  val: i16l
-  return: applied_int(val)
-}
-def *runtime_bias_u16l = apply_with_u16l(biased_int(u16l, ..))
-```
-Note the `*` before `int(int)` in the signature of `apply_with_u16l`:
-The `*` binds tighter than the function argument types, so `*int(int)` takes an integer, and returns a byte parser returning an integer.
-
 Failing and Patterns
 --------------------
 An important task of parsing, other than returning the parsed data, is to recognize whether the input matches the expected format.
@@ -345,6 +322,32 @@ To summarize, there are four conditions:
 * A parser can throw an `eof` if it reaches the end of input, which can be handled with the `!eof` pattern.
 * A parser can fail, which can be converted into an error with the `!` operator.
 * A parser can error, which is a condition that is not expected to happen and cannot be handled.
+
+Function Arguments
+------------------
+Given that this is a parser combinator language, it is important to be able to define higher order functions.
+Arguments can be specified in parentheses after the name of the parser:
+```
+def *biased_int(int_parser: *int, bias: int) = {
+  parsed_int: int_parser!
+  let return = parsed_int + bias
+}
+```
+
+Note that function arguments are always assumed to be fallible for now (I plan to change this in the future), hence the `!`.
+
+The parser combinator can then be applied by writing the arguments in parentheses after the name, like `biased_int(u16l, 42)`.
+We can also partially apply function arguments by writing two dots after the last given argument, like in this (a bit nonsensical) example:
+```
+def *apply_with_u16l(applied_int: *int(int)) = {
+  val: i16l
+  return: applied_int!(val)!
+}
+def *runtime_bias_u16l = apply_with_u16l(biased_int(u16l, ..))
+```
+Note the `*` before `int(int)` in the signature of `apply_with_u16l`:
+The `*` binds tighter than the function argument types, so `*int(int)` takes an integer, and returns a byte parser returning an integer.
+The `applied_int!(val)!` makes sure that both the function application and parser application is fallible, and I do realize this looks ugly, but again this will hopefully change in the future.
 
 Choices
 -------
@@ -627,7 +630,7 @@ def *padded_to_1024 = u8[1024] |> const_sized2(u8, u16l)
 `|>` actually just desugars to a call to the following combinator:
 ```
 fun ['a] *> compose(a: ['a] *> ['b], b: ['b] *> 'c) = {
-  x: a, let return = x *> b
+  x: a?, let return = x *> b?
 }
 ```
 
@@ -664,7 +667,7 @@ The `at` operator allows parsing at a specific location in the input file, speci
 ```
 fun *u8ptr(parser: *'t) = {
   addr: u8
-  let return = parser at addr
+  let return = parser! at addr
 }
 
 def *linked_list = {

@@ -47,7 +47,7 @@ def *partition_table(size: int, count: int) = ([size] |> partition_entry)[count]
 
 export def *gpt = {
   # protective mbr
-  protective_mbr: mbr.mbr
+  protective_mbr: mbr.mbr?
   signature: /EFI PART/
   # should be version 1.0
   version: u16l[2]

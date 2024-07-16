@@ -1,18 +1,18 @@
 ====[ source code ]====
 import text
 def *skip(skipper: *[u8]) = {
-    skipper, return: /.*/
+    skipper?, return: /.*/
 }
 
-def *skip_4 = skip(/..../)
+def *skip_4 = skip(/..../)?
 
-def *after_hello = skip(/.*?hello/)
+def *after_hello = skip(/.*?hello/)?
 
-def *skip_non_num = skip(/[^0-9]*/)
+def *skip_non_num = skip(/[^0-9]*/)?
 
-export def *test = skip_4
-                |> after_hello
-                |> skip_non_num
+export def *test = skip_4?
+                |> after_hello?
+                |> skip_non_num?
                 |> text.num?
 
 ====[ text 1 ]====

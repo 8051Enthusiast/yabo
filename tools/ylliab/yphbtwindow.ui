@@ -39,7 +39,7 @@
 def *chunk(ty: *[u8], data_parser: *'t) = {
   length: u32b
   type: [4] |&gt; ty?
-  value: [length] |&gt; data_parser
+  value: [length] |&gt; data_parser!
   crc: u32b
 }
 

@@ -12,7 +12,7 @@ fun *num(start: int) = {
 }
 
 fun add_in_range_impl(start: int, end: int, acc: int, f: int(int)): int =
-  when?(start < end) then add_in_range_impl(start + 1, end, acc + f(start), f) else acc
+  when?(start < end) then add_in_range_impl(start + 1, end, acc + f!(start)!, f) else acc
   
 fun add_in_range(start: int, end: int, f: int(int)): int = add_in_range_impl(start, end, 0, f)
 

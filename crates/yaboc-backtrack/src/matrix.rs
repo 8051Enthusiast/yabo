@@ -1,5 +1,7 @@
 use std::num::NonZeroU32;
 
+use crate::Arena;
+
 #[derive(Clone, Debug)]
 enum RowBits {
     Outer(Box<[u64]>),
@@ -176,7 +178,6 @@ impl VarRow {
 
     fn subrange(&self, start: u32, end: u32) -> Self {
         assert!(start <= end);
-        assert!(end <= self.total_bits());
         let total_bits = end - start;
         Self {
             bound_bits: self.bound_bits.saturating_sub(start).min(total_bits),
@@ -480,6 +481,29 @@ pub struct MatrixView<'a> {
     matrix: Matrix<'a>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rect<T> {
+    pub matrix: T,
+    pub bound: u32,
+    pub total: u32,
+}
+
+impl<T> Rect<T> {
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Rect<U> {
+        Rect {
+            matrix: f(self.matrix),
+            bound: self.bound,
+            total: self.total,
+        }
+    }
+}
+
+impl<'a> Rect<MatrixView<'a>> {
+    pub fn as_matrix(self) -> Rect<Matrix<'a>> {
+        self.map(|x| x.as_matrix())
+    }
+}
+
 impl<'a> Matrix<'a> {
     pub const fn from_rows(rows: &'a [Row]) -> Self {
         Self { rows }
@@ -496,12 +520,16 @@ impl<'a> Matrix<'a> {
         self.rows.len().try_into().unwrap()
     }
 
-    fn first_row(&self) -> Option<VarRow> {
-        self.rows.iter().find_map(|row| row.map(|x| x.clone()))
-    }
-
     pub fn rows(&self) -> &'a [Row] {
         self.rows
+    }
+
+    pub fn rect(self, bound: u32, total: u32) -> Rect<Matrix<'a>> {
+        Rect {
+            matrix: self,
+            bound,
+            total,
+        }
     }
 }
 
@@ -538,7 +566,7 @@ impl<'a> MatrixView<'a> {
     pub fn subview_from(&self, start: u32) -> MatrixView<'a> {
         let [old_start, new_end] = self.rows;
         let new_start = old_start + start;
-        if new_start >= new_end {
+        if new_start > new_end {
             panic!("out of bounds")
         }
         MatrixView {
@@ -551,7 +579,7 @@ impl<'a> MatrixView<'a> {
         let [_, end] = self.rows;
         let new_start = end;
         let new_end = end + size;
-        if new_end >= self.matrix.row_count() {
+        if new_end > self.matrix.row_count() {
             panic!("out of bounds")
         }
         MatrixView {
@@ -588,34 +616,40 @@ impl<'a> MatrixView<'a> {
             matrix: transformed_subview.matrix,
         }
     }
+
+    pub fn rect(&self, col: u32, arg_col: u32) -> Rect<MatrixView> {
+        Rect {
+            matrix: *self,
+            bound: col,
+            total: arg_col,
+        }
+    }
 }
 
-pub fn multiply<'a>(out: &'a mut [Row], lhs: Matrix<'a>, rhs: Matrix<'a>) {
+pub fn multiply<'a>(out: &'a mut [Row], lhs: Matrix<'a>, rhs: Rect<Matrix<'a>>) {
     assert_eq!(lhs.rows.len(), out.len());
-    let Some(first_row) = rhs.first_row() else {
-        return out.fill(Row::True);
-    };
     for (out_row, a_row) in out.iter_mut().zip(lhs.rows.iter()) {
         let Row::Vars(a_row) = a_row else {
             *out_row = Row::True;
             continue;
         };
-        let total_bits = a_row.total_bits() - rhs.row_count() + first_row.total_bits();
-        *out_row = Row::Vars(VarRow::empty(first_row.bound_bits(), total_bits));
+        let total_bits = a_row.total_bits() - rhs.matrix.row_count() + rhs.total;
+        *out_row = Row::Vars(VarRow::empty(rhs.bound, total_bits));
         // rev() so that the row gets allocated to the right size on the first iteration
         for bit in a_row.active_bits().rev() {
-            if let Some(row) = rhs.rows.get(bit as usize) {
+            if let Some(row) = rhs.matrix.rows.get(bit as usize) {
                 *out_row |= row;
             } else {
-                let extra_bit_offset = bit - rhs.row_count() + first_row.total_bits();
+                let extra_bit_offset = bit - rhs.matrix.row_count() + rhs.total;
                 out_row.set(extra_bit_offset);
             }
         }
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct MatrixArena<'arena> {
-    arena: &'arena typed_arena::Arena<Row>,
+    arena: &'arena Arena,
 }
 
 pub struct TypeVarOccurence {
@@ -635,7 +669,7 @@ fn expanded_count(count: u32, occurences: &[TypeVarOccurence], typevar_widths: &
 }
 
 impl<'arena> MatrixArena<'arena> {
-    pub fn new(arena: &'arena typed_arena::Arena<Row>) -> Self {
+    pub fn new(arena: &'arena Arena) -> Self {
         Self { arena }
     }
 
@@ -643,6 +677,10 @@ impl<'arena> MatrixArena<'arena> {
         Matrix {
             rows: self.arena.alloc_extend(rows),
         }
+    }
+
+    pub fn new_mutable_rows(&self, rows: impl IntoIterator<Item = Row>) -> &mut [Row] {
+        self.arena.alloc_extend(rows)
     }
 
     pub fn new_from_str(&self, s: &str) -> Result<Matrix<'arena>, RowParseError> {
@@ -672,7 +710,7 @@ impl<'arena> MatrixArena<'arena> {
         Matrix { rows: out }
     }
 
-    pub fn multiply(&self, lhs: Matrix, rhs: Matrix) -> Matrix<'arena> {
+    pub fn multiply(&self, lhs: Matrix, rhs: Rect<Matrix>) -> Matrix<'arena> {
         let out = self
             .arena
             .alloc_extend(std::iter::repeat(Row::True).take(lhs.row_count() as usize));
@@ -680,15 +718,16 @@ impl<'arena> MatrixArena<'arena> {
         Matrix { rows: out }
     }
 
-    pub fn multiply_rhs_view(&self, lhs: Matrix, rhs: MatrixView) -> MatrixView<'arena> {
-        let new_row_count = rhs.matrix.row_count() - rhs.view_row_count() + lhs.row_count();
+    pub fn multiply_rhs_view(&self, lhs: Matrix, rhs: Rect<MatrixView>) -> MatrixView<'arena> {
+        let new_row_count =
+            rhs.matrix.matrix.row_count() - rhs.matrix.view_row_count() + lhs.row_count();
         let out = self
             .arena
             .alloc_extend(std::iter::repeat(Row::True).take(new_row_count as usize));
-        let [start, rhs_end] = rhs.rows;
+        let [start, rhs_end] = rhs.matrix.rows;
         let end = start + lhs.row_count();
-        out[..start as usize].clone_from_slice(&rhs.matrix.rows[..start as usize]);
-        out[end as usize..].clone_from_slice(&rhs.matrix.rows[rhs_end as usize..]);
+        out[..start as usize].clone_from_slice(&rhs.matrix.matrix.rows[..start as usize]);
+        out[end as usize..].clone_from_slice(&rhs.matrix.matrix.rows[rhs_end as usize..]);
         multiply(&mut out[start as usize..end as usize], lhs, rhs.as_matrix());
         let matrix = Matrix { rows: out };
         MatrixView {
@@ -700,10 +739,10 @@ impl<'arena> MatrixArena<'arena> {
     pub fn multiply_lhs_view_column_subrange(
         &self,
         lhs: MatrixView,
-        rhs: Matrix,
+        rhs: Rect<Matrix>,
         start: u32,
     ) -> MatrixView<'arena> {
-        let end = start + rhs.row_count();
+        let end = start + rhs.matrix.row_count();
         let lhs_columns = self.column_subrange(lhs.as_matrix(), start, end);
         let replaced = self.multiply(lhs_columns, rhs);
         let out = self
@@ -729,8 +768,8 @@ impl<'arena> MatrixArena<'arena> {
         }
     }
 
-    pub fn partial_apply(&self, lhs: Matrix, rhs: Matrix, start: u32) -> Matrix<'arena> {
-        let end = start + rhs.row_count();
+    pub fn partial_apply(&self, lhs: Matrix, rhs: Rect<Matrix>, start: u32) -> Matrix<'arena> {
+        let end = start + rhs.matrix.row_count();
         let out = self
             .arena
             .alloc_extend(std::iter::repeat(Row::True).take(lhs.row_count() as usize));
@@ -739,7 +778,7 @@ impl<'arena> MatrixArena<'arena> {
         for (out, lhs) in out.iter_mut().zip(lhs.rows) {
             *out |= &lhs
                 .subrange(0, start)
-                .concat(&lhs.subrange(end, lhs.map(|x| x.total_bits()).unwrap_or(end)));
+                .concat(&lhs.subrange(end, lhs.map(|x| x.total_bits()).unwrap_or(end).max(end)));
         }
         Matrix { rows: out }
     }
@@ -911,7 +950,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            arena.multiply(a, b).to_string(),
+            arena.multiply(a, b.rect(3, 3)).to_string(),
             "\
 T
 0 1 0 | 1
@@ -933,7 +972,7 @@ T
                  0 0 1 0 1 | 1",
             )
             .unwrap();
-        let c = arena.multiply(a, b);
+        let c = arena.multiply(a, b.rect(5, 6));
         assert_eq!(
             c.to_string(),
             "\
@@ -953,7 +992,7 @@ T
                  0 1 1 0 0 | 1",
             )
             .unwrap();
-        let c = arena.multiply_rhs_view(a, b.view(1..4)).matrix;
+        let c = arena.multiply_rhs_view(a, b.view(1..4).rect(5, 6)).matrix;
         assert_eq!(
             c.to_string(),
             "\
@@ -973,7 +1012,7 @@ T
             )
             .unwrap();
         let e = arena
-            .multiply_lhs_view_column_subrange(c.view(3..5), d, 5)
+            .multiply_lhs_view_column_subrange(c.view(3..5), d.rect(0, 3), 5)
             .matrix;
         assert_eq!(
             e.to_string(),
@@ -1006,7 +1045,7 @@ T
                  0 1 0",
             )
             .unwrap();
-        let c = arena.partial_apply(a, b, 3);
+        let c = arena.partial_apply(a, b.rect(3, 3), 3);
         assert_eq!(
             c.to_string(),
             "\

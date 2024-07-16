@@ -8,7 +8,7 @@ def *priority = {
 }
 
 fun bitset(xs: list.list[*priority], n: int, bits: int): int = n if 0 then bits else (
-  bitset(xs.?next, n - 1, bits | 1 << xs.?this)
+  bitset?(xs.?next, n - 1, bits | 1 << xs.?this)
 )
 
 fun is_nonzero(n: int) = n if 0 else 1
@@ -31,9 +31,9 @@ fun bit_index(n: int) = {:
 export def *test = {
   line: list.list(priority?)
   let line_len = list.len(line)
-  let second_half = list.skip(line, line_len / 2)
-  let first_set = bitset(line, line_len / 2, 0)
-  let second_set = bitset(second_half, line_len / 2, 0)
+  let second_half = list.skip!(line, line_len / 2)
+  let first_set = bitset!(line, line_len / 2, 0)
+  let second_set = bitset!(second_half, line_len / 2, 0)
   let intersection = first_set & second_set
   let return = bit_index(intersection)
 }

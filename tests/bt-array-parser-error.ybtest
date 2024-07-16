@@ -1,0 +1,14 @@
+====[ source code ]====
+fun [int()] *> why = {
+  f: ~
+  g: ~
+  let return = f!() + g?()
+}
+
+fun throw() = 1 if 2
+
+def *test = {
+  let arr = {~, let return = throw}[..]
+  return: arr |> why
+  #~^error[604]
+}

@@ -1,7 +1,19 @@
+use std::fmt::Display;
+
 use yaboc_base::{databased_display::DatabasedDisplay, dbwrite};
 use yaboc_types::TypeInterner;
 
-use crate::{ExprNode, Instruction};
+use crate::{EvalEffectKind, ExprNode, Instruction};
+
+impl Display for EvalEffectKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EvalEffectKind::None => Ok(()),
+            EvalEffectKind::Effectful => write!(f, "?"),
+            EvalEffectKind::Silent => write!(f, "!"),
+        }
+    }
+}
 
 impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for Instruction {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
@@ -21,27 +33,17 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for Instruction {
                     }
                     write!(f, "[{}]", arg)?;
                 }
-                Ok(())
+                write!(f, ")")
             }
             Instruction::Eval(effectful, inner) => {
-                if *effectful {
-                    write!(f, "eval?")
-                } else {
-                    write!(f, "eval")
-                }?;
-                write!(f, " [{}]", inner)
+                write!(f, "eval{effectful} [{inner}]")
             }
             Instruction::Parse {
                 effectful,
                 fun,
                 arg,
             } => {
-                if *effectful {
-                    write!(f, "parse?")
-                } else {
-                    write!(f, "parse")
-                }?;
-                write!(f, " [{}]([{}])", fun, arg)
+                write!(f, "parse{effectful} [{fun}]([{arg}])")
             }
             Instruction::Copy(inner) => {
                 write!(f, "copy [{}]", inner)

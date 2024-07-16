@@ -444,6 +444,7 @@ class WasmRunnerFactory:
         compiler_args = [
             self.cc, '--sysroot', self.sysroot,
             '-lwasi-emulated-mman',
+            '-Wl,-z,stack-size=10000000',
             '-o', execpath.name, compiled, self.printer.name
         ]
         try:

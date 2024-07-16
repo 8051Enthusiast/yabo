@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
+use crate::Origin;
+
 use super::Constraints;
 use fxhash::FxHashMap;
 use hir::HirIdWrapper;
 use yaboc_ast::expr::{FieldAccessMode, WiggleKind};
 use yaboc_base::{
     error::{SResult, Silencable},
-    interner::{DefId, FieldName},
+    interner::FieldName,
 };
 use yaboc_dependents::{
     requirements::ExprDepData, BacktrackStatus, BlockSerialization, SubValue, SubValueKind,
@@ -28,12 +30,6 @@ pub struct SizeTermBuilder<'a> {
     block_locs: FxHashMap<hir::BlockId, usize>,
     expr_locs: FxHashMap<hir::ExprId, ShapedData<Vec<usize>, Resolved>>,
     arg_depth: u32,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum Origin {
-    Expr(hir::ExprId, ExprIdx<Resolved>),
-    Node(DefId),
 }
 
 impl<'a> SizeTermBuilder<'a> {

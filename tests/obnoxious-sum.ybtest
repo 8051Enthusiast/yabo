@@ -1,6 +1,6 @@
 ====[ source code ]====
 fun *apply_with_data(data: *'t, f: *'t('t), default: 't): 't = {
-  | x: data if !eof, return: f(x)
+  | x: data? if !eof, return: f!(x)!
   | let return = default
 }
 

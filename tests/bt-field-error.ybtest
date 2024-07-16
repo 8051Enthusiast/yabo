@@ -1,0 +1,25 @@
+===[ source code ]====
+def *three(a: *'t, b: *'r, c: *'s) = {
+  f1: a?
+  f2: b?
+  f3: c?
+}
+
+def *f = {
+  let return = u8 if 3
+}
+
+def *g = {
+  let return = u8
+}
+
+export
+def *test = {
+  a: three(g, f, u8)
+  let p = {let return: *int = ~}
+  b: three(p, p, ~)
+  let t = b else a
+  x: t.f1
+  y: t.f2
+  #~^error[604]
+}
