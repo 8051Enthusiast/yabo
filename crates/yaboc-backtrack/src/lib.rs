@@ -1,17 +1,19 @@
 use std::sync::Arc;
 
-use matrix::{Matrix, Row, VarRow};
 use smallvec::SmallVec;
-use transform::{fun_ty_parts, MatrixInfo, MatrixShape, TypeBtInfo, TypeMatrixCtx};
+use transform::fun_ty_parts;
 use yaboc_base::error::SResult;
 use yaboc_types::{DefId, Type, TypeId};
 
 mod builder;
 mod matrix;
-mod transform;
 mod represent;
+mod transform;
 
 pub use builder::ExpressionBuilder;
+pub use matrix::{Matrix, MatrixArena, Row, VarRow};
+pub use transform::{MatrixInfo, MatrixShape, TransformInfo, TypeBtInfo, TypeMatrixCtx};
+pub type Arena = typed_arena::Arena<Row>;
 
 pub trait TypeLookup {
     fn lookup(&self, ty: TypeId) -> Type;
@@ -20,11 +22,32 @@ pub trait TypeLookup {
     fn least_deref_type(&self, ty: TypeId) -> SResult<TypeId>;
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EvalEffectKind {
+    None,
+    Effectful,
+    Silent,
+}
+
+impl EvalEffectKind {
+    pub fn from_flags(effect: bool, silent: bool) -> Self {
+        match (effect, silent) {
+            (false, _) => Self::None,
+            (true, false) => Self::Effectful,
+            (true, true) => Self::Silent,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Instruction {
     Apply(u32, SmallVec<[u32; 4]>),
-    Eval(bool, u32),
-    Parse { effectful: bool, fun: u32, arg: u32 },
+    Eval(EvalEffectKind, u32),
+    Parse {
+        effectful: EvalEffectKind,
+        fun: u32,
+        arg: u32,
+    },
     Copy(u32),
     Unify(SmallVec<[u32; 4]>),
     EnterScope,
@@ -45,10 +68,10 @@ pub enum Instruction {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExprNode {
-    row_range: std::ops::Range<usize>,
-    ty: TypeId,
-    bound: u32,
-    instr: Instruction,
+    pub row_range: std::ops::Range<usize>,
+    pub ty: TypeId,
+    pub bound: u32,
+    pub instr: Instruction,
 }
 
 impl ExprNode {
@@ -65,24 +88,16 @@ impl ExprNode {
             matrix: Matrix::from_rows(&rows[self.row_range.clone()]),
         }
     }
+
+    pub fn row_range(&self) -> std::ops::Range<usize> {
+        self.row_range.clone()
+    }
 }
 
 struct Arg<'a> {
     ty: TypeId,
     bound: u32,
     matrix: Matrix<'a>,
-}
-
-impl<'a> Arg<'a> {
-    fn info(&self) -> MatrixInfo<'a> {
-        MatrixInfo {
-            shape: MatrixShape {
-                ty: self.ty,
-                bound: self.bound,
-            },
-            matrix: self.matrix,
-        }
-    }
 }
 
 #[derive(Default)]
@@ -92,18 +107,24 @@ struct Cursor<'a> {
     arg_stack: Vec<Arg<'a>>,
 }
 
-pub struct InferCtx<'a, Trans: TypeBtInfo<'a>> {
-    exprs: &'a [ExprNode],
-    rows: &'a mut [Row],
-    trans: TypeMatrixCtx<'a, Trans>,
-    cursor: Cursor<'a>,
-    errors: Vec<usize>,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EffectError {
+    UnscopedEffect(usize),
+    EffectOnNonEffectfulInvocation(usize),
 }
 
-impl<'a, Trans: TypeBtInfo<'a>> InferCtx<'a, Trans> {
+pub struct EvalCtx<'a, 'r, Trans: TypeBtInfo<'a>> {
+    exprs: &'r [ExprNode],
+    rows: &'r mut [Row],
+    trans: TypeMatrixCtx<'a, Trans>,
+    cursor: Cursor<'a>,
+    errors: Vec<EffectError>,
+}
+
+impl<'a, 'r, Trans: TypeBtInfo<'a>> EvalCtx<'a, 'r, Trans> {
     pub fn new(
-        exprs: &'a [ExprNode],
-        rows: &'a mut [Row],
+        exprs: &'r [ExprNode],
+        rows: &'r mut [Row],
         trans: TypeMatrixCtx<'a, Trans>,
     ) -> Self {
         Self {
@@ -193,7 +214,7 @@ impl<'a, Trans: TypeBtInfo<'a>> InferCtx<'a, Trans> {
         };
         let mut current_bound = self
             .exprs
-            .get(self.cursor.idx - 1)
+            .get(self.cursor.idx.wrapping_sub(1))
             .map(|expr| expr.bound)
             .unwrap_or(0);
         self.cursor
@@ -241,28 +262,38 @@ impl<'a, Trans: TypeBtInfo<'a>> InferCtx<'a, Trans> {
         let fun_info = fun_expr.info(source_rows);
         let arg_infos = args
             .iter()
-            .map(|&idx| self.cursor.arg_stack[idx as usize].info());
+            .map(|&idx| self.exprs[idx as usize].info(source_rows));
         let applied = self
             .trans
             .partial_apply(fun_info, arg_infos, to_expr.shape())?;
-        target_rows[0..to_expr.row_range.len()].clone_from_slice(applied.rows());
+        //(eprintln!("Applied: {} {:?}", applied.matrix, to_expr.row_range());
+        target_rows[0..to_expr.row_range.len()].clone_from_slice(applied.matrix.rows());
         Ok(())
     }
 
-    fn add_effect(&mut self, effectful: bool, effect: Row) {
+    fn add_effect(&mut self, effectful: EvalEffectKind, effect: Row) {
         if effect.is_empty() {
             return;
         }
-        if !effectful {
-            return self.errors.push(self.cursor.idx);
+        //eprintln!("Effectful: {}, effect: {}", effectful, effect);
+        if effectful == EvalEffectKind::None {
+            return self
+                .errors
+                .push(EffectError::EffectOnNonEffectfulInvocation(self.cursor.idx));
         }
         match self.cursor.effect_stack.last_mut() {
-            Some(row) => *row |= &effect,
-            None => self.errors.push(self.cursor.idx),
+            Some(row) => {
+                if effectful != EvalEffectKind::Silent {
+                    *row |= &effect
+                }
+            }
+            None => self
+                .errors
+                .push(EffectError::UnscopedEffect(self.cursor.idx)),
         }
     }
 
-    fn eval(&mut self, effectful: bool, from: u32) -> SResult<()> {
+    fn eval(&mut self, effectful: EvalEffectKind, from: u32) -> SResult<()> {
         let from_expr = &self.exprs[from as usize];
         let to_expr = &self.exprs[self.cursor.idx];
         let (source_rows, target_rows) = self.rows.split_at_mut(to_expr.row_range.start);
@@ -276,7 +307,7 @@ impl<'a, Trans: TypeBtInfo<'a>> InferCtx<'a, Trans> {
         Ok(())
     }
 
-    fn parse(&mut self, effectful: bool, fun: u32, arg: u32) -> SResult<()> {
+    fn parse(&mut self, effectful: EvalEffectKind, fun: u32, arg: u32) -> SResult<()> {
         let fun_expr = &self.exprs[fun as usize];
         let arg_expr = &self.exprs[arg as usize];
         let to_expr = &self.exprs[self.cursor.idx];
@@ -304,6 +335,12 @@ impl<'a, Trans: TypeBtInfo<'a>> InferCtx<'a, Trans> {
 
     fn eval_expr(&mut self) -> SResult<()> {
         let expr = &self.exprs[self.cursor.idx];
+        //dbeprintln!(
+        //    self.trans.db.types(),
+        //    "Evaluating [{}]: {}",
+        //    &self.cursor.idx,
+        //    expr
+        //);
         match &expr.instr {
             Instruction::Apply(fun, args) => self.apply(*fun, args),
             Instruction::Eval(effectful, from) => self.eval(*effectful, *from),
@@ -350,6 +387,9 @@ impl<'a, Trans: TypeBtInfo<'a>> InferCtx<'a, Trans> {
                 let shape = expr.shape();
                 let matrix = self.trans.identity(shape)?;
                 self.rows[expr.row_range.clone()].clone_from_slice(matrix.rows());
+                for row in self.rows[expr.row_range.clone()].iter_mut() {
+                    row.set_bound_bits(shape.bound);
+                }
                 Ok(())
             }
             Instruction::Arg(idx) => self.get_arg(*idx),
@@ -376,18 +416,21 @@ impl<'a, Trans: TypeBtInfo<'a>> InferCtx<'a, Trans> {
             Instruction::LeaveScope(ret) => self.leave_scope(*ret),
             Instruction::None => Ok(()),
             Instruction::Fail => {
-                self.add_effect(true, Row::True);
+                self.add_effect(EvalEffectKind::Effectful, Row::True);
                 Ok(())
             }
-        }
+        }?;
+        //let res_matrix = self.exprs[self.cursor.idx].info(self.rows);
+        //eprintln!("Result:\n{}", res_matrix.matrix);
+        Ok(())
     }
 
-    pub fn infer(mut self) -> SResult<Vec<usize>> {
+    pub fn infer(mut self) -> (TypeMatrixCtx<'a, Trans>, SResult<Vec<EffectError>>) {
         let mut has_err = Ok(());
         for idx in 0..self.exprs.len() {
             self.cursor.idx = idx;
             has_err = has_err.and(self.eval_expr());
         }
-        has_err.map(|_| self.errors)
+        (self.trans, has_err.map(|_| self.errors))
     }
 }

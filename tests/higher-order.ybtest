@@ -6,8 +6,8 @@ def *u16l = {
 }
 
 def *higher_order(f: *'t) = {
-  first: f
-  second: f
+  first: f?
+  second: f?
 }
 
 export def *test = {

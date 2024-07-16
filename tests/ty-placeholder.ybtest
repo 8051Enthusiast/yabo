@@ -1,5 +1,5 @@
 ====[ source code ]====
-fun *once(parser: *_) = parser
+fun *once(parser: *_) = parser?
 
 export
 def *test = {

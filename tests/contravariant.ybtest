@@ -12,7 +12,7 @@ def *added(x: int) = {
 
 def *applied(f: *int(u16l)) = {
   n: u16l
-  return: f(n)
+  return: f?(n)?
 }
 
 export def *test = {

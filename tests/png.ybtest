@@ -18,7 +18,7 @@ fun crc32(arr: [u8]) = arr *> crc32_impl(0xffffffff)
 def *chunk(ty: *[u8], data_parser: *'t) = {
   length: u32b
   type: [4] |> ty?
-  value: [length] |> data_parser
+  value: [length] |> data_parser!
   crc: u32b
   let crc_valid = crc32(span type..value) == crc
 }

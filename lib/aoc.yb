@@ -3,7 +3,7 @@ import math
 
 fun ['t] *> _map_acc(f: ['t] *> int, acc: int, op: int(int, int)): int = {
   | x: f?
-    return: _map_acc(f?, op(acc, x), op)
+    return: _map_acc(f, op?(acc, x), op)
   | let return = acc
 }
 

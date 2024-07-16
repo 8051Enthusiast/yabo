@@ -33,7 +33,7 @@ def *ebr(base: int) = {
   entries: partition_entry(base)[2]
   # the last 2 bytes of the EBR are unused
   unused_entires:  partition_entry(base)[2]
-  ibm: h/55 aa/
+  ibm: h/55 aa/!
 }
 
 # master boot record

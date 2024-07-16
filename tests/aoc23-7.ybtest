@@ -56,7 +56,7 @@ fun rank(cards: [u8]) = {:
   | let ty = same if 4..5 then (same + 1)
   | let ty = diff if 2 then 4
   | let ty = same if 3 then 3
-  | let ty = same if 2 then (5 - diff)
+  | let ty = same try 2 then (5 - diff)
   let return = ty << 20 | card_rank
 :}
 

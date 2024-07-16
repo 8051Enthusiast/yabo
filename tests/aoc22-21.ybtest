@@ -27,7 +27,7 @@ def *calculate_line(start: list.list[*line], x: list.list[*line], name: int): in
       | assert(res.op == '+')?, let return = left + right
       | assert(res.op == '-')?, let return = left - right
       | assert(res.op == '/')?, let return = left / right
-  | return: calculate_line(start, x.?next, name)
+  | return: calculate_line(start, x.next, name)
 }
 
 export

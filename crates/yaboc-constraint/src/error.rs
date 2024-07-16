@@ -1,24 +1,90 @@
-use yaboc_base::error::{
-    diagnostic::{DiagnosticKind, Label},
-    Report,
+use fxhash::FxHashSet;
+use yaboc_backtrack::EffectError;
+use yaboc_base::{
+    error::{
+        diagnostic::{Diagnostic, DiagnosticKind, Label},
+        Report, SResult,
+    },
+    source::IndirectSpan,
 };
+use yaboc_resolve::parserdef_ssc::FunctionSscId;
+use yaboc_types::DefId;
 
-use crate::{Constraints, LenError};
+use crate::{Constraints, LenError, Origin};
 
 pub fn errors(db: &(impl Constraints + ?Sized)) -> Vec<Report> {
     let parserdefs = db.all_parserdefs();
     let mut reports = Vec::new();
     for pd in parserdefs {
         for err in db.len_errors(pd).into_iter().flatten() {
-            if let Some(report) = make_report(db, err) {
+            if let Some(report) = make_len_report(db, err) {
                 reports.push(report);
+            }
+        }
+    }
+    let mut sscs: FxHashSet<FunctionSscId> = Default::default();
+    for module in db.all_modules() {
+        if let Ok(x) = db.mod_parser_ssc(module) {
+            sscs.extend(x.sscs.values());
+        }
+    }
+    for ssc in sscs {
+        let Ok(res) = db.ssc_bt_vals(ssc) else {
+            continue;
+        };
+        for (def, err) in res.errors.iter() {
+            if let Ok(err) = make_bt_report(db, *err, *def) {
+                reports.push(err);
             }
         }
     }
     reports
 }
 
-fn make_report(db: &(impl Constraints + ?Sized), err: LenError) -> Option<Report> {
+fn make_bt_report(
+    db: &(impl Constraints + ?Sized),
+    err: EffectError,
+    def: DefId,
+) -> SResult<Diagnostic> {
+    let pd = db.hir_parent_parserdef(def)?;
+    let terms = db.bt_term(pd)?;
+    let (EffectError::EffectOnNonEffectfulInvocation(idx) | EffectError::UnscopedEffect(idx)) = err;
+    let origin = terms.origin[idx];
+    let span = match origin {
+        Origin::Expr(expr, idx) => {
+            let span_idx = db.resolve_expr(expr)?.data[idx];
+            IndirectSpan::new(expr.0, span_idx)
+        }
+        Origin::Node(id) => IndirectSpan::default_span(id),
+    };
+    let span = db.indirect_span(span)?;
+    match err {
+        EffectError::UnscopedEffect(_) => {
+            let report = Report::new(
+                DiagnosticKind::Error,
+                span.file,
+                "Backtracking invocation outside function context",
+            )
+            .with_code(603)
+            .with_label(Label::new(span).with_message("invocation here"));
+            Ok(report)
+        }
+        EffectError::EffectOnNonEffectfulInvocation(_) => {
+            let report = Report::new(
+                DiagnosticKind::Error,
+                span.file,
+                "Invocation that could backtrack is not marked as such",
+            )
+            .with_code(604)
+            .with_label(Label::new(span).with_message(
+                "invocation here needs to be marked with a question or exclamation mark",
+            ));
+            Ok(report)
+        }
+    }
+}
+
+fn make_len_report(db: &(impl Constraints + ?Sized), err: LenError) -> Option<Report> {
     let report = match err {
         LenError::NonsizedInArray(span) => {
             let span = db.indirect_span(span).ok()?;

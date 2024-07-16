@@ -1,6 +1,6 @@
+mod backtrack;
 pub mod error;
 mod len;
-mod backtrack;
 pub mod represent;
 
 use std::sync::Arc;
@@ -14,14 +14,15 @@ use yaboc_base::{
     source::IndirectSpan,
 };
 use yaboc_dependents::Dependents;
+use yaboc_expr::ExprIdx;
 use yaboc_hir as hir;
 use yaboc_len::{depvec::ArgDeps, ArgRank, Env, PolyCircuit, SizeCalcCtx, Term, Val};
-use yaboc_resolve::{parserdef_ssc::FunctionSscId, Resolves};
+use yaboc_resolve::{expr::Resolved, parserdef_ssc::FunctionSscId, Resolves};
 
+use backtrack::{bt_term, ssc_bt_vals, BtResult, BtTerm, BtVals};
 use len::len_term;
-pub use len::{Origin, PdLenTerm};
-use backtrack::{bt_term, BtTerm};
-use yaboc_types::{Type, TypeId};
+pub use len::PdLenTerm;
+use yaboc_types::{DefId, Type, TypeId};
 
 #[salsa::query_group(ConstraintDatabase)]
 pub trait Constraints: Interner + Resolves + Dependents {
@@ -33,9 +34,17 @@ pub trait Constraints: Interner + Resolves + Dependents {
     fn len_errors(&self, pd: hir::ParserDefId) -> SResult<Vec<LenError>>;
 
     fn bt_term(&self, pd: hir::ParserDefId) -> SResult<Arc<BtTerm>>;
+    fn bt_vals(&self, pd: hir::ParserDefId) -> Arc<BtVals>;
+    fn ssc_bt_vals(&self, ssc: FunctionSscId) -> SResult<Arc<BtResult>>;
 
     #[salsa::interned]
     fn intern_polycircuit(&self, circuit: Arc<PolyCircuit>) -> PolyCircuitId;
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Origin {
+    Expr(hir::ExprId, ExprIdx<Resolved>),
+    Node(DefId),
 }
 
 pub type LenVal = Val<PolyCircuitId>;
@@ -147,6 +156,7 @@ impl<'db, DB: Constraints + ?Sized> Env for LenInferCtx<'db, DB> {
         self.db.intern_polycircuit(circuit)
     }
 }
+
 fn arg_rank(db: &(impl Constraints + ?Sized), ty: TypeId) -> SResult<ArgRank> {
     Ok(ArgRank(
         match db.lookup_intern_type(db.least_deref_type(ty)?) {
@@ -199,6 +209,18 @@ pub fn len_vals(db: &dyn Constraints, pd: hir::ParserDefId) -> Arc<LenVals> {
     let idx = pds.iter().position(|x| *x == pd).unwrap();
     let fun_vals = db.ssc_len_vals(ssc);
     Arc::new(fun_vals[idx].clone())
+}
+
+pub fn bt_vals(db: &dyn Constraints, pd: hir::ParserDefId) -> Arc<BtVals> {
+    let Ok(ssc) = db.parser_ssc(pd) else {
+        return Default::default();
+    };
+    let pds = db.lookup_intern_recursion_scc(ssc);
+    let idx = pds.iter().position(|x| *x == pd).unwrap();
+    let Ok(fun_vals) = db.ssc_bt_vals(ssc) else {
+        return Default::default();
+    };
+    Arc::new(fun_vals.vals[idx].clone())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

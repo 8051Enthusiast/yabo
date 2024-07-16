@@ -1,4 +1,5 @@
 use std::fmt::Write;
+use yaboc_backtrack::Matrix;
 use yaboc_base::{dbformat, dbwrite, error::SResult};
 use yaboc_len::len_graph;
 
@@ -23,9 +24,12 @@ pub fn backtrack<DB: Constraints + ?Sized>(db: &DB) -> SResult<String> {
     let mut ret = String::new();
     for pd in db.all_parserdefs() {
         let terms = db.bt_term(pd)?;
+        let vals = db.bt_vals(pd);
         dbwrite!(ret, db, "Backtrack for {}\n", &pd.0).unwrap();
         for (i, term) in terms.expr.iter().enumerate() {
-            dbwrite!(ret, db, "{i}: {}\n\n", term).unwrap();
+            dbwrite!(ret, db, "{i}: {}\n", term).unwrap();
+            let matrix = Matrix::from_rows(&vals.vals[term.row_range()]);
+            writeln!(ret, "{}", matrix).unwrap();
         }
     }
     Ok(ret)

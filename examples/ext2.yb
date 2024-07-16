@@ -93,7 +93,7 @@ def *inode_ptr = {
 def *block_ptr(data: *'t) = {
   block: u32l
   | block if 0 then nil
-  | let pointee = ([block_size] |> data) at (block * block_size)
+  | let pointee = ([block_size] |> data!) at (block * block_size)
 }
 
 def *indirect(data: *'t) = block_ptr(data)[..]
