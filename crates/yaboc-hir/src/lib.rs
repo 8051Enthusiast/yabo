@@ -646,12 +646,12 @@ pub enum Qualifier {
 pub struct ArgDef {
     pub id: ArgDefId,
     pub name: Identifier,
-    pub ty: TExprId,
+    pub ty: Option<TExprId>,
 }
 
 impl ArgDef {
     fn children(&self) -> Vec<DefId> {
-        vec![self.ty.0]
+        self.ty.into_iter().map(|x| x.0).collect()
     }
 }
 

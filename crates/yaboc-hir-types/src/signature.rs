@@ -77,7 +77,9 @@ pub fn parser_args_error(
         .map(|x| -> Result<_, SpannedTypeError> {
             let mut ret = Vec::new();
             for arg in x.iter() {
-                let arg_ty = arg.lookup(db)?.ty;
+                // top level definitions always have type annotation
+                // (enforced by syntax definition)
+                let arg_ty = arg.lookup(db)?.ty.unwrap();
                 let arg_expr = arg_ty.lookup(db)?;
                 let arg_infty = tcx.resolve_type_expr(arg_expr.expr.take_ref(), arg_ty)?;
                 ret.push(arg_infty);

@@ -279,7 +279,11 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                         vec![(id.0, mod_ref.0, "mod_ref".to_string(), dot::Style::Dotted)]
                     }
                     HirNode::ArgDef(ArgDef { id, ty, .. }) => {
-                        vec![(id.0, ty.0, "ty".to_string(), dot::Style::Bold)]
+                        if let Some(ty) = ty {
+                            vec![(id.0, ty.0, "ty".to_string(), dot::Style::Bold)]
+                        } else {
+                            vec![]
+                        }
                     }
                     HirNode::Choice(StructChoice {
                         id,
