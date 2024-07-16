@@ -649,8 +649,10 @@ def main(args):
             sys.exit(1)
         target_dir = current_script_dir / 'tests'
         files = [target_dir / x for x in os.listdir(target_dir)]
-        total_failed = run_tests(files)
-        total_failed += compile_examples()
+        with futures.ProcessPoolExecutor() as executor:
+            tests = executor.submit(run_tests, files)
+            compile = executor.submit(compile_examples)
+            total_failed = tests.result() + compile.result()
     else:
         total_failed = run_tests(arg_list)
 
