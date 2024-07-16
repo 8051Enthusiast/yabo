@@ -206,7 +206,7 @@ static std::optional<FileSpan> primary_slice(DynValue *array, DynValue *buf) {
     auto vtable = reinterpret_cast<const ArrayVTable *>(cur->vtable);
     auto status =
         vtable->inner_array_impl(next->data, cur->data, 0 | YABO_VTABLE);
-    if (status != OK) {
+    if (status != YABO_STATUS_OK) {
       return {};
     }
     std::swap(cur, next);
@@ -235,11 +235,11 @@ std::optional<FileSpan> YaboValCreator::extent(YaboVal val) {
   return storage.tmp_buf_o_plenty<std::optional<FileSpan>>(
       [=](DynValue *t1, DynValue *t2, DynValue *t3) -> std::optional<FileSpan> {
         auto start = t1;
-        if (vtable->start_impl(start->data, val->data, 0 | YABO_VTABLE) != OK) {
+        if (vtable->start_impl(start->data, val->data, 0 | YABO_VTABLE)) {
           return {};
         }
         auto end = t2;
-        if (vtable->end_impl(end->data, val->data, 0) != OK) {
+        if (vtable->end_impl(end->data, val->data, 0)) {
           return {};
         }
         auto array_vtable =
@@ -247,7 +247,7 @@ std::optional<FileSpan> YaboValCreator::extent(YaboVal val) {
         auto extent = t3;
         auto status = array_vtable->span_impl(extent->data, start->data,
                                               0 | YABO_VTABLE, end->data);
-        if (status != OK) {
+        if (status != YABO_STATUS_OK) {
           return {};
         }
         return primary_slice(extent, t2);

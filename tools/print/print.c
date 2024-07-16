@@ -101,7 +101,7 @@ int print_parser(DynValue *val, int indent, Stack stack, FILE *out) {
   struct ParserVTable *vtable = (struct ParserVTable *)val->vtable;
   int64_t len;
   int64_t ret = vtable->len_impl(&len, val->data);
-  if (ret != OK) {
+  if (ret != YABO_STATUS_OK) {
     return fputs("\"parser\"", out);
   } else {
     return fprintf(out, "\"parser(%" PRId64 ")\"", len);

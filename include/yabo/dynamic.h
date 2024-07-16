@@ -39,7 +39,7 @@ static inline size_t dyn_val_size(const DynValue *val) {
 static inline int64_t dyn_parse_bytes(DynValue *ret, struct Slice bytes,
                                       ParseFun parser) {
   int64_t status = parser(ret->data, NULL, YABO_ANY | YABO_VTABLE, &bytes);
-  if (status != 0) {
+  if (status) {
     return dyn_invalidate(ret, status);
   }
   return status;
@@ -77,7 +77,7 @@ static inline int64_t dyn_access_field(DynValue *ret, const DynValue *block,
     }
   }
   if (!access_impl) {
-    return dyn_invalidate(ret, ERROR);
+    return dyn_invalidate(ret, YABO_STATUS_ERROR);
   }
   int64_t status = access_impl(ret->data, block->data, YABO_ANY | YABO_VTABLE);
   if (status) {

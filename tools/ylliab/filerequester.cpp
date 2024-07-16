@@ -167,9 +167,9 @@ QVariant FileRequester::data(TreeIndex idx) const {
   switch (inner_val.kind) {
   case YaboValKind::YABOERROR: {
     auto err = *inner_val.access_error();
-    if (err == BACKTRACK) {
+    if (err == YABO_STATUS_BACKTRACK) {
       return QVariant("Backtrack");
-    } else if (err == EOS) {
+    } else if (err == YABO_STATUS_EOS) {
       return QVariant("EOF");
     } else {
       return QVariant("Exception");
