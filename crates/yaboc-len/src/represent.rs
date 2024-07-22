@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use crate::{
-    depvec::{self, DepVec},
+    depvec::{self, DepVec, IndexDepVec},
     PolyOp, SizeExpr, Term, Val,
 };
 
@@ -34,7 +34,11 @@ impl<T: std::fmt::Debug> std::fmt::Display for Term<T> {
     }
 }
 
-fn write_deps(f: &mut impl Write, deps: &DepVec, rank: u32) -> std::fmt::Result {
+fn write_deps<const REVERSED: bool>(
+    f: &mut impl Write,
+    deps: &DepVec<REVERSED>,
+    rank: u32,
+) -> std::fmt::Result {
     for i in 0..rank {
         if deps.has_len(i as usize) {
             write!(f, "¹")?;
@@ -62,7 +66,7 @@ impl<P: std::fmt::Debug> std::fmt::Display for Val<P> {
             }
             Val::Arg(0, idx) => write!(f, "arg {}", idx),
             Val::Arg(a, i) => {
-                write_deps(f, &DepVec::default(), *a)?;
+                write_deps(f, &IndexDepVec::default(), *a)?;
                 write!(f, " → arg {i}")
             }
             Val::PolyOp(PolyOp::Add([lhs, rhs])) => write!(f, "[{}] + [{}]", lhs, rhs),
