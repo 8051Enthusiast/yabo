@@ -3,7 +3,7 @@ pub mod prob_array;
 pub mod regex;
 mod represent;
 
-use depvec::{ArgDeps, DepVec, SmallBitVec};
+use depvec::{ArgDeps, DepVec, IndexDepVec, LevelDepVec, SmallBitVec};
 pub use represent::len_graph;
 
 use prob_array::{RandomArray, UNINIT};
@@ -46,7 +46,8 @@ pub enum PolyGate {
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct PolyCircuit {
     pub gates: Vec<PolyGate>,
-    pub deps: DepVec,
+    pub arg_deps: IndexDepVec,
+    pub env_deps: LevelDepVec,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -271,12 +272,12 @@ pub enum Fun<ParserRef> {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Val<PolyCircuitId> {
     Undefined,
-    Const(u32, i128, DepVec),
+    Const(u32, i128, IndexDepVec),
     Arg(u32, u32),
     PolyOp(PolyOp),
-    Poly(u32, PolyCircuitId, DepVec),
-    PartialPolyApply(u32, [usize; 2], PolyCircuitId, DepVec),
-    Static(u32, DepVec),
+    Poly(u32, PolyCircuitId, IndexDepVec),
+    PartialPolyApply(u32, [usize; 2], PolyCircuitId, IndexDepVec),
+    Static(u32, IndexDepVec),
     Unsized,
 }
 
@@ -344,7 +345,7 @@ impl<PolyCircuitId: Clone + std::fmt::Debug> Val<PolyCircuitId> {
         }
     }
 
-    fn deps(&self) -> depvec::DepVec {
+    fn deps(&self) -> depvec::IndexDepVec {
         match self {
             Val::Arg(_, _) => DepVec::default(),
             Val::Const(_, _, x)
@@ -433,7 +434,8 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             arg.random_element();
         }
         let arr_circuit = PolyCircuit {
-            deps: DepVec::array_deps(),
+            arg_deps: DepVec::array_deps(),
+            env_deps: LevelDepVec::default(),
             gates: vec![
                 PolyGate::Arg(0),
                 PolyGate::Arg(1),
@@ -766,14 +768,19 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         self.deps[pos] = cur;
         match term {
             Term::Arg(a) => {
-                let idx = self.args.len() - *a as usize - 1;
-                self.deps[pos].len().set_len(idx);
-                self.deps[pos].val().set_val(idx);
+                self.deps[pos].len().set_len(*a as usize);
+                self.deps[pos].val().set_val(*a as usize);
             }
             Term::Parsed | Term::Span => {
                 let idx = self.size_expr.arg_depth[pos] as usize - 1;
                 self.deps[pos].len().set_len(idx);
                 self.deps[pos].val().set_val(idx);
+            }
+            Term::BlockEnd(_, _) => {
+                for dep in self.deps[pos].0.iter_mut() {
+                    let depth = self.size_expr.arg_depth[pos] as usize - 1;
+                    dep.truncate(depth);
+                }
             }
             _ => (),
         }
@@ -924,9 +931,12 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 }
             }
         }
+        let depth = self.args.len();
+        let (env_deps, arg_deps) = self.deps[root].len().split_at(depth, depth);
         Some(PolyCircuit {
             gates,
-            deps: self.deps[root].len().clone(),
+            arg_deps,
+            env_deps,
         })
     }
 
@@ -950,12 +960,15 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             Val::Const(0, c, _) => Val::Const(arg_count, *c, val_deps),
             Val::Arg(0, _) | Val::PolyOp(_) | Val::Poly(0, ..) | Val::PartialPolyApply(0, ..) => {
                 let circuit = self.create_polycircuit(root).unwrap();
-                let deps = circuit.deps.or(&val_deps);
+                let deps = circuit.arg_deps.or(&val_deps);
                 let circuit_id = self.env.intern_circuit(Arc::new(circuit));
                 Val::Poly(arg_count, circuit_id, deps)
             }
             Val::Static(0, _) => {
-                let deps = self.deps[root].len().or(&val_deps);
+                let (_, arg_deps) = self.deps[root]
+                    .len()
+                    .split_at(arg_count as usize, arg_count as usize);
+                let deps = arg_deps.or(&val_deps);
                 Val::Static(arg_count, deps)
             }
             Val::Unsized => Val::Unsized,

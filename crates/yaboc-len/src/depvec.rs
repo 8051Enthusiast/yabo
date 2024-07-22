@@ -68,10 +68,12 @@ impl SmallBitVec {
 
     pub fn truncate(&self, n: usize) -> Self {
         let len = (n + 63) / 64;
-        let mut words = SmallVec::from_slice(&self.0[..len]);
+        let mut words = SmallVec::from_slice(&self.0[..len.min(self.0.len())]);
         if n % 64 != 0 {
             let mask = (1 << (n % 64)) - 1;
-            *words.last_mut().unwrap() &= mask;
+            if let Some(last) = words.last_mut() {
+                *last &= mask;
+            }
         }
         while words.last() == Some(&0) {
             words.pop();
@@ -79,12 +81,16 @@ impl SmallBitVec {
         words.shrink_to_fit();
         SmallBitVec(words)
     }
+
+    pub fn bit_capacity(&self) -> usize {
+        self.0.len() * 64
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
-pub struct DepVec(SmallBitVec);
+pub struct DepVec<const REVERSED: bool>(SmallBitVec);
 
-impl DepVec {
+impl<const REVERSED: bool> DepVec<REVERSED> {
     pub fn set_val(&mut self, idx: usize) {
         self.0.set(idx << 1);
     }
@@ -126,25 +132,50 @@ impl DepVec {
         ret.set_len(1);
         ret
     }
+
+    pub fn truncate(&mut self, size: usize) {
+        self.0 = self.0.truncate(size << 1);
+    }
 }
 
-impl std::ops::BitOrAssign<&DepVec> for DepVec {
+impl LevelDepVec {
+    pub fn split_at(&self, total: usize, arg_count: usize) -> (LevelDepVec, IndexDepVec) {
+        let idx = total - arg_count;
+        let mut first_ret = self.clone();
+        let mut second_ret = IndexDepVec::default();
+        for i in idx..total {
+            if first_ret.has_val(i) {
+                second_ret.set_val(arg_count - 1 - i);
+            }
+            if first_ret.has_len(i) {
+                second_ret.set_len(arg_count - 1 - i);
+            }
+        }
+        first_ret.truncate(idx);
+        (first_ret, second_ret)
+    }
+}
+
+impl<const REVERSED: bool> std::ops::BitOrAssign<&DepVec<REVERSED>> for DepVec<REVERSED> {
     fn bitor_assign(&mut self, rhs: &Self) {
         self.0 = self.0.or(&rhs.0);
     }
 }
 
+pub type LevelDepVec = DepVec<false>;
+pub type IndexDepVec = DepVec<true>;
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
-pub struct ArgDeps(pub [DepVec; 3]);
+pub struct ArgDeps(pub [LevelDepVec; 3]);
 
 impl ArgDeps {
-    pub fn len(&mut self) -> &mut DepVec {
+    pub fn len(&mut self) -> &mut LevelDepVec {
         &mut self.0[0]
     }
-    pub fn val(&mut self) -> &mut DepVec {
+    pub fn val(&mut self) -> &mut LevelDepVec {
         &mut self.0[1]
     }
-    pub fn backtrack(&mut self) -> &mut DepVec {
+    pub fn backtrack(&mut self) -> &mut LevelDepVec {
         &mut self.0[2]
     }
 }
@@ -157,8 +188,8 @@ impl std::ops::BitOrAssign<&ArgDeps> for ArgDeps {
     }
 }
 
-impl std::ops::BitOrAssign<&[DepVec; 3]> for ArgDeps {
-    fn bitor_assign(&mut self, rhs: &[DepVec; 3]) {
+impl std::ops::BitOrAssign<&[LevelDepVec; 3]> for ArgDeps {
+    fn bitor_assign(&mut self, rhs: &[LevelDepVec; 3]) {
         for (a, b) in self.0.iter_mut().zip(rhs.iter()) {
             *a |= b;
         }
