@@ -14,7 +14,7 @@ use yaboc_base::{
     source::IndirectSpan,
 };
 use yaboc_dependents::Dependents;
-use yaboc_expr::ExprIdx;
+use yaboc_expr::{ExprIdx, SmallVec};
 use yaboc_hir as hir;
 use yaboc_len::{depvec::ArgDeps, ArgRank, Env, PolyCircuit, SizeCalcCtx, Term, Val};
 use yaboc_resolve::{expr::Resolved, parserdef_ssc::FunctionSscId, Resolves};
@@ -113,9 +113,8 @@ impl<'a, DB: Constraints + ?Sized> LenInferCtx<'a, DB> {
             changed = false;
             for (pd, term) in self.local_terms.iter() {
                 let Some(term) = &term else { continue };
-                let args = arg_ranks(self.db, *pd).unwrap_or_default();
-                let mut subctx = SizeCalcCtx::new(&*self, &term.expr, &args);
-                let new_val = subctx.fun_val(term.root, term.is_val_fun);
+                let mut subctx = SizeCalcCtx::new(&*self, &term.expr);
+                let new_val = subctx.quoted_val(term.root);
                 let old_val = self
                     .local_vals
                     .get(pd)
@@ -166,10 +165,10 @@ fn arg_rank(db: &(impl Constraints + ?Sized), ty: TypeId) -> SResult<ArgRank> {
     ))
 }
 
-fn arg_ranks(db: &(impl Constraints + ?Sized), pd: hir::ParserDefId) -> SResult<Vec<ArgRank>> {
+fn arg_ranks(db: &(impl Constraints + ?Sized), pd: hir::ParserDefId) -> SResult<SmallVec<[ArgRank; 4]>> {
     let signature = db.parser_args(pd)?;
     let Some(args) = &signature.args else {
-        return Ok(Vec::new());
+        return Ok(SmallVec::new());
     };
     args.iter().map(|arg_ty| arg_rank(db, *arg_ty)).collect()
 }
