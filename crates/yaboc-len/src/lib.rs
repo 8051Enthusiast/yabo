@@ -51,24 +51,24 @@ pub struct PolyCircuit {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub enum BlockKind {
+pub enum ScopeKind {
     Parser,
     Inline,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub struct BlockInfoIdx(u32);
+pub struct ScopeInfoIdx(u32);
 
-impl BlockInfoIdx {
+impl ScopeInfoIdx {
     pub fn new(idx: u32) -> Self {
         Self(idx)
     }
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct BlockInfo {
+pub struct ScopeInfo {
     pub captures: SmallBitVec,
-    pub kind: BlockKind,
+    pub kind: ScopeKind,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -89,7 +89,7 @@ pub enum Term<ParserRef> {
     Then([usize; 2]),
     Copy(usize),
     Size(bool, usize),
-    BlockEnd(BlockInfoIdx, usize),
+    BlockEnd(ScopeInfoIdx, usize),
     Parsed,
     Span,
     Cat([usize; 2]),
@@ -128,7 +128,7 @@ impl<ParserRef> Term<ParserRef> {
 pub struct SizeExpr<Pd> {
     pub terms: Vec<Term<Pd>>,
     pub arg_depth: Vec<u32>,
-    pub block_info: SmallVec<[BlockInfo; 2]>,
+    pub scope_info: SmallVec<[ScopeInfo; 2]>,
 }
 
 impl<Pd> SizeExpr<Pd> {
@@ -136,7 +136,7 @@ impl<Pd> SizeExpr<Pd> {
         Self {
             terms: vec![],
             arg_depth: vec![],
-            block_info: Default::default(),
+            scope_info: Default::default(),
         }
     }
 
@@ -203,16 +203,16 @@ impl<Pd> SizeExpr<Pd> {
             }
             Term::BlockEnd(block_idx, len) => {
                 // note that we may iterate over the same value with different matrices twice
-                let block_info = &self.block_info[block_idx.0 as usize];
-                let kind = block_info.kind;
+                let scope_info = &self.scope_info[block_idx.0 as usize];
+                let kind = scope_info.kind;
                 // if this is an inline block, we evaluate the whole block as an opaque
                 // value which needs all dependencies even in case we only want the len
                 let needs_val = match kind {
-                    BlockKind::Parser => !!NeededBy::Val,
-                    BlockKind::Inline => NeededBy::Len | NeededBy::Val,
+                    ScopeKind::Parser => !!NeededBy::Val,
+                    ScopeKind::Inline => NeededBy::Len | NeededBy::Val,
                 };
                 let vreq = RequirementMatrix::outer(!!NeededBy::Val, needs_val);
-                for cap in block_info.captures.iter_ones() {
+                for cap in scope_info.captures.iter_ones() {
                     f(self, cap, vreq);
                 }
                 let lreq = RequirementMatrix::diag(!!NeededBy::Len);
@@ -820,7 +820,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                     otherwise => otherwise,
                 },
                 Term::BlockEnd(idx, len_loc) => {
-                    if self.size_expr.block_info[idx.0 as usize].kind == BlockKind::Parser {
+                    if self.size_expr.scope_info[idx.0 as usize].kind == ScopeKind::Parser {
                         self.block_end(*len_loc)
                     } else {
                         self.vals[*len_loc].clone()
