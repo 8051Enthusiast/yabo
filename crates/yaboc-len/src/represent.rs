@@ -26,6 +26,7 @@ impl<T: std::fmt::Debug> std::fmt::Display for Term<T> {
             Term::Copy(inner) => write!(f, "copy [{}]", inner),
             Term::Size(true, inner) => write!(f, "exact-size [{}]", inner),
             Term::Size(false, inner) => write!(f, "size [{}]", inner),
+            Term::ScopeIntro(_) => write!(f, "scope-intro"),
             Term::BlockEnd(_, len_loc) => write!(f, "block [{}]", len_loc),
             Term::Parsed => write!(f, "parsed"),
             Term::Span => write!(f, "span"),
