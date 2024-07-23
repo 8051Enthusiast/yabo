@@ -16,7 +16,7 @@ use yaboc_dependents::{
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, ShapedData, TakeRef};
 use yaboc_hir as hir;
 use yaboc_hir_types::FullTypeId;
-use yaboc_len::{depvec::SmallBitVec, BlockInfo, BlockInfoIdx, BlockKind, SizeExpr, Term};
+use yaboc_len::{depvec::SmallBitVec, ScopeInfo, ScopeInfoIdx, ScopeKind, SizeExpr, Term};
 use yaboc_req::NeededBy;
 use yaboc_resolve::expr::{Resolved, ResolvedAtom};
 use yaboc_resolve::expr::{ValBinOp, ValUnOp, ValVarOp};
@@ -51,19 +51,19 @@ impl<'a> SizeTermBuilder<'a> {
         index
     }
 
-    fn new_block(&mut self, bid: hir::BlockId) -> SResult<BlockInfoIdx> {
+    fn new_block(&mut self, bid: hir::BlockId) -> SResult<ScopeInfoIdx> {
         let mut captures = SmallBitVec::default();
         for id in self.db.captures(bid).iter() {
             let val = self.vals[&SubValue::new_val(*id)];
             captures.set(val);
         }
         let kind = match bid.lookup(self.db)?.kind {
-            hir::BlockKind::Inline => BlockKind::Inline,
-            hir::BlockKind::Parser => BlockKind::Parser,
+            hir::BlockKind::Inline => ScopeKind::Inline,
+            hir::BlockKind::Parser => ScopeKind::Parser,
         };
-        let block_info = BlockInfo { captures, kind };
-        let idx = BlockInfoIdx::new(self.terms.block_info.len() as u32);
-        self.terms.block_info.push(block_info);
+        let block_info = ScopeInfo { captures, kind };
+        let idx = ScopeInfoIdx::new(self.terms.scope_info.len() as u32);
+        self.terms.scope_info.push(block_info);
         Ok(idx)
     }
 
