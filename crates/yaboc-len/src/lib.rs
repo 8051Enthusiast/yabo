@@ -52,8 +52,8 @@ pub struct PolyCircuit {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum ScopeKind {
-    Parser,
-    Inline,
+    PartialLenUse,
+    AllValUse,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -69,7 +69,7 @@ impl ScopeInfoIdx {
 pub struct ScopeInfo {
     pub captures: SmallBitVec,
     pub kind: ScopeKind,
-    pub params: Vec<ArgRank>,
+    pub params: SmallVec<[ArgRank; 4]>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -92,6 +92,7 @@ pub enum Term<ParserRef> {
     Size(bool, usize),
     ScopeIntro(ScopeInfoIdx),
     BlockEnd(ScopeInfoIdx, usize),
+    FunctionEnd(ScopeInfoIdx, usize),
     Parsed,
     Span,
     Cat([usize; 2]),
@@ -114,6 +115,7 @@ impl<ParserRef> Term<ParserRef> {
             | Term::Copy(x)
             | Term::Size(_, x)
             | Term::BlockEnd(_, x)
+            | Term::FunctionEnd(_, x)
             | Term::Backtracking(x) => slice::from_ref(x),
             Term::OpaqueBin(x)
             | Term::Apply(x)
@@ -204,15 +206,15 @@ impl<Pd> SizeExpr<Pd> {
                 let rreq = RequirementMatrix::id();
                 f(self, *rhs, rreq);
             }
-            Term::BlockEnd(block_idx, len) => {
+            Term::BlockEnd(scope_idx, len) | Term::FunctionEnd(scope_idx, len) => {
                 // note that we may iterate over the same value with different matrices twice
-                let scope_info = &self.scope_info[block_idx.0 as usize];
+                let scope_info = &self.scope_info[scope_idx.0 as usize];
                 let kind = scope_info.kind;
                 // if this is an inline block, we evaluate the whole block as an opaque
                 // value which needs all dependencies even in case we only want the len
                 let needs_val = match kind {
-                    ScopeKind::Parser => !!NeededBy::Val,
-                    ScopeKind::Inline => NeededBy::Len | NeededBy::Val,
+                    ScopeKind::PartialLenUse => !!NeededBy::Val,
+                    ScopeKind::AllValUse => NeededBy::Len | NeededBy::Val,
                 };
                 let vreq = RequirementMatrix::outer(!!NeededBy::Val, needs_val);
                 for cap in scope_info.captures.iter_ones() {
@@ -417,27 +419,8 @@ pub trait Env: Sized {
 
     fn lookup_circuit(&self, id: Self::PolyCircuitId) -> Arc<PolyCircuit>;
     fn intern_circuit(&self, circuit: Arc<PolyCircuit>) -> Self::PolyCircuitId;
-}
 
-pub struct SizeCalcCtx<'a, Γ: Env> {
-    env: &'a Γ,
-    size_expr: &'a SizeExpr<Γ::ParserRef>,
-    poly_vals: Vec<RandomArray>,
-    pub vals: Vec<Val<Γ::PolyCircuitId>>,
-    arr_circuit: Γ::PolyCircuitId,
-    args: Vec<ArgRank>,
-    arg_count: u32,
-    arg_poly_vals: Vec<RandomArray>,
-    deps: Vec<ArgDeps>,
-}
-
-impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
-    pub fn new(env: &'a Γ, size_expr: &'a SizeExpr<Γ::ParserRef>, args: &'a [ArgRank]) -> Self {
-        // 5 extra slots to avoid reallocation when comparing polynomials
-        let mut arg_poly_vals = vec![UNINIT; args.len() + 5];
-        for arg in arg_poly_vals.iter_mut() {
-            arg.random_element();
-        }
+    fn arr_circuit(&self) -> Self::PolyCircuitId {
         let arr_circuit = PolyCircuit {
             arg_deps: DepVec::array_deps(),
             env_deps: LevelDepVec::default(),
@@ -447,16 +430,33 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 PolyGate::Op(PolyOp::Mul([0, 1])),
             ],
         };
-        let arr_circuit = env.intern_circuit(Arc::new(arr_circuit));
-        let arg_count = args.len() as u32;
+        let arr_circuit = self.intern_circuit(Arc::new(arr_circuit));
+        arr_circuit
+    }
+}
+
+pub struct SizeCalcCtx<'a, Γ: Env> {
+    env: &'a Γ,
+    size_expr: &'a SizeExpr<Γ::ParserRef>,
+    poly_vals: Vec<RandomArray>,
+    pub vals: Vec<Val<Γ::PolyCircuitId>>,
+    arr_circuit: Γ::PolyCircuitId,
+    args: Vec<ArgRank>,
+    arg_poly_vals: Vec<RandomArray>,
+    deps: Vec<ArgDeps>,
+}
+
+impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
+    pub fn new(env: &'a Γ, size_expr: &'a SizeExpr<Γ::ParserRef>) -> Self {
+        let arg_poly_vals = Vec::new();
+        let arr_circuit = env.arr_circuit();
         let mut ret = Self {
             env,
             poly_vals: vec![UNINIT; size_expr.terms.len()],
             vals: Vec::with_capacity(size_expr.terms.len()),
             size_expr,
             arr_circuit,
-            args: args.to_vec(),
-            arg_count,
+            args: Vec::new(),
             arg_poly_vals,
             deps: vec![Default::default(); size_expr.terms.len()],
         };
@@ -772,6 +772,35 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         }
     }
 
+    fn function_end(&mut self, ret_idx: usize, scope: ScopeInfo) -> Val<Γ::PolyCircuitId> {
+        let arg_count = scope.params.len() as u32;
+        let mut val_deps = DepVec::default();
+        if scope.kind == ScopeKind::AllValUse {
+            for i in 0..arg_count as usize {
+                val_deps.set_val(i);
+            }
+        }
+        match &self.vals[ret_idx] {
+            Val::Undefined => Val::Undefined,
+            Val::Const(0, c, _) => Val::Const(arg_count, *c, val_deps),
+            Val::Arg(0, _) | Val::PolyOp(_) | Val::Poly(0, ..) | Val::PartialPolyApply(0, ..) => {
+                let circuit = self.create_polycircuit(ret_idx, arg_count).unwrap();
+                let deps = circuit.arg_deps.or(&val_deps);
+                let circuit_id = self.env.intern_circuit(Arc::new(circuit));
+                Val::Poly(arg_count, circuit_id, deps)
+            }
+            Val::Static(0, _) => {
+                let (_, arg_deps) = self.deps[ret_idx]
+                    .len()
+                    .split_at(self.args.len(), arg_count as usize);
+                let deps = arg_deps.or(&val_deps);
+                Val::Static(arg_count, deps)
+            }
+            Val::Unsized => Val::Unsized,
+            _ => panic!("cannot have higher-order function as total length"),
+        }
+    }
+
     fn update_deps(&mut self, pos: usize) {
         let term = &self.size_expr.terms[pos];
         let mut cur = self.deps[pos].clone();
@@ -789,9 +818,10 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 self.deps[pos].len().set_len(idx);
                 self.deps[pos].val().set_val(idx);
             }
-            Term::BlockEnd(_, _) => {
+            Term::BlockEnd(scope, _) | Term::FunctionEnd(scope, _) => {
+                let params = self.size_expr.scope_info[scope.0 as usize].params.len();
                 for dep in self.deps[pos].0.iter_mut() {
-                    let depth = self.size_expr.arg_depth[pos] as usize - 1;
+                    let depth = self.size_expr.arg_depth[pos] as usize - params;
                     dep.truncate(depth);
                 }
             }
@@ -840,11 +870,17 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 Term::BlockEnd(idx, len_loc) => {
                     let info = &self.size_expr.scope_info[idx.0 as usize];
                     self.args.truncate(self.args.len() - info.params.len());
-                    if info.kind == ScopeKind::Parser {
+                    if info.kind == ScopeKind::PartialLenUse {
                         self.block_end(*len_loc)
                     } else {
                         self.vals[*len_loc].clone()
                     }
+                }
+                Term::FunctionEnd(idx, len_loc) => {
+                    let info = &self.size_expr.scope_info[idx.0 as usize];
+                    let res = self.function_end(*len_loc, info.clone());
+                    self.args.truncate(self.args.len() - info.params.len());
+                    res
                 }
                 Term::Copy(val) | Term::Then([_, val]) | Term::Backtracking(val) => {
                     self.vals[*val].clone()
@@ -966,32 +1002,15 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         }
     }
 
-    pub fn fun_val(&mut self, root: usize, is_val_fun: bool) -> Val<Γ::PolyCircuitId> {
-        let arg_count = self.arg_count;
-        let mut val_deps = DepVec::default();
-        if is_val_fun {
-            for i in 0..arg_count as usize {
-                val_deps.set_val(i);
-            }
-        }
+    pub fn quoted_val(&mut self, root: usize) -> Val<Γ::PolyCircuitId> {
         match &self.vals[root] {
-            Val::Undefined => Val::Undefined,
-            Val::Const(0, c, _) => Val::Const(arg_count, *c, val_deps),
-            Val::Arg(0, _) | Val::PolyOp(_) | Val::Poly(0, ..) | Val::PartialPolyApply(0, ..) => {
+            Val::Arg(_, _) | Val::PolyOp(_) | Val::PartialPolyApply(0, ..) => {
+                let arg_count = self.vals[root].rank().unwrap();
                 let circuit = self.create_polycircuit(root, arg_count).unwrap();
-                let deps = circuit.arg_deps.or(&val_deps);
                 let circuit_id = self.env.intern_circuit(Arc::new(circuit));
-                Val::Poly(arg_count, circuit_id, deps)
+                Val::Poly(arg_count, circuit_id, self.vals[root].deps())
             }
-            Val::Static(0, _) => {
-                let (_, arg_deps) = self.deps[root]
-                    .len()
-                    .split_at(arg_count as usize, arg_count as usize);
-                let deps = arg_deps.or(&val_deps);
-                Val::Static(arg_count, deps)
-            }
-            Val::Unsized => Val::Unsized,
-            _ => panic!("cannot have higher-order function as total length"),
+            otherwise => otherwise.clone(),
         }
     }
 }

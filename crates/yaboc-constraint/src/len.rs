@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::Origin;
+use crate::{arg_ranks, Origin};
 
 use super::Constraints;
 use fxhash::FxHashMap;
@@ -13,7 +13,7 @@ use yaboc_base::{
 use yaboc_dependents::{
     requirements::ExprDepData, BacktrackStatus, BlockSerialization, SubValue, SubValueKind,
 };
-use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, ShapedData, TakeRef};
+use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, ShapedData, SmallVec, TakeRef};
 use yaboc_hir as hir;
 use yaboc_hir_types::FullTypeId;
 use yaboc_len::{depvec::SmallBitVec, ArgRank, ScopeInfo, ScopeInfoIdx, ScopeKind, SizeExpr, Term};
@@ -58,13 +58,13 @@ impl<'a> SizeTermBuilder<'a> {
             captures.set(val);
         }
         let kind = match bid.lookup(self.db)?.kind {
-            hir::BlockKind::Inline => ScopeKind::Inline,
-            hir::BlockKind::Parser => ScopeKind::Parser,
+            hir::BlockKind::Inline => ScopeKind::AllValUse,
+            hir::BlockKind::Parser => ScopeKind::PartialLenUse,
         };
         let block_info = ScopeInfo {
             captures,
             kind,
-            params: vec![ArgRank(0)],
+            params: SmallVec::from_slice(&[ArgRank(0)]),
         };
         let idx = ScopeInfoIdx::new(self.terms.scope_info.len() as u32);
         self.terms.scope_info.push(block_info);
@@ -294,6 +294,19 @@ impl<'a> SizeTermBuilder<'a> {
 
     fn create_pd(&mut self, pd: hir::ParserDefId) -> SResult<usize> {
         let parserdef = pd.lookup(self.db)?;
+        let kind = if parserdef.from.is_some() {
+            ScopeKind::PartialLenUse
+        } else {
+            ScopeKind::AllValUse
+        };
+        let params = arg_ranks(self.db, parserdef.id)?;
+        let idx = ScopeInfoIdx::new(self.terms.scope_info.len() as u32);
+        self.terms.scope_info.push(ScopeInfo {
+            captures: SmallBitVec::default(),
+            kind,
+            params,
+        });
+        self.push_term(Term::ScopeIntro(idx), Origin::Node(pd.0));
         for (arg_idx, arg) in parserdef
             .args
             .into_iter()
@@ -305,7 +318,8 @@ impl<'a> SizeTermBuilder<'a> {
             let val_loc = SubValue::new_val(arg.0);
             self.vals.insert(val_loc, term);
         }
-        self.create_expr(parserdef.to)
+        let res = self.create_expr(parserdef.to)?;
+        Ok(self.push_term(Term::FunctionEnd(idx, res), Origin::Node(pd.0)))
     }
 }
 
