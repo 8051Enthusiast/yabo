@@ -16,7 +16,7 @@ use yaboc_dependents::{
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, ShapedData, TakeRef};
 use yaboc_hir as hir;
 use yaboc_hir_types::FullTypeId;
-use yaboc_len::{depvec::SmallBitVec, ScopeInfo, ScopeInfoIdx, ScopeKind, SizeExpr, Term};
+use yaboc_len::{depvec::SmallBitVec, ArgRank, ScopeInfo, ScopeInfoIdx, ScopeKind, SizeExpr, Term};
 use yaboc_req::NeededBy;
 use yaboc_resolve::expr::{Resolved, ResolvedAtom};
 use yaboc_resolve::expr::{ValBinOp, ValUnOp, ValVarOp};
@@ -61,7 +61,11 @@ impl<'a> SizeTermBuilder<'a> {
             hir::BlockKind::Inline => ScopeKind::Inline,
             hir::BlockKind::Parser => ScopeKind::Parser,
         };
-        let block_info = ScopeInfo { captures, kind };
+        let block_info = ScopeInfo {
+            captures,
+            kind,
+            params: vec![ArgRank(0)],
+        };
         let idx = ScopeInfoIdx::new(self.terms.scope_info.len() as u32);
         self.terms.scope_info.push(block_info);
         Ok(idx)
@@ -70,6 +74,8 @@ impl<'a> SizeTermBuilder<'a> {
     fn create_block(&mut self, bid: hir::BlockId) -> SResult<usize> {
         let ser: BlockSerialization = self.db.block_serialization(bid).silence()?;
         let mut whole_result = None;
+        let idx = self.new_block(bid)?;
+        self.push_term(Term::ScopeIntro(idx), Origin::Node(bid.0));
         for val_loc in ser.eval_order.iter() {
             let loc = Origin::Node(val_loc.val.id);
             let val = match (self.db.hir_node(val_loc.val.id)?, val_loc.val.kind) {
@@ -152,7 +158,6 @@ impl<'a> SizeTermBuilder<'a> {
             self.vals.insert(val_loc.val, val);
         }
         let (res, loc) = whole_result.expect("block is never terminated");
-        let idx = self.new_block(bid)?;
         let res = self.push_term(Term::BlockEnd(idx, res), loc);
         self.block_locs.insert(bid, res);
         Ok(res)

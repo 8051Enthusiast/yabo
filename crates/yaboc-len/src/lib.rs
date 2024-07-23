@@ -69,6 +69,7 @@ impl ScopeInfoIdx {
 pub struct ScopeInfo {
     pub captures: SmallBitVec,
     pub kind: ScopeKind,
+    pub params: Vec<ArgRank>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -89,6 +90,7 @@ pub enum Term<ParserRef> {
     Then([usize; 2]),
     Copy(usize),
     Size(bool, usize),
+    ScopeIntro(ScopeInfoIdx),
     BlockEnd(ScopeInfoIdx, usize),
     Parsed,
     Span,
@@ -105,6 +107,7 @@ impl<ParserRef> Term<ParserRef> {
             | Term::Opaque
             | Term::Arr
             | Term::Parsed
+            | Term::ScopeIntro(_)
             | Term::Span => &[],
             Term::OpaqueUn(x)
             | Term::Neg(x)
@@ -230,6 +233,7 @@ impl<Pd> SizeExpr<Pd> {
             | Term::Arg(_)
             | Term::Pd(_)
             | Term::Const(_)
+            | Term::ScopeIntro(_)
             | Term::Opaque
             | Term::OpaqueUn(_)
             | Term::OpaqueBin(_)
@@ -398,7 +402,7 @@ impl Default for Parameter {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ArgRank(pub u32);
 
 pub struct Vals<ParserRef> {
@@ -421,7 +425,8 @@ pub struct SizeCalcCtx<'a, Γ: Env> {
     poly_vals: Vec<RandomArray>,
     pub vals: Vec<Val<Γ::PolyCircuitId>>,
     arr_circuit: Γ::PolyCircuitId,
-    args: &'a [ArgRank],
+    args: Vec<ArgRank>,
+    arg_count: u32,
     arg_poly_vals: Vec<RandomArray>,
     deps: Vec<ArgDeps>,
 }
@@ -443,13 +448,15 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             ],
         };
         let arr_circuit = env.intern_circuit(Arc::new(arr_circuit));
+        let arg_count = args.len() as u32;
         let mut ret = Self {
             env,
             poly_vals: vec![UNINIT; size_expr.terms.len()],
             vals: Vec::with_capacity(size_expr.terms.len()),
             size_expr,
             arr_circuit,
-            args,
+            args: args.to_vec(),
+            arg_count,
             arg_poly_vals,
             deps: vec![Default::default(); size_expr.terms.len()],
         };
@@ -480,28 +487,32 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         }
     }
 
-    fn poly_args(&mut self, fun: Val<Γ::PolyCircuitId>) -> Vec<Option<Parameter>> {
+    fn poly_args(&mut self, idx: usize) -> Vec<Option<Parameter>> {
+        let fun = &self.vals[idx];
         let mut args = self.poly_args_impl(fun.clone());
+        let fun = &self.vals[idx];
         let rank = match fun {
             Val::PartialPolyApply(rank, ..) => rank,
             Val::Poly(rank, ..) => rank,
             _ => panic!("not a polynomial"),
         };
-        // for comparing polynomials, we need to make sure there are at least
-        // rank + arglen slots in the arg_poly_vals vector
-        let new_size = self
-            .arg_poly_vals
-            .len()
-            .max(rank as usize + self.args.len());
-        self.arg_poly_vals.resize_with(new_size, || {
+        let arg_count = self.size_expr.arg_depth[idx] as usize;
+        for i in arg_count..(arg_count + *rank as usize) {
+            args.push(Some(Parameter::Arg(i)));
+        }
+        args
+    }
+
+    fn get_polyval_arg(&mut self, arg: usize) -> &RandomArray {
+        if arg < self.arg_poly_vals.len() {
+            return &self.arg_poly_vals[arg];
+        }
+        self.arg_poly_vals.resize_with(arg + 1, || {
             let mut arr = UNINIT;
             arr.random_element();
             arr
         });
-        for i in self.args.len()..(self.args.len() + rank as usize) {
-            args.push(Some(Parameter::Arg(i)));
-        }
-        args
+        &self.arg_poly_vals[arg]
     }
 
     fn eval_circuit(&mut self, circuit: &PolyCircuit, params: &[Option<Parameter>]) -> RandomArray {
@@ -511,7 +522,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             match gate {
                 PolyGate::Const(c) => val.array_from_const(*c),
                 PolyGate::Arg(a) => match params[*a as usize] {
-                    Some(Parameter::Arg(a)) => val.clone_from(&self.arg_poly_vals[a]),
+                    Some(Parameter::Arg(a)) => val.clone_from(self.get_polyval_arg(a)),
                     Some(Parameter::Val(v)) => {
                         self.eval_poly(v);
                         val.clone_from(&self.poly_vals[v])
@@ -548,7 +559,9 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         }
         match self.vals[idx].clone() {
             Val::Const(_, c, _) => self.poly_vals[idx].array_from_const(c),
-            Val::Arg(_, a) => self.poly_vals[idx].clone_from(&self.arg_poly_vals[a as usize]),
+            Val::Arg(_, a) => {
+                self.poly_vals[idx] = *self.get_polyval_arg(a as usize);
+            }
             Val::PolyOp(op) => {
                 let deps = match &op {
                     PolyOp::Add(deps) | PolyOp::Mul(deps) => &deps[..],
@@ -573,7 +586,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 }
             }
             Val::Poly(.., circ, _) | Val::PartialPolyApply(.., circ, _) => {
-                let args = self.poly_args(self.vals[idx].clone());
+                let args = self.poly_args(idx);
                 let circ = self.env.lookup_circuit(circ);
                 self.poly_vals[idx] = self.eval_circuit(&circ, &args);
             }
@@ -819,8 +832,15 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                     Val::Unsized | Val::Static(_, _) => Val::Unsized,
                     otherwise => otherwise,
                 },
+                Term::ScopeIntro(scope) => {
+                    let info = &self.size_expr.scope_info[scope.0 as usize];
+                    self.args.extend_from_slice(&info.params);
+                    Val::Undefined
+                }
                 Term::BlockEnd(idx, len_loc) => {
-                    if self.size_expr.scope_info[idx.0 as usize].kind == ScopeKind::Parser {
+                    let info = &self.size_expr.scope_info[idx.0 as usize];
+                    self.args.truncate(self.args.len() - info.params.len());
+                    if info.kind == ScopeKind::Parser {
                         self.block_end(*len_loc)
                     } else {
                         self.vals[*len_loc].clone()
@@ -869,7 +889,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         *index.last().unwrap()
     }
 
-    fn create_polycircuit(&mut self, root: usize) -> Option<PolyCircuit> {
+    fn create_polycircuit(&mut self, root: usize, rank: u32) -> Option<PolyCircuit> {
         if !self.vals.get(root).map_or(false, |x| x.is_poly()) {
             return None;
         }
@@ -919,7 +939,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                     gates.push(PolyGate::Op(op))
                 }
                 Val::Poly(0, circuit, _) | Val::PartialPolyApply(0, _, circuit, _) => {
-                    let parameters = self.poly_args(self.vals[i].clone());
+                    let parameters = self.poly_args(i);
                     let circuit = self.env.lookup_circuit(circuit);
                     let last =
                         self.include_circuit(&circuit, &mut gates, &gates_index, &parameters);
@@ -931,8 +951,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 }
             }
         }
-        let depth = self.args.len();
-        let (env_deps, arg_deps) = self.deps[root].len().split_at(depth, depth);
+        let (env_deps, arg_deps) = self.deps[root].len().split_at(rank as usize, rank as usize);
         Some(PolyCircuit {
             gates,
             arg_deps,
@@ -948,7 +967,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
     }
 
     pub fn fun_val(&mut self, root: usize, is_val_fun: bool) -> Val<Γ::PolyCircuitId> {
-        let arg_count = self.args.len() as u32;
+        let arg_count = self.arg_count;
         let mut val_deps = DepVec::default();
         if is_val_fun {
             for i in 0..arg_count as usize {
@@ -959,7 +978,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             Val::Undefined => Val::Undefined,
             Val::Const(0, c, _) => Val::Const(arg_count, *c, val_deps),
             Val::Arg(0, _) | Val::PolyOp(_) | Val::Poly(0, ..) | Val::PartialPolyApply(0, ..) => {
-                let circuit = self.create_polycircuit(root).unwrap();
+                let circuit = self.create_polycircuit(root, arg_count).unwrap();
                 let deps = circuit.arg_deps.or(&val_deps);
                 let circuit_id = self.env.intern_circuit(Arc::new(circuit));
                 Val::Poly(arg_count, circuit_id, deps)
