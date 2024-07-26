@@ -15,7 +15,7 @@ use yaboc_dependents::{requirements::ExprDepData, BlockSerialization, SubValue, 
 use yaboc_expr::{ExprIdx, Expression, FetchExpr, TakeRef};
 use yaboc_hir::{
     self as hir, variable_set::VarStatus, BlockId, ChoiceId, ContextId, ExprId, HirIdWrapper,
-    HirNode, ParserDefId, ParserPredecessor,
+    HirNode, LambdaId, ParserDefId, ParserPredecessor,
 };
 use yaboc_hir_types::FullTypeId;
 use yaboc_req::{NeededBy, RequirementMatrix, RequirementSet};
@@ -378,6 +378,13 @@ impl<'a> ConvertCtx<'a> {
         Ok(())
     }
 
+    pub fn lambda_eval_fun(&mut self, lambda: &hir::Lambda) -> SResult<()> {
+        let expr = self.w.val_place_at_def(lambda.expr.0).unwrap();
+        let ret = self.w.f.fun.ret().unwrap();
+        self.w.copy(expr, ret);
+        Ok(())
+    }
+
     pub fn parserdef_eval_fun(&mut self, pd: &hir::ParserDef) -> SResult<()> {
         let expr = self.w.val_place_at_def(pd.to.0).unwrap();
         let ret = self.w.f.fun.ret().unwrap();
@@ -571,6 +578,7 @@ impl<'a> ConvertCtx<'a> {
             | hir::HirNode::TExpr(_)
             | hir::HirNode::ArgDef(_)
             | hir::HirNode::Import(_)
+            | hir::HirNode::Lambda(_)
             | hir::HirNode::ParserDef(_) => panic!("invalid subvalue encountered"),
         };
         Ok(())
@@ -641,6 +649,7 @@ impl<'a> ConvertCtx<'a> {
                     | HirNode::Module(_)
                     | HirNode::Context(_)
                     | HirNode::Import(_)
+                    | HirNode::Lambda(_)
                     | HirNode::ParserDef(_) => {
                         dbpanic!(db, "subvalue {} should not occur here", &val)
                     }
@@ -696,56 +705,51 @@ impl<'a> ConvertCtx<'a> {
         })
     }
 
-    fn pd_places(
+    fn fun_places(
         db: &dyn Mirs,
-        id: ParserDefId,
+        id: DefId,
+        expr_id: ExprId,
         f: &mut FunctionWriter,
     ) -> SResult<FxHashMap<SubValue, PlaceRef>> {
         let mut places: FxHashMap<SubValue, PlaceRef> = FxHashMap::default();
-        let pd = id.lookup(db)?;
-        let expr = db.parser_expr_at(pd.to)?;
-        let expr_place = Place::Stack(f.new_stack_ref(PlaceOrigin::Expr(pd.to, expr.root())));
+        let expr = db.parser_expr_at(expr_id)?;
+        let expr_place = Place::Stack(f.new_stack_ref(PlaceOrigin::Expr(expr_id, expr.root())));
         let expr_place_ref = f.add_place(PlaceInfo {
             place: expr_place,
             ty: *expr.root_data(),
             remove_bt: false,
         });
-        places.insert(SubValue::new_val(pd.to.0), expr_place_ref);
+        places.insert(SubValue::new_val(expr_id.0), expr_place_ref);
         if let Some(arg) = f.fun.arg() {
-            places.insert(SubValue::new_front(id.0), arg);
+            places.insert(SubValue::new_front(id), arg);
         }
         if let Some(ret) = f.fun.ret() {
-            places.insert(SubValue::new_val(id.0), ret);
+            places.insert(SubValue::new_val(id), ret);
         }
         if let Some(retlen) = f.fun.retlen() {
-            places.insert(SubValue::new_back(id.0), retlen);
+            places.insert(SubValue::new_back(id), retlen);
         }
         Ok(places)
     }
 
-    pub fn new_parserdef_builder(
-        db: &'a dyn Mirs,
-        id: ParserDefId,
+    fn new_fun_builder(
+        mut f: FunctionWriter,
         requirements: RequirementSet,
-    ) -> SResult<Self> {
-        let mut f = FunctionWriter::new_pd(db, id, requirements)?;
+        id: DefId,
+        expr: ExprId,
+        db: &'a dyn Mirs,
+        places: FxHashMap<SubValue, PlaceRef>,
+    ) -> SResult<ConvertCtx<'a>> {
         let mut top_level_retreat = f.make_top_level_retreat();
         if !requirements.contains(NeededBy::Backtrack) {
             top_level_retreat.backtrack = top_level_retreat.error;
         }
         let retreat = top_level_retreat;
-        let context_data = FxHashMap::default();
-        let context_bb = FxHashMap::default();
-        let places = Self::pd_places(db, id, &mut f)?;
-        let current_context = None;
-        let returns_self = false;
-        let processed_parse_sites = FxHashSet::default();
         let mut req_transformer = BTreeMap::default();
-        req_transformer.insert(id.0, RequirementMatrix::id());
-        let parserdef = id.lookup(db)?;
+        req_transformer.insert(id, RequirementMatrix::id());
         // if we want to know the length or bt, we need to know the value of the parser
         req_transformer.insert(
-            parserdef.to.0,
+            expr.0,
             RequirementMatrix::id()
                 | RequirementMatrix::outer(
                     NeededBy::Val.into(),
@@ -754,10 +758,12 @@ impl<'a> ConvertCtx<'a> {
         );
         let req_transformer = Arc::new(req_transformer);
         let mut tails = BTreeSet::default();
-        tails.insert(id.0);
+        tails.insert(id);
         let tails = Arc::new(tails);
         f.set_bb(f.fun.entry());
         let w = ConvertExpr::new(db, f, retreat, places);
+        let (returns_self, current_context, context_bb, context_data, processed_parse_sites) =
+            Default::default();
         Ok(ConvertCtx {
             db,
             top_level_retreat,
@@ -771,6 +777,28 @@ impl<'a> ConvertCtx<'a> {
             tails,
             w,
         })
+    }
+
+    pub fn new_parserdef_builder(
+        db: &'a dyn Mirs,
+        id: ParserDefId,
+        requirements: RequirementSet,
+    ) -> SResult<Self> {
+        let mut f = FunctionWriter::new_pd(db, id, requirements)?;
+        let parserdef = id.lookup(db)?;
+        let places = Self::fun_places(db, id.0, parserdef.to, &mut f)?;
+        Self::new_fun_builder(f, requirements, id.0, parserdef.to, db, places)
+    }
+
+    pub fn new_lambda_builder(
+        db: &'a dyn Mirs,
+        id: LambdaId,
+        requirements: RequirementSet,
+    ) -> SResult<Self> {
+        let lambda = id.lookup(db)?;
+        let mut f = FunctionWriter::new_lambda(db, &lambda, requirements)?;
+        let places = Self::fun_places(db, id.0, lambda.expr, &mut f)?;
+        Self::new_fun_builder(f, requirements, id.0, lambda.expr, db, places)
     }
 
     pub fn new_if_builder(

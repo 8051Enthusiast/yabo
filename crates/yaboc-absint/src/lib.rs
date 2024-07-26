@@ -125,6 +125,26 @@ pub struct PdEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LambdaEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
+    pub returned: Dom,
+    pub expr_vals: AbstractData<Dom>,
+    pub typesubst: Arc<Vec<TypeId>>,
+}
+
+impl<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> From<LambdaEvaluated<Dom>>
+    for PdEvaluated<Dom>
+{
+    fn from(lambda: LambdaEvaluated<Dom>) -> Self {
+        Self {
+            returned: lambda.returned,
+            from: None,
+            expr_vals: Some(lambda.expr_vals),
+            typesubst: lambda.typesubst,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlockEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
     pub id: BlockId,
     pub expr_vals: FxHashMap<hir::ExprId, AbstractData<Dom>>,
@@ -158,7 +178,9 @@ pub struct AbsIntCtx<'a, Dom: AbstractDomain<'a>> {
     block_vars: FxHashMap<DefId, Dom>,
     block_expr_vals: FxHashMap<hir::ExprId, AbstractData<Dom>>,
     block_result: FxHashMap<CallSite<Dom>, MaybeEpoch<BlockEvaluated<Dom>>>,
-    active_block: Option<Dom>,
+    active_env: Dom,
+
+    lambda_result: FxHashMap<Dom, MaybeEpoch<LambdaEvaluated<Dom>>>,
 
     errors: Vec<(Dom, Dom::Err)>,
 }
@@ -169,7 +191,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         Self {
             db,
             dcx,
-            current_pd: bottom,
+            current_pd: bottom.clone(),
             cache_epoch: Default::default(),
             type_substitutions: Default::default(),
             current_ambience: Default::default(),
@@ -180,7 +202,8 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             block_vars: Default::default(),
             block_expr_vals: Default::default(),
             block_result: Default::default(),
-            active_block: Default::default(),
+            lambda_result: Default::default(),
+            active_env: bottom,
             errors: Default::default(),
         }
     }
@@ -191,6 +214,10 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
 
     pub fn block_result(&self) -> &FxHashMap<CallSite<Dom>, MaybeEpoch<BlockEvaluated<Dom>>> {
         &self.block_result
+    }
+
+    pub fn lambda_result(&self) -> &FxHashMap<Dom, MaybeEpoch<LambdaEvaluated<Dom>>> {
+        &self.lambda_result
     }
 
     fn strip_error<T>(&mut self, x: Result<T, Dom::Err>) -> Option<T> {
@@ -364,7 +391,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         let old_ambienece = std::mem::replace(&mut self.current_ambience, from);
         // to make sure
         self.call_needs_fixpoint.remove(&self.depth);
-        let old_active_block = self.active_block.take();
+        let old_active_env = std::mem::replace(&mut self.active_env, pd.clone());
 
         let result = self.eval_pd_expr(&parserdef);
         let result = self.strip_error(result);
@@ -380,7 +407,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             self.cache_epoch.update();
         }
 
-        self.active_block = old_active_block;
+        self.active_env = old_active_env;
         self.current_ambience = old_ambienece;
         self.type_substitutions = old_type_substitutions;
         self.current_pd = old_pd;
@@ -391,13 +418,9 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
     }
 
     pub fn var_by_id(&mut self, id: DefId) -> Result<Dom, Dom::Err> {
-        if self.active_block.is_some() {
-            match self.block_vars.get(&id) {
-                Some(v) => Ok(v.clone()),
-                None => dbpanic!(self.db, "Did not find variable {}", &id,),
-            }
-        } else {
-            self.current_pd.clone().get_arg(self, Arg::Named(id))
+        match self.block_vars.get(&id) {
+            Some(v) => Ok(v.clone()),
+            None => dbpanic!(self.db, "Did not find variable {}", &id,),
         }
     }
 
@@ -405,8 +428,8 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         self.block_vars.insert(id, val);
     }
 
-    pub fn active_block(&self) -> &Option<Dom> {
-        &self.active_block
+    pub fn active_env(&self) -> &Dom {
+        &self.active_env
     }
 
     pub fn active_pd(&self) -> &Dom {
@@ -511,7 +534,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         //}
         let mut old_block_vars = std::mem::take(&mut self.block_vars);
         let mut old_block_expr = std::mem::take(&mut self.block_expr_vals);
-        let old_block = std::mem::replace(&mut self.active_block, Some(block.clone()));
+        let old_env = std::mem::replace(&mut self.active_env, block.clone());
         let old_type_substitutions =
             std::mem::replace(&mut self.type_substitutions, typesubst.clone());
         let old_ambience = std::mem::replace(&mut self.current_ambience, from.clone());
@@ -521,7 +544,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
 
         self.current_ambience = old_ambience;
         self.type_substitutions = old_type_substitutions;
-        self.active_block = old_block;
+        self.active_env = old_env;
         std::mem::swap(&mut self.block_expr_vals, &mut old_block_expr);
         std::mem::swap(&mut self.block_vars, &mut old_block_vars);
 
@@ -539,6 +562,49 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         );
 
         res
+    }
+
+    pub fn eval_lambda_impl(
+        &mut self,
+        lambda_id: hir::LambdaId,
+        result_ty: TypeId,
+    ) -> Result<LambdaEvaluated<Dom>, Dom::Err> {
+        let lambda = lambda_id.lookup(self.db)?;
+        let expr = Resolved::expr_with_data::<FullTypeId>(self.db, lambda.expr)?;
+        let expr_res = self.eval_expr(expr.take_ref())?;
+        let ret = expr_res.root_data().0.clone().typecast(self, result_ty)?.0;
+        let ret = LambdaEvaluated {
+            returned: ret,
+            expr_vals: expr_res,
+            typesubst: self.type_substitutions.clone(),
+        };
+        Ok(ret)
+    }
+
+    pub fn eval_lambda(
+        &mut self,
+        lambda_id: hir::LambdaId,
+        lambda: Dom,
+        result_ty: TypeId,
+        typesubst: Arc<Vec<TypeId>>,
+    ) -> Option<Dom> {
+        let old_env = std::mem::replace(&mut self.active_env, lambda.clone());
+        let old_type_substitutions =
+            std::mem::replace(&mut self.type_substitutions, typesubst.clone());
+
+        let res = self.eval_lambda_impl(lambda_id, result_ty);
+        let res = self.strip_error(res);
+
+        self.type_substitutions = old_type_substitutions;
+        self.active_env = old_env;
+
+        let ret = res.as_ref().map(|evaluated| evaluated.returned.clone());
+        if let Some(evaluated) = res {
+            self.lambda_result
+                .insert(lambda, EpochVal::new(Some(evaluated), self.cache_epoch));
+        }
+
+        ret
     }
 
     pub fn apply_thunk_arg(

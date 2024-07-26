@@ -140,6 +140,19 @@ pub fn add_term_val_refs<DB: Dependents + ?Sized>(
             })
             .map(SubValue::new_val)
             .for_each(add_subval),
+        ExprHead::Niladic(ResolvedAtom::Lambda(l)) => db
+            .lambda_captures(*l)
+            .iter()
+            .copied()
+            .filter(|target| {
+                if let Some(parent_block) = parent_block {
+                    parent_block.0.is_ancestor_of(db, *target)
+                } else {
+                    true
+                }
+            })
+            .map(SubValue::new_val)
+            .for_each(add_subval),
         ExprHead::Niladic(ResolvedAtom::Val(v)) => add_subval(SubValue::new_val(*v)),
         ExprHead::Niladic(ResolvedAtom::Span(start, end)) => {
             add_subval(SubValue::new_front(*start));
@@ -218,7 +231,7 @@ fn val_refs(
                 DepType::Data,
             )))
             .collect()),
-        hir::HirNode::TExpr(_) => Ok(FxHashSet::default()),
+        hir::HirNode::TExpr(_) | hir::HirNode::Lambda(_) => Ok(FxHashSet::default()),
         hir::HirNode::ArgDef(_)
         | hir::HirNode::Module(_)
         | hir::HirNode::ParserDef(_)
@@ -331,6 +344,7 @@ fn bt_refs(db: &dyn Dependents, node: &hir::HirNode) -> SResult<FxHashSet<SubVal
         | hir::HirNode::ArgDef(_)
         | hir::HirNode::Module(_)
         | hir::HirNode::Context(_)
+        | hir::HirNode::Lambda(_)
         | hir::HirNode::ParserDef(_)
         | hir::HirNode::ChoiceIndirection(_)
         | hir::HirNode::TExpr(_) => {}
@@ -385,7 +399,7 @@ impl DependencyGraph {
 
     fn init_nodes(&mut self, db: &dyn Dependents) -> SResult<()> {
         for hir_node in hir::walk::ChildIter::new(self.block.root_context.0, db)
-            .without_kinds(hir::HirNodeKind::Block)
+            .without_kinds(hir::HirNodeKind::Block | hir::HirNodeKind::Lambda)
             .chain(std::iter::once(db.hir_node(self.block.id.0)?))
         {
             match hir_node {

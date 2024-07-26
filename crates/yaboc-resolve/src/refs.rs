@@ -112,6 +112,13 @@ pub fn resolve_var_ref(
                     None => db.hir_parent_module(current_id)?.id(),
                 }
             }
+            HirNode::Lambda(lambda_id) => match ident {
+                FieldName::Ident(n) => match db.lambda_arg(lambda_id.id, n)? {
+                    Some(child_id) => return Ok(Resolved::Value(child_id.0, VarType::Value)),
+                    None => current_id.parent(db).unwrap(),
+                },
+                FieldName::Return => current_id.parent(db).unwrap(),
+            },
             _ => current_id.parent(db).unwrap(),
         }
     }

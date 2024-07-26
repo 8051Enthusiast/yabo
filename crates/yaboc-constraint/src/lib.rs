@@ -165,10 +165,24 @@ fn arg_rank(db: &(impl Constraints + ?Sized), ty: TypeId) -> SResult<ArgRank> {
     ))
 }
 
-fn arg_ranks(db: &(impl Constraints + ?Sized), pd: hir::ParserDefId) -> SResult<SmallVec<[ArgRank; 4]>> {
+fn arg_ranks(
+    db: &(impl Constraints + ?Sized),
+    pd: hir::ParserDefId,
+) -> SResult<SmallVec<[ArgRank; 4]>> {
     let signature = db.parser_args(pd)?;
     let Some(args) = &signature.args else {
         return Ok(SmallVec::new());
+    };
+    args.iter().map(|arg_ty| arg_rank(db, *arg_ty)).collect()
+}
+
+fn lambda_arg_ranks(
+    db: &(impl Constraints + ?Sized),
+    lambda_id: hir::LambdaId,
+) -> SResult<SmallVec<[ArgRank; 4]>> {
+    let lambda_ty = db.lambda_type(lambda_id)?;
+    let Type::FunctionArg(_, args) = db.lookup_intern_type(lambda_ty) else {
+        panic!("Lambda type is not a function type");
     };
     args.iter().map(|arg_ty| arg_rank(db, *arg_ty)).collect()
 }

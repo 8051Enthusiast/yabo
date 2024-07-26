@@ -284,17 +284,26 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         if let Some(value) = self.array_arg_level_and_offset(layout, argnum) {
             return value;
         }
-        let (pd, args) = if let MonoLayout::NominalParser(pd, args, _) = layout.mono_layout().0 {
-            (*pd, args)
-        } else {
-            dbpanic!(
-                &self.compiler_database.db,
-                "trying to get parser set arg struct for non-nominal-parser layout {}",
-                &layout.inner()
-            );
+        let (arg_defs, args) = match layout.mono_layout().0 {
+            MonoLayout::NominalParser(pd, args, _) => {
+                let pd = pd.lookup(&self.compiler_database.db).unwrap();
+                let arg_defs = pd.args.unwrap();
+                (arg_defs, args)
+            }
+            MonoLayout::Lambda(lambda_id, _, args, ..) => {
+                let lambda = lambda_id.lookup(&self.compiler_database.db).unwrap();
+                let arg_defs = lambda.args;
+                (arg_defs, args)
+            }
+            _ => {
+                dbpanic!(
+                    &self.compiler_database.db,
+                    "trying to get parser set arg struct for non-nominal-parser layout {}",
+                    &layout.inner()
+                );
+            }
         };
-        let parserdef_args = pd.lookup(&self.compiler_database.db).unwrap().args.unwrap();
-        let arg_index = parserdef_args.len() - argnum as usize - 1;
+        let arg_index = arg_defs.len() - argnum as usize - 1;
         let (arg_layout, ty) = args[arg_index];
         let is_multi = arg_layout.is_multi();
         let head = self
@@ -307,7 +316,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         // needed so that the manifestation exists
         let _ = layout.inner().size_align(self.layouts).unwrap();
         let manifestation = self.layouts.dcx.manifestation(layout.inner());
-        let arg_defid = parserdef_args[arg_index];
+        let arg_defid = arg_defs[arg_index];
         let mut field_offset = manifestation.field_offsets[&arg_defid.0];
         if is_multi {
             field_offset += arg_layout

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{arg_ranks, Origin};
+use crate::{arg_ranks, lambda_arg_ranks, Origin};
 
 use super::Constraints;
 use fxhash::FxHashMap;
@@ -33,7 +33,7 @@ pub struct SizeTermBuilder<'a> {
 }
 
 impl<'a> SizeTermBuilder<'a> {
-    pub fn new(db: &'a dyn Constraints, arg_depth: u32) -> Self {
+    pub fn new(db: &'a dyn Constraints) -> Self {
         Self {
             db,
             terms: SizeExpr::new(),
@@ -41,7 +41,7 @@ impl<'a> SizeTermBuilder<'a> {
             vals: FxHashMap::default(),
             block_locs: FxHashMap::default(),
             expr_locs: FxHashMap::default(),
-            arg_depth,
+            arg_depth: 0,
         }
     }
 
@@ -75,6 +75,7 @@ impl<'a> SizeTermBuilder<'a> {
         let ser: BlockSerialization = self.db.block_serialization(bid).silence()?;
         let mut whole_result = None;
         let idx = self.new_block(bid)?;
+        self.arg_depth += 1;
         self.push_term(Term::ScopeIntro(idx), Origin::Node(bid.0));
         for val_loc in ser.eval_order.iter() {
             let loc = Origin::Node(val_loc.val.id);
@@ -158,9 +159,47 @@ impl<'a> SizeTermBuilder<'a> {
             self.vals.insert(val_loc.val, val);
         }
         let (res, loc) = whole_result.expect("block is never terminated");
+        self.arg_depth -= 1;
         let res = self.push_term(Term::BlockEnd(idx, res), loc);
         self.block_locs.insert(bid, res);
         Ok(res)
+    }
+
+    fn new_lambda(&mut self, lambda_id: hir::LambdaId) -> SResult<ScopeInfoIdx> {
+        let mut captures = SmallBitVec::default();
+        for id in self.db.lambda_captures(lambda_id).iter() {
+            let val = self.vals[&SubValue::new_val(*id)];
+            captures.set(val);
+        }
+        let kind = ScopeKind::AllValUse;
+        let params = lambda_arg_ranks(self.db, lambda_id)?;
+        let block_info = ScopeInfo {
+            captures,
+            kind,
+            params,
+        };
+        let idx = ScopeInfoIdx::new(self.terms.scope_info.len() as u32);
+        self.terms.scope_info.push(block_info);
+        Ok(idx)
+    }
+
+    fn create_lambda(&mut self, lambda_id: hir::LambdaId) -> SResult<usize> {
+        let lambda = lambda_id.lookup(self.db)?;
+        let old_depth = self.arg_depth;
+        self.arg_depth += lambda.args.len() as u32;
+        let idx = self.new_lambda(lambda_id)?;
+        self.push_term(Term::ScopeIntro(idx), Origin::Node(lambda_id.0));
+        for (arg_idx, arg) in lambda.args.iter().enumerate() {
+            let arg_idx = old_depth + arg_idx as u32;
+            let loc = Origin::Node(arg.0);
+            let term = self.push_term(Term::Arg(arg_idx), loc);
+            let val_loc = SubValue::new_val(arg.0);
+            self.vals.insert(val_loc, term);
+        }
+        let res = self.create_expr(lambda.expr)?;
+        self.arg_depth -= lambda.args.len() as u32;
+        let lam = self.push_term(Term::FunctionEnd(idx, res), Origin::Node(lambda_id.0));
+        Ok(lam)
     }
 
     fn create_expr(&mut self, expr_id: hir::ExprId) -> SResult<usize> {
@@ -204,12 +243,8 @@ impl<'a> SizeTermBuilder<'a> {
                         ResolvedAtom::Nil => self.push_term(Term::Const(0), src),
                         ResolvedAtom::Array => self.push_term(Term::Arr, src),
                         ResolvedAtom::Span(..) => self.push_term(Term::Span, src),
-                        ResolvedAtom::Block(bid, _) => {
-                            self.arg_depth += 1;
-                            let ret = self.create_block(bid);
-                            self.arg_depth -= 1;
-                            ret?
-                        }
+                        ResolvedAtom::Block(bid, _) => self.create_block(bid)?,
+                        ResolvedAtom::Lambda(lam) => self.create_lambda(lam)?,
                     },
                     ExprHead::Monadic(m, &(inner, inner_bt, inner_ty)) => match m {
                         ValUnOp::Neg => self.push_term(Term::Neg(inner), src),
@@ -300,12 +335,14 @@ impl<'a> SizeTermBuilder<'a> {
             ScopeKind::AllValUse
         };
         let params = arg_ranks(self.db, parserdef.id)?;
+        let param_count = params.len() as u32;
         let idx = ScopeInfoIdx::new(self.terms.scope_info.len() as u32);
         self.terms.scope_info.push(ScopeInfo {
             captures: SmallBitVec::default(),
             kind,
             params,
         });
+        self.arg_depth += param_count;
         self.push_term(Term::ScopeIntro(idx), Origin::Node(pd.0));
         for (arg_idx, arg) in parserdef
             .args
@@ -319,6 +356,7 @@ impl<'a> SizeTermBuilder<'a> {
             self.vals.insert(val_loc, term);
         }
         let res = self.create_expr(parserdef.to)?;
+        self.arg_depth -= param_count;
         Ok(self.push_term(Term::FunctionEnd(idx, res), Origin::Node(pd.0)))
     }
 }
@@ -335,8 +373,7 @@ pub struct PdLenTerm {
 }
 
 pub fn len_term(db: &dyn Constraints, pd: hir::ParserDefId) -> SResult<Arc<PdLenTerm>> {
-    let arg_count = db.argnum(pd)?.unwrap_or(0);
-    let mut ctx = SizeTermBuilder::new(db, arg_count as u32);
+    let mut ctx = SizeTermBuilder::new(db);
     let root = ctx.create_pd(pd)?;
     let expr = ctx.terms;
     let term_spans = ctx.term_spans;

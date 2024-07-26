@@ -136,6 +136,19 @@ impl<const REVERSED: bool> DepVec<REVERSED> {
     pub fn truncate(&mut self, size: usize) {
         self.0 = self.0.truncate(size << 1);
     }
+
+    pub fn iter_ones(&self) -> impl Iterator<Item = (usize, NeededBy)> + '_ {
+        self.0.iter_ones().map(|i| {
+            (
+                i >> 1,
+                if i & 1 == 0 {
+                    NeededBy::Val
+                } else {
+                    NeededBy::Len
+                },
+            )
+        })
+    }
 }
 
 impl LevelDepVec {

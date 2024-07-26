@@ -31,7 +31,7 @@
       },
       "ty": {
         "multiple": true,
-        "required": true,
+        "required": false,
         "types": [
           {
             "type": "(",
@@ -246,6 +246,10 @@
             "named": true
           },
           {
+            "type": "lambda",
+            "named": true
+          },
+          {
             "type": "nil",
             "named": true
           },
@@ -435,6 +439,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "lambda",
             "named": true
           },
           {
@@ -681,6 +689,10 @@
             "named": true
           },
           {
+            "type": "lambda",
+            "named": true
+          },
+          {
             "type": "nil",
             "named": true
           },
@@ -789,6 +801,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "lambda",
             "named": true
           },
           {
@@ -948,6 +964,10 @@
             "named": true
           },
           {
+            "type": "lambda",
+            "named": true
+          },
+          {
             "type": "nil",
             "named": true
           },
@@ -1034,6 +1054,10 @@
             "named": true
           },
           {
+            "type": "lambda",
+            "named": true
+          },
+          {
             "type": "nil",
             "named": true
           },
@@ -1100,6 +1124,128 @@
     }
   },
   {
+    "type": "lambda",
+    "named": true,
+    "fields": {
+      "argdefs": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "lambda_arg_def_list",
+            "named": true
+          }
+        ]
+      },
+      "expr": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "(",
+            "named": false
+          },
+          {
+            "type": ")",
+            "named": false
+          },
+          {
+            "type": "array_fill",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "block",
+            "named": true
+          },
+          {
+            "type": "bool_literal",
+            "named": true
+          },
+          {
+            "type": "bt_mark",
+            "named": true
+          },
+          {
+            "type": "char_literal",
+            "named": true
+          },
+          {
+            "type": "constraint_apply",
+            "named": true
+          },
+          {
+            "type": "fun_application",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "lambda",
+            "named": true
+          },
+          {
+            "type": "nil",
+            "named": true
+          },
+          {
+            "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "parser_span",
+            "named": true
+          },
+          {
+            "type": "regex_literal",
+            "named": true
+          },
+          {
+            "type": "retvrn",
+            "named": true
+          },
+          {
+            "type": "single",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          },
+          {
+            "type": "val_dot",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "lambda_arg_def_list",
+    "named": true,
+    "fields": {
+      "args": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "arg_definition",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "let_statement",
     "named": true,
     "fields": {
@@ -1149,6 +1295,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "lambda",
             "named": true
           },
           {
@@ -1324,6 +1474,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "lambda",
             "named": true
           },
           {
@@ -1614,6 +1768,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "lambda",
             "named": true
           },
           {
@@ -2289,6 +2447,10 @@
             "named": true
           },
           {
+            "type": "lambda",
+            "named": true
+          },
+          {
             "type": "nil",
             "named": true
           },
@@ -2444,6 +2606,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "lambda",
             "named": true
           },
           {

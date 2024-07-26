@@ -49,10 +49,11 @@ pub trait Hirs: yaboc_ast::Asts {
     fn all_exported_parserdefs(&self) -> Vec<ParserDefId>;
     fn hir_parent_module(&self, id: DefId) -> SResult<ModuleId>;
     fn hir_parent_parserdef(&self, id: DefId) -> SResult<ParserDefId>;
-    fn hir_parent_block(&self, id: DefId) -> SResult<Option<BlockId>>;
+    fn hir_parent_closure(&self, id: DefId) -> SResult<Option<DefId>>;
     fn indirect_span(&self, span: IndirectSpan) -> SResult<Span>;
     fn indirection_targets(&self, id: DefId) -> SResult<Arc<Vec<DefId>>>;
     fn all_parserdef_blocks(&self, pd: ParserDefId) -> Arc<Vec<BlockId>>;
+    fn all_parserdef_lambdas(&self, pd: ParserDefId) -> Arc<Vec<LambdaId>>;
     fn sorted_block_fields(&self, bd: BlockId, discriminants: bool)
         -> SResult<Arc<Vec<FieldName>>>;
     fn sorted_field_index(
@@ -65,6 +66,8 @@ pub trait Hirs: yaboc_ast::Asts {
     fn argnum(&self, pd: ParserDefId) -> SResult<Option<usize>>;
     fn parserdef_arg(&self, pd: ParserDefId, name: Identifier) -> SResult<Option<ArgDefId>>;
     fn parserdef_arg_index(&self, pd: ParserDefId, id: DefId) -> SResult<Option<usize>>;
+    fn lambda_arg(&self, pd: LambdaId, name: Identifier) -> SResult<Option<ArgDefId>>;
+    fn lambda_arg_index(&self, lambda: LambdaId, id: DefId) -> SResult<Option<usize>>;
     fn core_items(&self) -> SResult<CoreItems>;
     #[salsa::interned]
     fn intern_hir_constraint(&self, c: HirConstraintExpressionRoot) -> HirConstraintId;
@@ -165,6 +168,15 @@ fn all_parserdef_blocks(db: &dyn Hirs, pd: ParserDefId) -> Arc<Vec<BlockId>> {
     }
     Arc::new(ret)
 }
+fn all_parserdef_lambdas(db: &dyn Hirs, pd: ParserDefId) -> Arc<Vec<LambdaId>> {
+    let mut ret = Vec::new();
+    for node in ChildIter::new(pd.0, db) {
+        if let HirNode::Lambda(l) = node {
+            ret.push(l.id)
+        }
+    }
+    Arc::new(ret)
+}
 
 fn all_def_ids(db: &dyn Hirs) -> Vec<DefId> {
     let mut ret = Vec::new();
@@ -240,13 +252,14 @@ fn hir_parent_parserdef(db: &dyn Hirs, id: DefId) -> SResult<ParserDefId> {
     }
 }
 
-fn hir_parent_block(db: &dyn Hirs, id: DefId) -> SResult<Option<BlockId>> {
+fn hir_parent_closure(db: &dyn Hirs, id: DefId) -> SResult<Option<DefId>> {
     match db.hir_node(id)? {
-        HirNode::Block(b) => return Ok(Some(b.id)),
+        HirNode::Block(b) => return Ok(Some(b.id.0)),
+        HirNode::Lambda(l) => return Ok(Some(l.id.0)),
         HirNode::ParserDef(_) => return Ok(None),
         _ => {}
     }
-    db.hir_parent_block(id.parent(db).expect("child of pd has no parent"))
+    db.hir_parent_closure(id.parent(db).expect("child of pd has no parent"))
 }
 
 fn indirect_span(db: &dyn Hirs, span: IndirectSpan) -> SResult<Span> {
@@ -343,6 +356,22 @@ fn parserdef_arg_index(db: &dyn Hirs, pd: ParserDefId, id: DefId) -> SResult<Opt
         .unwrap_or_default()
         .iter()
         .position(|x| x.0 == id);
+    Ok(index)
+}
+
+fn lambda_arg(db: &dyn Hirs, lambda_id: LambdaId, name: Identifier) -> SResult<Option<ArgDefId>> {
+    let lambda = lambda_id.lookup(db)?;
+    let arg = lambda
+        .args
+        .iter()
+        .find(|x| db.def_name(x.0) == Some(FieldName::Ident(name)))
+        .copied();
+    Ok(arg)
+}
+
+fn lambda_arg_index(db: &dyn Hirs, lambda: LambdaId, id: DefId) -> SResult<Option<usize>> {
+    let lambda = lambda.lookup(db)?;
+    let index = lambda.args.iter().position(|x| x.0 == id);
     Ok(index)
 }
 
@@ -456,6 +485,7 @@ hir_node_enum! {
         ArgDef(ArgDef),
         Choice(StructChoice),
         Module(Module),
+        Lambda(Lambda),
         Context(StructCtx),
         ParserDef(ParserDef),
         ChoiceIndirection(ChoiceIndirection),
@@ -470,6 +500,7 @@ hir_id_wrapper! {
     type BlockId = Block(Block);
     type ImportId = Import(Import);
     type ArgDefId = ArgDef(ArgDef);
+    type LambdaId = Lambda(Lambda);
     type ChoiceId = Choice(StructChoice);
     type ModuleId = Module(Module);
     type ContextId = Context(StructCtx);
@@ -652,6 +683,22 @@ pub struct ArgDef {
 impl ArgDef {
     fn children(&self) -> Vec<DefId> {
         self.ty.into_iter().map(|x| x.0).collect()
+    }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct Lambda {
+    pub id: LambdaId,
+    pub enclosing_expr: ExprId,
+    pub expr: ExprId,
+    pub args: Vec<ArgDefId>,
+}
+
+impl Lambda {
+    fn children(&self) -> Vec<DefId> {
+        let mut children = vec![self.expr.0];
+        children.extend(self.args.iter().map(|x| x.0));
+        children
     }
 }
 
@@ -847,6 +894,7 @@ pub enum ParserAtom {
     Span(FieldName, FieldName),
     Regex(Regex),
     Block(BlockId, BlockKind),
+    Lambda(LambdaId),
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]

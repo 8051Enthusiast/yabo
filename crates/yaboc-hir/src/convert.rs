@@ -230,6 +230,11 @@ fn val_expression(
                     };
                     ParserAtom::Block(nid, kind)
                 }
+                ast::ParserAtom::Lambda(l) => {
+                    let nid = LambdaId(new_id());
+                    lambda(l, ctx, nid, id);
+                    ParserAtom::Lambda(nid)
+                }
             }),
             ExpressionHead::Monadic(m) => ExprHead::Monadic(
                 m.op.inner
@@ -345,14 +350,40 @@ fn type_expression(ast: &ast::TypeExpression, ctx: &HirConversionCtx, id: TExprI
 }
 
 fn arg_def(ast: &ast::ArgDefinition, ctx: &HirConversionCtx, id: ArgDefId) {
-    let ty = TExprId(id.child(ctx.db, PathComponent::Unnamed(0)));
-    type_expression(&ast.ty, ctx, ty);
+    let ty = if let Some(ty_expr) = &ast.ty {
+        let ty = TExprId(id.child(ctx.db, PathComponent::Unnamed(0)));
+        type_expression(ty_expr, ctx, ty);
+        Some(ty)
+    } else {
+        None
+    };
     let argdef = ArgDef {
         id,
         name: ast.name.inner,
-        ty: Some(ty),
+        ty,
     };
     ctx.insert(id.0, HirNode::ArgDef(argdef), vec![ast.name.span]);
+}
+
+fn generate_arg_defs(x: &ast::ArgDefList, parent: DefId, ctx: &HirConversionCtx) -> Vec<ArgDefId> {
+    let mut names = FxHashSet::default();
+    let mut args = Vec::new();
+    for arg in x.args.iter() {
+        if !names.insert(arg.name.inner) {
+            ctx.add_errors(Some(HirConversionError::DuplicateArg {
+                name: arg.name.inner,
+                place: arg.name.span,
+            }));
+            continue;
+        };
+        let arg_id = ArgDefId(parent.child(
+            ctx.db,
+            PathComponent::Named(FieldName::Ident(arg.name.inner)),
+        ));
+        arg_def(arg, ctx, arg_id);
+        args.push(arg_id);
+    }
+    args
 }
 
 fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDefId) {
@@ -388,26 +419,10 @@ fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDef
         Some(ast::Qualifier::Export) => Qualifier::Export,
         None => Qualifier::Regular,
     };
-    let mut names = FxHashSet::default();
-    let args = ast.argdefs.as_ref().map(|x| {
-        let mut args = Vec::new();
-        for arg in x.args.iter() {
-            if !names.insert(arg.name.inner) {
-                ctx.add_errors(Some(HirConversionError::DuplicateArg {
-                    name: arg.name.inner,
-                    place: arg.name.span,
-                }));
-                continue;
-            };
-            let arg_id = ArgDefId(id.child(
-                ctx.db,
-                PathComponent::Named(FieldName::Ident(arg.name.inner)),
-            ));
-            arg_def(arg, ctx, arg_id);
-            args.push(arg_id);
-        }
-        args
-    });
+    let args = ast
+        .argdefs
+        .as_ref()
+        .map(|x| generate_arg_defs(x, id.0, ctx));
     let kind = match ast.kind {
         ast::DefKind::Fun => DefKind::Fun,
         ast::DefKind::Def => DefKind::Def,
@@ -427,6 +442,19 @@ fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDef
         HirNode::ParserDef(pdef),
         vec![ast.name.span, ast.span],
     );
+}
+
+fn lambda(l: &ast::Lambda, ctx: &HirConversionCtx, nid: LambdaId, enclosing_expr: ExprId) {
+    let args = generate_arg_defs(&l.argdefs, nid.0, ctx);
+    let expr = ExprId(nid.child(ctx.db, PathComponent::Unnamed(0)));
+    val_expression(&l.expr, ctx, expr, None);
+    let lambda = Lambda {
+        id: nid,
+        args,
+        expr,
+        enclosing_expr,
+    };
+    ctx.insert(nid.0, HirNode::Lambda(lambda), vec![l.span]);
 }
 
 fn block(

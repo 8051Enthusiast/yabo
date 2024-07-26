@@ -468,14 +468,27 @@ astify! {
 }
 
 astify! {
+    struct lambda = Lambda {
+        argdefs: lambda_arg_def_list[!],
+        expr: expression(val_expression)[!],
+    };
+}
+
+astify! {
     struct arg_definition = ArgDefinition {
         name: idspan[!],
-        ty: expression(type_expression)[!],
+        ty: expression(type_expression)[?],
     };
 }
 
 astify! {
     struct arg_def_list = ArgDefList {
+        args: arg_definition[*],
+    };
+}
+
+astify! {
+    struct lambda_arg_def_list = ArgDefList {
         args: arg_definition[*],
     };
 }
@@ -608,6 +621,7 @@ astify! {
         Monadic(bt_mark),
         Niladic(with_span_data(parser_block)),
         Niladic(with_span_data(block)),
+        Niladic(with_span_data(lambda)),
         Niladic(with_span_data(single)),
         Niladic(with_span_data(nil)),
         Niladic(with_span_data(array_fill)),

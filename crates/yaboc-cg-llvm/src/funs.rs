@@ -121,6 +121,20 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         )
     }
 
+    fn mir_lambda_fun(&mut self, layout: IMonoLayout<'comp>) -> IResult<FunctionSubstitute<'comp>> {
+        let MonoLayout::Lambda(ld, _, _, _, _) = layout.mono_layout().0 else {
+            panic!("mir_pd_len_fun has to be called with a lambda layout");
+        };
+        let kind = FunKind::Lambda(*ld);
+        let req = MirKind::Call(fun_req());
+        let mir = self.compiler_database.db.mir(kind, req).unwrap();
+        let strictness = self.compiler_database.db.strictness(kind, req).unwrap();
+        Ok(
+            FunctionSubstitute::new_from_lambda(mir, &strictness, layout, *ld, self.layouts)
+                .unwrap(),
+        )
+    }
+
     fn mir_pd_parser(
         &mut self,
         from: ILayout<'comp>,
@@ -352,6 +366,22 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     .unwrap();
                 inner
             }),
+            MonoLayout::Lambda(ld, captures, args, _, _) => {
+                self.create_mask_manifested(layout, |id| {
+                    let parent_id = id.parent(&self.compiler_database.db).unwrap();
+                    if parent_id == ld.0 {
+                        let idx = self
+                            .compiler_database
+                            .db
+                            .lambda_arg_index(*ld, id)
+                            .unwrap()
+                            .unwrap();
+                        args[idx].0
+                    } else {
+                        captures[&id]
+                    }
+                })
+            }
             MonoLayout::Block(_, layouts) => self.create_mask_manifested(layout, |id| {
                 let field = id.unwrap_name(&self.compiler_database.db);
                 layouts[&FieldName::Ident(field)]
@@ -1313,6 +1343,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         Ok(())
     }
 
+    fn create_eval_lambda_fun(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+    ) -> IResult<FunctionValue<'llvm>> {
+        let llvm_fun = self.eval_fun_fun_val(layout);
+        let arg = self.undef_val();
+        let mir_fun = Rc::new(self.mir_lambda_fun(layout)?);
+        let (ret, fun) = eval_fun_values(llvm_fun, layout);
+        let mut translator = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg)?;
+        translator = translator.with_ret_val(ret);
+        translator.build()
+    }
+
     fn create_eval_fun_fun(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
         let impl_fun = match layout.mono_layout().0 {
             MonoLayout::ArrayParser(_) | MonoLayout::ArrayFillParser(_) => {
@@ -1326,6 +1369,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 self.create_eval_pd_fun_fun_impl(layout)?
             }
             MonoLayout::BlockParser(..) => return self.create_eval_block(layout),
+            MonoLayout::Lambda(..) => self.create_eval_lambda_fun(layout)?,
             _ => dbpanic!(
                 &self.compiler_database.db,
                 "called create_eval_fun_fun on non-parser {}",

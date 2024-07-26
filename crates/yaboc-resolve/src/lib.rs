@@ -34,6 +34,7 @@ pub trait Resolves: crate::hir::Hirs {
     fn resolve_expr(&self, expr_id: hir::ExprId) -> SResult<ResolvedExpr>;
     fn resolve_regex(&self, regex: Regex) -> Result<regex_syntax::hir::Hir, RegexError>;
     fn captures(&self, id: hir::BlockId) -> Arc<BTreeSet<DefId>>;
+    fn lambda_captures(&self, id: hir::LambdaId) -> Arc<BTreeSet<DefId>>;
     fn parserdef_ref(&self, loc: DefId, name: Vec<Identifier>)
         -> SResult<Option<hir::ParserDefId>>;
     fn module_sequence(&self) -> Result<Arc<Vec<ModuleId>>, ResolveErrors>;
@@ -125,6 +126,33 @@ fn resolve_expr(db: &dyn Resolves, expr_id: hir::ExprId) -> SResult<ResolvedExpr
     db.resolve_expr_error(expr_id).silence()
 }
 
+fn expr_captures(
+    db: &dyn Resolves,
+    expr: ExprId,
+    ret: &mut BTreeSet<DefId>,
+    id: DefId,
+) -> SResult<()> {
+    let resolved_expr = db.resolve_expr(expr)?;
+    for subexpr in resolved_expr.expr.take_ref().iter_parts() {
+        if let ExprHead::Niladic(expr::ResolvedAtom::Captured(capture)) = subexpr {
+            ret.insert(capture);
+        } else if let ExprHead::Niladic(expr::ResolvedAtom::Block(bid, _)) = subexpr {
+            ret.extend(
+                db.captures(bid)
+                    .iter()
+                    .filter(|x| !id.is_ancestor_of(db, **x)),
+            );
+        } else if let ExprHead::Niladic(expr::ResolvedAtom::Lambda(lid)) = subexpr {
+            ret.extend(
+                db.lambda_captures(lid)
+                    .iter()
+                    .filter(|x| !id.is_ancestor_of(db, **x)),
+            );
+        }
+    }
+    Ok(())
+}
+
 pub fn captures(db: &dyn Resolves, id: hir::BlockId) -> Arc<BTreeSet<DefId>> {
     let mut ret = BTreeSet::new();
     let root_context = match id.lookup(db) {
@@ -132,25 +160,31 @@ pub fn captures(db: &dyn Resolves, id: hir::BlockId) -> Arc<BTreeSet<DefId>> {
         Err(_) => return Default::default(),
     }
     .root_context;
-    for i in ChildIter::new(root_context.0, db).without_kinds(hir::HirNodeKind::Block) {
+    for i in ChildIter::new(root_context.0, db)
+        .without_kinds(hir::HirNodeKind::Block | hir::HirNodeKind::Lambda)
+    {
         if let hir::HirNode::Expr(expr) = i {
-            let resolved_expr = if let Ok(x) = db.resolve_expr(expr.id) {
-                x
-            } else {
+            if expr_captures(db, expr.id, &mut ret, id.0).is_err() {
                 continue;
-            };
-            for subexpr in resolved_expr.expr.take_ref().iter_parts() {
-                if let ExprHead::Niladic(expr::ResolvedAtom::Captured(capture)) = subexpr {
-                    ret.insert(capture);
-                } else if let ExprHead::Niladic(expr::ResolvedAtom::Block(bid, _)) = subexpr {
-                    ret.extend(
-                        db.captures(bid)
-                            .iter()
-                            .filter(|x| !id.0.is_ancestor_of(db, **x)),
-                    );
-                }
             }
         }
+    }
+    Arc::new(ret)
+}
+
+pub fn lambda_captures(db: &dyn Resolves, id: hir::LambdaId) -> Arc<BTreeSet<DefId>> {
+    let lambda = match id.lookup(db) {
+        Ok(x) => x,
+        Err(_) => return Default::default(),
+    };
+    let mut ret = BTreeSet::new();
+    let Ok(()) = expr_captures(db, lambda.expr, &mut ret, id.0) else {
+        return Default::default();
+    };
+    // the arguments are treated as captures, so we need to remove them
+    // to get the real captures
+    for arg in lambda.args.iter() {
+        ret.remove(&arg.0);
     }
     Arc::new(ret)
 }
