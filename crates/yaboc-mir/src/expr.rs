@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     ops::{Deref, DerefMut},
     sync::Arc,
 };
@@ -13,8 +14,8 @@ use yaboc_base::{
 use yaboc_dependents::{requirements::ExprDepData, SubValue, SubValueKind};
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchKindData, IdxExpression, IndexExpr, ZipExpr};
 use yaboc_hir::{
-    BlockId, ExprId, HirConstraint, HirConstraintId, HirIdWrapper, HirNode, ParseStatement,
-    ParserDefId, ParserPredecessor,
+    BlockId, ExprId, HirConstraint, HirConstraintId, HirIdWrapper, HirNode, LambdaId,
+    ParseStatement, ParserDefId, ParserPredecessor,
 };
 use yaboc_hir_types::FullTypeId;
 use yaboc_req::{NeededBy, RequirementSet};
@@ -276,8 +277,11 @@ impl<'a> ConvertExpr<'a> {
         place_ref
     }
 
-    fn init_block_captures(&mut self, block: BlockId, loc: ExpressionLoc) -> SResult<PlaceRef> {
-        let captures = self.db.captures(block);
+    fn init_captures(
+        &mut self,
+        captures: &BTreeSet<DefId>,
+        loc: ExpressionLoc,
+    ) -> SResult<PlaceRef> {
         let place_ref = self.unwrap_or_stack(loc);
         for captured in captures.iter() {
             let cap_ty = self.db.parser_type_at(*captured)?;
@@ -299,6 +303,16 @@ impl<'a> ConvertExpr<'a> {
             self.copy(origin, target);
         }
         Ok(place_ref)
+    }
+
+    fn init_block_captures(&mut self, block: BlockId, loc: ExpressionLoc) -> SResult<PlaceRef> {
+        let captures = self.db.captures(block);
+        self.init_captures(&captures, loc)
+    }
+
+    fn init_lambda_captures(&mut self, lambda: LambdaId, loc: ExpressionLoc) -> SResult<PlaceRef> {
+        let captures = self.db.lambda_captures(lambda);
+        self.init_captures(&captures, loc)
     }
 
     pub fn convert_constraint(
@@ -494,6 +508,7 @@ impl<'a> ConvertExpr<'a> {
             ResolvedAtom::Span(start, end) => self.convert_span(loc, *start, *end)?,
             ResolvedAtom::Regex(regex) => self.load_zst(ZstVal::Regex(*regex), loc),
             ResolvedAtom::Block(block, _) => self.init_block_captures(*block, loc)?,
+            ResolvedAtom::Lambda(lambda) => self.init_lambda_captures(*lambda, loc)?,
         })
     }
 

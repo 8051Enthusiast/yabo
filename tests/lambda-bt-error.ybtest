@@ -1,0 +1,3 @@
+====[ source code ]====
+fun test() = (<a> a if 1..10)(3)
+#~^error[604] Invocation that could backtrack is not marked as such

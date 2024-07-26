@@ -31,6 +31,7 @@ pub enum ResolvedAtom {
     Array,
     ArrayFill,
     Block(hir::BlockId, hir::BlockKind),
+    Lambda(hir::LambdaId),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -278,7 +279,7 @@ fn resolve_expr_modules(
     expr_id: ExprId,
     expr: DataRefExpr<hir::HirVal, SpanIndex>,
 ) -> Result<ReidxExpr<hir::HirVal, ResolvedButSugared>, ResolveError> {
-    let parent_block = db.hir_parent_block(expr_id.0)?;
+    let parent_closure = db.hir_parent_closure(expr_id.0)?;
 
     let new_resolved_atom = |loc, name, span, use_core| {
         let (id, kind) = match refs::resolve_var_ref(db, loc, name, use_core, true)? {
@@ -292,8 +293,8 @@ fn resolve_expr_modules(
             refs::VarType::ParserDef => ResolvedAtom::ParserDef(hir::ParserDefId(id)),
             refs::VarType::Static => ResolvedAtom::Global(hir::ParserDefId(id)),
             refs::VarType::Value => {
-                let is_captured = parent_block
-                    .map(|x| !x.0.is_ancestor_of(db, id))
+                let is_captured = parent_closure
+                    .map(|x| !x.is_ancestor_of(db, id))
                     .unwrap_or(false);
                 let is_arg = db.hir_node(id)?.is_kind(hir::HirNodeKind::ArgDef.into());
                 if is_captured || is_arg {
@@ -334,6 +335,7 @@ fn resolve_expr_modules(
                         ResolvedAtom::Regex(r)
                     }
                     hir::ParserAtom::Block(b, kind) => ResolvedAtom::Block(b, kind),
+                    hir::ParserAtom::Lambda(l) => ResolvedAtom::Lambda(l),
                     hir::ParserAtom::Span(start, end) => {
                         let (start, end) = resolve_span(db, start, end, expr_id, *span)?;
                         ResolvedAtom::Span(start, end)

@@ -118,6 +118,13 @@ pub enum MonoLayout<Inner> {
     NominalParser(hir::ParserDefId, Vec<(Inner, TypeId)>, bool),
     Block(hir::BlockId, BTreeMap<FieldName, Inner>),
     BlockParser(hir::BlockId, BTreeMap<DefId, Inner>, Arc<Vec<TypeId>>, bool),
+    Lambda(
+        hir::LambdaId,
+        BTreeMap<DefId, Inner>,
+        Vec<(Inner, TypeId)>,
+        Arc<Vec<TypeId>>,
+        bool,
+    ),
     Array {
         parser: Inner,
         slice: Inner,
@@ -243,6 +250,12 @@ impl<'a> IMonoLayout<'a> {
                 let new_status = if bt { WiggleKind::If } else { WiggleKind::Try };
                 IMonoLayout(ctx.dcx.intern(Layout::Mono(
                     MonoLayout::IfParser(*inner, *c, new_status),
+                    self.mono_layout().1,
+                )))
+            }
+            MonoLayout::Lambda(id, cap, args, subst, status) if *status != bt => {
+                IMonoLayout(ctx.dcx.intern(Layout::Mono(
+                    MonoLayout::Lambda(*id, cap.clone(), args.clone(), subst.clone(), bt),
                     self.mono_layout().1,
                 )))
             }
@@ -457,6 +470,13 @@ impl<'a> ILayout<'a> {
             }
         } {
             MonoLayout::BlockParser(_, captures, ..) => captures,
+            MonoLayout::Lambda(lambda_id, captures, args, ..) => {
+                if id.parent(ctx.db) == Some(lambda_id.0) {
+                    return Ok(ctx.db.lambda_arg_index(*lambda_id, id)?.map(|i| args[i].0));
+                } else {
+                    captures
+                }
+            }
             MonoLayout::Nominal(pd, _, args) | MonoLayout::NominalParser(pd, args, _) => {
                 return Ok(ctx.db.parserdef_arg_index(*pd, id)?.map(|i| args[i].0))
             }
@@ -568,6 +588,11 @@ impl<'a> ILayout<'a> {
                         .eval_block(*block_id, self, None, result_type, subst.clone())
                         .ok_or_else(|| SilencedError::new().into())
                 }
+                MonoLayout::Lambda(lambda_id, _, _, subst, _) => {
+                    return ctx
+                        .eval_lambda(*lambda_id, self, result_type, subst.clone())
+                        .ok_or_else(|| SilencedError::new().into())
+                }
                 MonoLayout::ArrayParser(Some((parser, Some(int)))) => {
                     return Ok(ctx.dcx.intern(Layout::Mono(
                         MonoLayout::ArrayParser(Some((*parser, Some(*int)))),
@@ -611,6 +636,10 @@ impl<'a> ILayout<'a> {
                 .zip(args.clone())
                 .map(|(ty, (arg, _))| arg.typecast(ctx, *ty).map(|x| (x.0, *ty)))
                 .collect::<Result<Vec<_>, _>>()?;
+            let fun_ty = ctx.db.intern_type(Type::FunctionArg(
+                result_type,
+                Arc::new(arg_types[typecast_args.len()..].to_vec()),
+            ));
             match layout.mono_layout().0 {
                 MonoLayout::NominalParser(pd, present_args, backtracks) => {
                     let present_args = present_args
@@ -619,11 +648,23 @@ impl<'a> ILayout<'a> {
                         .copied()
                         .collect();
                     let layout = MonoLayout::NominalParser(*pd, present_args, *backtracks);
-                    let ty = ctx.db.intern_type(Type::FunctionArg(
-                        result_type,
-                        Arc::new(arg_types[typecast_args.len()..].to_vec()),
-                    ));
-                    let res = ctx.dcx.intern(Layout::Mono(layout, ty));
+                    let res = ctx.dcx.intern(Layout::Mono(layout, fun_ty));
+                    Ok(res)
+                }
+                MonoLayout::Lambda(lambda_id, captures, present_args, subst, backtracks) => {
+                    let present_args = present_args
+                        .iter()
+                        .chain(typecast_args.iter())
+                        .copied()
+                        .collect();
+                    let layout = MonoLayout::Lambda(
+                        *lambda_id,
+                        captures.clone(),
+                        present_args,
+                        subst.clone(),
+                        *backtracks,
+                    );
+                    let res = ctx.dcx.intern(Layout::Mono(layout, fun_ty));
                     Ok(res)
                 }
                 MonoLayout::ArrayParser(args) => {
@@ -636,11 +677,7 @@ impl<'a> ILayout<'a> {
                         _ => panic!("Invalid number of arguments for array parser"),
                     };
                     let layout = MonoLayout::ArrayParser(new_args);
-                    let ty = ctx.db.intern_type(Type::FunctionArg(
-                        result_type,
-                        Arc::new(arg_types[typecast_args.len()..].to_vec()),
-                    ));
-                    let res = ctx.dcx.intern(Layout::Mono(layout, ty));
+                    let res = ctx.dcx.intern(Layout::Mono(layout, fun_ty));
                     Ok(res)
                 }
                 MonoLayout::ArrayFillParser(arg) => {
@@ -650,11 +687,7 @@ impl<'a> ILayout<'a> {
                         _ => panic!("Invalid number of arguments for array fill parser"),
                     };
                     let layout = MonoLayout::ArrayFillParser(new_arg);
-                    let ty = ctx.db.intern_type(Type::FunctionArg(
-                        result_type,
-                        Arc::new(arg_types[typecast_args.len()..].to_vec()),
-                    ));
-                    let res = ctx.dcx.intern(Layout::Mono(layout, ty));
+                    let res = ctx.dcx.intern(Layout::Mono(layout, fun_ty));
                     Ok(res)
                 }
                 _ => panic!("Attempting to apply function to non-function layout"),
@@ -723,6 +756,9 @@ impl<'a> ILayout<'a> {
             }
             Layout::Mono(MonoLayout::BlockParser(_, captures, ..), _) => {
                 self.block_parser_manifestation(ctx, captures)?.size
+            }
+            Layout::Mono(MonoLayout::Lambda(id, captures, args, _, _), _) => {
+                self.lambda_manifestation(ctx, *id, captures, args)?.size
             }
             Layout::Mono(
                 MonoLayout::IfParser(inner, _, _)
@@ -814,6 +850,31 @@ impl<'a> ILayout<'a> {
         for (capture, layout) in captures.iter() {
             let sa = layout.size_align(ctx)?;
             manifest.add_field(*capture, sa);
+        }
+        let manifest = Arc::new(manifest.finalize(Default::default()));
+        ctx.dcx.manifestations.insert(self, manifest.clone());
+        Ok(manifest)
+    }
+
+    pub fn lambda_manifestation(
+        self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+        id: hir::LambdaId,
+        captures: &BTreeMap<DefId, ILayout<'a>>,
+        args: &[(ILayout<'a>, TypeId)],
+    ) -> SResult<Arc<StructManifestation>> {
+        if let Some(man) = ctx.dcx.manifestations.get(&self) {
+            return Ok(man.clone());
+        }
+        let mut manifest = UnfinishedManifestation::new();
+        for (capture, layout) in captures.iter() {
+            let sa = layout.size_align(ctx)?;
+            manifest.add_field(*capture, sa);
+        }
+        let arg_ids = id.lookup(ctx.db)?.args;
+        for ((arg, _), id) in args.iter().zip(arg_ids.iter()) {
+            let sa = arg.size_align(ctx)?;
+            manifest.add_field(id.0, sa);
         }
         let manifest = Arc::new(manifest.finalize(Default::default()));
         ctx.dcx.manifestations.insert(self, manifest.clone());
@@ -1118,12 +1179,13 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                     let mut captures = BTreeMap::new();
                     let capture_ids = ctx.db.captures(block_id);
                     for capture in capture_ids.iter() {
-                        let capture_value = ctx
-                            .active_block()
-                            .unwrap_or(*ctx.active_pd())
-                            .get_captured(ctx, *capture)?;
+                        // if the containing environment also captured the
+                        // variable, we need to fetch it from the captures
+                        // of the containing environment
+                        let capture_value = ctx.active_env().get_captured(ctx, *capture)?;
                         let capture_value = match capture_value {
                             Some(x) => x,
+                            // otherwise we get it from the current environment
                             None => ctx.var_by_id(*capture)?,
                         };
                         captures.insert(*capture, capture_value);
@@ -1135,12 +1197,27 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                     ));
                     res
                 }
-                ResolvedAtom::Captured(capture) => ctx
-                    .active_block()
-                    .and_then(|s| s.get_captured(ctx, capture).transpose())
-                    .unwrap_or_else(|| {
-                        Ok(ctx.active_pd().get_arg(ctx, Arg::Named(capture)).unwrap())
-                    })?,
+                ResolvedAtom::Lambda(lambda_id) => {
+                    let mut captures = BTreeMap::new();
+                    let capture_ids = ctx.db.lambda_captures(lambda_id);
+                    for capture in capture_ids.iter() {
+                        let capture_value = ctx.active_env().get_captured(ctx, *capture)?;
+                        let capture_value = match capture_value {
+                            Some(x) => x,
+                            // otherwise we get it from the current environment
+                            None => ctx.var_by_id(*capture)?,
+                        };
+                        captures.insert(*capture, capture_value);
+                    }
+                    let typeargs = ctx.current_type_substitutions();
+                    ctx.dcx.intern(Layout::Mono(
+                        MonoLayout::Lambda(lambda_id, captures, Vec::new(), typeargs, true),
+                        ty,
+                    ))
+                }
+                ResolvedAtom::Captured(capture) => {
+                    ctx.active_env().get_captured(ctx, capture)?.unwrap()
+                }
             },
             ExprHead::Monadic(op, inner) => match op {
                 ValUnOp::Not | ValUnOp::Neg | ValUnOp::Size => {

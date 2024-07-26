@@ -2,10 +2,12 @@ use std::sync::Arc;
 
 use fxhash::FxHashMap;
 
-use yaboc_absint::AbsIntCtx;
+use yaboc_absint::{AbsIntCtx, PdEvaluated};
 use yaboc_base::{error::SilencedError, interner::DefId};
 use yaboc_expr::{IndexExpr, ShapedData};
-use yaboc_hir::{walk::ChildIter, ExprId, HirIdWrapper, HirNode, HirNodeKind, ParserDefId};
+use yaboc_hir::{
+    walk::ChildIter, ExprId, HirIdWrapper, HirNode, HirNodeKind, LambdaId, ParserDefId,
+};
 use yaboc_mir::{FunKind, Function, MirKind, Place, PlaceOrigin, PlaceRef, StackRef, Strictness};
 use yaboc_resolve::expr::Resolved;
 use yaboc_types::{PrimitiveType, Type, TypeId};
@@ -45,7 +47,9 @@ impl<'a> FunctionSubstitute<'a> {
         let mut vals = evaluated.vals.clone();
         vals.extend(captures.iter());
         let root_context = def.lookup(ctx.db)?.root_context.0;
-        for node in ChildIter::new(root_context, ctx.db).without_kinds(HirNodeKind::Block) {
+        for node in ChildIter::new(root_context, ctx.db)
+            .without_kinds(HirNodeKind::Block | HirNodeKind::Lambda)
+        {
             if let HirNode::Choice(choice) = node {
                 let int_ty = ctx.db.intern_type(Type::Primitive(PrimitiveType::Int));
                 let int_layout = ctx.dcx.intern(Layout::Mono(
@@ -74,28 +78,16 @@ impl<'a> FunctionSubstitute<'a> {
         })
     }
 
-    pub fn new_from_pd(
+    fn new_from_fun(
         f: Function,
         strictness: &[Strictness],
         from: Option<ILayout<'a>>,
         fun: IMonoLayout<'a>,
-        pd: ParserDefId,
+        evaluated: PdEvaluated<ILayout<'a>>,
+        expr_id: ExprId,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
-    ) -> Result<Self, LayoutError> {
-        let MonoLayout::NominalParser(..) = fun.mono_layout().0 else {
-            panic!("non-nominal-parser as argument")
-        };
-        let lookup_layout = if let Some(from) = from {
-            fun.inner().apply_arg(ctx, from)?
-        } else {
-            fun.inner().eval_fun(ctx)?
-        };
-        let evaluated = ctx.pd_result()[&lookup_layout]
-            .val()
-            .as_ref()
-            .ok_or_else(SilencedError::new)?;
+    ) -> Result<FunctionSubstitute<'a>, LayoutError> {
         let subst = Some(evaluated.typesubst.clone());
-        let expr_id = pd.lookup(ctx.db)?.to;
         let mut expr_map = FxHashMap::default();
         if let Some(expr) = evaluated.expr_vals.as_ref() {
             expr_map.insert(expr_id, expr.clone());
@@ -117,6 +109,50 @@ impl<'a> FunctionSubstitute<'a> {
             stack_layouts,
             place_layouts,
         })
+    }
+
+    pub fn new_from_pd(
+        f: Function,
+        strictness: &[Strictness],
+        from: Option<ILayout<'a>>,
+        fun: IMonoLayout<'a>,
+        pd: ParserDefId,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+    ) -> Result<Self, LayoutError> {
+        let MonoLayout::NominalParser(..) = fun.mono_layout().0 else {
+            panic!("non-nominal-parser as argument")
+        };
+        let expr_id = pd.lookup(ctx.db)?.to;
+        let lookup_layout = if let Some(from) = from {
+            fun.inner().apply_arg(ctx, from)?
+        } else {
+            fun.inner().eval_fun(ctx)?
+        };
+        let evaluated = ctx.pd_result()[&lookup_layout]
+            .val()
+            .as_ref()
+            .ok_or_else(SilencedError::new)?
+            .clone();
+        Self::new_from_fun(f, strictness, from, fun, evaluated, expr_id, ctx)
+    }
+
+    pub fn new_from_lambda(
+        f: Function,
+        strictness: &[Strictness],
+        fun: IMonoLayout<'a>,
+        lambda: LambdaId,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+    ) -> Result<Self, LayoutError> {
+        let MonoLayout::Lambda(..) = fun.mono_layout().0 else {
+            panic!("non-lambda-parser as argument")
+        };
+        let expr_id = lambda.lookup(ctx.db)?.expr;
+        let evaluated = ctx.lambda_result()[&fun.0]
+            .val()
+            .as_ref()
+            .ok_or_else(SilencedError::new)?
+            .clone();
+        Self::new_from_fun(f, strictness, None, fun, evaluated.into(), expr_id, ctx)
     }
 
     pub fn new_from_if(
@@ -180,6 +216,9 @@ pub fn function_substitute<'a>(
         FunKind::Block(_) => FunctionSubstitute::new_from_block(mir, &strictness, from, fun, ctx),
         FunKind::ParserDef(pd) => {
             FunctionSubstitute::new_from_pd(mir, &strictness, from, fun, pd, ctx)
+        }
+        FunKind::Lambda(lambda_id) => {
+            FunctionSubstitute::new_from_lambda(mir, &strictness, fun, lambda_id, ctx)
         }
         FunKind::If(_, _, _) => {
             FunctionSubstitute::new_from_if(mir, &strictness, from.unwrap(), fun, ctx)

@@ -198,6 +198,7 @@ module.exports = grammar({
       $.constraint_apply,
       $.parser_block,
       $.block,
+      $.lambda,
       $.single,
       $.parser_span,
       $.array_fill,
@@ -222,8 +223,10 @@ module.exports = grammar({
     ),
     arg_definition: $ => seq(
       field('name', $.identifier),
-      ':',
-      field('ty', $._type_expression),
+      optional(seq(
+        ':',
+        field('ty', $._type_expression),
+      ))
     ),
     arg_def_list: $ => seq(
       '(',
@@ -235,6 +238,21 @@ module.exports = grammar({
         )),
       )),
       ')'
+    ),
+    lambda_arg_def_list: $ => seq(
+      '<',
+      optional(seq(
+        field('args', $.arg_definition),
+        repeat(seq(
+          ',',
+          field('args', $.arg_definition),
+        )),
+      )),
+      '>'
+    ),
+    lambda: $ => seq(
+      field('argdefs', $.lambda_arg_def_list),
+      field('expr', $._expression),
     ),
     fun_application: $ => prec(PREC.ARGS, seq(
       field('applicant', $._expression),

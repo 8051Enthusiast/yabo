@@ -20,11 +20,12 @@ use yaboc_base::{
 };
 use yaboc_constraint::{Constraints, Origin};
 use yaboc_dependents::{Dependents, SubValue};
-use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, TakeRef};
-use yaboc_hir::{Block, BlockId, ExprId, HirConstraintId, HirIdWrapper, ParserDefId};
-use yaboc_hir_types::FullTypeId;
+use yaboc_expr::ExprIdx;
+use yaboc_hir::{
+    Block, BlockId, ExprId, HirConstraintId, HirIdWrapper, Lambda, LambdaId, ParserDefId,
+};
 use yaboc_req::{NeededBy, RequirementSet};
-use yaboc_resolve::expr::{Resolved, ResolvedAtom};
+use yaboc_resolve::expr::Resolved;
 use yaboc_resolve::expr::{ValBinOp, ValUnOp};
 use yaboc_types::{Type, TypeId};
 
@@ -51,9 +52,11 @@ fn mir(db: &dyn Mirs, kind: FunKind, mir_kind: MirKind) -> SResult<Function> {
         (FunKind::If(constraint, ty, wiggle), MirKind::Call(req)) => {
             mir_if(db, constraint, ty, wiggle, req)
         }
+        (FunKind::Lambda(lambda), MirKind::Call(req)) => mir_lambda(db, lambda, req),
         (FunKind::Block(block), MirKind::Len) => LenMirCtx::new_block(db, block),
         (FunKind::ParserDef(pd), MirKind::Len) => LenMirCtx::new_pd(db, pd),
         (FunKind::If(_, ty, _), MirKind::Len) => LenMirCtx::new_if(db, ty),
+        (FunKind::Lambda(_), MirKind::Len) => panic!("lambda does not have len"),
     }
 }
 
@@ -66,6 +69,7 @@ fn strictness(db: &dyn Mirs, kind: FunKind, mir_kind: MirKind) -> SResult<Vec<St
 pub enum FunKind {
     Block(BlockId),
     ParserDef(ParserDefId),
+    Lambda(LambdaId),
     If(HirConstraintId, TypeId, WiggleKind),
 }
 
@@ -709,15 +713,7 @@ impl FunctionWriter {
     }
 
     pub fn new_block(db: &dyn Mirs, block: &Block, req: RequirementSet) -> SResult<Self> {
-        let id = block.id;
-        let block_ty = Resolved::expr_with_data::<FullTypeId>(db, block.enclosing_expr)?
-            .take_ref()
-            .iter_parts()
-            .find_map(|(x, ty)| match &x {
-                ExprHead::Niladic(ResolvedAtom::Block(b, _)) if *b == id => Some(*ty),
-                _ => None,
-            })
-            .expect("could not find block within enclosing expression");
+        let block_ty = db.block_type(block.id)?;
         let ty = db.lookup_intern_type(block_ty);
         let (result, arg) = if let Type::ParserArg { result, arg } = ty {
             (result, Some(arg))
@@ -745,6 +741,17 @@ impl FunctionWriter {
         };
         let arg_ty = from;
         let f = FunctionWriter::new(fun_ty, arg_ty, ret_ty, req);
+        Ok(f)
+    }
+
+    pub fn new_lambda(db: &dyn Mirs, lambda: &Lambda, req: RequirementSet) -> SResult<Self> {
+        let lambda_ty = db.lambda_type(lambda.id)?;
+        let ty = db.lookup_intern_type(lambda_ty);
+        let Type::FunctionArg(result, _) = ty else {
+            dbpanic!(db, "should have been a function type, was {}", &lambda_ty)
+        };
+        let ty = db.intern_type(Type::FunctionArg(result, Default::default()));
+        let f = FunctionWriter::new(ty, None, result, req);
         Ok(f)
     }
 
@@ -1036,6 +1043,18 @@ impl FunctionWriter {
         ));
         self.set_bb(new_block);
     }
+}
+
+fn mir_lambda(
+    db: &dyn Mirs,
+    lambda_id: LambdaId,
+    req: RequirementSet,
+) -> Result<Function, yaboc_base::error::SilencedError> {
+    let lambda = lambda_id.lookup(db)?;
+    let mut ctx = ConvertCtx::new_lambda_builder(db, lambda_id, req)?;
+    ctx.add_sub_value(SubValue::new_val(lambda.expr.0))?;
+    ctx.lambda_eval_fun(&lambda)?;
+    Ok(ctx.finish_fun())
 }
 
 fn mir_block(db: &dyn Mirs, block: BlockId, requirements: RequirementSet) -> SResult<Function> {

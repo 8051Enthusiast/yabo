@@ -84,6 +84,34 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
                     }
                     write!(f, "}}")
                 }
+                MonoLayout::Lambda(ld, captures, args, tysubs, bt) => {
+                    write!(f, "lambda")?;
+                    if *bt {
+                        write!(f, "?")?;
+                    }
+                    dbwrite!(f, db, "[{}, [", &ld.0)?;
+                    for (i, ty) in tysubs.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        dbwrite!(f, db, "{}", ty)?;
+                    }
+                    write!(f, "]]{{")?;
+                    for (i, (capture, layout)) in captures.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        dbwrite!(f, db, "{}: {}", capture, layout)?;
+                    }
+                    write!(f, "}}(")?;
+                    for (i, (layout, ty)) in args.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        dbwrite!(f, db, "{}: {}", layout, ty)?;
+                    }
+                    write!(f, ")")
+                }
                 MonoLayout::Regex(regex, bt) => {
                     regex.db_fmt(f, db)?;
                     if *bt {
@@ -279,6 +307,21 @@ impl<'a> LayoutHasher<'a> {
                 }
                 state.update([*bt as u8]);
             }
+            MonoLayout::Lambda(def, map, args, tysubs, bt) => {
+                state.update([7]);
+                def.0.update_hash(state, db);
+                self.hash_captures(state, map, db);
+                tysubs.len().update_hash(state, db);
+                for ty in tysubs.iter() {
+                    state.update(db.type_hash(*ty));
+                }
+                args.len().update_hash(state, db);
+                for (layout, ty) in args.iter() {
+                    state.update(self.hash(*layout, db));
+                    state.update(db.type_hash(*ty));
+                }
+                state.update([*bt as u8]);
+            }
             MonoLayout::Nil => {
                 state.update([8]);
             }
@@ -452,6 +495,13 @@ impl<'a> LayoutSymbol<'a> {
                     dbformat!(db, "parse_{}_b", &db.def_name(id.0).unwrap())
                 } else {
                     dbformat!(db, "parse_{}", &db.def_name(id.0).unwrap())
+                }
+            }
+            MonoLayout::Lambda(id, .., backtracks) => {
+                if *backtracks {
+                    dbformat!(db, "lambda_{}_b", &truncated_hex(&db.def_hash(id.0)))
+                } else {
+                    dbformat!(db, "lambda_{}", &truncated_hex(&db.def_hash(id.0)))
                 }
             }
             MonoLayout::Regex(re, backtracks) => {

@@ -14,6 +14,7 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for HirNode {
             HirNode::Choice(_) => write!(f, "Choice"),
             HirNode::Import(_) => write!(f, "Import"),
             HirNode::ArgDef(_) => write!(f, "ArgDef"),
+            HirNode::Lambda(_) => write!(f, "Lambda"),
             HirNode::Module(_) => write!(f, "Module"),
             HirNode::Context(_) => write!(f, "Context"),
             HirNode::ParserDef(n) => {
@@ -75,6 +76,7 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for ParserAtom {
             ParserAtom::Span(start, end) => dbwrite!(f, db, "{}..{}", start, end),
             ParserAtom::Regex(regex) => regex.db_fmt(f, db),
             ParserAtom::Block(id, _) => dbwrite!(f, db, "block({})", &id.0.unwrap_unnamed_id(db)),
+            ParserAtom::Lambda(id) => dbwrite!(f, db, "lambda({})", &id.0.unwrap_unnamed_id(db)),
         }
     }
 }
@@ -383,6 +385,15 @@ impl<'a> dot::GraphWalk<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGr
                         if let Some(ret_ty) = ret_ty {
                             v.push((id.0, ret_ty.0, "ret_ty".to_string(), dot::Style::Bold));
                         }
+                        v
+                    }
+                    HirNode::Lambda(Lambda { id, expr, args, .. }) => {
+                        let mut v = vec![(id.0, expr.0, "expr".to_string(), dot::Style::Bold)];
+                        v.extend(
+                            args.iter()
+                                .enumerate()
+                                .map(|(i, p)| (id.0, p.0, format!("args[{i}]"), dot::Style::Bold)),
+                        );
                         v
                     }
                     HirNode::ChoiceIndirection(ChoiceIndirection {

@@ -8,7 +8,7 @@ use std::hash::Hash;
 use std::sync::Arc;
 
 use expr::*;
-pub use expr::{ConstraintBinOp, ConstraintUnOp, ValBinOp, ValUnOp, TypeBinOp, TypeUnOp};
+pub use expr::{ConstraintBinOp, ConstraintUnOp, TypeBinOp, TypeUnOp, ValBinOp, ValUnOp};
 
 use yaboc_base::{
     error::{SResult, Silencable},
@@ -196,6 +196,7 @@ pub enum ParserAtom {
     Span(FieldName, FieldName),
     Regex(Regex),
     Block(Block),
+    Lambda(Arc<Lambda>),
 }
 
 impl From<Atom> for ParserAtom {
@@ -207,6 +208,12 @@ impl From<Atom> for ParserAtom {
 impl From<Block> for ParserAtom {
     fn from(block: Block) -> Self {
         ParserAtom::Block(block)
+    }
+}
+
+impl From<Lambda> for ParserAtom {
+    fn from(l: Lambda) -> Self {
+        ParserAtom::Lambda(Arc::new(l))
     }
 }
 
@@ -240,7 +247,7 @@ impl Statement {
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ArgDefinition {
     pub name: IdSpan,
-    pub ty: TypeExpression,
+    pub ty: Option<TypeExpression>,
     pub span: Span,
 }
 
@@ -287,6 +294,13 @@ pub struct ParserDefinition {
     pub argdefs: Option<ArgDefList>,
     pub to: ValExpression,
     pub ret_ty: Option<TypeExpression>,
+    pub span: Span,
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct Lambda {
+    pub argdefs: ArgDefList,
+    pub expr: ValExpression,
     pub span: Span,
 }
 

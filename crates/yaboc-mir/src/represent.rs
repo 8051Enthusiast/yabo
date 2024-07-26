@@ -549,6 +549,17 @@ pub fn print_all_mir_graphs<DB: Mirs, W: Write>(
                 dbformat!(db, "{}", &block.0).replace(|c: char| !c.is_ascii_alphanumeric(), "_");
             mir_graph(db, w, FunKind::Block(*block), &block_name, req)?;
         }
+        for lambda in db.all_parserdef_lambdas(pd).iter() {
+            let lambda_name =
+                dbformat!(db, "{}", &lambda.0).replace(|c: char| !c.is_ascii_alphanumeric(), "_");
+            mir_graph(
+                db,
+                w,
+                FunKind::Lambda(*lambda),
+                &lambda_name,
+                MirKind::Call(NeededBy::Backtrack | NeededBy::Val),
+            )?;
+        }
     }
     writeln!(w, "}}")
 }

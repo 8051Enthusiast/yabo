@@ -12,7 +12,9 @@ use yaboc_base::{
 };
 use yaboc_dependents::{BacktrackStatus, SubValueKind};
 use yaboc_expr::{ExprHead, ExprIdx, Expression as _, FetchExpr, SmallVec, TakeRef};
-use yaboc_hir::{BlockId, BlockKind, ContextId, ExprId, HirIdWrapper, HirNode, ParserDefId};
+use yaboc_hir::{
+    BlockId, BlockKind, ContextId, ExprId, HirIdWrapper, HirNode, LambdaId, ParserDefId,
+};
 use yaboc_hir_types::{FullTypeId, NominalId};
 use yaboc_resolve::{
     expr::{Resolved, ResolvedAtom, ValBinOp, ValUnOp, ValVarOp},
@@ -197,6 +199,7 @@ impl<'a> ExpressionBuildCtx<'a> {
                 | HirNode::ParserDef(_)
                 | HirNode::Import(_)
                 | HirNode::ArgDef(_)
+                | HirNode::Lambda(_)
                 | HirNode::TExpr(_) => unreachable!(),
             }
         }
@@ -220,6 +223,24 @@ impl<'a> ExpressionBuildCtx<'a> {
             self.current_arg_idx -= 1;
         }
         self.push(Instruction::LeaveScope(ret), ty, block_origin)
+    }
+
+    fn build_lambda(&mut self, lambda_id: LambdaId, ty: TypeId) -> SResult<u32> {
+        let lambda_origin = Origin::Node(lambda_id.0);
+        let lambda = lambda_id.lookup(self.db)?;
+        self.push(Instruction::EnterScope, ty, lambda_origin)?;
+        for arg in lambda.args.iter() {
+            let arg_ty = self.db.parser_type_at(arg.0)?;
+            let arg_idx = self.push(
+                Instruction::Arg(self.current_arg_idx),
+                arg_ty,
+                lambda_origin,
+            )?;
+            self.current_arg_idx += 1;
+            self.defs.insert(arg.0, arg_idx);
+        }
+        let (_, expr) = self.build_expr(lambda.expr, false)?;
+        self.push(Instruction::LeaveScope(expr), ty, lambda_origin)
     }
 
     fn build_expr(&mut self, expr_id: ExprId, silent: bool) -> SResult<(bool, u32)> {
@@ -261,6 +282,7 @@ impl<'a> ExpressionBuildCtx<'a> {
                     ResolvedAtom::Array => self.push(Instruction::Array, *ty, orig),
                     ResolvedAtom::ArrayFill => self.push(Instruction::Array, *ty, orig),
                     ResolvedAtom::Block(id, kind) => self.build_block(id, kind, *ty),
+                    ResolvedAtom::Lambda(id) => self.build_lambda(id, *ty),
                     ResolvedAtom::Number(_)
                     | ResolvedAtom::Char(_)
                     | ResolvedAtom::Bool(_)
