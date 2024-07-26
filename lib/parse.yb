@@ -34,3 +34,21 @@ fun ['t] *> _len_impl(acc: int): int = {
 
 # gets the length of the rest of the stream
 fun ['t] *> len = _len_impl(0)
+
+# Some parser combinators that parse the input using some given parsers,
+# and then apply a function to the results.
+fun ['t] *> lift(f: 'r('a), a: ['t] *> 'a) = {
+  res: a?, let return = f?(res)
+}
+
+fun ['t] *> lift2(f: 'r('a0, 'a1), a0: ['t] *> 'a0, a1: ['t] *> 'a1) = {
+  res0: a0?, res1: a1?, let return = f?(res0, res1)
+}
+
+fun ['t] *> lift3(f: 'r('a0, 'a1, 'a2), a0: ['t] *> 'a0, a1: ['t] *> 'a1, a2: ['t] *> 'a2) = {
+  res0: a0?, res1: a1?, res2: a2?, let return = f?(res0, res1, res2)
+}
+
+fun ['t] *> lift4(f: 'r('a0, 'a1, 'a2, 'a3), a0: ['t] *> 'a0, a1: ['t] *> 'a1, a2: ['t] *> 'a2, a3: ['t] *> 'a3) = {
+  res0: a0?, res1: a1?, res2: a2?, res3: a3?, let return = f?(res0, res1, res2, res3)
+}

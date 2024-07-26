@@ -14,6 +14,18 @@ fun when(big: bit) = big if true
 # Same as +
 fun *nil = +
 
+# Maps a function f over an array.
+fun ['t] *> map(f: 'r('t)) = {x: ~, let return = f?(x)}[..]
+
+# Tries to parse using the first parser, then the second if the first fails.
+fun ['t] *> alt(a0: ['t] *> 'r, a1: ['t] *> 'r) = {
+  | return: a0?
+  | return: a1?
+}
+
+# Parser of zero length that simply returns the input.
+fun ['t] *> pure(v: 'r) = {let return = v}
+
 # =============== inttypes ===============
 
 # Parses an 8-bit unsigned integer.
