@@ -262,8 +262,7 @@ runReduce End acc _ _ _ = Result acc
 runReduce (Cons item vg) acc name env expr =
   case reduceStep acc item name env expr of
     Result acc' -> runReduce vg acc' name env expr
-    ErrorResult s -> ErrorResult s
-    BreakResult i -> BreakResult i
+    other -> other
 
 reduceExpr :: (PrimOps a) => String -> Tertiary a
 reduceExpr name from initial step v = do

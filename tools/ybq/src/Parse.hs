@@ -181,16 +181,15 @@ ifTermTail = do
   cond <- topExpr
   reserved l "then"
   t <- topExpr
-  ( do
-      reserved l "else"
-      f <- topExpr
-      reserved l "end"
-      return $ ifExpr cond t f
-    )
-    <|> ( do
-            reserved l "elif"
-            ifExpr cond t <$> ifTermTail
-        )
+  let end = do
+        reserved l "else"
+        f <- topExpr
+        reserved l "end"
+        return $ ifExpr cond t f
+  let elif = do
+        reserved l "elif"
+        ifExpr cond t <$> ifTermTail
+  end <|> elif
 
 tryTerm :: (PrimOps a) => Parser (Expr a)
 tryTerm = do

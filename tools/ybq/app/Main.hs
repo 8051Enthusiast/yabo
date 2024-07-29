@@ -22,7 +22,7 @@ main =
       (libName, parserName, inputFile) <- case args of
         [library, parser, input] -> return (library, parser, input)
         _ -> do
-          liftIO $ print "Usage: ybq <library> <parser> <input>"
+          liftIO $ putStrLn "Usage: ybq <library> <parser> <input>"
           MaybeT $ return Nothing
       file <- liftIO $ mmapFileByteString inputFile Nothing
       lib <- MaybeT $ openLibrary libName file
