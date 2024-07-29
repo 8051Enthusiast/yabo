@@ -16,24 +16,33 @@ import Foreign.C (CSize)
 import GHC.IO (unsafePerformIO)
 import System.Posix.DynamicLinker qualified as DL
 import YaboBindings
-    ( YbqReturnStatus(YbqStatusEos, YbqStatusOk, YbqStatusBacktrack),
-      YbqType(YbqTypeFunction, YbqTypeInt, YbqTypeChar, YbqTypeBit,
-              YbqTypeArray, YbqTypeBlock, YbqTypeError, YbqTypeUnit,
-              YbqTypeParser),
-      ybqGetError,
-      ybqGetInt,
-      ybqArrayAccess,
-      ybqArraySize,
-      ybqFieldCount,
-      ybqFieldNameAtIndex,
-      ybqFieldAccess,
-      ybqParseBytes,
-      ybqAllocSize,
-      ybqType,
-      ybqCallInit,
-      ybqTypeFromCInt,
-      ybqStatusFromWord64,
-      fieldNameToString )
+  ( YbqReturnStatus (YbqStatusBacktrack, YbqStatusEos, YbqStatusOk),
+    YbqType
+      ( YbqTypeArray,
+        YbqTypeBit,
+        YbqTypeBlock,
+        YbqTypeChar,
+        YbqTypeError,
+        YbqTypeFunction,
+        YbqTypeInt,
+        YbqTypeParser,
+        YbqTypeUnit
+      ),
+    fieldNameToString,
+    ybqAllocSize,
+    ybqArrayAccess,
+    ybqArraySize,
+    ybqCallInit,
+    ybqFieldAccess,
+    ybqFieldCount,
+    ybqFieldNameAtIndex,
+    ybqGetError,
+    ybqGetInt,
+    ybqParseBytes,
+    ybqStatusFromWord64,
+    ybqType,
+    ybqTypeFromCInt,
+  )
 
 data YaboVal
   = YaboNull
@@ -115,15 +124,13 @@ data Parser = Parser Library (Ptr ())
 parse :: Parser -> Int -> YaboVal
 parse (Parser lib ptr) offset = unsafePerformIO $ do
   let offsetFile = Data.ByteString.drop offset (origFile lib)
-  Data.ByteString.useAsCStringLen offsetFile $ \(charptr, len) -> do
-    let filePtr = castPtr charptr
-    withReturnBuf
-      (maxBuf lib)
-      ( \retBuf -> do
-          _ <- ybqParseBytes retBuf filePtr (fromIntegral len) ptr
-          return $ Identity ()
-      )
-      >>= intoYaboVal lib . runIdentity
+  Data.ByteString.useAsCStringLen offsetFile $ \(charptr, len) ->
+    do
+      let filePtr = castPtr charptr
+      ret <- withReturnBuf (maxBuf lib) $ \retBuf -> do
+        _ <- ybqParseBytes retBuf filePtr (fromIntegral len) ptr
+        return $ Identity ()
+      intoYaboVal lib $ runIdentity ret
 
 getPtr :: (Monad m) => FunPtr a -> MaybeT m (Ptr b)
 getPtr ptr = (MaybeT . return) $ if ptr == nullFunPtr then Nothing else Just (castFunPtrToPtr ptr)
@@ -160,6 +167,7 @@ openLibrary name file = runMaybeT $ do
 
 instance Show YaboVal where
   show = toString
+
 toString :: YaboVal -> String
 toString (YaboInt a) = show a
 toString (YaboChar a) = "\"" ++ [a] ++ "\""
