@@ -14,7 +14,7 @@ struct Slice {
   const uint8_t *end;
 };
 
-typedef struct {
+typedef struct DynValue {
   // padding such that the vtable is directly infront of data without
   // padding, and such that data[] has the necessary alignment
   alignas(YABO_MAX_ALIGN) char padding[YABO_MAX_ALIGN - sizeof(void *)];
@@ -126,6 +126,16 @@ static inline const char *dyn_block_field_name_at_index(const DynValue *block,
 static inline int64_t dyn_array_single_forward(DynValue *array) {
   const struct ArrayVTable *vtable = (const struct ArrayVTable *)array->vtable;
   uint64_t status = vtable->single_forward_impl(array->data);
+  if (status) {
+    return dyn_invalidate(array, status);
+  }
+  return status;
+}
+
+// skips `count` elements in the array
+static inline int64_t dyn_array_skip(DynValue *array, size_t count) {
+  const struct ArrayVTable *vtable = (const struct ArrayVTable *)array->vtable;
+  uint64_t status = vtable->skip_impl(array->data, count);
   if (status) {
     return dyn_invalidate(array, status);
   }

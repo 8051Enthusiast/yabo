@@ -1,0 +1,98 @@
+cabal-version: 2.2
+
+-- This file has been generated from package.yaml by hpack version 0.36.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:           ybq
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/8051enthusiast/ybq#readme>
+homepage:       https://github.com/8051enthusiast/yabo#readme
+bug-reports:    https://github.com/8051enthusiast/yabo/issues
+author:         8051enthusiast
+maintainer:     8051enthusiast@protonmail.com
+copyright:      Copyright 2024 8051enthusiast
+license:        BSD-3-Clause
+build-type:     Simple
+extra-source-files:
+    README.md
+
+source-repository head
+  type: git
+  location: https://github.com/8051enthusiast/yabo
+
+library
+  exposed-modules:
+      Builtin
+      Expr
+      Lib
+      Ops
+      Parse
+      ValGen
+      YaboBindings
+      YaboVal
+  other-modules:
+      Paths_ybq
+  autogen-modules:
+      Paths_ybq
+  hs-source-dirs:
+      src
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
+  c-sources:
+      src/yabo-bindings.c
+  build-depends:
+      base >=4.7 && <5
+    , bytestring
+    , containers
+    , file-embed >=0.0.16
+    , mmap >=0.5.9
+    , mtl
+    , parsec
+    , transformers
+    , unix
+  default-language: GHC2021
+
+executable ybq-exe
+  main-is: Main.hs
+  other-modules:
+      Paths_ybq
+  autogen-modules:
+      Paths_ybq
+  hs-source-dirs:
+      app
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.7 && <5
+    , bytestring
+    , containers
+    , file-embed >=0.0.16
+    , mmap >=0.5.9
+    , mtl
+    , parsec
+    , transformers
+    , unix
+    , ybq
+  default-language: GHC2021
+
+test-suite ybq-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_ybq
+  autogen-modules:
+      Paths_ybq
+  hs-source-dirs:
+      test
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.7 && <5
+    , bytestring
+    , containers
+    , file-embed >=0.0.16
+    , mmap >=0.5.9
+    , mtl
+    , parsec
+    , transformers
+    , unix
+    , ybq
+  default-language: GHC2021
