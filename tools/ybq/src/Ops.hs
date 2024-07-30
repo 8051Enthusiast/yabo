@@ -1,8 +1,9 @@
 module Ops (PrimOps (..)) where
 
+import Data.Map (elemAt)
 import Data.Map qualified
 import Data.Maybe qualified
-import Data.Sequence (Seq, cycleTaking, length, lookup)
+import Data.Sequence (Seq, cycleTaking, fromFunction, length, lookup)
 import ValGen
   ( Result (ErrorResult, Result),
     ValGen,
@@ -14,7 +15,7 @@ import YaboVal (YaboVal (..))
 
 class PrimOps a where
   add, sub, mul, div, mod, index :: a -> a -> Result a
-  neg, not :: a -> Result a
+  neg, not, keys, length :: a -> Result a
   toVal :: a -> YaboVal
   val :: YaboVal -> Result a
   iter :: a -> ValGen a
@@ -71,8 +72,18 @@ instance PrimOps YaboVal where
   neg (YaboInt a) = Result $ YaboInt $ -a
   neg a = ErrorResult $ "Invalid negation of " ++ typeOf a
 
-  not (YaboBit a) = Result $ YaboBit $ Prelude.not a
-  not a = ErrorResult $ "Invalid negation of " ++ typeOf a
+  not a = Result $ YaboBit $ Prelude.not $ truthy a
+
+  keys (YaboArray a) = Result $ YaboArray $ fromFunction (Data.Sequence.length a) (YaboInt . toInteger)
+  keys (YaboBlock a) = Result $ YaboArray $ fromFunction (Data.Map.size a) (YaboString . fst . flip elemAt a)
+  keys a = ErrorResult $ "Cannot get keys of " ++ typeOf a
+
+  length (YaboArray a) = Result $ YaboInt $ toInteger $ Data.Sequence.length a
+  length (YaboBlock a) = Result $ YaboInt $ toInteger $ Data.Map.size a
+  length (YaboInt a) = Result $ YaboInt $ abs a
+  length (YaboString a) = Result $ YaboInt $ toInteger $ Prelude.length a
+  length YaboNull = Result $ YaboInt 0
+  length a = ErrorResult $ "Cannot get length of " ++ typeOf a
 
   toVal = id
 

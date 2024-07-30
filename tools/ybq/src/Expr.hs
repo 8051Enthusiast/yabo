@@ -22,9 +22,6 @@ emptyBreakMap = BreakMap mempty 0
 
 data Env v = Env {vars :: Map String v, funcs :: Map (String, Int) ([Expr v] -> Expr v), brk :: BreakMap}
 
-emptyEnv :: Env v
-emptyEnv = Env mempty mempty emptyBreakMap
-
 insertVar :: String -> v -> Env v -> Env v
 insertVar name value env = env {vars = Data.Map.insert name value (vars env)}
 
@@ -49,16 +46,19 @@ type Binary a = (PrimOps a) => Expr a -> Expr a -> Expr a
 
 type Unary a = (PrimOps a) => Expr a -> Expr a
 
+lifted :: Result a -> Res a a
+lifted = lift . fromResult
+
 binOp :: (v -> v -> Result v) -> Binary v
 binOp op a b v = do
   b' <- b v
   a' <- a v
-  lift $ fromResult $ op a' b'
+  lifted $ op a' b'
 
 unOp :: (v -> Result v) -> Unary v
 unOp op a v = do
   a' <- a v
-  lift $ fromResult $ op a'
+  lifted $ op a'
 
 addExpr, subExpr, mulExpr, divExpr, modExpr :: Binary v
 addExpr = binOp add
@@ -67,12 +67,14 @@ mulExpr = binOp mul
 divExpr = binOp Ops.div
 modExpr = binOp Ops.mod
 
-negExpr, notExpr, indexExpr :: Unary v
+negExpr, indexExpr :: Unary v
 negExpr = unOp neg
-notExpr = unOp Ops.not
 indexExpr a v = do
   idx <- a v
-  lift $ fromResult $ Ops.index v idx
+  lifted $ Ops.index v idx
+
+notExpr :: (PrimOps v) => Expr v
+notExpr = lifted . Ops.not
 
 seqExpr :: Binary v
 seqExpr a b v = do
@@ -99,7 +101,7 @@ varExpr name _ = do
     $ Data.Map.lookup name (vars env)
 
 litExpr :: (PrimOps v) => YaboVal -> Expr v
-litExpr x _ = lift $ fromResult $ val x
+litExpr x _ = lifted $ val x
 
 intExpr :: (PrimOps v) => Integer -> Expr v
 intExpr x = litExpr $ YaboInt x
@@ -145,10 +147,10 @@ bindExpr name a b v = do
   lift $ runReaderT (b v) env'
 
 typeExpr :: (PrimOps v) => Expr v
-typeExpr a = lift $ fromResult $ val $ YaboString $ typeOf a
+typeExpr a = lifted $ val $ YaboString $ typeOf a
 
 toStringExpr :: (PrimOps v) => Expr v
-toStringExpr a = lift $ fromResult $ val $ YaboString $ toString a
+toStringExpr a = lifted $ val $ YaboString $ toString a
 
 ifExpr :: Tertiary v
 ifExpr cond a b v = do
@@ -208,7 +210,13 @@ dictExpr :: (PrimOps a) => [(Expr a, Expr a)] -> Expr a
 dictExpr kvs r = do
   let kvs' = fmap (\(k, v) -> (toStr k r, exprToVal v r)) kvs
   kvs'' <- traverse (\(k, v) -> (,) <$> k <*> v) kvs'
-  lift $ fromResult $ val $ YaboBlock $ fromList kvs''
+  lifted $ val $ YaboBlock $ fromList kvs''
+
+lengthExpr :: (PrimOps a) => Expr a
+lengthExpr a = lifted $ Ops.length a
+
+keysExpr :: (PrimOps a) => Expr a
+keysExpr a = lifted $ Ops.keys a
 
 captured :: Env a -> Unary a
 captured e a v = ReaderT $ \_ -> runReaderT (a v) e
@@ -235,7 +243,7 @@ definition argNames body args v = do
 defExpr :: String -> [(String, Bool)] -> Expr a -> Expr a -> Expr a
 defExpr name args body cont v = do
   env <- ask
-  let arity = length args
+  let arity = Prelude.length args
   let func = definition args body
   let newEnv = insertFunc name arity func env
   lift $ runReaderT (cont v) newEnv
@@ -243,7 +251,7 @@ defExpr name args body cont v = do
 callExpr :: (PrimOps a) => String -> [Expr a] -> Expr a
 callExpr name args v = do
   env <- ask
-  let arity = length args
+  let arity = Prelude.length args
   let func = Data.Map.lookup (name, arity) (funcs env)
   let args' = fmap (captured env) args
   case func of
@@ -251,7 +259,7 @@ callExpr name args v = do
     Nothing -> lift $ Error $ "Function " ++ name ++ "/" ++ show arity ++ " not found"
 
 reduceStep :: (PrimOps a) => a -> a -> String -> Env a -> Expr a -> Result a
-reduceStep acc item name env expr = seq acc $ withEnv $ expr acc
+reduceStep acc item name env expr = withEnv $ expr acc
   where
     withEnv expr' = fromMaybe (val YaboNull) $ lastVal $ runReaderT expr' (insertVar name item env)
 
@@ -261,7 +269,7 @@ runReduce (Break i) _ _ _ _ = BreakResult i
 runReduce End acc _ _ _ = Result acc
 runReduce (Cons item vg) acc name env expr =
   case reduceStep acc item name env expr of
-    Result acc' -> runReduce vg acc' name env expr
+    Result acc' -> seq acc' $ runReduce vg acc' name env expr
     other -> other
 
 reduceExpr :: (PrimOps a) => String -> Tertiary a
@@ -269,4 +277,4 @@ reduceExpr name from initial step v = do
   init' <- initial v
   env <- ask
   let arr = runReaderT (from v) env
-  lift $ fromResult $ runReduce arr init' name env step
+  lifted $ runReduce arr init' name env step

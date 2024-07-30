@@ -1,6 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 
-module Builtin (ybqBuiltins) where
+module Builtin (ybqBuiltins, initialEnv) where
 
 -- Some of the builtins in builtin.ybq come from jq, which is licensed under the MIT License.
 {-
@@ -27,6 +27,25 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 -}
 
 import Data.FileEmbed (embedStringFile, makeRelativeToProject)
+import Data.Map (Map, fromList)
+import Expr
+import Ops (PrimOps)
 
 ybqBuiltins :: String
 ybqBuiltins = $(makeRelativeToProject "src/builtin.ybq" >>= embedStringFile)
+
+intrinsics :: (PrimOps a) => Map (String, Int) ([Expr a] -> Expr a)
+intrinsics =
+  fromList
+    [ (("length", 0), const lengthExpr),
+      (("keys", 0), const keysExpr),
+      (("keys_unsorted", 0), const keysExpr),
+      (("empty", 0), const emptyExpr),
+      (("tostring", 0), const toStringExpr),
+      (("error", 0), const errorExpr),
+      (("type", 0), const typeExpr),
+      (("not", 0), const notExpr)
+    ]
+
+initialEnv :: (PrimOps a) => Env a
+initialEnv = Env {funcs = intrinsics, vars = mempty, brk = emptyBreakMap}

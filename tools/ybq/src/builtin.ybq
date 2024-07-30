@@ -37,3 +37,16 @@ def scalars: select(type|. != "array" and . != "object");
 def _flatten($x): reduce .[] as $i ([]; if $i | type == "array" and $x != 0 then . + ($i | _flatten($x-1)) else . + [$i] end);
 def flatten($x): if $x < 0 then error("flatten depth must not be negative") else _flatten($x) end;
 def flatten: _flatten(-1);
+
+def to_entries: [keys_unsorted[] as $k | {key: $k, value: .[$k]}];
+def reverse: [.[length - 1 - range(0; length)]];
+
+def first(g): label $out | g | ., break $out;
+def isempty(g): first((g|false), true);
+def all(generator; condition): isempty(generator|condition and empty);
+def any(generator; condition): isempty(generator|condition or empty)|not;
+def all(generator): all(generator; .);
+def any(generator): any(generator; .);
+def last(g): reduce g as $item (null; $item);
+def first: .[0];
+def last: .[-1];

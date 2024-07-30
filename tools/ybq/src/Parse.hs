@@ -1,6 +1,6 @@
 module Parse (Parse.parse) where
 
-import Builtin (ybqBuiltins)
+import Builtin (ybqBuiltins, initialEnv)
 import Control.Monad.Reader (runReaderT)
 import Data.Maybe (fromMaybe)
 import Expr
@@ -24,8 +24,44 @@ langDef =
       identLetter = alphaNum <|> char '_',
       opStart = oneOf "+-*/%<>=!&|?",
       opLetter = oneOf "+-*/%<>=!&|?",
-      reservedOpNames = ["+", "-", "*", "/", "%", ".", "<", ">", "=", "<=", ">=", "==", "!=", "?", "//", ".", "|"],
-      reservedNames = ["as", "def", "if", "then", "else", "elif", "end", "and", "or", "try", "catch", "label", "break", "reduce"],
+      reservedOpNames =
+        [ "+",
+          "-",
+          "*",
+          "/",
+          "%",
+          ".",
+          "<",
+          ">",
+          "=",
+          "<=",
+          ">=",
+          "==",
+          "!=",
+          "?",
+          "//",
+          ".",
+          "|"
+        ],
+      reservedNames =
+        [ "as",
+          "def",
+          "if",
+          "then",
+          "else",
+          "elif",
+          "end",
+          "and",
+          "or",
+          "try",
+          "catch",
+          "label",
+          "break",
+          "reduce",
+          "false",
+          "true",
+          "null"
+        ],
       caseSensitive = True
     }
 
@@ -39,7 +75,7 @@ parse s source = do
   return $ case (parsed, builtin) of
     (Left err, _) -> Left err
     (_, Left err) -> Left err
-    (Right f, Right b) -> Right $ \x -> runReaderT (b f x) emptyEnv
+    (Right f, Right b) -> Right $ \x -> runReaderT (b f x) initialEnv
 
 builtins :: (PrimOps a) => IO (Either ParseError (Expr a -> Expr a))
 builtins = runParserT defs () "builtins" ybqBuiltins
@@ -216,6 +252,8 @@ atom =
     <|> (intExpr <$> natural l)
     <|> (strExpr <$> stringLiteral l)
     <|> (varExpr <$> binding)
+    <|> (boolExpr <$> ((reserved l "true" >> pure True) <|> (reserved l "false" >> pure False)))
+    <|> (nullExpr <$ reserved l "null")
     <|> brkTerm
     <|> call
 
@@ -226,15 +264,7 @@ call :: (PrimOps a) => Parser (Expr a)
 call = do
   f <- identifier l
   args <- parens l (sepBy topExpr (semi l)) <|> pure []
-  return $ case (f, args) of
-    ("type", []) -> typeExpr
-    ("tostring", []) -> toStringExpr
-    ("null", []) -> nullExpr
-    ("true", []) -> boolExpr True
-    ("false", []) -> boolExpr False
-    ("empty", []) -> emptyExpr
-    ("error", []) -> errorExpr
-    _ -> callExpr f args
+  return $ callExpr f args
 
 tailTerm :: (PrimOps a) => Parser (Expr a)
 tailTerm = do
