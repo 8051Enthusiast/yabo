@@ -4,14 +4,15 @@ import Control.Monad.Trans (liftIO)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Lib (YaboVal, getParser, openLibrary, parse)
 import System.Environment (getArgs)
-import System.IO.MMap (mmapFileByteString)
+import System.IO.MMap (mmapFileForeignPtr, Mode (ReadOnly))
 
-procLine :: (Int -> YaboVal) -> String -> IO ()
+
+procLine :: YaboVal -> String -> IO ()
 procLine parser line = do
   parseResult <- parse line "stdin"
   case parseResult of
     Left err -> print err
-    Right program -> print $ program $ parser 0
+    Right program -> print $ program parser
 
 main :: IO ()
 main =
@@ -24,8 +25,8 @@ main =
         _ -> do
           liftIO $ putStrLn "Usage: ybq <library> <parser> <input>"
           MaybeT $ return Nothing
-      file <- liftIO $ mmapFileByteString inputFile Nothing
-      lib <- MaybeT $ openLibrary libName file
-      parser <- MaybeT $ getParser lib parserName
+      (file, _, size) <- liftIO $ mmapFileForeignPtr inputFile ReadOnly Nothing
+      lib <- MaybeT $ openLibrary libName (file, size)
+      parser <- MaybeT $ getParser lib parserName 0
       inp <- liftIO getContents
       liftIO $ mapM_ (procLine parser) $ filter (/= "") (lines inp)
