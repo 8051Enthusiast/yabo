@@ -3,16 +3,15 @@ module YaboVal (YaboVal (..), getParser, openLibrary, toString) where
 import Control.Monad.Identity (Identity (Identity), runIdentity)
 import Control.Monad.Trans (liftIO)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
-import Data.ByteString (ByteString)
-import Data.ByteString qualified
 import Data.ByteString.Short (ShortByteString, packCStringLen, useAsCStringLen)
 import Data.Foldable (toList)
 import Data.List (intercalate)
 import Data.Map (Map, fromList, toList)
 import Data.Maybe (catMaybes)
 import Data.Sequence (Seq, fromFunction)
-import Foreign (FunPtr, Ptr, allocaBytes, castFunPtrToPtr, castPtr, nullFunPtr, peek)
-import Foreign.C (CSize)
+import Foreign (FunPtr, Ptr, allocaBytes, castFunPtrToPtr, castPtr, nullFunPtr, peek, plusForeignPtr, withForeignPtr)
+import Foreign.C (CChar, CSize)
+import Foreign.ForeignPtr (ForeignPtr)
 import GHC.IO (unsafePerformIO)
 import System.Posix.DynamicLinker qualified as DL
 import YaboBindings
@@ -121,10 +120,10 @@ intoYaboVal lib rawVal = do
 
 data Parser = Parser Library (Ptr ())
 
-parse :: Parser -> Int -> YaboVal
-parse (Parser lib ptr) offset = unsafePerformIO $ do
-  let offsetFile = Data.ByteString.drop offset (origFile lib)
-  Data.ByteString.useAsCStringLen offsetFile $ \(charptr, len) ->
+parse :: Parser -> Int -> IO YaboVal
+parse (Parser lib ptr) offset = do
+  let offsetFile = atOffset offset (origFile lib)
+  asPtrLen offsetFile $ \(charptr, len) ->
     do
       let filePtr = castPtr charptr
       ret <- withReturnBuf (maxBuf lib) $ \retBuf -> do
@@ -135,35 +134,46 @@ parse (Parser lib ptr) offset = unsafePerformIO $ do
 getPtr :: (Monad m) => FunPtr a -> MaybeT m (Ptr b)
 getPtr ptr = (MaybeT . return) $ if ptr == nullFunPtr then Nothing else Just (castFunPtrToPtr ptr)
 
-getParser :: Library -> String -> IO (Maybe (Int -> YaboVal))
-getParser lib name = runMaybeT $ do
+getParser :: Library -> String -> Int -> IO (Maybe YaboVal)
+getParser lib name offset = runMaybeT $ do
   parserFunPtrPtr <- liftIO $ DL.dlsym (dl lib) name
   parserPtrPtr <- getPtr parserFunPtrPtr
   parserPtr <- liftIO $ peek (parserPtrPtr :: Ptr (Ptr ()))
-  return $ parse $ Parser lib parserPtr
+  liftIO $ parse (Parser lib parserPtr) offset
+
+data ByteFile = ByteFile (ForeignPtr CChar) Int
+
+atOffset :: Int -> ByteFile -> ByteFile
+atOffset off (ByteFile ptr len) = ByteFile (ptr `plusForeignPtr` off') (len - off')
+  where
+    off' = min off len
+
+asPtrLen :: ByteFile -> ((Ptr CChar, Int) -> IO a) -> IO a
+asPtrLen (ByteFile ptr len) f = withForeignPtr ptr $ \p -> f (p, len)
 
 data Library = Library
   { dl :: DL.DL,
-    origFile :: ByteString,
+    origFile :: ByteFile,
     maxBuf :: Int
   }
 
-openLibrary :: String -> ByteString -> IO (Maybe Library)
+openLibrary :: String -> (ForeignPtr CChar, Int) -> IO (Maybe Library)
 openLibrary name file = runMaybeT $ do
+  let file' = uncurry ByteFile file
   dl <- liftIO $ DL.dlopen name [DL.RTLD_LAZY, DL.RTLD_LOCAL]
   bufSizeFunPtr <- liftIO $ DL.dlsym dl "yabo_max_buf_size"
   bufSizePtr <- getPtr bufSizeFunPtr
   maxBuf <- liftIO $ peek (bufSizePtr :: Ptr CSize)
   initFunPtr <- liftIO $ DL.dlsym dl "yabo_global_init"
   initPtr <- getPtr initFunPtr
-  status <- liftIO $ Data.ByteString.useAsCStringLen file $ \(charptr, len) -> do
+  status <- liftIO $ asPtrLen file' $ \(charptr, len) -> do
     let filePtr = castPtr charptr
     ybqCallInit filePtr (fromIntegral len) initPtr
   MaybeT $
     if ybqStatusFromWord64 status /= YbqStatusOk
       then return Nothing
       else return $ Just ()
-  return $ Library dl file (fromIntegral maxBuf)
+  return $ Library dl file' (fromIntegral maxBuf)
 
 instance Show YaboVal where
   show = toString
