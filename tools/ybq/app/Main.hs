@@ -28,4 +28,4 @@ main =
       lib <- MaybeT $ openLibrary libName file
       parser <- MaybeT $ getParser lib parserName
       inp <- liftIO getContents
-      liftIO $ mapM_ (procLine parser) (lines inp)
+      liftIO $ mapM_ (procLine parser) $ filter (/= "") (lines inp)
