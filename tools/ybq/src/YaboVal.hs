@@ -9,7 +9,7 @@ import Data.List (intercalate)
 import Data.Map (Map, fromList, toList)
 import Data.Maybe (catMaybes)
 import Data.Sequence (Seq, fromFunction)
-import Foreign (FunPtr, Ptr, allocaBytes, castFunPtrToPtr, castPtr, nullFunPtr, peek, plusForeignPtr, withForeignPtr)
+import Foreign (FunPtr, Ptr, allocaBytes, castFunPtrToPtr, castPtr, nullFunPtr, peek, plusForeignPtr, touchForeignPtr, withForeignPtr)
 import Foreign.C (CChar, CSize)
 import Foreign.ForeignPtr (ForeignPtr)
 import GHC.IO (unsafePerformIO)
@@ -73,6 +73,7 @@ arrayIndex lib val idx = do
         return $ Identity ()
 
   res <- withReturnBuf (maxBuf lib) accessElement
+  touchForeignPtr $ pointer $ origFile lib
   intoYaboVal lib $ runIdentity res
 
 blockIndex :: Library -> ShortByteString -> CSize -> IO (Maybe (String, YaboVal))
@@ -86,6 +87,7 @@ blockIndex lib val idx = useAsCStringLen val $ \(charptr, _) -> runMaybeT $ do
 
   ret <- MaybeT $ withReturnBuf (maxBuf lib) accessField
   fieldName <- liftIO $ ybqFieldNameAtIndex ptr idx >>= fieldNameToString
+  liftIO $ touchForeignPtr $ pointer $ origFile lib
   retVal <- liftIO $ intoYaboVal lib ret
   return (fieldName, retVal)
 
@@ -141,12 +143,15 @@ getParser lib name offset = runMaybeT $ do
   parserPtr <- liftIO $ peek (parserPtrPtr :: Ptr (Ptr ()))
   liftIO $ parse (Parser lib parserPtr) offset
 
-data ByteFile = ByteFile (ForeignPtr CChar) Int
+data ByteFile = ByteFile
+  { pointer :: ForeignPtr CChar,
+    len :: Int
+  }
 
 atOffset :: Int -> ByteFile -> ByteFile
-atOffset off (ByteFile ptr len) = ByteFile (ptr `plusForeignPtr` off') (len - off')
+atOffset off file = ByteFile (pointer file `plusForeignPtr` off') (len file - off')
   where
-    off' = min off len
+    off' = min off $ len file
 
 asPtrLen :: ByteFile -> ((Ptr CChar, Int) -> IO a) -> IO a
 asPtrLen (ByteFile ptr len) f = withForeignPtr ptr $ \p -> f (p, len)
