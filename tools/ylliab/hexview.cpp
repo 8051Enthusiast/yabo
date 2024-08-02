@@ -77,6 +77,7 @@ void HexTableView::set_font(QFont font) {
 }
 
 void HexTableView::goto_addr(size_t addr) {
+  addr = std::min(addr, hexModel->file->span().size());
   auto row = hexModel->addr_row(addr);
   hexModel->put_row_in_range(row);
   auto local_row = hexModel->local_row(row);

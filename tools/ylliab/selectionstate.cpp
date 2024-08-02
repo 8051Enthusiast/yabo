@@ -47,3 +47,5 @@ void SelectionState::set_root_internal(Node root) {
   emit root_changed(root);
   emit selection_changed({});
 }
+
+void SelectionState::jump_addr(size_t addr) { emit goto_addr(addr); }

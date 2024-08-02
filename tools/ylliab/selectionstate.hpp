@@ -17,6 +17,8 @@ public:
   void undo();
   void redo();
 
+  void jump_addr(size_t addr);
+
 signals:
   void begin_root_change();
   void root_changed(Node node);

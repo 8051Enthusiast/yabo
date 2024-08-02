@@ -58,6 +58,7 @@
     <bool>false</bool>
    </attribute>
    <addaction name="actionNewTab"/>
+   <addaction name="actionGotoAddress"/>
    <addaction name="separator"/>
    <addaction name="actionBack"/>
    <addaction name="actionForth"/>
@@ -81,6 +82,20 @@
   <action name="actionForth">
    <property name="text">
     <string>Forth</string>
+   </property>
+  </action>
+  <action name="actionGotoAddress">
+   <property name="text">
+    <string>Goto Address</string>
+   </property>
+   <property name="toolTip">
+    <string>Go to an address</string>
+   </property>
+   <property name="shortcut">
+    <string>G</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::NoRole</enum>
    </property>
   </action>
  </widget>

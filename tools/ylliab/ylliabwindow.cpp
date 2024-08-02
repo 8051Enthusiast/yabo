@@ -1,6 +1,6 @@
 #include "ylliabwindow.hpp"
 #include "./ui_ylliabwindow.h"
-#include "filerequester.hpp"
+#include "addressdialog.hpp"
 #include "newtab.hpp"
 #include "parserview.hpp"
 
@@ -11,6 +11,7 @@ YlliabWindow::YlliabWindow(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::YlliabWindow) {
   ui->setupUi(this);
   new_tab = new NewTab(this);
+  goto_address = new AddressDialog(this);
 }
 
 YlliabWindow::~YlliabWindow() { delete ui; }
@@ -49,4 +50,19 @@ void YlliabWindow::on_actionForth_triggered() {
 
 ParserView *YlliabWindow::current_parser_view() const {
   return dynamic_cast<ParserView *>(ui->tabWidget->currentWidget());
+}
+
+void YlliabWindow::on_actionGotoAddress_triggered() {
+  if (!ui->tabWidget->count()) {
+    return;
+  }
+  goto_address->exec();
+  if (goto_address->result() != QDialog::Accepted) {
+    return;
+  }
+  auto address = goto_address->get_address();
+  auto widget = current_parser_view();
+  if (!widget)
+    return;
+  widget->goto_address(address);
 }

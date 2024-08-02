@@ -11,8 +11,6 @@
 #include <QObject>
 #include <QOpenGLWidget>
 
-#include <iostream>
-
 ParserView::ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req)
     : QWidget(parent), ui(new Ui::ParserView), fileRequester(std::move(req)) {
   ui->setupUi(this);
@@ -67,4 +65,8 @@ void ParserView::keyPressEvent(QKeyEvent *event) {
 
 void ParserView::on_tableView_doubleClicked(const QModelIndex &index) {
   hexModel->handle_doubleclick(index, select);
+}
+
+void ParserView::goto_address(size_t address) {
+  select->jump_addr(address);
 }
