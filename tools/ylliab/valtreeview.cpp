@@ -1,9 +1,16 @@
 #include "valtreeview.hpp"
 #include "valtreemodel.hpp"
 
+#include <QAction>
+#include <QFileDialog>
 #include <QHeaderView>
+#include <QMenu>
 
-ValTreeView::ValTreeView(QWidget *parent) : QTreeView(parent) {}
+ValTreeView::ValTreeView(QWidget *parent) : QTreeView(parent) {
+  setContextMenuPolicy(Qt::CustomContextMenu);
+  connect(this, &ValTreeView::customContextMenuRequested, this,
+          &ValTreeView::context_menu);
+}
 
 void ValTreeView::reset() {
   QTreeView::reset();
@@ -49,4 +56,29 @@ void ValTreeView::dataChanged(const QModelIndex &topLeft,
   if (root.isValid() && root == topLeft) {
     expand(root);
   }
+}
+
+void ValTreeView::context_menu(const QPoint &pos) {
+  auto index = indexAt(pos);
+  if (!index.isValid()) {
+    return;
+  }
+  auto model = dynamic_cast<ValTreeModel *>(this->model());
+  if (!model) {
+    return;
+  }
+  auto span = model->idx_span(index);
+  if (!span.data()) {
+    return;
+  }
+  auto field_column = model->index(index.row(), Column::FIELD, index.parent());
+  auto name = model->data(field_column, Qt::DisplayRole).toString();
+  auto menu = new QMenu(this);
+  auto action = new QAction("Save Bytes to file", menu);
+  connect(action, &QAction::triggered, [span, name]() {
+    QByteArray data(reinterpret_cast<const char *>(span.data()), span.size());
+    QFileDialog::saveFileContent(data, name + ".bin");
+  });
+  menu->addAction(action);
+  menu->popup(mapToGlobal(pos));
 }

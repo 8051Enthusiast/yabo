@@ -7,6 +7,14 @@
 class FileRequester;
 class SelectionState;
 
+enum Column {
+  FIELD = 0,
+  VALUE = 1,
+  ADDR = 2,
+  DEBUG = 3,
+};
+
+
 class ValTreeModel : public QAbstractItemModel {
   Q_OBJECT
 public:
@@ -32,6 +40,7 @@ public:
 
   void handle_doubleclick(const QModelIndex &index);
 
+  FileSpan idx_span(const QModelIndex &index) const;
   void change_selected(const QModelIndex &current, const QModelIndex &previous);
   TreeIndex to_tree_index(const QModelIndex &index) const;
   QModelIndex to_qindex(TreeIndex idx, int column) const;

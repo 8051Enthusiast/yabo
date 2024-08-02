@@ -6,13 +6,6 @@
 #include <qnamespace.h>
 #include <qvariant.h>
 
-enum Column {
-  FIELD = 0,
-  VALUE = 1,
-  ADDR = 2,
-  DEBUG = 3,
-};
-
 ValTreeModel::ValTreeModel(FileRequester *file_requester,
                              std::shared_ptr<SelectionState> select)
     : QAbstractItemModel(file_requester), file_requester(file_requester),
@@ -269,4 +262,8 @@ std::optional<TreeIndex> ValTreeModel::current_root_tree_index() const {
     return {};
   }
   return file_requester->root_idx(*node).tree_index;
+}
+
+FileSpan ValTreeModel::idx_span(const QModelIndex &index) const {
+  return file_requester->span(to_tree_index(index));
 }
