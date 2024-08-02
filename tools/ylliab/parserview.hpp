@@ -21,6 +21,7 @@ public:
   ~ParserView();
   void setParserName(QString fileRequester);
   void keyPressEvent(QKeyEvent *event) override;
+  void goto_address(size_t address);
   void back();
   void forth();
 

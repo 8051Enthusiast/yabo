@@ -43,6 +43,7 @@ qt_add_executable(ylliab
     parserview.hpp parserview.cpp parserview.ui
     newtab.hpp newtab.cpp newtab.ui
     ylliab.cpp
+    addressdialog.hpp addressdialog.cpp addressdialog.ui
 )
 
 qt_add_executable(yphbt
