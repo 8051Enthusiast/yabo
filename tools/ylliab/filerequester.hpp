@@ -1,14 +1,10 @@
 #pragma once
 #include <filesystem>
-#include <format>
 #include <memory>
-#include <system_error>
 
 #include <QObject>
 #include <qthread.h>
 #include <qvariant.h>
-
-#include <unordered_set>
 
 #include "filecontent.hpp"
 #include "graph.hpp"
