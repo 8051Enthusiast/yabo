@@ -8,7 +8,7 @@
 
 int main(int argc, char **argv) {
   QApplication a(argc, argv);
-  init_meta_types();
+  init_runtime();
   QFile f(":qdarkstyle/dark/darkstyle.qss");
   if (f.exists() && f.open(QFile::ReadOnly | QFile::Text)) {
     QTextStream ts(&f);

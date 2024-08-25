@@ -171,6 +171,8 @@ QVariant FileRequester::data(TreeIndex idx) const {
       return QVariant("Backtrack");
     } else if (err == YABO_STATUS_EOS) {
       return QVariant("EOF");
+    } else if (err == segfault_err_code) {
+      return QVariant("Segfault");
     } else {
       return QVariant("Exception");
     }

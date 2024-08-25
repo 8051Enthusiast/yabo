@@ -32,7 +32,7 @@ public:
                                          size_t pos);
 public slots:
   void execute_request_slot(Request req) {
-    if (init_lib()) {
+    if (thread_init()) {
       emit response(Response(req.metadata));
       return;
     }
@@ -44,7 +44,7 @@ public slots:
     }
   }
   void execute_parser_slot(Meta meta, QString func_name, size_t pos) {
-    if (init_lib()) {
+    if (thread_init()) {
       emit response(Response(meta));
       return;
     }
@@ -60,7 +60,7 @@ signals:
   void response(Response resp);
 
 private:
-  int64_t init_lib();
+  int64_t thread_init();
   std::optional<Response> get_fields(Request &req);
   std::optional<Response> get_array_members(Request &req);
   std::optional<Response> get_list_members(Request &req);
@@ -75,6 +75,7 @@ private:
   DerefInfo deref(YaboVal val);
   YaboValCreator vals;
   void *lib;
+  std::unique_ptr<char[]> altstack = nullptr;
   std::filesystem::path tmp_file;
   FileRef file;
 };
