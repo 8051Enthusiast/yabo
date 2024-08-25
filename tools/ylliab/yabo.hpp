@@ -24,6 +24,9 @@ enum class YaboValKind : int64_t {
   YABOERROR = -2,
 };
 
+static constexpr int64_t segfault_err_code = 0xff;
+int init_segfault_handler();
+
 typedef std::span<const uint8_t> FileSpan;
 
 static bool span_contains(FileSpan outer, FileSpan inner) noexcept {

@@ -6,7 +6,7 @@
 
 int main(int argc, char *argv[]) {
   QApplication a(argc, argv);
-  init_meta_types();
+  init_runtime();
   YlliabWindow w;
   w.show();
   return a.exec();

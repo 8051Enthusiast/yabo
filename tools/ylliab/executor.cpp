@@ -10,6 +10,9 @@ const char *YABO_GLOBAL_INIT = "orig$yabo_global_init";
 #else
 const char *YABO_GLOBAL_INIT = "yabo_global_init";
 #endif
+#ifdef __linux__
+#include <csignal>
+#endif
 
 Executor::Executor(std::filesystem::path path, FileRef file_content)
     : file(file_content), lib(nullptr) {
@@ -34,10 +37,20 @@ Executor::Executor(std::filesystem::path path, FileRef file_content)
   }
 }
 
-int64_t Executor::init_lib() {
+int64_t Executor::thread_init() {
   if (lib) {
     return 0;
   }
+#ifdef __linux__
+  altstack = std::make_unique<char[]>(MINSIGSTKSZ);
+  stack_t ss;
+  ss.ss_sp = altstack.get();
+  ss.ss_flags = 0;
+  ss.ss_size = MINSIGSTKSZ;
+  if (sigaltstack(&ss, nullptr)) {
+    return -1;
+  }
+#endif
   lib = dlopen(tmp_file.c_str(), RTLD_LAZY);
   if (!lib) {
     // error = dlerror();
@@ -69,6 +82,13 @@ Executor::~Executor() {
   if (lib) {
     dlclose(lib);
   }
+#ifdef __linux__
+  if (altstack) {
+    stack_t ss;
+    ss.ss_flags = SS_DISABLE;
+    sigaltstack(&ss, nullptr);
+  }
+#endif
   std::filesystem::remove(tmp_file);
 }
 

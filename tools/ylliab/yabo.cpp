@@ -1,7 +1,82 @@
 #include "yabo.hpp"
 #include "yabo/vtable.h"
 #include <algorithm>
-#include <unistd.h>
+
+// -- signal handling --
+#if defined(__linux__)
+#include <atomic>
+#include <csetjmp>
+#include <csignal>
+// note that we rely on the local-exec linker optimization so that no
+// signal-unsafe functions are called during access to segfault_resume
+thread_local static std::atomic<sigjmp_buf *> segfault_resume;
+
+// in case of stack overflows, we don't want to crash the whole application,
+// but instead return an error value. this function wraps a function call so
+// that, when it segfaults, it instead returns an error value. note that the
+// function `f` should be a pointer to a function from a yabo library because
+// these invariants need to be upheld:
+// * no calls (direct or indirect) to any signal-unsafe functions, as the
+//   segfault handler will siglongjmp out of the handler
+// * on error, any memory that the function would have written to must be
+//   assumed invalid as the segfault might have occured during an incomplete
+//   write
+// * as it uses longjmp, there must only be trivially destructible objects
+//   anywhere in the function
+// * catch_segfault should probably not be inlined as i don't know what the
+//   implications of that are
+template <typename T, typename... Args>
+__attribute__((noinline)) static T catch_segfault(T (*f)(Args...), T err_return,
+                                                  Args... args) {
+  sigjmp_buf env;
+  if (!sigsetjmp(env, 1)) {
+    // even though segfault_resume is a thread-local, we still do atomic
+    // writes as we could get an external SIGSEGV signal during the write
+    // which could tear if it wasn't atomic and cause the handler to jump
+    // to an invalid location
+    segfault_resume.store(&env, std::memory_order_relaxed);
+    T err = f(args...);
+    segfault_resume.store(nullptr, std::memory_order_relaxed);
+    return err;
+  } else {
+    segfault_resume.store(nullptr, std::memory_order_relaxed);
+    return err_return;
+  }
+}
+
+static void handler(int sig) {
+  sigjmp_buf *resume = segfault_resume.load(std::memory_order_relaxed);
+  if (resume) {
+    siglongjmp(*resume, 1);
+  } else {
+    // in this case we can only call signal-safe functions
+    static constexpr char msg[] = "Segmentation fault\n";
+    write(STDERR_FILENO, msg, sizeof(msg) - 1);
+    _exit(128 + sig);
+  }
+}
+
+int init_segfault_handler() {
+  struct sigaction action;
+  action.sa_handler = handler;
+  sigfillset(&action.sa_mask);
+  action.sa_flags = SA_ONSTACK;
+  int err = sigaction(SIGSEGV, &action, nullptr);
+  if (err) {
+    return err;
+  }
+  return sigaction(SIGBUS, &action, nullptr);
+}
+
+#else
+
+template <typename T, typename... Args>
+static T catch_segfault(T (*f)(Args...), T err_return, Args... args) {
+  return f(args...);
+}
+
+int init_segfault_handler() { return 0; }
+#endif
 
 YaboValKind YaboVal::kind() const noexcept {
   if (!val->vtable) {
@@ -139,8 +214,10 @@ YaboValCreator::access_field(YaboVal val, const char *name, int64_t level) {
   auto offset = *maybe_offset;
   auto vtable = reinterpret_cast<BlockVTable *>(val->vtable);
   auto impl = vtable->access_impl[offset];
-  auto ret = storage.with_return_buf(
-      [=](uint8_t *buf) { return impl(buf, val->data, level | YABO_VTABLE); });
+  auto ret = storage.with_return_buf([=](uint8_t *buf) {
+    return catch_segfault(impl, segfault_err_code, (void *)buf,
+                          (const void *)val->data, level | YABO_VTABLE);
+  });
   if (ret.is_backtrack()) {
     return {};
   }
@@ -155,8 +232,9 @@ std::optional<YaboVal> YaboValCreator::deref(YaboVal val) {
 
   auto target_level = val->vtable->deref_level - 256;
   return storage.with_return_buf([=](uint8_t *buf) {
-    return val->vtable->typecast_impl(buf, val->data,
-                                      target_level | YABO_VTABLE);
+    return catch_segfault(val->vtable->typecast_impl, segfault_err_code,
+                          (void *)buf, (const void *)val->data,
+                          target_level | YABO_VTABLE);
   });
 }
 
@@ -177,11 +255,13 @@ std::optional<YaboVal> YaboValCreator::index(YaboVal val, size_t idx) {
   return storage.with_address_and_return_buf(
       val, [=](DynValue *val, uint8_t *buf) {
         auto vtable = reinterpret_cast<ArrayVTable *>(val->vtable);
-        auto status = vtable->skip_impl(val->data, (uint64_t)idx);
+        auto status = catch_segfault(vtable->skip_impl, segfault_err_code,
+                                     (void *)val->data, (uint64_t)idx);
         if (status)
           return status;
-        return vtable->current_element_impl(buf, val->data,
-                                            DEFAULT_LEVEL | YABO_VTABLE);
+        return catch_segfault(vtable->current_element_impl, segfault_err_code,
+                              (void *)buf, (const void *)val->data,
+                              DEFAULT_LEVEL | YABO_VTABLE);
       });
 }
 
@@ -193,10 +273,13 @@ std::optional<YaboVal> YaboValCreator::skip(YaboVal val, size_t offset) {
   return storage.with_address_and_return_buf(
       val, [=](DynValue *val, uint8_t *buf) {
         auto vtable = reinterpret_cast<ArrayVTable *>(val->vtable);
-        auto status = vtable->skip_impl(val->data, (uint64_t)offset);
+        auto status = catch_segfault(vtable->skip_impl, segfault_err_code,
+                                     (void *)val->data, (uint64_t)offset);
         if (status)
           return status;
-        return vtable->head.typecast_impl(buf, val->data, YABO_VTABLE);
+        return catch_segfault(vtable->head.typecast_impl, segfault_err_code,
+                              (void *)buf, (const void *)val->data,
+                              0 | YABO_VTABLE);
       });
 }
 
@@ -204,8 +287,9 @@ static std::optional<FileSpan> primary_slice(DynValue *array, DynValue *buf) {
   auto cur = array, next = buf;
   while (cur->vtable->head != YABO_SLICEPTR) {
     auto vtable = reinterpret_cast<const ArrayVTable *>(cur->vtable);
-    auto status =
-        vtable->inner_array_impl(next->data, cur->data, 0 | YABO_VTABLE);
+    auto status = catch_segfault(vtable->inner_array_impl, segfault_err_code,
+                                 (void *)next->data, (const void *)cur->data,
+                                 0 | YABO_VTABLE);
     if (status != YABO_STATUS_OK) {
       return {};
     }
@@ -224,6 +308,7 @@ std::optional<FileSpan> YaboValCreator::extent(YaboVal val) {
   if (val.kind() == YaboValKind::YABOARRAY) {
     return storage.tmp_buf_o_plenty<std::optional<FileSpan>>(
         [=](DynValue *t1, DynValue *t2) -> std::optional<FileSpan> {
+          // this cannot fail as we are already at deref level 0
           val->vtable->typecast_impl(t1->data, val->data, 0 | YABO_VTABLE);
           return primary_slice(t1, t2);
         });
@@ -235,18 +320,24 @@ std::optional<FileSpan> YaboValCreator::extent(YaboVal val) {
   return storage.tmp_buf_o_plenty<std::optional<FileSpan>>(
       [=](DynValue *t1, DynValue *t2, DynValue *t3) -> std::optional<FileSpan> {
         auto start = t1;
-        if (vtable->start_impl(start->data, val->data, 0 | YABO_VTABLE)) {
+        if (catch_segfault(vtable->start_impl, segfault_err_code,
+                           (void *)start->data, (const void *)val->data,
+                           0 | YABO_VTABLE)) {
           return {};
         }
         auto end = t2;
-        if (vtable->end_impl(end->data, val->data, 0)) {
+        if (catch_segfault(vtable->end_impl, segfault_err_code,
+                           (void *)end->data, (const void *)val->data,
+                           (uint64_t)0)) {
           return {};
         }
         auto array_vtable =
             reinterpret_cast<const ArrayVTable *>(start->vtable);
         auto extent = t3;
-        auto status = array_vtable->span_impl(extent->data, start->data,
-                                              0 | YABO_VTABLE, end->data);
+        auto status =
+            catch_segfault(array_vtable->span_impl, segfault_err_code,
+                           (void *)extent->data, (const void *)start->data,
+                           0 | YABO_VTABLE, (const void *)end->data);
         if (status != YABO_STATUS_OK) {
           return {};
         }
@@ -256,6 +347,8 @@ std::optional<FileSpan> YaboValCreator::extent(YaboVal val) {
 
 std::optional<SpannedVal> YaboValCreator::parse(ParseFun parser, FileSpan buf) {
   return storage.with_span_and_return_buf(buf, [=](void *addr, uint8_t *ret) {
-    return parser(ret, nullptr, DEFAULT_LEVEL | YABO_VTABLE, addr);
+    return catch_segfault(parser, segfault_err_code, (void *)ret,
+                          (const void *)nullptr, DEFAULT_LEVEL | YABO_VTABLE,
+                          addr);
   });
 }

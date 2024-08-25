@@ -1,4 +1,5 @@
 #include "init.hpp"
+#include "yabo.hpp"
 #include "graph.hpp"
 #include "hex.hpp"
 #include "hexview.hpp"
@@ -9,7 +10,7 @@
 #include <QHeaderView>
 #include <QObject>
 
-void init_meta_types() {
+void init_runtime() {
   qRegisterMetaType<Meta>();
   qRegisterMetaType<Request>();
   qRegisterMetaType<Response>();
@@ -19,6 +20,7 @@ void init_meta_types() {
   qRegisterMetaType<GraphUpdate>();
   qRegisterMetaType<PositionsUpdate>();
   qRegisterMetaType<PositionOverride>();
+  init_segfault_handler();
 }
 void init_hex_and_tree(HexTableView *hex_view, QTreeView *tree_view,
                        HexTableModel *hex_model, ValTreeModel *tree_model,
