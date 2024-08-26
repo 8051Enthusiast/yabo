@@ -66,10 +66,11 @@ private:
   std::optional<Response> get_list_members(Request &req);
   YaboVal from_handle(ValHandle handle) const noexcept;
   SpannedVal from_spanned_handle(SpannedHandle handle) const noexcept;
-  SpannedVal normalize(YaboVal val, FileSpan parent_span);
+  SpannedVal normalize(YaboVal val, ByteSpan parent_span);
+  SpannedHandle normalize(YaboVal val, FileSpan parent_span);
   struct DerefInfo {
     std::optional<YaboVal> val;
-    std::optional<FileSpan> span;
+    std::optional<ByteSpan> span;
   };
   std::unordered_map<YaboVal, DerefInfo> deref_cache;
   DerefInfo deref(YaboVal val);

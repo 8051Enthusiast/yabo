@@ -71,9 +71,9 @@ void FileRequester::set_value(TreeIndex idx, SpannedHandle val,
   } else {
     node.state = TreeNodeState::LOADED;
   }
-  if (idx == root.tree_index && val.span.data()) {
+  if (idx == root.tree_index && val.span) {
     auto node = Node{root};
-    size_t start = val.span.data() - file->span().data();
+    size_t start = *val.span.addr();
     size_t end = start + val.span.size();
     emit new_node({start, end, node});
   }
@@ -340,10 +340,10 @@ QColor FileRequester::node_color(Node idx) const {
 std::optional<std::pair<size_t, size_t>>
 FileRequester::idx_range(TreeIndex idx) const {
   auto range = span(idx);
-  if (!range.data()) {
+  if (!range) {
     return {};
   }
-  size_t start = range.data() - file->span().data();
+  size_t start = *range.addr();
   size_t end = start + range.size();
   return std::make_pair(start, end);
 }

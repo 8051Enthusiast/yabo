@@ -142,7 +142,6 @@ public:
 
   QString error_message() const { return error_msg; }
   FileRef file_ref() const noexcept { return file; }
-  const uint8_t *file_base_addr() const noexcept { return file->span().data(); }
 
   RootIndex set_parser(QString name, size_t pos = 0);
   QString node_name(Node idx) const override;

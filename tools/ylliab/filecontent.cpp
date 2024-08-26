@@ -1,4 +1,5 @@
 #include "filecontent.hpp"
+#include <cassert>
 #include <random>
 extern "C" {
 #include <fcntl.h>
@@ -9,6 +10,18 @@ extern "C" {
 }
 
 #include <fstream>
+
+FileSpan::FileSpan(const uint8_t *base,
+                   std::span<const uint8_t> span) noexcept {
+  if (!span.data()) {
+    m_size = 0;
+    m_addr = (uint64_t)-1;
+    return;
+  }
+  auto rel = span.data() - base;
+  m_addr = rel;
+  m_size = span.size();
+}
 
 FileContent::FileContent(std::filesystem::path path) {
   auto fd = open(path.c_str(), O_RDONLY);
@@ -75,4 +88,42 @@ std::filesystem::path tmp_file_name(std::string prefix, std::string suffix) {
   auto random_num = std::random_device()();
   auto tmp_file_name = prefix + std::to_string(random_num) + suffix;
   return tmp_root / tmp_file_name;
+}
+
+std::span<const uint8_t> FileContent::byte_span(FileSpan file_span) const {
+  auto addr = file_span.addr();
+  assert(addr <= span().size());
+  if (addr) {
+    return std::span(span().data() + *addr, file_span.size());
+  } else {
+    return std::span<const uint8_t>((const uint8_t *)nullptr, 0);
+  }
+}
+
+FileSpan FileContent::file_span(std::span<const uint8_t> byte_span) const {
+  if (!byte_span.data()) {
+    return FileSpan();
+  }
+  return FileSpan(span().data(), byte_span);
+}
+
+bool FileContent::is_valid_span(FileSpan sp) const {
+  return !sp.addr() || *sp.addr() + sp.size() <= span().size();
+}
+
+uint8_t FileContent::get_addr(const uint8_t *addr) const {
+  auto [start, end] = slice();
+  if (std::less{}(addr, start)) {
+    return 0xff;
+  }
+  if (std::greater_equal{}(addr, end)) {
+    return 0xff;
+  }
+  return *addr;
+}
+
+std::pair<const uint8_t *, const uint8_t *> FileContent::slice() const {
+  auto start = span().begin().base();
+  auto end = span().end().base();
+  return {start, end};
 }
