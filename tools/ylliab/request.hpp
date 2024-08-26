@@ -1,6 +1,7 @@
 #pragma once
 
 #include "yabo.hpp"
+#include "filecontent.hpp"
 #include <QAbstractItemModel>
 #include <QThread>
 #include <optional>
@@ -54,7 +55,7 @@ struct ValFlags {
 };
 
 struct SpannedHandle {
-  SpannedHandle(SpannedVal val) noexcept;
+  SpannedHandle(SpannedVal val, const FileRef &file) noexcept;
   SpannedHandle(ValHandle val, FileSpan span, YaboValKind kind, bool active,
                 ValFlags flags) noexcept
       : handle(val.handle), active(active), span(span), kind(kind),
@@ -145,7 +146,7 @@ struct NamedYaboVal {
     if (active_cmp != 0) {
       return active_cmp;
     }
-    auto start_cmp = val.span.data() <=> other.val.span.data();
+    auto start_cmp = val.span.addr() <=> other.val.span.addr();
     if (start_cmp != 0) {
       return start_cmp;
     }

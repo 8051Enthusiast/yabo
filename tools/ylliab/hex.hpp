@@ -78,7 +78,7 @@ public slots:
 
 private:
   size_t global_row_count() const {
-    return (file->span().size() + columns - 1) / columns;
+    return (file->end_address() + columns - 1) / columns;
   }
   std::vector<NodeRange> const &nodes_at(QModelIndex &index) const;
   RangeMap ranges;

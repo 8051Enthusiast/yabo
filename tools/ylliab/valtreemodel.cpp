@@ -7,7 +7,7 @@
 #include <qvariant.h>
 
 ValTreeModel::ValTreeModel(FileRequester *file_requester,
-                             std::shared_ptr<SelectionState> select)
+                           std::shared_ptr<SelectionState> select)
     : QAbstractItemModel(file_requester), file_requester(file_requester),
       select(select) {
   connect(file_requester, &FileRequester::tree_data_changed, this,
@@ -22,7 +22,7 @@ ValTreeModel::ValTreeModel(FileRequester *file_requester,
           &ValTreeModel::endResetModel);
 }
 QModelIndex ValTreeModel::index(int row, int column,
-                                 const QModelIndex &parent) const {
+                                const QModelIndex &parent) const {
   TreeIndex new_index;
   if (!select->get_root()) {
     return QModelIndex();
@@ -103,12 +103,11 @@ QVariant ValTreeModel::data(const QModelIndex &index, int role) const {
     return file_requester->field_name(to_tree_index(index));
   case Column::ADDR: {
     auto span = file_requester->span(to_tree_index(index));
-    if (!span.data()) {
+    if (!span) {
       return QVariant();
     }
-    auto relative_addr_start = span.data() - file_requester->file_base_addr();
     auto addr_str =
-        QString::asprintf("0x%08zx [%zd]", relative_addr_start, span.size());
+        QString::asprintf("0x%08zx [%zd]", *span.addr(), span.size());
     return addr_str;
   }
   case Column::DEBUG: {
@@ -125,7 +124,7 @@ QVariant ValTreeModel::data(const QModelIndex &index, int role) const {
 }
 
 QVariant ValTreeModel::headerData(int section, Qt::Orientation orientation,
-                                   int role) const {
+                                  int role) const {
   if (orientation != Qt::Orientation::Horizontal || role != Qt::DisplayRole) {
     return QVariant();
   }
@@ -213,7 +212,7 @@ TreeIndex ValTreeModel::to_tree_index(const QModelIndex &index) const {
 }
 
 void ValTreeModel::begin_insert_rows(TreeIndex parent, int first, int last,
-                                      RootIndex root) {
+                                     RootIndex root) {
   if (Node(root) != select->get_root()) {
     return;
   }
@@ -233,7 +232,7 @@ void ValTreeModel::end_insert_rows(TreeIndex parent, RootIndex root) {
 }
 
 void ValTreeModel::change_selected(const QModelIndex &current,
-                                    const QModelIndex &previous) {
+                                   const QModelIndex &previous) {
   if (!current.isValid()) {
     select->clear_selection();
   }
@@ -250,8 +249,8 @@ void ValTreeModel::handle_doubleclick(const QModelIndex &index) {
   }
   if (index.column() == Column::ADDR) {
     auto span = file_requester->span(to_tree_index(index));
-    if (span.data()) {
-      emit select->goto_addr(span.data() - file_requester->file_base_addr());
+    if (span) {
+      emit select->goto_addr(*span.addr());
     }
   }
 }
@@ -264,6 +263,11 @@ std::optional<TreeIndex> ValTreeModel::current_root_tree_index() const {
   return file_requester->root_idx(*node).tree_index;
 }
 
-FileSpan ValTreeModel::idx_span(const QModelIndex &index) const {
-  return file_requester->span(to_tree_index(index));
+ByteSpan ValTreeModel::idx_span(const QModelIndex &index) const {
+  auto span = file_requester->span(to_tree_index(index));
+  if (!file_requester->file_ref()->is_valid_span(span)) {
+    return ByteSpan();
+  }
+  auto byte_span = file_requester->file_ref()->byte_span(span);
+  return byte_span;
 }

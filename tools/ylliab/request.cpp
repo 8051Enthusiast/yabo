@@ -25,8 +25,9 @@ void ParseRequester::add_recently_used(QString func_name) {
 
 ValFlags::ValFlags(YaboVal val) noexcept { is_list = val.is_list_block(); }
 
-SpannedHandle::SpannedHandle(SpannedVal val) noexcept
-    : active(val.active), span(val.span), kind(val.kind()), flags(val) {
+SpannedHandle::SpannedHandle(SpannedVal val, const FileRef &file) noexcept
+    : active(val.active), span(file->file_span(val.span)), kind(val.kind()),
+      flags(val) {
   switch (kind) {
   case YaboValKind::YABONOM:
     name = QString::fromUtf8(
@@ -44,7 +45,7 @@ SpannedHandle::SpannedHandle(SpannedVal val) noexcept
     handle = val.access_int();
     break;
   case YaboValKind::YABOU8:
-    handle = *val.access_u8();
+    handle = file->get_addr(val.access_u8());
     break;
   case YaboValKind::YABOERROR:
     handle = val.access_error();

@@ -11,16 +11,16 @@
 HexTableModel::HexTableModel(FileRef file, NodeInfoProvider *node_info,
                              QObject *parent)
     : QAbstractTableModel(parent), file(file), node_info(node_info) {
-  file_address_digit_count = address_digit_count(file->span().size());
+  file_address_digit_count = address_digit_count(file->end_address());
 }
 
 QVariant HexTableModel::data(const QModelIndex &index, int role) const {
   auto offset = index_addr(index);
   if (role == Qt::DisplayRole) {
-    if (offset >= file->span().size()) {
+    if (offset >= file->end_address()) {
       return QVariant();
     }
-    return QString("%1").arg(file->span()[offset], 2, 16, QChar('0'));
+    return QString("%1").arg(file->get_addr(offset), 2, 16, QChar('0'));
   } else if (role == Qt::BackgroundRole) {
     auto node = ranges.get(offset);
     if (!node) {

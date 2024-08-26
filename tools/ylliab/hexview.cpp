@@ -34,7 +34,7 @@ HexTableView::HexTableView(QWidget *parent)
 void HexTableView::set_model(HexTableModel *model,
                              std::shared_ptr<SelectionState> &select) {
   hexModel = model;
-  hexCell->set_file_size(model->file->span().size());
+  hexCell->set_file_size(model->file->end_address());
   update_dimensions();
 
   QTableView::setModel(model);
@@ -77,7 +77,7 @@ void HexTableView::set_font(QFont font) {
 }
 
 void HexTableView::goto_addr(size_t addr) {
-  addr = std::min(addr, hexModel->file->span().size());
+  addr = std::min(addr, hexModel->file->end_address());
   auto row = hexModel->addr_row(addr);
   hexModel->put_row_in_range(row);
   auto local_row = hexModel->local_row(row);
@@ -115,7 +115,7 @@ void HexTableView::parse_menu(QPoint current_mouse_pos) {
     return;
   }
   auto addr = hexModel->index_addr(index);
-  if (addr >= hexModel->file->span().size()) {
+  if (addr >= hexModel->file->end_address()) {
     return;
   }
   auto menu = new QMenu(this);

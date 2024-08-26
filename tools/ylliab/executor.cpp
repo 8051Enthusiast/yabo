@@ -65,11 +65,11 @@ int64_t Executor::thread_init() {
     return -1;
   }
 
-  auto span = file->span();
+  auto [start, end] = file->slice();
 
   typedef InitFun init_fun;
   auto global_init = reinterpret_cast<init_fun>(dlsym(lib, YABO_GLOBAL_INIT));
-  int64_t status = global_init(span.data(), span.data() + span.size());
+  int64_t status = global_init(start, end);
   if (status) {
     // error = QString("Global init failed with status %1").arg(status);
     return -1;
@@ -205,15 +205,15 @@ Executor::execute_parser(Meta meta, char const *func_name, size_t pos) {
     return {};
   }
   auto parser = *parser_ptr;
-  auto span = file->span();
-  if (pos >= span.size()) {
+  auto span = file->segment_from(pos);
+  if (!span.data()) {
     return {};
   }
-  span = span.subspan(pos, span.size() - pos);
   auto ret = vals.parse(parser, span);
   if (ret.has_value()) {
     auto normalized = normalize(ret.value(), ret->span);
-    return Response(meta, {func_name, normalized});
+    auto handle = SpannedHandle(normalized, file);
+    return Response(meta, {func_name, handle});
   }
   return {};
 }
@@ -224,7 +224,7 @@ Executor::DerefInfo Executor::deref(YaboVal val) {
     return it->second;
   }
   auto ret = vals.deref(val);
-  std::optional<FileSpan> span;
+  std::optional<ByteSpan> span;
   if (ret.has_value()) {
     span = vals.extent(val);
   }
@@ -233,13 +233,13 @@ Executor::DerefInfo Executor::deref(YaboVal val) {
   return info;
 }
 
-SpannedVal Executor::normalize(YaboVal val, FileSpan parent_span) {
+SpannedVal Executor::normalize(YaboVal val, ByteSpan parent_span) {
   std::optional<SpannedVal> first_outside;
   bool active = false;
   while (true) {
     if (val.kind() == YaboValKind::YABOU8) {
       const uint8_t *start = val.access_u8();
-      return SpannedVal(val, FileSpan(start, 1), true);
+      return SpannedVal(val, ByteSpan(start, 1), true);
     }
     auto deref_info = deref(val);
     if (!deref_info.val.has_value()) {
@@ -268,11 +268,17 @@ SpannedVal Executor::normalize(YaboVal val, FileSpan parent_span) {
   return SpannedVal(val, parent_span, active);
 }
 
+SpannedHandle Executor::normalize(YaboVal val, FileSpan parent_span) {
+  auto span = file->byte_span(parent_span);
+  SpannedVal new_val = normalize(val, span);
+  return SpannedHandle(new_val, file);
+}
+
 YaboVal Executor::from_handle(ValHandle handle) const noexcept {
   return YaboVal(reinterpret_cast<DynValue *>(handle.handle));
 }
 
 SpannedVal Executor::from_spanned_handle(SpannedHandle handle) const noexcept {
   auto val = from_handle(ValHandle(handle.handle));
-  return SpannedVal(val, handle.span, handle.active);
+  return SpannedVal(val, file->byte_span(handle.span), handle.active);
 }

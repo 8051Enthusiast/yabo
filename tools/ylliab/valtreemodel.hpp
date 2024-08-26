@@ -40,7 +40,7 @@ public:
 
   void handle_doubleclick(const QModelIndex &index);
 
-  FileSpan idx_span(const QModelIndex &index) const;
+  ByteSpan idx_span(const QModelIndex &index) const;
   void change_selected(const QModelIndex &current, const QModelIndex &previous);
   TreeIndex to_tree_index(const QModelIndex &index) const;
   QModelIndex to_qindex(TreeIndex idx, int column) const;

@@ -191,14 +191,14 @@ YaboVal YaboValStorage::with_address_and_return_buf(
 }
 
 SpannedVal YaboValStorage::with_span_and_return_buf(
-    FileSpan span, std::function<uint64_t(void *addr, uint8_t *ret)> f) {
+    ByteSpan span, std::function<uint64_t(void *addr, uint8_t *ret)> f) {
   auto tmp_val = tmp_storage.get();
   Slice slice{span.data(), span.data() + span.size()};
   std::memcpy(tmp_val, &slice, sizeof(Slice));
   auto val = with_return_buf([=](uint8_t *ret) { return f(tmp_val, ret); });
   std::memcpy(&slice, tmp_val, sizeof(Slice));
   auto size = slice.start - span.data();
-  return SpannedVal(val, FileSpan(span.data(), size), true);
+  return SpannedVal(val, ByteSpan(span.data(), size), true);
 }
 
 std::optional<YaboVal>
@@ -283,7 +283,7 @@ std::optional<YaboVal> YaboValCreator::skip(YaboVal val, size_t offset) {
       });
 }
 
-static std::optional<FileSpan> primary_slice(DynValue *array, DynValue *buf) {
+static std::optional<ByteSpan> primary_slice(DynValue *array, DynValue *buf) {
   auto cur = array, next = buf;
   while (cur->vtable->head != YABO_SLICEPTR) {
     auto vtable = reinterpret_cast<const ArrayVTable *>(cur->vtable);
@@ -296,18 +296,18 @@ static std::optional<FileSpan> primary_slice(DynValue *array, DynValue *buf) {
     std::swap(cur, next);
   }
   auto slice = reinterpret_cast<Slice *>(cur->data);
-  return FileSpan(reinterpret_cast<const uint8_t *>(slice->start),
+  return ByteSpan(reinterpret_cast<const uint8_t *>(slice->start),
                   reinterpret_cast<const uint8_t *>(slice->end));
 }
 
-std::optional<FileSpan> YaboValCreator::extent(YaboVal val) {
+std::optional<ByteSpan> YaboValCreator::extent(YaboVal val) {
   if (val.kind() == YaboValKind::YABOU8) {
     auto start = val.access_u8();
-    return FileSpan(start, 1);
+    return ByteSpan(start, 1);
   }
   if (val.kind() == YaboValKind::YABOARRAY) {
-    return storage.tmp_buf_o_plenty<std::optional<FileSpan>>(
-        [=](DynValue *t1, DynValue *t2) -> std::optional<FileSpan> {
+    return storage.tmp_buf_o_plenty<std::optional<ByteSpan>>(
+        [=](DynValue *t1, DynValue *t2) -> std::optional<ByteSpan> {
           // this cannot fail as we are already at deref level 0
           val->vtable->typecast_impl(t1->data, val->data, 0 | YABO_VTABLE);
           return primary_slice(t1, t2);
@@ -317,8 +317,8 @@ std::optional<FileSpan> YaboValCreator::extent(YaboVal val) {
     return {};
   }
   auto vtable = reinterpret_cast<const NominalVTable *>(val->vtable);
-  return storage.tmp_buf_o_plenty<std::optional<FileSpan>>(
-      [=](DynValue *t1, DynValue *t2, DynValue *t3) -> std::optional<FileSpan> {
+  return storage.tmp_buf_o_plenty<std::optional<ByteSpan>>(
+      [=](DynValue *t1, DynValue *t2, DynValue *t3) -> std::optional<ByteSpan> {
         auto start = t1;
         if (catch_segfault(vtable->start_impl, segfault_err_code,
                            (void *)start->data, (const void *)val->data,
@@ -345,7 +345,7 @@ std::optional<FileSpan> YaboValCreator::extent(YaboVal val) {
       });
 }
 
-std::optional<SpannedVal> YaboValCreator::parse(ParseFun parser, FileSpan buf) {
+std::optional<SpannedVal> YaboValCreator::parse(ParseFun parser, ByteSpan buf) {
   return storage.with_span_and_return_buf(buf, [=](void *addr, uint8_t *ret) {
     return catch_segfault(parser, segfault_err_code, (void *)ret,
                           (const void *)nullptr, DEFAULT_LEVEL | YABO_VTABLE,

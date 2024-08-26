@@ -27,12 +27,13 @@ enum class YaboValKind : int64_t {
 static constexpr int64_t segfault_err_code = 0xff;
 int init_segfault_handler();
 
-typedef std::span<const uint8_t> FileSpan;
+using ByteSpan = std::span<const uint8_t>;
 
-static bool span_contains(FileSpan outer, FileSpan inner) noexcept {
+static bool span_contains(ByteSpan outer, ByteSpan inner) noexcept {
   return outer.data() <= inner.data() &&
          outer.data() + outer.size() >= inner.data() + inner.size();
 }
+
 
 // interned yabo value, can be compared by pointer comparison
 struct YaboVal {
@@ -68,22 +69,22 @@ struct YaboVal {
 };
 
 struct SpannedVal : public YaboVal {
-  SpannedVal(YaboVal val, FileSpan span, bool active) noexcept
+  SpannedVal(YaboVal val, ByteSpan span, bool active) noexcept
       : YaboVal(val), span(span), active(active) {}
   explicit SpannedVal() noexcept
-      : YaboVal(nullptr), span(FileSpan()), active(false) {}
-  FileSpan span;
+      : YaboVal(nullptr), span(ByteSpan()), active(false) {}
+  ByteSpan span;
   bool active;
 };
 
 struct YaboValBytes {
-  YaboValBytes(FileSpan byte_span) noexcept : bytes(byte_span){};
+  YaboValBytes(ByteSpan byte_span) noexcept : bytes(byte_span){};
 
   YaboValBytes(const DynValue *x) noexcept {
     bytes = std::span((uint8_t *)&x->vtable, dyn_val_size(x));
   }
 
-  FileSpan bytes;
+  ByteSpan bytes;
 
   bool operator==(const YaboValBytes &rhs) const noexcept {
     if (bytes.size() != rhs.bytes.size()) {
@@ -113,7 +114,7 @@ public:
   YaboVal with_address_and_return_buf(
       YaboVal addr, std::function<uint64_t(DynValue *addr, uint8_t *ret)>);
   SpannedVal
-  with_span_and_return_buf(FileSpan span,
+  with_span_and_return_buf(ByteSpan span,
                            std::function<uint64_t(void *addr, uint8_t *ret)>);
   // all functions take at most 3 value arguments, so this should be enough for
   // most cases
@@ -179,8 +180,8 @@ public:
   int64_t array_len(YaboVal val);
   std::optional<YaboVal> index(YaboVal val, size_t idx);
   std::optional<YaboVal> skip(YaboVal val, size_t offset);
-  std::optional<SpannedVal> parse(ParseFun parser, FileSpan buf);
-  std::optional<FileSpan> extent(YaboVal val);
+  std::optional<SpannedVal> parse(ParseFun parser, ByteSpan buf);
+  std::optional<ByteSpan> extent(YaboVal val);
 
 private:
   YaboValStorage storage;
