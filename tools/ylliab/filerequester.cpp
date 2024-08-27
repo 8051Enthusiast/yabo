@@ -1,11 +1,8 @@
 #include <cstdio>
 #include <filesystem>
-#include <fstream>
 #include <qcolor.h>
 #include <qglobal.h>
-#include <random>
 
-#include <algorithm>
 #include <qthread.h>
 #include <qvariant.h>
 #include <sstream>
