@@ -30,6 +30,11 @@ __attribute__((noinline)) static T catch_segfault(T (*f)(Args...), T err_return,
                                                   Args... args) {
   sigjmp_buf env;
   if (!sigsetjmp(env, 1)) {
+    // i don't think this is an issue in practice since compilers are
+    // very reluctant to optimize function calls that return multiple times,
+    // but just in case this is here to make sure everything is written into
+    // the sigjmp_buf before we store the pointer in segfault_resume
+    std::atomic_signal_fence(std::memory_order_release);
     // even though segfault_resume is a thread-local, we still do atomic
     // writes as we could get an external SIGSEGV signal during the write
     // which could tear if it wasn't atomic and cause the handler to jump
