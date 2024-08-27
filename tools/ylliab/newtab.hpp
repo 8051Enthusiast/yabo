@@ -21,6 +21,10 @@ public:
   }
   QString get_input_file();
 
+  void set_preset_file_path(QString p);
+  void set_preset_file(FileRef f);
+  void set_preset_parser_path(QString p);
+
 private slots:
   void on_intputFileButton_clicked();
   void on_parserFileButton_clicked();
@@ -31,6 +35,8 @@ protected:
   void done(int r) override;
 
 private:
+  void reset_ui_state();
+  std::optional<FileRef> preset_file = {};
   Ui::NewTab *ui;
   std::unique_ptr<FileRequester> file_requester = nullptr;
 };

@@ -14,6 +14,7 @@ NewTab::NewTab(QWidget *parent) : QDialog(parent), ui(new Ui::NewTab) {
   auto font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
   font.setPointSize(12);
   ui->errors->setFont(font);
+  reset_ui_state();
 }
 
 NewTab::~NewTab() { delete ui; }
@@ -39,6 +40,7 @@ void NewTab::show_error(QString text) {
 
 void NewTab::done(int r) {
   if (r != QDialog::Accepted) {
+    reset_ui_state();
     return QDialog::done(r);
   }
   if (ui->parserFileEdit->text() == "") {
@@ -59,8 +61,14 @@ QString NewTab::get_input_file() { return ui->inputFileEdit->text(); }
 
 void NewTab::load_compiled_file(QString file_path) {
   auto factory = FileRequesterFactory();
-  auto new_file_requester = factory.create_file_requester(
-      file_path, ui->inputFileEdit->text(), ui->fetchEager->checkState());
+  std::unique_ptr<FileRequester> new_file_requester;
+  if (preset_file) {
+    new_file_requester = factory.create_file_requester(
+        file_path, *preset_file, ui->fetchEager->checkState());
+  } else {
+    new_file_requester = factory.create_file_requester(
+        file_path, ui->inputFileEdit->text(), ui->fetchEager->checkState());
+  }
   std::filesystem::remove(file_path.toStdString());
   auto error = new_file_requester->error_message();
   if (error != "") {
@@ -69,6 +77,25 @@ void NewTab::load_compiled_file(QString file_path) {
   }
   file_requester = std::move(new_file_requester);
   setEnabled(true);
-  ui->errors->clear();
+  reset_ui_state();
   QDialog::done(QDialog::Accepted);
+}
+
+void NewTab::reset_ui_state() {
+  ui->inputFile->show();
+  ui->parserFile->show();
+  ui->errors->clear();
+}
+
+void NewTab::set_preset_file_path(QString p) {
+  ui->inputFileEdit->setText(p);
+}
+
+void NewTab::set_preset_file(FileRef f) {
+  ui->inputFile->hide();
+  preset_file = f;
+}
+
+void NewTab::set_preset_parser_path(QString p) {
+  ui->parserFileEdit->setText(p);
 }

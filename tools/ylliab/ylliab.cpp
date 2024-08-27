@@ -2,12 +2,22 @@
 #include "ylliabwindow.hpp"
 
 #include <QApplication>
+#include <QCommandLineOption>
+#include <QCommandLineParser>
 #include <QMetaType>
+#include <QStringList>
 
 int main(int argc, char *argv[]) {
-  QApplication a(argc, argv);
+  QApplication app(argc, argv);
+  QCommandLineParser options;
+
+  options.addOption(parser_opt);
+  options.addOption(input_opt);
+  options.addHelpOption();
+  options.process(app);
+
   init_runtime();
-  YlliabWindow w;
+  YlliabWindow w(options);
   w.show();
-  return a.exec();
+  return app.exec();
 }

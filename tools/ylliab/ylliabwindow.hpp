@@ -1,9 +1,15 @@
 #pragma once
+#include <QCommandLineParser>
 #include <QMainWindow>
 
 class ParserView;
 class NewTab;
 class AddressDialog;
+
+const QCommandLineOption parser_opt(QStringList() << "p" << "parser",
+                              "file path to parser file", "path");
+const QCommandLineOption input_opt(QStringList() << "i" << "input",
+                             "file path to input file", "path");
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -15,7 +21,7 @@ class YlliabWindow : public QMainWindow {
   Q_OBJECT
 
 public:
-  YlliabWindow(QWidget *parent = nullptr);
+  YlliabWindow(const QCommandLineParser &options, QWidget *parent = nullptr);
   ~YlliabWindow();
 
 private slots:
@@ -25,7 +31,7 @@ private slots:
   void on_actionForth_triggered();
   void on_actionGotoAddress_triggered();
 
-  private:
+private:
   Ui::YlliabWindow *ui;
   NewTab *new_tab;
   AddressDialog *goto_address;

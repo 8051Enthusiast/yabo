@@ -7,11 +7,18 @@
 #include <QFileDialog>
 #include <QMessageBox>
 
-YlliabWindow::YlliabWindow(QWidget *parent)
+YlliabWindow::YlliabWindow(const QCommandLineParser &options, QWidget *parent)
     : QMainWindow(parent), ui(new Ui::YlliabWindow) {
   ui->setupUi(this);
   new_tab = new NewTab(this);
   goto_address = new AddressDialog(this);
+  if (options.isSet(parser_opt)) {
+    new_tab->set_preset_parser_path(options.value(parser_opt));
+  }
+  if (options.isSet(input_opt)) {
+    new_tab->set_preset_file_path(options.value(input_opt));
+  }
+  on_actionNewTab_triggered();
 }
 
 YlliabWindow::~YlliabWindow() { delete ui; }
