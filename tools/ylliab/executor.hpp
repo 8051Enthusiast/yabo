@@ -1,6 +1,5 @@
 #pragma once
 #include <QObject>
-#include <cinttypes>
 #include <filesystem>
 
 #include "filecontent.hpp"

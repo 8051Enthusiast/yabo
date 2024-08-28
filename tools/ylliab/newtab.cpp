@@ -47,7 +47,7 @@ void NewTab::done(int r) {
     show_error("Parser file empty!");
     return;
   }
-  if (ui->inputFileEdit->text() == "") {
+  if (!preset_file && ui->inputFileEdit->text() == "") {
     show_error("Input file empty!");
     return;
   }
@@ -57,7 +57,12 @@ void NewTab::done(int r) {
   setEnabled(false);
 }
 
-QString NewTab::get_input_file() { return ui->inputFileEdit->text(); }
+QString NewTab::get_input_file() {
+  if (ui->inputFileEdit->text().isEmpty()) {
+    return "new tab";
+  }
+  return ui->inputFileEdit->text();
+}
 
 void NewTab::load_compiled_file(QString file_path) {
   auto factory = FileRequesterFactory();
@@ -85,11 +90,10 @@ void NewTab::reset_ui_state() {
   ui->inputFile->show();
   ui->parserFile->show();
   ui->errors->clear();
+  preset_file = {};
 }
 
-void NewTab::set_preset_file_path(QString p) {
-  ui->inputFileEdit->setText(p);
-}
+void NewTab::set_preset_file_path(QString p) { ui->inputFileEdit->setText(p); }
 
 void NewTab::set_preset_file(FileRef f) {
   ui->inputFile->hide();

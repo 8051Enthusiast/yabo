@@ -13,6 +13,7 @@ int main(int argc, char *argv[]) {
 
   options.addOption(parser_opt);
   options.addOption(input_opt);
+  options.addOption(kernkeule_opt);
   options.addHelpOption();
   options.process(app);
 

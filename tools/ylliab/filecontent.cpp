@@ -1,5 +1,7 @@
 #include "filecontent.hpp"
+#include "yabo.hpp"
 #include <cassert>
+#include <map>
 #include <random>
 extern "C" {
 #include <fcntl.h>
@@ -11,6 +13,34 @@ extern "C" {
 
 #include <fstream>
 
+struct SegmentMap : std::map<size_t, ByteSpan, std::greater<size_t>> {
+  SegmentMap(ByteSpan file)
+      : std::map<size_t, ByteSpan, std::greater<size_t>>({{0, file}}) {}
+
+  SegmentMap(const std::vector<std::pair<size_t, size_t>> &map) {
+    for (auto [start, len] : map) {
+      auto ptr = (const uint8_t *)start;
+      auto span = ByteSpan(ptr, len);
+      insert({start, span});
+    }
+  }
+
+  std::optional<std::pair<size_t, ByteSpan>>
+  get_span(size_t addr) const noexcept {
+    auto it = this->lower_bound(addr);
+    if (it == end()) {
+      return {};
+    }
+    auto [start, span] = *it;
+    if (addr >= start + span.size()) {
+      return {};
+    }
+
+    size_t rel_addr = addr - start;
+    return {{rel_addr, span}};
+  }
+};
+
 FileSpan::FileSpan(const uint8_t *base,
                    std::span<const uint8_t> span) noexcept {
   if (!span.data()) {
@@ -18,9 +48,13 @@ FileSpan::FileSpan(const uint8_t *base,
     m_addr = (uint64_t)-1;
     return;
   }
-  auto rel = span.data() - base;
-  m_addr = rel;
   m_size = span.size();
+  if (!base) {
+    m_addr = (size_t)span.data();
+  } else {
+    auto rel = span.data() - base;
+    m_addr = rel;
+  }
 }
 
 FileContent::FileContent(std::filesystem::path path) {
@@ -55,31 +89,34 @@ FileContent::FileContent(std::filesystem::path path) {
   }
   auto ptr = mmap(nullptr, size, PROT_READ, MAP_SHARED, fd, 0);
   if (ptr != MAP_FAILED) {
-    content = std::span<const uint8_t>(static_cast<const uint8_t *>(ptr), size);
+    auto span = ByteSpan(static_cast<const uint8_t *>(ptr), size);
+    storage = span;
+    segment_map = std::make_unique<SegmentMap>(span);
     return;
   }
   close(fd);
 
-  content = std::vector<uint8_t>(size);
-  auto &vec = std::get<std::vector<uint8_t>>(content);
+  storage = std::vector<uint8_t>(size);
+  auto &vec = std::get<std::vector<uint8_t>>(*storage);
   std::ifstream file(path, std::ios::binary);
   file.read(reinterpret_cast<char *>(vec.data()), size);
+  auto span = ByteSpan(vec.data(), size);
+  segment_map = std::make_unique<SegmentMap>(span);
 }
 
-FileContent::FileContent(std::vector<uint8_t> vec) { content = vec; }
+FileContent::FileContent(std::vector<uint8_t> vec) {
+  storage = vec;
+  auto span = ByteSpan(vec.data(), vec.size());
+  segment_map = std::make_unique<SegmentMap>(span);
+}
+
+FileContent::FileContent(const std::vector<std::pair<size_t, size_t>> &map)
+    : segment_map(std::make_unique<SegmentMap>(map)), storage({}) {}
 
 FileContent::~FileContent() {
-  if (std::holds_alternative<std::span<const uint8_t>>(content)) {
-    auto span = std::get<std::span<const uint8_t>>(content);
+  if (storage && std::holds_alternative<std::span<const uint8_t>>(*storage)) {
+    auto span = std::get<std::span<const uint8_t>>(*storage);
     munmap(const_cast<uint8_t *>(span.data()), span.size());
-  }
-}
-
-std::span<const uint8_t> FileContent::span() const {
-  if (std::holds_alternative<std::span<const uint8_t>>(content)) {
-    return std::get<std::span<const uint8_t>>(content);
-  } else {
-    return std::span<const uint8_t>(std::get<std::vector<uint8_t>>(content));
   }
 }
 
@@ -90,13 +127,16 @@ std::filesystem::path tmp_file_name(std::string prefix, std::string suffix) {
   return tmp_root / tmp_file_name;
 }
 
-std::span<const uint8_t> FileContent::byte_span(FileSpan file_span) const {
+ByteSpan FileContent::byte_span(FileSpan file_span) const {
   auto addr = file_span.addr();
-  assert(addr <= span().size());
   if (addr) {
-    return std::span(span().data() + *addr, file_span.size());
+    if (!is_valid_span(file_span)) {
+      return ByteSpan();
+    }
+    auto [rel_addr, span] = *segment_map->get_span(*addr);
+    return ByteSpan(span.data() + rel_addr, file_span.size());
   } else {
-    return std::span<const uint8_t>((const uint8_t *)nullptr, 0);
+    return ByteSpan();
   }
 }
 
@@ -104,26 +144,84 @@ FileSpan FileContent::file_span(std::span<const uint8_t> byte_span) const {
   if (!byte_span.data()) {
     return FileSpan();
   }
-  return FileSpan(span().data(), byte_span);
+  return FileSpan(base(), byte_span);
 }
 
 bool FileContent::is_valid_span(FileSpan sp) const {
-  return !sp.addr() || *sp.addr() + sp.size() <= span().size();
+  if (!sp) {
+    return true;
+  }
+  auto res = segment_map->get_span(*sp.addr());
+  if (!res) {
+    return false;
+  }
+  auto [rel_addr, span] = *res;
+  return rel_addr < span.size();
 }
 
 uint8_t FileContent::get_addr(const uint8_t *addr) const {
-  auto [start, end] = slice();
-  if (std::less{}(addr, start)) {
-    return 0xff;
+  size_t rel_addr;
+  if (!base()) {
+    // we hope that casting addr to (size_t) is actually
+    // the same as doing addr - 0 for platforms where this is
+    // viable
+    rel_addr = (size_t)addr;
+  } else {
+    rel_addr = addr - base();
   }
-  if (std::greater_equal{}(addr, end)) {
-    return 0xff;
-  }
-  return *addr;
+  return get_addr(rel_addr);
 }
 
 std::pair<const uint8_t *, const uint8_t *> FileContent::slice() const {
-  auto start = span().begin().base();
-  auto end = span().end().base();
+  if (!base()) {
+    auto start = nullptr;
+    auto last_segment = segment_map->begin();
+    const uint8_t *end;
+    if (last_segment == segment_map->end()) {
+      end = nullptr;
+    } else {
+      end = last_segment->second.end().base();
+    }
+    return {start, end};
+  }
+  auto start = base();
+  auto end = start + end_address();
   return {start, end};
+}
+
+uint8_t FileContent::get_addr(size_t addr) const {
+  auto res = segment_map->get_span(addr);
+  if (!res) {
+    return 0xff;
+  }
+  return res->second[res->first];
+}
+
+size_t FileContent::end_address() const {
+  auto end = segment_map->begin();
+  if (end == segment_map->end()) {
+    return 0;
+  }
+  return end->first + end->second.size();
+}
+
+std::span<const uint8_t> FileContent::segment_from(size_t pos) const {
+  auto res = segment_map->get_span(pos);
+  if (!res) {
+    return {};
+  }
+  auto [rel_addr, current_span] = *res;
+  return current_span.subspan(rel_addr, current_span.size() - rel_addr);
+}
+
+const uint8_t *FileContent::base() const {
+  if (!storage) {
+    return nullptr;
+  }
+  if (std::holds_alternative<std::span<const uint8_t>>(*storage)) {
+    return std::get<std::span<const uint8_t>>(*storage).data();
+  } else {
+    return std::span<const uint8_t>(std::get<std::vector<uint8_t>>(*storage))
+        .data();
+  }
 }
