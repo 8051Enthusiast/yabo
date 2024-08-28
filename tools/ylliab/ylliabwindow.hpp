@@ -7,9 +7,11 @@ class NewTab;
 class AddressDialog;
 
 const QCommandLineOption parser_opt(QStringList() << "p" << "parser",
-                              "file path to parser file", "path");
+                                    "file path to parser file", "path");
 const QCommandLineOption input_opt(QStringList() << "i" << "input",
-                             "file path to input file", "path");
+                                   "file path to input file", "path");
+const QCommandLineOption kernkeule_opt(QStringList() << "k" << "kernkeule",
+                                       "use kernkeule memory map");
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
