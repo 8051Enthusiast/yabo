@@ -105,9 +105,9 @@ FileContent::FileContent(std::filesystem::path path) {
 }
 
 FileContent::FileContent(std::vector<uint8_t> vec) {
-  storage = vec;
   auto span = ByteSpan(vec.data(), vec.size());
   segment_map = std::make_unique<SegmentMap>(span);
+  storage = std::move(vec);
 }
 
 FileContent::FileContent(const std::vector<std::pair<size_t, size_t>> &map)
