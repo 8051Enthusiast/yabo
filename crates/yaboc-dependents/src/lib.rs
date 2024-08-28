@@ -269,12 +269,15 @@ fn between_parser_refs(
     }))
 }
 
-fn inner_parser_refs(db: &dyn Dependents, node: &hir::HirNode) -> SResult<FxHashSet<SubValue>> {
+fn inner_parser_refs(
+    db: &dyn Dependents,
+    node: &hir::HirNode,
+) -> SResult<FxHashSet<(SubValue, DepType)>> {
     match node {
         hir::HirNode::Parse(p) => {
             let mut ret = FxHashSet::default();
-            ret.insert(SubValue::new_val(p.expr.0));
-            ret.insert(SubValue::new_front(p.id.id()));
+            ret.insert((SubValue::new_val(p.expr.0), DepType::Data));
+            ret.insert((SubValue::new_front(p.id.id()), DepType::Data));
             Ok(ret)
         }
         hir::HirNode::Choice(c) if c.endpoints.is_none() => Ok(FxHashSet::default()),
@@ -282,18 +285,25 @@ fn inner_parser_refs(db: &dyn Dependents, node: &hir::HirNode) -> SResult<FxHash
             let mut ret = FxHashSet::default();
             for ctx in c.subcontexts.iter() {
                 if let Some((_, back)) = ctx.lookup(db)?.endpoints {
-                    ret.insert(SubValue::new_back(back));
+                    ret.insert((SubValue::new_back(back), DepType::Data));
                 }
             }
-            ret.insert(SubValue::new_val(c.id.0));
+            ret.insert((SubValue::new_val(c.id.0), DepType::Data));
             Ok(ret)
         }
         hir::HirNode::Block(b) => {
             let mut ret = FxHashSet::default();
-            ret.insert(match b.root_context.lookup(db)?.endpoints {
+            let val = match b.root_context.lookup(db)?.endpoints {
                 Some((_, back)) => SubValue::new_back(back),
                 None => SubValue::new_front(b.id.0),
-            });
+            };
+            ret.insert((val, DepType::Data));
+            let ctx = b.root_context.lookup(db)?;
+            for node in ctx.children.iter() {
+                if db.hir_node(*node)?.kind() == hir::HirNodeKind::Choice {
+                    ret.insert((SubValue::new_val(*node), DepType::Control));
+                }
+            }
             Ok(ret)
         }
         _ => Ok(FxHashSet::default()),
@@ -443,13 +453,9 @@ impl DependencyGraph {
                     sub_value,
                     between_parser_refs(db, &hir_node, self.block.id)?.map(|x| (x, DepType::Data)),
                 ),
-                SubValueKind::Back => self.add_edges(
-                    db,
-                    sub_value,
-                    inner_parser_refs(db, &hir_node)?
-                        .into_iter()
-                        .map(|x| (x, DepType::Data)),
-                ),
+                SubValueKind::Back => {
+                    self.add_edges(db, sub_value, inner_parser_refs(db, &hir_node)?.into_iter())
+                }
                 SubValueKind::Bt => self.add_edges(
                     db,
                     sub_value,
