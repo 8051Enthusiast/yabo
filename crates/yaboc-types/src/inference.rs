@@ -416,7 +416,7 @@ impl<'intern> InferenceVar<'intern> {
     }
 }
 
-impl<'intern> TryFrom<&InferenceType<InfTypeId<'intern>>> for TypeHead {
+impl TryFrom<&InferenceType<InfTypeId<'_>>> for TypeHead {
     type Error = ();
 
     fn try_from(value: &InferenceType<InfTypeId<'_>>) -> Result<Self, Self::Error> {

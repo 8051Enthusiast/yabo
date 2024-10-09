@@ -232,7 +232,7 @@ impl<'a> From<InfTypeId<'a>> for EitherType<'a> {
     }
 }
 
-impl<'a> From<TypeId> for EitherType<'a> {
+impl From<TypeId> for EitherType<'_> {
     fn from(x: TypeId) -> Self {
         EitherType::Regular(x)
     }

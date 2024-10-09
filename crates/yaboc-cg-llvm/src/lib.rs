@@ -788,7 +788,7 @@ fn eval_fun_values<'comp, 'llvm>(
     (ret, fun)
 }
 
-impl<'llvm, 'comp> CodegenTypeContext for CodeGenCtx<'llvm, 'comp> {
+impl<'llvm> CodegenTypeContext for CodeGenCtx<'llvm, '_> {
     type Type = BasicTypeEnum<'llvm>;
 
     fn int(&mut self, bits: u8, _signed: bool) -> Self::Type {

@@ -389,7 +389,7 @@ impl<'a, DB: ?Sized> AriadneCache<'a, DB> {
     }
 }
 
-impl<'a, DB> Cache<FileId> for AriadneCache<'a, DB>
+impl<DB> Cache<FileId> for AriadneCache<'_, DB>
 where
     DB: Files + ?Sized,
 {

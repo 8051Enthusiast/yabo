@@ -135,7 +135,7 @@ impl<'a, DB: Constraints + ?Sized> LenInferCtx<'a, DB> {
     }
 }
 
-impl<'db, DB: Constraints + ?Sized> Env for LenInferCtx<'db, DB> {
+impl<DB: Constraints + ?Sized> Env for LenInferCtx<'_, DB> {
     type ParserRef = hir::ParserDefId;
     type PolyCircuitId = PolyCircuitId;
 

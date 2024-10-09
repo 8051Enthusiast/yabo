@@ -14,13 +14,13 @@ pub struct IdCursor<'db, DB: ?Sized + TyHirs> {
     pub kind: HirNodeKind,
 }
 
-impl<'db, DB: ?Sized + TyHirs> Clone for IdCursor<'db, DB> {
+impl<DB: ?Sized + TyHirs> Clone for IdCursor<'_, DB> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'db, DB: ?Sized + TyHirs> Copy for IdCursor<'db, DB> {}
+impl<DB: ?Sized + TyHirs> Copy for IdCursor<'_, DB> {}
 
 impl<'db, DB: ?Sized + TyHirs> IdCursor<'db, DB> {
     pub fn new(db: &'db DB, id: DefId) -> Self {

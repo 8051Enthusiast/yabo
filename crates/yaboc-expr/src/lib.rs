@@ -398,7 +398,7 @@ where
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub struct IdxExprRef<'a, K: ExprKind>(&'a IdxExpression<K>);
 
-impl<'a, K: ExprKind> IdxExprRef<'a, K> {
+impl<K: ExprKind> IdxExprRef<'_, K> {
     pub fn get(&self, idx: ExprIdx<K>) -> &ExprHead<K, ExprIdx<K>> {
         &self.0[idx]
     }
@@ -411,14 +411,14 @@ impl<'a, K: ExprKind> IdxExprRef<'a, K> {
     }
 }
 
-impl<'a, K: ExprKind> Index<ExprIdx<K>> for IdxExprRef<'a, K> {
+impl<K: ExprKind> Index<ExprIdx<K>> for IdxExprRef<'_, K> {
     type Output = ExprHead<K, ExprIdx<K>>;
     fn index(&self, idx: ExprIdx<K>) -> &Self::Output {
         &self.0[idx]
     }
 }
 
-impl<'a, K: ExprKind> IndexExpr<K> for IdxExprRef<'a, K> {
+impl<K: ExprKind> IndexExpr<K> for IdxExprRef<'_, K> {
     type Output<'b> = &'b ExprHead<K, ExprIdx<K>>
     where
         Self: 'b;

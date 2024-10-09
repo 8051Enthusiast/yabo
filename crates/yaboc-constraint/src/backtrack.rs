@@ -24,7 +24,7 @@ use yaboc_types::{DefId, Type, TypeId};
 
 use crate::{Constraints, Origin};
 
-impl<'a> TypeLookup for dyn Constraints + 'a {
+impl TypeLookup for dyn Constraints + '_ {
     fn lookup(&self, ty: TypeId) -> Type {
         self.lookup_intern_type(ty)
     }

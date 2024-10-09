@@ -23,7 +23,7 @@ impl<'a, DB: Hirs + ?Sized> ChildIter<'a, DB> {
     }
 }
 
-impl<'a, DB: Hirs + ?Sized> Iterator for ChildIter<'a, DB> {
+impl<DB: Hirs + ?Sized> Iterator for ChildIter<'_, DB> {
     type Item = HirNode;
 
     fn next(&mut self) -> Option<Self::Item> {
