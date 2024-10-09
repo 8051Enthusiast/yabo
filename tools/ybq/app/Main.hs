@@ -8,12 +8,13 @@ import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Data.ByteString (ByteString, pack)
 import Data.ByteString qualified as ByteString
 import Data.Foldable (toList)
+import Data.Sequence (fromFunction)
 import Data.Word (Word8)
 import GHC.IO.Handle.FD (stderr)
 import Lib (YaboVal (..), getParser, openLibrary, parse)
 import System.Environment (getArgs)
 import System.IO (hPutStrLn)
-import System.IO.MMap (Mode (ReadOnly), mmapFileForeignPtr)
+import System.IO.MMap (Mode (ReadOnly), mmapFileByteString, mmapFileForeignPtr)
 import ValGen (ValGen (Cons, Error))
 
 toChar :: Integer -> Maybe Word8
@@ -51,20 +52,28 @@ procLine binary parser line = do
     Left err -> print err
     Right program -> if not binary then print $ program parser else printBin $ program parser
 
+withMaybeIO :: MaybeT IO () -> IO ()
+withMaybeIO prog = runMaybeT prog >>= maybe (pure ()) return
+
 main :: IO ()
-main =
-  runMaybeT prog >>= maybe (pure ()) return
+main = withMaybeIO $ do
+  args <- liftIO getArgs
+  (binary, parser) <- case args of
+    [library, parser, input] -> (False,) <$> loadParser library parser input
+    ["-b", library, parser, input] -> (True,) <$> loadParser library parser input
+    [input] -> (False,) <$> loadFlat input
+    ["-b", input] -> (True,) <$> loadFlat input
+    _ -> do
+      liftIO $ putStrLn "Usage: ybq [-b] [library parser] <input>"
+      MaybeT $ return Nothing
+  inp <- liftIO getContents
+  liftIO $ mapM_ (procLine binary parser) $ filter (/= "") (lines inp)
   where
-    prog = do
-      args <- liftIO getArgs
-      (binary, libName, parserName, inputFile) <- case args of
-        [library, parser, input] -> return (False, library, parser, input)
-        ["-b", library, parser, input] -> return (True, library, parser, input)
-        _ -> do
-          liftIO $ putStrLn "Usage: ybq [-b] <library> <parser> <input>"
-          MaybeT $ return Nothing
-      (file, _, size) <- liftIO $ mmapFileForeignPtr inputFile ReadOnly Nothing
+    loadParser libName parserName inputPath = do
+      (file, _, size) <- liftIO $ mmapFileForeignPtr inputPath ReadOnly Nothing
       lib <- MaybeT $ openLibrary libName (file, size)
-      parser <- MaybeT $ getParser lib parserName 0
-      inp <- liftIO getContents
-      liftIO $ mapM_ (procLine binary parser) $ filter (/= "") (lines inp)
+      MaybeT $ getParser lib parserName 0
+    loadFlat inputPath = do
+      file <- liftIO $ mmapFileByteString inputPath Nothing
+      let arr = fromFunction (ByteString.length file) $ YaboInt . toInteger . ByteString.index file
+      return $ YaboArray arr
