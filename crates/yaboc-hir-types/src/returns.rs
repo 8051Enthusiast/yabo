@@ -477,13 +477,19 @@ def *dir_entry = {
             .parser_expr_at(ExprId(subdir_expr))
             .unwrap()
             .root_data();
-        assert_eq!(dbformat!(&ctx.db, "{}", &subdir_ty), "[u8] &> file[_].dir_entries");
+        assert_eq!(
+            dbformat!(&ctx.db, "{}", &subdir_ty),
+            "[u8] &> file[_].dir_entries"
+        );
         let file_expr = block.field("file").expr().id;
         let file_ty = *ctx
             .db
             .parser_expr_at(ExprId(file_expr))
             .unwrap()
             .root_data();
-        assert_eq!(dbformat!(&ctx.db, "{}", &file_ty), "[u8] &> file[_].file_entry");
+        assert_eq!(
+            dbformat!(&ctx.db, "{}", &file_ty),
+            "[u8] &> file[_].file_entry"
+        );
     }
 }

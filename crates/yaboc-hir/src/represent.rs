@@ -192,7 +192,7 @@ impl<'a> dot::Labeller<'a, DefId, (DefId, DefId, String, dot::Style)> for HirGra
         dot::LabelText::label(text)
     }
 
-    fn edge_label(&'a self, e: &(DefId, DefId, String, dot::Style)) -> dot::LabelText<'_> {
+    fn edge_label(&'a self, e: &(DefId, DefId, String, dot::Style)) -> dot::LabelText<'a> {
         dot::LabelText::label(e.2.clone())
     }
 

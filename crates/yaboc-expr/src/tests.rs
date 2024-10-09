@@ -158,7 +158,7 @@ fn univariate_string(s: PartialEval<Univariate, i64>) -> String {
 
 fn eval(expr: DataRefExpr<Bivariate, Range<usize>>, x: i64, y: i64) -> Result<i64, Range<usize>> {
     let expr = expr.try_partial_eval::<i64, Univariate, _>(
-        |n, _| Ok(PartialEval::Eval(n)),
+        |n, _| Ok::<_, Range<usize>>(PartialEval::Eval(n)),
         |_, (head, span)| {
             let span = span.clone();
             Ok(PartialEval::Eval(match head {

@@ -96,7 +96,7 @@ impl Linker for WasmLinker {
             .arg("-Wl,--no-entry")
             .arg("-Wl,--export-dynamic")
             .arg("-Wl,--export-table")
-            .arg(&format!("-Wl,-z,stack-size={}", Self::STACK_SIZE))
+            .arg(format!("-Wl,-z,stack-size={}", Self::STACK_SIZE))
             .arg("-Wl,--gc-sections")
             .arg("-o")
             .arg(output_path)

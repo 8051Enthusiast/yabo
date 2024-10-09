@@ -64,7 +64,11 @@ enum DerefInfoTargetResponse {
 }
 
 impl DerefCache {
-    fn deref_data_to_level<'a>(&'a self, mut data: &'a DerefData, target_level: u32) -> &DerefData {
+    fn deref_data_to_level<'a>(
+        &'a self,
+        mut data: &'a DerefData,
+        target_level: u32,
+    ) -> &'a DerefData {
         assert!(data.level() >= target_level);
         while let DerefData::Nominal { def, .. } = data {
             let deref = &self.deref_cache[def];
