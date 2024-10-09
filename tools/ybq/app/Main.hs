@@ -5,10 +5,9 @@ module Main (main) where
 
 import Control.Monad.Trans (liftIO)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
-import Data.ByteString (ByteString, pack)
 import Data.ByteString qualified as ByteString
-import Data.Foldable (toList)
-import Data.Sequence (fromFunction)
+import Data.ByteString.Lazy qualified as LazyByteString
+import Data.Sequence (Seq (Empty, (:<|)), fromFunction)
 import Data.Word (Word8)
 import GHC.IO.Handle.FD (stderr)
 import Lib (YaboVal (..), getParser, openLibrary, parse)
@@ -23,25 +22,20 @@ toChar x = if x > fromChr (maxBound :: Word8) || x < fromChr (minBound :: Word8)
     fromChr = toInteger . fromEnum
     toChr = toEnum . fromInteger
 
-valToBinary :: YaboVal -> Maybe ByteString
-valToBinary (YaboArray s) =
-  pack . toList
-    <$> mapM
-      ( \x ->
-          case x of
-            YaboInt i -> toChar i
-            _ -> Nothing
-      )
-      s
-valToBinary _ = Nothing
+asBytes :: Data.Sequence.Seq YaboVal -> LazyByteString.ByteString -> LazyByteString.ByteString
+asBytes a acc = case a of
+  (YaboInt x) :<| xs -> case toChar x of
+    Nothing -> error "Array value not a byte value (out of range)"
+    Just xbyte -> LazyByteString.cons xbyte $ asBytes xs acc
+  _ :<| _ -> error "Array value not a byte value"
+  Empty -> acc
 
 printBin :: ValGen YaboVal -> IO ()
-printBin (ValGen.Cons x xs) = case valToBinary x of
-  Just bin -> do
-    ByteString.putStr bin
-    printBin xs
-  Nothing -> do
-    hPutStrLn stderr "Could not print, not an array of bytes"
+printBin (ValGen.Cons (YaboArray x) xs) = do
+  LazyByteString.putStr $ asBytes x LazyByteString.empty
+  printBin xs
+printBin (ValGen.Cons _ _) = do
+  hPutStrLn stderr "Could not print, not an array of bytes"
 printBin (ValGen.Error res) = putStr ("Error: " ++ res)
 printBin _ = pure ()
 
