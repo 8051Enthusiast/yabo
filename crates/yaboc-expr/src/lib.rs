@@ -287,13 +287,11 @@ pub trait Expression<K: ExprKind>: Sized {
     ) -> ReidxExpr<K, ToK> {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         enum Never {}
-        match self.try_partial_eval::<_, _, Never>(
+        let Ok(x) = self.try_partial_eval::<_, _, Never>(
             |ev, idx| Ok(default(ev, idx)),
             |inv, expr| Ok(f(inv, expr)),
-        ) {
-            Ok(x) => x,
-            Err(v) => match v {},
-        }
+        );
+        x
     }
 
     fn try_partial_eval<Ev: Clone + Hash + Debug + Eq, ToK: ExprKind, Error>(
