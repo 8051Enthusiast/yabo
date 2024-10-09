@@ -16,7 +16,7 @@ use crate::ILayout;
 use super::{IMonoLayout, Layout, Layouts, MonoLayout};
 use yaboc_absint::AbsInt;
 
-impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
+impl<DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'_> {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match &self.layout.1 {
             Layout::None => write!(f, "<null>"),
@@ -160,7 +160,7 @@ impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'a> {
     }
 }
 
-impl<'a, DB: AbsInt + ?Sized> DatabasedDisplay<DB> for IMonoLayout<'a> {
+impl<DB: AbsInt + ?Sized> DatabasedDisplay<DB> for IMonoLayout<'_> {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         self.0.db_fmt(f, db)
     }

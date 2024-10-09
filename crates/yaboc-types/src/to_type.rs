@@ -515,8 +515,8 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
     }
 }
 
-impl<'a, 'intern, TR: TypeResolver<'intern>> InfTypeInterner<'intern>
-    for TypeConvertMemo<'a, 'intern, TR>
+impl<'intern, TR: TypeResolver<'intern>> InfTypeInterner<'intern>
+    for TypeConvertMemo<'_, 'intern, TR>
 {
     fn intern_infty(&mut self, infty: InferenceType<InfTypeId<'intern>>) -> InfTypeId<'intern> {
         InfTypeId(self.ctx.interner.intern(infty))

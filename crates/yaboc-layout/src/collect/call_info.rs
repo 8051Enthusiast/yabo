@@ -12,7 +12,7 @@ pub struct CallInfo<'a, Arg: std::hash::Hash + Eq + Copy> {
     pub(crate) map: FxHashMap<Arg, FxHashSet<ILayout<'a>>>,
 }
 
-impl<'a, Arg: std::hash::Hash + Eq + Copy> Default for CallInfo<'a, Arg> {
+impl<Arg: std::hash::Hash + Eq + Copy> Default for CallInfo<'_, Arg> {
     fn default() -> Self {
         Self {
             map: FxHashMap::default(),

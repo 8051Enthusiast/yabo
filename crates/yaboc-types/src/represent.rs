@@ -11,7 +11,7 @@ use super::{inference::InferenceType, InfTypeId, NominalKind, PrimitiveType, Typ
 
 use yaboc_base::dbwrite;
 
-impl<'a, DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeId<'a> {
+impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeId<'_> {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self.value() {
             InferenceType::Primitive(p) => write!(f, "{}", &p),

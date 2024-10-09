@@ -44,15 +44,15 @@ pub struct ExprInfo<'a> {
     reqs: &'a [RequirementSet],
 }
 
-impl<'a> Clone for ExprInfo<'a> {
+impl Clone for ExprInfo<'_> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'a> Copy for ExprInfo<'a> {}
+impl Copy for ExprInfo<'_> {}
 
-impl<'a> ExprInfo<'a> {
+impl ExprInfo<'_> {
     fn req(&self, idx: ExprIdx<Resolved>) -> RequirementSet {
         self.reqs[idx.as_usize()]
     }
@@ -72,7 +72,7 @@ pub struct ConvertExpr<'a> {
     places: FxHashMap<SubValue, PlaceRef>,
 }
 
-impl<'a> Deref for ConvertExpr<'a> {
+impl Deref for ConvertExpr<'_> {
     type Target = FunctionWriter;
 
     fn deref(&self) -> &Self::Target {
@@ -80,7 +80,7 @@ impl<'a> Deref for ConvertExpr<'a> {
     }
 }
 
-impl<'a> DerefMut for ConvertExpr<'a> {
+impl DerefMut for ConvertExpr<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.f
     }

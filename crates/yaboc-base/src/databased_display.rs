@@ -84,8 +84,8 @@ pub struct DatabasedDisplayWrap<'a, DB: ?Sized, T: ?Sized + DatabasedDisplay<DB>
     pub(crate) db: &'a DB,
 }
 
-impl<'a, DB: ?Sized, T: ?Sized + DatabasedDisplay<DB>> fmt::Display
-    for DatabasedDisplayWrap<'a, DB, T>
+impl<DB: ?Sized, T: ?Sized + DatabasedDisplay<DB>> fmt::Display
+    for DatabasedDisplayWrap<'_, DB, T>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.inner.db_fmt(f, self.db)

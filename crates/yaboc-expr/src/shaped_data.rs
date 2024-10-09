@@ -177,7 +177,7 @@ impl<K, D> IndexExpr<K> for ShapedData<Vec<D>, K> {
     }
 }
 
-impl<'a, K, D> IndexExpr<K> for ShapedData<&'a [D], K> {
+impl<K, D> IndexExpr<K> for ShapedData<&[D], K> {
     type Output<'b> = &'b D where Self: 'b;
     fn index_expr(&self, idx: ExprIdx<K>) -> Self::Output<'_> {
         &self.data[idx.as_usize()]
