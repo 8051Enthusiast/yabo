@@ -41,7 +41,8 @@ langDef =
           "?",
           "//",
           ".",
-          "|"
+          "|",
+          ":"
         ],
       reservedNames =
         [ "as",
@@ -278,9 +279,20 @@ dotTail =
 
 bracketTail :: (PrimOps a) => Parser (Expr a)
 bracketTail = do
-  index <- brackets l $ optionMaybe topExpr
-  let res = maybe iterExpr indexExpr index
+  res <- brackets l bracketContent
   q <- optionMaybe $ reserved l "?"
   case q of
     Just _ -> pure $ tryExpr res
     Nothing -> pure res
+
+bracketContent :: (PrimOps a) => Parser (Expr a)
+bracketContent = do
+  first <- optionMaybe topExpr
+  second <- optionMaybe (char ':' *> optionMaybe topExpr)
+  case (first, second) of
+    (Nothing, Nothing) -> return iterExpr
+    (Just idx, Nothing) -> return $ indexExpr idx
+    (first_idx, Just second_idx) -> do
+      let f = fromMaybe nullExpr first_idx
+      let s = fromMaybe nullExpr second_idx
+      return $ sliceExpr f s

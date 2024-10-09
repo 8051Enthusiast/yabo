@@ -60,6 +60,12 @@ unOp op a v = do
   a' <- a v
   lifted $ op a'
 
+sliceExpr :: Binary v
+sliceExpr a b v = do
+  b' <- b v
+  a' <- a v
+  lifted $ slice v a' b'
+
 addExpr, subExpr, mulExpr, divExpr, modExpr :: Binary v
 addExpr = binOp add
 subExpr = binOp sub

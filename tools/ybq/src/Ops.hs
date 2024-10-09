@@ -3,7 +3,7 @@ module Ops (PrimOps (..)) where
 import Data.Map (elemAt)
 import Data.Map qualified
 import Data.Maybe qualified
-import Data.Sequence (Seq, cycleTaking, fromFunction, length, lookup)
+import Data.Sequence (Seq, cycleTaking, drop, fromFunction, length, lookup, take)
 import ValGen
   ( Result (ErrorResult, Result),
     ValGen,
@@ -14,6 +14,7 @@ import ValGen
 import YaboVal (YaboVal (..))
 
 class PrimOps a where
+  slice :: a -> a -> a -> Result a
   add, sub, mul, div, mod, index :: a -> a -> Result a
   neg, not, keys, length :: a -> Result a
   toVal :: a -> YaboVal
@@ -28,6 +29,17 @@ class PrimOps a where
 
 toInt :: Integer -> Maybe Int
 toInt x = if x > toInteger (maxBound :: Int) || x < toInteger (minBound :: Int) then Nothing else Just $ fromInteger x
+
+cappedIndex :: Int -> Integer -> Int
+cappedIndex len = saturated . absolute
+  where
+    saturated idx
+      | idx < 0 = 0
+      | idx > toInteger len = len
+      | otherwise = fromInteger idx
+    absolute idx
+      | idx < 0 = toInteger len + idx
+      | otherwise = idx
 
 instance PrimOps YaboVal where
   add (YaboInt a) (YaboInt b) = Result $ YaboInt $ a + b
@@ -68,6 +80,26 @@ instance PrimOps YaboVal where
   index (YaboBlock a) (YaboString b) = Result $ Data.Maybe.fromMaybe YaboNull (Data.Map.lookup b a)
   index YaboNull _ = Result YaboNull
   index a b = ErrorResult $ "Invalid indexing of " ++ typeOf a ++ " and " ++ typeOf b
+
+  slice (YaboArray a) (YaboInt start) (YaboInt end) =
+    Result $
+      YaboArray $
+        Data.Sequence.take (end_idx - start_idx) $
+          Data.Sequence.drop start_idx a
+    where
+      start_idx = conv start
+      end_idx = conv end
+      conv = cappedIndex $ Data.Sequence.length a
+  slice (YaboString a) (YaboInt start) (YaboInt end) =
+    Result $ YaboString $ Prelude.take (end_idx - start_idx) $ Prelude.drop start_idx a
+    where
+      start_idx = conv start
+      end_idx = conv end
+      conv = cappedIndex $ Prelude.length a
+  slice arr YaboNull other = slice arr (YaboInt 0) other
+  slice (YaboArray a) other YaboNull = slice (YaboArray a) other (YaboInt $ toInteger $ Data.Sequence.length a)
+  slice (YaboString a) other YaboNull = slice (YaboString a) other (YaboInt $ toInteger $ Prelude.length a)
+  slice a b c = ErrorResult $ "Invalid slicing of " ++ typeOf a ++ " with " ++ typeOf b ++ " and " ++ typeOf c
 
   neg (YaboInt a) = Result $ YaboInt $ -a
   neg a = ErrorResult $ "Invalid negation of " ++ typeOf a
