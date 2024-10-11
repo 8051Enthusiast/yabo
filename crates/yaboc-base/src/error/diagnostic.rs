@@ -62,7 +62,7 @@ impl Diagnostic {
     pub fn add_code(&mut self, code: u32) {
         self.code = Some(code);
     }
-    pub fn into_ariadne(self) -> ariadne::Report<Span> {
+    pub fn into_ariadne(self) -> ariadne::Report<'static, Span> {
         let mut diag = ariadne::Report::build(ariadne::ReportKind::Error, self.file, 0)
             .with_message(self.message);
         if let Some(code) = self.code {

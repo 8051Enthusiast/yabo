@@ -13,5 +13,5 @@ yaboc-ast = { path = "../yaboc-ast" }
 yaboc-hir = { path = "../yaboc-hir" }
 fxhash = "0.2.1"
 petgraph = { workspace = true }
-regex-syntax = "0.8.3"
+regex-syntax = "0.8.5"
 hexagex = "0.2.3"

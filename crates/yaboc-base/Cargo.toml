@@ -6,10 +6,10 @@ license.workspace = true
 description.workspace = true
 
 [dependencies]
-ariadne = "0.1.5"
-bumpalo = "3.13.0"
-dirs = "4.0.0"
+ariadne = "0.4.1"
+bumpalo = "3.16.0"
+dirs = "5.0.1"
 fxhash = "0.2.1"
 salsa = { workspace = true }
-serde = { version = "1.0.164", features = ["derive"] }
-sha2 = "0.10.7"
+serde = { version = "1.0.210", features = ["derive"] }
+sha2 = "0.10.8"

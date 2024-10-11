@@ -374,7 +374,7 @@ type CacheFn<'a> = Box<dyn for<'b> Fn(&'b usize) -> Result<String, Box<dyn Debug
 
 pub struct AriadneCache<'a, DB: ?Sized> {
     db: &'a DB,
-    fncache: FnCache<usize, CacheFn<'a>>,
+    fncache: FnCache<usize, CacheFn<'a>, String>,
 }
 
 impl<'a, DB: ?Sized> AriadneCache<'a, DB> {
@@ -393,6 +393,8 @@ impl<DB> Cache<FileId> for AriadneCache<'_, DB>
 where
     DB: Files + ?Sized,
 {
+    type Storage = String;
+
     fn fetch(&mut self, id: &FileId) -> Result<&ariadne::Source, Box<dyn std::fmt::Debug + '_>> {
         self.fncache.fetch(&id.to_usize())
     }

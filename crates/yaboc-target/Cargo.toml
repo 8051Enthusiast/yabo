@@ -7,5 +7,5 @@ license.workspace = true
 
 [dependencies]
 yaboc-base = { path = "../yaboc-base" }
-paste = "1.0.14"
-tempfile = "3.10.0"
+paste = "1.0.15"
+tempfile = "3.13.0"

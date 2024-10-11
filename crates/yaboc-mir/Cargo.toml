@@ -19,4 +19,4 @@ yaboc-len = { path = "../yaboc-len" }
 yaboc-constraint = { path = "../yaboc-constraint" }
 yaboc-req = { path = "../yaboc-req" }
 fxhash = "0.2.1"
-enumflags2 = "0.7.7"
+enumflags2 = "0.7.10"

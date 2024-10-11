@@ -10,5 +10,5 @@ salsa = { workspace = true }
 yaboc-ast = { path = "../yaboc-ast" }
 yaboc-base = { path = "../yaboc-base" }
 yaboc-database = { path = "../yaboc-database" }
-bumpalo = "3.13.0"
-clap = { version = "4.3.9", features = ["default", "derive"] }
+bumpalo = "3.16.0"
+clap = { version = "4.5.20", features = ["default", "derive"] }
