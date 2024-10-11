@@ -12,7 +12,7 @@ index 75e76a6806..b0319042ae 100644
  EM_JS(bool, jsHaveAsyncify, (), { return typeof Asyncify !== "undefined"; });
  EM_JS(bool, jsHaveJspi, (),
 diff --git a/src/plugins/platforms/wasm/CMakeLists.txt b/src/plugins/platforms/wasm/CMakeLists.txt
-index 90c7ec21..27b413ef 100644
+index 2c9e3ec867..2df9ed3fff 100644
 --- a/src/plugins/platforms/wasm/CMakeLists.txt
 +++ b/src/plugins/platforms/wasm/CMakeLists.txt
 @@ -35,7 +35,6 @@ qt_internal_add_plugin(QWasmIntegrationPlugin
@@ -23,7 +23,7 @@ index 90c7ec21..27b413ef 100644
      DEFINES
          QT_EGL_NO_X11
          QT_NO_FOREACH
-@@ -69,6 +68,10 @@ qt_internal_extend_target(QWasmIntegrationPlugin CONDITION QT_FEATURE_opengl
+@@ -72,6 +71,10 @@ qt_internal_extend_target(QWasmIntegrationPlugin CONDITION QT_FEATURE_opengl
          Qt::OpenGLPrivate
  )
 
@@ -35,7 +35,7 @@ index 90c7ec21..27b413ef 100644
 
  set(wasm_support_files
 diff --git a/src/plugins/platforms/wasm/qwasmintegration.cpp b/src/plugins/platforms/wasm/qwasmintegration.cpp
-index f5cc3e2e..aa76b617 100644
+index a1129f54e3..7b5aa27b00 100644
 --- a/src/plugins/platforms/wasm/qwasmintegration.cpp
 +++ b/src/plugins/platforms/wasm/qwasmintegration.cpp
 @@ -14,7 +14,10 @@
@@ -71,7 +71,7 @@ index f5cc3e2e..aa76b617 100644
 
  QWasmIntegration::~QWasmIntegration()
 diff --git a/src/plugins/platforms/wasm/qwasmwindowclientarea.cpp b/src/plugins/platforms/wasm/qwasmwindowclientarea.cpp
-index 6da3e24c..3f26f1b9 100644
+index 4a8d427e70..81c5a70e7c 100644
 --- a/src/plugins/platforms/wasm/qwasmwindowclientarea.cpp
 +++ b/src/plugins/platforms/wasm/qwasmwindowclientarea.cpp
 @@ -7,7 +7,10 @@
@@ -93,12 +93,11 @@ index 6da3e24c..3f26f1b9 100644
          element.call<void>("setAttribute", emscripten::val("draggable"), emscripten::val("true"));
 
          m_dragStartCallback = std::make_unique<qstdweb::EventCallback>(
-@@ -59,6 +63,7 @@ ClientArea::ClientArea(QWasmWindow *window, QWasmScreen *screen, emscripten::val
-                             auto event = *DragEvent::fromWeb(webEvent, m_window->window());
-                             QWasmDrag::instance()->onNativeDragFinished(&event);
+@@ -67,6 +71,7 @@ ClientArea::ClientArea(QWasmWindow *window, QWasmScreen *screen, emscripten::val
+                             QWasmDrag::instance()->onNativeDragLeave(&event);
                          });
-+#endif // QT_CONFIG(draganddrop)
 
++#endif // QT_CONFIG(draganddrop)
  }
 
-
+ bool ClientArea::processPointer(const PointerEvent &event)
