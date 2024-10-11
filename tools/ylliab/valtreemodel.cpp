@@ -2,9 +2,10 @@
 #include "filerequester.hpp"
 #include "request.hpp"
 #include "selectionstate.hpp"
-#include <qcolor.h>
-#include <qnamespace.h>
-#include <qvariant.h>
+#include <QColor>
+#include <QVariant>
+#include <Qt>
+#include <cinttypes>
 
 ValTreeModel::ValTreeModel(FileRequester *file_requester,
                            std::shared_ptr<SelectionState> select)
@@ -106,8 +107,8 @@ QVariant ValTreeModel::data(const QModelIndex &index, int role) const {
     if (!span) {
       return QVariant();
     }
-    auto addr_str =
-        QString::asprintf("0x%08zx [%zd]", *span.addr(), span.size());
+    auto addr_str = QString::asprintf("0x%08" PRIx64 " [%" PRIu64 "]",
+                                      *span.addr(), span.size());
     return addr_str;
   }
   case Column::DEBUG: {
