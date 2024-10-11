@@ -5,9 +5,13 @@
 #include <QApplication>
 #include <QMetaType>
 #include <QtGlobal>
+#include <QSettings>
 
 int main(int argc, char **argv) {
   QApplication a(argc, argv);
+  a.setOrganizationName("yabo");
+  a.setOrganizationDomain("yabo-lang.org");
+  a.setApplicationName("yphbt");
   init_runtime();
   QFile f(":qdarkstyle/dark/darkstyle.qss");
   if (f.exists() && f.open(QFile::ReadOnly | QFile::Text)) {
@@ -31,6 +35,12 @@ int main(int argc, char **argv) {
   std::optional<QString> source;
   if (env_source != "") {
     source = env_source;
+  } else {
+    QSettings settings;
+    auto saved_source = settings.value("source").toString();
+    if (!saved_source.isEmpty()) {
+      source = saved_source;
+    }
   }
   YphbtWindow w(nullptr, source, input);
   w.show();

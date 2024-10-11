@@ -17,6 +17,7 @@
 #include <QTemporaryFile>
 #include <QThreadPool>
 #include <QtGlobal>
+#include <QSettings>
 #include <memory>
 #include <qnamespace.h>
 #include <qobjectdefs.h>
@@ -73,6 +74,8 @@ void YphbtWindow::after_init() { on_actionCompile_triggered(); }
 
 void YphbtWindow::on_actionCompile_triggered() {
   auto program = ui->plainTextEdit->toPlainText();
+  QSettings settings;
+  settings.setValue("source", program);
   if (compile_url) {
     start_remote_compile(*compile_url, program, this,
                          &YphbtWindow::load_compiled_file,

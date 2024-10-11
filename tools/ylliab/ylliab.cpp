@@ -9,6 +9,9 @@
 
 int main(int argc, char *argv[]) {
   QApplication app(argc, argv);
+  app.setOrganizationName("yabo");
+  app.setOrganizationDomain("yabo-lang.org");
+  app.setApplicationName("ylliab");
   QCommandLineParser options;
 
   options.addOption(parser_opt);
