@@ -14,5 +14,5 @@ yaboc-ast = { path = "../yaboc-ast" }
 yaboc-hir = { path = "../yaboc-hir" }
 yaboc-resolve = { path = "../yaboc-resolve" }
 yaboc-types = { path = "../yaboc-types" }
-bumpalo = "3.13.0"
+bumpalo = "3.16.0"
 petgraph = { workspace = true }

@@ -9,7 +9,7 @@ description.workspace = true
 salsa = { workspace = true }
 yaboc-base = { path = "../yaboc-base" }
 yaboc-ast = { path = "../yaboc-ast" }
-sha2 = "0.10.7"
-bumpalo = "3.13.0"
+sha2 = "0.10.8"
+bumpalo = "3.16.0"
 fxhash = "0.2.1"
 petgraph = { workspace = true }
