@@ -10,7 +10,7 @@ FROM rust:1-bookworm AS compiler
 
 RUN apt-get update && apt-get install -y cmake
 
-ARG LLVM_VERSION=18.1.4
+ARG LLVM_VERSION=18.1.8
 
 ADD https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/llvm-project-${LLVM_VERSION}.src.tar.xz \
     /src/
@@ -31,7 +31,7 @@ RUN cargo build --release
 
 FROM debian:bookworm AS emscripten
 
-ARG EMSCRIPTEN_VERSION=3.1.58
+ARG EMSCRIPTEN_VERSION=3.1.68
 
 ADD https://github.com/emscripten-core/emsdk/archive/refs/tags/${EMSCRIPTEN_VERSION}.tar.gz \
     /src/
@@ -45,7 +45,7 @@ RUN apt-get update && apt-get install -y python3 xz-utils \
 
 FROM debian:bookworm AS qt
 
-ARG QT_VERSION=6.7.0
+ARG QT_VERSION=6.8.0
 
 ADD https://github.com/qt/qtbase/archive/refs/tags/v$QT_VERSION.zip /src/
 RUN apt-get update && apt-get install -y build-essential cmake unzip libgl1-mesa-dev
