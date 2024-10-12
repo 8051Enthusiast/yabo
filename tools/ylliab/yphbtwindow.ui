@@ -179,22 +179,6 @@ def *main = {
     <string>Ctrl+R</string>
    </property>
   </action>
-  <action name="actionEnsizen">
-   <property name="text">
-    <string>+</string>
-   </property>
-   <property name="shortcut">
-    <string>Ctrl+=</string>
-   </property>
-  </action>
-  <action name="actionDesizen">
-   <property name="text">
-    <string>-</string>
-   </property>
-   <property name="shortcut">
-    <string>Ctrl+-</string>
-   </property>
-  </action>
  </widget>
  <customwidgets>
   <customwidget>
