@@ -217,6 +217,12 @@ void HexCell::paint(QPainter *painter, const QStyleOptionViewItem &option,
   }
   painter->setFont(font);
   painter->drawText(option.rect, Qt::AlignCenter, data);
+  auto middle = index.model()->columnCount() / 2;
+  // separator between hex and ascii columns
+  if (index.column() == middle - 1) {
+    painter->drawLine(option.rect.topRight(), option.rect.bottomRight());
+  }
+
 }
 
 QSize HexCell::sizeHint(const QStyleOptionViewItem &option,
