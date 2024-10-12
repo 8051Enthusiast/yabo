@@ -4,12 +4,26 @@
 #include "request.hpp"
 
 #include <QFont>
+#include <QLineEdit>
 #include <QPoint>
 #include <QStyledItemDelegate>
 #include <QTableView>
 
 class HexTableModel;
 class SelectionState;
+
+// we create a qlineedit on middle click, but on unix
+// this immediately pastes the selction content into the
+// textbox, so we disable the mouse middle event instead
+class NoMiddlePasteLineEdit : public QLineEdit {
+  Q_OBJECT
+public:
+  NoMiddlePasteLineEdit(QWidget *parent = nullptr) : QLineEdit(parent) {}
+
+protected:
+  void mousePressEvent(QMouseEvent *event) override;
+  void mouseReleaseEvent(QMouseEvent *event) override;
+};
 
 class HexCell : public QStyledItemDelegate {
   Q_OBJECT
@@ -50,6 +64,9 @@ public slots:
   void goto_addr(size_t addr);
   void goto_node(Node node);
   void context_menu(const QPoint &pos);
+
+protected:
+  void mousePressEvent(QMouseEvent *event) override;
 
 private:
   void update_dimensions();
