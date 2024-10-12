@@ -16,6 +16,22 @@
 #include "hexview.hpp"
 #include "selectionstate.hpp"
 
+void NoMiddlePasteLineEdit::mouseReleaseEvent(QMouseEvent *event) {
+  if (event->button() == Qt::MiddleButton) {
+    event->accept();
+  } else {
+    QLineEdit::mouseReleaseEvent(event);
+  }
+}
+
+void NoMiddlePasteLineEdit::mousePressEvent(QMouseEvent *event) {
+  if (event->button() == Qt::MiddleButton) {
+    event->accept();
+  } else {
+    QLineEdit::mousePressEvent(event);
+  }
+}
+
 HexTableView::HexTableView(QWidget *parent)
     : QTableView(parent), select(nullptr) {
   QFont hexfont("Monospace");
@@ -112,6 +128,15 @@ void HexTableView::context_menu(const QPoint &pos) {
   menu->popup(viewport()->mapToGlobal(pos));
 }
 
+void HexTableView::mousePressEvent(QMouseEvent *event) {
+  if (event->button() == Qt::MiddleButton) {
+    parse_menu(viewport()->mapToGlobal(event->pos()));
+    event->accept();
+  } else {
+    QTableView::mousePressEvent(event);
+  }
+};
+
 void HexTableView::parse_menu(QPoint current_mouse_pos) {
   if (!parseRequester) {
     return;
@@ -127,7 +152,7 @@ void HexTableView::parse_menu(QPoint current_mouse_pos) {
   auto menu = new QMenu(this);
   menu->setFont(font());
   auto widget_action = new QWidgetAction(menu);
-  auto line_edit = new QLineEdit(menu);
+  auto line_edit = new NoMiddlePasteLineEdit(menu);
   line_edit->setFont(font());
   line_edit->setText(parseRequester->last_requested_parse());
   line_edit->setSelection(0, line_edit->text().size());
