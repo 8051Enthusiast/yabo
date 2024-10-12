@@ -14,11 +14,11 @@ HexTableModel::HexTableModel(FileRef file, NodeInfoProvider *node_info,
   file_address_digit_count = address_digit_count(file->end_address());
 }
 
-static char char_repr(uint8_t byte) {
-  if (byte < 0x20 || byte >= 0x7f) {
+static QChar char_repr(uint8_t byte) {
+  if (byte < 0x20 || byte >= 0x7f && byte <= 0xA0) {
     return '.';
   }
-  return byte;
+  return QChar(byte);
 }
 
 QVariant HexTableModel::data(const QModelIndex &index, int role) const {
