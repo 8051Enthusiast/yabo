@@ -20,14 +20,17 @@ public:
   QSize sizeHint(const QStyleOptionViewItem &option,
                  const QModelIndex &index) const override;
   QSize get_cell_size() const { return cell_size; }
+  QSize get_half_cell_size() const { return half_cell_size; }
   QSize get_header_size() const { return header_size; }
   void set_file_size(size_t file_size);
   void set_font(QFont font);
 
 private:
   QSize padded(QSize size) const;
+  QSize half_padded(QSize size) const;
   QFont font;
   QSize cell_size;
+  QSize half_cell_size;
   QSize header_size;
   size_t current_file_size;
 };
@@ -50,7 +53,7 @@ public slots:
 
 private:
   void update_dimensions();
-  HexTableModel *hexModel;
+  HexTableModel *hexModel = nullptr;
   ParseRequester *parseRequester = nullptr;
   std::unique_ptr<HexCell> hexCell;
   std::shared_ptr<SelectionState> select;

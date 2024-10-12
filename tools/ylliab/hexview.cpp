@@ -35,7 +35,6 @@ void HexTableView::set_model(HexTableModel *model,
                              std::shared_ptr<SelectionState> &select) {
   hexModel = model;
   hexCell->set_file_size(model->file->end_address());
-  update_dimensions();
 
   QTableView::setModel(model);
   auto scroll_bar = new ColorScrollBar(model);
@@ -55,6 +54,7 @@ void HexTableView::set_model(HexTableModel *model,
   this->select = select;
   auto selection_model = new HexSelectionModel(hexModel, select);
   setSelectionModel(selection_model);
+  update_dimensions();
 }
 
 void HexTableView::update_dimensions() {
@@ -66,7 +66,12 @@ void HexTableView::update_dimensions() {
   vert_header->setFixedWidth(header_size.width());
   auto horiz_header = horizontalHeader();
   horiz_header->setSectionResizeMode(QHeaderView::Fixed);
-  horiz_header->setDefaultSectionSize(size.width());
+  horiz_header->setMinimumSectionSize(hexCell->get_half_cell_size().width());
+  int columns = hexModel ? hexModel->bytes_per_row() : 16;
+  for (int i = 0; i < columns; i++) {
+    setColumnWidth(i, hexCell->get_cell_size().width());
+    setColumnWidth(columns + i, hexCell->get_half_cell_size().width());
+  }
 }
 
 void HexTableView::set_font(QFont font) {
@@ -160,28 +165,29 @@ void HexCell::set_file_size(size_t file_size) {
   auto metrics = QFontMetrics(font);
   auto addr_string = QString("0x%1").arg(
       file_size, address_digit_count(file_size), 16, QChar('0'));
-  header_size = metrics.size(0, addr_string);
-  header_size.setHeight(padded(header_size).height());
-  header_size.setWidth(padded(header_size).width());
+  header_size = padded(metrics.size(0, addr_string));
 }
 
 void HexCell::set_font(QFont font) {
   this->font = font;
   auto metrics = QFontMetrics(font);
-  cell_size = metrics.size(0, "00");
-  cell_size.setHeight(padded(cell_size).height());
-  cell_size.setWidth(padded(cell_size).width());
+  cell_size = padded(metrics.size(0, "00"));
+  half_cell_size = half_padded(metrics.size(0, "0"));
   auto addr_string = QString("0x%1").arg(current_file_size,
                                          address_digit_count(current_file_size),
                                          16, QChar('0'));
-  header_size = metrics.size(0, addr_string);
-  header_size.setHeight(padded(header_size).height());
-  header_size.setWidth(padded(header_size).width());
+  header_size = padded(metrics.size(0, addr_string));
 }
 
 QSize HexCell::padded(QSize size) const {
   auto added_height = size.height() / 3;
   auto added_width = added_height * 4 / 3;
+  return size + QSize(added_width, added_height);
+}
+
+QSize HexCell::half_padded(QSize size) const {
+  auto added_height = size.height() / 3;
+  auto added_width = added_height;
   return size + QSize(added_width, added_height);
 }
 
@@ -215,15 +221,18 @@ void HexCell::paint(QPainter *painter, const QStyleOptionViewItem &option,
 
 QSize HexCell::sizeHint(const QStyleOptionViewItem &option,
                         const QModelIndex &index) const {
-
-  return cell_size;
+  auto len = index.data().toString().size();
+  if (len == 1) {
+    return half_cell_size;
+  } else {
+    return cell_size;
+  }
 }
 
 HexCell::HexCell(QFont font, size_t file_size)
     : font(font), current_file_size(file_size) {
   auto metrics = QFontMetrics(font);
-  cell_size = metrics.size(0, "00");
-  cell_size.setHeight(padded(cell_size).height());
-  cell_size.setWidth(padded(cell_size).width());
+  cell_size = padded(metrics.size(0, "00"));
+  half_cell_size = half_padded(metrics.size(0, "0"));
   set_file_size(file_size);
 }
