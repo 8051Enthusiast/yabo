@@ -14,13 +14,25 @@ HexTableModel::HexTableModel(FileRef file, NodeInfoProvider *node_info,
   file_address_digit_count = address_digit_count(file->end_address());
 }
 
+static char char_repr(uint8_t byte) {
+  if (byte < 0x20 || byte >= 0x7f) {
+    return '.';
+  }
+  return byte;
+}
+
 QVariant HexTableModel::data(const QModelIndex &index, int role) const {
   auto offset = index_addr(index);
+  bool is_ascii = is_ascii_column(index);
   if (role == Qt::DisplayRole) {
     if (offset >= file->end_address()) {
       return QVariant();
     }
-    return QString("%1").arg(file->get_addr(offset), 2, 16, QChar('0'));
+    if (is_ascii) {
+      return QString("%1").arg(char_repr(file->get_addr(offset)));
+    } else {
+      return QString("%1").arg(file->get_addr(offset), 2, 16, QChar('0'));
+    }
   } else if (role == Qt::BackgroundRole) {
     auto node = ranges.get(offset);
     if (!node) {
@@ -37,6 +49,7 @@ QVariant HexTableModel::data(const QModelIndex &index, int role) const {
     return QVariant();
   }
 }
+
 QVariant HexTableModel::headerData(int section, Qt::Orientation orientation,
                                    int role) const {
   if (role == Qt::TextAlignmentRole) {
@@ -50,7 +63,11 @@ QVariant HexTableModel::headerData(int section, Qt::Orientation orientation,
                              file_address_digit_count, 16, QChar('0'));
   }
   if (role == Qt::DisplayRole && orientation == Qt::Horizontal) {
-    return QString("%1").arg(section, 2, 16, QChar('0'));
+    if (section >= columns) {
+      return QString("%1").arg(section - columns, 1, 16, QChar('0'));
+    } else {
+      return QString("%1").arg(section, 2, 16, QChar('0'));
+    }
   }
   return QVariant();
 }
@@ -60,7 +77,7 @@ void HexTableModel::add_range(NodeRange range) {
   auto start_row = local_row(addr_row(range.start));
   auto end_row = local_row(addr_row(range.end - 1));
   emit dataChanged(createIndex(start_row, 0),
-                   createIndex(end_row, columns - 1));
+                   createIndex(end_row, columnCount() - 1));
   emit updated_minimap();
 }
 
@@ -73,11 +90,11 @@ std::optional<size_t> HexTableModel::node_addr(Node node) const {
 }
 
 GlobalRow HexTableModel::addr_row(size_t address) const {
-  return GlobalRow{address / columns};
+  return GlobalRow{address / bytes_per_row()};
 }
 
 size_t HexTableModel::row_addr(GlobalRow row) const {
-  return row.row * columns;
+  return row.row * bytes_per_row();
 }
 
 std::pair<GlobalRow, GlobalRow>
@@ -148,7 +165,7 @@ QPixmap HexTableModel::node_minimap(int len, QColor background_color) const {
   for (size_t i = 0; i < inner_len; i++) {
     auto [min_row, max_row] = pixel_offset_global_row_range(i, inner_len);
     auto min_offset = row_addr(min_row);
-    auto max_offset = row_addr(max_row) + columns - 1;
+    auto max_offset = row_addr(max_row) + bytes_per_row() - 1;
     auto node = ranges.get_next(min_offset);
     if (!node) {
       image.setPixel(0, i + 1, default_color);
@@ -182,7 +199,7 @@ GlobalRow HexTableModel::global_row(int row) const {
   return GlobalRow{row + model_offset};
 }
 std::vector<NodeRange> const &
-HexTableModel::nodes_at(QModelIndex &index) const {
+HexTableModel::nodes_at(const QModelIndex &index) const {
   auto offset = index_addr(index);
   return ranges.get_all(offset);
 }
@@ -239,22 +256,36 @@ void HexSelectionModel::set_selection(std::optional<TreeIndex> idx) {
   auto last_row = model->addr_row(end - 1);
   auto start_local_row = model->local_row(start_row);
   auto last_local_row = model->local_row(last_row);
-  auto col = model->columnCount();
+  auto col = model->bytes_per_row();
   auto start_column = start % col;
   auto last_column = (end - 1) % col;
+  auto ascii_start_column = start_column + col;
+  auto ascii_last_column = last_column + col;
+  auto ascii_col = col + col;
   auto selection = QItemSelection();
   if (start_local_row == last_local_row) {
     selection.select(model->index(start_local_row, start_column),
                      model->index(start_local_row, last_column));
+
+    selection.select(model->index(start_local_row, ascii_start_column),
+                     model->index(start_local_row, ascii_last_column));
   } else {
     selection.select(model->index(start_local_row, start_column),
                      model->index(start_local_row, col - 1));
+
+    selection.select(model->index(start_local_row, ascii_start_column),
+                     model->index(start_local_row, ascii_col - 1));
     if (last_local_row - start_local_row >= 2) {
+      // select both hex and ascii at once
       selection.select(model->index(start_local_row + 1, 0),
-                       model->index(last_local_row - 1, col - 1));
+                       model->index(last_local_row - 1, ascii_col - 1));
     }
+
     selection.select(model->index(last_local_row, 0),
                      model->index(last_local_row, last_column));
+
+    selection.select(model->index(last_local_row, col),
+                     model->index(last_local_row, ascii_last_column));
   }
   select(selection, QItemSelectionModel::ClearAndSelect);
 }

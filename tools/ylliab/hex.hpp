@@ -35,7 +35,7 @@ public:
                 QObject *parent = nullptr);
   int rowCount(const QModelIndex &parent = QModelIndex()) const override;
   int columnCount(const QModelIndex &parent = QModelIndex()) const override {
-    return columns;
+    return columns * 2;
   }
   QVariant data(const QModelIndex &index,
                 int role = Qt::DisplayRole) const override;
@@ -62,10 +62,22 @@ public:
   bool row_is_in_range(GlobalRow addr) const;
   void put_row_in_range(GlobalRow addr);
 
+  int bytes_per_row() const {
+    return columns;
+  }
+
   QMenu *create_context_menu(const QModelIndex &index,
                              std::shared_ptr<SelectionState> &select);
+  size_t index_column(const QModelIndex &index) const {
+    int col = index.column();
+    if (col >= columns) {
+      return col - columns;
+    } else {
+      return col;
+    }
+  }
   size_t index_addr(const QModelIndex &index) const {
-    return row_addr(global_row(index.row())) + index.column();
+    return row_addr(global_row(index.row())) + index_column(index);
   }
   NodeInfoProvider *get_node_info() const noexcept { return node_info; }
   FileRef file;
@@ -80,7 +92,10 @@ private:
   size_t global_row_count() const {
     return (file->end_address() + columns - 1) / columns;
   }
-  std::vector<NodeRange> const &nodes_at(QModelIndex &index) const;
+  bool is_ascii_column(const QModelIndex &index) const {
+    return index.column() >= columns;
+  }
+  std::vector<NodeRange> const &nodes_at(const QModelIndex &index) const;
   RangeMap ranges;
   int columns = 16;
   int file_address_digit_count;
