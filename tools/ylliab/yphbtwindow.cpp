@@ -51,18 +51,6 @@ YphbtWindow::YphbtWindow(QWidget *parent, std::optional<QString> source,
     file = std::make_shared<FileContent>(
         std::vector<uint8_t>(input->begin(), input->end()));
   }
-  auto ensizen = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Plus), this);
-  connect(ensizen, &QShortcut::activated, this,
-          &YphbtWindow::on_actionEnsizen_triggered);
-  auto ensizen2 = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Equal), this);
-  connect(ensizen2, &QShortcut::activated, this,
-          &YphbtWindow::on_actionEnsizen_triggered);
-  auto desizen = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_Minus), this);
-  connect(desizen, &QShortcut::activated, this,
-          &YphbtWindow::on_actionDesizen_triggered);
-  auto reset_font = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_0), this);
-  connect(reset_font, &QShortcut::activated, this,
-          &YphbtWindow::reset_font_size);
   // for some reason, qt on emscripten does not like when this is directly
   // executed (and debugging wasm is a pain)
   QMetaObject::invokeMethod(this, "after_init", Qt::QueuedConnection);
@@ -162,21 +150,4 @@ void YphbtWindow::set_font(const QFont &font) {
   ui->plainTextEdit->setFont(font);
   ui->errorView->setFont(font);
   ui->toolBar->setFont(font);
-}
-
-void YphbtWindow::on_actionEnsizen_triggered() {
-  current_font.setPointSize(current_font.pointSize() + 1);
-  set_font(current_font);
-}
-
-void YphbtWindow::on_actionDesizen_triggered() {
-  if (current_font.pointSize() > minimum_font_size) {
-    current_font.setPointSize(current_font.pointSize() - 1);
-  }
-  set_font(current_font);
-}
-
-void YphbtWindow::reset_font_size() {
-  current_font.setPointSize(default_font_size);
-  set_font(current_font);
 }

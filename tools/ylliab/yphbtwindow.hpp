@@ -32,9 +32,6 @@ private slots:
   void on_actionLoadFile_triggered();
   void on_actionBack_triggered();
   void on_actionForth_triggered();
-  void on_actionEnsizen_triggered();
-  void on_actionDesizen_triggered();
-  void reset_font_size();
 
   void load_compiled_file(QString file_path);
   void compile_error(QString error);
@@ -53,7 +50,7 @@ private:
   std::shared_ptr<SelectionState> select = nullptr;
   FileRef file;
   std::optional<QUrl> compile_url;
-  static constexpr int default_font_size = 13;
+  static constexpr int default_font_size = 12;
   static constexpr int minimum_font_size = 4;
   QFont current_font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
 };
