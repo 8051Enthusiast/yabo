@@ -50,7 +50,5 @@ private:
   std::shared_ptr<SelectionState> select = nullptr;
   FileRef file;
   std::optional<QUrl> compile_url;
-  static constexpr int default_font_size = 12;
-  static constexpr int minimum_font_size = 4;
   QFont current_font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
 };

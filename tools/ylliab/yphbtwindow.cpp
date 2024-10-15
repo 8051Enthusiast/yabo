@@ -38,7 +38,6 @@ YphbtWindow::YphbtWindow(QWidget *parent, std::optional<QString> source,
           PNG_EXAMPLE, PNG_EXAMPLE + sizeof(PNG_EXAMPLE)))) {
   ui->setupUi(this);
   ui->errorView->hide();
-  current_font.setPointSize(default_font_size);
   set_font(current_font);
   auto compile_url_env = qEnvironmentVariable("YPHBT_COMPILE_URL");
   if (compile_url_env != "") {
