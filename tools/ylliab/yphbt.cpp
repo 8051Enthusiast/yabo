@@ -1,11 +1,11 @@
 #include "color.hpp"
-#include "yphbtwindow.hpp"
 #include "init.hpp"
+#include "yphbtwindow.hpp"
 
 #include <QApplication>
 #include <QMetaType>
-#include <QtGlobal>
 #include <QSettings>
+#include <QtGlobal>
 
 int main(int argc, char **argv) {
   QApplication a(argc, argv);
@@ -17,7 +17,7 @@ int main(int argc, char **argv) {
   if (f.exists() && f.open(QFile::ReadOnly | QFile::Text)) {
     QTextStream ts(&f);
     a.setStyleSheet(ts.readAll());
-    use_dark_random_colors = true;
+    use_dark_colors = true;
   }
   auto env_input = qEnvironmentVariable("YPHBT_INPUT");
   std::optional<QByteArray> input;
