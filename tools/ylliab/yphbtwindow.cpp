@@ -146,7 +146,7 @@ void YphbtWindow::set_font(const QFont &font) {
   ui->tableView->verticalHeader()->setFont(font);
   ui->treeView->setFont(font);
   ui->treeView->header()->setFont(font);
-  ui->plainTextEdit->setFont(font);
+  ui->plainTextEdit->set_font(font);
   ui->errorView->setFont(font);
   ui->toolBar->setFont(font);
 }

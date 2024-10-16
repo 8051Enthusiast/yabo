@@ -2,7 +2,7 @@
 #include <complex>
 #include <random>
 
-bool use_dark_random_colors = false;
+bool use_dark_colors = false;
 
 struct ColorSpaceSlice {
   float luminance;
@@ -24,7 +24,7 @@ static constexpr ColorSpaceSlice DARK_SPACE = {0.7,
                                                {-0.11949073, 0.31128398}};
 
 static ColorSpaceSlice const &current_slice() {
-  return use_dark_random_colors ? DARK_SPACE : LIGHT_SPACE;
+  return use_dark_colors ? DARK_SPACE : LIGHT_SPACE;
 }
 
 struct Color {
@@ -101,8 +101,8 @@ QColor random_color(size_t seed) {
   lab[0] = slice.luminance;
   // rejection sampling by generating a random point in the parallelogram
   do {
-    auto val = slice.start_pos + slice.first_axis * dist(rng)
-	     + slice.second_axis * dist(rng);
+    auto val = slice.start_pos + slice.first_axis * dist(rng) +
+               +slice.second_axis * dist(rng);
     lab[1] = val.real();
     lab[2] = val.imag();
     auto xyz = oklab_to_xyz(lab);
@@ -141,4 +141,80 @@ QColor ansi_color_256(uint8_t color) {
   color -= base * base * base;
   auto shade = color * 10 + 8;
   return QColor(shade, shade, shade);
+}
+
+// solarized light
+static QColor style_color_light(HighlightName name) {
+  switch (name) {
+  case HighlightName::None:
+    return QColor("#fdf6e3"); // Default background (base03)
+  case HighlightName::Comment:
+    return QColor("#93a1a1"); // base01
+  case HighlightName::ConstantNumeric:
+  case HighlightName::ConstantOther:
+  case HighlightName::ConstantLanguage:
+    return QColor("#2aa198"); // cyan
+  case HighlightName::Entity:
+    return QColor("#6c71c4"); // violet
+  case HighlightName::Invalid:
+    return QColor("#dc322f"); // red
+  case HighlightName::Keyword:
+  case HighlightName::KeywordControl:
+  case HighlightName::KeywordOperator:
+  case HighlightName::Operator:
+    return QColor("#859900"); // green
+  case HighlightName::Punctuation:
+  case HighlightName::Variable:
+    return QColor("#839496"); // base00
+  case HighlightName::Type:
+    return QColor("#b58900"); // yellow
+  case HighlightName::StringQuotedSingle:
+  case HighlightName::StringQuotedDouble:
+  case HighlightName::StringRegexp:
+    return QColor("#2aa198"); // cyan
+  }
+}
+
+// gruvbox
+static QColor style_color_dark(HighlightName name) {
+  switch (name) {
+  case HighlightName::None:
+    return QColor("#1d2021"); // fg1
+  case HighlightName::Comment:
+    return QColor("#928374"); // gray
+  case HighlightName::ConstantNumeric:
+  case HighlightName::ConstantOther:
+    return QColor("#d3869b"); // purple1
+  case HighlightName::Entity:
+    return QColor("#ebdbb2"); // fg1
+  case HighlightName::Invalid:
+    return QColor("#fb4934"); // red1
+  case HighlightName::KeywordControl:
+  case HighlightName::ConstantLanguage:
+    return QColor("#8ec07c"); // aqua1
+  case HighlightName::KeywordOperator:
+  case HighlightName::Keyword:
+    return QColor("#fb4934"); // red1
+  case HighlightName::Operator:
+    return QColor("#d3869b"); // purple1
+  case HighlightName::Punctuation:
+    return QColor("#fe8019"); // orange1
+  case HighlightName::StringQuotedSingle:
+  case HighlightName::StringQuotedDouble:
+    return QColor("#b8bb26"); // green1
+  case HighlightName::StringRegexp:
+    return QColor("#fe8019"); // orange1
+  case HighlightName::Type:
+    return QColor("#fabd2f"); // yellow1
+  case HighlightName::Variable:
+    return QColor("#ebdbb2"); // fg1
+  }
+}
+
+QColor style_color(HighlightName name) {
+  if (use_dark_colors) {
+    return style_color_dark(name);
+  } else {
+    return style_color_light(name);
+  }
 }

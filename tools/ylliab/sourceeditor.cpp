@@ -2,9 +2,106 @@
 #include <QFontMetrics>
 #include <QKeyEvent>
 #include <QPainter>
+#include <QRegularExpression>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextEdit>
+#include <qregularexpression.h>
+
+Lexer::Matcher::Matcher(const char *re, HighlightName highlight,
+                        LexerState next_state, LexerState cond_state)
+    : expr(std::make_unique<QRegularExpression>(re)), highlight(highlight),
+      next_state(next_state), cond_state(cond_state){};
+
+Lexer::Lexer() {
+  Matcher matcher_list[] = {
+      Matcher(R"((true|false|eof)\b)", HighlightName::ConstantLanguage,
+              LexerState::NotAfterOperator),
+      Matcher(R"((bit|int|char)\b)", HighlightName::Type,
+              LexerState::NotAfterOperator),
+      Matcher(R"((or|and|at|span)\b)", HighlightName::KeywordOperator,
+              LexerState::AfterOperator),
+      Matcher(R"(sizeof\b)", HighlightName::KeywordOperator,
+              LexerState::NotAfterOperator),
+      Matcher(R"((fun|def|static|let)\b)", HighlightName::Keyword,
+              LexerState::None),
+      Matcher(R"((if|else|then|import|export|return)\b)",
+              HighlightName::Keyword, LexerState::AfterOperator),
+      Matcher(R"(\(|\[|\{|\{:)", HighlightName::Punctuation,
+              LexerState::AfterOperator),
+      Matcher(R"(\)|\]|\}|:\})", HighlightName::Punctuation,
+              LexerState::NotAfterOperator),
+      Matcher(R"(,)", HighlightName::Punctuation, LexerState::AfterOperator),
+      Matcher(R"(h?/([^/]|\\.)*/)", HighlightName::StringRegexp,
+              LexerState::NotAfterOperator, LexerState::AfterOperator),
+      Matcher(R"([A-Za-z_][A-Za-z_0-9]*)", HighlightName::Variable,
+              LexerState::NotAfterOperator),
+      Matcher(R"(-?(0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+|[0-9]+))",
+              HighlightName::ConstantNumeric, LexerState::NotAfterOperator),
+      Matcher(R"('([^']|\\.)')", HighlightName::StringQuotedSingle,
+              LexerState::NotAfterOperator),
+      Matcher(R"('[A-Za-z_][A-Za-z_0-9]*)", HighlightName::Type,
+              LexerState::NotAfterOperator),
+      Matcher(
+          R"(==|<=|>=|!=|>>|<<|[&]>|<|>|~|!|\?|:|\.\.|[.]|[|]|=|[+]|-|[*]|/|%|\^|\&)",
+          HighlightName::Operator, LexerState::AfterOperator)};
+  std::vector<Matcher> match{std::make_move_iterator(std::begin(matcher_list)),
+                             std::make_move_iterator(std::end(matcher_list))};
+  matchers = std::move(match);
+}
+
+HighlightName Lexer::match_next(const QString &str, size_t &offset,
+                                LexerState &state) {
+  while (offset < str.length() && str[offset].isSpace()) {
+    offset++;
+  }
+  if (offset == str.length()) {
+    return HighlightName::None;
+  }
+
+  if (str[offset] == '#') {
+    // this is special case because we want to keep LexerState unchanged
+    offset = str.length();
+    return HighlightName::Comment;
+  }
+
+  int idx = 0;
+  for (const auto &matcher : matchers) {
+    if (matcher.cond_state != LexerState::None && matcher.cond_state != state &&
+        state != LexerState::None) {
+      continue;
+    }
+
+    auto match =
+        matcher.expr->match(str, offset, QRegularExpression::NormalMatch,
+                            QRegularExpression::AnchorAtOffsetMatchOption);
+    if (match.hasMatch()) {
+      offset += match.capturedLength();
+      state = matcher.next_state;
+      return matcher.highlight;
+    }
+    idx++;
+  }
+
+  offset += 1;
+  state = LexerState::None;
+  return HighlightName::Invalid;
+};
+
+void Highlighter::highlightBlock(const QString &text) {
+  size_t offset = 0;
+  LexerState state = LexerState(previousBlockState());
+  while (offset != text.length()) {
+    size_t start_offset = offset;
+    HighlightName highlight = lexer.match_next(text, offset, state);
+    if (highlight == HighlightName::None) {
+      continue;
+    }
+
+    setFormat(start_offset, offset - start_offset, style_color(highlight));
+  }
+  setCurrentBlockState(static_cast<int>(state));
+}
 
 LineNumberArea::LineNumberArea(SourceEditor *editor)
     : QWidget(editor), source_editor(editor) {}
@@ -29,6 +126,13 @@ SourceEditor::SourceEditor(QWidget *parent) : QPlainTextEdit(parent) {
   connect(this, &QPlainTextEdit::cursorPositionChanged, this,
           [this]() { update_line_number_area(viewport()->rect(), 0); });
 
+  line_number_area->setFont(font());
+  highlighter = new Highlighter(document());
+
+  auto bg = style_color(HighlightName::None);
+  auto stylesheet =
+      QString("QPlainTextEdit {background-color: %1;}").arg(bg.name());
+  setStyleSheet(stylesheet);
   update_line_number_area_width(0);
 }
 
@@ -71,9 +175,9 @@ int SourceEditor::line_number_width() {
     max /= 10;
     ++digits;
   }
-
+  auto fnt = QFontMetrics(font());
   int space = left_line_number_pad + right_line_number_pad +
-              fontMetrics().horizontalAdvance(QChar('0')) * digits;
+              fnt.horizontalAdvance(QChar('0')) * digits;
 
   return space;
 }
@@ -94,7 +198,7 @@ void SourceEditor::line_number_area_paint_event(QPaintEvent *event) {
   QPainter painter(line_number_area);
 
   QPalette palette = line_number_area->palette();
-  QColor background_color = palette.color(QPalette::Base);
+  QColor background_color = style_color(HighlightName::None);
   QColor text_color = palette.color(QPalette::ButtonText);
   QColor inactive_text_color = text_color;
   inactive_text_color.setAlphaF(0.5);
@@ -147,4 +251,10 @@ SourceEditor::CurrentLineInfo SourceEditor::current_line_info() const {
   auto line = cursor.block().text();
   auto match = indent_re.match(line);
   return {pos, (int)match.captured().size()};
+}
+
+void SourceEditor::set_font(const QFont &font) {
+  setFont(font);
+  line_number_area->setFont(font);
+  update_line_number_area(viewport()->rect(), 0);
 }
