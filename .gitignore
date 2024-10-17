@@ -9,7 +9,7 @@ a.out
 *.o
 *.so
 *.ll
-/tools/print/yaboprint
+/tools/yaboprint/yaboprint
 /tools/yaboc-server/yaboc-server
 /compile_flags.txt
 build

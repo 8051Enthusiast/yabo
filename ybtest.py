@@ -435,7 +435,7 @@ class WasmRunnerFactory:
             '-I', current_script_dir / 'include',
             '-D_WASI_EMULATED_MMAN',
             '-o', self.printer.name,
-            current_script_dir / 'tools' / 'print' / 'print.c'
+            current_script_dir / 'tools' / 'yaboprint' / 'yaboprint.c'
         ]
         subprocess.run(compiler_args, check=True)
 
