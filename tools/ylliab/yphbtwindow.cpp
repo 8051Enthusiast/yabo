@@ -9,19 +9,21 @@
 #include "ui_yphbtwindow.h"
 #include "valtreemodel.hpp"
 
+#include <QClipboard>
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QProcess>
 #include <QRunnable>
+#include <QSettings>
 #include <QShortcut>
+#include <QStringView>
 #include <QTemporaryFile>
 #include <QThreadPool>
+#include <Qt>
+#include <QtEnvironmentVariables>
 #include <QtGlobal>
-#include <QSettings>
 #include <memory>
-#include <qnamespace.h>
 #include <qobjectdefs.h>
-#include <qshortcut.h>
 
 static constexpr uint8_t PNG_EXAMPLE[] = {
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
@@ -139,6 +141,28 @@ void YphbtWindow::on_treeView_doubleClicked(const QModelIndex &index) {
 void YphbtWindow::on_actionBack_triggered() { select->undo(); }
 
 void YphbtWindow::on_actionForth_triggered() { select->redo(); }
+
+void YphbtWindow::on_actioncopyURL_triggered() {
+  qDebug() << "helo";
+  auto [start, end] = file->slice();
+  QByteArray file_content(reinterpret_cast<const char *>(start), end - start);
+  auto compressed_file =
+      qCompress(file_content).toBase64(QByteArray::Base64UrlEncoding);
+
+  QByteArray source = ui->plainTextEdit->toPlainText().toUtf8();
+  auto compressed_source =
+      qCompress(source).toBase64(QByteArray::Base64UrlEncoding);
+
+  auto url = qEnvironmentVariable("YPHBT_URL");
+
+  auto link = QString("%1?source=z!%2&input=z!%3")
+                  .arg(url)
+                  .arg(compressed_source)
+                  .arg(compressed_file);
+
+  auto clipboard = QGuiApplication::clipboard();
+  clipboard->setText(link);
+}
 
 void YphbtWindow::set_font(const QFont &font) {
   setFont(font);
