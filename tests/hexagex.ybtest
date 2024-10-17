@@ -1,6 +1,6 @@
 ====[ source code ]====
 export
-fun *test = {
+fun ~test = {
   | a: h/i_oi f (1[a-f] | 00)* \xff/
   | +
 }

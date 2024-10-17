@@ -1,7 +1,7 @@
 ====[ source code ]====
 fun inc(n: int) = n + 1
 
-export def *test = {
+export def ~test = {
   a: ~
   let return = inc(a)
 }

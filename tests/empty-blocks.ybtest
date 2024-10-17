@@ -1,6 +1,6 @@
 ====[ source code ]====
 export
-fun *test = {{}}
+fun ~test = {{}}
 
 ====[ text 1 ]====
 does not matter

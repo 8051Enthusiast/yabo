@@ -1,6 +1,6 @@
 ====[ source code ]====
 export
-fun *test = /.*l\b/
+fun ~test = /.*l\b/
 
 ====[ text 1 ]====
 parallel world

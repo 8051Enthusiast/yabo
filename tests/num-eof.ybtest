@@ -1,13 +1,13 @@
 ====[ source code ]=====
 import text
 
-def *constsize_num = {
+def ~constsize_num = {
   return: /[0-9]{4}/ |> text.num?
   /, /
 }
 
 export
-def *test = {
+def ~test = {
   len: text.num?, /\n/
   nums: constsize_num[len]
 }

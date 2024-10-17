@@ -1,5 +1,5 @@
 ====[ source code ]====
-fun *right = {
+fun ~right = {
   a: ~
   | b: ~
   | let r = span e..a
@@ -10,7 +10,7 @@ fun *right = {
   #~^ error[305] end of span is not after start of span
 }
 
-fun *wrong = {
+fun ~wrong = {
   a: ~, b: ~
   let t = span b..a
   #~^ error[305] end of span is not after start of span

@@ -1,14 +1,14 @@
 ====[ source code ]====
-export def *test = {
+export def ~test = {
   tag: ~
-  | let first: int = tag if 1
+  | let first: int = tag is 1
     let extra: int = 1
   
-  | let second: int = 5 * tag if 2
+  | let second: int = 5 * tag is 2
     extra: ~
     let additional: int = extra + tag
   
-  | let third: int = tag if 3
+  | let third: int = tag is 3
     additional: ~
 }
 

@@ -1,5 +1,5 @@
 ====[ source code ]====
-def *test = {
+def ~test = {
   let x = {}
   #~^ error[514] could not infer type
 }

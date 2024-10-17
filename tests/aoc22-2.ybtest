@@ -1,10 +1,10 @@
 ====[ source code ]====
 import aoc
 
-export def *test = aoc.summap({
+export def ~test = aoc.summap({
   opp: ~, ~, own: ~, ~
   let return = ((own + 2 - opp) % 3) * 3 + own - 0x57
-} if !eof)
+} is !eof)
 ====[ binary 1 ]====
 43 20 5a 0a
 42 20 58 0a

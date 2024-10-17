@@ -41,7 +41,7 @@ pub fn expr_reqs(
                         // we need to know its value to know whether to backtrack
                         inner_mat |= bt_to_val
                     }
-                    Wiggle(_, WiggleKind::If) | Dot(_, FieldAccessMode::Backtrack) => {
+                    Wiggle(_, WiggleKind::Is) | Dot(_, FieldAccessMode::Backtrack) => {
                         // this checks the inner value, which means we need to know
                         // the value to know whether to backtrack
                         inner_mat |= bt_to_val

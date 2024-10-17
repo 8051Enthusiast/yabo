@@ -1,13 +1,13 @@
 ====[ source code ]====
-fun [int] *> sum(acc: int) = {
-  | x: ~ if !eof, return: sum(acc + x)
+fun [int] ~> sum(acc: int) = {
+  | x: ~ is !eof, return: sum(acc + x)
   | let return = acc
 }
 export
-fun *test = {
+fun ~test = {
   start: u8
   end: u8
-  let return = start..<end *> sum(0)
+  let return = start..<end ~> sum(0)
 }
 
 ====[ binary 1 ]====

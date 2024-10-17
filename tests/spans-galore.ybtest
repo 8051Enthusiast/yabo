@@ -1,9 +1,9 @@
 ====[ source code ]====
 export
-fun *test = {
+fun ~test = {
   a: ~
   ~
-  | b: ~ if 2
+  | b: ~ is 2
     [4]
     let r = span a..b
     let s = span b..d

@@ -1,12 +1,12 @@
 ====[ source code ]====
-fun *digit(base: int) = {
+fun ~digit(base: int) = {
   x: ~
-  let value = x if 0x30..0x39 - 0x30
-  let _ = (base > value) if true
+  let value = x is 0x30..0x39 - 0x30
+  let _ = (base > value) is true
 }
 
 export
-fun *test = digit(10)?
+fun ~test = digit(10)?
 ====[ text 1 ]====
 3
 

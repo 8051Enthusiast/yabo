@@ -392,7 +392,7 @@ impl<'a> ConvertExpr<'a> {
             self.copy(place_ref, ldt_ref);
             let old_backtrack = self.retreat.backtrack;
             self.retreat.backtrack = match kind {
-                WiggleKind::If => self.retreat.backtrack,
+                WiggleKind::Is => self.retreat.backtrack,
                 WiggleKind::Try => self.retreat.error,
             };
             let cont = self.f.new_bb();
@@ -521,12 +521,12 @@ impl<'a> ConvertExpr<'a> {
         recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
     ) -> SResult<PlaceRef> {
         match &op {
-            ValUnOp::Wiggle(constr, WiggleKind::If) => {
+            ValUnOp::Wiggle(constr, WiggleKind::Is) => {
                 if matches!(self.db.lookup_intern_type(loc.ty), Type::ParserArg { .. }) {
                     recurse(self, None)?;
                     return Ok(self.load_undef(loc));
                 }
-                self.convert_wiggle(loc, inner_loc, WiggleKind::If, *constr, recurse)
+                self.convert_wiggle(loc, inner_loc, WiggleKind::Is, *constr, recurse)
             }
             ValUnOp::Dot(field, FieldAccessMode::Backtrack) => {
                 self.convert_dot(inner_loc, loc, FieldAccessMode::Backtrack, *field, recurse)

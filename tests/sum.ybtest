@@ -1,10 +1,10 @@
 ====[ source code ]====
-def *sum(acc: int) = {
-  | x: u16l if !eof, return: sum(acc + x)
+def ~sum(acc: int) = {
+  | x: u16l is !eof, return: sum(acc + x)
   | let return = acc
 }
 
-export def *test = sum(0)
+export def ~test = sum(0)
 
 ====[ binary 1 ]====
 01 02 03 04

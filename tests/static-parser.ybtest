@@ -1,8 +1,8 @@
 ====[ source code ]====
-static i32l_or_i16l = (u8 at 0) if 0x11..0x20 then i32l else i16l
+static i32l_or_i16l = (u8 at 0) is 0x11..0x20 then i32l else i16l
 
 export
-fun *test = i32l_or_i16l[2]
+fun ~test = i32l_or_i16l[2]
 
 ====[ binary 1 ]====
 11 00 00 00 12 00 00 00

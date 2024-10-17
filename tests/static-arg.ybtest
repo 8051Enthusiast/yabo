@@ -1,5 +1,5 @@
 ====[ source code ]====
 static f(a: int) = a + 1
 #~^error[208] statics cannot be defined with arguments
-static *g = {}
+static ~g = {}
 #~^error[208] statics cannot be defined with arguments

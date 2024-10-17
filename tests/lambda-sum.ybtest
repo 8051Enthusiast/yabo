@@ -1,16 +1,16 @@
 ====[ source code ]====
-fun ['t] *> lift2(f: 'r('a0, 'a1), a0: ['t] *> 'a0, a1: ['t] *> 'a1) = {
+fun ['t] ~> lift2(f: ('a0, 'a1) -> 'r, a0: ['t] ~> 'a0, a1: ['t] ~> 'a1) = {
   res0: a0?, res1: a1?, let return = f?(res0, res1)
 }
-fun ['t] *> alt(a0: ['t] *> 'r, a1: ['t] *> 'r) = {
+fun ['t] ~> alt(a0: ['t] ~> 'r, a1: ['t] ~> 'r) = {
   | return: a0?
   | return: a1?
 }
 
-fun ['t] *> pure(v: 'r) = {let return = v}
+fun ['t] ~> pure(v: 'r) = {let return = v}
 
 export
-fun *test = alt(lift2(<a, b> a + b, u16l if !eof, test), pure(0))
+fun ~test = alt(lift2(<a, b> a + b, u16l is !eof, test), pure(0))
 
 ====[ binary 1 ]====
 01 02 03 04

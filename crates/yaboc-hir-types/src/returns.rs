@@ -336,9 +336,9 @@ mod tests {
     fn return_types() {
         let ctx = Context::<HirTypesTestDatabase>::mock(
             r#"
-def ['t] *> nil = {}
-def nil *> expr1 = {}
-def *single = ~
+def ['t] ~> nil = {}
+def nil ~> expr1 = {}
+def ~single = ~
             "#,
         );
         let return_type = |name| {
@@ -363,7 +363,7 @@ def *single = ~
     fn block_with_return() {
         let ctx = Context::<HirTypesTestDatabase>::mock(
             r#"
-def *u16l = {
+def ~u16l = {
     low: ~
     high: ~
     let return: int = low + high * 256
@@ -378,8 +378,8 @@ def *u16l = {
     fn test_type_expr() {
         let ctx = Context::<HirTypesTestDatabase>::mock(
             r#"
-def ['t] *> nil = {}
-def ['t] *> expr1 = {
+def ['t] ~> nil = {}
+def ['t] ~> expr1 = {
   a: ~
   b: {
     | let c: int = 2
@@ -387,25 +387,25 @@ def ['t] *> expr1 = {
     | let c: int = 1
   }
 }
-def *expr2 = {
+def ~expr2 = {
   x: expr1
   let y: int = 3 + x.a
 }
-def [[u8]] *> expr4 = {
+def [[u8]] ~> expr4 = {
   x: ~ |> ~
-  let b: *int = ~
+  let b: ~int = ~
   y: ~ |> b
   let a: int = x + y
 }
-def *expr5 = {
+def ~expr5 = {
   x: expr2
   let b: expr2 = x
 }
-def *expr6 = {
-  let expr3: *expr5 = expr5
+def ~expr6 = {
+  let expr3: ~expr5 = expr5
   b: expr3
   inner: {
-    let expr3: *expr2 = expr2
+    let expr3: ~expr2 = expr2
     b: expr3
   }
 }
@@ -436,19 +436,19 @@ def *expr6 = {
         assert_eq!(full_type("expr2", &["x"]), "[u8] &> file[_].expr1");
         assert_eq!(full_type("expr2", &["y"]), "int");
         //assert_eq!(full_type("expr4", &["x"]), "int");
-        assert_eq!(full_type("expr4", &["b"]), "[u8] *> int");
+        assert_eq!(full_type("expr4", &["b"]), "[u8] ~> int");
         //assert_eq!(full_type("expr4", &["y"]), "int");
         assert_eq!(full_type("expr4", &["a"]), "int");
         assert_eq!(full_type("expr5", &["x"]), "[u8] &> file[_].expr2");
         assert_eq!(full_type("expr5", &["b"]), "[u8] &> file[_].expr2");
         assert_eq!(
             full_type("expr6", &["expr3"]),
-            "[u8] *> [u8] &> file[_].expr5"
+            "[u8] ~> [u8] &> file[_].expr5"
         );
         assert_eq!(full_type("expr6", &["b"]), "[u8] &> file[_].expr5");
         assert_eq!(
             full_type("expr6", &["inner", "expr3"]),
-            "[u8] *> [u8] &> file[_].expr2"
+            "[u8] ~> [u8] &> file[_].expr2"
         );
         assert_eq!(full_type("expr6", &["inner", "b"]), "[u8] &> file[_].expr2");
     }
@@ -457,11 +457,11 @@ def *expr6 = {
         let ctx = Context::<HirTypesTestDatabase>::mock(
             r#"
 fun id(x: 't) = x
-def *entry = {}
-def *dir_entries = entry
-def *file_entry = entry
+def ~entry = {}
+def ~dir_entries = entry
+def ~file_entry = entry
 
-def *dir_entry = {
+def ~dir_entry = {
   let subdir: dir_entries = id(dir_entries at 0)
   let file: file_entry = id(file_entry at 0)
 }

@@ -263,11 +263,11 @@ mod tests {
     fn recursion_ssc() {
         let ctx = Context::<ResolveTestDatabase>::mock(
             r#"
-def for [u8] *> a = {x: c, y: {b, z: d}}
-def for [u8] *> b = {x: a, y: c}
-def for [u8] *> c = {x: c}
-def for [u8] *> d = {let a: u64 = 1, let b: u64 = a + 1}
-def for [u8] *> e = {}
+def for [u8] ~> a = {x: c, y: {b, z: d}}
+def for [u8] ~> b = {x: a, y: c}
+def for [u8] ~> c = {x: c}
+def for [u8] ~> d = {let a: u64 = 1, let b: u64 = a + 1}
+def for [u8] ~> e = {}
             "#,
         );
         let a = ctx.parser("a");

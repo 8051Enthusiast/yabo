@@ -775,7 +775,7 @@ mod tests {
     fn simple_cycle() {
         let ctx = Context::<DependentsTestDatabase>::mock(
             r#"
-def *cycle = {
+def ~cycle = {
     let x: int = y
     let y: int = x + 1
 }
@@ -787,7 +787,7 @@ def *cycle = {
     fn parser_cycle() {
         let ctx = Context::<DependentsTestDatabase>::mock(
             r#"
-def *cycle = {
+def ~cycle = {
     | let x: int = y
     | x: ~
     y: ~
@@ -800,7 +800,7 @@ def *cycle = {
     fn choice_indirection() {
         let ctx = Context::<DependentsTestDatabase>::mock(
             r#"
-def *main = {
+def ~main = {
     | y: ~
     | let y: int = 0
 }
@@ -817,9 +817,9 @@ def *main = {
     fn inner_choice() {
         let ctx = Context::<DependentsTestDatabase>::mock(
             r"
-def ['a] *> first = +
-def ['b] *> second = +
-def *main = {
+def ['a] ~> first = +
+def ['b] ~> second = +
+def ~main = {
     a: ~
     b: second?
     c: {
@@ -880,9 +880,9 @@ def *main = {
     fn tail_return() {
         let ctx = Context::<DependentsTestDatabase>::mock(
             r"
-def *main: int = {
+def ~main: int = {
   x: ~
-  | let _ = x if 3
+  | let _ = x is 3
     return: main
   | let return = 4
 }
@@ -904,10 +904,10 @@ def *main: int = {
     fn choice_ref_no_tail() {
         let ctx = Context::<DependentsTestDatabase>::mock(
             r"
-def *main: int = {
+def ~main: int = {
     x: ~
-    let y = z if 3
-    | let z = x if 3..4
+    let y = z is 3
+    | let z = x is 3..4
       return: main
     | let return = 4
 }
@@ -925,10 +925,10 @@ def *main: int = {
     fn bt_no_tail() {
         let ctx = Context::<DependentsTestDatabase>::mock(
             r"
-def *main: int = {
-    x: ~ if 1..4
+def ~main: int = {
+    x: ~ is 1..4
     | return: main?
-    | let return = x if 1..2
+    | let return = x is 1..2
 }
         ",
         );

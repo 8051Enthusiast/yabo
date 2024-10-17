@@ -1,6 +1,6 @@
 ====[ source code ]====
 export
-fun *test = {
+fun ~test = {
   addr: u8
   let return = u8 at addr
 }

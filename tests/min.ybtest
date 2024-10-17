@@ -1,5 +1,5 @@
 ====[ source code ]====
-export def *test = ~
+export def ~test = ~
 ====[ binary 1 ]====
 01
 ====[ output 1 ]====

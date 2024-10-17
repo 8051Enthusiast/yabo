@@ -3,34 +3,34 @@ import aoc
 import text
 import parse
 
-fun *wsnum = {
+fun ~wsnum = {
   ~, n: u16l, let return = (n * 0x10a) >> 8 & 0x7f
 }
 
-fun *points(lo: int, hi: int, acc: int): int = {
-  | n: wsnum if !eof
-    let right = (n & 64) if 0 else 1
+fun ~points(lo: int, hi: int, acc: int): int = {
+  | n: wsnum is !eof
+    let right = (n & 64) is 0 else 1
     let shift = n & 63
-    let winning = ((1 ^ right) << shift & lo | right << shift & hi) if 0 else acc
+    let winning = ((1 ^ right) << shift & lo | right << shift & hi) is 0 else acc
     return: points(lo, hi, acc + winning)
   | let return = acc >> 1
 }
 
-fun *winning(lo: int, hi: int): int = {
+fun ~winning(lo: int, hi: int): int = {
   | ~, /\|/, return: points(lo, hi, 1)
   | n: wsnum?
-    let right = (n & 64) if 0 else 1
+    let right = (n & 64) is 0 else 1
     return: winning((1 ^ right) << n | lo, right << n | hi)
 }
 
 export
-fun *test = {
+fun ~test = {
   card: /Card *[0-9]*:/
   first_line: /[^\n]+\n/
-  let card_len = (card *> parse.len) try 0..16
-  let len = ((first_line *> parse.len) + card_len) try 0..256
-  let first_num = first_line *> winning(0, 0)
-  other_lines: aoc.summap([len] if !eof |> {[card_len] if !eof, return: winning(0, 0)})
+  let card_len = (card ~> parse.len) try 0..16
+  let len = ((first_line ~> parse.len) + card_len) try 0..256
+  let first_num = first_line ~> winning(0, 0)
+  other_lines: aoc.summap([len] is !eof |> {[card_len] is !eof, return: winning(0, 0)})
   let return = other_lines + first_num
 }
 

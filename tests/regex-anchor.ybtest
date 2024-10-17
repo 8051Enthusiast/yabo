@@ -1,6 +1,6 @@
 ====[ source code ]====
 export
-def *test = {
+def ~test = {
   | res: /A$/
   | +
 }

@@ -5,10 +5,10 @@ import aoc
 import math
 import parse
 
-def *sublistsum = aoc.summap(text.line? |> text.num?)
+def ~sublistsum = aoc.summap(text.line? |> text.num?)
 
 export
-def *test = aoc.maxmap({return: sublistsum, text.newline? if !eof})
+def ~test = aoc.maxmap({return: sublistsum, text.newline? is !eof})
 ====[ text 1 ]====
 1000
 2000

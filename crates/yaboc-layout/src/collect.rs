@@ -245,7 +245,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         if TRACE_COLLECTION {
                             dbeprintln!(
                                 self.ctx.db,
-                                "[collection] registered block parse({}) {} *> {}",
+                                "[collection] registered block parse({}) {} ~> {}",
                                 &info,
                                 &arg,
                                 &mono
@@ -263,7 +263,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         if TRACE_COLLECTION {
                             dbeprintln!(
                                 self.ctx.db,
-                                "[collection] registered nominal parse({}) {} *> {}",
+                                "[collection] registered nominal parse({}) {} ~> {}",
                                 &info,
                                 &arg,
                                 &mono
@@ -289,7 +289,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         if TRACE_COLLECTION {
                             dbeprintln!(
                                 self.ctx.db,
-                                "[collection] registered if parse({}) {} *> {}",
+                                "[collection] registered if parse({}) {} ~> {}",
                                 &info,
                                 &arg,
                                 &mono
@@ -438,7 +438,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         if TRACE_COLLECTION {
             dbeprintln!(
                 self.ctx.db,
-                "[collection] processing block parser({}) {} *> {}",
+                "[collection] processing block parser({}) {} ~> {}",
                 &info,
                 &arg,
                 &parser.inner()
@@ -497,7 +497,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         if TRACE_COLLECTION {
             dbeprintln!(
                 self.ctx.db,
-                "[collection] processing nominal parser({}) {} *> {}",
+                "[collection] processing nominal parser({}) {} ~> {}",
                 &info,
                 &arg,
                 &parser.inner()
@@ -634,7 +634,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     if TRACE_COLLECTION {
                         dbeprintln!(
                             self.ctx.db,
-                            "[collection] processing if-parser({}) {} *> {}",
+                            "[collection] processing if-parser({}) {} ~> {}",
                             &info,
                             &from,
                             &parser.inner()

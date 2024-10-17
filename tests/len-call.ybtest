@@ -1,17 +1,17 @@
 ====[ source code ]====
-fun *added_u32l(add: int) = {
+fun ~added_u32l(add: int) = {
   x: u32l
   let return = x + add
 }
 
-fun *sized(arr: [u8], n: int) = {
-  let parser: [u8] *> int = u8[4] |> added_u32l(n)
+fun ~sized(arr: [u8], n: int) = {
+  let parser: [u8] ~> int = u8[4] |> added_u32l(n)
   a: parser
-  let b = arr *> parser
+  let b = arr ~> parser
 }
 
 export
-fun *test = {
+fun ~test = {
   arr: u8[4]
   return: sized(arr, 5)[2]
 }

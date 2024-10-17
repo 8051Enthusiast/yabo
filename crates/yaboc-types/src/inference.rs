@@ -838,7 +838,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         self.parser(u8_array, u8_array)
     }
     pub fn array_parser(&mut self) -> InfTypeId<'intern> {
-        // the type of an array is ['t] *> ['r](['t] *> 'r, int)
+        // the type of an array is ['t] ~> ['r](['t] ~> 'r, int)
         let int = self.int();
         let from = self.var();
         let to = self.var();
@@ -851,7 +851,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         self.function(returned_parser, args, Application::Full)
     }
     pub fn array_fill_parser(&mut self) -> InfTypeId<'intern> {
-        // the type of an array fill is ['t] *> ['r](['t] *> 'r)
+        // the type of an array fill is ['t] ~> ['r](['t] ~> 'r)
         let from = self.var();
         let to = self.var();
         let from_array = self.array(ArrayKind::Each, from);

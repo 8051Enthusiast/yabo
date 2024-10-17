@@ -1,9 +1,9 @@
 ====[ source code ]====
-def *matrix(rows: int, columns: int) = [rows][columns]
+def ~matrix(rows: int, columns: int) = [rows][columns]
 export
-def *test = {
+def ~test = {
     rows: ~, columns: ~
-    | m: matrix(rows, columns) if !eof
+    | m: matrix(rows, columns) is !eof
     | let t = 1
 }
 

@@ -1,7 +1,7 @@
 ====[ source code ]====
 export
-def *test = {
-  let parser: *_ = {
+def ~test = {
+  let parser: ~_ = {
     a: u32l
     b: u32l
     c: u32l

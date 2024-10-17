@@ -2,7 +2,7 @@
 Simple Parser
 =============
 
-def [u8] *> complex = {
+def [u8] ~> complex = {
   real: f32_el
   imag: f32_el
 }
@@ -30,8 +30,8 @@ def [u8] *> complex = {
 Choice Parser
 =============
 
-def [u8] *> choice = {
-  | if ascii
+def [u8] ~> choice = {
+  | is ascii
     return: utf8char
   | return: utf8char
 }
@@ -67,7 +67,7 @@ def [u8] *> choice = {
 Let Statement
 =============
 
-def [u8] *> seven = {
+def [u8] ~> seven = {
   val: u8
   let return: u8 = 7
 }
@@ -97,10 +97,10 @@ def [u8] *> seven = {
 Nested Blocks
 =============
 
-def [u8] *> nested = {
+def [u8] ~> nested = {
   val: ~
   return: {
-    | val: if 0
+    | val: is 0
     | let val: u8 = 3
       ~
     let return: u8 = val
@@ -153,10 +153,10 @@ def [u8] *> nested = {
 Three Choices
 =============
 
-def [u8] *> three = {
-  | if 0
+def [u8] ~> three = {
+  | is 0
     return: u8
-  | if 1
+  | is 1
     return: u8
   | return: u8
 }
@@ -200,7 +200,7 @@ Comment
 =======
 
 # comment
-def [u8] *> test = {
+def [u8] ~> test = {
    # comment
   x: u8?
  # comment
@@ -231,7 +231,7 @@ def [u8] *> test = {
 Args
 ====
 
-def *nonsense(x: int, y: int) = 1 + nonsense(3, 4)
+def ~nonsense(x: int, y: int) = 1 + nonsense(3, 4)
 
 ---
 

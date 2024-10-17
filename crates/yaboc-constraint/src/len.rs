@@ -248,7 +248,7 @@ impl<'a> SizeTermBuilder<'a> {
                     },
                     ExprHead::Monadic(m, &(inner, inner_bt, inner_ty)) => match m {
                         ValUnOp::Neg => self.push_term(Term::Neg(inner), src),
-                        ValUnOp::Wiggle(_, WiggleKind::If) if needs_bt => {
+                        ValUnOp::Wiggle(_, WiggleKind::Is) if needs_bt => {
                             self.push_term(Term::Backtracking(inner), src)
                         }
                         ValUnOp::EvalFun if inner_bt && needs_bt => {

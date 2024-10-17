@@ -2,33 +2,33 @@
 import aoc
 import text
 
-fun *reduce_impl(init: 't, cont: *'t('t)): 't = {
+fun ~reduce_impl(init: 't, cont: ('t) -> ~'t): 't = {
   | next: cont?(init)?
     return: reduce_impl(next, cont)
   | let return = init
 }
 
-fun *reduce(init: *'t, cont: *'t('t)): 't = {
+fun ~reduce(init: ~'t, cont: ('t) -> ~'t): 't = {
   start: init?
   return: reduce_impl(start, cont)
 }
 
-fun *atom: int = {
+fun ~atom: int = {
   | return: text.num?
   | /\(/, return: expr!, /\)/!
 }
 
-fun *expr_cont(lhs: int): int = {
+fun ~expr_cont(lhs: int): int = {
   | / \+ /, rhs: atom!
     let return = lhs + rhs
   | / \* /, rhs: atom!
     let return = lhs * rhs
 }
 
-fun *expr: int = reduce(atom, expr_cont)?
+fun ~expr: int = reduce(atom, expr_cont)?
 
 export
-fun *test = aoc.summap({
+fun ~test = aoc.summap({
   return: expr?, text.newline?
 })
 

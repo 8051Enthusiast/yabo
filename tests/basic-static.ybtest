@@ -2,7 +2,7 @@
 static f = u8 at 0
 
 export
-fun *test = [f]
+fun ~test = [f]
 
 ====[ binary 1 ]====
 04 03 02 01 00

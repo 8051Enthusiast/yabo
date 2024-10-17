@@ -1,6 +1,6 @@
 # Backtracks if the argument is false.
-fun ['t] *> assert(big: bit) = {
-  let _ = big if true
+fun ['t] ~> assert(big: bit) = {
+  let _ = big is true
 }
 
 # Fails if the argument is false.
@@ -9,113 +9,113 @@ fun ['t] *> assert(big: bit) = {
 # ```
 # fun fib(n: int) = when?(n < 2) then n else (fib(n - 1) + fib(n - 2))
 # ```
-fun when(big: bit) = big if true
+fun when(big: bit) = big is true
 
 # Same as +
-fun *nil = +
+fun ~nil = +
 
 # Maps a function f over an array.
-fun ['t] *> map(f: 'r('t)) = {x: ~, let return = f?(x)}[..]
+fun ['t] ~> map(f: ('t) -> 'r) = {x: ~, let return = f?(x)}[..]
 
 # Tries to parse using the first parser, then the second if the first fails.
-fun ['t] *> alt(a0: ['t] *> 'r, a1: ['t] *> 'r) = {
+fun ['t] ~> alt(a0: ['t] ~> 'r, a1: ['t] ~> 'r) = {
   | return: a0?
   | return: a1?
 }
 
 # Parser of zero length that simply returns the input.
-fun ['t] *> pure(v: 'r) = {let return = v}
+fun ['t] ~> pure(v: 'r) = {let return = v}
 
 # =============== inttypes ===============
 
 # Parses an 8-bit unsigned integer.
-fun *u8 = ~
+fun ~u8 = ~
 
 # Parses an 8-bit little endian unsigned integer.
-def *u8l = ~
+def ~u8l = ~
 
 # Parses an 8-bit big endian unsigned integer.
-def *u8b = ~
+def ~u8b = ~
 
 # Parses an 8-bit little endian signed integer.
-def *i8l = {
+def ~i8l = {
   x: ~
-  | let return = x if 0x00..0x7f
+  | let return = x is 0x00..0x7f
   | let return = x - 0x100
 }
 
 # Parses an 8-bit big endian signed integer.
-def *i8b = {
+def ~i8b = {
   x: ~
-  | let return = x if 0x00..0x7f
+  | let return = x is 0x00..0x7f
   | let return = x - 0x100
 }
 
 # Parses a 16-bit little endian unsigned integer.
-def *u16l = {
+def ~u16l = {
   lo: ~
   hi: ~
   let return = lo | hi << 8
 }
 
 # Parses a 16-bit big endian unsigned integer.
-def *u16b = {
+def ~u16b = {
   hi: ~
   lo: ~
   let return = lo | hi << 8
 }
 
 # Parses a 16-bit little endian signed integer.
-def *i16l = {
+def ~i16l = {
   lo: ~
   hi: i8l
   let return = lo | hi << 8
 }
 
 # Parses a 16-bit big endian signed integer.
-def *i16b = {
+def ~i16b = {
   hi: i8b
   lo: ~
   let return = lo | hi << 8
 }
 
 # Parses a 32-bit little endian unsigned integer.
-def *u32l = {
+def ~u32l = {
   lo: u16l
   hi: u16l
   let return = lo | hi << 16
 }
 
 # Parses a 32-bit big endian unsigned integer.
-def *u32b = {
+def ~u32b = {
   hi: u16b
   lo: u16b
   let return = lo | hi << 16
 }
 
 # Parses a 32-bit little endian signed integer.
-def *i32l = {
+def ~i32l = {
   lo: u16l
   hi: i16l
   let return = lo | hi << 16
 }
 
 # Parses a 32-bit big endian signed integer.
-def *i32b = {
+def ~i32b = {
   hi: i16b
   lo: u16b
   let return = lo | hi << 16
 }
 
 # Parses a 64-bit little endian signed integer.
-def *i64l = {
+def ~i64l = {
   lo: u32l
   hi: i32l
   let return = lo | hi << 32
 }
 
 # Parses a 64-bit big endian signed integer.
-def *i64b = {
+def ~i64b = {
   hi: i32b
   lo: u32b
   let return = lo | hi << 32
@@ -123,11 +123,11 @@ def *i64b = {
 
 # =============== desugar ===============
 
-fun ['a] *> compose(a: ['a] *> ['b], b: ['b] *> 'c) = {
-  x: a?, let return = x *> b?
+fun ['a] ~> compose(a: ['a] ~> ['b], b: ['b] ~> 'c) = {
+  x: a?, let return = x ~> b?
 }
 
-fun ['a] *> index(idx: int): 'a = {
-  [idx if 0..0x7fffffffffffffff] if !eof
-  return: ~ if !eof
+fun ['a] ~> index(idx: int): 'a = {
+  [idx is 0..0x7fffffffffffffff] is !eof
+  return: ~ is !eof
 }

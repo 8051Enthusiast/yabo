@@ -1,11 +1,11 @@
 ====[ source code ]====
 fun arg() = 5
-def *arg2() = ~
-fun *arg3() = ~
+def ~arg2() = ~
+fun ~arg3() = ~
 fun addr() = ~ at 2
 
 export
-def *test = {
+def ~test = {
     a: arg2()
     let b = arg()
     c: arg3()

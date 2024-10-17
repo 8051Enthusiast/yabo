@@ -5,7 +5,7 @@ import list
 # somewhat incomplete, but it works on my test images
 
 export
-def *ext2_superblock = {
+def ~ext2_superblock = {
   inodes_count: u32l
   blocks_count: u32l
   r_blocks_count: u32l
@@ -59,10 +59,10 @@ def *ext2_superblock = {
 static superblock = ext2_superblock at 1024
 
 static block_size = 1024 << superblock.log_block_size
-static inode_size = superblock.rev_level if 0 then 128 else superblock.inode_size
+static inode_size = superblock.rev_level is 0 then 128 else superblock.inode_size
 
 export
-def *ext2_group_desc = {
+def ~ext2_group_desc = {
   block_bitmap: u32l
   inode_bitmap: u32l
   inode_table: u32l
@@ -77,60 +77,60 @@ static group_descs = ext2_group_desc[
     (superblock.blocks_count + superblock.blocks_per_group - 1) / superblock.blocks_per_group
 ] at math.max(2048, block_size)
 
-fun inode_at(idx: int) = {:
+fun inode_at(idx: int) = {|
   let group = idx / superblock.inodes_per_group
   let offset = idx % superblock.inodes_per_group
   let inodes_start = group_descs.[group].inode_table * block_size
   let return = inode at (inodes_start + offset * inode_size)
-:}
+|}
 
-def *inode_ptr = {
+def ~inode_ptr = {
   inode_idx: u32l
-  | inode_idx if 0 then nil
+  | inode_idx is 0 then nil
   | let pointee = inode_at(inode_idx - 1)
 }
 
-def *block_ptr(data: *'t) = {
+def ~block_ptr(data: ~'t) = {
   block: u32l
-  | block if 0 then nil
+  | block is 0 then nil
   | let pointee = ([block_size] |> data!) at (block * block_size)
 }
 
-def *indirect(data: *'t) = block_ptr(data)[..]
+def ~indirect(data: ~'t) = block_ptr(data)[..]
 
-def *data_blocks(data: *'t) = {
+def ~data_blocks(data: ~'t) = {
   direct: block_ptr(data)[12]
   indirect1: block_ptr(indirect(data))
   indirect2: block_ptr(indirect(indirect(data)))
   indirect3: block_ptr(indirect(indirect(indirect(data))))
 }
 
-fun inode_type(mode: int) = {:
+fun inode_type(mode: int) = {|
   let masked = mode & 0xF000
-  | let fifo = masked if 0x1000
-  | let char_dev = masked if 0x2000
-  | let dir = masked if 0x4000
-  | let block_dev = masked if 0x6000
-  | let file = masked if 0x8000
-  | let symlink = masked if 0xA000
-  | let socket = masked if 0xC000
+  | let fifo = masked is 0x1000
+  | let char_dev = masked is 0x2000
+  | let dir = masked is 0x4000
+  | let block_dev = masked is 0x6000
+  | let file = masked is 0x8000
+  | let symlink = masked is 0xA000
+  | let socket = masked is 0xC000
   | let unknown = masked
-:}
+|}
 
-def *byte_block = [..]
+def ~byte_block = [..]
 
-def *dir_entry = {
-  inode_idx: inode_ptr if !eof and pointee
+def ~dir_entry = {
+  inode_idx: inode_ptr is !eof and pointee
   rec_len: u16l
   name_len: u8
   file_type: u8
   name: [rec_len - 8] |> [name_len] 
 }
 
-def *dir_entries = [block_size] |> list.list(dir_entry)
+def ~dir_entries = [block_size] |> list.list(dir_entry)
 
 export
-def *inode = {
+def ~inode = {
   mode: u16l
   let mode_type = inode_type(mode)
   uid: u16l
@@ -145,11 +145,11 @@ def *inode = {
   flags: u32l
   osd1: u32l
   block_bytes: [u32l.sizeof * 15]
-  | let file = mode_type if file then (block_bytes *> data_blocks(byte_block))
-  | let dir = mode_type if dir then (block_bytes *> data_blocks(dir_entries))
-  | let short_symlink = mode_type if symlink then size if 0..59 then (block_bytes *> [size])
-  | let symlink = mode_type if symlink then (block_bytes *> byte_block)
-  | let dev = mode_type if char_dev or block_dev then (block_bytes *> {
+  | let file = mode_type is file then (block_bytes ~> data_blocks(byte_block))
+  | let dir = mode_type is dir then (block_bytes ~> data_blocks(dir_entries))
+  | let short_symlink = mode_type is symlink then size is 0..59 then (block_bytes ~> [size])
+  | let symlink = mode_type is symlink then (block_bytes ~> byte_block)
+  | let dev = mode_type is char_dev or block_dev then (block_bytes ~> {
       minor: u8
       major: u8
     })
@@ -162,6 +162,6 @@ def *inode = {
 }
 
 export
-fun *root = {
+fun ~root = {
   let root_inode = inode_at(1)
 }

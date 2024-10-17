@@ -1,12 +1,12 @@
 ====[ source code ]====
 fun as_int(b: bit) = true
-fun [bit] *> uint_msb_impl(acc: bit) = [7]
-fun [bit] *> sint_msb(size: int) = {
+fun [bit] ~> uint_msb_impl(acc: bit) = [7]
+fun [bit] ~> sint_msb(size: int) = {
   sign: ~, return: uint_msb_impl(as_int(sign))
 }
 export
-fun *test = {
-  let return = (0..<8 *> {~, let return = true}[8]) *> sint_msb(8)
+fun ~test = {
+  let return = (0..<8 ~> {~, let return = true}[8]) ~> sint_msb(8)
 }
 
 ====[ binary 1 ]====

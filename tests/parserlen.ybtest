@@ -1,10 +1,10 @@
 ====[ source code ]====
-def *g(a: *'a, b: *'b) = {
+def ~g(a: ~'a, b: ~'b) = {
   | a?, b?, a?
   | b?, a?, a?
 }
-def *square(n: int) = [n * n]
-def *poly_unify(n: int, m: int) = {
+def ~square(n: int) = [n * n]
+def ~poly_unify(n: int, m: int) = {
   | [2 * n * m - 1]
     [n * n]
     [m * m]
@@ -12,23 +12,23 @@ def *poly_unify(n: int, m: int) = {
   | square(n + m)
     poly_unify(0, 0)
 }
-def *static_len(a: int) = {
+def ~static_len(a: int) = {
   | [a], [a]
   | [2 * a]
   [a & 43]
 }
-def *dynamic = {
+def ~dynamic = {
   x: ~, [x]
 }
-export def *test = {
-  let a: *_ = +
-  let b: *_ = ~
-  let c: *_ = { d, b, b }
-  let d: *_ = [10]
-  let e: *_ = g([10], ~)
-  let h: *_ = poly_unify(4, 3)
-  let k: *_ = static_len(31)
-  let l: *_ = g(dynamic, +)
+export def ~test = {
+  let a: ~_ = +
+  let b: ~_ = ~
+  let c: ~_ = { d, b, b }
+  let d: ~_ = [10]
+  let e: ~_ = g([10], ~)
+  let h: ~_ = poly_unify(4, 3)
+  let k: ~_ = static_len(31)
+  let l: ~_ = g(dynamic, +)
 }
 
 ====[ binary 1 ]====

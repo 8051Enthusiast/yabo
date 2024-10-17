@@ -2,14 +2,14 @@
 import text
 import math
 import list
-def *ws = /\s*/!
+def ~ws = /\s*/!
 
-def *fixed_num = {
+def ~fixed_num = {
   whole: text.num?
-  | u8 if '.'
+  | u8 is '.'
     fract: /[0-9]+/
-    let fract_val = fract *> text.num!
-    let fract_len = list.len(fract *> list.list(u8 if !eof))
+    let fract_val = fract ~> text.num!
+    let fract_len = list.len(fract ~> list.list(u8 is !eof))
     # use 3 digits behind comma
     let return = whole * 1000 +
                  math.ipow(10, 3 - fract_len) * fract_val
@@ -18,7 +18,7 @@ def *fixed_num = {
 }
 
 export
-fun *test = {
+fun ~test = {
   days: list.list({
     /(Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day:/, ws
     return: fixed_num!, ws

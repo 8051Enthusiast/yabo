@@ -1,11 +1,11 @@
 ====[ source code ]====
-fun *cap_length(a: int) = {
+fun ~cap_length(a: int) = {
   let t = <b: int> [b + a]
   return: t(4)
 }
 
 export
-fun *test = cap_length(5)[2]
+fun ~test = cap_length(5)[2]
 
 ====[ binary 1 ]====
 00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f

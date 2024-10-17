@@ -1,12 +1,12 @@
 ====[ source code ]====
 import bit
 
-def *fat12(size: int) = [size]
+def ~fat12(size: int) = [size]
   |> bit.from_bytes_lsb
   |> bit.uint_lsb(12)[..]
 
 export
-def *test = fat12(16)
+def ~test = fat12(16)
 
 ====[ binary 1 ]====
 F0 FF FF 03 40 00 05 60 00 07 80 00 FF AF 00 14

@@ -1,17 +1,17 @@
 ====[ source code ]====
-def *linear_byte(m: int) = {
+def ~linear_byte(m: int) = {
   byte: ~
   let return = m * byte
 }
 
-def *affine_byte(m: int, a: int) = {
+def ~affine_byte(m: int, a: int) = {
   byte: ~
   let return = m * byte + a
 }
 
-export def *test = {
+export def ~test = {
   tag: ~
-  | let _ = tag if 0
+  | let _ = tag is 0
     m: ~
     let p = affine_byte(m, ..)
   | let p = linear_byte

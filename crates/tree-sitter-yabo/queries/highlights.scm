@@ -27,7 +27,7 @@
 "sizeof" @keyword.operator
 
 [
-    "if"
+    "is"
     "else"
     "then"
 ] @keyword.control.conditional
@@ -74,7 +74,8 @@
     "^"
     ">>"
     "<<"
-    "*>"
+    "~>"
+    "->"
     "|>"
     "&>"
     "."

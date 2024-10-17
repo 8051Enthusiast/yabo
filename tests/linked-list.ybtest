@@ -1,12 +1,12 @@
 ====[ source code ]====
-fun *u8ptr(t: *'t) = {
-  addr: u8 if 0x01..0xff
+fun ~u8ptr(t: ~'t) = {
+  addr: u8 is 0x01..0xff
   let return = t? at addr
 }
 
 export
-def *test = {
-  | u8 if 0
+def ~test = {
+  | u8 is 0
   | next: u8ptr(test)?
   val: u8
 }

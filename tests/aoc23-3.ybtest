@@ -2,42 +2,42 @@
 import text
 import list
 
-fun *line(len: int) = {return: [len], ~}
+fun ~line(len: int) = {return: [len], ~}
 
-fun *num(start: int) = {
+fun ~num(start: int) = {
   pre: [start]
-  str: when?(pre.?[start - 1] if '0'..'9' then false else true) then /[0-9]+/
-  let len = list.len(str *> list.list(~ if !eof))
-  let val = str *> text.num!
+  str: when?(pre.?[start - 1] is '0'..'9' then false else true) then /[0-9]+/
+  let len = list.len(str ~> list.list(~ is !eof))
+  let val = str ~> text.num!
 }
 
-fun add_in_range_impl(start: int, end: int, acc: int, f: int(int)): int =
+fun add_in_range_impl(start: int, end: int, acc: int, f: (int) -> int): int =
   when?(start < end) then add_in_range_impl(start + 1, end, acc + f!(start)!, f) else acc
   
-fun add_in_range(start: int, end: int, f: int(int)): int = add_in_range_impl(start, end, 0, f)
+fun add_in_range(start: int, end: int, f: (int) -> int): int = add_in_range_impl(start, end, 0, f)
 
-fun add_row(start_y: int, end_y: int, f: int(int, int), x: int): int =
+fun add_row(start_y: int, end_y: int, f: (int, int) -> int, x: int): int =
   add_in_range(start_y, end_y, f(x, ..))
 
-fun add_rect(start_x: int, end_x: int, start_y: int, end_y: int, f: int(int, int)): int =
+fun add_rect(start_x: int, end_x: int, start_y: int, end_y: int, f: (int, int) -> int): int =
   add_in_range(start_x, end_x, add_row(start_y, end_y, f, ..))
 
-fun is_sym(n: u8) = n if '!'..'-' or '/' or ':'..'@' or '['..'`' or '{'..'~'
+fun is_sym(n: u8) = n is '!'..'-' or '/' or ':'..'@' or '['..'`' or '{'..'~'
 
 fun symbol(map: [[u8]], x: int, y: int) = is_sym?(map.?[y].?[x]) then 1 else 0
 
-fun part_number(map: [[u8]], x: int, y: int) = {:
-  let n = map.[y] *> num(x)?
+fun part_number(map: [[u8]], x: int, y: int) = {|
+  let n = map.[y] ~> num(x)?
   let num_syms = add_rect(x - 1, x + n.len + 1, y - 1, y + 2, symbol(map, ..))
   let return = when?(num_syms > 0) then n.val
-:} else 0
+|} else 0
 
 export
-fun *test = {
+fun ~test = {
   input: /.*/
-  let line_len = list.len(input *> (list.list(~ if ' '..0x7f and !eof)))
-  let num_row = list.len(input *> list.list(line(line_len) if !eof))
-  let map = input *> line(line_len)[num_row]
+  let line_len = list.len(input ~> (list.list(~ is ' '..0x7f and !eof)))
+  let num_row = list.len(input ~> list.list(line(line_len) is !eof))
+  let map = input ~> line(line_len)[num_row]
   let return = add_rect(0, line_len, 0, num_row, part_number(map, ..))
 }
 

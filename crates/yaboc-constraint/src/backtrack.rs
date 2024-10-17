@@ -289,7 +289,7 @@ impl<'a> ExpressionBuildCtx<'a> {
                     | ResolvedAtom::Span(_, _) => self.push(Instruction::None, *ty, orig),
                 },
                 ExprHead::Monadic(op, (inner_bt, inner)) => match op {
-                    ValUnOp::Wiggle(_, WiggleKind::If) => {
+                    ValUnOp::Wiggle(_, WiggleKind::Is) => {
                         if matches!(self.db.lookup_intern_type(*ty), Type::ParserArg { .. }) {
                             self.push(Instruction::Activate(inner), *ty, orig)
                         } else {

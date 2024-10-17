@@ -1,15 +1,15 @@
 ====[ source code ]====
-fun *d = {
+fun ~d = {
   x: ~
   # retlen does not directly depend on the choice here, since
   # both do not have any parsers, but it does have to be
   # lowered after the choice in the root context
-  | let return = x if 0x00..0x7f
+  | let return = x is 0x00..0x7f
   | let return = x - 0x100
 }
 
 export
-fun *test = {
+fun ~test = {
   t: d
   return: u8
 }

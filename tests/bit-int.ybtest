@@ -2,20 +2,20 @@
 import bit
 
 export
-def *test = {
+def ~test = {
   bytes: [..]
-  let msb_bytes = bytes *> bit.from_bytes_msb
-  let lsb_bytes = bytes *> bit.from_bytes_lsb
-  let return = {:
-    let signed_msb_byte_msb = msb_bytes *> bit.sint_msb(4)[..]
-    let signed_msb_byte_lsb = lsb_bytes *> bit.sint_msb(4)[..]
-    let signed_lsb_byte_msb = msb_bytes *> bit.sint_lsb(4)[..]
-    let signed_lsb_byte_lsb = lsb_bytes *> bit.sint_lsb(4)[..]
-    let unsigned_msb_byte_msb = msb_bytes *> bit.uint_msb(4)[..]
-    let unsigned_msb_byte_lsb = lsb_bytes *> bit.uint_msb(4)[..]
-    let unsigned_lsb_byte_msb = msb_bytes *> bit.uint_lsb(4)[..]
-    let unsigned_lsb_byte_lsb = lsb_bytes *> bit.uint_lsb(4)[..]
-  :}
+  let msb_bytes = bytes ~> bit.from_bytes_msb
+  let lsb_bytes = bytes ~> bit.from_bytes_lsb
+  let return = {|
+    let signed_msb_byte_msb = msb_bytes ~> bit.sint_msb(4)[..]
+    let signed_msb_byte_lsb = lsb_bytes ~> bit.sint_msb(4)[..]
+    let signed_lsb_byte_msb = msb_bytes ~> bit.sint_lsb(4)[..]
+    let signed_lsb_byte_lsb = lsb_bytes ~> bit.sint_lsb(4)[..]
+    let unsigned_msb_byte_msb = msb_bytes ~> bit.uint_msb(4)[..]
+    let unsigned_msb_byte_lsb = lsb_bytes ~> bit.uint_msb(4)[..]
+    let unsigned_lsb_byte_msb = msb_bytes ~> bit.uint_lsb(4)[..]
+    let unsigned_lsb_byte_lsb = lsb_bytes ~> bit.uint_lsb(4)[..]
+  |}
 }
 
 ====[ binary 1 ]====

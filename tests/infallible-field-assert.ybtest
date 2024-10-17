@@ -1,10 +1,10 @@
 ====[ source code ]====
-fun *chunk = { let length = 1 }
+fun ~chunk = { let length = 1 }
 
 export
-fun *test = {
+fun ~test = {
   x: chunk
-  let return = x if length
+  let return = x is length
 }
 
 ====[ binary 1 ]====

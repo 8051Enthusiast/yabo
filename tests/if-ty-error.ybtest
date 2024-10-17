@@ -1,3 +1,3 @@
 ====[ source code ]====
-export def *test = ~ if true
+export def ~test = ~ is true
 #~^error[507] expected bit, but got int

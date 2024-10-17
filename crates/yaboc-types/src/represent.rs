@@ -36,7 +36,7 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeId<'_> {
                 dbwrite!(f, db, "[{}]", inner)
             }
             InferenceType::ParserArg { result, arg } => {
-                dbwrite!(f, db, "{} *> {}", arg, result)
+                dbwrite!(f, db, "{} ~> {}", arg, result)
             }
             InferenceType::FunctionArgs {
                 result,
@@ -221,7 +221,7 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for TypeId {
                 dbwrite!(f, db, "[{}]", &inner)
             }
             Type::ParserArg { result, arg } => {
-                dbwrite!(f, db, "{} *> {}", &arg, &result)
+                dbwrite!(f, db, "{} ~> {}", &arg, &result)
             }
             Type::FunctionArg(result, args) => {
                 dbwrite!(f, db, "{}(", &result)?;

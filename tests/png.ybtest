@@ -4,18 +4,18 @@ import list
 # a parser for the rough structure of a png
 
 fun crc_shift(poly: int, n: int) =
-  (n & 1) if 1 then (n >> 1 ^ poly) else (n >> 1)
+  (n & 1) is 1 then (n >> 1 ^ poly) else (n >> 1)
 
-fun *crc32_impl(acc: int): int = {
-  | next: u8 if !eof
+fun ~crc32_impl(acc: int): int = {
+  | next: u8 is !eof
     let s = crc_shift(0xedb88320, ..)
     return: crc32_impl(s(s(s(s(s(s(s(s(next ^ acc)))))))))
   | let return = acc ^ 0xffffffff
 }
 
-fun crc32(arr: [u8]) = arr *> crc32_impl(0xffffffff)
+fun crc32(arr: [u8]) = arr ~> crc32_impl(0xffffffff)
 
-def *chunk(ty: *[u8], data_parser: *'t) = {
+def ~chunk(ty: ~[u8], data_parser: ~'t) = {
   length: u32b
   type: [4] |> ty?
   value: [length] |> data_parser!
@@ -23,7 +23,7 @@ def *chunk(ty: *[u8], data_parser: *'t) = {
   let crc_valid = crc32(span type..value) == crc
 }
 
-def *head = {
+def ~head = {
   width: u32b
   height: u32b
   bit_depth: u8
@@ -33,14 +33,14 @@ def *head = {
   interlace_method: u8
 }
 
-def *rgb = {
+def ~rgb = {
   red: u8
   green: u8
   blue: u8
 }
 
 export
-def *test = {
+def ~test = {
   h/89 50 4e 47 0d 0a 1a 0a/
 
   header: chunk(/IHDR/, head)!

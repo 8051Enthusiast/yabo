@@ -1,8 +1,8 @@
 ====[ source code ]====
-fun ['t] *> a = {
+fun ['t] ~> a = {
   let next = b
   #~^ error[513] could not find type variable of current function corresponding to 'r
 }
-fun ['r] *> b = {
+fun ['r] ~> b = {
   let next = a
 }

@@ -1,12 +1,12 @@
 ====[ source code ]====
-def *u16l = {
+def ~u16l = {
   lo: ~
   hi: ~
   let return = lo | hi << 8
 }
 
 export
-def *test = {
+def ~test = {
   a: u16l
   [8 - u16l.sizeof]
   b: u16l
