@@ -147,6 +147,33 @@ def *main = {
    <addaction name="actionBack"/>
    <addaction name="actionForth"/>
   </widget>
+  <widget class="QMenuBar" name="menuBar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>640</width>
+     <height>24</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menuTest">
+    <property name="title">
+     <string>File</string>
+    </property>
+    <addaction name="actionLoadFile"/>
+    <addaction name="actionCompile"/>
+    <addaction name="actioncopyURL"/>
+   </widget>
+   <widget class="QMenu" name="menuEdit">
+    <property name="title">
+     <string>Edit</string>
+    </property>
+    <addaction name="actionBack"/>
+    <addaction name="actionForth"/>
+   </widget>
+   <addaction name="menuTest"/>
+   <addaction name="menuEdit"/>
+  </widget>
   <action name="actionCompile">
    <property name="text">
     <string>Compile</string>
@@ -177,6 +204,17 @@ def *main = {
    </property>
    <property name="shortcut">
     <string>Ctrl+R</string>
+   </property>
+  </action>
+  <action name="actioncopyURL">
+   <property name="text">
+    <string>Copy URL</string>
+   </property>
+   <property name="toolTip">
+    <string>creates an URL for sharing</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::NoRole</enum>
    </property>
   </action>
  </widget>

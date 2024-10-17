@@ -69,16 +69,12 @@
 
                 const url_params = new URLSearchParams(window.location.search);
                 if (url_params.has('source')) {
-                    try {
-                        env_vars['YPHBT_SOURCE'] = atob(url_params.get('source'));
-                    } catch (e) {
-                        status.innerHTML = 'Invalid input URL parameter (must be base64 encoded)';
-                        throw e;
-                    }
+                    env_vars['YPHBT_SOURCE'] = url_params.get('source');
                 }
                 if (url_params.has('input')) {
                     env_vars['YPHBT_INPUT'] = url_params.get('input');
                 }
+                env_vars['YPHBT_URL'] = document.location.origin + document.location.pathname;
                 const tail = Uint8Array.from(atob("AGFzbQEAAAABBAFgAAADAgEACgYBBAASAAs="), c => c.charCodeAt(0));
                 if (typeof WebAssembly === "object"
                     && typeof WebAssembly.validate === "function"
