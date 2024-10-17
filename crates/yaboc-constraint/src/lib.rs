@@ -352,9 +352,9 @@ mod tests {
     fn straightline_constant_size() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            def *one = ~
-            def *two = { ~,~ }
-            def *three = { one, two }
+            def ~one = ~
+            def ~two = { ~,~ }
+            def ~three = { one, two }
         "#,
         );
         let one = ctx.parser("one");
@@ -369,8 +369,8 @@ mod tests {
     fn same_const_size_choice() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            def *one = ~
-            def *const_size_choice = {
+            def ~one = ~
+            def ~const_size_choice = {
                 | left: one, one, one
                 | right: ~, ~, ~
             }
@@ -387,11 +387,11 @@ mod tests {
     fn const_size_rec() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            def *rec = {
+            def ~rec = {
                 | /AAAAA/?
                 | rec
             }
-            def *rec2 = {
+            def ~rec2 = {
                 | /AAAAA/?
                 | ~, rec
             }
@@ -409,8 +409,8 @@ mod tests {
     fn poly_size() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            fun ['a] *> compose(a: ['a] *> ['b], b: ['b] *> 'c) = {
-              x: a, let return = x *> b
+            fun ['a] ~> compose(a: ['a] ~> ['b], b: ['b] ~> 'c) = {
+              x: a, let return = x ~> b
             }
         "#,
         );
@@ -422,8 +422,8 @@ mod tests {
     fn poly_unify() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            def *square(n: int) = [n * n]
-            def *poly_unify(n: int, m: int) = {
+            def ~square(n: int) = [n * n]
+            def ~poly_unify(n: int, m: int) = {
                 | square(n + m)
                   poly_unify(0, 0)
                 | [2 * n * m - 1]
@@ -441,7 +441,7 @@ mod tests {
     fn static_size() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            def *stat(a: int, b: int) = [1 << a] |> [1 << b]
+            def ~stat(a: int, b: int) = [1 << a] |> [1 << b]
         "#,
         );
         let stat = ctx.parser("stat");
@@ -457,7 +457,7 @@ mod tests {
     fn dyn_recurse() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            fun *number_acc(base: int, n: int): int = {
+            fun ~number_acc(base: int, n: int): int = {
               x: ~
               let s = n * base + x
               | return: number_acc?(base, s)
@@ -474,9 +474,9 @@ mod tests {
     fn backtrack_dep() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            def *backtrack_if(x: int) = x if 0 then [1] else [2]
-            def *backtrack_when(x: int) = when?(x == 0) then [1] else [2]
-            def *backtrack_field(x: int) = {: let y = x if 0 :}.?y then [1] else [2]
+            def ~backtrack_if(x: int) = x is 0 then [1] else [2]
+            def ~backtrack_when(x: int) = when?(x == 0) then [1] else [2]
+            def ~backtrack_field(x: int) = {| let y = x is 0 |}.?y then [1] else [2]
             "#,
         );
         for parser_name in ["backtrack_if", "backtrack_when", "backtrack_field"] {
@@ -492,11 +492,11 @@ mod tests {
     fn val_fun() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            fun uses_vals(x: int): [u8] *> int = x then {
+            fun uses_vals(x: int): [u8] ~> int = x then {
                 ~
                 let return = x
             }
-            fun *test(x: int, y: int) = {
+            fun ~test(x: int, y: int) = {
                 [y]
                 uses_vals(x)
             }

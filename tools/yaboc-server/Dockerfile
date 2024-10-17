@@ -109,7 +109,7 @@ RUN bash -c '. /opt/emsdk/emsdk_env.sh \
 USER 1000:1000
 # initialize emcc's cache by running once
 RUN bash -c '. /opt/emsdk/emsdk_env.sh \
- && build.sh <(echo "export def *main = ~") /tmp/out.wasm \
+ && build.sh <(echo "export def ~main = ~") /tmp/out.wasm \
  && rm /tmp/out.wasm'
 
 WORKDIR /tmp

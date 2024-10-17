@@ -1,6 +1,6 @@
 ====[ source code ]====
 export
-def *test = {
+def ~test = {
   arr: [5][5]
   let a0 = arr.[0]
   let a10 = arr.[1].[0]

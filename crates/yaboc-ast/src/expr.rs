@@ -600,7 +600,7 @@ impl ValBinOp {
             "%" => Modulo,
             "*" => Mul,
             "|>" => Compose,
-            "*>" => ParserApply,
+            "~>" => ParserApply,
             "else" => Else,
             "then" => Then,
             "..<" => Range,
@@ -636,7 +636,7 @@ impl Display for ValBinOp {
                 ValBinOp::Modulo => "%",
                 ValBinOp::Mul => "*",
                 ValBinOp::Compose => "|>",
-                ValBinOp::ParserApply => "*>",
+                ValBinOp::ParserApply => "~>",
                 ValBinOp::Else => "else",
                 ValBinOp::Then => "then",
                 ValBinOp::Index(BtMarkKind::RemoveBt) => ".[",
@@ -731,7 +731,7 @@ impl<C> ValUnOp<C> {
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[repr(u8)]
 pub enum WiggleKind {
-    If,
+    Is,
     Try,
 }
 
@@ -741,7 +741,7 @@ impl Display for WiggleKind {
             f,
             "{}",
             match self {
-                WiggleKind::If => "if",
+                WiggleKind::Is => "is",
                 WiggleKind::Try => "try",
             }
         )
@@ -751,7 +751,7 @@ impl Display for WiggleKind {
 impl From<WiggleKind> for bool {
     fn from(kind: WiggleKind) -> Self {
         match kind {
-            WiggleKind::If => true,
+            WiggleKind::Is => true,
             WiggleKind::Try => false,
         }
     }
@@ -774,7 +774,7 @@ impl TypeBinOp {
         use TypeBinOp::*;
         Ok(match s {
             "&>" => Ref,
-            "*>" => ParseArg,
+            "~>" => ParseArg,
             otherwise => return Err(otherwise),
         })
     }
@@ -787,7 +787,7 @@ impl Display for TypeBinOp {
             "{}",
             match self {
                 TypeBinOp::Ref => "&>",
-                TypeBinOp::ParseArg => "*>",
+                TypeBinOp::ParseArg => "~>",
             }
         )
     }
@@ -803,7 +803,7 @@ impl<C> TypeUnOp<C> {
     pub fn parse_from_str(s: &str) -> Result<Self, &str> {
         use TypeUnOp::*;
         Ok(match s {
-            "*" => ByteParser,
+            "~" => ByteParser,
             otherwise => return Err(otherwise),
         })
     }

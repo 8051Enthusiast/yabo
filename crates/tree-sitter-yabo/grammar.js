@@ -57,7 +57,7 @@ module.exports = grammar({
           choice(
             seq(
               field('from', $._type_expression),
-              '*>',
+              '~>',
             ),
             field('from', $.byte_slice),
           ),
@@ -88,14 +88,14 @@ module.exports = grammar({
       seq('(', $._type_expression, ')'),
     ),
     binary_type_expression: $ => choice(
-      prec.left(PREC.PARSERTYPE, seq(
+      prec.right(PREC.PARSERTYPE, seq(
         field('left', $._type_expression),
-        field('op', '*>'),
+        field('op', '~>'),
         field('right', $._type_expression),
       )),
     ),
     unary_type_expression: $ => prec(PREC.PARSERTYPE + 1, seq(
-      field('op', '*'),
+      field('op', '~'),
       field('right', $._type_expression)
     )),
     block: $ => seq(
@@ -140,7 +140,7 @@ module.exports = grammar({
     ),
     constraint_apply: $ => prec.left(PREC.POSTFIX, seq(
       field('left', $._expression),
-      field('op', choice('~', 'if', 'try')),
+      field('op', choice('~', 'is', 'try')),
       field('right', $._constraint_expression),
     )),
     type_constraint: $ => prec.left(PREC.POSTFIX, seq(
@@ -269,16 +269,17 @@ module.exports = grammar({
       )),
       ')'
     ),
-    type_fun_application: $ => prec(PREC.ARGS, seq(
-      field('result', $._type_expression),
+    type_fun_application: $ => prec.right(PREC.PARSERTYPE, seq(
       $._type_arg_list,
+      '->',
+      field('result', $._type_expression),
     )),
     binary_expression: $ => {
       const table = [
         ['..<', PREC.RANGE],
         ['then', PREC.THEN],
         ['else', PREC.ELSE],
-        ['*>', PREC.PARSE],
+        ['~>', PREC.PARSE],
         ['|>', PREC.PARSE],
         ['at', PREC.PARSE],
         ['+', PREC.ADD],
@@ -321,7 +322,7 @@ module.exports = grammar({
     unary_expression: $ => choice(
       prec(PREC.PREFIX,
         seq(
-          field('op', choice('-', '!', 'if')),
+          field('op', choice('-', '!', 'is')),
           field('right', $._expression)
         ),
       ),
@@ -417,7 +418,7 @@ module.exports = grammar({
       'bit',
       'char',
     ),
-    byte_slice: $ => prec(PREC.BYTE_SLICE, '*'),
+    byte_slice: $ => prec(PREC.BYTE_SLICE, '~'),
     single: $ => '~',
     nil: $ => '+',
     placeholder: $ => '_',

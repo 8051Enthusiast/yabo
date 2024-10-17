@@ -247,7 +247,7 @@ impl<'a> IMonoLayout<'a> {
                 Layout::Mono(MonoLayout::Regex(*r, true), self.mono_layout().1),
             )),
             MonoLayout::IfParser(inner, c, status) if bool::from(*status) != bt => {
-                let new_status = if bt { WiggleKind::If } else { WiggleKind::Try };
+                let new_status = if bt { WiggleKind::Is } else { WiggleKind::Try };
                 IMonoLayout(ctx.dcx.intern(Layout::Mono(
                     MonoLayout::IfParser(*inner, *c, new_status),
                     self.mono_layout().1,
@@ -1360,14 +1360,14 @@ mod tests {
     fn layouts() {
         let ctx = Context::<LayoutTestDatabase>::mock(
             r"
-def *first = ~
-def *second = ~
-def *main = {
+def ~first = ~
+def ~second = ~
+def ~main = {
     a: ~
     b: ~
     c: {
-      | let c: *first = first!
-      | let c: *second = second?
+      | let c: ~first = first!
+      | let c: ~second = second?
     }
     d: c.c
 }
@@ -1444,8 +1444,8 @@ def *main = {
                 .unwrap()
         );
         assert!(
-            ["nominal-parser?[[u8] *> [u8] &> file[_].second]() | nominal-parser[[u8] *> [u8] &> file[_].first]()",
-             "nominal-parser[[u8] *> [u8] &> file[_].first]() | nominal-parser?[[u8] *> [u8] &> file[_].second]()"]
+            ["nominal-parser?[[u8] ~> [u8] &> file[_].second]() | nominal-parser[[u8] ~> [u8] &> file[_].first]()",
+             "nominal-parser[[u8] ~> [u8] &> file[_].first]() | nominal-parser?[[u8] ~> [u8] &> file[_].second]()"]
             .contains(&out.as_str())
         );
         assert_eq!(
@@ -1462,7 +1462,7 @@ def *main = {
         let ctx = Context::<LayoutTestDatabase>::mock(
             r"
 export
-def *test = [2][3][5]
+def ~test = [2][3][5]
             ",
         );
         let bump = Bump::new();

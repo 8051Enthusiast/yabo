@@ -36,14 +36,14 @@
 
 # a parser for the rough structure of a png
 
-def *chunk(ty: *[u8], data_parser: *'t) = {
+def ~chunk(ty: ~[u8], data_parser: ~'t) = {
   length: u32b
   type: [4] |&gt; ty?
   value: [length] |&gt; data_parser!
   crc: u32b
 }
 
-def *head = {
+def ~head = {
   width: u32b
   height: u32b
   bit_depth: u8
@@ -53,14 +53,14 @@ def *head = {
   interlace_method: u8
 }
 
-def *rgb = {
+def ~rgb = {
   red: u8
   green: u8
   blue: u8
 }
 
 export
-def *main = {
+def ~main = {
   h/89 50 4e 47 0d 0a 1a 0a/
 
   header: chunk(/IHDR/, head)!

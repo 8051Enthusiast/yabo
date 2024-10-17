@@ -1,23 +1,23 @@
 ====[ source code ]====
-def *list(element: *'r) = {
+def ~list(element: ~'r) = {
   | this: element?
     next: list(element?)
   | +
 }
 
-fun first(xs: list[*'r]): 'r = xs.?this
+fun first(xs: list[~'r]): 'r = xs.?this
 
-fun *digit = {
+fun ~digit = {
   x: ~
   # the 0x3a > x comparison requires x with strictness 0
   # but the return may use strictness 1 or 0
-  let _ = (0x3a > x) if true
+  let _ = (0x3a > x) is true
   let return = x
 }
 
 export
-fun *test = {
-  digits: list({/[^0-9\n]*/, return: digit? if !eof})
+fun ~test = {
+  digits: list({/[^0-9\n]*/, return: digit? is !eof})
   let return = first?(digits) else 1000
 }
 

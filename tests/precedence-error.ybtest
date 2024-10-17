@@ -1,5 +1,5 @@
 ====[ source code ]====
-def *test = {
+def ~test = {
   let a = 4 % 3 % 2
   #~^error[209] Operators without relative precedence
   let b = 4 % 3 * 2
@@ -10,6 +10,6 @@ def *test = {
   #~^error[209] Operators without relative precedence
   let e = test at 1 + 2
   #~^error[209] Operators without relative precedence
-  let f = 1 + 2 if 3 then 4
+  let f = 1 + 2 is 3 then 4
   #~^error[209] Operators without relative precedence
 }

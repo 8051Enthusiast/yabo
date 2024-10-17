@@ -1,10 +1,10 @@
 ====[ source code ]====
-def *f(a: int, b: int) = {
+def ~f(a: int, b: int) = {
     let return = a * b
 }
 
 export
-def *test = {
+def ~test = {
     let j = f(6, 7, 8, ..)
            #~^error[507] expected a function with at least 3 arguments, but got a function with 2 arguments
 }

@@ -308,10 +308,6 @@
             "named": false
           },
           {
-            "type": "*>",
-            "named": false
-          },
-          {
             "type": "+",
             "named": false
           },
@@ -389,6 +385,10 @@
           },
           {
             "type": "|>",
+            "named": false
+          },
+          {
+            "type": "~>",
             "named": false
           }
         ]
@@ -544,7 +544,7 @@
         "required": true,
         "types": [
           {
-            "type": "*>",
+            "type": "~>",
             "named": false
           }
         ]
@@ -850,7 +850,7 @@
         "required": true,
         "types": [
           {
-            "type": "if",
+            "type": "is",
             "named": false
           },
           {
@@ -2389,7 +2389,7 @@
             "named": true
           },
           {
-            "type": "if",
+            "type": "is",
             "named": false
           },
           {
@@ -2499,7 +2499,7 @@
         "required": true,
         "types": [
           {
-            "type": "*",
+            "type": "~",
             "named": false
           }
         ]
@@ -2729,10 +2729,6 @@
     "named": false
   },
   {
-    "type": "*>",
-    "named": false
-  },
-  {
     "type": "+",
     "named": false
   },
@@ -2742,6 +2738,10 @@
   },
   {
     "type": "-",
+    "named": false
+  },
+  {
+    "type": "->",
     "named": false
   },
   {
@@ -2885,15 +2885,15 @@
     "named": true
   },
   {
-    "type": "if",
-    "named": false
-  },
-  {
     "type": "import",
     "named": false
   },
   {
     "type": "int",
+    "named": false
+  },
+  {
+    "type": "is",
     "named": false
   },
   {
@@ -2970,6 +2970,10 @@
   },
   {
     "type": "~",
+    "named": false
+  },
+  {
+    "type": "~>",
     "named": false
   }
 ]

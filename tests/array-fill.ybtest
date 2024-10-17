@@ -1,12 +1,12 @@
 ====[ source code ]====
-def *rgb = {
+def ~rgb = {
   red: u8
   green: u8
   blue: u8
 }
 
 export
-fun *test = {
+fun ~test = {
   colors: [3][..] |> (~ |> rgb)[..]
   leftover: [..] |> [..] |> [..] |> [..]
 }

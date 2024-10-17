@@ -1,11 +1,11 @@
 ====[ source code ]====
-def *enum = {
-  | ~ if 0..9, let x: *int = ~ if 10..19
+def ~enum = {
+  | ~ is 0..9, let x: ~int = ~ is 10..19
   | +
 }
 
 export
-def *test = {
+def ~test = {
   n: enum
   | return: n.?x?
   | let return = 0

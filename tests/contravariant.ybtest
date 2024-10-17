@@ -1,21 +1,21 @@
 ====[ source code ]====
-def *u16l = {
+def ~u16l = {
   lo: ~
   hi: ~
   let return = lo | hi << 8
 }
 
-def *added(x: int) = {
+def ~added(x: int) = {
   n: ~
   let return = n + x
 }
 
-def *applied(f: *int(u16l)) = {
+def ~applied(f: (u16l) -> ~int) = {
   n: u16l
   return: f?(n)?
 }
 
-export def *test = {
+export def ~test = {
   return: applied(added)
 }
 

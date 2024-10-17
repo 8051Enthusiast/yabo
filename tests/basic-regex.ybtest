@@ -1,9 +1,9 @@
 ====[ source code ]====
 import text
-export def *test = {
+export def ~test = {
   /[^0-9]*/
   a: /[0-9]+./?
-  let return = a *> text.num?
+  let return = a ~> text.num?
 }
 
 ====[ text 1 ]====

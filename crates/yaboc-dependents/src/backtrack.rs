@@ -90,10 +90,10 @@ pub fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<Arc<E
                     status.backtrack_if(acc.can_backtrack())
                 }
                 ExprHead::Monadic(ValUnOp::Wiggle(_, kind), status) if !is_parser => {
-                    status.backtrack_if(kind == WiggleKind::If)
+                    status.backtrack_if(kind == WiggleKind::Is)
                 }
                 ExprHead::Monadic(ValUnOp::Wiggle(_, kind), status) if is_parser => {
-                    status.can_backtrack_if(kind == WiggleKind::If)
+                    status.can_backtrack_if(kind == WiggleKind::Is)
                 }
                 ExprHead::Monadic(ValUnOp::BtMark(mark), status) => {
                     status.can_backtrack_if(mark == BtMarkKind::KeepBt)

@@ -1,6 +1,6 @@
 ====[ source code ]====
 import aoc import text import list export
-fun*test=aoc.summap(text.line?|>{d:list.list({/[^0-9]*/,return:text.digit(10)if!eof}),let return=list.first?(d)*10+list.last?(d)})
+fun~test=aoc.summap(text.line?|>{d:list.list({/[^0-9]*/,return:text.digit(10)is!eof}),let return=list.first?(d)*10+list.last?(d)})
 ====[ text 1 ]====
 1abc2
 pqr3stu8vwx

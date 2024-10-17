@@ -3,7 +3,7 @@ import text
 import math
 
 export
-fun *test = {
+fun ~test = {
   a: text.num?, /, /, b: text.num?
   let return = math.ipow(a, b)
 }

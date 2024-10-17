@@ -1,16 +1,16 @@
 ====[ source code ]====
-def *u16l = {
+def ~u16l = {
   lo: ~
   hi: ~
   let return = lo | hi << 8
 }
 
-def *higher_order(f: *'t) = {
+def ~higher_order(f: ~'t) = {
   first: f?
   second: f?
 }
 
-export def *test = {
+export def ~test = {
   bytes: higher_order(~)
   shorts: higher_order(u16l)
 }

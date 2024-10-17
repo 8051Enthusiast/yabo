@@ -3,14 +3,14 @@ import mbr
 # parser for gpt (GUID partition table)
 
 # logical block address (a logical block is assumed to be 512 here)
-def *lba = i64l
+def ~lba = i64l
 
-def *guid = [16]
+def ~guid = [16]
 
-def *partition(blocks: int) = [blocks * 512]
+def ~partition(blocks: int) = [blocks * 512]
 
 # flags, including those for windows
-def *flags = bit.b64l_lsb |> {
+def ~flags = bit.b64l_lsb |> {
   # whether the partition is required for booting
   required_partition: bit.flag
   # whether the partition should be hidden from the os
@@ -29,7 +29,7 @@ def *flags = bit.b64l_lsb |> {
   win_no_drive_letter: bit.flag
 }
 
-def *partition_entry = {
+def ~partition_entry = {
   # an all-zero partition type guid means empty
   | partition_type: /\x00{16}/
   | partition_type: guid
@@ -43,9 +43,9 @@ def *partition_entry = {
     name: u16l[36]
 }
 
-def *partition_table(size: int, count: int) = ([size] |> partition_entry)[count]
+def ~partition_table(size: int, count: int) = ([size] |> partition_entry)[count]
 
-export def *gpt = {
+export def ~gpt = {
   # protective mbr
   protective_mbr: mbr.mbr?
   signature: /EFI PART/

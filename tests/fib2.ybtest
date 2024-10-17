@@ -1,8 +1,8 @@
 ====[ source code ]====
-fun fib(n: int) = n if 0 or 1 else (fib(n-1) + fib(n-2))
+fun fib(n: int) = n is 0 or 1 else (fib(n-1) + fib(n-2))
 
 export 
-fun *test = {
+fun ~test = {
     x: ~
     let return = fib(x)
 }

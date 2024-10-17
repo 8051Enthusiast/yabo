@@ -1,6 +1,6 @@
 ====[ source code ]====
 export
-fun *test = {
+fun ~test = {
   let parser = [2][3]
   a: parser
   let b = a.sizeof

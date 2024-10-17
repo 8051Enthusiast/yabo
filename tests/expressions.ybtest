@@ -1,24 +1,24 @@
 ====[ source code ]====
-def *i8l = {
+def ~i8l = {
     byte: ~
     let sign_bit: int = byte & 0x80
     let return: int = byte - 2 * sign_bit
 }
 
-def *i16l = {
+def ~i16l = {
     lo: ~
     hi: i8l
     let return: int = lo + 256 * hi
 }
 
-export def *test = {
+export def ~test = {
     a: i16l
     unit: +
     b: i16l
     let plus = a + b
     let minus = a - b
     let times = a * b
-    | let _ = b if 0
+    | let _ = b is 0
       let div = 0
       let mod = 0
     | let div = a / b

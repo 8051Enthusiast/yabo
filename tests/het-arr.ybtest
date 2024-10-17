@@ -1,17 +1,17 @@
 ====[ source code ]====
-def *u8l_biased(x: int) = {
+def ~u8l_biased(x: int) = {
   a: ~, let return = a + x
 }
-def [int] *> u16l = {
+def [int] ~> u16l = {
   lo: ~, hi: ~
   let return = hi << 8 | lo
 }
 export
-def *test = {
+def ~test = {
   tag: ~
   arr1: u8l_biased(1)[8], arr2: [8]
-  let arr = tag if 0 then arr1 else arr2
-  let return = arr *> u16l[4]
+  let arr = tag is 0 then arr1 else arr2
+  let return = arr ~> u16l[4]
 }
 
 ====[ binary 1 ]====

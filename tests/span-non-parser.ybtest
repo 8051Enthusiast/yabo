@@ -1,12 +1,12 @@
 ====[ source code ]====
-def *let_statements = {
+def ~let_statements = {
   let a = 1
   let b = 2
   let c = span a..b
   #~^ error[306] span may only reference identifiers of parse statements in the current or ancestor scope
 }
 
-def *indirect = {
+def ~indirect = {
   a: ~
   | b: ~
   | +
@@ -14,9 +14,9 @@ def *indirect = {
   #~^ error[306] span may only reference identifiers of parse statements in the current or ancestor scope
 }
 
-fun function() = {:
+fun function() = {|
   let a = 1
   let b = 2
   let c = span a..b
   #~^ error[306] span may only reference identifiers of parse statements in the current or ancestor scope
-:}
+|}

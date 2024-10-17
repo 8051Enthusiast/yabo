@@ -1,10 +1,10 @@
 ====[ source code ]====
 static x = 5
 
-fun twice(f: 'a('a)) = <x: 'a> f?(f?(x))
+fun twice(f: ('a) -> 'a) = <x: 'a> f?(f?(x))
 
 export
-fun *test = {
+fun ~test = {
   let y = 10
   let add15 = <z> x + y + z
   let return = twice(add15)(12)

@@ -1,13 +1,13 @@
 ====[ source code ]====
 import text
 
-fun *ws = /[\n\r \t]*/!
-fun *string = /"(\\"|[^"])*"/
-fun *element: int = {ws, return: value?, ws}
-fun *member(inner: *'t): 't = {
+fun ~ws = /[\n\r \t]*/!
+fun ~string = /"(\\"|[^"])*"/
+fun ~element: int = {ws, return: value?, ws}
+fun ~member(inner: ~'t): 't = {
   ws, string?, ws, /:/, return: inner?
 }
-fun *members(acc: int, red: bit): int = {
+fun ~members(acc: int, red: bit): int = {
   | member({ws, /"red"/, ws})?
     let now_red = true, let first = 0
   | first: member(element)?
@@ -16,31 +16,31 @@ fun *members(acc: int, red: bit): int = {
   | /,/, return: members(sum, now_red)?
   | let return = when?(now_red) then 0 else sum
 }
-fun *object: int = {
+fun ~object: int = {
   /\{/
   | return: members(0, false)?
   | ws, let return = 0
   /\}/!
 }
-fun *elements: int = {
+fun ~elements: int = {
   first: element?
   | /,/, cont: elements?
     let return = first + cont
   | let return = first
 }
-fun *array: int = {
+fun ~array: int = {
   /\[/
   | return: elements?
   | ws, let return = 0
   /\]/!
 }
-fun *number: int = {
+fun ~number: int = {
   | /-/, let sign = -1
   | let sign = 1
   num: text.num?
   let return = sign * num
 }
-fun *value: int = {
+fun ~value: int = {
   | return: object?
   | return: array?
   | return: number?
@@ -48,7 +48,7 @@ fun *value: int = {
   | /true|false|null/, let return = 0
 }
 export
-fun *test = element?
+fun ~test = element?
 
 ====[ text 1 ]====
 [1,2,3]

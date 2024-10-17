@@ -1,8 +1,8 @@
 ====[ source code ]====
 export
-def *test = {
+def ~test = {
   # make sure the lexer/parser doesn't get confused by the # in the char
-  x: u8, let return = x if '#' then 1 else 0
+  x: u8, let return = x is '#' then 1 else 0
 }
 
 ====[ text 1 ]====

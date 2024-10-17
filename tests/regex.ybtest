@@ -1,5 +1,5 @@
 ====[ source code ]====
-export def *test = /h.*o/
+export def ~test = /h.*o/
 
 ====[ text 1 ]====
 hfweoijfhalalfotwrtg

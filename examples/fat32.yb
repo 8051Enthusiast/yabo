@@ -1,6 +1,6 @@
 # fields of the FAT32 header
 export
-def *fat32_header = {
+def ~fat32_header = {
   jmp_boot: [3]
   oem_name: [8]
   byts_per_sec: u16l
@@ -34,21 +34,21 @@ def *fat32_header = {
 static header = fat32_header at 0
 
 # defines an integer in a FAT entry that has the high 4 bits masked out
-def *masked_fat_val = {
+def ~masked_fat_val = {
   val: u32l
   let return = val & 0x0FFFFFFF
 }
 
 # defines a FAT entry
-def *fat_entry = {
+def ~fat_entry = {
   # if it is in the range 2 to 0x0FFFFFEF, it is a valid cluster
   # and points to the next cluster in the file
-  | next: masked_fat_val if 2..0x0FFFFFEF
+  | next: masked_fat_val is 2..0x0FFFFFEF
   | other: masked_fat_val
 }
 
 # defines a fat table of a given size
-def *fat_table = fat_entry[(header.fat_sz32 * header.byts_per_sec) / u32l.sizeof]
+def ~fat_table = fat_entry[(header.fat_sz32 * header.byts_per_sec) / u32l.sizeof]
 
 static fat = fat_table at (header.byts_per_sec * header.rsvd_sec_cnt)
 
@@ -62,10 +62,10 @@ static blocks = {
   return: [header.bytes_per_cluster][count_of_clusters]
 } at 0
 
-fun parse_block(idx: int, data: *'t(int)) = blocks.[idx - 2] *> data!(idx)?
+fun parse_block(idx: int, data: (int) -> ~'t) = blocks.[idx - 2] ~> data!(idx)?
 
 # defines a short entry in the directory
-def *short_entry = {
+def ~short_entry = {
   name: [8]
   ext: [3]
   attr: u8
@@ -83,10 +83,10 @@ def *short_entry = {
 }
 
 # defines a long entry in the directory
-def *long_entry = {
+def ~long_entry = {
   ord: u8
   name1: u16l[5]
-  attr: u8 if 0x0F
+  attr: u8 is 0x0F
   type: u8
   chksum: u8
   name2: u16l[6]
@@ -95,8 +95,8 @@ def *long_entry = {
 }
 
 # a single entry in the directory, either a long or short entry, or empty
-def *dir_entry = [32] |> {
-  | empty: u8 if 0 or 0xE5
+def ~dir_entry = [32] |> {
+  | empty: u8 is 0 or 0xE5
   | long: long_entry?
   | short: short_entry
     | assert(short.attr & 0x10 != 0)?
@@ -107,13 +107,13 @@ def *dir_entry = [32] |> {
 }
 
 # a chain of directory entries
-def *dir_entries(idx: int) = entry(dir_entry[..], idx)
+def ~dir_entries(idx: int) = entry(dir_entry[..], idx)
 
 # a chain of file entries
-def *file_entry(idx: int) = entry([..], idx)
+def ~file_entry(idx: int) = entry([..], idx)
 
 # takes a data type and returns a linked list of entries using the FAT
-def *entry(data_type: *'t, idx: int) = {
+def ~entry(data_type: ~'t, idx: int) = {
   data: data_type!
   | let next_idx = fat.[idx].?next
     let next = parse_block(next_idx, entry(data_type, ..))
@@ -121,4 +121,4 @@ def *entry(data_type: *'t, idx: int) = {
 }
 
 export
-def *fat32 = {let return = parse_block(header.root_clus, dir_entries)}
+def ~fat32 = {let return = parse_block(header.root_clus, dir_entries)}

@@ -2,8 +2,8 @@
 # prev_address is the address of the previous node
 # (0 if not existent), and cur_address is the address
 # of this node itself
-def *xor_linked_list(prev_addr: int, cur_addr: int) = {
-  # this branch results in no fields if current address is zero
+def ~xor_linked_list(prev_addr: int, cur_addr: int) = {
+  # this branch results in no fields is current address is zero
   | assert(cur_addr == 0)?
   # otherwise we have a valid address
   # xor_addr is the value prev_addr ^ next_addr
@@ -22,7 +22,7 @@ def *xor_linked_list(prev_addr: int, cur_addr: int) = {
 
 # the start of the xor linked list, given by a single 16-bit pointer
 export
-fun *xor_linked_list_head = {
+fun ~xor_linked_list_head = {
   addr: u16l
   let next = xor_linked_list(0, addr) at addr
 }

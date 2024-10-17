@@ -614,7 +614,7 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo<'arena>> TypeMatrixCtx<'arena, Inf
     }
 
     pub fn array_parser_combinator(&mut self, to: MatrixShape) -> SResult<Matrix<'arena>> {
-        // remember that the type of `array`` is (['arg] *> ['ret])(['arg] *> 'ret, int)
+        // remember that the type of `array`` is (['arg] ~> ['ret])(['arg] ~> 'ret, int)
         const MATRIX_ROWS: &[Row] = &[
             //                 parse  'ret   'arg
             Row::const_inner([false, false, false]), // fun

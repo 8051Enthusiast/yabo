@@ -1,6 +1,6 @@
 ====[ source code ]====
-fun *binary_tree(inner: *'t) = {
-  | tag: u8 if 0
+fun ~binary_tree(inner: ~'t) = {
+  | tag: u8 is 0
   | tag: u8
     val: u32l
     len: u32l
@@ -9,7 +9,7 @@ fun *binary_tree(inner: *'t) = {
 }
 
 export
-fun *test = {
+fun ~test = {
   tree: binary_tree(test)
   let return = (tree.?val + tree.?left + tree.?right) else 0
 }

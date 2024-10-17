@@ -1,21 +1,21 @@
 ====[ source code ]====
-def *case = {
+def ~case = {
   x: ~
-  let return = (x if 0 then 10
-           else x if 1 then 9
-           else x if 2 then 8
-           else x if 3 then 7
-           else x if 4 then 6
-           else x if 5
-           else x if 6 then 4
-           else x if 7 then 3
-           else x if 8 then 2
-           else x if 9 then 1
-           else x if 10 then 0)
+  let return = (x is 0 then 10
+           else x is 1 then 9
+           else x is 2 then 8
+           else x is 3 then 7
+           else x is 4 then 6
+           else x is 5
+           else x is 6 then 4
+           else x is 7 then 3
+           else x is 8 then 2
+           else x is 9 then 1
+           else x is 10 then 0)
 }
 
 export
-def *test = case[11]
+def ~test = case[11]
 
 ====[ binary 1 ]====
 02 04 06 08 0a 01 03 05 07 09 00

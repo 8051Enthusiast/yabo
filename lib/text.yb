@@ -4,44 +4,44 @@ import parse
 # For 0 <= i < 10, the digit is the corresponding ASCII digit.
 # For 10 <= i < 36, the digit is the corresponding ASCII letter from A to Z.
 # The result is the value of the digit.
-fun *digit(base: int) = {
+fun ~digit(base: int) = {
   x: ~
-  | let value = x if 0x30..0x39 - 0x30
-  | let value = 10 + x if 0x41..0x5a - 0x41
-  | let value = 10 + x if 0x61..0x7a - 0x61
+  | let value = x is 0x30..0x39 - 0x30
+  | let value = 10 + x is 0x41..0x5a - 0x41
+  | let value = 10 + x is 0x61..0x7a - 0x61
   assert(base > value)?
   let return = value
 }
 
-fun *_number_acc(base: int, n: int): int = {
-  | x: digit?(base) if !eof
+fun ~_number_acc(base: int, n: int): int = {
+  | x: digit?(base) is !eof
     return: _number_acc(base, n * base + x)
   | let return = n
 }
 
 # Parses a number in the given base.
-fun *basenum(base: int) = {
+fun ~basenum(base: int) = {
   | /-/, let sign = -1
   | let sign = 1
   # make sure there is at least one digit
-  val: digit?(base) if !eof
+  val: digit?(base) is !eof
   n: _number_acc(base, val)?
   let return = sign * n
 }
 
 # Parses a decimal number
-fun *num = basenum(10)?
+fun ~num = basenum(10)?
 
 # Parses a newline
-fun *newline = /\r\n?|\n/
+fun ~newline = /\r\n?|\n/
 
 # Parses a newline or eof
-fun *line_end = {
+fun ~line_end = {
   | newline?
   | parse.eof?
 }
 
-fun *line = {
+fun ~line = {
   | return: /[^\n\r]*/, newline?
   | return: /[^\n\r]+/, parse.eof?
 }

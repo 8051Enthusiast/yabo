@@ -257,7 +257,7 @@ bool tree_sitter_yabo_external_scanner_scan(void *payload, TSLexer *lexer, const
         is_closing = true;
         lexer->result_symbol = PARSER_BLOCK_CLOSE;
     }
-    if ((valid_symbols[BLOCK_CLOSE] | valid_symbols[DEDENT]) && lookahead == ':') {
+    if ((valid_symbols[BLOCK_CLOSE] | valid_symbols[DEDENT]) && lookahead == '|') {
         lexer->advance(lexer, false);
         if (lexer->lookahead == '}') {
             is_closing = true;
@@ -295,7 +295,7 @@ bool tree_sitter_yabo_external_scanner_scan(void *payload, TSLexer *lexer, const
     if ((valid_symbols[PARSER_BLOCK_OPEN] | valid_symbols[BLOCK_OPEN]) && lookahead == '{') {
         add_simple_state(scanner, BRACE);
         lexer->advance(lexer, false);
-        if (lexer->lookahead == ':') {
+        if (lexer->lookahead == '|') {
             lexer->advance(lexer, false);
             lexer->result_symbol = BLOCK_OPEN;
         } else {

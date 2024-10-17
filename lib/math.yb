@@ -18,10 +18,10 @@ fun gcd(a: int, b: int): int = _gcd_impl(abs(a), abs(b))
 # Returns the least common multiple of a and b.
 fun lcm(a: int, b: int): int = abs(a * b) / gcd(a, b)
 
-fun _ipow_impl(base: int, exp: int, acc: int): int = when?(exp == 0) then acc else {:
+fun _ipow_impl(base: int, exp: int, acc: int): int = when?(exp == 0) then acc else {|
   let factor = when?(exp & 1 == 0) then 1 else base
   let return = _ipow_impl(base * base, exp >> 1, acc * factor)
-:}
+|}
 
 fun ipow(base: int, exp: int): int = when!(exp >= 0) then _ipow_impl(base, exp, 1)
 

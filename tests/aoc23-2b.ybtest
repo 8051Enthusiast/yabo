@@ -3,7 +3,7 @@ import aoc
 import text
 import math
 
-fun *color_power(red: int, green: int, blue: int): int = {
+fun ~color_power(red: int, green: int, blue: int): int = {
   | /[:,;] /, n: text.num?, ~
     | /red/, return: color_power(math.max(red, n), green, blue)
     | /green/, return: color_power(red, math.max(green, n), blue)
@@ -12,7 +12,7 @@ fun *color_power(red: int, green: int, blue: int): int = {
 }
 
 export
-fun *test = aoc.summap(text.line? |> {/Game [0-9]+/, return: color_power(0, 0, 0)})
+fun ~test = aoc.summap(text.line? |> {/Game [0-9]+/, return: color_power(0, 0, 0)})
 
 ====[ text 1 ]====
 Game 1: 3 blue, 4 red; 1 red, 2 green, 6 blue; 2 green

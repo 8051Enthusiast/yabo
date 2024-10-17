@@ -1,5 +1,5 @@
 # Returns a cons-list of the given parser contingent in memory.
-def *list(element: *'r) = {
+def ~list(element: ~'r) = {
   | this: element?
     next: list(element?)
   | +
@@ -9,15 +9,15 @@ def *list(element: *'r) = {
 fun len(xs: list): int = (len(xs.?next) + 1) else 0
 
 # Skips the first n elements of a list xs.
-fun skip(xs: list, n: int): list = n if 0 then xs else skip?(xs.?next, n - 1)
+fun skip(xs: list, n: int): list = n is 0 then xs else skip?(xs.?next, n - 1)
 
-fun first(xs: list[*'r]): 'r = xs.?this
+fun first(xs: list[~'r]): 'r = xs.?this
 
-fun last(xs: list[*'r]): 'r = xs.?next.?next then last!(xs.?next) else xs.?this
+fun last(xs: list[~'r]): 'r = xs.?next.?next then last!(xs.?next) else xs.?this
 
-fun fold(xs: list[*'r], init: 't, f: 't('t, 'r)): 't = {:
+fun fold(xs: list[~'r], init: 't, f: ('t, 'r) -> 't): 't = {|
   | let x = xs.?this
     let new_init = f?(init, x)?
     let return = fold(xs.next, new_init, f)
   | let return = init
-:}
+|}

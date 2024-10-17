@@ -1,11 +1,11 @@
 ====[ source code ]====
-def *block = {
+def ~block = {
   tag: ~
-  | let ignore: int = tag if 1
+  | let ignore: int = tag is 1
     next: block
   | more: ~
 }
-export def *test = {
+export def ~test = {
   a: block
   b: block
 }

@@ -3,7 +3,7 @@ import math
 import text
 
 export
-fun *test = {
+fun ~test = {
   a: text.num?, /, /, b: text.num?
   let abs_a = math.abs(a)
   let abs_b = math.abs(b)

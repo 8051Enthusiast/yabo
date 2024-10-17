@@ -1,6 +1,6 @@
 ====[ source code ]====
 export
-fun *test = {
+fun ~test = {
   | let y = 3
   | +
 }

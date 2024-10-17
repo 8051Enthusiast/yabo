@@ -1,13 +1,13 @@
 ====[ source code ]====
-def *u32b_or_16b(n: int) = {
-  | let _ = n if 0
+def ~u32b_or_16b(n: int) = {
+  | let _ = n is 0
     let return = u32b
   | let return = u16b
 }
-export def *test = {
+export def ~test = {
   tag: ~
   parser: u32b_or_16b(tag)
-  | return: parser if 0..1000
+  | return: parser is 0..1000
   | let return = 123
 }
 

@@ -943,7 +943,7 @@ mod tests {
     fn eval_test() {
         let ctx = <Context<HirTestDatabase> as Import>::mock(
             r#"
-def for [u8] *> expr1 = {
+def for [u8] ~> expr1 = {
   | a: u64
     b: u32
   | a: u64,

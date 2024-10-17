@@ -1,9 +1,9 @@
 ====[ source code ]====
-def *elf16 = (u8 at 0x5) if 1 then u16l else u16b
-def *elf32 = (u8 at 0x5) if 1 then u32l else u32b
+def ~elf16 = (u8 at 0x5) is 1 then u16l else u16b
+def ~elf32 = (u8 at 0x5) is 1 then u32l else u32b
 
 export
-def *test = {
+def ~test = {
   a: elf16
   b: elf16
   c: elf32
