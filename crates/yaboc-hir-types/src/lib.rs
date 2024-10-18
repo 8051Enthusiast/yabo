@@ -38,7 +38,7 @@ use yaboc_types::{
 };
 use yaboc_types::{TypeConvError, TypeVarRef};
 
-use yaboc_hir::{self, Hirs};
+use yaboc_hir::{self, BlockReturnKind, Hirs};
 
 pub struct FullTypeId;
 pub struct PubTypeId;
@@ -340,32 +340,49 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         })
     }
 
+    fn wrap_block_return(
+        &mut self,
+        kind: BlockKind,
+        result: InfTypeId<'intern>,
+    ) -> InfTypeId<'intern> {
+        match kind {
+            BlockKind::Parser => {
+                let arg = self.infctx.var();
+                self.infctx.parser(result, arg)
+            }
+            BlockKind::Inline => self.infctx.zero_arg_function(result),
+        }
+    }
+
     fn infer_block(
         &mut self,
         b: hir::BlockId,
         kind: BlockKind,
     ) -> Result<InfTypeId<'intern>, TypeError> {
         let block = b.lookup(self.db)?;
-        Ok(if block.returns {
-            let to_id = block.root_context.0.child_field(self.db, FieldName::Return);
-            let result = self.inftypes[&to_id];
-            match kind {
-                BlockKind::Parser => {
-                    let arg = self.infctx.var();
-                    self.infctx.parser(result, arg)
-                }
-                BlockKind::Inline => self.infctx.zero_arg_function(result),
+        Ok(match block.returns {
+            BlockReturnKind::Returns => {
+                let to_id = block.root_context.0.child_field(self.db, FieldName::Return);
+                let result = self.inftypes[&to_id];
+                self.wrap_block_return(kind, result)
             }
-        } else {
-            let pd = self.db.hir_parent_parserdef(b.0)?;
-            let ty_vars = (0..self.loc.vars.defs.len() as u32)
-                .map(|i| {
-                    self.infctx
-                        .intern_infty(InferenceType::TypeVarRef(TypeVarRef(pd.0, i)))
-                })
-                .collect::<Vec<_>>();
-            self.infctx
-                .block(b.0, kind == BlockKind::Parser, &ty_vars)?
+            BlockReturnKind::Fields => {
+                let pd = self.db.hir_parent_parserdef(b.0)?;
+                let ty_vars = (0..self.loc.vars.defs.len() as u32)
+                    .map(|i| {
+                        self.infctx
+                            .intern_infty(InferenceType::TypeVarRef(TypeVarRef(pd.0, i)))
+                    })
+                    .collect::<Vec<_>>();
+                self.infctx
+                    .block(b.0, kind == BlockKind::Parser, &ty_vars)?
+            }
+            BlockReturnKind::Nothing => {
+                let result = self
+                    .infctx
+                    .intern_infty(InferenceType::Primitive(PrimitiveType::Unit));
+                self.wrap_block_return(kind, result)
+            }
         })
     }
 

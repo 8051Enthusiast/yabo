@@ -753,13 +753,20 @@ pub enum BlockKind {
     Inline,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BlockReturnKind {
+    Fields,
+    Returns,
+    Nothing,
+}
+
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Block {
     pub id: BlockId,
     pub root_context: ContextId,
     pub super_context: Option<ContextId>,
     pub enclosing_expr: ExprId,
-    pub returns: bool,
+    pub returns: BlockReturnKind,
     pub kind: BlockKind,
 }
 

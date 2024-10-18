@@ -9,7 +9,7 @@ use yaboc_base::{
 use yaboc_hir::{HirIdWrapper, HirNode, Module, ParserDefId};
 use yaboc_req::{NeededBy, RequirementSet};
 
-use crate::{strictness::Strictness, CallMeta, ControlFlow, FunKind, InsRef, MirKind, ZstVal};
+use crate::{strictness::Strictness, CallMeta, ControlFlow, FunKind, InsRef, MirKind, UninitVal};
 
 use super::{
     BBRef, Comp, ExceptionRetreat, Function, IntBinOp, IntUnOp, MirInstr, Mirs, Place, PlaceOrigin,
@@ -102,15 +102,17 @@ impl Display for Comp {
     }
 }
 
-impl<DB: Mirs + ?Sized> DatabasedDisplay<DB> for ZstVal {
+impl<DB: Mirs + ?Sized> DatabasedDisplay<DB> for UninitVal {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
-            ZstVal::Nil => write!(f, "+"),
-            ZstVal::Single => write!(f, "~"),
-            ZstVal::Array => write!(f, "[]"),
-            ZstVal::ArrayFill => write!(f, "[..]"),
-            ZstVal::Regex(regex) => regex.db_fmt(f, db),
-            ZstVal::ParserDef(pd) => dbwrite!(f, db, "parserdef {}", &pd.0),
+            UninitVal::Nil => write!(f, "+"),
+            UninitVal::Single => write!(f, "~"),
+            UninitVal::Array => write!(f, "[]"),
+            UninitVal::ArrayFill => write!(f, "[..]"),
+            UninitVal::Regex(regex) => regex.db_fmt(f, db),
+            UninitVal::ParserDef(pd) => dbwrite!(f, db, "parserdef {}", &pd.0),
+            UninitVal::Block(bd) => dbwrite!(f, db, "block {}", &bd.0),
+            UninitVal::Lambda(lambda_id) => dbwrite!(f, db, "lambda {}", &lambda_id.0),
         }
     }
 }

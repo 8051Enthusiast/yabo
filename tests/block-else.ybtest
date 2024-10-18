@@ -1,0 +1,19 @@
+====[ source code ]====
+export
+fun ~test = {
+  x: ~
+  x is 0 then {~, ~} else {~}
+  return: ~
+}
+
+====[ binary 1 ]====
+00 01 02 03
+
+====[ output 1 ]====
+3
+
+====[ binary 2 ]====
+01 01 02 03
+
+====[ output 2 ]====
+2

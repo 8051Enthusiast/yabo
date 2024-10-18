@@ -24,7 +24,7 @@ use yaboc_types::{Type, TypeId};
 
 use crate::{
     BBRef, CallMeta, Comp, ExceptionRetreat, FunctionWriter, IntBinOp, IntUnOp, Place, PlaceInfo,
-    PlaceOrigin, PlaceRef, ZstVal,
+    PlaceOrigin, PlaceRef, UninitVal,
 };
 
 // anyone wanna play some type tetris?
@@ -253,13 +253,13 @@ impl<'a> ConvertExpr<'a> {
         place_ref
     }
 
-    fn load_zst(&mut self, val: ZstVal, loc: ExpressionLoc) -> PlaceRef {
+    fn load_uninit(&mut self, val: UninitVal, loc: ExpressionLoc) -> PlaceRef {
         // loading a zst requires keeping the mono layout information
         // in order to get the vtable, which may be lost if it is
         // loaded directly into a multi-layout so we make a stack place
         // which is guaranteed to be mono
         let stack_place = self.new_stack_place(loc.ty, loc.origin);
-        self.f.load_zst(val, stack_place);
+        self.f.load_uninit(val, stack_place);
         if let Some(place) = loc.place {
             self.copy(stack_place, place);
             place
@@ -305,12 +305,14 @@ impl<'a> ConvertExpr<'a> {
         Ok(place_ref)
     }
 
-    fn init_block_captures(&mut self, block: BlockId, loc: ExpressionLoc) -> SResult<PlaceRef> {
+    fn load_block(&mut self, block: BlockId, loc: ExpressionLoc) -> SResult<PlaceRef> {
+        self.load_uninit(UninitVal::Block(block), loc);
         let captures = self.db.captures(block);
         self.init_captures(&captures, loc)
     }
 
-    fn init_lambda_captures(&mut self, lambda: LambdaId, loc: ExpressionLoc) -> SResult<PlaceRef> {
+    fn load_lambda(&mut self, lambda: LambdaId, loc: ExpressionLoc) -> SResult<PlaceRef> {
+        self.load_uninit(UninitVal::Lambda(lambda), loc);
         let captures = self.db.lambda_captures(lambda);
         self.init_captures(&captures, loc)
     }
@@ -499,16 +501,16 @@ impl<'a> ConvertExpr<'a> {
             ResolvedAtom::Number(n) => self.load_int(*n, loc),
             ResolvedAtom::Char(c) => self.load_char(*c, loc),
             ResolvedAtom::Bool(b) => self.load_bool(*b, loc),
-            ResolvedAtom::ParserDef(pd) => self.load_zst(ZstVal::ParserDef(*pd), loc),
+            ResolvedAtom::ParserDef(pd) => self.load_uninit(UninitVal::ParserDef(*pd), loc),
             ResolvedAtom::Global(pd) => self.load_global(*pd, loc)?,
-            ResolvedAtom::Single => self.load_zst(ZstVal::Single, loc),
-            ResolvedAtom::Nil => self.load_zst(ZstVal::Nil, loc),
-            ResolvedAtom::Array => self.load_zst(ZstVal::Array, loc),
-            ResolvedAtom::ArrayFill => self.load_zst(ZstVal::ArrayFill, loc),
+            ResolvedAtom::Single => self.load_uninit(UninitVal::Single, loc),
+            ResolvedAtom::Nil => self.load_uninit(UninitVal::Nil, loc),
+            ResolvedAtom::Array => self.load_uninit(UninitVal::Array, loc),
+            ResolvedAtom::ArrayFill => self.load_uninit(UninitVal::ArrayFill, loc),
             ResolvedAtom::Span(start, end) => self.convert_span(loc, *start, *end)?,
-            ResolvedAtom::Regex(regex) => self.load_zst(ZstVal::Regex(*regex), loc),
-            ResolvedAtom::Block(block, _) => self.init_block_captures(*block, loc)?,
-            ResolvedAtom::Lambda(lambda) => self.init_lambda_captures(*lambda, loc)?,
+            ResolvedAtom::Regex(regex) => self.load_uninit(UninitVal::Regex(*regex), loc),
+            ResolvedAtom::Block(block, _) => self.load_block(*block, loc)?,
+            ResolvedAtom::Lambda(lambda) => self.load_lambda(*lambda, loc)?,
         })
     }
 
