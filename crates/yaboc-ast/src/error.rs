@@ -3,7 +3,7 @@ use yaboc_base::error::{
     Report,
 };
 
-use super::{convert::GenericParseError, Asts};
+use super::{convert::ParseError, Asts};
 
 pub fn errors(db: &(impl Asts + ?Sized)) -> Vec<Report> {
     let mut ret = Vec::new();
@@ -17,8 +17,20 @@ pub fn errors(db: &(impl Asts + ?Sized)) -> Vec<Report> {
     ret
 }
 
-fn parse_error_report(f: GenericParseError) -> Report {
-    Report::new(DiagnosticKind::Error, f.loc.file, "Parse error")
-        .with_code(100)
-        .with_label(Label::new(f.loc).with_message("error occured here"))
+fn parse_error_report(f: ParseError) -> Report {
+    match f {
+        ParseError::Generic(span) => Report::new(DiagnosticKind::Error, span.file, "Parse error")
+            .with_code(100)
+            .with_label(Label::new(span).with_message("error occured here")),
+        ParseError::InvalidChar(span) => {
+            Report::new(DiagnosticKind::Error, span.file, "Invalid char literal")
+                .with_code(101)
+                .with_label(Label::new(span).with_message("error occured here"))
+        }
+        ParseError::NumberTooBig(span) => {
+            Report::new(DiagnosticKind::Error, span.file, "Number literal too big")
+                .with_code(103)
+                .with_label(Label::new(span).with_message("error occured here"))
+        }
+    }
 }

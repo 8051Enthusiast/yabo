@@ -1,0 +1,3 @@
+====[ source code ]====
+fun test() = 10000000000000000000000000000000000
+             #~^error[103] Number literal too big
