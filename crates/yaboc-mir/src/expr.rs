@@ -504,7 +504,6 @@ impl<'a> ConvertExpr<'a> {
             ResolvedAtom::ParserDef(pd) => self.load_uninit(UninitVal::ParserDef(*pd), loc),
             ResolvedAtom::Global(pd) => self.load_global(*pd, loc)?,
             ResolvedAtom::Single => self.load_uninit(UninitVal::Single, loc),
-            ResolvedAtom::Nil => self.load_uninit(UninitVal::Nil, loc),
             ResolvedAtom::Array => self.load_uninit(UninitVal::Array, loc),
             ResolvedAtom::ArrayFill => self.load_uninit(UninitVal::ArrayFill, loc),
             ResolvedAtom::Span(start, end) => self.convert_span(loc, *start, *end)?,

@@ -216,7 +216,6 @@ fn val_expression(
                 }
                 ast::ParserAtom::Atom(atom) => ParserAtom::Atom(atom.clone()),
                 ast::ParserAtom::Single => ParserAtom::Single,
-                ast::ParserAtom::Nil => ParserAtom::Nil,
                 ast::ParserAtom::ArrayFill => ParserAtom::ArrayFill,
                 ast::ParserAtom::Span(start, end) => ParserAtom::Span(*start, *end),
                 ast::ParserAtom::Regex(re) => ParserAtom::Regex(*re),

@@ -105,7 +105,6 @@ impl Display for Comp {
 impl<DB: Mirs + ?Sized> DatabasedDisplay<DB> for UninitVal {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
-            UninitVal::Nil => write!(f, "+"),
             UninitVal::Single => write!(f, "~"),
             UninitVal::Array => write!(f, "[]"),
             UninitVal::ArrayFill => write!(f, "[..]"),

@@ -122,9 +122,8 @@ def ~nested_block = {
 def ~no_block = u16l
 ```
 
-There are two special built-in parsers available: `~` and `+`:
-* `~` is a parser that returns a single element of the input array and advances the position by one.
-* `+` parses zero elements and returns the unit value.
+There is a special built-in parser `~`: it returns a single element of the input array and advances the position by one.
+For example, `def ~single = ~` has a length of one and just returns the byte of the input itself.
 
 If we want to use a parser from the command line or playground, we have to add an `export` in front of the definition:
 ```
@@ -388,11 +387,11 @@ If a `return` is in a branch, it must be in every branch, however if there is no
 ```
 def ~maybe(f: ~'t) = {
   | some: f?
-  # remember: `+` parses zero elements and returns the unit value
-  \ +
+  \ {}
 }
 ```
 This returns a structure containing a single `some` field with the output of `f` if it succeeds, or an empty structure if it fails.
+Note that we are using an empty block here to get a zero-length parser, but we could also use the `nil` parser from the prelude which has the same purpose.
 
 ### Optional Fields
 
@@ -444,7 +443,7 @@ As an example, take a contiguous recursive list:
 def ~list(f: ~'t) = {
   | head: f?
     tail: list(f)
-  \ +
+  \ {}
 }
 ```
 If we naively tried to construct the resulting value without using thunks, we would end up with arbitrarily deep nested structures like (leaving `head` out), `{tail: {tail: {tail: {}}}}`.
@@ -786,7 +785,6 @@ Appendix A: Overview of Expressions
 | `0x..`, `0..` | Literal  | Hexadecimal, Decimal literals |
 | `/.../`, `h/.../` | Literal  | Create regex parser |
 | `span foo..bar` | Literal | Create span array of fields from `foo` to `bar` |
-| `+`      | Literal       | Unit parser        |
 | `~`      | Literal       | Single value parser |
 | `{...}`  | Block         | Create block parser |
 | `{| ... |}`| Inline Block  | Create block that is immediately evaluated |

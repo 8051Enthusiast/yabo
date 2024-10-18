@@ -191,7 +191,6 @@ impl From<TypeVar> for TypeAtom {
 pub enum ParserAtom {
     Atom(Atom),
     Single,
-    Nil,
     ArrayFill,
     Span(FieldName, FieldName),
     Regex(Regex),

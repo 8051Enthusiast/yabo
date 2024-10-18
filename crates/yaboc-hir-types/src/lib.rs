@@ -457,7 +457,6 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                     ResolvedAtom::Number(_) => self.infctx.int(),
                     ResolvedAtom::Bool(_) => self.infctx.bit(),
                     ResolvedAtom::Single => self.infctx.single(),
-                    ResolvedAtom::Nil => self.infctx.nil(),
                     ResolvedAtom::Array => self.infctx.array_parser(),
                     ResolvedAtom::ArrayFill => self.infctx.array_fill_parser(),
                     // the ambient type can only be none if we had another error before it,

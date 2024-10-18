@@ -823,15 +823,6 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
             arg: for_loop,
         })
     }
-    pub fn nil(&mut self) -> InfTypeId<'intern> {
-        let ty_var = self.var();
-        let for_loop = self.intern_infty(InferenceType::Loop(ArrayKind::Each, ty_var));
-        let unit_type = self.intern_infty(InferenceType::Primitive(PrimitiveType::Unit));
-        self.intern_infty(InferenceType::ParserArg {
-            result: unit_type,
-            arg: for_loop,
-        })
-    }
     pub fn regex(&mut self) -> InfTypeId<'intern> {
         let u8 = self.u8();
         let u8_array = self.array(ArrayKind::Each, u8);

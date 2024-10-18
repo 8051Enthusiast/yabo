@@ -332,7 +332,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             | MonoLayout::SlicePtr
             | MonoLayout::Range
             | MonoLayout::Single
-            | MonoLayout::Nil
             | MonoLayout::Regex(_, _)
             | MonoLayout::ArrayParser(None)
             | MonoLayout::ArrayFillParser(None) => self.create_mask_simple(layout),
@@ -901,30 +900,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         Ok(llvm_fun)
     }
 
-    fn create_nil_parse(
-        &mut self,
-        from: ILayout<'comp>,
-        layout: IMonoLayout<'comp>,
-        req: RequirementSet,
-    ) -> IResult<FunctionValue<'llvm>> {
-        let llvm_fun = self.parser_fun_val_tail(layout, from, req);
-        self.add_entry_block(llvm_fun);
-        self.set_always_inline(llvm_fun);
-        let (ret, _, _) = parser_values(llvm_fun, layout, from);
-        if req.contains(NeededBy::Val) {
-            let unit_type = self
-                .compiler_database
-                .db
-                .intern_type(Type::Primitive(PrimitiveType::Unit));
-            let unit_layout = canon_layout(self.layouts, unit_type).unwrap();
-            let undef = CgValue::new(unit_layout, self.invalid_ptr());
-            self.terminate_tail_typecast(undef, ret)?;
-        } else {
-            self.builder.build_return(Some(&self.const_i64(0)))?;
-        }
-        Ok(llvm_fun)
-    }
-
     fn create_error_parse(
         &mut self,
         from: ILayout<'comp>,
@@ -1252,7 +1227,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_len_fun(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
         match layout.mono_layout().0 {
             MonoLayout::Single => self.create_const_len_fun(layout, 1),
-            MonoLayout::Nil => self.create_const_len_fun(layout, 0),
             MonoLayout::Regex(regex, _) => {
                 if let Some(len) = self.compiler_database.db.regex_len(*regex).unwrap() {
                     self.create_const_len_fun(layout, len as i64)
@@ -1452,7 +1426,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             }
             let mut create_fun = match layout.mono_layout().0 {
                 MonoLayout::Single => Self::create_single_parse,
-                MonoLayout::Nil => Self::create_nil_parse,
                 MonoLayout::NominalParser(..) => Self::create_pd_parse,
                 MonoLayout::BlockParser(..) => Self::create_block_parse,
                 MonoLayout::Regex(..) => Self::create_regex_parse,

@@ -105,7 +105,6 @@ pub enum MonoLayout<Inner> {
     SlicePtr,
     Range,
     Single,
-    Nil,
     Regex(Regex, bool),
     IfParser(Inner, HirConstraintId, WiggleKind),
     ArrayParser(Option<(Inner, Option<Inner>)>),
@@ -544,10 +543,6 @@ impl<'a> ILayout<'a> {
                         }
                     }
                     MonoLayout::Single => from.array_primitive(ctx),
-                    MonoLayout::Nil => Ok(ctx.dcx.intern(Layout::Mono(
-                        MonoLayout::Primitive(PrimitiveType::Unit),
-                        result_type,
-                    ))),
                     MonoLayout::Regex(..) => Ok(from),
                     MonoLayout::IfParser(inner, ..) => inner.apply_arg(ctx, from),
                     MonoLayout::ArrayParser(Some((parser, Some(_))))
@@ -788,7 +783,6 @@ impl<'a> ILayout<'a> {
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::U8), _) => <&Zst>::tsize(data),
             Layout::Mono(
                 MonoLayout::Single
-                | MonoLayout::Nil
                 | MonoLayout::Regex(_, _)
                 | MonoLayout::ArrayParser(None)
                 | MonoLayout::ArrayFillParser(None),
@@ -1164,7 +1158,6 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ResolvedAtom::Bool(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Bit)),
                 ResolvedAtom::Val(id) => ctx.var_by_id(id)?,
                 ResolvedAtom::Single => make_layout(MonoLayout::Single),
-                ResolvedAtom::Nil => make_layout(MonoLayout::Nil),
                 ResolvedAtom::Array => make_layout(MonoLayout::ArrayParser(None)),
                 ResolvedAtom::ArrayFill => make_layout(MonoLayout::ArrayFillParser(None)),
                 ResolvedAtom::Span(..) => {

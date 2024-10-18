@@ -11,8 +11,8 @@ fun ['t] ~> assert(big: bit) = {
 # ```
 fun when(big: bit) = big is true
 
-# Same as +
-fun ~nil = +
+# Same as {}
+fun ~nil = {}
 
 # Maps a function f over an array.
 fun ['t] ~> map(f: ('t) -> 'r) = {x: ~, let return = f?(x)}[..]

@@ -71,7 +71,6 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for ParserAtom {
         match self {
             ParserAtom::Atom(atom) => atom.db_fmt(f, db),
             ParserAtom::Single => dbwrite!(f, db, "~"),
-            ParserAtom::Nil => dbwrite!(f, db, "+"),
             ParserAtom::ArrayFill => dbwrite!(f, db, "[..]"),
             ParserAtom::Span(start, end) => dbwrite!(f, db, "{}..{}", start, end),
             ParserAtom::Regex(regex) => regex.db_fmt(f, db),
