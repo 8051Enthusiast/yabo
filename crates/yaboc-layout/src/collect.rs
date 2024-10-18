@@ -207,10 +207,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     self.register_parser_or_function(mono);
                     self.register_len(*inner_parser);
                 }
-                MonoLayout::Single
-                | MonoLayout::Nil
-                | MonoLayout::IfParser(..)
-                | MonoLayout::Regex(..) => {
+                MonoLayout::Single | MonoLayout::IfParser(..) | MonoLayout::Regex(..) => {
                     for bt_status in mono.backtrack_statuses(self.ctx) {
                         if self.parsers.insert(bt_status) && TRACE_COLLECTION {
                             dbeprintln!(self.ctx.db, "[collection] registered parser {}", &mono);

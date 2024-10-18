@@ -593,7 +593,6 @@ astify! {
         Niladic(with_span_data(block)),
         Niladic(with_span_data(lambda)),
         Niladic(with_span_data(single)),
-        Niladic(with_span_data(nil)),
         Niladic(with_span_data(array_fill)),
         Niladic(parser_span),
         Niladic(with_span_data(regex_literal)),
@@ -813,10 +812,6 @@ fn byte_slice(_: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<TypeAtom> 
 
 fn single(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ParserAtom> {
     Ok(ParserAtom::Single)
-}
-
-fn nil(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ParserAtom> {
-    Ok(ParserAtom::Nil)
 }
 
 fn array_fill(_: &dyn Asts, _: FileId, _: TreeCursor) -> ParseResult<ParserAtom> {

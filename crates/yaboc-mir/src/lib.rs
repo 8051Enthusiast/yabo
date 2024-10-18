@@ -182,7 +182,6 @@ impl TryFrom<&ValBinOp> for Comp {
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum UninitVal {
-    Nil,
     Single,
     Array,
     ArrayFill,

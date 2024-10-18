@@ -240,7 +240,6 @@ impl<'a> SizeTermBuilder<'a> {
                         ResolvedAtom::Char(c) => self.push_term(Term::Const(c.into()), src),
                         ResolvedAtom::Bool(b) => self.push_term(Term::Const(b.into()), src),
                         ResolvedAtom::Single => self.push_term(Term::Const(1), src),
-                        ResolvedAtom::Nil => self.push_term(Term::Const(0), src),
                         ResolvedAtom::Array => self.push_term(Term::Arr, src),
                         ResolvedAtom::Span(..) => self.push_term(Term::Span, src),
                         ResolvedAtom::Block(bid, _) => self.create_block(bid)?,

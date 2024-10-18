@@ -25,7 +25,6 @@ impl<DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'_> {
                 MonoLayout::SlicePtr => write!(f, "sliceptr"),
                 MonoLayout::Range => write!(f, "range"),
                 MonoLayout::Single => write!(f, "single"),
-                MonoLayout::Nil => write!(f, "nil"),
                 MonoLayout::Nominal(_, from, args) => {
                     dbwrite!(f, db, "nominal[{}](", ty)?;
                     if let Some((inner_layout, _)) = from {
@@ -322,9 +321,6 @@ impl<'a> LayoutHasher<'a> {
                 }
                 state.update([*bt as u8]);
             }
-            MonoLayout::Nil => {
-                state.update([8]);
-            }
             MonoLayout::Range => {
                 state.update([9]);
             }
@@ -528,8 +524,7 @@ impl<'a> LayoutSymbol<'a> {
             MonoLayout::Primitive(_)
             | MonoLayout::SlicePtr
             | MonoLayout::Range
-            | MonoLayout::Single
-            | MonoLayout::Nil => {
+            | MonoLayout::Single => {
                 dbformat!(db, "{}", &self.layout.0)
             }
         };

@@ -41,7 +41,6 @@ use yaboc_database::YabocDatabase;
 use yaboc_hir::{BlockId, HirIdWrapper, Hirs, ParserDefId};
 use yaboc_hir_types::{DerefLevel, TyHirs};
 use yaboc_layout::{
-    canon_layout,
     collect::{root_req, LayoutCollection},
     mir_subst::FunctionSubstitute,
     represent::{truncated_hex, LayoutPart},

@@ -250,10 +250,6 @@
             "named": true
           },
           {
-            "type": "nil",
-            "named": true
-          },
-          {
             "type": "number_literal",
             "named": true
           },
@@ -443,10 +439,6 @@
           },
           {
             "type": "lambda",
-            "named": true
-          },
-          {
-            "type": "nil",
             "named": true
           },
           {
@@ -693,10 +685,6 @@
             "named": true
           },
           {
-            "type": "nil",
-            "named": true
-          },
-          {
             "type": "number_literal",
             "named": true
           },
@@ -805,10 +793,6 @@
           },
           {
             "type": "lambda",
-            "named": true
-          },
-          {
-            "type": "nil",
             "named": true
           },
           {
@@ -968,10 +952,6 @@
             "named": true
           },
           {
-            "type": "nil",
-            "named": true
-          },
-          {
             "type": "number_literal",
             "named": true
           },
@@ -1055,10 +1035,6 @@
           },
           {
             "type": "lambda",
-            "named": true
-          },
-          {
-            "type": "nil",
             "named": true
           },
           {
@@ -1190,10 +1166,6 @@
             "named": true
           },
           {
-            "type": "nil",
-            "named": true
-          },
-          {
             "type": "number_literal",
             "named": true
           },
@@ -1302,10 +1274,6 @@
             "named": true
           },
           {
-            "type": "nil",
-            "named": true
-          },
-          {
             "type": "number_literal",
             "named": true
           },
@@ -1406,11 +1374,6 @@
     }
   },
   {
-    "type": "nil",
-    "named": true,
-    "fields": {}
-  },
-  {
     "type": "parse_statement",
     "named": true,
     "fields": {
@@ -1478,10 +1441,6 @@
           },
           {
             "type": "lambda",
-            "named": true
-          },
-          {
-            "type": "nil",
             "named": true
           },
           {
@@ -1772,10 +1731,6 @@
           },
           {
             "type": "lambda",
-            "named": true
-          },
-          {
-            "type": "nil",
             "named": true
           },
           {
@@ -2452,10 +2407,6 @@
             "named": true
           },
           {
-            "type": "nil",
-            "named": true
-          },
-          {
             "type": "number_literal",
             "named": true
           },
@@ -2611,10 +2562,6 @@
           },
           {
             "type": "lambda",
-            "named": true
-          },
-          {
-            "type": "nil",
             "named": true
           },
           {

@@ -283,7 +283,6 @@ impl<'a> ExpressionBuildCtx<'a> {
                     }
                     ResolvedAtom::Regex(_) => self.push(Instruction::True, *ty, orig),
                     ResolvedAtom::Single => self.push(Instruction::Single, *ty, orig),
-                    ResolvedAtom::Nil => self.push(Instruction::False, *ty, orig),
                     ResolvedAtom::Array => self.push(Instruction::Array, *ty, orig),
                     ResolvedAtom::ArrayFill => self.push(Instruction::Array, *ty, orig),
                     ResolvedAtom::Block(id, kind) => self.build_block(id, kind, *ty),

@@ -27,7 +27,6 @@ pub enum ResolvedAtom {
     Char(u32),
     Bool(bool),
     Single,
-    Nil,
     Array,
     ArrayFill,
     Block(hir::BlockId, hir::BlockKind),
@@ -320,7 +319,6 @@ fn resolve_expr_modules(
                     hir::ParserAtom::Atom(Atom::Char(s)) => ResolvedAtom::Char(s),
                     hir::ParserAtom::Atom(Atom::Bool(s)) => ResolvedAtom::Bool(s),
                     hir::ParserAtom::Single => ResolvedAtom::Single,
-                    hir::ParserAtom::Nil => ResolvedAtom::Nil,
                     hir::ParserAtom::ArrayFill => ResolvedAtom::ArrayFill,
                     hir::ParserAtom::Regex(r) => {
                         match db.resolve_regex(r) {

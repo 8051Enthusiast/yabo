@@ -13,7 +13,7 @@ def ~i16l = {
 
 export def ~test = {
     a: i16l
-    unit: +
+    unit: {}
     b: i16l
     let plus = a + b
     let minus = a - b
