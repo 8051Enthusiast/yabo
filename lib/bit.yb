@@ -71,13 +71,13 @@ fun as_int(b: bit) = b is true then 1 else 0
 fun [bit] ~> uint_msb_impl(acc: int) = {
   | b: ~ is !eof
     return: uint_msb_impl(acc * 2 + as_int(b))
-  | let return = acc
+  \ let return = acc
 }
 
 fun [bit] ~> uint_lsb_impl(acc: int, shift: int) = {
   | b: ~ is !eof
     return: uint_lsb_impl(acc + (as_int(b) << shift), shift + 1)
-  | let return = acc
+  \ let return = acc
 }
 
 def [bit] ~> uint_msb(size: int) = [size] |> uint_msb_impl(0)

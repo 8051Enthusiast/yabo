@@ -10,10 +10,10 @@ def ~is_subrange = {
   a: range?, ~, b: range!, text.newline!
   | | assert(a.start <= b.start)?
       assert(a.end >= b.end)?
-    | assert(a.start >= b.start)?
+    \ assert(a.start >= b.start)?
       assert(a.end <= b.end)?
     let return = 1
-  | let return = 0
+  \ let return = 0
 }
 
 export def ~test = aoc.summap(is_subrange)

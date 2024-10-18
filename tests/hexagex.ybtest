@@ -2,7 +2,7 @@
 export
 fun ~test = {
   | a: h/i_oi f (1[a-f] | 00)* \xff/
-  | +
+  \ {}
 }
 
 ====[ binary 1 ]====

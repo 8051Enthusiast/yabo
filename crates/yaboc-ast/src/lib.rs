@@ -461,8 +461,8 @@ mod tests {
 def [u8] ~> expr1 = {
   x: u64
   | let b: u64 = 3
-  | | let a: u64 = 0
-    | let z: u64 = 1
+  \ | let a: u64 = 0
+    \ let z: u64 = 1
 }
         "#,
         );

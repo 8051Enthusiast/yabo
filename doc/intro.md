@@ -360,12 +360,13 @@ def ~small_int = {
   lo: u8
   | let return = lo is 0x00..0x7f
 
-  | hi: u8
+  \ hi: u8
     let return = (lo & 0x7f) | (hi << 7)
 }
 ```
 The `|` initiates a choice, which means the individual branches are tried in order until one succeeds.
 If all branches fail, the whole choice fails.
+The last branch uses `\` instead of `|` to indicate that the whole choice ends with it.
 Note that this is different to Prolog: `{small_int, u8 is 0}` does not try the other branch in `small_int` if `u8 is 0` fails; it just fails the whole parser.
 
 The extent of one branch is whitespace sensitive and ends at the next dedent, `|`, or end of block.
@@ -388,7 +389,7 @@ If a `return` is in a branch, it must be in every branch, however if there is no
 def ~maybe(f: ~'t) = {
   | some: f?
   # remember: `+` parses zero elements and returns the unit value
-  | +
+  \ +
 }
 ```
 This returns a structure containing a single `some` field with the output of `f` if it succeeds, or an empty structure if it fails.
@@ -400,7 +401,7 @@ Optional fields can be accessed either with `block.?field` (which fails) or `blo
 def ~small_int = {
   small: maybe(tag)
   | let return = small.?some
-  | return: u16l
+  \ return: u16l
 }
 ```
 
@@ -410,23 +411,9 @@ def ~small_int = {
   | small: maybe(tag) is some
     # this cannot fail as the existence of the `some` field was checked by the `if`
     let return = small.some
-  | return: u16l
+  \ return: u16l
 }
 ```
-### Multiple Choices
-
-If we have multiple choices one after another, we need to insert something that separates them so they are not parsed as one big choice.
-The `+` parser is very handy for this:
-```
-def ~multiple_choice = {
-  | a: foo?
-  | b: bar
-  +
-  | c: baz?
-  | d: qux
-}
-```
-As `+` has a length of zero, the two choices are placed right after one another.
 
 ### `then` and `else`
 There are two binary operators, `then` and `else`, that allow handling failing within one expression.
@@ -457,7 +444,7 @@ As an example, take a contiguous recursive list:
 def ~list(f: ~'t) = {
   | head: f?
     tail: list(f)
-  | +
+  \ +
 }
 ```
 If we naively tried to construct the resulting value without using thunks, we would end up with arbitrarily deep nested structures like (leaving `head` out), `{tail: {tail: {tail: {}}}}`.
@@ -485,7 +472,7 @@ For example, the following calculates the sum of all bytes in a list:
 fun ~sum(f: ~int, acc: int) = {
   | head: f is !eof
     return: sum_list(f, acc + head)
-  | let return = acc
+  \ let return = acc
 }
 ```
 A `def` would be overkill here since a thunk would be returned.
@@ -511,7 +498,7 @@ We can also define blocks with fields this way, and use choices:
 ```
 fun maybe_zero(n: int) = {|
   | let zero = n is 0
-  | let nonzero = n
+  \ let nonzero = n
 |}
 
 fun square(n: int) = maybe_zero(n).?zero else (n * n)
@@ -542,7 +529,7 @@ def ~const_sized(a: int, b: int) = {
   | u8[a * a]
     u8[2 * a * b]
     u8[b * b]
-  | u8[(a + b) * (a + b)]
+  \ u8[(a + b) * (a + b)]
 }
 ```
 as a² + 2ab + b² = (a + b)² (binomial formula).
@@ -552,7 +539,7 @@ The following also works:
 def ~const_sized2(f: ~'t, g: ~'r) = {
   | f, f, g
   | f, g, f
-  | g, f, f
+  \ g, f, f
 }
 ```
 (Of course, these parsers are useless as they will always take the first branch.)
@@ -670,7 +657,7 @@ fun ~u8ptr(parser: ~'t) = {
 
 def ~linked_list = {
   | u8 is 0
-  | next: u8ptr(linked_list)?
+  \ next: u8ptr(linked_list)?
   val: u8
 }
 ```
@@ -703,7 +690,7 @@ For example, the following is not possible because `bar` is not in the top scope
 ```
 def ~foo = {
   | bar: u8 is 1
-  | bar: u8
+  \ bar: u8
   baz: u8
   let spanned = span bar..baz
 }
@@ -727,7 +714,7 @@ It can be parsed and indexed as with other kinds of array:
 fun [int] ~> sum(acc: int) = {
   | val: ~ is !eof
     return: sum(acc + val)
-  | let return = acc
+  \ let return = acc
 }
 
 fun range_sum(n: int) = 0..<n
@@ -752,7 +739,7 @@ It is a top-level statement and takes a single identifier as an argument:
 import text
 def ~num = {
   | /0x/, return: text.basenum(16)?
-  | return: text.basenum(10)?
+  \ return: text.basenum(10)?
 }
 ```
 The definitions from the imported file can be accessed via `.`, like `text.basenum` in the above example.

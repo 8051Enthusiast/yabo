@@ -4,7 +4,7 @@ def ~wrapped = ~
 export def ~test = {
   f: wrapped
   | let a = f is 0
-  | let b = 3
+  \ let b = 3
 }
 ====[ binary 1 ]====
 00

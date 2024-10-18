@@ -9,7 +9,7 @@ def ~let_statements = {
 def ~indirect = {
   a: ~
   | b: ~
-  | +
+  \ {}
   let c = span a..b
   #~^ error[306] span may only reference identifiers of parse statements in the current or ancestor scope
 }

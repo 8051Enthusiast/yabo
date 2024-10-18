@@ -1,7 +1,7 @@
 ====[ source code ]====
 fun [int] ~> sum(acc: int) = {
   | x: ~ is !eof, return: sum(acc + x)
-  | let return = acc
+  \ let return = acc
 }
 export
 fun ~test = {

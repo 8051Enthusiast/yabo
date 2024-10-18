@@ -5,7 +5,7 @@ fun ~d = {
   # both do not have any parsers, but it does have to be
   # lowered after the choice in the root context
   | let return = x is 0x00..0x7f
-  | let return = x - 0x100
+  \ let return = x - 0x100
 }
 
 export

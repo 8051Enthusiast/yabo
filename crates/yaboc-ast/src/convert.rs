@@ -122,44 +122,6 @@ fn module(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Module> {
     })
 }
 
-fn parser_sequence(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<ParserSequence> {
-    let node = check_error(db, fd, c.node())?;
-    let mut statements = Vec::new();
-    let mut current_choice: Option<ParserChoice> = None;
-    let clear_choice_and_push_statement =
-        |statements: &mut Vec<ParserSequenceElement>, current_choice: &mut Option<ParserChoice>| {
-            if let Some(choice) = current_choice.take() {
-                statements.push(ParserSequenceElement::Choice(Box::new(choice)));
-            }
-        };
-    iter_children(db, fd, c, |node, cursor| {
-        // we want to skip parens
-        if node.is_named() {
-            match parser_sequence_element(db, fd, cursor)? {
-                ParserSequenceElement::Choice(mut c) => match current_choice {
-                    Some(ref mut prev_choice) => {
-                        prev_choice.content.append(&mut c.content);
-                    }
-                    None => {
-                        current_choice = Some(*c);
-                    }
-                },
-                otherwise => {
-                    clear_choice_and_push_statement(&mut statements, &mut current_choice);
-                    statements.push(otherwise)
-                }
-            }
-        }
-        Ok(())
-    })?;
-    clear_choice_and_push_statement(&mut statements, &mut current_choice);
-
-    Ok(ParserSequence {
-        content: statements,
-        span: span_from_node(fd, &node),
-    })
-}
-
 struct OpInfo<'a> {
     left: Option<TreeCursor<'a>>,
     left_parens: bool,
@@ -565,10 +527,8 @@ astify! {
 }
 
 astify! {
-    struct parserdef_ref = ParserDefRef {
-        from: expression(type_expression)[?],
-        name: idspan[*],
-        args: expression(type_expression)[*],
+    struct parser_sequence = ParserSequence {
+        content: parser_sequence_element[*],
     };
 }
 
@@ -576,6 +536,14 @@ astify! {
     enum parser_sequence_element = ParserSequenceElement {
         Choice(boxed(parser_choice)),
         Statement(statement..),
+    };
+}
+
+astify! {
+    struct parserdef_ref = ParserDefRef {
+        from: expression(type_expression)[?],
+        name: idspan[*],
+        args: expression(type_expression)[*],
     };
 }
 

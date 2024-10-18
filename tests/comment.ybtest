@@ -6,10 +6,10 @@ def ~test = {   # test
   z: u32l       # test
   |             # test
     y: u32l     # test
-  |             # test
+  \             # test
     |           # test
       let y = 3 # test
-    |           # test
+    \           # test
       let y = 4 # test
 }               # test
 

@@ -4,7 +4,7 @@ export
 def ~test = {
     rows: ~, columns: ~
     | m: matrix(rows, columns) is !eof
-    | let t = 1
+    \ let t = 1
 }
 
 ====[ binary 1 ]====

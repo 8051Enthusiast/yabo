@@ -3,7 +3,7 @@ def ~block = {
   tag: ~
   | let ignore: int = tag is 1
     next: block
-  | more: ~
+  \ more: ~
 }
 export def ~test = {
   a: block

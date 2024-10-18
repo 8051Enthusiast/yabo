@@ -11,7 +11,7 @@ fun ['t] ~> not_if(f: ['t] ~> 'r) = {
   | f?
   # if not, parse a zero-length unit type
   # and put it into the `not_parsed` field
-  | not_parsed: +
+  \ not_parsed: {}
 } is not_parsed
 
 # checks if `f` matches, but does not advance the
@@ -24,12 +24,12 @@ fun ['t] ~> eof = not_if(~ is !eof)?
 # optionally parses `f`, or zero length if `f` fails
 fun ['t] ~> optional(f: ['t] ~> 'r) = {
   | some: f?
-  | none: +
+  \ none: {}
 }
 
 fun ['t] ~> _len_impl(acc: int): int = {
   | ~ is !eof, return: _len_impl(acc + 1)
-  | let return = acc
+  \ let return = acc
 }
 
 # gets the length of the rest of the stream

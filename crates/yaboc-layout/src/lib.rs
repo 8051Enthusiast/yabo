@@ -1371,7 +1371,7 @@ def ~main = {
     b: ~
     c: {
       | let c: ~first = first!
-      | let c: ~second = second?
+      \ let c: ~second = second?
     }
     d: c.c
 }

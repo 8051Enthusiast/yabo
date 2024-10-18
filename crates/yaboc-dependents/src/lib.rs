@@ -789,7 +789,7 @@ def ~cycle = {
             r#"
 def ~cycle = {
     | let x: int = y
-    | x: ~
+    \ x: ~
     y: ~
 }
         "#,
@@ -802,7 +802,7 @@ def ~cycle = {
             r#"
 def ~main = {
     | y: ~
-    | let y: int = 0
+    \ let y: int = 0
 }
         "#,
         );
@@ -825,7 +825,7 @@ def ~main = {
     c: {
         let x = a
         | c: first?
-        | c: second
+        \ c: second
     }
 }
             ",
@@ -884,7 +884,7 @@ def ~main: int = {
   x: ~
   | let _ = x is 3
     return: main
-  | let return = 4
+  \ let return = 4
 }
         ",
         );
@@ -909,7 +909,7 @@ def ~main: int = {
     let y = z is 3
     | let z = x is 3..4
       return: main
-    | let return = 4
+    \ let return = 4
 }
         ",
         );
@@ -928,7 +928,7 @@ def ~main: int = {
 def ~main: int = {
     x: ~ is 1..4
     | return: main?
-    | let return = x is 1..2
+    \ let return = x is 1..2
 }
         ",
         );

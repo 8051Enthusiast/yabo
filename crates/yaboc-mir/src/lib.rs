@@ -1142,7 +1142,7 @@ def ~main = {
           x: ~
       }
 
-    | b: ~
+    \ b: ~
       a: ~
       c: ~
       let d: int = b + c * a * a

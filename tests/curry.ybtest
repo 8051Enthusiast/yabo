@@ -14,7 +14,7 @@ export def ~test = {
   | let _ = tag is 0
     m: ~
     let p = affine_byte(m, ..)
-  | let p = linear_byte
+  \ let p = linear_byte
   a: ~
   s: p(a)
   t: affine_byte(a, s)

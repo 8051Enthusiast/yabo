@@ -33,7 +33,7 @@ Choice Parser
 def [u8] ~> choice = {
   | is ascii
     return: utf8char
-  | return: utf8char
+  \ return: utf8char
 }
 
 ---
@@ -54,8 +54,7 @@ def [u8] ~> choice = {
                 right: (identifier)))
             (parse_statement
               name: (retvrn)
-              parser: (identifier))))
-        (parser_choice
+              parser: (identifier)))
           content: (parser_sequence
             (parse_statement
                 name: (retvrn)
@@ -101,7 +100,7 @@ def [u8] ~> nested = {
   val: ~
   return: {
     | val: is 0
-    | let val: u8 = 3
+    \ let val: u8 = 3
       ~
     let return: u8 = val
   }
@@ -131,8 +130,7 @@ def [u8] ~> nested = {
                   (parse_statement
                     (identifier)
                     (unary_expression
-                      (number_literal)))))
-              (parser_choice
+                      (number_literal))))
                 (parser_sequence
                   (let_statement
                     (identifier)
@@ -158,7 +156,7 @@ def [u8] ~> three = {
     return: u8
   | is 1
     return: u8
-  | return: u8
+  \ return: u8
 }
 
 ---
@@ -178,16 +176,14 @@ def [u8] ~> three = {
                 (number_literal)))
             (parse_statement
               (retvrn)
-              (identifier))))
-        (parser_choice
+              (identifier)))
           (parser_sequence
             (parse_statement
               (unary_expression
                 (number_literal)))
             (parse_statement
               (retvrn)
-              (identifier))))
-        (parser_choice
+              (identifier)))
           (parser_sequence
             (parse_statement
               (retvrn)

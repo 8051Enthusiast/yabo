@@ -1555,7 +1555,7 @@
     "named": true,
     "fields": {
       "content": {
-        "multiple": false,
+        "multiple": true,
         "required": true,
         "types": [
           {
@@ -1817,24 +1817,25 @@
   {
     "type": "parser_sequence",
     "named": true,
-    "fields": {},
-    "children": {
-      "multiple": true,
-      "required": true,
-      "types": [
-        {
-          "type": "let_statement",
-          "named": true
-        },
-        {
-          "type": "parse_statement",
-          "named": true
-        },
-        {
-          "type": "parser_choice",
-          "named": true
-        }
-      ]
+    "fields": {
+      "content": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "let_statement",
+            "named": true
+          },
+          {
+            "type": "parse_statement",
+            "named": true
+          },
+          {
+            "type": "parser_choice",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {
@@ -2814,6 +2815,10 @@
   },
   {
     "type": "[",
+    "named": false
+  },
+  {
+    "type": "\\",
     "named": false
   },
   {

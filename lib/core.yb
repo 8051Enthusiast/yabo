@@ -20,7 +20,7 @@ fun ['t] ~> map(f: ('t) -> 'r) = {x: ~, let return = f?(x)}[..]
 # Tries to parse using the first parser, then the second if the first fails.
 fun ['t] ~> alt(a0: ['t] ~> 'r, a1: ['t] ~> 'r) = {
   | return: a0?
-  | return: a1?
+  \ return: a1?
 }
 
 # Parser of zero length that simply returns the input.
@@ -41,14 +41,14 @@ def ~u8b = ~
 def ~i8l = {
   x: ~
   | let return = x is 0x00..0x7f
-  | let return = x - 0x100
+  \ let return = x - 0x100
 }
 
 # Parses an 8-bit big endian signed integer.
 def ~i8b = {
   x: ~
   | let return = x is 0x00..0x7f
-  | let return = x - 0x100
+  \ let return = x - 0x100
 }
 
 # Parses a 16-bit little endian unsigned integer.

@@ -10,7 +10,7 @@ fun ~crc32_impl(acc: int): int = {
   | next: u8 is !eof
     let s = crc_shift(0xedb88320, ..)
     return: crc32_impl(s(s(s(s(s(s(s(s(next ^ acc)))))))))
-  | let return = acc ^ 0xffffffff
+  \ let return = acc ^ 0xffffffff
 }
 
 fun crc32(arr: [u8]) = arr ~> crc32_impl(0xffffffff)
@@ -48,7 +48,7 @@ def ~test = {
   chunks: list.list({
     | palette: chunk(/PLTE/, rgb[..])?
     | data: chunk(/IDAT/, [..])?
-    | optional: chunk(/[a-z].{3}/, [..])?
+    \ optional: chunk(/[a-z].{3}/, [..])?
   })
   end: chunk(/IEND/, nil)!
 }

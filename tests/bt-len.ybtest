@@ -2,7 +2,7 @@
 fun flag() = {|
   let flag = u8 at 0
   | let r = flag is 1
-  | let l = flag is 0
+  \ let l = flag is 0
 |}
 def ~flag_int = flag!().?r then u32l else u16l
 export

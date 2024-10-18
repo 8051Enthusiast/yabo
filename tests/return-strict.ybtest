@@ -2,7 +2,7 @@
 def ~list(element: ~'r) = {
   | this: element?
     next: list(element?)
-  | +
+  \ {}
 }
 
 fun first(xs: list[~'r]): 'r = xs.?this

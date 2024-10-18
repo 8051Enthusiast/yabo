@@ -1,7 +1,7 @@
 ====[ source code ]====
 def ~g(a: ~'a, b: ~'b) = {
   | a?, b?, a?
-  | b?, a?, a?
+  \ b?, a?, a?
 }
 def ~square(n: int) = [n * n]
 def ~poly_unify(n: int, m: int) = {
@@ -9,12 +9,12 @@ def ~poly_unify(n: int, m: int) = {
     [n * n]
     [m * m]
     ~
-  | square(n + m)
+  \ square(n + m)
     poly_unify(0, 0)
 }
 def ~static_len(a: int) = {
   | [a], [a]
-  | [2 * a]
+  \ [2 * a]
   [a & 43]
 }
 def ~dynamic = {

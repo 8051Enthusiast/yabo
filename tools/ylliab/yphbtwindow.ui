@@ -68,7 +68,7 @@ def ~main = {
   chunks: list.list({
     | palette: chunk(/PLTE/, rgb[..])?
     | data: chunk(/IDAT/, [..])?
-    | optional: chunk(/[a-z].{3}/, [..])?
+    \ optional: chunk(/[a-z].{3}/, [..])?
   })
   end: chunk(/IEND/, nil)!
 }

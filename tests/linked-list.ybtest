@@ -7,7 +7,7 @@ fun ~u8ptr(t: ~'t) = {
 export
 def ~test = {
   | u8 is 0
-  | next: u8ptr(test)?
+  \ next: u8ptr(test)?
   val: u8
 }
 

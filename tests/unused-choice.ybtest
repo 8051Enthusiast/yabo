@@ -2,7 +2,7 @@
 export
 fun ~test = {
   | let y = 3
-  | +
+  \ {}
 }
 
 ====[ binary 1 ]====

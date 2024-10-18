@@ -2,7 +2,7 @@
 fun ~last_byte: int = {
   | ~ is !eof
     return: last_byte?
-  | return: ~ is !eof
+  \ return: ~ is !eof
 }
 
 export fun ~test = last_byte!

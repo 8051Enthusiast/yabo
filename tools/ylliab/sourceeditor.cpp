@@ -43,7 +43,7 @@ Lexer::Lexer() {
       Matcher(R"('[A-Za-z_][A-Za-z_0-9]*)", HighlightName::Type,
               LexerState::NotAfterOperator),
       Matcher(
-          R"(==|<=|>=|!=|>>|<<|[&]>|~>|->|<|>|~|!|\?|:|\.\.|[.]|[|]|=|[+]|-|[*]|/|%|\^|\&)",
+          R"(==|<=|>=|!=|>>|<<|[&]>|~>|->|<|>|~|!|\?|:|\.\.|[.]|[|]|=|[+]|-|[*]|/|%|\^|\&|\\)",
           HighlightName::Operator, LexerState::AfterOperator)};
   std::vector<Matcher> match{std::make_move_iterator(std::begin(matcher_list)),
                              std::make_move_iterator(std::end(matcher_list))};
