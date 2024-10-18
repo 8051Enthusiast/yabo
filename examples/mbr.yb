@@ -24,7 +24,7 @@ def ~partition_entry(base: int) = {
   let real_sector = base + first_sector_lba
   | partition_type is 0x00 then nil
   | let extended = partition_type is 0x05 or 0x0f then ebr(real_sector) at (real_sector * 512)
-  | let primary = primary_partition(sector_count) at (real_sector * 512)
+  \ let primary = primary_partition(sector_count) at (real_sector * 512)
 }
 
 # extended boot record

@@ -117,10 +117,10 @@ module.exports = grammar({
       $.parser_block_close,
     ),
     parser_sequence: $ => seq(
-      $._parser_sequence_element,
+      field('content', $._parser_sequence_element),
       repeat(seq(
         choice($._newline, ','),
-        $._parser_sequence_element,
+        field('content', $._parser_sequence_element),
       ))
     ),
     _parser_sequence_element: $ => choice(
@@ -128,10 +128,18 @@ module.exports = grammar({
       $.parser_choice,
     ),
     parser_choice: $ => seq(
-      '|',
-      $._indent,
-      field('content', $.parser_sequence),
-      $._dedent,
+      repeat(seq(
+        '|',
+        $._indent,
+        field('content', $.parser_sequence),
+        $._dedent,
+      )),
+      seq(
+        '\\',
+        $._indent,
+        field('content', $.parser_sequence),
+        $._dedent,
+      )
     ),
     type_array: $ => seq(
       '[',
@@ -421,6 +429,7 @@ module.exports = grammar({
     byte_slice: $ => prec(PREC.BYTE_SLICE, '~'),
     single: $ => '~',
     nil: $ => '+',
+    rule: $ => /\\|\|/,
     placeholder: $ => '_',
     array_fill: $ => '[..]',
     not_eof: $ => '!eof',

@@ -14,7 +14,7 @@ def ~fixed_num = {
     let return = whole * 1000 +
                  math.ipow(10, 3 - fract_len) * fract_val
   # no fractional part
-  | let return = whole * 1000
+  \ let return = whole * 1000
 }
 
 export

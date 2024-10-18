@@ -44,7 +44,7 @@ def ~fat_entry = {
   # if it is in the range 2 to 0x0FFFFFEF, it is a valid cluster
   # and points to the next cluster in the file
   | next: masked_fat_val is 2..0x0FFFFFEF
-  | other: masked_fat_val
+  \ other: masked_fat_val
 }
 
 # defines a fat table of a given size
@@ -98,11 +98,11 @@ def ~long_entry = {
 def ~dir_entry = [32] |> {
   | empty: u8 is 0 or 0xE5
   | long: long_entry?
-  | short: short_entry
+  \ short: short_entry
     | assert(short.attr & 0x10 != 0)?
       # we have a subdirectory
       let subdir = parse_block(short.cluster, dir_entries)
-    | # otherwise it's a regular file
+    \ # otherwise it's a regular file
       let file = parse_block(short.cluster, file_entry)
 }
 
@@ -117,7 +117,7 @@ def ~entry(data_type: ~'t, idx: int) = {
   data: data_type!
   | let next_idx = fat.[idx].?next
     let next = parse_block(next_idx, entry(data_type, ..))
-  | +
+  \ nil
 }
 
 export

@@ -7,7 +7,7 @@ def ~xor_linked_list(prev_addr: int, cur_addr: int) = {
   | assert(cur_addr == 0)?
   # otherwise we have a valid address
   # xor_addr is the value prev_addr ^ next_addr
-  | xor_addr: u16l
+  \ xor_addr: u16l
     val: u16l
     # we have prev_addr ^ (prev_addr ^ next_addr)
     #      = (prev_addr ^ prev_addr) ^ next_addr

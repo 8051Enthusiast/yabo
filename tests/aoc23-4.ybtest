@@ -13,12 +13,12 @@ fun ~points(lo: int, hi: int, acc: int): int = {
     let shift = n & 63
     let winning = ((1 ^ right) << shift & lo | right << shift & hi) is 0 else acc
     return: points(lo, hi, acc + winning)
-  | let return = acc >> 1
+  \ let return = acc >> 1
 }
 
 fun ~winning(lo: int, hi: int): int = {
   | ~, /\|/, return: points(lo, hi, 1)
-  | n: wsnum?
+  \ n: wsnum?
     let right = (n & 64) is 0 else 1
     return: winning((1 ^ right) << n | lo, right << n | hi)
 }

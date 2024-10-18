@@ -1,7 +1,7 @@
 ====[ source code ]====
 fun ~apply_with_data(data: ~'t, f: ('t) -> ~'t, default: 't): 't = {
   | x: data? is !eof, return: f!(x)!
-  | let return = default
+  \ let return = default
 }
 
 fun ~apply_with_byte(f: (int) -> ~int, default: int) = apply_with_data(u8l, f, default)

@@ -32,7 +32,7 @@ def ~flags = bit.b64l_lsb |> {
 def ~partition_entry = {
   # an all-zero partition type guid means empty
   | partition_type: /\x00{16}/
-  | partition_type: guid
+  \ partition_type: guid
     partition_guid: guid
     first_lba: lba
     # inclusive

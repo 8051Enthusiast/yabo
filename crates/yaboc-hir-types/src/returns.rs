@@ -381,7 +381,7 @@ def ['t] ~> expr1 = {
   b: {
     | let c: int = 2
       d: ~
-    | let c: int = 1
+    \ let c: int = 1
   }
 }
 def ~expr2 = {

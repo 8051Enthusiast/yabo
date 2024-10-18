@@ -8,7 +8,7 @@ export def ~test = {
     extra: ~
     let additional: int = extra + tag
   
-  | let third: int = tag is 3
+  \ let third: int = tag is 3
     additional: ~
 }
 

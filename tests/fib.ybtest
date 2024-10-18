@@ -1,7 +1,7 @@
 ====[ source code ]====
 def ~fib(a: int) = {
   | let return = a is 0 or 1
-  | x: fib(a - 2)
+  \ x: fib(a - 2)
     y: fib(a - 1)
     let return = x + y
 }

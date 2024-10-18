@@ -12,7 +12,7 @@ def ~test = {
   let a3 = arr.[3]
   let a4 = arr.[4]
   | let a5 = arr.?[5]
-  | let a5_err = 1
+  \ let a5_err = 1
 }
 
 ====[ binary 1 ]====

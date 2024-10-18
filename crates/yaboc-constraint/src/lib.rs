@@ -372,7 +372,7 @@ mod tests {
             def ~one = ~
             def ~const_size_choice = {
                 | left: one, one, one
-                | right: ~, ~, ~
+                \ right: ~, ~, ~
             }
         "#,
         );
@@ -389,11 +389,11 @@ mod tests {
             r#"
             def ~rec = {
                 | /AAAAA/?
-                | rec
+                \ rec
             }
             def ~rec2 = {
                 | /AAAAA/?
-                | ~, rec
+                \ ~, rec
             }
         "#,
         );
@@ -426,7 +426,7 @@ mod tests {
             def ~poly_unify(n: int, m: int) = {
                 | square(n + m)
                   poly_unify(0, 0)
-                | [2 * n * m - 1]
+                \ [2 * n * m - 1]
                   [n * n]
                   [m * m]
                   ~
@@ -461,7 +461,7 @@ mod tests {
               x: ~
               let s = n * base + x
               | return: number_acc?(base, s)
-              | let return = s
+              \ let return = s
             }"#,
         );
         let number_acc = ctx.parser("number_acc");

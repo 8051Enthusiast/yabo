@@ -1,7 +1,7 @@
 ====[ source code ]====
 fun fact(n: int) = {|
   | let return = n is 0 then 1
-  | let return = fact(n - 1) * n
+  \ let return = fact(n - 1) * n
 |}
 
 export

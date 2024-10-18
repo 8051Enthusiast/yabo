@@ -2,7 +2,7 @@
 def ~list(element: ~'r) = {
   | this: element?
     next: list(element?)
-  | +
+  \ {}
 }
 
 # Returns the length of a given list.
@@ -19,5 +19,5 @@ fun fold(xs: list[~'r], init: 't, f: ('t, 'r) -> 't): 't = {|
   | let x = xs.?this
     let new_init = f?(init, x)?
     let return = fold(xs.next, new_init, f)
-  | let return = init
+  \ let return = init
 |}

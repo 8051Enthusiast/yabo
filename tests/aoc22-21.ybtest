@@ -12,7 +12,7 @@ def ~line = {
   name: u32l
   ~, ~
   | num: text.num?
-  | res: op
+  \ res: op
   text.newline?
 }
 
@@ -20,14 +20,14 @@ def ~calculate_line(start: list.list[~line], x: list.list[~line], name: int): in
   | let current = x.?this
     assert(current.name == name)?
     | let return = current.?num
-    | let res = current.?res
+    \ let res = current.?res
       left: calculate_line(start, start, res.left)
       right: calculate_line(start, start, res.right)
       | assert(res.op == '*')?, let return = left * right
       | assert(res.op == '+')?, let return = left + right
       | assert(res.op == '-')?, let return = left - right
-      | assert(res.op == '/')?, let return = left / right
-  | return: calculate_line(start, x.next, name)
+      \ assert(res.op == '/')?, let return = left / right
+  \ return: calculate_line(start, x.next, name)
 }
 
 export
