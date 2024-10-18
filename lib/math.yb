@@ -1,16 +1,16 @@
 # Returns the maxiumum of a and b.
-fun max(a: int, b: int): int = when?(a > b) then a else b
+fun max(a: int, b: int): int = if?(a > b) then a else b
 
 # Returns the minimum of a and b.
-fun min(a: int, b: int): int = when?(a < b) then a else b
+fun min(a: int, b: int): int = if?(a < b) then a else b
 
 # Returns the absolute value of a.
 fun abs(a: int): int = max(a, -a)
 
 # Returns the sign of a, or 0 if the number is 0.
-fun sign(a: int): int = when?(a > 0) then 1 else when?(a < 0) then -1 else 0
+fun sign(a: int): int = if?(a > 0) then 1 else if?(a < 0) then -1 else 0
 
-fun _gcd_impl(a: int, b: int): int = when?(b == 0) then a else _gcd_impl(b, a % b)
+fun _gcd_impl(a: int, b: int): int = if?(b == 0) then a else _gcd_impl(b, a % b)
 
 # Returns the greatest common divisor of a and b.
 fun gcd(a: int, b: int): int = _gcd_impl(abs(a), abs(b))
@@ -18,12 +18,12 @@ fun gcd(a: int, b: int): int = _gcd_impl(abs(a), abs(b))
 # Returns the least common multiple of a and b.
 fun lcm(a: int, b: int): int = abs(a * b) / gcd(a, b)
 
-fun _ipow_impl(base: int, exp: int, acc: int): int = when?(exp == 0) then acc else {|
-  let factor = when?(exp & 1 == 0) then 1 else base
+fun _ipow_impl(base: int, exp: int, acc: int): int = if?(exp == 0) then acc else {|
+  let factor = if?(exp & 1 == 0) then 1 else base
   let return = _ipow_impl(base * base, exp >> 1, acc * factor)
 |}
 
-fun ipow(base: int, exp: int): int = when!(exp >= 0) then _ipow_impl(base, exp, 1)
+fun ipow(base: int, exp: int): int = if!(exp >= 0) then _ipow_impl(base, exp, 1)
 
 fun add(a: int, b: int) = a + b
 fun mul(a: int, b: int) = a * b

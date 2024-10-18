@@ -3,7 +3,7 @@ import text
 import aoc
 
 fun ~match(f: int) = {
-  r: ~, let return = when?(f == r) then 1 else 0
+  r: ~, let return = if?(f == r) then 1 else 0
 }
 
 fun ~match_count(f: int, len: int) = match(f)[len] |> aoc.summap(~ is !eof)
@@ -68,7 +68,7 @@ fun ~play = {
 
 fun ~higher_count(score: int) = aoc.summap({
   p: play is !eof
-  let return = when?(score >= p.score) then 1 else 0
+  let return = if?(score >= p.score) then 1 else 0
 })
 
 fun ~total_win(input: [u8]) = aoc.summap({

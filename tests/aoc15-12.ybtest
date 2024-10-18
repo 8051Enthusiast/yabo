@@ -14,7 +14,7 @@ fun ~members(acc: int, red: bit): int = {
     let now_red = red
   let sum = acc + first
   | /,/, return: members(sum, now_red)?
-  \ let return = when?(now_red) then 0 else sum
+  \ let return = if?(now_red) then 0 else sum
 }
 fun ~object: int = {
   /\{/

@@ -474,12 +474,12 @@ mod tests {
     fn backtrack_dep() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            def ~backtrack_if(x: int) = x is 0 then [1] else [2]
-            def ~backtrack_when(x: int) = when?(x == 0) then [1] else [2]
+            def ~backtrack_is(x: int) = x is 0 then [1] else [2]
+            def ~backtrack_if(x: int) = if?(x == 0) then [1] else [2]
             def ~backtrack_field(x: int) = {| let y = x is 0 |}.?y then [1] else [2]
             "#,
         );
-        for parser_name in ["backtrack_if", "backtrack_when", "backtrack_field"] {
+        for parser_name in ["backtrack_is", "backtrack_if", "backtrack_field"] {
             let parser = ctx.parser(parser_name);
             let len = ctx.db.fun_len(parser);
             let Val::Static(1, deps) = len else {

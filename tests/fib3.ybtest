@@ -1,5 +1,5 @@
 ====[ source code ]====
-fun fib(n: int) = when?(n <= 1) then n else (fib(n - 1) + fib(n - 2))
+fun fib(n: int) = if?(n <= 1) then n else (fib(n - 1) + fib(n - 2))
 
 export
 fun ~test = {

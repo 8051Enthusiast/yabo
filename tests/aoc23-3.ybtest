@@ -6,13 +6,13 @@ fun ~line(len: int) = {return: [len], ~}
 
 fun ~num(start: int) = {
   pre: [start]
-  str: when?(pre.?[start - 1] is '0'..'9' then false else true) then /[0-9]+/
+  str: if?(pre.?[start - 1] is '0'..'9' then false else true) then /[0-9]+/
   let len = list.len(str ~> list.list(~ is !eof))
   let val = str ~> text.num!
 }
 
 fun add_in_range_impl(start: int, end: int, acc: int, f: (int) -> int): int =
-  when?(start < end) then add_in_range_impl(start + 1, end, acc + f!(start)!, f) else acc
+  if?(start < end) then add_in_range_impl(start + 1, end, acc + f!(start)!, f) else acc
   
 fun add_in_range(start: int, end: int, f: (int) -> int): int = add_in_range_impl(start, end, 0, f)
 
@@ -29,7 +29,7 @@ fun symbol(map: [[u8]], x: int, y: int) = is_sym?(map.?[y].?[x]) then 1 else 0
 fun part_number(map: [[u8]], x: int, y: int) = {|
   let n = map.[y] ~> num(x)?
   let num_syms = add_rect(x - 1, x + n.len + 1, y - 1, y + 2, symbol(map, ..))
-  let return = when?(num_syms > 0) then n.val
+  let return = if?(num_syms > 0) then n.val
 |} else 0
 
 export
