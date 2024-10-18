@@ -1,0 +1,3 @@
+====[ source code ]====
+fun test() = '\k'
+            #~^error[101] Invalid char literal

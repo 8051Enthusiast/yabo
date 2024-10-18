@@ -15,17 +15,19 @@ macro_rules! inner_string {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GenericParseError {
-    pub(super) loc: Span,
+pub enum ParseError {
+    Generic(Span),
+    InvalidChar(Span),
+    NumberTooBig(Span),
 }
 
-impl From<GenericParseError> for SilencedError {
-    fn from(_val: GenericParseError) -> Self {
+impl From<ParseError> for SilencedError {
+    fn from(_val: ParseError) -> Self {
         SilencedError::new()
     }
 }
 
-pub type ParseResult<T> = Result<T, Vec<GenericParseError>>;
+pub type ParseResult<T> = Result<T, Vec<ParseError>>;
 
 fn combine_errors<T: std::fmt::Debug, U: std::fmt::Debug, V, F: FnOnce(T, U) -> V>(
     a: ParseResult<T>,
@@ -42,7 +44,7 @@ fn combine_errors<T: std::fmt::Debug, U: std::fmt::Debug, V, F: FnOnce(T, U) -> 
     }
 }
 
-pub fn parse(db: &dyn Asts, fd: FileId) -> Result<Module, Vec<GenericParseError>> {
+pub fn parse(db: &dyn Asts, fd: FileId) -> Result<Module, Vec<ParseError>> {
     let mut parser = Parser::new();
     let language = language();
     parser
@@ -64,7 +66,7 @@ fn span_from_node(fd: FileId, node: &Node) -> Span {
 fn check_error<'a>(_: &dyn Asts, fd: FileId, node: Node<'a>) -> ParseResult<Node<'a>> {
     if node.is_error() {
         let span = span_from_node(fd, &node);
-        Err(vec![GenericParseError { loc: span }])
+        Err(vec![ParseError::Generic(span)])
     } else {
         Ok(node)
     }
@@ -930,7 +932,7 @@ fn number_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<i64> 
     } else {
         (inner.as_str(), 10)
     };
-    i64::from_str_radix(num, radix).map_err(|_| vec![GenericParseError { loc: span }])
+    i64::from_str_radix(num, radix).map_err(|_| vec![ParseError::NumberTooBig(span)])
 }
 
 fn char_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<i64> {
@@ -938,13 +940,13 @@ fn char_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<i64> {
     let without_quotes = inner
         .strip_prefix('\'')
         .and_then(|s| s.strip_suffix('\''))
-        .ok_or_else(|| vec![GenericParseError { loc: span }])?;
+        .ok_or_else(|| vec![ParseError::InvalidChar(span)])?;
     let mut it = without_quotes.chars();
     match it.next() {
         Some('\\') => {
             let c = it
                 .next()
-                .ok_or_else(|| vec![GenericParseError { loc: span }])?;
+                .ok_or_else(|| vec![ParseError::InvalidChar(span)])?;
             let val = match c {
                 'n' => b'\n' as i64,
                 'r' => b'\r' as i64,
@@ -952,12 +954,12 @@ fn char_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<i64> {
                 '\\' => b'\\' as i64,
                 '\'' => b'\'' as i64,
                 '0' => 0,
-                _ => return Err(vec![GenericParseError { loc: span }]),
+                _ => return Err(vec![ParseError::InvalidChar(span)]),
             };
             Ok(val)
         }
         Some(c) => Ok(c as i64),
-        None => Err(vec![GenericParseError { loc: span }]),
+        None => Err(vec![ParseError::InvalidChar(span)]),
     }
 }
 
@@ -979,7 +981,7 @@ fn regex_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Parser
     let without_slashes = inner
         .strip_prefix('/')
         .and_then(|s| s.strip_suffix('/'))
-        .ok_or_else(|| vec![GenericParseError { loc: node.span }])?;
+        .expect("invalid regex literal");
     let mut unescaped_slashes = String::with_capacity(without_slashes.len());
     let mut backslash = false;
     for c in without_slashes.chars() {
@@ -997,9 +999,7 @@ fn regex_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Parser
             unescaped_slashes.push(c);
         }
     }
-    if backslash {
-        return Err(vec![GenericParseError { loc: node.span }]);
-    }
+    assert!(!backslash);
     let regex = db.intern_regex(yaboc_base::interner::RegexData {
         kind,
         regex: unescaped_slashes,
