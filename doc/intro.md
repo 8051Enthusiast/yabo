@@ -422,8 +422,8 @@ Otherwise, it evaluates and returns the value of `b`.
 `then` has lower precedence compared to `else`, so it can essentially be used to replicate the functionality of `is` statements:
 `x is 0 then foo else bar` would evaluate `foo` if `x` is `0`, and to `bar` otherwise.
 
-As a convenience, there's also the `when?` function, which fails if the argument is false:
-`when?(foo > bar) then foo else bar` would evaluate `foo` if `foo` is greater than `bar`, and to `bar` otherwise.
+As a convenience, there's also the `if?` function, which fails if the argument is false:
+`if?(foo > bar) then foo else bar` would evaluate `foo` if `foo` is greater than `bar`, and to `bar` otherwise.
 
 Recursive Structures and Thunks
 -------------------------------
@@ -503,10 +503,10 @@ fun maybe_zero(n: int) = {|
 fun square(n: int) = maybe_zero(n).?zero else (n * n)
 ```
 
-Note also that the operator `?` to mark something as backtracking needs to be placed before the application, so if use a backtracking function, we need to write `when?(foo)` instead of `when(foo)?` as with parsers:
+Note also that the operator `?` to mark something as backtracking needs to be placed before the application, so if use a backtracking function, we need to write `if?(foo)` instead of `if(foo)?` as with parsers:
 ```
 fun when(condition: bool) = condition is true
-fun foo() = when?(1 == 2) then 1 else 2
+fun foo() = if?(1 == 2) then 1 else 2
 ```
 
 Arrays

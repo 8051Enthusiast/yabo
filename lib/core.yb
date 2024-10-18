@@ -7,9 +7,9 @@ fun ['t] ~> assert(cond: bit) = {
 # Useful for writing if-statement-like expressions.
 # Example:
 # ```
-# fun fib(n: int) = when?(n < 2) then n else (fib(n - 1) + fib(n - 2))
+# fun fib(n: int) = if?(n < 2) then n else (fib(n - 1) + fib(n - 2))
 # ```
-fun when(cond: bit) = cond is true
+fun if(cond: bit) = cond is true
 
 # Same as {}
 fun ~nil = {}
