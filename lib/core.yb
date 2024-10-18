@@ -1,6 +1,6 @@
 # Backtracks if the argument is false.
-fun ['t] ~> assert(big: bit) = {
-  let _ = big is true
+fun ['t] ~> assert(cond: bit) = {
+  let _ = cond is true
 }
 
 # Fails if the argument is false.
@@ -9,7 +9,7 @@ fun ['t] ~> assert(big: bit) = {
 # ```
 # fun fib(n: int) = when?(n < 2) then n else (fib(n - 1) + fib(n - 2))
 # ```
-fun when(big: bit) = big is true
+fun when(cond: bit) = cond is true
 
 # Same as {}
 fun ~nil = {}
