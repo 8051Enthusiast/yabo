@@ -26,6 +26,9 @@ fun ['t] ~> alt(a0: ['t] ~> 'r, a1: ['t] ~> 'r) = {
 # Parser of zero length that simply returns the input.
 fun ['t] ~> pure(v: 'r) = {let return = v}
 
+# Returns a range from start to end (end exclusive)
+fun range(start: int, end: int) = start..<end
+
 # =============== inttypes ===============
 
 # Parses an 8-bit unsigned integer.

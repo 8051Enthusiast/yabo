@@ -2,7 +2,7 @@
 def ~list(element: ~'r) = {
   | this: element?
     next: list(element?)
-  \ {}
+  \ nil
 }
 
 # Returns the length of a given list.
