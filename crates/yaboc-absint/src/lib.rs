@@ -11,11 +11,11 @@ use yaboc_base::{
 };
 use yaboc_dependents::{Dependents, SubValueKind};
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, ShapedData, TakeRef};
-use yaboc_hir as hir;
 use yaboc_hir::HirIdWrapper;
+use yaboc_hir::{self as hir, BlockReturnKind};
 use yaboc_hir_types::{FullTypeId, NominalId, TyHirs};
 use yaboc_resolve::expr::{self, Resolved};
-use yaboc_types::{Type, TypeId, TypeInterner};
+use yaboc_types::{PrimitiveType, Type, TypeId, TypeInterner};
 
 use fxhash::{FxHashMap, FxHashSet};
 
@@ -104,6 +104,7 @@ pub trait AbstractDomain<'a>: Sized + Clone + std::hash::Hash + Eq + std::fmt::D
         -> Result<(Self, bool), Self::Err>;
     fn get_arg(self, ctx: &mut AbsIntCtx<'a, Self>, arg: Arg) -> Result<Self, Self::Err>;
     fn bottom(ctx: &mut Self::DomainContext) -> Self;
+    fn unit(ctx: &mut Self::DomainContext, ty: TypeId) -> Self;
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -502,10 +503,17 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             self.set_block_var(subvalue.id, val);
         }
 
-        if block.returns {
-            let ret = block.root_context.0.child_field(self.db, FieldName::Return);
-            let ret = self.var_by_id(ret)?;
-            return Ok(ret);
+        match block.returns {
+            BlockReturnKind::Returns => {
+                let ret = block.root_context.0.child_field(self.db, FieldName::Return);
+                let ret = self.var_by_id(ret)?;
+                return Ok(ret);
+            }
+            BlockReturnKind::Nothing => {
+                let unit = self.db.intern_type(Type::Primitive(PrimitiveType::Unit));
+                return Ok(Dom::unit(&mut self.dcx, unit));
+            }
+            BlockReturnKind::Fields => {}
         }
 
         let root_context = block.root_context.lookup(self.db)?;

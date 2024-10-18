@@ -17,7 +17,7 @@ use yaboc_base::{
     interner::{DefId, FieldName},
 };
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, ShapedData, TakeRef};
-use yaboc_hir::{self as hir, HirIdWrapper, ParserPredecessor};
+use yaboc_hir::{self as hir, BlockReturnKind, HirIdWrapper, ParserPredecessor};
 use yaboc_hir_types::TyHirs;
 use yaboc_req::{NeededBy, RequirementMatrix, RequirementSet};
 use yaboc_resolve::expr::{Resolved, ResolvedAtom};
@@ -566,7 +566,7 @@ impl DependencyGraph {
 
     pub fn tail_returns(&self, db: &(impl Dependents + ?Sized)) -> SResult<FxHashSet<DefId>> {
         let mut ret = FxHashSet::default();
-        if !self.block.returns {
+        if !matches!(self.block.returns, BlockReturnKind::Returns) {
             return Ok(ret);
         }
         ret.insert(self.block.id.0);

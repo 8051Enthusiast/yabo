@@ -14,7 +14,7 @@ use yaboc_dependents::{
     requirements::ExprDepData, BacktrackStatus, BlockSerialization, SubValue, SubValueKind,
 };
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, ShapedData, SmallVec, TakeRef};
-use yaboc_hir as hir;
+use yaboc_hir::{self as hir, BlockReturnKind};
 use yaboc_hir_types::FullTypeId;
 use yaboc_len::{depvec::SmallBitVec, ArgRank, ScopeInfo, ScopeInfoIdx, ScopeKind, SizeExpr, Term};
 use yaboc_req::NeededBy;
@@ -109,7 +109,7 @@ impl<'a> SizeTermBuilder<'a> {
                     self.push_term(Term::Const(0), loc)
                 }
                 (hir::HirNode::Block(b), SubValueKind::Val) => {
-                    let val = if b.returns {
+                    let val = if matches!(b.returns, BlockReturnKind::Returns) {
                         let ctx = b.root_context.lookup(self.db)?;
                         let ret = *ctx.vars.get(FieldName::Return).unwrap().inner();
                         self.vals[&SubValue::new_val(ret)]

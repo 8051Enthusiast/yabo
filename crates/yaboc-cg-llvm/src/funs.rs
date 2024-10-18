@@ -1,6 +1,7 @@
 use fxhash::FxHashSet;
 use yaboc_base::interner::{RegexData, RegexKind};
 use yaboc_constraint::Constraints;
+use yaboc_hir::BlockReturnKind;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{
     collect::{fun_req, pd_len_req, pd_val_req},
@@ -822,7 +823,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         // making sure the vtable pointer for the block return is properly returned
         // which is actually counterproductive since we may not even have collected
         // the block layout during collection
-        if block.returns || !req.contains(NeededBy::Val) {
+        if matches!(block.returns, BlockReturnKind::Returns) || !req.contains(NeededBy::Val) {
             self.wrap_direct_call(impl_fun, llvm_fun, true)?;
             return Ok(llvm_fun);
         }
@@ -1288,7 +1289,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         translator.build()?;
 
         // if the block function does not return itself, we do not need to write the block vtable
-        if block.returns {
+        if matches!(block.returns, BlockReturnKind::Returns) {
             let llvm_fun = self.eval_fun_fun_val_wrapper(layout);
             self.wrap_direct_call(impl_fun, llvm_fun, false)?;
             return Ok(());

@@ -478,11 +478,17 @@ fn block(
     let returns = match &ast.content {
         Some(c) => {
             let (vars, _) = struct_context(c, ctx, context_id, &parents, kind);
-            vars.get(FieldName::Return).is_some()
+            if vars.get(FieldName::Return).is_some() {
+                BlockReturnKind::Returns
+            } else if vars.set.is_empty() {
+                BlockReturnKind::Nothing
+            } else {
+                BlockReturnKind::Fields
+            }
         }
         None => {
             empty_struct_context(ctx, context_id, &parents, ast.span);
-            false
+            BlockReturnKind::Nothing
         }
     };
     let block = Block {

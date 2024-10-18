@@ -181,13 +181,15 @@ impl TryFrom<&ValBinOp> for Comp {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum ZstVal {
+pub enum UninitVal {
     Nil,
     Single,
     Array,
     ArrayFill,
     Regex(Regex),
     ParserDef(ParserDefId),
+    Block(BlockId),
+    Lambda(LambdaId),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -195,7 +197,7 @@ pub enum Val {
     Char(u32),
     Int(i64),
     Bool(bool),
-    Parser(ZstVal),
+    Parser(UninitVal),
     Undefined,
 }
 
@@ -898,7 +900,7 @@ impl FunctionWriter {
         self.append_ins(MirInstr::StoreVal(place, Val::Bool(b)));
     }
 
-    pub fn load_zst(&mut self, val: ZstVal, place: PlaceRef) {
+    pub fn load_uninit(&mut self, val: UninitVal, place: PlaceRef) {
         self.append_ins(MirInstr::StoreVal(place, Val::Parser(val)));
     }
 

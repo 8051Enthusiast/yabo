@@ -14,8 +14,8 @@ use yaboc_base::{
 use yaboc_dependents::{requirements::ExprDepData, BlockSerialization, SubValue, SubValueKind};
 use yaboc_expr::{ExprIdx, Expression, FetchExpr, TakeRef};
 use yaboc_hir::{
-    self as hir, variable_set::VarStatus, BlockId, ChoiceId, ContextId, ExprId, HirIdWrapper,
-    HirNode, LambdaId, ParserDefId, ParserPredecessor,
+    self as hir, variable_set::VarStatus, BlockId, BlockReturnKind, ChoiceId, ContextId, ExprId,
+    HirIdWrapper, HirNode, LambdaId, ParserDefId, ParserPredecessor,
 };
 use yaboc_hir_types::FullTypeId;
 use yaboc_req::{NeededBy, RequirementMatrix, RequirementSet};
@@ -594,8 +594,9 @@ impl<'a> ConvertCtx<'a> {
         let ambient_type = f.fun.arg().map(|pl| f.fun.place(pl).ty);
         let mut places: FxHashMap<SubValue, PlaceRef> = Default::default();
         let root_context = block.root_context.lookup(db)?;
+        let returns = matches!(block.returns, BlockReturnKind::Returns);
         let returned_vals = if requirements.contains(NeededBy::Val) {
-            if block.returns {
+            if returns {
                 [block.root_context.0.child_field(db, FieldName::Return)]
                     .into_iter()
                     .collect()
@@ -629,7 +630,7 @@ impl<'a> ConvertCtx<'a> {
                 places.insert(val, place_ref);
             } else if matches!(val.kind, SubValueKind::Val) {
                 let place = if returned_vals.contains(&val.id) {
-                    if block.returns {
+                    if returns {
                         f.fun.place(f.fun.ret().unwrap()).place
                     } else {
                         Place::Field(f.fun.ret().unwrap(), val.id)
@@ -684,7 +685,8 @@ impl<'a> ConvertCtx<'a> {
         let mut context_bb: FxHashMap<ContextId, (BBRef, BBRef)> = FxHashMap::default();
         context_bb.insert(block.root_context, (f.fun.entry(), f.fun.entry()));
         let current_context: Option<ContextId> = Some(block.root_context);
-        let returns_self: bool = requirements.contains(NeededBy::Val) && !block.returns;
+        let returns_self: bool = requirements.contains(NeededBy::Val)
+            && !matches!(block.returns, BlockReturnKind::Returns);
         let processed_parse_sites = FxHashSet::default();
         let req_transformer = order.parse_requirements.clone();
         let tails = order.tails.clone();

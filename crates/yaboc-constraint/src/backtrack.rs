@@ -13,7 +13,8 @@ use yaboc_base::{
 use yaboc_dependents::{BacktrackStatus, SubValueKind};
 use yaboc_expr::{ExprHead, ExprIdx, Expression as _, FetchExpr, SmallVec, TakeRef};
 use yaboc_hir::{
-    BlockId, BlockKind, ContextId, ExprId, HirIdWrapper, HirNode, LambdaId, ParserDefId,
+    BlockId, BlockKind, BlockReturnKind, ContextId, ExprId, HirIdWrapper, HirNode, LambdaId,
+    ParserDefId,
 };
 use yaboc_hir_types::{FullTypeId, NominalId};
 use yaboc_resolve::{
@@ -205,19 +206,23 @@ impl<'a> ExpressionBuildCtx<'a> {
         }
         let block = block_id.lookup(self.db)?;
         let ctx = block.root_context.lookup(self.db)?;
-        let ret = if block.returns {
-            let ret_id = ctx
-                .vars
-                .get(FieldName::Return)
-                .expect("no return field")
-                .inner();
-            self.defs[ret_id]
-        } else {
-            for (_, var) in ctx.vars.iter() {
-                let id = var.inner();
-                self.fields.insert(*id, self.defs[id]);
+        let ret = match block.returns {
+            BlockReturnKind::Returns => {
+                let ret_id = ctx
+                    .vars
+                    .get(FieldName::Return)
+                    .expect("no return field")
+                    .inner();
+                self.defs[ret_id]
             }
-            self.push(Instruction::Identity, ret_ty, block_origin)?
+            BlockReturnKind::Fields => {
+                for (_, var) in ctx.vars.iter() {
+                    let id = var.inner();
+                    self.fields.insert(*id, self.defs[id]);
+                }
+                self.push(Instruction::Identity, ret_ty, block_origin)?
+            }
+            BlockReturnKind::Nothing => self.push(Instruction::None, ret_ty, block_origin)?,
         };
         if kind == BlockKind::Parser {
             self.current_arg_idx -= 1;

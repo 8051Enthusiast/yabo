@@ -1310,6 +1310,10 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
     fn bottom(ctx: &mut Self::DomainContext) -> Self {
         ctx.intern(Layout::None)
     }
+
+    fn unit(ctx: &mut Self::DomainContext, ty: TypeId) -> Self {
+        ctx.intern(Layout::Mono(MonoLayout::Primitive(PrimitiveType::Unit), ty))
+    }
 }
 
 #[cfg(test)]

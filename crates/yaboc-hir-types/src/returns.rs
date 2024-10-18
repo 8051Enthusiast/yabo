@@ -337,7 +337,7 @@ mod tests {
         let ctx = Context::<HirTypesTestDatabase>::mock(
             r#"
 def ['t] ~> nil = {}
-def nil ~> expr1 = {}
+def nil ~> expr1 = {t: expr1}
 def ~single = ~
             "#,
         );
@@ -349,10 +349,7 @@ def ~single = ~
                 .deref
                 .to_db_string(&ctx.db)
         };
-        assert_eq!(
-            return_type("nil"),
-            "<anonymous block ['0] &> file[_].nil.1.0>"
-        );
+        assert_eq!(return_type("nil"), "unit");
         assert_eq!(
             return_type("expr1"),
             "<anonymous block ['0] &> file[_].nil &> file[_].expr1.1.0>"

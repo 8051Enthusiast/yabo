@@ -1,7 +1,7 @@
 ====[ source code ]====
 
 fun block() = {|
-  a: u8
+  let a = 0
 |}
 
 def ~access = {

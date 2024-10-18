@@ -6,4 +6,4 @@ fun ~test = {{}}
 does not matter
 
 ====[ output 1 ]====
-{}
+"unit"
