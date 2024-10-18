@@ -64,14 +64,11 @@ pub fn resolve_var_ref(
     let mut current_id = loc;
     loop {
         current_id = match &db.hir_node(current_id)? {
-            HirNode::Block(b) => {
+            HirNode::Block(_) => {
                 if !outside_block {
                     return Ok(Resolved::Unresolved);
                 }
-                match b.super_context {
-                    Some(id) => id.id(),
-                    None => db.hir_parent_parserdef(current_id)?.id(),
-                }
+                current_id.parent(db).unwrap()
             }
             HirNode::Module(m) => {
                 let ident = match ident {

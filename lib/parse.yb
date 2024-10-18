@@ -1,18 +1,20 @@
 # Parses a specific byte or fails
-def ~byteval(x: int) = {
+def ~byteval(x: int) = {{
   y: ~
   assert(x == y)?
-}
+}}
 
 # backtracks if `f` matches, otherwise parses
 # a zero length value
 fun ['t] ~> not_if(f: ['t] ~> 'r) = {
-  # check if `f` parses
-  | f?
-  # if not, parse a zero-length unit type
-  # and put it into the `not_parsed` field
-  \ not_parsed: {}
-} is not_parsed
+  {
+    # check if `f` parses
+    | f?
+    # if not, parse a zero-length unit type
+    # and put it into the `not_parsed` field
+    \ not_parsed: {}
+  } is not_parsed
+}
 
 # checks if `f` matches, but does not advance the
 # stream and does not return the value of `f`

@@ -3,12 +3,11 @@
 # Each byte is read strating from the most significant bit.
 fun ~from_bytes_msb = {
   bytes: [..]
-  let return = 0..<(bytes.sizeof * 8) ~> {
-    i: ~
+  let return = range(0, bytes.sizeof * 8) ~> map(<i> {|
     let byte = bytes.[i / 8]
     let bit = (byte << (i % 8)) & 0x80
     let return = bit != 0
-  }[..]
+  |})
 }
 
 # Converts a byte array to a bit array.
@@ -16,34 +15,31 @@ fun ~from_bytes_msb = {
 # Each byte is read starting from the least significant bit.
 fun ~from_bytes_lsb = {
   bytes: [..]
-  let return = 0..<(bytes.sizeof * 8) ~> {
-    i: ~
+  let return = range(0, bytes.sizeof * 8) ~> map(<i> {|
     let byte = bytes.[i / 8]
     let bit = (byte >> (i % 8)) & 1
     let return = bit != 0
-  }[..]
+  |})
 }
 
 # Takes an int parser and the number of bits of the resulting integer.
 # The integer is parsed and split into num_bits, starting with the most significant bit.
 fun ~from_int_msb(parser: ~int, num_bits: int) = {
   x: parser?
-  let return = (64 - num_bits)..<64 ~> {
-    i: ~
+  let return = range(64 - num_bits, 64) ~> map(<i> {|
     let bit = x << i
     let return = bit < 0
-  }[..]
+  |})
 }
 
 # Takes an int parser and the number of bits of the resulting integer.
 # The integer is parsed and split into num_bits, starting with the least significant bit.
 fun ~from_int_lsb(parser: ~int, num_bits: int) = {
   x: parser?
-  let return = 0..<num_bits ~> {
-    i: ~
+  let return = range(0, num_bits) ~> map(<i> {|
     let bit = (x >> i) & 1
     let return = bit != 0
-  }[..]
+  |})
 }
 
 def ~b8_msb   = from_int_msb(u8, 8)
