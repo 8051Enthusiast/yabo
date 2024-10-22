@@ -4,7 +4,6 @@ use crate::{
     connections::ConnectionMap,
     deref_levels::DerefCache,
     inference::{InfSlice, InfTypeHead, NominalInfHead, TRACING_ENABLED},
-    TypeVarRef,
 };
 use yaboc_base::{
     dbeprintln,
@@ -258,7 +257,6 @@ pub struct TypeConvertMemo<'a, 'intern, TR: TypeResolver<'intern>> {
     meet: MemoRecursor<InfSlice<'intern>, InfTypeId<'intern>>,
     join: MemoRecursor<InfSlice<'intern>, InfTypeId<'intern>>,
     id: DefId,
-    var_count: Option<u32>,
     map: ConnectionMap,
     deref_cache: DerefCache,
     ctx: &'a mut InferenceContext<'intern, TR>,
@@ -276,7 +274,6 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
             normalize: Default::default(),
             meet: Default::default(),
             join: Default::default(),
-            var_count: None,
             id,
             map,
             deref_cache,
@@ -332,9 +329,6 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
         combinee: &[InfTypeId<'intern>],
     ) -> Result<InfTypeId<'intern>, TypeError> {
         let mut combinee: Vec<_> = combinee.to_vec();
-        for ty in combinee.iter_mut() {
-            *ty = self.normalize_var(*ty)?;
-        }
         combinee.sort_unstable();
         combinee.dedup();
         let combinee = self.ctx.slice_interner.intern_slice(&combinee);
@@ -373,34 +367,12 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
             .intern_infty(InferenceType::TypeVarRef(local_typevar));
         Ok(interned)
     }
-    fn normalize_var(
-        &mut self,
-        infty: InfTypeId<'intern>,
-    ) -> Result<InfTypeId<'intern>, TypeError> {
-        if let InferenceType::Var(v) = infty.value() {
-            let var_tys = self.ctx.var_store.get(*v).lower().to_vec();
-            let contains_only_var = var_tys
-                .iter()
-                .all(|ty| matches!(ty.value(), InferenceType::Var(_)));
-            if contains_only_var {
-                if let Some(ref mut n) = self.var_count {
-                    let result = self
-                        .ctx
-                        .intern_infty(InferenceType::TypeVarRef(TypeVarRef(self.id, *n)));
-                    self.ctx.equal(result, infty)?;
-                    *n += 1;
-                    return Ok(result);
-                }
-            }
-        }
-        Ok(infty)
-    }
+
     fn normalize_inftype_impl(
         &mut self,
         infty: InfTypeId<'intern>,
     ) -> Result<InfTypeId<'intern>, TypeError> {
-        let mut res = self.normalize_var(infty)?;
-        res = self.normalize_typevar(res)?;
+        let mut res = self.normalize_typevar(infty)?;
         if matches!(res.value(), InferenceType::Var(_)) {
             res = self.join_inftype(&[res])?;
         }
@@ -502,16 +474,6 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
             }
             Err(e) => self.convert.leave_fun_err(infty, e),
         }
-    }
-    pub fn convert_to_type_with_vars(
-        &mut self,
-        infty: InfTypeId<'intern>,
-        n_vars: u32,
-    ) -> Result<(TypeId, u32), TypeError> {
-        self.var_count = Some(n_vars);
-        let ret = self.convert_to_type(infty);
-        let new_var_count = self.var_count.take().unwrap();
-        ret.map(|x| (x, new_var_count))
     }
 }
 

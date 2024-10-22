@@ -1441,8 +1441,8 @@ def ~main = {
                 .unwrap()
         );
         assert!(
-            ["nominal-parser?[[u8] ~> [u8] &> file[_].second]() | nominal-parser[[u8] ~> [u8] &> file[_].first]()",
-             "nominal-parser[[u8] ~> [u8] &> file[_].first]() | nominal-parser?[[u8] ~> [u8] &> file[_].second]()"]
+            ["nominal-parser?[[u8] ~> file[_].second]() | nominal-parser[[u8] ~> file[_].first]()",
+             "nominal-parser[[u8] ~> file[_].first]() | nominal-parser?[[u8] ~> file[_].second]()"]
             .contains(&out.as_str())
         );
         assert_eq!(

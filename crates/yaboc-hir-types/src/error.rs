@@ -6,7 +6,7 @@ use yaboc_base::{
         diagnostic::{DiagnosticKind, Label},
         Report, SResult,
     },
-    interner::{DefId, TypeVar},
+    interner::{DefId, Identifier},
     source::{IndirectSpan, Span},
 };
 use yaboc_hir::HirNodeKind;
@@ -54,7 +54,7 @@ fn make_report(db: &(impl TyHirs + ?Sized), error: SpannedTypeError) -> Option<R
     }
 }
 
-fn get_var_name(db: &(impl TyHirs + ?Sized), var: TypeVarRef) -> TypeVar {
+fn get_var_name(db: &(impl TyHirs + ?Sized), var: TypeVarRef) -> Identifier {
     TypeVarCollection::at_id(db, yaboc_hir::ParserDefId(var.0))
         .unwrap()
         .defs[var.1 as usize]
@@ -127,11 +127,8 @@ fn make_type_error(
 ) -> Option<Report> {
     let (code, message) = match err {
         TypeError::Silenced(_) => return None,
-        TypeError::UnknownTypeVar(var) => (501, dbformat!(db, "unknown type variable {}", &var)),
         TypeError::UnknownField(field) => (502, dbformat!(db, "unknown field {}", &field)),
-        TypeError::UnknownParserdefName(name) => {
-            (503, dbformat!(db, "unknown definition {}", &name))
-        }
+        TypeError::UnknownName(name) => (503, dbformat!(db, "unknown type name {}", &name)),
         TypeError::ParserDefArgCountMismatch(first, second) => (
             504,
             format!("cannot unify functions with different argument counts: {first} and {second}"),

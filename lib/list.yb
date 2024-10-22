@@ -1,21 +1,21 @@
 # Returns a cons-list of the given parser contingent in memory.
-def ~list(element: ~'r) = {
+def ~list[R](element: ~R) = {
   | this: element?
     next: list(element?)
   \ nil
 }
 
 # Returns the length of a given list.
-fun len(xs: list): int = (len(xs.?next) + 1) else 0
+fun len[T](xs: list[T]): int = (len(xs.?next) + 1) else 0
 
 # Skips the first n elements of a list xs.
-fun skip(xs: list, n: int): list = n is 0 then xs else skip?(xs.?next, n - 1)
+fun skip[T](xs: list[T], n: int): list = n is 0 then xs else skip?(xs.?next, n - 1)
 
-fun first(xs: list[~'r]): 'r = xs.?this
+fun first[R](xs: list[R]): R = xs.?this
 
-fun last(xs: list[~'r]): 'r = xs.?next.?next then last!(xs.?next) else xs.?this
+fun last[R](xs: list[R]): R = xs.?next.?next then last!(xs.?next) else xs.?this
 
-fun fold(xs: list[~'r], init: 't, f: ('t, 'r) -> 't): 't = {|
+fun fold[R, T](xs: list[R], init: T, f: (T, R) -> T): T = {|
   | let x = xs.?this
     let new_init = f?(init, x)?
     let return = fold(xs.next, new_init, f)

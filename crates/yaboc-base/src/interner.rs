@@ -42,35 +42,6 @@ impl<DB: Interner + ?Sized> StableHash<DB> for Identifier {
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct TypeVar(InternId);
-
-impl salsa::InternKey for TypeVar {
-    fn from_intern_id(v: InternId) -> Self {
-        TypeVar(v)
-    }
-
-    fn as_intern_id(&self) -> InternId {
-        self.0
-    }
-}
-
-impl<DB: Interner + ?Sized> DatabasedDisplay<DB> for TypeVar {
-    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
-        dbwrite!(f, db, "{}", &db.lookup_intern_type_var(*self).name)
-    }
-}
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub struct TypeVarName {
-    pub name: String,
-}
-
-impl TypeVarName {
-    pub fn new(name: String) -> Self {
-        Self { name }
-    }
-}
-
-#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum FieldName {
     Return,
     Ident(Identifier),
@@ -305,8 +276,6 @@ impl salsa::InternKey for Regex {
 pub trait Interner: crate::source::Files {
     #[salsa::interned]
     fn intern_identifier(&self, identifier: IdentifierName) -> Identifier;
-    #[salsa::interned]
-    fn intern_type_var(&self, identifier: TypeVarName) -> TypeVar;
     #[salsa::interned]
     fn intern_hir_path(&self, path: DefinitionPath) -> DefId;
     #[salsa::interned]

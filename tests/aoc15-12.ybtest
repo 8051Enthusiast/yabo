@@ -4,7 +4,7 @@ import text
 fun ~ws = /[\n\r \t]*/!
 fun ~string = /"(\\"|[^"])*"/
 fun ~element: int = {ws, return: value?, ws}
-fun ~member(inner: ~'t): 't = {
+fun ~member[T](inner: ~T): T = {
   ws, string?, ws, /:/, return: inner?
 }
 fun ~members(acc: int, red: bit): int = {

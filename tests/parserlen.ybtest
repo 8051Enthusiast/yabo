@@ -1,5 +1,5 @@
 ====[ source code ]====
-def ~g(a: ~'a, b: ~'b) = {
+def ~g[A, B](a: ~A, b: ~B) = {
   | a?, b?, a?
   \ b?, a?, a?
 }

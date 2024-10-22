@@ -5,7 +5,7 @@ def ~u16l = {
   let return = lo | hi << 8
 }
 
-def ~higher_order(f: ~'t) = {
+def ~higher_order[T](f: ~T) = {
   first: f?
   second: f?
 }

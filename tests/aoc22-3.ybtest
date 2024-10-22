@@ -7,7 +7,7 @@ def ~priority = {
   \ let return = 26 + x is 0x41..0x5a - 0x40
 }
 
-fun bitset(xs: list.list[~priority], n: int, bits: int): int = n is 0 then bits else (
+fun bitset(xs: list.list[priority], n: int, bits: int): int = n is 0 then bits else (
   bitset?(xs.?next, n - 1, bits | 1 << xs.?this)
 )
 

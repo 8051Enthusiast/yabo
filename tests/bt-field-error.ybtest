@@ -1,5 +1,5 @@
 ===[ source code ]====
-def ~three(a: ~'t, b: ~'r, c: ~'s) = {
+def ~three[T, R, S](a: ~T, b: ~R, c: ~S) = {
   f1: a?
   f2: b?
   f3: c?

@@ -12,7 +12,7 @@ pub use expr::{ConstraintBinOp, ConstraintUnOp, TypeBinOp, TypeUnOp, ValBinOp, V
 
 use yaboc_base::{
     error::{SResult, Silencable},
-    interner::{FieldName, Identifier, Interner, Regex, TypeVar},
+    interner::{FieldName, Identifier, Interner, Regex},
     source::{FieldSpan, FileId, Files, IdSpan, Span},
 };
 
@@ -138,7 +138,6 @@ pub enum TypeAtom {
     ParserDef(Box<ParserDefRef>),
     Primitive(TypePrimitive),
     Array(Box<TypeArray>),
-    TypeVar(TypeVar),
     Placeholder,
 }
 
@@ -178,12 +177,6 @@ impl From<TypeArray> for TypeAtom {
 impl From<TypePrimitive> for TypeAtom {
     fn from(p: TypePrimitive) -> Self {
         TypeAtom::Primitive(p)
-    }
-}
-
-impl From<TypeVar> for TypeAtom {
-    fn from(v: TypeVar) -> Self {
-        TypeAtom::TypeVar(v)
     }
 }
 
@@ -291,8 +284,15 @@ pub struct ParserDefinition {
     pub name: IdSpan,
     pub from: Option<TypeExpression>,
     pub argdefs: Option<ArgDefList>,
+    pub type_params: Option<GenericsList>,
     pub to: ValExpression,
     pub ret_ty: Option<TypeExpression>,
+    pub span: Span,
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct GenericsList {
+    pub args: Vec<Identifier>,
     pub span: Span,
 }
 
@@ -359,7 +359,6 @@ pub enum Qualifier {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDefRef {
-    pub from: Option<TypeExpression>,
     pub name: Vec<IdSpan>,
     pub args: Vec<TypeExpression>,
     pub span: Span,

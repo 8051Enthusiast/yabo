@@ -78,7 +78,6 @@
     "~>"
     "->"
     "|>"
-    "&>"
     "."
     ".."
     ".["
@@ -97,8 +96,11 @@
 
 (regex_literal) @string.regexp
 
-(type_var) @type
 (placeholder) @type
+
+(generic_param_list
+    args: (identifier) @type)
+
 (parserdef_ref
     name: (identifier) @type)
 

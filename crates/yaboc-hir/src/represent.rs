@@ -86,7 +86,6 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for TypeAtom {
             TypeAtom::ParserDef(pd) => pd.db_fmt(f, db),
             TypeAtom::Array(arr) => arr.db_fmt(f, db),
             TypeAtom::Primitive(p) => p.db_fmt(f, db),
-            TypeAtom::TypeVar(v) => v.db_fmt(f, db),
             TypeAtom::Placeholder => write!(f, "_"),
         }
     }
@@ -94,9 +93,6 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for TypeAtom {
 
 impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for ParserDefRef {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
-        if let Some(fr) = self.from.as_ref() {
-            dbwrite!(f, db, "{} &> ", &W(fr))?;
-        }
         for (i, field) in self.path.iter().enumerate() {
             if i > 0 {
                 dbwrite!(f, db, ".")?;

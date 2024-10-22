@@ -285,10 +285,6 @@ fn convert_type_expression(
         let expr = match &expr.0 {
             ExpressionHead::Niladic(n) => match &n.inner {
                 ast::TypeAtom::ParserDef(pd) => {
-                    let from = pd
-                        .from
-                        .as_ref()
-                        .map(|x| convert_type_expression(x, ctx, add_span));
                     let args = pd
                         .args
                         .iter()
@@ -303,7 +299,6 @@ fn convert_type_expression(
                         })
                         .collect();
                     ExprHead::Niladic(TypeAtom::ParserDef(Box::new(ParserDefRef {
-                        from,
                         path: name,
                         args,
                     })))
@@ -316,7 +311,6 @@ fn convert_type_expression(
                         expr: new_expr,
                     })))
                 }
-                ast::TypeAtom::TypeVar(v) => ExprHead::Niladic(TypeAtom::TypeVar(*v)),
                 ast::TypeAtom::Placeholder => ExprHead::Niladic(TypeAtom::Placeholder),
             },
             ExpressionHead::Monadic(monadic) => {
@@ -427,11 +421,16 @@ fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDef
         ast::DefKind::Def => DefKind::Def,
         ast::DefKind::Static => DefKind::Static,
     };
+    let generics = ast
+        .type_params
+        .as_ref()
+        .map(|generics| generics.args.clone());
     let pdef = ParserDef {
         qualifier,
         id,
         kind,
         from: ast.from.is_some().then_some(from),
+        generics,
         args,
         to,
         ret_ty,

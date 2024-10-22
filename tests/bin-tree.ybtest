@@ -1,5 +1,5 @@
 ====[ source code ]====
-fun ~binary_tree(inner: ~'t) = {
+fun ~binary_tree[T](inner: ~T) = {
   | tag: u8 is 0
   \ tag: u8
     val: u32l

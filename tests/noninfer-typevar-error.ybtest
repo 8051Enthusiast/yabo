@@ -1,8 +1,8 @@
 ====[ source code ]====
-fun ['t] ~> a = {
+fun [T] ~> a[T] = {
   let next = b
-  #~^ error[513] could not find type variable of current function corresponding to 'r
+  #~^ error[513] could not find type variable of current function corresponding to T
 }
-fun ['r] ~> b = {
+fun [T] ~> b[T] = {
   let next = a
 }

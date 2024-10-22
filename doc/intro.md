@@ -254,7 +254,6 @@ Here is an overview of the types:
 | `int`           | signed 64-bit integer                                               |
 | `bit`           | single bit (boolean)                                                |
 | `u8`            | byte in memory (a byte pointer), is a subtype of `int` by dereferencing into the byte value (not the address!) |
-| `'t`            | generic type (can have any identifier)                              |
 | `[foo]`         | array of `foo`                                                      |
 | `foo ~> bar`    | parser that takes a `foo` and returns an `bar` (advancing `foo`)    |
 | `~foo`          | desugars to `[u8] ~> foo`                                           |
@@ -385,13 +384,14 @@ Let's see how this works with some examples:
 
 If a `return` is in a branch, it must be in every branch, however if there is no `return` in a block then the fields inside each branch become optional (except if they are in every branch):
 ```
-def ~maybe(f: ~'t) = {
+def ~maybe[T](f: ~T) = {
   | some: f?
   \ {}
 }
 ```
 This returns a structure containing a single `some` field with the output of `f` if it succeeds, or an empty structure if it fails.
 Note that we are using an empty block here to get a zero-length parser, but we could also use the `nil` parser from the prelude which has the same purpose.
+The `[T]` after the `def ~maybe` indicates a generic type parameter.
 
 ### Optional Fields
 
@@ -440,7 +440,7 @@ Values of type `u16l` can be used in any place where an `int` is expected, as `u
 How does one define recursive structures then?
 As an example, take a contiguous recursive list:
 ```
-def ~list(f: ~'t) = {
+def ~list[T](f: ~T) = {
   | head: f?
     tail: list(f)
   \ {}
@@ -464,7 +464,7 @@ We do not need the length of the list to get the values of both fields.
 For `head`, `u8 is 0x01..0xff` does get evaluated, but the `tail` field is just a thunk and needs no further evaluation.
 
 If you use the `fun` keyword instead of the `def` keyword, no thunk will be returned.
-This is required especially if the return type is a type variable (for example, `[u8] ~> 't`).
+This is required especially if the return type is a type variable (for example, `def [u8] ~> rec[T]: T = rec`).
 It is meant more for calculations than data definitions.
 For example, the following calculates the sum of all bytes in a list:
 ```
@@ -519,7 +519,7 @@ def ~pascal_string = {
 }
 ```
 `parser[len]` takes a parser (`u8`) and the length of the array (`len`), and returns a parser for an array of that length with elements from the parser.
-If `parser` is of type `'t ~> 'r`, then `parser[len]` is of type `'t ~> ['r]`.
+If `parser` is of type `T ~> R`, then `parser[len]` is of type `T ~> [R]`.
 
 In order for the compiler to infer that two branches are of the same length (which is a requirement for the length to be constant), it has the ability to reason about polynomial equality.
 For example, the following would have a constant size:
@@ -535,7 +535,7 @@ as a² + 2ab + b² = (a + b)² (binomial formula).
 
 The following also works:
 ```
-def ~const_sized2(f: ~'t, g: ~'r) = {
+def ~const_sized2[T, R](f: ~T, g: ~R) = {
   | f, f, g
   | f, g, f
   \ g, f, f
@@ -613,7 +613,7 @@ def ~padded_to_1024 = u8[1024] |> const_sized2(u8, u16l)
 
 `|>` actually just desugars to a call to the following combinator:
 ```
-fun ['a] ~> compose(a: ['a] ~> ['b], b: ['b] ~> 'c) = {
+fun [A] ~> compose[A](a: [A] ~> [B], b: [B] ~> C) = {
   x: a?, let return = x ~> b?
 }
 ```
@@ -649,7 +649,7 @@ The `at` Operator
 
 The `at` operator allows parsing at a specific location in the input file, specified via an integer address:
 ```
-fun ~u8ptr(parser: ~'t) = {
+fun ~u8ptr[T](parser: ~T) = {
   addr: u8
   let return = parser! at addr
 }

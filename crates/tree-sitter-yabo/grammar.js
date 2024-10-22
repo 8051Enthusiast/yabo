@@ -56,13 +56,14 @@ module.exports = grammar({
         optional(
           choice(
             seq(
-              field('from', $._type_expression),
+              field('from', $._pd_from_type_expression),
               '~>',
             ),
             field('from', $.byte_slice),
           ),
         ),
         field('name', $.identifier),
+        optional(field('type_params', $.generic_param_list)),
         optional(field('argdefs', $.arg_def_list)),
       )),
       optional(
@@ -86,6 +87,10 @@ module.exports = grammar({
       $.type_array,
       $._type_atom,
       seq('(', $._type_expression, ')'),
+    ),
+    _pd_from_type_expression: $ => choice(
+      seq('(', $._type_expression, ')'),
+      $.type_array,
     ),
     binary_type_expression: $ => choice(
       prec.right(PREC.PARSERTYPE, seq(
@@ -235,6 +240,17 @@ module.exports = grammar({
         field('ty', $._type_expression),
       ))
     ),
+    generic_param_list: $ => seq(
+      '[',
+      optional(seq(
+        field('args', $.identifier),
+        repeat(seq(
+          ',',
+          field('args', $.identifier),
+        )),
+      )),
+      ']'
+    ),
     arg_def_list: $ => seq(
       '(',
       optional(seq(
@@ -350,7 +366,6 @@ module.exports = grammar({
     ),
     _type_atom: $ => choice(
       $.primitive_type,
-      $.type_var,
       $.parserdef_ref,
       $.placeholder,
     ),
@@ -380,12 +395,6 @@ module.exports = grammar({
       field('op', choice('!', '?')),
     )),
     parserdef_ref: $ => prec.left(PREC.ARGS, seq(
-      optional(
-        seq(
-          field('from', $._type_expression),
-          '&>'
-        )
-      ),
       seq(
         field('name', $.identifier),
         repeat(seq(
@@ -431,7 +440,6 @@ module.exports = grammar({
     placeholder: $ => '_',
     array_fill: $ => '[..]',
     not_eof: $ => '!eof',
-    type_var: $ => /\'[A-Za-z_][A-Za-z_0-9]*/,
     _field_name: $ => choice(
       $.identifier,
       $.retvrn,

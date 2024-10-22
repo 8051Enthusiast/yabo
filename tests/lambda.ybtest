@@ -1,7 +1,7 @@
 ====[ source code ]====
 static x = 5
 
-fun twice(f: ('a) -> 'a) = <x: 'a> f?(f?(x))
+fun twice[A](f: (A) -> A) = <x: A> f?(f?(x))
 
 export
 fun ~test = {

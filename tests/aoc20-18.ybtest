@@ -2,13 +2,13 @@
 import aoc
 import text
 
-fun ~reduce_impl(init: 't, cont: ('t) -> ~'t): 't = {
+fun ~reduce_impl[T](init: T, cont: (T) -> ~T): T = {
   | next: cont?(init)?
     return: reduce_impl(next, cont)
   \ let return = init
 }
 
-fun ~reduce(init: ~'t, cont: ('t) -> ~'t): 't = {
+fun ~reduce[T](init: ~T, cont: (T) -> ~T): T = {
   start: init?
   return: reduce_impl(start, cont)
 }

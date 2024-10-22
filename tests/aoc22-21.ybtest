@@ -16,7 +16,7 @@ def ~line = {
   text.newline?
 }
 
-def ~calculate_line(start: list.list[~line], x: list.list[~line], name: int): int = {
+def ~calculate_line(start: list.list[line], x: list.list[line], name: int): int = {
   | let current = x.?this
     assert(current.name == name)?
     | let return = current.?num

@@ -40,8 +40,6 @@ Lexer::Lexer() {
               HighlightName::ConstantNumeric, LexerState::NotAfterOperator),
       Matcher(R"('([^']|\\.)')", HighlightName::StringQuotedSingle,
               LexerState::NotAfterOperator),
-      Matcher(R"('[A-Za-z_][A-Za-z_0-9]*)", HighlightName::Type,
-              LexerState::NotAfterOperator),
       Matcher(
           R"(==|<=|>=|!=|>>|<<|[&]>|~>|->|<|>|~|!|\?|:|\.\.|[.]|[|]|=|[+]|-|[*]|/|%|\^|\&|\\)",
           HighlightName::Operator, LexerState::AfterOperator)};

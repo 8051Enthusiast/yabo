@@ -336,8 +336,8 @@ mod tests {
     fn return_types() {
         let ctx = Context::<HirTypesTestDatabase>::mock(
             r#"
-def ['t] ~> nil = {}
-def nil ~> expr1 = {t: expr1}
+def [T] ~> nil[T] = {}
+def (nil[int]) ~> expr1 = {t: expr1}
 def ~single = ~
             "#,
         );
@@ -350,10 +350,7 @@ def ~single = ~
                 .to_db_string(&ctx.db)
         };
         assert_eq!(return_type("nil"), "unit");
-        assert_eq!(
-            return_type("expr1"),
-            "<anonymous block ['0] &> file[_].nil &> file[_].expr1.1.0>"
-        );
+        assert_eq!(return_type("expr1"), "<anonymous block file[_].expr1.1.0>");
         assert_eq!(return_type("single"), "u8");
     }
     #[test]
@@ -375,8 +372,8 @@ def ~u16l = {
     fn test_type_expr() {
         let ctx = Context::<HirTypesTestDatabase>::mock(
             r#"
-def ['t] ~> nil = {}
-def ['t] ~> expr1 = {
+def [T] ~> nil[T] = {}
+def [T] ~> expr1[T] = {
   a: ~
   b: {
     | let c: int = 2
@@ -430,30 +427,27 @@ def ~expr6 = {
         assert_eq!(full_type("expr1", &["a"]), "'0");
         assert_eq!(full_type("expr1", &["b", "c"]), "int");
         assert_eq!(full_type("expr1", &["b", "d"]), "'0");
-        assert_eq!(full_type("expr2", &["x"]), "[u8] &> file[_].expr1");
+        assert_eq!(full_type("expr2", &["x"]), "file[_].expr1[u8]");
         assert_eq!(full_type("expr2", &["y"]), "int");
         //assert_eq!(full_type("expr4", &["x"]), "int");
         assert_eq!(full_type("expr4", &["b"]), "[u8] ~> int");
         //assert_eq!(full_type("expr4", &["y"]), "int");
         assert_eq!(full_type("expr4", &["a"]), "int");
-        assert_eq!(full_type("expr5", &["x"]), "[u8] &> file[_].expr2");
-        assert_eq!(full_type("expr5", &["b"]), "[u8] &> file[_].expr2");
-        assert_eq!(
-            full_type("expr6", &["expr3"]),
-            "[u8] ~> [u8] &> file[_].expr5"
-        );
-        assert_eq!(full_type("expr6", &["b"]), "[u8] &> file[_].expr5");
+        assert_eq!(full_type("expr5", &["x"]), "file[_].expr2");
+        assert_eq!(full_type("expr5", &["b"]), "file[_].expr2");
+        assert_eq!(full_type("expr6", &["expr3"]), "[u8] ~> file[_].expr5");
+        assert_eq!(full_type("expr6", &["b"]), "file[_].expr5");
         assert_eq!(
             full_type("expr6", &["inner", "expr3"]),
-            "[u8] ~> [u8] &> file[_].expr2"
+            "[u8] ~> file[_].expr2"
         );
-        assert_eq!(full_type("expr6", &["inner", "b"]), "[u8] &> file[_].expr2");
+        assert_eq!(full_type("expr6", &["inner", "b"]), "file[_].expr2");
     }
     #[test]
     fn uncached_normalization() {
         let ctx = Context::<HirTypesTestDatabase>::mock(
             r#"
-fun id(x: 't) = x
+fun id[T](x: T) = x
 def ~entry = {}
 def ~dir_entries = entry
 def ~file_entry = entry
@@ -474,19 +468,13 @@ def ~dir_entry = {
             .parser_expr_at(ExprId(subdir_expr))
             .unwrap()
             .root_data();
-        assert_eq!(
-            dbformat!(&ctx.db, "{}", &subdir_ty),
-            "[u8] &> file[_].dir_entries"
-        );
+        assert_eq!(dbformat!(&ctx.db, "{}", &subdir_ty), "file[_].dir_entries");
         let file_expr = block.field("file").expr().id;
         let file_ty = *ctx
             .db
             .parser_expr_at(ExprId(file_expr))
             .unwrap()
             .root_data();
-        assert_eq!(
-            dbformat!(&ctx.db, "{}", &file_ty),
-            "[u8] &> file[_].file_entry"
-        );
+        assert_eq!(dbformat!(&ctx.db, "{}", &file_ty), "file[_].file_entry");
     }
 }

@@ -18,10 +18,10 @@ def [u8] ~> complex = {
     to: (parser_block
       (parser_block_open)
       content: (parser_sequence
-        (parse_statement
+        content: (parse_statement
 	       name: (identifier)
 	       parser: (identifier))
-        (parse_statement
+        content: (parse_statement
 	       name: (identifier)
 	       parser: (identifier)))
       (parser_block_close))))
@@ -47,16 +47,16 @@ def [u8] ~> choice = {
     to: (parser_block
       (parser_block_open)
       content: (parser_sequence
-        (parser_choice
+        content: (parser_choice
           content: (parser_sequence
-            (parse_statement
+            content: (parse_statement
               parser: (unary_expression
                 right: (identifier)))
-            (parse_statement
+            content: (parse_statement
               name: (retvrn)
               parser: (identifier)))
           content: (parser_sequence
-            (parse_statement
+            content: (parse_statement
                 name: (retvrn)
                 parser: (identifier)))))
         (parser_block_close))))
@@ -82,10 +82,10 @@ def [u8] ~> seven = {
     to: (parser_block
       (parser_block_open)
       content: (parser_sequence
-        (parse_statement
+        content: (parse_statement
   	      name: (identifier)
         	parser: (identifier))
-        (let_statement
+        content: (let_statement
         	name: (retvrn)
         	ty: (parserdef_ref
             name: (identifier))
