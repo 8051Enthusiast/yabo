@@ -1,5 +1,5 @@
 ====[ source code ]====
-def ~find(needle: ~'r, distance: int): int = {
+def ~find[R](needle: ~R, distance: int): int = {
   | needle?
     let return = distance
   \ ~, return: find(needle, distance + 1)
@@ -11,7 +11,7 @@ def ~uniqc(bitset: int) = {
   let return = (bit & bitset) is 0 | bit | bitset
 }
 
-def ~repeat_fold(f: ('t) -> ~'t, start: 't, n: int): int = {
+def ~repeat_fold[T](f: (T) -> ~T, start: T, n: int): int = {
   | let return = n is 0
   \ next: f?(start)?
     return: repeat_fold(f, next, n - 1)?

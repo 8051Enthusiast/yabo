@@ -4,6 +4,7 @@ use yaboc_types::inference::InternedNomHead;
 
 use super::*;
 
+/// Returns an array of all types of bound arguments at a given point
 pub fn bound_args(db: &dyn TyHirs, id: DefId) -> SResult<Arc<[TypeId]>> {
     let (end, ancestor) = match db.hir_node(id)? {
         HirNode::ParserDef(pd) => {
@@ -64,7 +65,7 @@ pub fn parser_args_error(
 ) -> Result<Signature, SpannedTypeError> {
     let pd = id.lookup(db)?;
     let loc = TypingLocation {
-        vars: TypeVarCollection::new_empty(),
+        vars: TypeVarCollection::at_id(db, id)?,
         loc: db.hir_parent_module(id.0)?.0,
         pd: id,
     };
@@ -94,19 +95,16 @@ pub fn parser_args_error(
         arg_inftys.push(from_infty);
     }
     let inftys = &arg_inftys;
-    let mut count = tcx.loc.vars.defs.len() as u32;
     // we do not deref anything here, so we do not need to pass any
     // local ids to the deref cache
     let mut converter = tcx.infctx.type_converter(id.0, &[])?;
     let mut args = Vec::new();
     for infty in inftys {
-        let (new_ty, new_n) = converter
-            .convert_to_type_with_vars(*infty, count)
+        let new_ty = converter
+            .convert_to_type(*infty)
             .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(pd.id.0)))?;
-        count = new_n;
         args.push(new_ty);
     }
-    tcx.loc.vars.fill_anon_vars(db, count);
     let ty_args = tcx.loc.vars.var_types(db, id);
     let from_ty = if pd.from.is_some() {
         Some(args.pop().unwrap())
@@ -204,10 +202,10 @@ mod tests {
         let ctx = Context::<HirTypesTestDatabase>::mock(
             r#"
 def ~expr1 = {}
-def [[u8] &> expr1] ~> expr2 = {}
-def ['x] ~> expr3 = {}
+def [expr1] ~> expr2 = {}
+def [X] ~> expr3[X] = {}
 def [[expr1] ~> expr2] ~> expr4 = {}
-def [expr3] ~> expr5 = {}
+def [expr3[int]] ~> expr5 = {}
             "#,
         );
         let arg_type = |name| {
@@ -220,12 +218,9 @@ def [expr3] ~> expr5 = {}
                 .to_db_string(&ctx.db)
         };
         assert_eq!("[u8]", arg_type("expr1"));
-        assert_eq!("[[u8] &> file[_].expr1]", arg_type("expr2"));
+        assert_eq!("[file[_].expr1]", arg_type("expr2"));
         assert_eq!("['0]", arg_type("expr3"));
-        assert_eq!(
-            "[[[u8] &> file[_].expr1] ~> [[u8] &> file[_].expr1] &> file[_].expr2]",
-            arg_type("expr4")
-        );
-        assert_eq!("[['0] &> file[_].expr3]", arg_type("expr5"));
+        assert_eq!("[[file[_].expr1] ~> file[_].expr2]", arg_type("expr4"));
+        assert_eq!("[file[_].expr3[int]]", arg_type("expr5"));
     }
 }

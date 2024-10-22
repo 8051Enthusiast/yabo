@@ -1,5 +1,5 @@
 ====[ source code ]====
-fun ~apply_with_data(data: ~'t, f: ('t) -> ~'t, default: 't): 't = {
+fun ~apply_with_data[T](data: ~T, f: (T) -> ~T, default: T): T = {
   | x: data? is !eof, return: f!(x)!
   \ let return = default
 }

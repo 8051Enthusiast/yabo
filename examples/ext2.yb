@@ -90,15 +90,15 @@ def ~inode_ptr = {
   \ let pointee = inode_at(inode_idx - 1)
 }
 
-def ~block_ptr(data: ~'t) = {
+def ~block_ptr[T](data: ~T) = {
   block: u32l
   | block is 0 then nil
   \ let pointee = ([block_size] |> data!) at (block * block_size)
 }
 
-def ~indirect(data: ~'t) = block_ptr(data)[..]
+def ~indirect[T](data: ~T) = block_ptr(data)[..]
 
-def ~data_blocks(data: ~'t) = {
+def ~data_blocks[T](data: ~T) = {
   direct: block_ptr(data)[12]
   indirect1: block_ptr(indirect(data))
   indirect2: block_ptr(indirect(indirect(data)))

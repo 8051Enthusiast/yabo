@@ -15,9 +15,10 @@ use resolve::expr::Resolved;
 use resolve::parserdef_ssc::FunctionSscId;
 use yaboc_ast::expr::{self, Atom, TypeBinOp, TypeUnOp};
 use yaboc_ast::{ArrayKind, ConstraintAtom};
+use yaboc_base::interner::Identifier;
 use yaboc_base::{
     error::{IsSilenced, SResult, Silencable, SilencedError},
-    interner::{DefId, FieldName, TypeVar, TypeVarName},
+    interner::{DefId, FieldName},
     source::{IndirectSpan, SpanIndex},
 };
 use yaboc_expr::{
@@ -31,9 +32,7 @@ use yaboc_resolve::{
 };
 use yaboc_types::inference::{Application, InternedNomHead};
 use yaboc_types::{
-    inference::{
-        InfTypeId, InfTypeInterner, InferenceContext, InferenceType, NominalInfHead, TypeResolver,
-    },
+    inference::{InfTypeId, InfTypeInterner, InferenceContext, InferenceType, TypeResolver},
     EitherType, NominalKind, NominalTypeHead, PrimitiveType, Signature, Type, TypeError, TypeId,
 };
 use yaboc_types::{TypeConvError, TypeVarRef};
@@ -159,12 +158,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
             ExprHead::Dyadic(TypeBinOp::Ref, _) => unimplemented!(),
             ExprHead::Dyadic(TypeBinOp::ParseArg, [lhs, rhs]) => {
                 let from = self.resolve_type_expr_impl(expr, *lhs, id)?;
-                let inner = match &expr.expr[*rhs] {
-                    ExprHead::Niladic(hir::TypeAtom::ParserDef(pd)) => {
-                        self.resolve_type_expr_parserdef_ref(pd, Some(from), span, id)?
-                    }
-                    _ => self.resolve_type_expr_impl(expr, *rhs, id)?,
-                };
+                let inner = self.resolve_type_expr_impl(expr, *rhs, id)?;
                 self.infctx.parser(inner, from)
             }
             ExprHead::Monadic(TypeUnOp::Wiggle(_), inner) => {
@@ -173,12 +167,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
             ExprHead::Monadic(TypeUnOp::ByteParser, inner) => {
                 let u8 = self.infctx.u8();
                 let from = self.infctx.array(ArrayKind::Each, u8);
-                let inner = match &expr.expr[*inner] {
-                    ExprHead::Niladic(hir::TypeAtom::ParserDef(pd)) => {
-                        self.resolve_type_expr_parserdef_ref(pd, Some(from), span, id)?
-                    }
-                    _ => self.resolve_type_expr_impl(expr, *inner, id)?,
-                };
+                let inner = self.resolve_type_expr_impl(expr, *inner, id)?;
                 self.infctx.parser(inner, from)
             }
             ExprHead::Niladic(hir::TypeAtom::Primitive(p)) => match p {
@@ -188,23 +177,12 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                 hir::TypePrimitive::U8 => self.infctx.u8(),
             },
             ExprHead::Niladic(hir::TypeAtom::ParserDef(pd)) => {
-                self.resolve_type_expr_parserdef_ref(pd, None, span, id)?
+                self.resolve_type_expr_parserdef_ref(pd, span, id)?
             }
             ExprHead::Niladic(hir::TypeAtom::Array(a)) => {
                 let inner = self.resolve_type_expr(a.expr.take_ref(), id)?;
                 self.infctx
                     .intern_infty(InferenceType::Loop(a.direction, inner))
-            }
-            ExprHead::Niladic(hir::TypeAtom::TypeVar(v)) => {
-                let var_idx =
-                    self.loc.vars.get_var(*v).ok_or_else(|| {
-                        SpannedTypeError::new(TypeError::UnknownTypeVar(*v), span)
-                    })?;
-                self.infctx
-                    .intern_infty(InferenceType::TypeVarRef(TypeVarRef(
-                        self.loc.pd.0,
-                        var_idx,
-                    )))
             }
             ExprHead::Niladic(hir::TypeAtom::Placeholder) => self.infctx.var(),
             ExprHead::Variadic(expr::TypeVarOp::Call, inner) => {
@@ -222,29 +200,31 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
     fn resolve_type_expr_parserdef_ref(
         &mut self,
         pd: &ParserDefRef,
-        parserarg_from: Option<InfTypeId<'intern>>,
         span: IndirectSpan,
         id: hir::TExprId,
     ) -> Result<InfTypeId<'intern>, SpannedTypeError> {
         if let [name] = &*pd.path {
-            let name = self.db.lookup_intern_identifier(name.atom);
+            let real_name = self.db.lookup_intern_identifier(name.atom);
             // we don't want u8 to be a keyword, but the implementation is actually a fun and not
             // a def, so we cannot refer to it by parserdef type (and it would
             // result in an infinite loop anyway)
             // in non-type contexts, we just refer to the fun u8, while in type contexts, we mean
             // the primitive type u8
-            if name.name == "u8" {
+            if real_name.name == "u8" {
                 return Ok(self.infctx.u8());
+            }
+
+            if let Some(arg) = self.loc.vars.get_var(name.atom) {
+                return Ok(self
+                    .infctx
+                    .intern_infty(InferenceType::TypeVarRef(TypeVarRef(self.loc.pd.0, arg))));
             }
         }
         let def = self
             .db
             .parserdef_ref(self.loc.loc, pd.path.iter().map(|x| x.atom).collect())?
             .ok_or_else(|| {
-                SpannedTypeError::new(
-                    TypeError::UnknownParserdefName(pd.path.last().unwrap().atom),
-                    span,
-                )
+                SpannedTypeError::new(TypeError::UnknownName(pd.path.last().unwrap().atom), span)
             })?;
         let parserdef = def.lookup(self.db)?;
         if !parserdef.kind.thunky() {
@@ -254,63 +234,26 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
             ));
         }
         let definition = self.db.parser_args(def)?;
-        let mut parse_arg = pd
-            .from
-            .as_ref()
-            .map(|x| self.resolve_type_expr(x.take_ref(), id))
-            .transpose()?
-            .or(parserarg_from);
-        let mut fun_args = pd
+        let mut generic_args = pd
             .args
             .iter()
             .map(|x| self.resolve_type_expr(x.take_ref(), id))
             .collect::<Result<Vec<_>, _>>()?;
-        match (parse_arg, definition.from) {
-            (None, Some(_)) => parse_arg = Some(self.infctx.var()),
-            (Some(_), None) => {
-                return Err(SpannedTypeError::new(TypeError::ParseDefFromMismatch, span))
-            }
-            _ => {}
-        }
-        let def_args_len = definition.args.as_ref().map(|x| x.len()).unwrap_or(0);
-        if fun_args.len() > def_args_len {
+        let ty_args_len = definition.ty_args.len();
+        if generic_args.len() > ty_args_len {
             return Err(SpannedTypeError::new(
-                TypeError::ParserDefArgCountMismatch(def_args_len, fun_args.len()),
+                TypeError::ParserDefArgCountMismatch(ty_args_len, generic_args.len()),
                 span,
             ));
         }
-        while fun_args.len() < def_args_len {
-            fun_args.push(self.infctx.var());
+        while generic_args.len() < ty_args_len {
+            generic_args.push(self.infctx.var());
         }
-        let ty_args = (0..definition.ty_args.len())
-            .map(|_| self.infctx.var())
-            .collect::<Vec<InfTypeId>>();
-        let def_type = self.db.intern_type(Type::Nominal(NominalTypeHead {
-            kind: NominalKind::Def,
-            def: def.0,
-            parse_arg: definition.from,
-            fun_args: definition.args.unwrap_or_default(),
-            ty_args: Arc::new(n_type_vars(self.db, def, definition.ty_args.len() as u32)),
-        }));
+        let def_type = self.db.intern_type(Type::Nominal(definition.thunk));
         let inferred_def = self
             .infctx
-            .convert_type_into_inftype_with_args(def_type, &ty_args);
-        let fun_args = self.infctx.slice_interner.intern_slice(&fun_args);
-        let ty_args = self.infctx.slice_interner.intern_slice(&ty_args);
-        let ret = self
-            .infctx
-            .intern_infty(InferenceType::Nominal(NominalInfHead {
-                kind: NominalKind::Def,
-                def: def.0,
-                parse_arg,
-                fun_args,
-                ty_args,
-                internal: false,
-            }));
-        self.infctx
-            .equal(ret, inferred_def)
-            .map_err(|e| SpannedTypeError::new(e, span))?;
-        Ok(ret)
+            .convert_type_into_inftype_with_args(def_type, &generic_args);
+        Ok(inferred_def)
     }
     fn constr_expression_type(
         &mut self,
@@ -735,52 +678,34 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
 
 #[derive(Clone, Debug)]
 pub struct TypeVarCollection {
-    pub defs: Vec<TypeVar>,
-    names: FxHashMap<TypeVar, u32>,
+    pub defs: Vec<Identifier>,
+    names: FxHashMap<Identifier, u32>,
     frozen: bool,
 }
 
 impl TypeVarCollection {
-    pub fn new_empty() -> Self {
-        TypeVarCollection {
-            defs: vec![],
-            names: FxHashMap::default(),
-            frozen: false,
-        }
-    }
-    pub fn get_var(&mut self, var_name: TypeVar) -> Option<u32> {
-        if let Some(idx) = self.names.get(&var_name) {
-            return Some(*idx);
-        }
-        if self.frozen {
-            return None;
-        }
-        let new_index = self.defs.len() as u32;
-        self.defs.push(var_name);
-        self.names.insert(var_name, new_index);
-        Some(new_index)
+    pub fn get_var(&mut self, var_name: Identifier) -> Option<u32> {
+        self.names.get(&var_name).copied()
     }
     pub fn freeze(&mut self) {
         self.frozen = true
     }
     pub fn at_id(db: &(impl TyHirs + ?Sized), id: hir::ParserDefId) -> SResult<Self> {
-        let tys = db.parser_args(id)?.ty_args;
-        let mut ret = Self::new_empty();
-        for ty in tys.iter() {
-            ret.get_var(*ty);
+        let parserdef = id.lookup(db)?;
+        let mut ret = TypeVarCollection {
+            defs: vec![],
+            names: FxHashMap::default(),
+            frozen: false,
+        };
+        for (i, id) in parserdef.generics.iter().flatten().enumerate() {
+            ret.names.insert(*id, i as u32);
+            ret.defs.push(*id);
         }
         ret.freeze();
         Ok(ret)
     }
     pub fn var_types(&self, db: &(impl TyHirs + ?Sized), id: hir::ParserDefId) -> Vec<TypeId> {
         n_type_vars(db, id, self.defs.len() as u32)
-    }
-    pub fn fill_anon_vars(&mut self, db: &(impl TyHirs + ?Sized), target_count: u32) {
-        for i in 1..=(target_count - self.defs.len() as u32) {
-            let nth_name = format!("'{i}");
-            let tvar = db.intern_type_var(TypeVarName::new(nth_name));
-            self.defs.push(tvar);
-        }
     }
 }
 

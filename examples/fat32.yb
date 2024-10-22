@@ -62,7 +62,7 @@ static blocks = {
   return: [header.bytes_per_cluster][count_of_clusters]
 } at 0
 
-fun parse_block(idx: int, data: (int) -> ~'t) = blocks.[idx - 2] ~> data!(idx)?
+fun parse_block[T](idx: int, data: (int) -> ~T) = blocks.[idx - 2] ~> data!(idx)?
 
 # defines a short entry in the directory
 def ~short_entry = {
@@ -113,7 +113,7 @@ def ~dir_entries(idx: int) = entry(dir_entry[..], idx)
 def ~file_entry(idx: int) = entry([..], idx)
 
 # takes a data type and returns a linked list of entries using the FAT
-def ~entry(data_type: ~'t, idx: int) = {
+def ~entry[T](data_type: ~T, idx: int) = {
   data: data_type!
   | let next_idx = fat.[idx].?next
     let next = parse_block(next_idx, entry(data_type, ..))

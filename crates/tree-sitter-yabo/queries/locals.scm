@@ -8,6 +8,9 @@
 (arg_definition
     name: (identifier) @local.definition)
 
+(generic_param_list
+    args: (identifier) @local.definition)
+
 (let_statement
     name: (identifier) @local.definition)
 

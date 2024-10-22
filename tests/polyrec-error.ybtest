@@ -1,8 +1,8 @@
 ====[ source code ]====
-fun ~a(x: 't, y: 'T) = {
-#~^ error[512] polymorphic recursion between 't and 'T
+fun ~a[T0, R0](x: T0, y: R0) = {
+#~^ error[512] polymorphic recursion between T0 and R0
   let next = b(x, y)
 }
-fun ~b(x: 'r, y: 'R) = {
+fun ~b[T1, R1](x: T1, y: R1) = {
   let next = a(y, x)
 }

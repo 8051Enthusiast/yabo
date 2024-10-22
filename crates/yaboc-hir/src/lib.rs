@@ -24,7 +24,7 @@ use yaboc_base::{
     dbpanic,
     error::{SResult, SilencedError},
     interner::{
-        DefId, DefinitionPath, FieldName, Identifier, IdentifierName, PathComponent, Regex, TypeVar,
+        DefId, DefinitionPath, FieldName, Identifier, IdentifierName, PathComponent, Regex,
     },
     source::{FileId, IndexSpanned, IndirectSpan, Span, SpanIndex},
     Context,
@@ -721,6 +721,7 @@ pub struct ParserDef {
     pub qualifier: Qualifier,
     pub kind: DefKind,
     pub from: Option<TExprId>,
+    pub generics: Option<Vec<Identifier>>,
     pub args: Option<Vec<ArgDefId>>,
     pub to: ExprId,
     pub ret_ty: Option<TExprId>,
@@ -873,7 +874,6 @@ pub enum TypeAtom {
     Primitive(TypePrimitive),
     ParserDef(Box<ParserDefRef>),
     Array(Box<TypeArray>),
-    TypeVar(TypeVar),
     Placeholder,
 }
 
@@ -887,7 +887,6 @@ pub enum TypePrimitive {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct ParserDefRef {
-    pub from: Option<DataExpr<HirType, SpanIndex>>,
     pub path: Vec<IndexSpanned<Identifier>>,
     pub args: Vec<DataExpr<HirType, SpanIndex>>,
 }
@@ -949,7 +948,7 @@ mod tests {
     fn eval_test() {
         let ctx = <Context<HirTestDatabase> as Import>::mock(
             r#"
-def for [u8] ~> expr1 = {
+def [u8] ~> expr1 = {
   | a: u64
     b: u32
   | a: u64,

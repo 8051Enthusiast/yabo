@@ -5,7 +5,6 @@ use yaboc_base::interner::RegexKind;
 use super::*;
 use yaboc_base::error::SilencedError;
 use yaboc_base::interner::IdentifierName;
-use yaboc_base::interner::TypeVarName;
 use yaboc_base::source::Spanned;
 
 macro_rules! inner_string {
@@ -425,9 +424,16 @@ astify! {
         kind: def_kind[!],
         name: idspan[!],
         argdefs: arg_def_list[?],
+        type_params: generic_param_list[?],
         from: expression(type_expression)[?],
         to: expression(val_expression)[!],
         ret_ty: expression(type_expression)[?],
+    };
+}
+
+astify! {
+    struct generic_param_list = GenericsList {
+        args: identifier[*],
     };
 }
 
@@ -541,7 +547,6 @@ astify! {
 
 astify! {
     struct parserdef_ref = ParserDefRef {
-        from: expression(type_expression)[?],
         name: idspan[*],
         args: expression(type_expression)[*],
     };
@@ -619,7 +624,6 @@ astify! {
         Niladic(with_span_data(primitive_type)),
         Niladic(with_span_data(parserdef_ref)),
         Niladic(with_span_data(type_array)),
-        Niladic(with_span_data(type_var)),
         Niladic(with_span_data(byte_slice)),
         Niladic(with_span_data(placeholder)),
     };
@@ -847,12 +851,6 @@ fn identifier(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Identifie
     let str = spanned(node_to_string)(db, fd, c)?;
     let id = IdentifierName { name: str.inner };
     Ok(db.intern_identifier(id))
-}
-
-fn type_var(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<TypeVar> {
-    let str = spanned(node_to_string)(db, fd, c)?;
-    let id = TypeVarName::new(str.inner);
-    Ok(db.intern_type_var(id))
 }
 
 fn fieldspan(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<FieldSpan> {

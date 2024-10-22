@@ -1,11 +1,11 @@
 ====[ source code ]====
-def ~list(element: ~'r) = {
+def ~list[R](element: ~R) = {
   | this: element?
     next: list(element?)
   \ {}
 }
 
-fun first(xs: list[~'r]): 'r = xs.?this
+fun first[R](xs: list[R]): R = xs.?this
 
 fun ~digit = {
   x: ~

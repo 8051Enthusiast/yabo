@@ -1,5 +1,5 @@
 ====[ source code ]====
-fun ~u8ptr(t: ~'t) = {
+fun ~u8ptr[T](t: ~T) = {
   addr: u8 is 0x01..0xff
   let return = t? at addr
 }

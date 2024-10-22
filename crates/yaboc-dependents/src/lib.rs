@@ -817,8 +817,8 @@ def ~main = {
     fn inner_choice() {
         let ctx = Context::<DependentsTestDatabase>::mock(
             r"
-def ['a] ~> first = {}
-def ['b] ~> second = {}
+def [A] ~> first[A] = {}
+def [B] ~> second[B] = {}
 def ~main = {
     a: ~
     b: second?

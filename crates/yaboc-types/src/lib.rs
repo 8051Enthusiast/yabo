@@ -16,7 +16,7 @@ use yaboc_base::{
     dbeprintln, dbformat,
     error::{Silencable, SilencedError},
     hash::StableHash,
-    interner::{FieldName, Identifier, Interner, TypeVar},
+    interner::{FieldName, Identifier, Interner},
 };
 
 use self::{
@@ -155,7 +155,7 @@ pub enum NominalKind {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Signature {
-    pub ty_args: Arc<Vec<TypeVar>>,
+    pub ty_args: Arc<Vec<Identifier>>,
     pub from: Option<TypeId>,
     pub args: Option<Arc<Vec<TypeId>>>,
     pub thunk: NominalTypeHead,
@@ -168,10 +168,9 @@ pub enum TypeError {
     HeadIncompatible(InfTypeHead, InfTypeHead),
     RecursiveType,
     UnknownField(FieldName),
-    UnknownParserdefName(Identifier),
+    UnknownName(Identifier),
     ParseDefFromMismatch,
     ParserDefArgCountMismatch(usize, usize),
-    UnknownTypeVar(TypeVar),
     NonThunkReference(Identifier),
     NonInferTypeVar(TypeVarRef),
     NonInfer,

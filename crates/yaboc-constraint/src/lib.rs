@@ -409,7 +409,7 @@ mod tests {
     fn poly_size() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            fun ['a] ~> compose(a: ['a] ~> ['b], b: ['b] ~> 'c) = {
+            fun [A] ~> compose[A, B, C](a: [A] ~> [B], b: [B] ~> C) = {
               x: a, let return = x ~> b
             }
         "#,

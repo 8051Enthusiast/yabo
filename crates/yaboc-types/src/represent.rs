@@ -22,10 +22,16 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeId<'_> {
                 if let NominalKind::Block = n.kind {
                     write!(f, "<anonymous block ")?;
                 }
-                if let Some(x) = n.parse_arg {
-                    dbwrite!(f, db, "{} &> {}", &x, &n.def)?;
-                } else {
-                    dbwrite!(f, db, "{}", &n.def)?;
+                dbwrite!(f, db, "{}", &n.def)?;
+                if !n.ty_args.is_empty() {
+                    write!(f, "[")?;
+                    for (i, arg) in n.ty_args.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        dbwrite!(f, db, "{}", arg)?;
+                    }
+                    write!(f, "]")?;
                 }
                 if let NominalKind::Block = n.kind {
                     write!(f, ">")?;
@@ -207,10 +213,16 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for TypeId {
                 if let NominalKind::Block = n.kind {
                     write!(f, "<anonymous block ")?;
                 }
-                if let Some(x) = n.parse_arg {
-                    dbwrite!(f, db, "{} &> {}", &x, &n.def)?;
-                } else {
-                    dbwrite!(f, db, "{}", &n.def)?;
+                dbwrite!(f, db, "{}", &n.def)?;
+                if !n.ty_args.is_empty() {
+                    write!(f, "[")?;
+                    for (i, arg) in n.ty_args.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
+                        }
+                        dbwrite!(f, db, "{}", arg)?;
+                    }
+                    write!(f, "]")?;
                 }
                 if let NominalKind::Block = n.kind {
                     write!(f, ">")?;
