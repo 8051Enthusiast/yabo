@@ -88,7 +88,7 @@ impl TypeCache {
     }
 }
 
-pub trait TypeBtInfo<'a> {
+pub trait TypeBtInfo {
     fn deref_matrix(&self, def: DefId) -> SResult<Option<TransformInfo>>;
     fn field(&self, id: DefId) -> SResult<TransformInfo>;
     fn parserdef(&self, id: DefId) -> SResult<TransformInfo>;
@@ -97,7 +97,7 @@ pub trait TypeBtInfo<'a> {
     fn types(&self) -> &Self::Lookup;
 }
 
-impl<'a, T: TypeBtInfo<'a>> TypeLookup for T {
+impl<T: TypeBtInfo> TypeLookup for T {
     fn lookup(&self, ty: TypeId) -> Type {
         self.types().lookup(ty)
     }
@@ -115,7 +115,7 @@ impl<'a, T: TypeBtInfo<'a>> TypeLookup for T {
     }
 }
 
-pub struct TypeMatrixCtx<'a, Info: TypeBtInfo<'a>> {
+pub struct TypeMatrixCtx<'a, Info: TypeBtInfo> {
     rows: TypeCache,
     derefs: FxHashMap<(TypeId, TypeId), Matrix<'a>>,
     pub db: &'a Info,
@@ -130,7 +130,7 @@ pub fn fun_ty_parts(ty: &Type) -> Option<(TypeId, &[TypeId])> {
     }
 }
 
-impl<'short, 'arena: 'short, Info: TypeBtInfo<'arena>> TypeMatrixCtx<'arena, Info> {
+impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
     pub fn new(db: &'arena Info, arena: MatrixArena<'arena>) -> Self {
         Self {
             rows: TypeCache::default(),

@@ -113,7 +113,7 @@ pub enum EffectError {
     EffectOnNonEffectfulInvocation(usize),
 }
 
-pub struct EvalCtx<'a, 'r, Trans: TypeBtInfo<'a>> {
+pub struct EvalCtx<'a, 'r, Trans: TypeBtInfo> {
     exprs: &'r [ExprNode],
     rows: &'r mut [Row],
     trans: TypeMatrixCtx<'a, Trans>,
@@ -121,7 +121,7 @@ pub struct EvalCtx<'a, 'r, Trans: TypeBtInfo<'a>> {
     errors: Vec<EffectError>,
 }
 
-impl<'a, 'r, Trans: TypeBtInfo<'a>> EvalCtx<'a, 'r, Trans> {
+impl<'a, 'r, Trans: TypeBtInfo> EvalCtx<'a, 'r, Trans> {
     pub fn new(
         exprs: &'r [ExprNode],
         rows: &'r mut [Row],
