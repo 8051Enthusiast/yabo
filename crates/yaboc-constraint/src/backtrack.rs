@@ -548,7 +548,7 @@ impl<'a> BtInferContext<'a> {
     }
 }
 
-impl<'a> TypeBtInfo<'a> for BtInferContext<'a> {
+impl<'a> TypeBtInfo for BtInferContext<'a> {
     fn deref_matrix(&self, def: DefId) -> SResult<Option<TransformInfo>> {
         let pd = self.db.hir_parent_parserdef(def)?;
         if pd.0 != def {
