@@ -435,7 +435,7 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
         non_ldt: MatrixInfo<'short>,
         target_shape: MatrixShape,
         f: impl FnOnce(&mut Self, MatrixInfo<'short>) -> SResult<(Matrix<'maybe_short>, TypeId, T)>,
-    ) -> SResult<(MatrixInfo<'maybe_short>, Option<T>)>
+    ) -> SResult<(MatrixInfo<'maybe_short>, T)>
     where
         'arena: 'maybe_short,
     {
@@ -446,7 +446,7 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
             target_shape.with_ty(res_ty).with_matrix(res),
             target_shape.ty,
         )?;
-        Ok((target_shape.with_matrix(transformed), Some(ret)))
+        Ok((target_shape.with_matrix(transformed), ret))
     }
 
     pub fn arg_matrix(
@@ -511,7 +511,7 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
         &mut self,
         from: MatrixInfo<'short>,
         to: MatrixShape,
-    ) -> SResult<(MatrixInfo<'short>, Option<Row>)> {
+    ) -> SResult<(MatrixInfo<'short>, Row)> {
         self.on_ldt(from, to, |this, from| {
             let ldt_type = this.db.lookup(from.shape.ty);
             let Some((res, [])) = fun_ty_parts(&ldt_type) else {
@@ -529,7 +529,7 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
         fun: MatrixInfo<'short>,
         arg: MatrixInfo<'short>,
         to: MatrixShape,
-    ) -> SResult<(MatrixInfo<'short>, Option<Row>)> {
+    ) -> SResult<(MatrixInfo<'short>, Row)> {
         self.on_ldt(fun, to, |this, fun| {
             let fun_ldt_type = this.db.lookup(fun.shape.ty);
             let Some((res, [arg_ty])) = fun_ty_parts(&fun_ldt_type) else {

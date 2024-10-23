@@ -301,9 +301,7 @@ impl<'a, 'r, Trans: TypeBtInfo> EvalCtx<'a, 'r, Trans> {
             .trans
             .eval(from_expr.info(source_rows), to_expr.shape())?;
         target_rows[0..to_expr.row_range.len()].clone_from_slice(result.matrix.rows());
-        if let Some(effect) = effect {
-            self.add_effect(effectful, effect);
-        }
+        self.add_effect(effectful, effect);
         Ok(())
     }
 
@@ -316,9 +314,7 @@ impl<'a, 'r, Trans: TypeBtInfo> EvalCtx<'a, 'r, Trans> {
         let arg_info = arg_expr.info(source_rows);
         let (result, effect) = self.trans.parse(fun_info, arg_info, to_expr.shape())?;
         target_rows[0..to_expr.row_range.len()].clone_from_slice(result.matrix.rows());
-        if let Some(effect) = effect {
-            self.add_effect(effectful, effect);
-        }
+        self.add_effect(effectful, effect);
         Ok(())
     }
 
