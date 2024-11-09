@@ -66,6 +66,17 @@ impl RowBits {
         }
     }
 
+    fn clear(&mut self, bit: usize) {
+        match self {
+            RowBits::Outer(slice) => {
+                let (word, bit) = (bit / 64, bit % 64);
+                slice[word] &= !(1 << bit);
+            }
+            RowBits::Inner(inner) => *inner &= !(1 << bit),
+        }
+    }
+
+
     fn subrange(&self, start: usize, end: usize) -> Self {
         let mut new = RowBits::Inner(0);
         for i in (start..end).rev() {
@@ -86,6 +97,17 @@ impl RowBits {
             return true;
         }
         bits.iter().skip(word + 1).any(|&x| x != 0)
+    }
+
+    fn extract_bound_bits(&mut self, bound_bits: u32) -> RowBits {
+        let mut ret = Self::with_capacity(bound_bits as usize);
+        for i in 0..(bound_bits as usize) {
+            if self.get(i) {
+                self.clear(i);
+                ret.set(i);
+            }
+        }
+        ret
     }
 
     const fn inner<const N: usize>(value: [bool; N]) -> Self {
@@ -153,11 +175,11 @@ impl VarRow {
         }
     }
 
-    fn bound_bits(&self) -> u32 {
+    pub fn bound_bits(&self) -> u32 {
         self.bound_bits
     }
 
-    fn total_bits(&self) -> u32 {
+    pub fn total_bits(&self) -> u32 {
         self.total_bits.get() - 1
     }
 
@@ -243,6 +265,13 @@ impl VarRow {
 
     fn has_active_bits_above_or_at(&self, bit: u32) -> bool {
         self.bits.has_active_bits_above_or_at(bit)
+    }
+
+    fn extract_bound_bits(&mut self) -> Self {
+        let bits = self.bits.extract_bound_bits(self.bound_bits);
+        let mut ret = Self::empty(self.bound_bits, self.bound_bits);
+        ret.bits = bits;
+        ret
     }
 
     fn add_bound_vars(&self, count: u32) -> Self {
@@ -334,6 +363,9 @@ impl std::str::FromStr for VarRow {
 
 impl std::fmt::Display for VarRow {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.total_bits() == 0 {
+            return write!(f, "-");
+        }
         for i in 0..self.total_bits() {
             if i == self.bound_bits() {
                 write!(f, " | ")?;
@@ -427,11 +459,25 @@ impl Row {
         }
     }
 
+    pub fn extract_bound_bits(&mut self, bound_bits: u32) -> Row {
+        match self {
+            Row::True => {
+                *self = Row::Vars(VarRow::empty(bound_bits, bound_bits));
+                Row::True
+            }
+            Row::Vars(var_row) => Row::Vars(var_row.extract_bound_bits()),
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         match self {
             Row::True => false,
             Row::Vars(row) => row.is_empty(),
         }
+    }
+
+    pub fn is_true(&self) -> bool {
+        *self == Row::True
     }
 
     pub const fn const_inner<const N: usize>(value: [bool; N]) -> Self {

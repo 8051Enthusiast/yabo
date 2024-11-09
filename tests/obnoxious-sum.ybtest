@@ -1,6 +1,6 @@
 ====[ source code ]====
 fun ~apply_with_data[T](data: ~T, f: (T) -> ~T, default: T): T = {
-  | x: data? is !eof, return: f!(x)!
+  | x: data? is !eof, return: f(x)
   \ let return = default
 }
 

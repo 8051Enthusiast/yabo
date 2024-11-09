@@ -62,7 +62,7 @@ static blocks = {
   return: [header.bytes_per_cluster][count_of_clusters]
 } at 0
 
-fun parse_block[T](idx: int, data: (int) -> ~T) = blocks.[idx - 2] ~> data!(idx)?
+fun parse_block[T](idx: int, data: (int) -> ~T) = blocks.[idx - 2] ~> data(idx)?
 
 # defines a short entry in the directory
 def ~short_entry = {

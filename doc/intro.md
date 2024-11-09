@@ -339,11 +339,10 @@ We can also partially apply function arguments by writing two dots after the las
 ```
 def ~apply_with_u16l(applied_int: (int) -> ~int) = {
   val: i16l
-  return: applied_int!(val)!
+  return: applied_int(val)
 }
 def ~runtime_bias_u16l = apply_with_u16l(biased_int(u16l, ..))
 ```
-The `applied_int!(val)!` makes sure that both the function application and parser application is fallible, and I do realize this looks ugly, but again this will hopefully change in the future.
 
 Choices
 -------

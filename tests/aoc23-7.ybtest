@@ -41,7 +41,7 @@ fun ~card_rank = {
   | let return = card is 0x4a then 9
   | let return = card is 0x51 then 10
   | let return = card is 0x4b then 11
-  \ let return = card is 0x41 then 12
+  \ let return = card try 0x41 then 12
 }
 
 fun ~hand_rank = {
