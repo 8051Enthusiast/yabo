@@ -48,7 +48,7 @@ fn make_bt_report(
 ) -> SResult<Diagnostic> {
     let pd = db.hir_parent_parserdef(def)?;
     let terms = db.bt_term(pd)?;
-    let (EffectError::EffectOnNonEffectfulInvocation(idx) | EffectError::UnscopedEffect(idx)) = err;
+    let idx = err.index();
     let origin = terms.origin[idx];
     let span = match origin {
         Origin::Expr(expr, idx) => {
@@ -79,6 +79,26 @@ fn make_bt_report(
             .with_label(Label::new(span).with_message(
                 "invocation here needs to be marked with a question or exclamation mark",
             ));
+            Ok(report)
+        }
+        EffectError::ForbiddenParametersOnArg(_) => {
+            let report = Report::new(
+                DiagnosticKind::Error,
+                span.file,
+                "Argument given to function has parameters that are not allowed to backtrack",
+            )
+            .with_code(605)
+            .with_label(Label::new(span).with_message("call using the argument is here"));
+            Ok(report)
+        }
+        EffectError::DisallowedBacktrackingArg(_) => {
+            let report = Report::new(
+                DiagnosticKind::Error,
+                span.file,
+                "Argument may backtrack, but invoked function does not allow backtracking",
+            )
+            .with_code(606)
+            .with_label(Label::new(span).with_message("call using the argument is here"));
             Ok(report)
         }
     }

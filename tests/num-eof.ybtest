@@ -2,8 +2,8 @@
 import text
 
 def ~constsize_num = {
-  return: /[0-9]{4}/ |> text.num?
-  /, /
+  return: /[0-9]{4}/! |> text.num!
+  /, /!
 }
 
 export

@@ -28,8 +28,10 @@ pub fn backtrack<DB: Constraints + ?Sized>(db: &DB) -> SResult<String> {
         dbwrite!(ret, db, "Backtrack for {}\n", &pd.0).unwrap();
         for (i, term) in terms.expr.iter().enumerate() {
             dbwrite!(ret, db, "{i}: {}\n", term).unwrap();
-            let matrix = Matrix::from_rows(&vals.vals[term.row_range()]);
-            writeln!(ret, "{}", matrix).unwrap();
+            let matrix = Matrix::from_rows(&vals.present[term.row_range()]);
+            writeln!(ret, "present:\n{}", matrix).unwrap();
+            let matrix = Matrix::from_rows(&vals.forbidden[term.row_range()]);
+            writeln!(ret, "forbidden:\n{}", matrix).unwrap();
         }
     }
     Ok(ret)

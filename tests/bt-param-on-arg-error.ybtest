@@ -1,0 +1,5 @@
+====[ source code ]====
+fun pure_fun(f: ~int) = f at 0
+
+fun might_insert_unpure_arg(g: ((~int) -> int) -> int): int = g(pure_fun)
+#~^error[605] Argument given to function has parameters that are not allowed to backtrack

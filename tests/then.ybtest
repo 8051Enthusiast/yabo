@@ -11,7 +11,7 @@ def ~case = {
            else x is 7 then 3
            else x is 8 then 2
            else x is 9 then 1
-           else x is 10 then 0)
+           else x try 10 then 0)
 }
 
 export

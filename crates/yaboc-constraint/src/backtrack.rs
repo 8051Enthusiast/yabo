@@ -54,7 +54,7 @@ pub struct BtTerm {
 }
 
 impl BtTerm {
-    fn empty_vals(&self) -> Vec<Row> {
+    fn empty_vals(&self) -> BtVals {
         let row_count = self.expr.last().map(|x| x.row_range().end).unwrap_or(0);
         let mut ret = Vec::with_capacity(row_count);
         for expr_node in &self.expr {
@@ -63,7 +63,10 @@ impl BtTerm {
                 ret.push(row.clone());
             }
         }
-        ret
+        BtVals {
+            present: ret.clone(),
+            forbidden: ret,
+        }
     }
 
     fn return_node(&self) -> &ExprNode {
@@ -463,7 +466,7 @@ pub struct BtInferContext<'a> {
     db: &'a dyn Constraints,
     arena: MatrixArena<'a>,
     terms: FxHashMap<DefId, Arc<BtTerm>>,
-    vals: FxHashMap<DefId, Vec<Row>>,
+    vals: FxHashMap<DefId, BtVals>,
     pds: Vec<ParserDefId>,
 }
 
@@ -500,17 +503,27 @@ impl<'a> BtInferContext<'a> {
         let vals = if let Some(vals) = self.vals.get(&pd.0) {
             vals
         } else {
-            &self.db.bt_vals(pd).vals
+            &self.db.bt_vals(pd)
         };
         let node = get_node(&term);
         let range = node.row_range();
-        let matrix = self.arena.new_mutable_rows(vals[range].iter().cloned());
-        for row in matrix.iter_mut() {
+        let matrix_present = self
+            .arena
+            .new_mutable_rows(vals.present[range.clone()].iter().cloned());
+        let matrix_forbidden = self
+            .arena
+            .new_mutable_rows(vals.forbidden[range].iter().cloned());
+        for row in matrix_present.iter_mut() {
             row.set_bound_bits(0);
         }
-        let matrix = Matrix::from_rows(matrix);
+        for row in matrix_forbidden.iter_mut() {
+            row.set_bound_bits(0);
+        }
+        let matrix_present = Matrix::from_rows(matrix_present);
+        let matrix_forbidden = Matrix::from_rows(matrix_forbidden);
         Ok(TransformInfo {
-            matrix,
+            matrix_present,
+            matrix_forbidden,
             to_ty: node.ty,
         })
     }
@@ -524,7 +537,11 @@ impl<'a> BtInferContext<'a> {
             for def in self.pds.iter() {
                 let term = self.terms[&def.0].clone();
                 let mut new_vals = term.empty_vals();
-                let eval = EvalCtx::new(&term.expr, &mut new_vals, matrix_ctx);
+                let new_vals_array = [
+                    new_vals.present.as_mut_slice(),
+                    new_vals.forbidden.as_mut_slice(),
+                ];
+                let eval = EvalCtx::new(&term.expr, new_vals_array, matrix_ctx);
                 let errors;
                 (matrix_ctx, errors) = eval.infer();
                 current_errors.extend(errors?.into_iter().map(|err| (def.0, err)));
@@ -537,9 +554,7 @@ impl<'a> BtInferContext<'a> {
         };
         let mut ret_vals = Vec::new();
         for def in self.pds.iter() {
-            ret_vals.push(BtVals {
-                vals: self.vals.remove(&def.0).unwrap(),
-            });
+            ret_vals.push(self.vals.remove(&def.0).unwrap());
         }
         Ok(BtResult {
             vals: ret_vals,
@@ -591,7 +606,8 @@ impl<'a> TypeBtInfo for BtInferContext<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BtVals {
-    pub vals: Vec<Row>,
+    pub present: Vec<Row>,
+    pub forbidden: Vec<Row>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

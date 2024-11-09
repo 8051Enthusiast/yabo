@@ -1,0 +1,3 @@
+====[ source code ]====
+def ~test = /aaaa/[4]
+#~^error[606] Argument may backtrack
