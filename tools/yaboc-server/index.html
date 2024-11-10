@@ -75,6 +75,7 @@
                     env_vars['YPHBT_INPUT'] = url_params.get('input');
                 }
                 env_vars['YPHBT_URL'] = document.location.origin + document.location.pathname;
+                env_vars['YPHBT_EXAMPLES'] = '/examples/examples.json';
                 const tail = Uint8Array.from(atob("AGFzbQEAAAABBAFgAAADAgEACgYBBAASAAs="), c => c.charCodeAt(0));
                 if (typeof WebAssembly === "object"
                     && typeof WebAssembly.validate === "function"

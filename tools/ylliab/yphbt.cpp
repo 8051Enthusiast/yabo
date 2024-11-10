@@ -3,10 +3,13 @@
 #include "yphbtwindow.hpp"
 
 #include <QApplication>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QMetaType>
 #include <QSettings>
 #include <QStringView>
 #include <QtGlobal>
+#include <qtenvironmentvariables.h>
 
 static std::optional<QByteArray> decode(const QString &input) {
   if (input.isEmpty()) {
@@ -55,7 +58,12 @@ int main(int argc, char **argv) {
   std::optional<QByteArray> input = decode(env_input);
   auto env_source = qEnvironmentVariable("YPHBT_SOURCE");
   std::optional<QString> source = decode(env_source);
-  YphbtWindow w(nullptr, source, input);
+  auto env_examples = qEnvironmentVariable("YPHBT_EXAMPLES");
+  std::optional<QUrl> json_url{};
+  if (!env_examples.isEmpty()) {
+    json_url = QUrl(env_examples);
+  }
+  YphbtWindow w(nullptr, source, input, json_url);
   w.show();
   return a.exec();
 }

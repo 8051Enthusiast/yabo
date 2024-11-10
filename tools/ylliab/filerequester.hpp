@@ -107,6 +107,7 @@ public:
   ~FileRequester() {
     if (executor_thread) {
       executor_thread->quit();
+      executor_thread->deleteLater();
     }
   }
   bool has_children(TreeIndex idx) const {
