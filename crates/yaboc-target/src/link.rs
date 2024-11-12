@@ -28,6 +28,7 @@ impl Linker for UnixClangLinker {
     fn link_shared(&self, path: &Path, output_path: &Path) -> std::io::Result<()> {
         let mut cmd = Command::new(&self.cc);
         cmd.arg("-shared")
+            .arg("-fuse-ld=lld")
             .arg("-fPIC")
             .arg("-target")
             .arg(&self.triple);
