@@ -11,6 +11,22 @@ use yaboc_base::config::Config;
 pub mod layout;
 pub mod link;
 
+pub const HOST_TARGET_TRIPLE: Option<&str> = if cfg!(all(
+    target_arch = "x86_64",
+    target_os = "linux",
+    target_env = "gnu"
+)) {
+    Some("x86_64-unknown-linux-gnu")
+} else if cfg!(all(
+    target_arch = "aarch64",
+    target_os = "linux",
+    target_env = "gnu"
+)) {
+    Some("aarch64-unknown-linux-gnu")
+} else {
+    None
+};
+
 #[derive(Clone)]
 pub struct Target {
     pub data: TargetLayoutData,
@@ -32,6 +48,18 @@ pub fn target(config: &Config, rt_path: &Path) -> Option<Target> {
             )),
             features: Cow::Borrowed(""),
             cpu: Cow::Borrowed("x86-64-v2"),
+            use_tailcc: true,
+            use_musttail: true,
+        },
+        "aarch64-unknown-linux-gnu" => Target {
+            data: layout::POINTER64,
+            linker: Arc::new(link::UnixClangLinker::new(
+                config.target_triple.clone(),
+                config.cc.as_deref().unwrap_or("clang").to_string(),
+                config.sysroot.as_ref().map(PathBuf::from),
+            )),
+            features: Cow::Borrowed(""),
+            cpu: Cow::Borrowed("generic"),
             use_tailcc: true,
             use_musttail: true,
         },

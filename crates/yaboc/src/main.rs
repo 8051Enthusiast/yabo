@@ -3,6 +3,7 @@ use clap::Parser;
 use context::Driver;
 use yaboc_ast::import::Import;
 use yaboc_base::config::Config;
+use yaboc_target::HOST_TARGET_TRIPLE;
 
 use std::{ffi::OsString, path::PathBuf};
 
@@ -80,9 +81,12 @@ fn main() {
             }
         })
         .collect();
-    let target_triple = args
+    let Some(target_triple) = args
         .target
-        .unwrap_or_else(|| "x86_64-unknown-linux-gnu".to_string());
+        .or_else(|| HOST_TARGET_TRIPLE.map(|x| x.to_string()))
+    else {
+        exit_with_message("unsupported host triple and no --target given")
+    };
     let mut context = match Driver::new(Config {
         target_triple,
         output_json: args.output_json,
