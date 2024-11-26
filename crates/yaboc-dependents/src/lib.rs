@@ -14,10 +14,10 @@ use yaboc_base::{
     dbpanic,
     error::{SResult, SilencedError},
     error_type,
-    interner::{DefId, FieldName},
+    interner::{DefId, FieldName, PathComponent},
 };
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, ShapedData, TakeRef};
-use yaboc_hir::{self as hir, BlockReturnKind, HirIdWrapper, ParserPredecessor};
+use yaboc_hir::{self as hir, BlockReturnKind, HirIdWrapper, HirNode, ParserPredecessor};
 use yaboc_hir_types::TyHirs;
 use yaboc_req::{NeededBy, RequirementMatrix, RequirementSet};
 use yaboc_resolve::expr::{Resolved, ResolvedAtom};
@@ -527,7 +527,7 @@ impl DependencyGraph {
     fn choice_is_tail(
         &self,
         db: &(impl Dependents + ?Sized),
-        choice: hir::StructChoice,
+        choice: &hir::StructChoice,
     ) -> Result<bool, SilencedError> {
         let ctx = choice.parent_context.lookup(db)?;
         for child in ctx.children.iter().filter_map(|x| db.hir_node(*x).ok()) {
@@ -564,14 +564,27 @@ impl DependencyGraph {
         Ok(true)
     }
 
-    pub fn tail_returns(&self, db: &(impl Dependents + ?Sized)) -> SResult<FxHashSet<DefId>> {
+    pub fn possible_tail_returns(
+        &self,
+        db: &(impl Dependents + ?Sized),
+    ) -> SResult<FxHashSet<DefId>> {
         let mut ret = FxHashSet::default();
-        if !matches!(self.block.returns, BlockReturnKind::Returns) {
-            return Ok(ret);
-        }
+        let mut choices = FxHashMap::<hir::ChoiceId, bool>::default();
+        let mut choice_is_tail = |choice: &hir::StructChoice| -> SResult<bool> {
+            if let Some(is_tail) = choices.get(&choice.id) {
+                return Ok(*is_tail);
+            }
+            let res = self.choice_is_tail(db, choice)?;
+            choices.insert(choice.id, res);
+            Ok(res)
+        };
         ret.insert(self.block.id.0);
         let root_ctx = self.block.root_context.lookup(db)?;
-        let mut return_id_stack = vec![*root_ctx.vars.set[&FieldName::Return].inner()];
+        let mut return_id_stack = if matches!(self.block.returns, BlockReturnKind::Returns) {
+            vec![*root_ctx.vars.set[&FieldName::Return].inner()]
+        } else {
+            root_ctx.vars.set.values().map(|x| *x.inner()).collect()
+        };
         while let Some(id) = return_id_stack.pop() {
             if !self.id_is_tail(id, &ret)? {
                 continue;
@@ -588,13 +601,66 @@ impl DependencyGraph {
                 continue;
             }
 
-            if !self.choice_is_tail(db, choice)? {
+            if !choice_is_tail(&choice)? {
                 continue;
             }
 
             return_id_stack.extend(chind.choices.iter().map(|x| x.1));
         }
         Ok(ret)
+    }
+
+    pub fn trmc_tail_returns(&self, db: &(impl Dependents + ?Sized)) -> SResult<FxHashSet<DefId>> {
+        let mut ret = FxHashSet::default();
+        let root_ctx = self.block.root_context.lookup(db)?;
+        let Some((_, end)) = root_ctx.endpoints else {
+            return Ok(ret);
+        };
+        let all_tail_returns = self.possible_tail_returns(db)?;
+        let mut return_id_stack = vec![end];
+        while let Some(id) = return_id_stack.pop() {
+            let choice = match db.hir_node(id)? {
+                HirNode::Parse(_) => {
+                    match id.unwrap_path_end(db) {
+                        PathComponent::Named(_) => {
+                            if all_tail_returns.contains(&id) {
+                                ret.insert(id);
+                            }
+                        }
+                        PathComponent::Unnamed(_) => {
+                            let empty = FxHashSet::default();
+                            if self.id_is_tail(id, &empty)? {
+                                ret.insert(id);
+                            }
+                        }
+                    }
+                    continue;
+                }
+                HirNode::Choice(struct_choice) => struct_choice,
+                _ => unreachable!(),
+            };
+
+            if !self.choice_is_tail(db, &choice)? {
+                continue;
+            }
+
+            for context in choice.subcontexts {
+                let context = context.lookup(db)?;
+                let Some((_, end)) = context.endpoints else {
+                    continue;
+                };
+                return_id_stack.push(end);
+            }
+        }
+        Ok(ret)
+    }
+
+    pub fn tail_returns(&self, db: &(impl Dependents + ?Sized)) -> SResult<FxHashSet<DefId>> {
+        if matches!(self.block.returns, BlockReturnKind::Returns) {
+            self.possible_tail_returns(db)
+        } else {
+            self.trmc_tail_returns(db)
+        }
     }
 
     pub fn reachables(&self) -> [FxHashSet<SubValue>; 3] {

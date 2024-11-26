@@ -993,6 +993,12 @@ impl FunctionWriter {
         self.set_bb(new_block);
     }
 
+    pub fn set_discriminant(&mut self, block: PlaceRef, field: FieldName, val: bool) {
+        self.fun
+            .bb_mut(self.current_bb)
+            .append_ins(MirInstr::SetDiscriminant(block, field, val));
+    }
+
     pub fn next_ins(&self) -> InsRef {
         let current_bb = self.current_bb;
         let offset = self.fun.bb(current_bb).ins.len();

@@ -187,16 +187,10 @@ impl DefId {
         db.lookup_intern_hir_path(self).component().unwrap()
     }
     pub fn unwrap_name<DB: Interner + ?Sized>(self, db: &DB) -> Identifier {
-        db.lookup_intern_hir_path(self)
-            .component()
-            .unwrap()
-            .unwrap_ident()
+        self.unwrap_path_end(db).unwrap_ident()
     }
     pub fn unwrap_unnamed_id<DB: Interner + ?Sized>(self, db: &DB) -> u32 {
-        db.lookup_intern_hir_path(self)
-            .component()
-            .unwrap()
-            .unwrap_unnamed()
+        self.unwrap_path_end(db).unwrap_unnamed()
     }
 }
 
