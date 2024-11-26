@@ -38,6 +38,7 @@ pub struct ConvertCtx<'a> {
     top_level_retreat: ExceptionRetreat,
     context_bb: FxHashMap<ContextId, (BBRef, BBRef)>,
     current_context: Option<ContextId>,
+    top_context: Option<ContextId>,
     context_data: FxHashMap<ContextId, ContextData>,
     processed_parse_sites: FxHashSet<DefId>,
     req: RequirementSet,
@@ -225,9 +226,7 @@ impl<'a> ConvertCtx<'a> {
             if let Some(ret) = self.w.f.fun.ret() {
                 for field in context_data.affected_discriminants {
                     let has_field = context_data.field_ids.contains_key(&field);
-                    self.w
-                        .f
-                        .append_ins(MirInstr::SetDiscriminant(ret, field, has_field));
+                    self.w.set_discriminant(ret, field, has_field);
                 }
             }
         }
@@ -278,6 +277,76 @@ impl<'a> ConvertCtx<'a> {
         self.w.copy(expr_val, target);
     }
 
+    fn tail_terminate_all_contexts_impl(
+        &mut self,
+        ctx: ContextId,
+    ) -> SResult<FxHashMap<DefId, DefId>> {
+        let data = &self.context_data[&ctx];
+
+        let block = self.w.f.fun.ret().unwrap();
+        for discriminant in &data.affected_discriminants {
+            let is_set = data.field_ids.contains_key(discriminant);
+            self.w.set_discriminant(block, *discriminant, is_set);
+        }
+
+        let context = ctx.lookup(self.db)?;
+        let mut field_move_targets = if let Some(parent) = context.parent_context {
+            self.tail_terminate_all_contexts_impl(parent)?
+        } else {
+            FxHashMap::default()
+        };
+
+        let data = &self.context_data[&ctx];
+        for (from, to) in &data.field_move_targets {
+            let transitive_to = field_move_targets.remove(to).unwrap_or(*to);
+            field_move_targets.insert(*from, transitive_to);
+        }
+        Ok(field_move_targets)
+    }
+
+    fn tail_terminate_all_contexts(&mut self, name: DefId) -> SResult<()> {
+        let mut names = FxHashSet::default();
+        if let PathComponent::Named(FieldName::Ident(name)) = name.unwrap_path_end(self.db) {
+            names.insert(name);
+        }
+        let ctx = self.current_context.unwrap();
+        let moves = self.tail_terminate_all_contexts_impl(ctx)?;
+        for (from, to) in moves {
+            if from == name {
+                continue;
+            }
+            let to_place = match self.w.val_place_at_def(to) {
+                Some(p) => p,
+                None => continue,
+            };
+            let from_place = self.w.val_place_at_def(from).unwrap();
+            self.w.copy(from_place, to_place);
+        }
+        Ok(())
+    }
+
+    fn tail_place(&mut self, call_info: CallMeta, call_loc: DefId) -> SResult<Option<PlaceRef>> {
+        let ret = if call_info.req.contains(NeededBy::Val) {
+            if call_info.tail {
+                match call_loc.unwrap_path_end(self.db) {
+                    PathComponent::Named(FieldName::Return) => self.w.f.fun.ret(),
+                    PathComponent::Named(field) => {
+                        let root_ctx = self.top_context.unwrap().lookup(self.db)?;
+                        let field_id = root_ctx.vars.set[&field].inner();
+                        let ret = self.w.f.fun.ret().unwrap();
+                        Some(self.w.f.place_map[&Place::Field(ret, *field_id)])
+                    }
+                    PathComponent::Unnamed(_) => unreachable!(),
+                }
+            } else {
+                Some(self.w.val_place_at_def(call_loc).unwrap())
+            }
+        } else {
+            None
+        };
+        Ok(ret)
+    }
+
     fn call_expr(&mut self, call_loc: DefId, expr: ExprId, call_info: CallMeta) -> SResult<()> {
         let parser_fun = self.w.val_place_at_def(expr.0).unwrap();
         let parser_ty = self.w.f.fun.place(parser_fun).ty;
@@ -289,15 +358,10 @@ impl<'a> ConvertCtx<'a> {
         };
         let ldt_parser_fun = self.w.copy_if_deref(loc, |_, _| Ok(parser_fun))?;
         let addr = self.w.front_place_at_def(call_loc).unwrap();
-        let ret = if call_info.req.contains(NeededBy::Val) {
-            if call_info.tail {
-                self.w.f.fun.ret()
-            } else {
-                Some(self.w.val_place_at_def(call_loc).unwrap())
-            }
-        } else {
-            None
-        };
+        let ret = self.tail_place(call_info, call_loc)?;
+        if call_info.tail && self.returns_self {
+            self.tail_terminate_all_contexts(call_loc)?;
+        }
         let ty = self.w.f.fun.place(arg_place).ty;
         let retlen = if call_info.req.contains(NeededBy::Len) {
             if call_info.tail {
@@ -697,6 +761,7 @@ impl<'a> ConvertCtx<'a> {
             top_level_retreat,
             context_bb,
             current_context,
+            top_context: current_context,
             context_data,
             returns_self,
             processed_parse_sites,
@@ -764,13 +829,20 @@ impl<'a> ConvertCtx<'a> {
         let tails = Arc::new(tails);
         f.set_bb(f.fun.entry());
         let w = ConvertExpr::new(db, f, retreat, places);
-        let (returns_self, current_context, context_bb, context_data, processed_parse_sites) =
-            Default::default();
+        let (
+            returns_self,
+            current_context,
+            top_context,
+            context_bb,
+            context_data,
+            processed_parse_sites,
+        ) = Default::default();
         Ok(ConvertCtx {
             db,
             top_level_retreat,
             context_bb,
             current_context,
+            top_context,
             context_data,
             returns_self,
             processed_parse_sites,
@@ -826,6 +898,7 @@ impl<'a> ConvertCtx<'a> {
             req: requirements,
             context_bb: Default::default(),
             current_context: Default::default(),
+            top_context: Default::default(),
             context_data: Default::default(),
             returns_self: false,
             processed_parse_sites: Default::default(),
