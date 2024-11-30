@@ -1,0 +1,22 @@
+====[ source code ]====
+export
+def ~test = {
+  c: is 'A'
+  | d: is !eof
+  \ nil
+}
+
+====[ binary 1 ]====
+41
+====[ output 1 ]====
+{
+    "c": 65
+}
+
+====[ binary 2 ]====
+41 42
+====[ output 2 ]====
+{
+    "c": 65,
+    "d": 66
+}

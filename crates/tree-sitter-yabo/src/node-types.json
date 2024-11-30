@@ -270,6 +270,10 @@
             "named": true
           },
           {
+            "type": "single_constraint_apply",
+            "named": true
+          },
+          {
             "type": "unary_expression",
             "named": true
           },
@@ -459,6 +463,10 @@
           },
           {
             "type": "single",
+            "named": true
+          },
+          {
+            "type": "single_constraint_apply",
             "named": true
           },
           {
@@ -697,6 +705,10 @@
             "named": true
           },
           {
+            "type": "single_constraint_apply",
+            "named": true
+          },
+          {
             "type": "unary_expression",
             "named": true
           },
@@ -805,6 +817,10 @@
           },
           {
             "type": "single",
+            "named": true
+          },
+          {
+            "type": "single_constraint_apply",
             "named": true
           },
           {
@@ -964,6 +980,10 @@
             "named": true
           },
           {
+            "type": "single_constraint_apply",
+            "named": true
+          },
+          {
             "type": "unary_expression",
             "named": true
           },
@@ -1047,6 +1067,10 @@
           },
           {
             "type": "single",
+            "named": true
+          },
+          {
+            "type": "single_constraint_apply",
             "named": true
           },
           {
@@ -1194,6 +1218,10 @@
             "named": true
           },
           {
+            "type": "single_constraint_apply",
+            "named": true
+          },
+          {
             "type": "unary_expression",
             "named": true
           },
@@ -1299,6 +1327,10 @@
           },
           {
             "type": "single",
+            "named": true
+          },
+          {
+            "type": "single_constraint_apply",
             "named": true
           },
           {
@@ -1465,6 +1497,10 @@
           },
           {
             "type": "single",
+            "named": true
+          },
+          {
+            "type": "single_constraint_apply",
             "named": true
           },
           {
@@ -1750,6 +1786,10 @@
             "named": true
           },
           {
+            "type": "single_constraint_apply",
+            "named": true
+          },
+          {
             "type": "unary_expression",
             "named": true
           },
@@ -1939,6 +1979,72 @@
     "type": "single",
     "named": true,
     "fields": {}
+  },
+  {
+    "type": "single_constraint_apply",
+    "named": true,
+    "fields": {
+      "constraint": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "binary_constraint_expression",
+            "named": true
+          },
+          {
+            "type": "bool_literal",
+            "named": true
+          },
+          {
+            "type": "char_literal",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "not_eof",
+            "named": true
+          },
+          {
+            "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "range",
+            "named": true
+          },
+          {
+            "type": "regex_literal",
+            "named": true
+          },
+          {
+            "type": "retvrn",
+            "named": true
+          },
+          {
+            "type": "unary_constraint_expression",
+            "named": true
+          }
+        ]
+      },
+      "op": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "is",
+            "named": false
+          },
+          {
+            "type": "try",
+            "named": false
+          }
+        ]
+      }
+    }
   },
   {
     "type": "source_file",
@@ -2277,10 +2383,6 @@
             "named": true
           },
           {
-            "type": "is",
-            "named": false
-          },
-          {
             "type": "sizeof",
             "named": false
           }
@@ -2360,6 +2462,10 @@
           },
           {
             "type": "single",
+            "named": true
+          },
+          {
+            "type": "single_constraint_apply",
             "named": true
           },
           {
@@ -2514,6 +2620,10 @@
           },
           {
             "type": "single",
+            "named": true
+          },
+          {
+            "type": "single_constraint_apply",
             "named": true
           },
           {

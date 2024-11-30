@@ -911,6 +911,10 @@
           "name": "array_fill"
         },
         {
+          "type": "SYMBOL",
+          "name": "single_constraint_apply"
+        },
+        {
           "type": "SEQ",
           "members": [
             {
@@ -2145,10 +2149,6 @@
                     {
                       "type": "STRING",
                       "value": "!"
-                    },
-                    {
-                      "type": "STRING",
-                      "value": "is"
                     }
                   ]
                 }
@@ -2245,6 +2245,36 @@
                 "value": "]"
               }
             ]
+          }
+        }
+      ]
+    },
+    "single_constraint_apply": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "FIELD",
+          "name": "op",
+          "content": {
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "STRING",
+                "value": "is"
+              },
+              {
+                "type": "STRING",
+                "value": "try"
+              }
+            ]
+          }
+        },
+        {
+          "type": "FIELD",
+          "name": "constraint",
+          "content": {
+            "type": "SYMBOL",
+            "name": "_constraint_expression"
           }
         }
       ]

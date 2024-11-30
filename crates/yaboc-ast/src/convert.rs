@@ -592,6 +592,7 @@ astify! {
         Dyadic(binary_expression),
         Monadic(unary_expression),
         Monadic(constraint_apply),
+        Monadic(single_constraint_apply),
         Monadic(val_dot),
         Monadic(bt_mark),
         Niladic(with_span_data(parser_block)),
@@ -648,6 +649,35 @@ astify! {
     struct parser_span = ParserSpan {
         start: field_name[!],
         end: field_name[!],
+    };
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct SingleConstraint {
+    op: Spanned<WiggleKind>,
+    constraint: ConstraintExpression,
+    span: Span,
+}
+
+impl From<SingleConstraint> for MonadicExpr<AstValSpanned> {
+    fn from(constraint: SingleConstraint) -> MonadicExpr<AstValSpanned> {
+        MonadicExpr {
+            op: OpWithData {
+                data: constraint.op.span,
+                inner: ValUnOp::Wiggle(Arc::new(constraint.constraint), constraint.op.inner),
+            },
+            inner: Box::new(Expression::<AstValSpanned>::new_niladic(OpWithData {
+                inner: ParserAtom::Single,
+                data: constraint.span,
+            })),
+        }
+    }
+}
+
+astify! {
+    struct single_constraint_apply = SingleConstraint {
+        op: spanned(wiggle_kind)[!],
+        constraint: expression(constraint_expression)[!]
     };
 }
 

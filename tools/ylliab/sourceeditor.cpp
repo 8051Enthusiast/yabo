@@ -25,7 +25,7 @@ Lexer::Lexer() {
               LexerState::NotAfterOperator),
       Matcher(R"((fun|def|static|let)\b)", HighlightName::Keyword,
               LexerState::None),
-      Matcher(R"((if|else|then|import|export|return)\b)",
+      Matcher(R"((is|try|else|then|import|export|return)\b)",
               HighlightName::Keyword, LexerState::AfterOperator),
       Matcher(R"(\(|\[|\{|\{\|)", HighlightName::Punctuation,
               LexerState::AfterOperator),

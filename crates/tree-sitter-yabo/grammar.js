@@ -215,6 +215,7 @@ module.exports = grammar({
       $.single,
       $.parser_span,
       $.array_fill,
+      $.single_constraint_apply,
       seq('(', $._expression, ')'),
       $._atom,
     ),
@@ -345,7 +346,7 @@ module.exports = grammar({
     unary_expression: $ => choice(
       prec(PREC.PREFIX,
         seq(
-          field('op', choice('-', '!', 'is')),
+          field('op', choice('-', '!')),
           field('right', $._expression)
         ),
       ),
@@ -363,6 +364,10 @@ module.exports = grammar({
         field('right', $._expression),
         ']'
       )),
+    ),
+    single_constraint_apply: $ => seq(
+      field('op', choice('is', 'try')),
+      field('constraint', $._constraint_expression),
     ),
     _type_atom: $ => choice(
       $.primitive_type,
