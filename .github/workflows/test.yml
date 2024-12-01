@@ -1,0 +1,18 @@
+---
+name: Test
+on:
+  - push
+  - pull_request
+jobs:
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          wget https://apt.llvm.org/llvm.sh
+          sudo bash ./llvm.sh 18 all
+          curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C ${CARGO_HOME:-~/.cargo}/bin
+      - run: echo "YABO_LIB_PATH=$(pwd)/lib" >> $GITHUB_ENV
+      - uses: Swatinem/rust-cache@v2
+      - run: ./ybtest.py
