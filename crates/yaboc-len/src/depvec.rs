@@ -158,10 +158,10 @@ impl LevelDepVec {
         let mut second_ret = IndexDepVec::default();
         for i in idx..total {
             if first_ret.has_val(i) {
-                second_ret.set_val(arg_count - 1 - i);
+                second_ret.set_val(total - 1 - i);
             }
             if first_ret.has_len(i) {
-                second_ret.set_len(arg_count - 1 - i);
+                second_ret.set_len(total - 1 - i);
             }
         }
         first_ret.truncate(idx);

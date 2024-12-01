@@ -1,0 +1,21 @@
+====[ source code ]====
+fun f(a: int) = <x: int> (x > a) is true then 1 else 0
+
+export
+fun ~test = {
+  a: u8
+  b: u8
+  let return = f(a)(b)
+}
+
+====[ binary 1 ]====
+10 11
+
+====[ output 1 ]====
+1
+
+====[ binary 2 ]====
+11 10
+
+====[ output 2 ]====
+0
