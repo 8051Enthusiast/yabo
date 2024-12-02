@@ -23,6 +23,21 @@ fun [T] ~> alt[T, R](a0: [T] ~> R, a1: [T] ~> R) = {
   \ return: a1?
 }
 
+# Tries to parse, trying each parser in order
+fun [T] ~> alt3[T, R](a0: [T] ~> R, a1: [T] ~> R, a2: [T] ~> R) = {
+  | return: a0?
+  | return: a1?
+  \ return: a2?
+}
+
+# Tries to parse, trying each parser in order
+fun [T] ~> alt4[T, R](a0: [T] ~> R, a1: [T] ~> R, a2: [T] ~> R, a3: [T] ~> R) = {
+  | return: a0?
+  | return: a1?
+  | return: a2?
+  \ return: a3?
+}
+
 # Parser of zero length that simply returns the input.
 fun [T] ~> pure[T, R](v: R) = {let return = v}
 

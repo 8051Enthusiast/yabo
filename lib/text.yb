@@ -35,6 +35,9 @@ fun ~num = basenum(10)?
 # Parses a newline
 fun ~newline = /\r\n?|\n/
 
+# Parses whitespace
+fun ~whitespace = {/\s+/}
+
 # Parses a newline or eof
 fun ~line_end = {
   | newline?
