@@ -499,7 +499,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.terminate_tail_typecast(from, ret)
     }
 
-    fn get_slice_ptrs(&mut self, arg: PointerValue<'llvm>) -> IResult<[PointerValue<'llvm>; 2]> {
+    fn get_slice_ptrs(
+        &mut self,
+        arg: PointerValue<'llvm>,
+    ) -> IResult<[PointerValue<'llvm>; 2]> {
         let ptr = self.build_ptr_load(arg, "load_ptr")?;
         let ptr_ty = self.any_ptr();
         let end_ptr_ptr = unsafe {

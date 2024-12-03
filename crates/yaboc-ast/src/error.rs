@@ -27,6 +27,11 @@ fn parse_error_report(f: ParseError) -> Report {
                 .with_code(101)
                 .with_label(Label::new(span).with_message("error occured here"))
         }
+        ParseError::InvalidString(span) => {
+            Report::new(DiagnosticKind::Error, span.file, "Invalid string literal")
+                .with_code(102)
+                .with_label(Label::new(span).with_message("error occured here"))
+        }
         ParseError::NumberTooBig(span) => {
             Report::new(DiagnosticKind::Error, span.file, "Number literal too big")
                 .with_code(103)

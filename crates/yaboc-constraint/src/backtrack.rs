@@ -285,6 +285,7 @@ impl<'a> ExpressionBuildCtx<'a> {
                         self.push(Instruction::ParserDef(pd.0), *ty, orig)
                     }
                     ResolvedAtom::Regex(_) => self.push(Instruction::True, *ty, orig),
+                    ResolvedAtom::String(_) => self.push(Instruction::None, *ty, orig),
                     ResolvedAtom::Single => self.push(Instruction::Single, *ty, orig),
                     ResolvedAtom::Array => self.push(Instruction::Array, *ty, orig),
                     ResolvedAtom::ArrayFill => self.push(Instruction::Array, *ty, orig),

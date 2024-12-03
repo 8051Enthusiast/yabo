@@ -268,6 +268,17 @@ impl<'a> ConvertExpr<'a> {
         }
     }
 
+    fn load_string(&mut self, loc: ExpressionLoc, str: &str) -> PlaceRef {
+        let stack_place = self.new_stack_place(loc.ty, loc.origin);
+        self.f.load_bytes(str.as_bytes().to_owned(), stack_place);
+        if let Some(place) = loc.place {
+            self.copy(stack_place, place);
+            place
+        } else {
+            stack_place
+        }
+    }
+
     fn load_undef(&mut self, loc: ExpressionLoc) -> PlaceRef {
         let has_place = loc.place.is_some();
         let place_ref = self.unwrap_or_undef(loc);
@@ -507,6 +518,7 @@ impl<'a> ConvertExpr<'a> {
             ResolvedAtom::Array => self.load_uninit(UninitVal::Array, loc),
             ResolvedAtom::ArrayFill => self.load_uninit(UninitVal::ArrayFill, loc),
             ResolvedAtom::Span(start, end) => self.convert_span(loc, *start, *end)?,
+            ResolvedAtom::String(str) => self.load_string(loc, str),
             ResolvedAtom::Regex(regex) => self.load_uninit(UninitVal::Regex(*regex), loc),
             ResolvedAtom::Block(block, _) => self.load_block(*block, loc)?,
             ResolvedAtom::Lambda(lambda) => self.load_lambda(*lambda, loc)?,

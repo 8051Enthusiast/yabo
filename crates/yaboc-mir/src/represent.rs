@@ -160,6 +160,10 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
                 dbwrite!(f, db, "{} = load ", target)?;
                 dbwrite!(f, db.1, "{}", val)
             }
+            MirInstr::StoreBytes(target, val) => {
+                dbwrite!(f, db, "{} = loadbytes ", target)?;
+                dbwrite!(f, db.1, "{}", &String::from_utf8_lossy(val))
+            }
             MirInstr::ParseCall(ret, retlen, kind, arg, fun, retreat) => {
                 if let Some(ret) = ret {
                     dbwrite!(f, db, "{}, ", ret)?;

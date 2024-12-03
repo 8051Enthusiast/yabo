@@ -898,6 +898,7 @@ pub enum ParserAtom {
     ArrayFill,
     Span(FieldName, FieldName),
     Regex(Regex),
+    String(String),
     Block(BlockId, BlockKind),
     Lambda(LambdaId),
 }
