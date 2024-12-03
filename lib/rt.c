@@ -1,4 +1,5 @@
 #include <stddef.h>
+#include <stdint.h>
 // Runtime library for yabo, right now only needed for the wasm32-unknown-unknown target.
 // These are required as llvm may syntheize calls to these functions.
 void *memcpy(void *restrict dest, const void *restrict src, size_t n) {
@@ -17,7 +18,7 @@ void *memset(void *s, int c, size_t n) {
 }
 
 void *memmove(void *dest, const void *src, size_t n) {
-  if (dest < src) {
+  if ((uintptr_t)dest < (uintptr_t)src) {
     char *d = dest;
     const char *s = src;
     while (n--)
