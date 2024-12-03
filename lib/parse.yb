@@ -56,6 +56,6 @@ fun [T] ~> lift4[T, R, A0, A1, A2, A3](f: (A0, A1, A2, A3) -> R, a0: [T] ~> A0, 
 }
 
 fun [T] ~> find[T, R](p: [T] ~> R) = {
-  | return: p?
+  | return: p? is !eof
   \ is !eof, return: find(p)?
 }

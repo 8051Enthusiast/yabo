@@ -92,6 +92,8 @@
 
 (char_literal) @constant.character
 
+(string_literal) @constant.string
+
 (number_literal) @constant.numeric.integer
 
 (regex_literal) @string.regexp

@@ -12,12 +12,13 @@ const PREC = {
   PARSE: 10,
   RANGE: 11,
   CONSTRAINT: 12,
-  PREFIX: 13,
-  POSTFIX: 14,
-  ARGS: 15,
-  PARSERTYPE: 16,
-  PARSERDEF: 17,
-  BYTE_SLICE: 18,
+  LPOSTFIX: 13,
+  PREFIX: 14,
+  POSTFIX: 15,
+  ARGS: 16,
+  PARSERTYPE: 17,
+  PARSERDEF: 18,
+  BYTE_SLICE: 19,
 };
 module.exports = grammar({
   name: 'yabo',
@@ -151,12 +152,12 @@ module.exports = grammar({
       field('expr', $._type_expression),
       ']',
     ),
-    constraint_apply: $ => prec.left(PREC.POSTFIX, seq(
+    constraint_apply: $ => prec.left(PREC.LPOSTFIX, seq(
       field('left', $._expression),
       field('op', choice('~', 'is', 'try')),
       field('right', $._constraint_expression),
     )),
-    type_constraint: $ => prec.left(PREC.POSTFIX, seq(
+    type_constraint: $ => prec.left(PREC.LPOSTFIX, seq(
       field('left', $._type_expression),
       field('op', '~'),
       field('right', $._constraint_expression),
@@ -346,7 +347,7 @@ module.exports = grammar({
     unary_expression: $ => choice(
       prec(PREC.PREFIX,
         seq(
-          field('op', choice('-', '!')),
+          field('op', choice('-', '!', '>')),
           field('right', $._expression)
         ),
       ),

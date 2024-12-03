@@ -174,7 +174,7 @@ fun [A] ~> index[A](idx: int): A = {
   return: ~ is !eof
 }
 
-fun [int] ~> startwith(rhs: [int]) = {
+fun [int] ~> start_with(rhs: [int]) = {
   lhs: [rhs.sizeof]
   let is_equal = range(0, rhs.sizeof) ~> all(<i> lhs.[i] == rhs.[i])
   let return = if?(is_equal) then lhs

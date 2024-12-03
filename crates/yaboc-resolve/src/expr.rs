@@ -65,6 +65,7 @@ pub enum Origin {
     Index,
     Array,
     ArrayFill,
+    StartWith,
 }
 
 impl TryFrom<expr::ValBinOp> for ValBinOp {
@@ -127,6 +128,7 @@ impl<C> TryFrom<expr::ValUnOp<C>> for ValUnOp<C> {
             expr::ValUnOp::BtMark(k) => Ok(ValUnOp::BtMark(k)),
             expr::ValUnOp::Array => Err(expr::ValUnOp::Array),
             expr::ValUnOp::ArrayFill => Err(expr::ValUnOp::ArrayFill),
+            expr::ValUnOp::StartWith => Err(expr::ValUnOp::StartWith),
         }
     }
 }
@@ -522,6 +524,22 @@ pub fn resolve_expr_error(
             (Cont(id), ExprHead::Niladic(ResolvedAtom::Block(b, hir::BlockKind::Inline))) => {
                 ExprHead::Monadic(ValUnOp::EvalFun, Block(id, *b, hir::BlockKind::Inline))
             }
+            (Cont(id), ExprHead::Monadic(expr::ValUnOp::StartWith, _)) => ExprHead::Monadic(
+                ValUnOp::BtMark(BtMarkKind::KeepBt),
+                M(id, |id, _, _| {
+                    ExprHead::Monadic(
+                        ValUnOp::EvalFun,
+                        M(id, |id, _, inner| {
+                            ExprHead::Variadic(
+                                ValVarOp::PartialApply(Origin::StartWith),
+                                SmallVec::from(
+                                    &[Item(id, hir::CoreItem::StartWith), Cont(inner)][..],
+                                ),
+                            )
+                        }),
+                    )
+                }),
+            ),
             (Cont(_), otherwise) => otherwise
                 .clone()
                 .map_op(

@@ -1,0 +1,58 @@
+====[ source code ]====
+export
+def ~test = {
+  | start: /(fun|data)\n/
+    inner: test?
+    /end /, end: >start
+  \ nil
+}
+
+====[ text 1 ]====
+fun
+data
+end data
+end fun
+
+====[ output 1 ]====
+{
+  "end": [
+    102,
+    117,
+    110,
+    10
+  ],
+  "inner": {
+    "end": [
+      100,
+      97,
+      116,
+      97,
+      10
+    ],
+    "inner": {
+
+    },
+    "start": [
+      100,
+      97,
+      116,
+      97,
+      10
+    ]
+  },
+  "start": [
+    102,
+    117,
+    110,
+    10
+  ]
+}
+
+====[ text 2 ]====
+fun
+data
+end data
+end data
+
+====[ output 2 ]====
+{}
