@@ -429,6 +429,7 @@ module.exports = grammar({
       $._int_literal,
       $.bool_literal,
       $.regex_literal,
+      $.string_literal,
     ),
     _int_literal: $ => choice(
       $.number_literal,
@@ -453,6 +454,7 @@ module.exports = grammar({
     identifier: $ => /[A-Za-z_][A-Za-z_0-9]*/,
     number_literal: $ => /-?([0-9]+|0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+)/,
     char_literal: $ => /'([^'\\\n]|\\.)'/,
+    string_literal: $ => /"([^"\\\n]|\\.)*"/,
     bool_literal: $ => choice(
       'true',
       'false',

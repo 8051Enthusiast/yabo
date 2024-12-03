@@ -122,6 +122,10 @@
             "named": true
           },
           {
+            "type": "string_literal",
+            "named": true
+          },
+          {
             "type": "unary_constraint_expression",
             "named": true
           }
@@ -179,6 +183,10 @@
           },
           {
             "type": "retvrn",
+            "named": true
+          },
+          {
+            "type": "string_literal",
             "named": true
           },
           {
@@ -271,6 +279,10 @@
           },
           {
             "type": "single_constraint_apply",
+            "named": true
+          },
+          {
+            "type": "string_literal",
             "named": true
           },
           {
@@ -467,6 +479,10 @@
           },
           {
             "type": "single_constraint_apply",
+            "named": true
+          },
+          {
+            "type": "string_literal",
             "named": true
           },
           {
@@ -709,6 +725,10 @@
             "named": true
           },
           {
+            "type": "string_literal",
+            "named": true
+          },
+          {
             "type": "unary_expression",
             "named": true
           },
@@ -824,6 +844,10 @@
             "named": true
           },
           {
+            "type": "string_literal",
+            "named": true
+          },
+          {
             "type": "unary_expression",
             "named": true
           },
@@ -889,6 +913,10 @@
           },
           {
             "type": "retvrn",
+            "named": true
+          },
+          {
+            "type": "string_literal",
             "named": true
           },
           {
@@ -984,6 +1012,10 @@
             "named": true
           },
           {
+            "type": "string_literal",
+            "named": true
+          },
+          {
             "type": "unary_expression",
             "named": true
           },
@@ -1071,6 +1103,10 @@
           },
           {
             "type": "single_constraint_apply",
+            "named": true
+          },
+          {
+            "type": "string_literal",
             "named": true
           },
           {
@@ -1222,6 +1258,10 @@
             "named": true
           },
           {
+            "type": "string_literal",
+            "named": true
+          },
+          {
             "type": "unary_expression",
             "named": true
           },
@@ -1331,6 +1371,10 @@
           },
           {
             "type": "single_constraint_apply",
+            "named": true
+          },
+          {
+            "type": "string_literal",
             "named": true
           },
           {
@@ -1501,6 +1545,10 @@
           },
           {
             "type": "single_constraint_apply",
+            "named": true
+          },
+          {
+            "type": "string_literal",
             "named": true
           },
           {
@@ -1790,6 +1838,10 @@
             "named": true
           },
           {
+            "type": "string_literal",
+            "named": true
+          },
+          {
             "type": "unary_expression",
             "named": true
           },
@@ -2025,6 +2077,10 @@
             "named": true
           },
           {
+            "type": "string_literal",
+            "named": true
+          },
+          {
             "type": "unary_constraint_expression",
             "named": true
           }
@@ -2218,6 +2274,10 @@
             "named": true
           },
           {
+            "type": "string_literal",
+            "named": true
+          },
+          {
             "type": "unary_constraint_expression",
             "named": true
           }
@@ -2354,6 +2414,10 @@
         {
           "type": "retvrn",
           "named": true
+        },
+        {
+          "type": "string_literal",
+          "named": true
         }
       ]
     }
@@ -2466,6 +2530,10 @@
           },
           {
             "type": "single_constraint_apply",
+            "named": true
+          },
+          {
+            "type": "string_literal",
             "named": true
           },
           {
@@ -2627,6 +2695,10 @@
             "named": true
           },
           {
+            "type": "string_literal",
+            "named": true
+          },
+          {
             "type": "unary_expression",
             "named": true
           },
@@ -2676,6 +2748,10 @@
           },
           {
             "type": "retvrn",
+            "named": true
+          },
+          {
+            "type": "string_literal",
             "named": true
           }
         ]
@@ -2929,6 +3005,10 @@
   {
     "type": "static",
     "named": false
+  },
+  {
+    "type": "string_literal",
+    "named": true
   },
   {
     "type": "then",

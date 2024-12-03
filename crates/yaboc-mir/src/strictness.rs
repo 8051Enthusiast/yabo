@@ -190,6 +190,7 @@ impl<'a> StrictnessCtx<'a> {
             | MirInstr::IntUn(ret, _, _)
             | MirInstr::Comp(ret, _, _, _)
             | MirInstr::StoreVal(ret, _)
+            | MirInstr::StoreBytes(ret, _)
             | MirInstr::GetAddr(ret, _, _)
             | MirInstr::ApplyArgs(ret, ..)
             | MirInstr::Copy(ret, _, _)
@@ -267,6 +268,7 @@ impl<'a> StrictnessCtx<'a> {
             MirInstr::Branch(_)
             | MirInstr::Return(_)
             | MirInstr::StoreVal(_, _)
+            | MirInstr::StoreBytes(_, _)
             | MirInstr::SetDiscriminant(_, _, _) => {}
         }
         Ok(())

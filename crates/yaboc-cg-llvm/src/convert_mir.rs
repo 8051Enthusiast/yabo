@@ -17,6 +17,7 @@ use yaboc_layout::{mir_subst::FunctionSubstitute, ILayout, Layout, MonoLayout};
 use yaboc_mir::{
     self as mir, BBRef, Comp, IntBinOp, IntUnOp, MirInstr, PlaceRef, ReturnStatus, Val,
 };
+use yaboc_target::layout::TargetSized;
 use yaboc_types::{Type, TypeInterner};
 
 use crate::{
@@ -462,6 +463,24 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         Ok(())
     }
 
+    fn store_bytes(&mut self, ret: PlaceRef, val: &[u8]) -> IResult<()> {
+        let bytes_start = self.cg.module_bytes(val);
+        let count = self.cg.const_i64(val.len() as i64);
+        let u8 = u8::codegen_ty(self.cg);
+        let bytes_end = unsafe { bytes_start.const_in_bounds_gep(u8, &[count]) };
+        let ret_first = self.place_ptr(ret)?;
+        self.cg.builder.build_store(ret_first, bytes_start)?;
+        let ptr_ty = <*const u8>::codegen_ty(self.cg);
+        let one = self.cg.const_i64(1);
+        let ret_second = unsafe {
+            self.cg
+                .builder
+                .build_gep(ptr_ty, ret_first, &[one], "init_end_ptr")
+        }?;
+        self.cg.builder.build_store(ret_second, bytes_end)?;
+        Ok(())
+    }
+
     fn build_typed_place_ptr(&mut self, place: PlaceRef) -> IResult<PointerValue<'llvm>> {
         let ptr = self.place_ptr(place)?;
         Ok(self
@@ -697,6 +716,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::IntUn(ret, op, right) => self.int_un(ret, op, right),
             MirInstr::Comp(ret, op, left, right) => self.comp(ret, op, left, right),
             MirInstr::StoreVal(ret, val) => self.store_val(ret, val),
+            MirInstr::StoreBytes(ret, str) => self.store_bytes(ret, &str),
             MirInstr::ParseCall(ret, _, call_kind, arg, fun, ctrl) => {
                 self.parse_call(ret, call_kind, fun, arg, ctrl)
             }

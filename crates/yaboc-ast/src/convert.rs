@@ -17,6 +17,7 @@ macro_rules! inner_string {
 pub enum ParseError {
     Generic(Span),
     InvalidChar(Span),
+    InvalidString(Span),
     NumberTooBig(Span),
 }
 
@@ -602,6 +603,7 @@ astify! {
         Niladic(with_span_data(array_fill)),
         Niladic(parser_span),
         Niladic(with_span_data(regex_literal)),
+        Niladic(with_span_data(string_literal)),
         Niladic(with_span_data(atom..)),
     };
 }
@@ -952,6 +954,37 @@ fn char_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<i64> {
         Some(c) => Ok(c as i64),
         None => Err(vec![ParseError::InvalidChar(span)]),
     }
+}
+
+fn string_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<ParserAtom> {
+    let Spanned { inner, span } = spanned(node_to_string)(db, fd, c)?;
+    let without_quotes = inner
+        .strip_prefix('\"')
+        .and_then(|s| s.strip_suffix('\"'))
+        .ok_or_else(|| vec![ParseError::InvalidString(span)])?;
+    let mut ret = String::new();
+    let mut it = without_quotes.chars();
+    while let Some(c) = it.next() {
+        let next = match c {
+            '\\' => {
+                let c = it
+                    .next()
+                    .ok_or_else(|| vec![ParseError::InvalidString(span)])?;
+                match c {
+                    'n' => '\n',
+                    'r' => '\r',
+                    't' => '\t',
+                    '\\' => '\\',
+                    '\"' => '\"',
+                    '0' => '\0',
+                    _ => return Err(vec![ParseError::InvalidString(span)]),
+                }
+            }
+            c => c,
+        };
+        ret.push(next)
+    }
+    Ok(ParserAtom::String(ret))
 }
 
 fn bool_literal(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<bool> {

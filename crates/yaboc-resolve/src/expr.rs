@@ -23,6 +23,7 @@ pub enum ResolvedAtom {
     Global(hir::ParserDefId),
     Span(DefId, DefId),
     Regex(Regex),
+    String(String),
     Number(i64),
     Char(u32),
     Bool(bool),
@@ -332,6 +333,7 @@ fn resolve_expr_modules(
                         }
                         ResolvedAtom::Regex(r)
                     }
+                    hir::ParserAtom::String(str) => ResolvedAtom::String(str),
                     hir::ParserAtom::Block(b, kind) => ResolvedAtom::Block(b, kind),
                     hir::ParserAtom::Lambda(l) => ResolvedAtom::Lambda(l),
                     hir::ParserAtom::Span(start, end) => {

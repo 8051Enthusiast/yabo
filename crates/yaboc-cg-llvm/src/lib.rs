@@ -436,6 +436,22 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         global_value.as_pointer_value().const_cast(self.any_ptr())
     }
 
+    fn module_bytes(&mut self, s: &[u8]) -> PointerValue<'llvm> {
+        let hex = s
+            .iter()
+            .map(|x| format!("{x:02x}"))
+            .fold(String::new(), |a, b| a + &b);
+        let sym_name = format!("b${hex}");
+        if let Some(sym) = self.module.get_global(&sym_name) {
+            return sym.as_pointer_value().const_cast(self.any_ptr());
+        }
+        let cstr = self.llvm.const_string(s, true);
+        let global_value = self.module.add_global(cstr.get_type(), None, &sym_name);
+        global_value.set_visibility(GlobalVisibility::Hidden);
+        global_value.set_initializer(&cstr);
+        global_value.as_pointer_value().const_cast(self.any_ptr())
+    }
+
     fn field_info(&mut self, name: Identifier) -> PointerValue<'llvm> {
         let name = self
             .compiler_database

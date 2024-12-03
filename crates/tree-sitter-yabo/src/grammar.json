@@ -2570,6 +2570,10 @@
         {
           "type": "SYMBOL",
           "name": "regex_literal"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "string_literal"
         }
       ]
     },
@@ -2659,6 +2663,10 @@
     "char_literal": {
       "type": "PATTERN",
       "value": "'([^'\\\\\\n]|\\\\.)'"
+    },
+    "string_literal": {
+      "type": "PATTERN",
+      "value": "\"([^\"\\\\\\n]|\\\\.)*\""
     },
     "bool_literal": {
       "type": "CHOICE",

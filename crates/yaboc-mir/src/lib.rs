@@ -276,6 +276,7 @@ pub enum MirInstr {
     IntUn(PlaceRef, IntUnOp, PlaceRef),
     Comp(PlaceRef, Comp, PlaceRef, PlaceRef),
     StoreVal(PlaceRef, Val),
+    StoreBytes(PlaceRef, Vec<u8>),
     SetDiscriminant(PlaceRef, FieldName, bool),
     Range(PlaceRef, PlaceRef, PlaceRef, ControlFlow),
     GetAddr(PlaceRef, PlaceRef, ControlFlow),
@@ -338,6 +339,7 @@ impl MirInstr {
             | MirInstr::IntUn(_, _, _)
             | MirInstr::Comp(_, _, _, _)
             | MirInstr::StoreVal(_, _)
+            | MirInstr::StoreBytes(_, _)
             | MirInstr::SetDiscriminant(_, _, _)
             | MirInstr::ParseCall(.., None)
             | MirInstr::Return(_) => None,
@@ -387,6 +389,7 @@ impl MirInstr {
             | MirInstr::IntUn(_, _, _)
             | MirInstr::Comp(_, _, _, _)
             | MirInstr::StoreVal(_, _)
+            | MirInstr::StoreBytes(_, _)
             | MirInstr::SetDiscriminant(_, _, _)
             | MirInstr::Return(_)
             | MirInstr::ParseCall(.., None) => {
@@ -905,6 +908,10 @@ impl FunctionWriter {
 
     pub fn load_undef(&mut self, place: PlaceRef) {
         self.append_ins(MirInstr::StoreVal(place, Val::Undefined));
+    }
+
+    pub fn load_bytes(&mut self, s: Vec<u8>, place: PlaceRef) {
+        self.append_ins(MirInstr::StoreBytes(place, s));
     }
 
     pub fn int_bin_op(&mut self, target: PlaceRef, op: IntBinOp, left: PlaceRef, right: PlaceRef) {

@@ -823,9 +823,12 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
             arg: for_loop,
         })
     }
-    pub fn regex(&mut self) -> InfTypeId<'intern> {
+    pub fn byte_array(&mut self) -> InfTypeId<'intern> {
         let u8 = self.u8();
-        let u8_array = self.array(ArrayKind::Each, u8);
+        self.array(ArrayKind::Each, u8)
+    }
+    pub fn regex(&mut self) -> InfTypeId<'intern> {
+        let u8_array = self.byte_array();
         self.parser(u8_array, u8_array)
     }
     pub fn array_parser(&mut self) -> InfTypeId<'intern> {

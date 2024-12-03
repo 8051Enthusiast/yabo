@@ -1163,6 +1163,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ResolvedAtom::Span(..) => {
                     ctx.active_ambience().expect("Span in non-parser context").0
                 }
+                ResolvedAtom::String(_) => make_layout(MonoLayout::SlicePtr),
                 ResolvedAtom::Regex(r) => make_layout(MonoLayout::Regex(r, true)),
                 ResolvedAtom::ParserDef(pd) => {
                     make_layout(MonoLayout::NominalParser(pd, Vec::new(), true))
@@ -1440,11 +1441,11 @@ def ~main = {
                 .access_field(&mut outlayer, field("c"))
                 .unwrap()
         );
-        assert!(
-            ["nominal-parser?[[u8] ~> file[_].second]() | nominal-parser[[u8] ~> file[_].first]()",
-             "nominal-parser[[u8] ~> file[_].first]() | nominal-parser?[[u8] ~> file[_].second]()"]
-            .contains(&out.as_str())
-        );
+        assert!([
+            "nominal-parser?[[u8] ~> file[_].second]() | nominal-parser[[u8] ~> file[_].first]()",
+            "nominal-parser[[u8] ~> file[_].first]() | nominal-parser?[[u8] ~> file[_].second]()"
+        ]
+        .contains(&out.as_str()));
         assert_eq!(
             dbformat!(
                 &ctx.db,

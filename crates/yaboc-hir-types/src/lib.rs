@@ -407,6 +407,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                     // to resolve correctly
                     ResolvedAtom::Span(..) => self.ambient_type().ok_or(SilencedError::new())?,
                     ResolvedAtom::Regex(..) => self.infctx.regex(),
+                    ResolvedAtom::String(_) => self.infctx.byte_array(),
                     ResolvedAtom::Block(b, kind) => self.infer_block(*b, *kind).map_err(spanned)?,
                     ResolvedAtom::Lambda(l) => {
                         let lambda = l.lookup(self.db)?;
