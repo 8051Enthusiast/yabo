@@ -355,7 +355,14 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
 
     fn register_len(&mut self, parser: ILayout<'a>) {
         for parser in &parser {
+            match parser.mono_layout().0 {
+                MonoLayout::SlicePtr | MonoLayout::Range | MonoLayout::Array { .. } => continue,
+                _ => {}
+            }
             if self.lens.insert(parser) {
+                if TRACE_COLLECTION {
+                    dbeprintln!(self.ctx.db, "[collection] registered len {}", &parser);
+                }
                 if let Some(call) = self.parser_len_proc_entry(parser) {
                     self.unprocessed.push(call);
                 }

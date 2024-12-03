@@ -680,6 +680,7 @@ pub enum BtMarkKind {
 pub enum ValUnOp<C> {
     Not,
     Neg,
+    StartWith,
     Array,
     ArrayFill,
     Wiggle(C, WiggleKind),
@@ -694,6 +695,7 @@ impl<C> ValUnOp<C> {
         Ok(match s {
             "!" => Not,
             "-" => Neg,
+            ">" => StartWith,
             "[" => Array,
             "[..]" => ArrayFill,
             "sizeof" => Size,
@@ -705,6 +707,7 @@ impl<C> ValUnOp<C> {
         match self {
             Not => Not,
             Neg => Neg,
+            StartWith => StartWith,
             Array => Array,
             ArrayFill => ArrayFill,
             Wiggle(expr, kind) => Wiggle(f(expr), *kind),
@@ -718,6 +721,7 @@ impl<C> ValUnOp<C> {
         Ok(match self {
             Not => Not,
             Neg => Neg,
+            StartWith => StartWith,
             Array => Array,
             ArrayFill => ArrayFill,
             Wiggle(expr, kind) => Wiggle(f(expr)?, *kind),

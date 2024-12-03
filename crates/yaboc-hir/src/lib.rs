@@ -78,6 +78,7 @@ pub trait Hirs: yaboc_ast::Asts {
 pub enum CoreItem {
     Compose,
     Index,
+    StartWith,
 }
 
 impl CoreItem {
@@ -85,11 +86,12 @@ impl CoreItem {
         match self {
             CoreItem::Compose => "compose",
             CoreItem::Index => "index",
+            CoreItem::StartWith => "start_with",
         }
     }
 }
 
-const CORE_ITEM_LIST: &[CoreItem] = &[CoreItem::Compose, CoreItem::Index];
+const CORE_ITEM_LIST: &[CoreItem] = &[CoreItem::Compose, CoreItem::Index, CoreItem::StartWith];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct HirConstraintId(InternId);
