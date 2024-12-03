@@ -54,3 +54,8 @@ fun [T] ~> lift3[T, R, A0, A1, A2](f: (A0, A1, A2) -> R, a0: [T] ~> A0, a1: [T] 
 fun [T] ~> lift4[T, R, A0, A1, A2, A3](f: (A0, A1, A2, A3) -> R, a0: [T] ~> A0, a1: [T] ~> A1, a2: [T] ~> A2, a3: [T] ~> A3) = {
   res0: a0?, res1: a1?, res2: a2?, res3: a3?, let return = f?(res0, res1, res2, res3)
 }
+
+fun [T] ~> find[T, R](p: [T] ~> R) = {
+  | return: p?
+  \ is !eof, return: find(p)?
+}

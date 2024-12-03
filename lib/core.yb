@@ -44,6 +44,30 @@ fun [T] ~> pure[T, R](v: R) = {let return = v}
 # Returns a range from start to end (end exclusive)
 fun range(start: int, end: int) = start..<end
 
+# Repeatedly parses p until it backtracks, returns unit
+# (for a non-unit version, see the list module)
+fun [T] ~> repeat[T, R](p: [T] ~> R) = {
+  | p?, repeat(p)
+  \ {}
+}
+
+# Returns whether `p` evaluated on any input element is true
+fun [T] ~> any[T](p: (T) -> bit) = {
+  | x: is !eof
+    | return: p(x) is false then any(p)
+    \ [..], let return = true
+  \ let return = false
+}
+
+# Returns whether `p` is always true when evaluated on all input elements
+fun [T] ~> all[T](p: (T) -> bit) = {
+  | x: is !eof
+    | return: p(x) is true then all(p)
+    \ [..], let return = false
+  \ let return = true
+}
+
+
 # =============== inttypes ===============
 
 # Parses an 8-bit unsigned integer.
@@ -148,4 +172,10 @@ fun [A] ~> compose[A, B, C](a: [A] ~> [B], b: [B] ~> C) = {
 fun [A] ~> index[A](idx: int): A = {
   [idx is 0..0x7fffffffffffffff] is !eof
   return: ~ is !eof
+}
+
+fun [int] ~> startwith(rhs: [int]) = {
+  lhs: [rhs.sizeof]
+  let is_equal = range(0, rhs.sizeof) ~> all(<i> lhs.[i] == rhs.[i])
+  let return = if?(is_equal) then lhs
 }
