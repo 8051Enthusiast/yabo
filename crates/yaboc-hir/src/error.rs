@@ -108,6 +108,18 @@ fn conversion_report(error: HirConversionError) -> Option<Report> {
                 Label::new(lower.span).with_message(&format!("this operator '{}'", lower.inner)),
             ),
         ),
+        HirConversionError::EarlyImplicitReturn { span } => Some(
+            Report::new(
+                DiagnosticKind::Error,
+                span.file,
+                "implicit return not at end of block",
+            )
+            .with_code(210)
+            .with_label(
+                Label::new(span)
+                    .with_message("error introduced here"),
+            ),
+        ),
         HirConversionError::Silenced => None,
     }
 }

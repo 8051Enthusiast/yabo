@@ -36,6 +36,9 @@ pub enum HirConversionError {
     ParseInNonParserBlock {
         span: Span,
     },
+    EarlyImplicitReturn {
+        span: Span,
+    },
     ReturnFieldUnsupported {
         span: Span,
     },
@@ -476,7 +479,14 @@ fn block(
     };
     let returns = match &ast.content {
         Some(c) => {
-            let (vars, _) = struct_context(c, ctx, context_id, &parents, kind);
+            let (vars, _) = struct_context(
+                c,
+                ctx,
+                context_id,
+                &parents,
+                kind,
+                &mut FxHashSet::default(),
+            );
             if vars.get(FieldName::Return).is_some() {
                 BlockReturnKind::Returns
             } else if vars.set.is_empty() {
@@ -508,6 +518,7 @@ fn struct_choice(
     pred: ParserPredecessor,
     parents: &ParentInfo,
     kind: BlockKind,
+    inline_returns: &mut FxHashSet<Span>,
 ) -> (VariableSet<Vec<(u32, DefId, Span)>>, bool) {
     let children = &ast.content;
     let parents = ParentInfo {
@@ -522,7 +533,7 @@ fn struct_choice(
         let subcontext_id = ContextId(id.child(ctx.db, PathComponent::Unnamed(idx as u32)));
         subcontexts.push(subcontext_id);
         let (new_vars, non_zero_len_context) =
-            struct_context(child, ctx, subcontext_id, &parents, kind);
+            struct_context(child, ctx, subcontext_id, &parents, kind, inline_returns);
         has_non_zero_len |= non_zero_len_context;
         varset = varset
             .map(|x: VariableSet<()>| x.merge_sum(&new_vars))
@@ -581,6 +592,7 @@ fn struct_context(
     id: ContextId,
     parents: &ParentInfo,
     kind: BlockKind,
+    inline_returns: &mut FxHashSet<Span>,
 ) -> (VariableSet<(DefId, Span)>, bool) {
     let children = &ast.content;
     let mut children_id = BTreeSet::new();
@@ -622,12 +634,16 @@ fn struct_context(
         children_id.insert(sub_id);
         sub_id
     };
+    let mut cur_returns = FxHashSet::<Span>::default();
     for child in children {
+        for span in cur_returns.drain() {
+            ctx.add_errors(Some(HirConversionError::EarlyImplicitReturn { span }));
+        }
         let new_set = match child {
             ast::ParserSequenceElement::Choice(c) => {
                 let sub_id = ChoiceId(new_id(None));
                 let (choice_indirect, nonzero_len) =
-                    struct_choice(c, ctx, sub_id, pred, &parents, kind);
+                    struct_choice(c, ctx, sub_id, pred, &parents, kind, &mut cur_returns);
                 if nonzero_len {
                     update_pred(&mut pred, sub_id.0);
                 }
@@ -640,13 +656,28 @@ fn struct_context(
             ast::ParserSequenceElement::Statement(x) => match x.as_ref() {
                 ast::Statement::Parse(p) => {
                     if kind == BlockKind::Inline {
-                        ctx.add_errors(Some(HirConversionError::ParseInNonParserBlock {
+                        if p.name.is_some() {
+                            ctx.add_errors(Some(HirConversionError::ParseInNonParserBlock {
+                                span: p.span,
+                            }));
+                            continue;
+                        }
+                        let sub_id = new_id(Some(FieldName::Return));
+                        let l = ast::LetStatement {
+                            name: Spanned {
+                                inner: FieldName::Return,
+                                span: p.span,
+                            },
+                            ty: None,
+                            expr: p.parser.clone(),
                             span: p.span,
-                        }));
-                        continue;
+                        };
+                        cur_returns.insert(p.span);
+                        let_statement(&l, ctx, LetId(sub_id), id)
+                    } else {
+                        let sub_id = new_id(x.field());
+                        parse_statement(p, ctx, ParseId(sub_id), update_pred(&mut pred, sub_id), id)
                     }
-                    let sub_id = new_id(x.field());
-                    parse_statement(p, ctx, ParseId(sub_id), update_pred(&mut pred, sub_id), id)
                 }
                 ast::Statement::Let(l) => {
                     let sub_id = new_id(x.field());
@@ -667,6 +698,9 @@ fn struct_context(
         }));
         ctx.add_errors(duplicate_field.values().cloned());
         varset = result_set;
+    }
+    for span in cur_returns.drain() {
+        inline_returns.insert(span);
     }
     let context = StructCtx {
         id,
