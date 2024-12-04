@@ -1,0 +1,6 @@
+====[ source code ]====
+fun test(x: int) = {|
+  x + 1
+  #~^ error[210] implicit return not at end of block
+  let t = x * 2
+|}
