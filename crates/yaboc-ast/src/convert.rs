@@ -634,14 +634,14 @@ astify! {
 
 struct ParserSpan {
     start: FieldName,
-    end: FieldName,
+    end: Option<FieldName>,
     span: Span,
 }
 
 impl From<ParserSpan> for OpWithData<ParserAtom, Span> {
     fn from(value: ParserSpan) -> Self {
         OpWithData {
-            inner: ParserAtom::Span(value.start, value.end),
+            inner: ParserAtom::Span(value.start, value.end.unwrap_or(value.start)),
             data: value.span,
         }
     }
@@ -650,7 +650,7 @@ impl From<ParserSpan> for OpWithData<ParserAtom, Span> {
 astify! {
     struct parser_span = ParserSpan {
         start: field_name[!],
-        end: field_name[!],
+        end: field_name[?],
     };
 }
 
