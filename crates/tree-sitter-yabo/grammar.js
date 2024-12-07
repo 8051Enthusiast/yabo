@@ -383,8 +383,10 @@ module.exports = grammar({
     parser_span: $ => seq(
       'span',
       field('start', $._field_name),
-      '..',
-      field('end', $._field_name),
+      optional(seq(
+        '..',
+        field('end', $._field_name),
+      ))
     ),
     _constraint_atom: $ => choice(
       $._atom,
