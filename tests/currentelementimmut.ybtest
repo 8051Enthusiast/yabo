@@ -1,0 +1,32 @@
+====[ source code ]====
+fun ~elem = {
+  asdf: ~
+  | is '\n', let tert = 0
+  \ tert: ~
+}
+
+export
+fun ~test = elem[4]
+
+====[ text 1 ]====
+abcdefghij
+
+====[ output 1 ]====
+[
+  {
+    "asdf": 97,
+    "tert": 98
+  },
+  {
+    "asdf": 99,
+    "tert": 100
+  },
+  {
+    "asdf": 101,
+    "tert": 102
+  },
+  {
+    "asdf": 103,
+    "tert": 104
+  }
+]

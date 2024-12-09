@@ -499,10 +499,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.terminate_tail_typecast(from, ret)
     }
 
-    fn get_slice_ptrs(
-        &mut self,
-        arg: PointerValue<'llvm>,
-    ) -> IResult<[PointerValue<'llvm>; 2]> {
+    fn get_slice_ptrs(&mut self, arg: PointerValue<'llvm>) -> IResult<[PointerValue<'llvm>; 2]> {
         let ptr = self.build_ptr_load(arg, "load_ptr")?;
         let ptr_ty = self.any_ptr();
         let end_ptr_ptr = unsafe {
@@ -725,10 +722,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let array = CgMonoValue::new(layout, from.into_pointer_value());
         let parser = self.build_array_parser_get(array)?;
         let slice = self.build_array_slice_get(array)?;
+        let slice_copy = self.build_alloca_value(slice.layout, "arg_copy")?;
+        self.build_copy_invariant(slice_copy, slice)?;
         let ret = self.build_parser_call(
             ret,
             parser,
-            slice,
+            slice_copy,
             CallMeta::new(NeededBy::Val.into(), false),
         )?;
         self.builder.build_return(Some(&ret))?;
