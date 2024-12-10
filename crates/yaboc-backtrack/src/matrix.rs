@@ -76,7 +76,6 @@ impl RowBits {
         }
     }
 
-
     fn subrange(&self, start: usize, end: usize) -> Self {
         let mut new = RowBits::Inner(0);
         for i in (start..end).rev() {
@@ -737,6 +736,15 @@ impl<'arena> MatrixArena<'arena> {
         Ok(self.new_matrix(rows))
     }
 
+    pub fn new_zeroes(&self, rows: u32, bound: u32, total: u32) -> Rect<Matrix<'arena>> {
+        let empty_row = Row::Vars(VarRow::empty(bound, total));
+        Rect {
+            matrix: self.new_matrix(std::iter::repeat(empty_row).take(rows as usize)),
+            bound,
+            total,
+        }
+    }
+
     pub fn identity(&self, size: u32) -> Matrix<'arena> {
         let out = self.arena.alloc_extend((0..size).map(|i| {
             let mut row = VarRow::empty(0, size);
@@ -782,15 +790,13 @@ impl<'arena> MatrixArena<'arena> {
         }
     }
 
-    pub fn multiply_lhs_view_column_subrange(
+    pub fn replace_columns(
         &self,
         lhs: MatrixView,
         rhs: Rect<Matrix>,
         start: u32,
+        end: u32,
     ) -> MatrixView<'arena> {
-        let end = start + rhs.matrix.row_count();
-        let lhs_columns = self.column_subrange(lhs.as_matrix(), start, end);
-        let replaced = self.multiply(lhs_columns, rhs);
         let out = self
             .arena
             .alloc_extend(std::iter::repeat(Row::True).take(lhs.matrix.row_count() as usize));
@@ -800,7 +806,7 @@ impl<'arena> MatrixArena<'arena> {
         for ((out_row, row), replaced) in out[start_row as usize..end_row as usize]
             .iter_mut()
             .zip(lhs.as_matrix().rows.iter())
-            .zip(replaced.rows)
+            .zip(rhs.matrix.rows)
         {
             *out_row = row
                 .subrange(0, start)
@@ -812,6 +818,21 @@ impl<'arena> MatrixArena<'arena> {
             rows: [start_row, end_row],
             matrix,
         }
+    }
+
+    pub fn multiply_lhs_view_column_subrange(
+        &self,
+        lhs: MatrixView,
+        rhs: Rect<Matrix>,
+        start: u32,
+    ) -> MatrixView<'arena> {
+        let end = start + rhs.matrix.row_count();
+        let lhs_columns = self.column_subrange(lhs.as_matrix(), start, end);
+        let replaced = Rect {
+            matrix: self.multiply(lhs_columns, rhs),
+            ..rhs
+        };
+        self.replace_columns(lhs, replaced, start, end)
     }
 
     pub fn partial_apply(&self, lhs: Matrix, rhs: Rect<Matrix>, start: u32) -> Matrix<'arena> {

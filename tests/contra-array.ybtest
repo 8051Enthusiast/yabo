@@ -1,0 +1,13 @@
+====[ source code ]====
+fun [int] ~> start_with = {let return = "aaaa"}
+
+fun ~chunk(ty: ~[int]) = ty
+
+export
+fun ~test = chunk(start_with)
+
+====[ binary 1 ]====
+00
+
+====[ output 1 ]====
+[97, 97, 97, 97]

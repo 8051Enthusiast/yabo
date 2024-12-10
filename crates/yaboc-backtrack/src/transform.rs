@@ -145,6 +145,65 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
         self.rows.row_count(ty, self.db)
     }
 
+    fn transform_contravariant(
+        &mut self,
+        from_ty: TypeId,
+        to_ty: TypeId,
+        slot: EffectSlot,
+        subview: &mut MatrixView<'short>,
+        current_col: u32,
+    ) -> SResult<()> {
+        let [from, to] = [from_ty, to_ty].map(|ty| self.db.lookup(ty));
+        match [from, to] {
+            [_, Type::Unknown] => {
+                let row_num = self.row_count(from_ty)?;
+                let empty_matrix = self.arena.new_zeroes(subview.view_row_count(), 0, 0);
+                *subview = self.arena.replace_columns(
+                    *subview,
+                    empty_matrix,
+                    current_col,
+                    current_col + row_num,
+                );
+            }
+            [Type::Unknown, _] => {
+                let row_num = self.row_count(to_ty)?;
+                let empty_matrix = self.arena.new_zeroes(subview.view_row_count(), 0, row_num);
+                *subview =
+                    self.arena
+                        .replace_columns(*subview, empty_matrix, current_col, current_col);
+            }
+            [Type::Nominal(..), _] => {
+                let transform = self.deref_nom_flattened(from_ty, to_ty, slot)?;
+                *subview =
+                    self.arena
+                        .multiply_lhs_view_column_subrange(*subview, transform, current_col);
+            }
+            [Type::TypeVarRef(_), Type::TypeVarRef(_)]
+            | [Type::Primitive(_), Type::Primitive(_)] => {}
+            [Type::Loop(_, lhs_inner), Type::Loop(_, rhs_inner)] => {
+                self.transform_contravariant(lhs_inner, rhs_inner, slot, subview, current_col)?;
+            }
+            [Type::ParserArg {
+                result: lhs_result, ..
+            }, Type::ParserArg {
+                result: rhs_result, ..
+            }]
+            | [Type::FunctionArg(lhs_result, _), Type::FunctionArg(rhs_result, _)] => {
+                self.transform_contravariant(
+                    lhs_result,
+                    rhs_result,
+                    slot,
+                    subview,
+                    current_col + 1,
+                )?;
+            }
+            [l, r] => {
+                panic!("Mismatched types: {:?} and {:?}", &l, &r)
+            }
+        }
+        Ok(())
+    }
+
     fn transform_args(
         &mut self,
         matrix: MatrixView<'short>,
@@ -168,10 +227,7 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
                 current_col += col_count;
                 continue;
             }
-            let transform = self.deref_nom_flattened(*from_ty, *to_ty, slot)?;
-            new_subview =
-                self.arena
-                    .multiply_lhs_view_column_subrange(new_subview, transform, current_col);
+            self.transform_contravariant(*from_ty, *to_ty, slot, &mut new_subview, current_col)?;
             current_col += col_count;
         }
         Ok((
