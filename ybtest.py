@@ -11,7 +11,8 @@ import re
 import tempfile
 import subprocess
 import json
-from typing import Optional, Tuple
+import time
+from typing import Optional, Sequence, Tuple
 from concurrent import futures
 import yabo
 
@@ -44,8 +45,9 @@ current_script_dir = pathlib.Path(os.path.dirname(os.path.realpath(__file__)))
 core_path = current_script_dir / 'lib' / 'core.yb'
 lib_path = current_script_dir / 'lib'
 example_path = current_script_dir / 'examples'
+test_order_path = current_script_dir / 'test_order.txt'
 compiler_env = os.environ.copy()
-compiler_env['YABO_LIB_PATH'] = lib_path
+compiler_env['YABO_LIB_PATH'] = str(lib_path)
 compiler_env['RUST_BACKTRACE'] = '1'
 # filter out LD_PRELOAD from the environment
 compiler_env['LD_PRELOAD'] = ''
@@ -142,7 +144,7 @@ class CompiledSource:
                 self.compiled = os.path.join(tmp_dir, 'target.so')
 
             if isinstance(source, os.PathLike):
-                source_path = source
+                source_path = str(source)
             else:
                 source_path = os.path.join(tmp_dir, 'source.yb')
                 with open(source_path, 'w', encoding='utf-8') as sourcefile:
@@ -213,9 +215,9 @@ class CompiledSource:
             for (line, errors) in ErrorLocation.from_diagnostics(error_json).items():
                 diagnostics[line].extend(errors)
 
-        for (linenum, line) in enumerate(self.source.splitlines()):
+        for (linenum, current_line) in enumerate(self.source.splitlines()):
             linenum = linenum + 1
-            match = error_comment.match(line)
+            match = error_comment.match(current_line)
             if not match:
                 continue
             total += 1
@@ -433,10 +435,10 @@ class WasmRunnerFactory:
         compiler_args = [
             self.cc, '--sysroot', self.sysroot, '-c',
             '-DSTATIC_PARSER=test',
-            '-I', current_script_dir / 'include',
+            '-I', str(current_script_dir / 'include'),
             '-D_WASI_EMULATED_MMAN',
             '-o', self.printer.name,
-            current_script_dir / 'tools' / 'yaboprint' / 'yaboprint.c'
+            str(current_script_dir / 'tools' / 'yaboprint' / 'yaboprint.c')
         ]
         subprocess.run(compiler_args, check=True)
 
@@ -576,29 +578,61 @@ class TestFile:
         return failed_tests
 
 
-def run_test(path: os.PathLike) -> int:
+def run_test(spath: str) -> tuple[int, float]:
+    path = pathlib.Path(spath)
     if path.suffix != '.ybtest':
-        return 0
+        return (0, 0)
     with open(path, 'r', encoding='utf-8') as file:
         content = file.read()
+        starttime = time.time()
         testname = os.path.basename(path).removesuffix('.ybtest')
         test = TestFile(content, testname)
-        return test.run()
+        count = test.run()
+        endtime = time.time()
+        elapsed = (endtime - starttime)
+        return (count, elapsed)
+
+def get_test_order_list(paths: list[str]) -> list[str]:
+    try:
+        with open(test_order_path, 'r') as file:
+            pathset = set(paths)
+            order = file.read().splitlines()
+            existing_paths = [path for path in order if path in pathset]
+            missing_paths = pathset - set(existing_paths)
+            return existing_paths + list(missing_paths)
+    except FileNotFoundError:
+        return paths
+
+def write_test_order_file(times: dict[str, float]):
+    increasing = sorted((exec_time, path) for (path, exec_time) in times.items())
+    paths = [path for (_, path) in increasing][::-1]
+    with open(test_order_path, 'w') as outfile:
+        outfile.write('\n'.join(paths))
+
+def run_test_with_path_returned(file: str) -> tuple[str, int, float]:
+    return (file, *run_test(file))
 
 # goes through all files in the target directory ending in .ybtest
-
-
-def run_tests(files: list[str | os.PathLike]) -> int:
+def run_tests(files: list[str], collect: bool = True) -> int:
     try:
         with futures.ProcessPoolExecutor() as executor:
-            results = executor.map(run_test, files)
-            return sum(results)
+            results = executor.map(run_test_with_path_returned, files)
+            sum = 0
+            times = dict()
+            for (file, count, time) in results:
+                times[str(file)] = time
+                sum += count
+
+            if collect and sum == 0:
+                write_test_order_file(times)
+
+            return sum
     except (futures.process.BrokenProcessPool, ValueError) as e:
         print(f'Encountered error ({e}), running tests sequentially')
         total_failed = 0
         for file in files:
             print(f'Running {file}')
-            total_failed += run_test(file)
+            total_failed += run_test(file)[0]
         return total_failed
 
 
@@ -649,13 +683,14 @@ def main(args):
         if not run_compiler_unit_tests():
             sys.exit(1)
         target_dir = current_script_dir / 'tests'
-        files = [target_dir / x for x in os.listdir(target_dir)]
+        files = [str(target_dir / x) for x in os.listdir(target_dir)]
+        files = get_test_order_list(files)
         with futures.ProcessPoolExecutor() as executor:
             tests = executor.submit(run_tests, files)
             compile = executor.submit(compile_examples)
             total_failed = int(not clippy_success) + tests.result() + compile.result()
     else:
-        total_failed = run_tests(arg_list)
+        total_failed = run_tests(arg_list, collect=False)
 
     if total_failed != 0:
         print(f'{total_failed} tests failed')
