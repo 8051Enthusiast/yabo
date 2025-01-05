@@ -1,0 +1,58 @@
+====[ source code ]====
+import text
+import parse
+def ~factor_impl(n: int, p: int) = (if?(n % p == 0) else if?(p > n)) then {
+  | if?(n < p) then nil
+  \ let factor = p
+    next: factor_impl(n / p, p)
+} else factor_impl(n, p + 1)
+
+def ~factor(n: int) = factor_impl(n, 2)
+
+export
+def ~test = {
+  n: text.num?
+  return: factor(n)
+}
+
+====[ text 1 ]====
+1
+
+====[ output 1 ]====
+{}
+
+====[ text 2 ]====
+2
+
+====[ output 2 ]====
+{
+	"factor": 2,
+	"next": {}
+}
+
+====[ text 3 ]====
+85
+
+====[ output 3 ]====
+{
+	"factor": 5,
+	"next": {
+		"factor": 17,
+		"next": {}
+	}
+}
+
+====[ text 4 ]====
+125
+
+====[ output 4 ]====
+{
+	"factor": 5,
+	"next": {
+		"factor": 5,
+		"next": {
+			"factor": 5,
+			"next": {}
+		}
+	}
+}
