@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeSet,
+    convert::Infallible,
     ops::{Deref, DerefMut},
     sync::Arc,
 };
@@ -253,30 +254,43 @@ impl<'a> ConvertExpr<'a> {
         place_ref
     }
 
+    fn try_with_own_place<T, E>(
+        &mut self,
+        loc: ExpressionLoc,
+        f: impl FnOnce(&mut Self, PlaceRef) -> Result<T, E>,
+    ) -> Result<PlaceRef, E> {
+        let stack_place = self.new_stack_place(loc.ty, loc.origin);
+        f(self, stack_place)?;
+        if let Some(place) = loc.place {
+            self.copy(stack_place, place);
+            Ok(place)
+        } else {
+            Ok(stack_place)
+        }
+    }
+
+    fn with_own_place<T>(
+        &mut self,
+        loc: ExpressionLoc,
+        f: impl FnOnce(&mut Self, PlaceRef) -> T,
+    ) -> PlaceRef {
+        let Ok(place) =
+            self.try_with_own_place::<T, Infallible>(loc, |this, place| Ok(f(this, place)));
+        place
+    }
+
     fn load_uninit(&mut self, val: UninitVal, loc: ExpressionLoc) -> PlaceRef {
         // loading a zst requires keeping the mono layout information
         // in order to get the vtable, which may be lost if it is
         // loaded directly into a multi-layout so we make a stack place
         // which is guaranteed to be mono
-        let stack_place = self.new_stack_place(loc.ty, loc.origin);
-        self.f.load_uninit(val, stack_place);
-        if let Some(place) = loc.place {
-            self.copy(stack_place, place);
-            place
-        } else {
-            stack_place
-        }
+        self.with_own_place(loc, |this, l| this.f.load_uninit(val, l))
     }
 
     fn load_string(&mut self, loc: ExpressionLoc, str: &str) -> PlaceRef {
-        let stack_place = self.new_stack_place(loc.ty, loc.origin);
-        self.f.load_bytes(str.as_bytes().to_owned(), stack_place);
-        if let Some(place) = loc.place {
-            self.copy(stack_place, place);
-            place
-        } else {
-            stack_place
-        }
+        self.with_own_place(loc, |this, l| {
+            this.f.load_bytes(str.as_bytes().to_owned(), l)
+        })
     }
 
     fn load_undef(&mut self, loc: ExpressionLoc) -> PlaceRef {
@@ -291,9 +305,8 @@ impl<'a> ConvertExpr<'a> {
     fn init_captures(
         &mut self,
         captures: &BTreeSet<DefId>,
-        loc: ExpressionLoc,
+        place_ref: PlaceRef,
     ) -> SResult<PlaceRef> {
-        let place_ref = self.unwrap_or_stack(loc);
         for captured in captures.iter() {
             let cap_ty = self.db.parser_type_at(*captured)?;
             let bp_ref = |ctx: &mut Self, block| {
@@ -317,15 +330,19 @@ impl<'a> ConvertExpr<'a> {
     }
 
     fn load_block(&mut self, block: BlockId, loc: ExpressionLoc) -> SResult<PlaceRef> {
-        self.load_uninit(UninitVal::Block(block), loc);
-        let captures = self.db.captures(block);
-        self.init_captures(&captures, loc)
+        self.try_with_own_place(loc, |this, place| {
+            this.f.load_uninit(UninitVal::Block(block), place);
+            let captures = this.db.captures(block);
+            this.init_captures(&captures, place)
+        })
     }
 
     fn load_lambda(&mut self, lambda: LambdaId, loc: ExpressionLoc) -> SResult<PlaceRef> {
-        self.load_uninit(UninitVal::Lambda(lambda), loc);
-        let captures = self.db.lambda_captures(lambda);
-        self.init_captures(&captures, loc)
+        self.try_with_own_place(loc, |this, place| {
+            this.f.load_uninit(UninitVal::Lambda(lambda), place);
+            let captures = this.db.lambda_captures(lambda);
+            this.init_captures(&captures, place)
+        })
     }
 
     pub fn convert_constraint(

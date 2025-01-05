@@ -462,7 +462,11 @@ impl<'a> ILayout<'a> {
         Ok(match match &self.layout.1 {
             Layout::Mono(m, _) => m,
             Layout::Multi(_) => {
-                panic!("Attempting to get captured variable inside multi layout block")
+                dbpanic!(
+                    ctx.db,
+                    "Attempting to get captured variable inside multi layout block {}",
+                    &self
+                )
             }
             Layout::None => {
                 panic!("Attempting to get captured variable inside empty layout")
@@ -530,7 +534,7 @@ impl<'a> ILayout<'a> {
                         let res = ctx
                             .eval_block(
                                 *block_id,
-                                self,
+                                layout.inner(),
                                 Some((from, arg_type)),
                                 result_type,
                                 subst.clone(),
