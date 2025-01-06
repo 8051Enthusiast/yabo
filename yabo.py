@@ -260,12 +260,14 @@ class Parser:
     def parse(self, buf: bytearray):
         parse = self.impl
         nullptr = ctypes.c_void_p()
-        return self._lib.new_val(lambda ret: parse(ret, nullptr, YABO_ANY | YABO_VTABLE, byref(Slice(buf))))
+        return self._lib.new_val(lambda ret: parse(ret, nullptr, self._lib.discriminant(), byref(Slice(buf))))
 
 
 class YaboLib(ctypes.CDLL):
     _loc: threading.local
-    def __init__(self, path: str, global_address: bytearray):
+    _autoderef: bool
+    def __init__(self, path: str, global_address: bytearray, autoderef: bool=True):
+        self._autoderef = autoderef
         # we need to copy the library to a temporary path because
         # loading the same library twice will deduplicates globals
         # and cause a mess if it is overwritten
@@ -278,6 +280,12 @@ class YaboLib(ctypes.CDLL):
         _check_status(status)
         
         self._loc = threading.local()
+
+    def discriminant(self) -> int:
+        if self._autoderef:
+            return YABO_VTABLE
+        else:
+            return YABO_ANY | YABO_VTABLE
 
     def parser(self, name: str) -> Parser:
         impl = PARSER_TY.in_dll(self, name)
@@ -361,7 +369,7 @@ class BlockValue(YaboValue):
     def __getattr__(self, name: str):
         ret = self.get(name)
         if ret is None:
-            raise AttributeError(f"{name} is not a field of {self}")
+            return super().__getattribute__(name)
         return ret
 
     def get(self, name: str):
@@ -371,16 +379,22 @@ class BlockValue(YaboValue):
             raise AttributeError(f'{name} is not a valid field')
         try:
             return self._lib.new_val(lambda ret:
-                access(ret, self._val.data_ptr(), YABO_ANY | YABO_VTABLE)
+                access(ret, self._val.data_ptr(), self._lib.discriminant())
             )
         except BacktrackError:
             return None
 
     def __getitem__(self, field: str):
-        return self.__getattr__(field)
+        res = self.__getattr__(field)
+        if res is None:
+            raise AttributeError(f"{field} is not a field of {self}")
+        return res
 
     def fields(self):
         return [field for field in self._access_impl if self.get(field) is not None]
+
+    def __dir__(self):
+        return sorted(dir(BlockValue) + list(self._access_impl.keys()))
 
 
 class ArrayValue(YaboValue):
@@ -402,7 +416,7 @@ class ArrayValue(YaboValue):
             pointer(self._val.get_vtable()), POINTER(ArrayVTable))
         current_element_impl = array_vtable.contents.current_element_impl
         return self._lib.new_val(lambda ret:
-            current_element_impl(ret, self._val.data_ptr(), YABO_ANY | YABO_VTABLE)
+            current_element_impl(ret, self._val.data_ptr(), self._lib.discriminant())
         )
 
     def __getitem__(self, index: int):
@@ -420,7 +434,7 @@ class ArrayValue(YaboValue):
             pointer(self._val.get_vtable()), POINTER(ArrayVTable))
         inner_array_impl = array_vtable.contents.inner_array_impl
         return self._lib.new_val(lambda ret:
-            inner_array_impl(ret, self._val.data_ptr(), YABO_ANY | YABO_VTABLE)
+            inner_array_impl(ret, self._val.data_ptr(), self._lib.discriminant())
         )
     
 
