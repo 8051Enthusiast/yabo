@@ -531,7 +531,7 @@ class TestFile:
             compiled = compiled_source.compiled
             for (test_name, pair) in self.cases.items():
                 buf = bytearray(pair.input)
-                lib = yabo.YaboLib(compiled, buf)
+                lib = yabo.YaboLib(compiled, buf, autoderef=False)
                 try:
                     obj = lib.parser('test').parse(buf)
                 except Exception as e:
