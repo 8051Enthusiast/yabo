@@ -951,7 +951,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         rank: u32,
         arg_depth: u32,
     ) -> Option<PolyCircuit> {
-        if !self.vals.get(root).map_or(false, |x| x.is_poly()) {
+        if !self.vals.get(root).is_some_and(|x| x.is_poly()) {
             return None;
         }
         let mut included = vec![false; self.vals.len()];
