@@ -13,7 +13,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(DARK_STYLE_QRC_PATH CACHE FILEPATH "Path to darkstyle.qrc.")
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Core OpenGL OpenGLWidgets Network)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Core OpenGL OpenGLWidgets Network Test)
 
 qt_add_library(ylliab_core STATIC
     request.hpp request.cpp
@@ -29,6 +29,7 @@ qt_add_library(ylliab_core STATIC
     hexview.hpp hexview.cpp
     compiler_error_view.hpp compiler_error_view.cpp
     sourceeditor.cpp sourceeditor.hpp
+    dataprovider.hpp
     executor.hpp executor.cpp
     filerequester.hpp filerequester.cpp
     valtreemodel.hpp valtreemodel.cpp
@@ -52,6 +53,14 @@ qt_add_executable(yphbt
     yphbt.cpp
 )
 
+find_package(yaml-cpp REQUIRED)
+
+qt_add_executable(test_yaml_model
+    test/test_yaml_model.cpp
+    test/yamldataprovider.cpp
+    test/yamldataprovider.hpp
+)
+
 include_directories("../../include")
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -66,6 +75,12 @@ target_link_libraries(ylliab PRIVATE
 target_link_libraries(yphbt PRIVATE
     ylliab_core Qt6::Core Qt6::Widgets
 )
+
+target_link_libraries(test_yaml_model PRIVATE
+    ylliab_core Qt6::Test Qt6::Core Qt6::Widgets yaml-cpp
+)
+
+target_compile_definitions(test_yaml_model PRIVATE YLLIAB_ENABLE_YAML_TESTS)
 
 if(EMSCRIPTEN)
     target_link_options(ylliab PUBLIC -sMAIN_MODULE=2)
@@ -91,3 +106,7 @@ install(TARGETS ylliab yphbt
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
+# Enable testing
+enable_testing()
+add_test(NAME yaml_model_test COMMAND test_yaml_model)

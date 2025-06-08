@@ -77,7 +77,7 @@ struct SpannedHandle {
     return {};
   }
   std::optional<bool> access_bool() const noexcept {
-    if (kind == YaboValKind::YABOUNIT) {
+    if (kind == YaboValKind::YABOBIT) {
       return handle == 1;
     }
     return {};

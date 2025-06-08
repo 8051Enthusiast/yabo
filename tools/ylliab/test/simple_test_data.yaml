@@ -1,0 +1,68 @@
+parsers:
+  - name: "main"
+    pos: 0
+    root:
+      name: "file_header"
+      type: "block"
+      span_start: 0
+      span_size: 50
+      active: true
+      children:
+        - name: "magic"
+          type: "u8"
+          value: "0x89"
+          span_start: 0
+          span_size: 1
+          active: true
+          children: []
+        - name: "version"
+          type: "integer"
+          value: "1"
+          span_start: 1
+          span_size: 4
+          active: true
+          children: []
+        - name: "flags"
+          type: "array"
+          span_start: 5
+          span_size: 10
+          active: true
+          children:
+            - name: "[0]"
+              type: "u8"
+              value: "0x01"
+              span_start: 5
+              span_size: 1
+              active: true
+              children: []
+            - name: "[1]"
+              type: "u8"
+              value: "0x02"
+              span_start: 6
+              span_size: 1
+              active: true
+              children: []
+
+  - name: "parse_entry"
+    pos: 10
+    root:
+      name: "entry"
+      type: "block"
+      span_start: 10
+      span_size: 8
+      active: true
+      children:
+        - name: "id"
+          type: "u8"
+          value: "0xAA"
+          span_start: 10
+          span_size: 1
+          active: true
+          children: []
+        - name: "data"
+          type: "integer"
+          value: "12345"
+          span_start: 11
+          span_size: 4
+          active: true
+          children: []

@@ -11,6 +11,7 @@ struct SegmentMap;
 class FileSpan {
 public:
   FileSpan(const uint8_t *base, std::span<const uint8_t> span) noexcept;
+  FileSpan(uint64_t addr, uint64_t size) noexcept : m_size(size), m_addr(addr) {}
   FileSpan() noexcept : m_size(0), m_addr(-1) {}
   std::optional<uint64_t> addr() const noexcept {
     if (m_addr == (uint64_t)-1) {

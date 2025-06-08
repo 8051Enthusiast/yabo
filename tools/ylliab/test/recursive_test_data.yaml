@@ -1,0 +1,23 @@
+parsers:
+  - name: recursive_test
+    pos: 0
+    root: &root
+      name: root
+      type: block
+      active: true
+      span_start: 0
+      span_size: 100
+      children:
+        - name: self_ref
+          type: array
+          active: true
+          span_start: 0
+          span_size: 100
+          children:
+            - *root
+        - name: value
+          type: u8
+          value: "0x01"
+          active: true
+          span_start: 0
+          span_size: 1

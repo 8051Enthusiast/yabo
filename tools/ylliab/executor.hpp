@@ -2,6 +2,7 @@
 #include <QObject>
 #include <filesystem>
 
+#include "dataprovider.hpp"
 #include "filecontent.hpp"
 #include "request.hpp"
 #include "yabo.hpp"
@@ -14,7 +15,7 @@ struct ExecutorError : public std::exception {
 
 constexpr size_t array_fetch_size = 4096;
 
-class Executor : public QObject {
+class Executor : public DataProvider {
   Q_OBJECT
 public:
   Executor(std::filesystem::path path, FileRef file);
@@ -30,7 +31,7 @@ public:
   std::optional<Response> execute_parser(Meta meta, char const *func_name,
                                          size_t pos);
 public slots:
-  void execute_request_slot(Request req) {
+  void execute_request_slot(Request req) override {
     if (thread_init()) {
       emit response(Response(req.metadata));
       return;
@@ -42,7 +43,7 @@ public slots:
       emit response(Response(req.metadata));
     }
   }
-  void execute_parser_slot(Meta meta, QString func_name, size_t pos) {
+  void execute_parser_slot(Meta meta, QString func_name, size_t pos) override {
     if (thread_init()) {
       emit response(Response(meta));
       return;
