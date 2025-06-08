@@ -1,5 +1,4 @@
 #pragma once
-#include <filesystem>
 #include <memory>
 
 #include <QObject>
@@ -10,6 +9,7 @@
 #include "graph.hpp"
 #include "request.hpp"
 #include "yabo.hpp"
+#include "dataprovider.hpp"
 
 struct ParentBranch {
   bool operator==(const ParentBranch &other) const noexcept {
@@ -95,21 +95,31 @@ private:
 
 class ValTreeModel;
 
-// communicates with Executor and maintains the tree structure
+// communicates with DataProvider and maintains the tree structure
 class FileRequester : public QObject,
                       public NodeInfoProvider,
                       public ParseRequester {
   Q_OBJECT
 public:
-  FileRequester(std::filesystem::path path, FileRef file,
+  FileRequester(std::unique_ptr<DataProvider> provider, FileRef file,
                 bool recursive_fetch = true);
   FileRequester(QString error_msg) : error_msg(error_msg) {}
   ~FileRequester() {
-    if (executor_thread) {
-      executor_thread->quit();
-      executor_thread->deleteLater();
+    if (provider_thread) {
+      provider_thread->quit();
+      provider_thread->deleteLater();
     }
   }
+
+  void stop_thread() {
+    if (provider_thread) {
+      provider_thread->quit();
+      provider_thread->wait();
+      provider_thread->deleteLater();
+      provider_thread = nullptr;
+    }
+  }
+
   bool has_children(TreeIndex idx) const {
     auto val = arborist->get_node(idx).val;
     if (!val.has_value()) {
@@ -155,7 +165,7 @@ public:
     return set_parser(func_name, pos);
   }
 
-  void start_executor_thread() { executor_thread->start(); }
+  void start_provider_thread() { provider_thread->start(); }
   RootIndex root_idx(Node node) const override;
 
 public slots:
@@ -176,7 +186,7 @@ private:
   QColor generate_new_node_color(QString val, size_t pos) const;
   void set_value(TreeIndex idx, SpannedHandle val, RootIndex root);
 
-  QThread *executor_thread = nullptr;
+  QThread *provider_thread = nullptr;
   std::unique_ptr<Arborist> arborist;
   std::map<std::pair<QString, size_t>, RootIndex> parser_root;
   std::unordered_map<ValHandle, RootIndex> nominal_bubbles;
@@ -198,4 +208,9 @@ public:
   std::unique_ptr<FileRequester> create_file_requester(QString parser_lib_path,
                                                        FileRef file,
                                                        bool recursive_fetch);
+#ifdef YLLIAB_ENABLE_YAML_TESTS
+  std::unique_ptr<FileRequester> create_file_requester_from_yaml(QString yaml_path,
+                                                                 FileRef file,
+                                                                 bool recursive_fetch);
+#endif
 };

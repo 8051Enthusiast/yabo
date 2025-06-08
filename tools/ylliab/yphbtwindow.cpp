@@ -257,7 +257,7 @@ void YphbtWindow::set_new_file_requester(
                     file_requester.get(), select);
   auto root = file_requester->request_parse("main", 0);
   select->set_root(root);
-  file_requester->start_executor_thread();
+  file_requester->start_provider_thread();
 }
 
 void YphbtWindow::on_tableView_doubleClicked(const QModelIndex &index) {
