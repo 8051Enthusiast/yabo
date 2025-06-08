@@ -259,7 +259,7 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
                 let row_num = self.row_count(to_ty)?;
                 let replacement = self
                     .arena
-                    .new_matrix(std::iter::repeat(empty_row).take(row_num as usize));
+                    .new_matrix(std::iter::repeat_n(empty_row, row_num as usize));
                 self.arena.replace_view_content(matrix, replacement)
             }
             [Type::Nominal(..), _] => {

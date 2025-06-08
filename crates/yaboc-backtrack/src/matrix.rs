@@ -739,7 +739,7 @@ impl<'arena> MatrixArena<'arena> {
     pub fn new_zeroes(&self, rows: u32, bound: u32, total: u32) -> Rect<Matrix<'arena>> {
         let empty_row = Row::Vars(VarRow::empty(bound, total));
         Rect {
-            matrix: self.new_matrix(std::iter::repeat(empty_row).take(rows as usize)),
+            matrix: self.new_matrix(std::iter::repeat_n(empty_row, rows as usize)),
             bound,
             total,
         }
@@ -757,7 +757,7 @@ impl<'arena> MatrixArena<'arena> {
     pub fn column_subrange(&self, matrix: Matrix, start: u32, end: u32) -> Matrix<'arena> {
         let out = self
             .arena
-            .alloc_extend(std::iter::repeat(Row::True).take(matrix.row_count() as usize));
+            .alloc_extend(std::iter::repeat_n(Row::True, matrix.row_count() as usize));
         for (out_row, row) in out.iter_mut().zip(matrix.rows) {
             *out_row = row.subrange(start, end);
         }
@@ -767,7 +767,7 @@ impl<'arena> MatrixArena<'arena> {
     pub fn multiply(&self, lhs: Matrix, rhs: Rect<Matrix>) -> Matrix<'arena> {
         let out = self
             .arena
-            .alloc_extend(std::iter::repeat(Row::True).take(lhs.row_count() as usize));
+            .alloc_extend(std::iter::repeat_n(Row::True, lhs.row_count() as usize));
         multiply(out, lhs, rhs);
         Matrix { rows: out }
     }
@@ -777,7 +777,7 @@ impl<'arena> MatrixArena<'arena> {
             rhs.matrix.matrix.row_count() - rhs.matrix.view_row_count() + lhs.row_count();
         let out = self
             .arena
-            .alloc_extend(std::iter::repeat(Row::True).take(new_row_count as usize));
+            .alloc_extend(std::iter::repeat_n(Row::True, new_row_count as usize));
         let [start, rhs_end] = rhs.matrix.rows;
         let end = start + lhs.row_count();
         out[..start as usize].clone_from_slice(&rhs.matrix.matrix.rows[..start as usize]);
@@ -797,9 +797,10 @@ impl<'arena> MatrixArena<'arena> {
         start: u32,
         end: u32,
     ) -> MatrixView<'arena> {
-        let out = self
-            .arena
-            .alloc_extend(std::iter::repeat(Row::True).take(lhs.matrix.row_count() as usize));
+        let out = self.arena.alloc_extend(std::iter::repeat_n(
+            Row::True,
+            lhs.matrix.row_count() as usize,
+        ));
         let [start_row, end_row] = lhs.rows;
         out[..start_row as usize].clone_from_slice(&lhs.matrix.rows[..start_row as usize]);
         out[end_row as usize..].clone_from_slice(&lhs.matrix.rows[end_row as usize..]);
@@ -839,7 +840,7 @@ impl<'arena> MatrixArena<'arena> {
         let end = start + rhs.matrix.row_count();
         let out = self
             .arena
-            .alloc_extend(std::iter::repeat(Row::True).take(lhs.row_count() as usize));
+            .alloc_extend(std::iter::repeat_n(Row::True, lhs.row_count() as usize));
         let lhs_columns = self.column_subrange(lhs, start, end);
         multiply(out, lhs_columns, rhs);
         for (out, lhs) in out.iter_mut().zip(lhs.rows) {
@@ -863,7 +864,7 @@ impl<'arena> MatrixArena<'arena> {
         let new_rows = expanded_count(matrix.row_count(), rows, typevar_widths);
         let out = self
             .arena
-            .alloc_extend(std::iter::repeat(Row::True).take(new_rows as usize));
+            .alloc_extend(std::iter::repeat_n(Row::True, new_rows as usize));
         let mut out_idx = 0;
         let mut row_var_idx = 0;
         for (i, row) in matrix.rows.iter().enumerate() {
@@ -885,7 +886,7 @@ impl<'arena> MatrixArena<'arena> {
     pub fn substitute_with_true_from(&self, matrix: Matrix, bit: u32) -> Matrix<'arena> {
         let out = self
             .arena
-            .alloc_extend(std::iter::repeat(Row::True).take(matrix.row_count() as usize));
+            .alloc_extend(std::iter::repeat_n(Row::True, matrix.row_count() as usize));
         for (out_row, row) in out.iter_mut().zip(matrix.rows) {
             *out_row = row.substitute_with_true_from(bit);
         }
@@ -902,7 +903,7 @@ impl<'arena> MatrixArena<'arena> {
         let total_len = matrix.matrix.row_count() + replacement.row_count() - (end - start);
         let out = self
             .arena
-            .alloc_extend(std::iter::repeat(Row::True).take(total_len as usize));
+            .alloc_extend(std::iter::repeat_n(Row::True, total_len as usize));
         out[..start as usize].clone_from_slice(&matrix.matrix.rows[..start as usize]);
         out[start as usize..new_end as usize].clone_from_slice(replacement.rows);
         out[new_end as usize..].clone_from_slice(&matrix.matrix.rows[end as usize..]);

@@ -24,7 +24,7 @@ impl Index<usize> for SmallBitVec {
 
 impl SmallBitVec {
     pub fn ones(bits: usize) -> Self {
-        let len = (bits + 63) / 64;
+        let len = bits.div_ceil(64);
         let mut words = SmallVec::from_elem(u64::MAX, len);
         if bits % 64 != 0 {
             let mask = (1 << (bits % 64)) - 1;
@@ -61,13 +61,13 @@ impl SmallBitVec {
         let (word, bit) = (idx / 64, idx % 64);
         if self.0.len() < word + 1 {
             self.0
-                .extend(std::iter::repeat(0).take(word + 1 - self.0.len()));
+                .extend(std::iter::repeat_n(0, word + 1 - self.0.len()));
         }
         self.0[word] |= 1 << bit;
     }
 
     pub fn truncate(&self, n: usize) -> Self {
-        let len = (n + 63) / 64;
+        let len = n.div_ceil(64);
         let mut words = SmallVec::from_slice(&self.0[..len.min(self.0.len())]);
         if n % 64 != 0 {
             let mask = (1 << (n % 64)) - 1;

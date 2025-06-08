@@ -68,7 +68,7 @@ impl UnfinishedManifestation {
         manifest.discriminant_offset = 0;
         let disc_sa = SizeAlign {
             before: 0,
-            after: ((manifest.discriminant_mapping.len() + 7) / 8) as PSize,
+            after: manifest.discriminant_mapping.len().div_ceil(8) as PSize,
             align_mask: 0,
         };
         let size = manifest.size.after;

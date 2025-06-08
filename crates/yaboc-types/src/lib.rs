@@ -90,7 +90,7 @@ pub fn type_contains_unknown(db: &dyn TypeInterner, id: TypeId) -> bool {
             fun_args,
             ..
         }) => {
-            parse_arg.map_or(false, |x| db.type_contains_unknown(x))
+            parse_arg.is_some_and(|x| db.type_contains_unknown(x))
                 || fun_args.iter().any(|x| db.type_contains_unknown(*x))
         }
         Type::Loop(_, inner) => db.type_contains_unknown(inner),
@@ -112,7 +112,7 @@ pub fn type_contains_typevar(db: &dyn TypeInterner, id: TypeId) -> bool {
             fun_args,
             ..
         }) => {
-            parse_arg.map_or(false, |x| db.type_contains_typevar(x))
+            parse_arg.is_some_and(|x| db.type_contains_typevar(x))
                 || fun_args.iter().any(|x| db.type_contains_typevar(*x))
         }
         Type::Loop(_, inner) => db.type_contains_typevar(inner),
