@@ -31,7 +31,7 @@ RUN cargo build --release
 
 FROM debian:bookworm AS emscripten
 
-ARG EMSCRIPTEN_VERSION=3.1.68
+ARG EMSCRIPTEN_VERSION=3.1.70
 
 ADD https://github.com/emscripten-core/emsdk/archive/refs/tags/${EMSCRIPTEN_VERSION}.tar.gz \
     /src/
@@ -45,7 +45,7 @@ RUN apt-get update && apt-get install -y python3 xz-utils \
 
 FROM debian:bookworm AS qt
 
-ARG QT_VERSION=6.8.0
+ARG QT_VERSION=6.9.1
 
 ADD https://github.com/qt/qtbase/archive/refs/tags/v$QT_VERSION.zip /src/
 RUN apt-get update && apt-get install -y build-essential cmake unzip libgl1-mesa-dev
