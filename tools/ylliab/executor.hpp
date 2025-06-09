@@ -56,8 +56,6 @@ public slots:
       emit response(Response(meta));
     }
   }
-signals:
-  void response(Response resp);
 
 private:
   int64_t thread_init();
