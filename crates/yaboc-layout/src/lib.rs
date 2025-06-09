@@ -211,6 +211,11 @@ impl<'a> IMonoLayout<'a> {
             MonoLayout::ArrayParser(None) => Ok(Some((2, 0))),
             MonoLayout::ArrayFillParser(Some(_)) => Ok(Some((1, 1))),
             MonoLayout::ArrayFillParser(None) => Ok(Some((1, 0))),
+            MonoLayout::Lambda(id, _, args, _, _) => {
+                let lambda = id.lookup(db)?;
+                let arg_count = lambda.args.len();
+                Ok(Some((arg_count, args.len())))
+            }
             _ => Ok(None),
         }
     }
@@ -584,12 +589,12 @@ impl<'a> ILayout<'a> {
                 MonoLayout::NominalParser(pd, present_args, _) => (pd, present_args),
                 MonoLayout::BlockParser(block_id, _, subst, _) => {
                     return ctx
-                        .eval_block(*block_id, self, None, result_type, subst.clone())
+                        .eval_block(*block_id, layout.inner(), None, result_type, subst.clone())
                         .ok_or_else(|| SilencedError::new().into())
                 }
                 MonoLayout::Lambda(lambda_id, _, _, subst, _) => {
                     return ctx
-                        .eval_lambda(*lambda_id, self, result_type, subst.clone())
+                        .eval_lambda(*lambda_id, layout.inner(), result_type, subst.clone())
                         .ok_or_else(|| SilencedError::new().into())
                 }
                 MonoLayout::ArrayParser(Some((parser, Some(int)))) => {
