@@ -53,13 +53,16 @@ qt_add_executable(yphbt
     yphbt.cpp
 )
 
-find_package(yaml-cpp REQUIRED)
+# Optional dependency for tests only
+find_package(yaml-cpp)
 
-qt_add_executable(test_yaml_model
-    test/test_yaml_model.cpp
-    test/yamldataprovider.cpp
-    test/yamldataprovider.hpp
-)
+if(yaml-cpp_FOUND)
+    qt_add_executable(test_yaml_model
+        test/test_yaml_model.cpp
+        test/yamldataprovider.cpp
+        test/yamldataprovider.hpp
+    )
+endif()
 
 include_directories("../../include")
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
@@ -76,11 +79,13 @@ target_link_libraries(yphbt PRIVATE
     ylliab_core Qt6::Core Qt6::Widgets
 )
 
-target_link_libraries(test_yaml_model PRIVATE
-    ylliab_core Qt6::Test Qt6::Core Qt6::Widgets yaml-cpp
-)
+if(yaml-cpp_FOUND)
+    target_link_libraries(test_yaml_model PRIVATE
+        ylliab_core Qt6::Test Qt6::Core Qt6::Widgets yaml-cpp
+    )
 
-target_compile_definitions(test_yaml_model PRIVATE YLLIAB_ENABLE_YAML_TESTS)
+    target_compile_definitions(test_yaml_model PRIVATE YLLIAB_ENABLE_YAML_TESTS)
+endif()
 
 if(EMSCRIPTEN)
     target_link_options(ylliab PUBLIC -sMAIN_MODULE=2)
@@ -109,4 +114,6 @@ install(TARGETS ylliab yphbt
 
 # Enable testing
 enable_testing()
-add_test(NAME yaml_model_test COMMAND test_yaml_model)
+if(yaml-cpp_FOUND)
+    add_test(NAME yaml_model_test COMMAND test_yaml_model)
+endif()
