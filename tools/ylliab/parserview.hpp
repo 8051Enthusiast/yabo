@@ -1,7 +1,7 @@
 #pragma once
 
-#include <QWidget>
 #include <QThread>
+#include <QWidget>
 
 class HexTableModel;
 class FileRequester;
@@ -19,7 +19,7 @@ class ParserView : public QWidget {
 public:
   explicit ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req);
   ~ParserView();
-  void setParserName(QString fileRequester);
+  void request_parse(QString fileRequester, size_t pos);
   void keyPressEvent(QKeyEvent *event) override;
   void goto_address(size_t address);
   void back();
@@ -29,7 +29,7 @@ private slots:
   void on_treeView_doubleClicked(const QModelIndex &index);
   void on_tableView_doubleClicked(const QModelIndex &index);
 
-  private:
+private:
   Ui::ParserView *ui;
   std::unique_ptr<FileRequester> fileRequester;
   std::unique_ptr<GraphScene> scene;

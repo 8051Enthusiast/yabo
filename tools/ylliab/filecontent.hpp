@@ -42,6 +42,7 @@ public:
   uint8_t get_addr(size_t addr) const;
   uint8_t get_addr(const uint8_t *addr) const;
   std::pair<const uint8_t *, const uint8_t *> slice() const;
+  size_t total_size() const;
   bool is_valid_span(FileSpan sp) const;
 
 private:

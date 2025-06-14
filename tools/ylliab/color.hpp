@@ -1,4 +1,7 @@
+#pragma once
+
 #include <QColor>
+
 // whether to use dark or light colors
 extern bool use_dark_colors;
 QColor random_color(size_t seed);

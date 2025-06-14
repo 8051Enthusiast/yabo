@@ -37,6 +37,8 @@ qt_add_library(ylliab_core STATIC
     selectionstate.hpp selectionstate.cpp
     compile.hpp compile.cpp
     init.hpp init.cpp
+    multifilemodel.hpp multifilemodel.cpp
+    multifilehexview.hpp multifilehexview.cpp
 )
 
 qt_add_executable(ylliab
@@ -45,6 +47,7 @@ qt_add_executable(ylliab
     newtab.hpp newtab.cpp newtab.ui
     ylliab.cpp
     addressdialog.hpp addressdialog.cpp addressdialog.ui
+    multifileview.hpp multifileview.cpp multifileview.ui
 )
 
 qt_add_executable(yphbt

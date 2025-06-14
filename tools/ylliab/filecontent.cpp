@@ -225,3 +225,8 @@ const uint8_t *FileContent::base() const {
         .data();
   }
 }
+
+size_t FileContent::total_size() const {
+  auto [start, end] = slice();
+  return end - start;
+}

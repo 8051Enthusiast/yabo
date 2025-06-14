@@ -5,6 +5,8 @@
 class ParserView;
 class NewTab;
 class AddressDialog;
+class MultiFileDialog;
+class MultiFileView;
 
 const QCommandLineOption parser_opt(QStringList() << "p" << "parser",
                                     "file path to parser file", "path");
@@ -26,8 +28,11 @@ public:
   YlliabWindow(const QCommandLineParser &options, QWidget *parent = nullptr);
   ~YlliabWindow();
 
+public slots:
+  void new_tab_requested(QWidget *widget, QString name);
 private slots:
   void on_actionNewTab_triggered();
+  void on_actionNewMultiFileTab_triggered();
   void on_tabWidget_tabCloseRequested(int index);
   void on_actionBack_triggered();
   void on_actionForth_triggered();
