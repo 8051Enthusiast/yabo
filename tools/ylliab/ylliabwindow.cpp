@@ -1,6 +1,8 @@
 #include "ylliabwindow.hpp"
 #include "./ui_ylliabwindow.h"
 #include "addressdialog.hpp"
+#include "multifilemodel.hpp"
+#include "multifileview.hpp"
 #include "newtab.hpp"
 #include "parserview.hpp"
 
@@ -87,6 +89,22 @@ void YlliabWindow::on_actionNewTab_triggered() {
   ui->tabWidget->setCurrentIndex(newTabIndex);
 }
 
+void YlliabWindow::on_actionNewMultiFileTab_triggered() {
+  auto multi_file_parser = ask_files_for_multi_file_parser(this);
+
+  if (!multi_file_parser) {
+    return;
+  }
+
+  auto view = new MultiFileView(std::move(multi_file_parser), nullptr);
+  auto name = "Multi-File Analysis";
+  ui->tabWidget->addTab(view, name);
+  auto newTabIndex = ui->tabWidget->count() - 1;
+  ui->tabWidget->setCurrentIndex(newTabIndex);
+  connect(view, &MultiFileView::new_tab_requested, this,
+          &YlliabWindow::new_tab_requested);
+}
+
 void YlliabWindow::on_tabWidget_tabCloseRequested(int index) {
   auto view = ui->tabWidget->widget(index);
   ui->tabWidget->removeTab(index);
@@ -124,4 +142,10 @@ void YlliabWindow::on_actionGotoAddress_triggered() {
   if (!widget)
     return;
   widget->goto_address(address);
+}
+
+void YlliabWindow::new_tab_requested(QWidget *widget, QString name) {
+  ui->tabWidget->addTab(widget, name);
+  auto newTabIndex = ui->tabWidget->count() - 1;
+  ui->tabWidget->setCurrentIndex(newTabIndex);
 }

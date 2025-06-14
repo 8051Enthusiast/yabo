@@ -21,7 +21,7 @@
        <bool>true</bool>
       </property>
       <property name="tabPosition">
-       <enum>QTabWidget::North</enum>
+       <enum>QTabWidget::TabPosition::North</enum>
       </property>
       <property name="currentIndex">
        <number>-1</number>
@@ -58,6 +58,7 @@
     <bool>false</bool>
    </attribute>
    <addaction name="actionNewTab"/>
+   <addaction name="actionNewMultiFileTab"/>
    <addaction name="actionGotoAddress"/>
    <addaction name="separator"/>
    <addaction name="actionBack"/>
@@ -84,6 +85,17 @@
     <string>Forth</string>
    </property>
   </action>
+  <action name="actionNewMultiFileTab">
+   <property name="text">
+    <string>Multi-File Analysis</string>
+   </property>
+   <property name="toolTip">
+    <string>Analyze multiple files with integrated parser editor</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+M</string>
+   </property>
+  </action>
   <action name="actionGotoAddress">
    <property name="text">
     <string>Goto Address</string>
@@ -95,7 +107,7 @@
     <string>G</string>
    </property>
    <property name="menuRole">
-    <enum>QAction::NoRole</enum>
+    <enum>QAction::MenuRole::NoRole</enum>
    </property>
   </action>
  </widget>

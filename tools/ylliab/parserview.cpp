@@ -67,6 +67,9 @@ void ParserView::on_tableView_doubleClicked(const QModelIndex &index) {
   hexModel->handle_doubleclick(index, select);
 }
 
-void ParserView::goto_address(size_t address) {
-  select->jump_addr(address);
+void ParserView::goto_address(size_t address) { select->jump_addr(address); }
+
+void ParserView::request_parse(QString parser, size_t pos) {
+  auto root = fileRequester->set_parser(parser, pos);
+  select->set_root(root);
 }

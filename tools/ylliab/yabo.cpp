@@ -1,6 +1,7 @@
 #include "yabo.hpp"
 #include "yabo/vtable.h"
 #include <algorithm>
+#include <dlfcn.h>
 
 // -- signal handling --
 #if defined(__linux__)
@@ -356,4 +357,21 @@ std::optional<SpannedVal> YaboValCreator::parse(ParseFun parser, ByteSpan buf) {
                           (const void *)nullptr, DEFAULT_LEVEL | YABO_VTABLE,
                           addr);
   });
+}
+
+YaboValCreator
+init_vals_from_lib(void *lib, std::pair<const uint8_t *, const uint8_t *> span) {
+  auto size = reinterpret_cast<size_t *>(dlsym(lib, "yabo_max_buf_size"));
+  if (!size) {
+    throw std::runtime_error("Failed to get yabo_max_buf_size from library");
+  }
+
+  auto [start, end] = span;
+
+  auto global_init = reinterpret_cast<InitFun>(dlsym(lib, YABO_GLOBAL_INIT));
+  int64_t status = global_init(start, end);
+  if (status) {
+    throw std::runtime_error("Failed to initialize global state");
+  }
+  return YaboValCreator(YaboValStorage(*size));
 }

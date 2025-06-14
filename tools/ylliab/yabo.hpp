@@ -9,6 +9,12 @@
 #include <vector>
 
 #include <yabo/dynamic.h>
+#ifdef __EMSCRIPTEN__
+// https://github.com/WebAssembly/binaryen/pull/2427
+#define YABO_GLOBAL_INIT "orig$yabo_global_init"
+#else
+#define YABO_GLOBAL_INIT "yabo_global_init"
+#endif
 
 enum class YaboValKind : int64_t {
   YABOINTEGER = 0x100,
@@ -186,3 +192,5 @@ public:
 private:
   YaboValStorage storage;
 };
+
+YaboValCreator init_vals_from_lib(void *lib, std::pair<const uint8_t*, const uint8_t*> span);

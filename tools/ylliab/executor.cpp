@@ -1,15 +1,8 @@
 #include "executor.hpp"
 #include "request.hpp"
+#include "yabo.hpp"
 
 #include <dlfcn.h>
-#ifdef __EMSCRIPTEN__
-#include <emscripten.h>
-
-// https://github.com/WebAssembly/binaryen/pull/2427
-const char *YABO_GLOBAL_INIT = "orig$yabo_global_init";
-#else
-const char *YABO_GLOBAL_INIT = "yabo_global_init";
-#endif
 #ifdef __linux__
 #include <csignal>
 #endif
@@ -53,28 +46,16 @@ int64_t Executor::thread_init() {
 #endif
   lib = dlopen(tmp_file.c_str(), RTLD_LAZY);
   if (!lib) {
-    // error = dlerror();
     return -1;
   }
 
-  auto size = reinterpret_cast<size_t *>(dlsym(lib, "yabo_max_buf_size"));
-  if (!size) {
-    // error = QString("File does not contain yabo_max_buf_size symbol: %1. Is "
-    //                 "the file in the right format?")
-    //             .arg(dlerror());
+  try {
+    vals = init_vals_from_lib(lib, file->slice());
+  } catch (std::runtime_error &) {
+    dlclose(lib);
+    lib = nullptr;
     return -1;
   }
-
-  auto [start, end] = file->slice();
-
-  typedef InitFun init_fun;
-  auto global_init = reinterpret_cast<init_fun>(dlsym(lib, YABO_GLOBAL_INIT));
-  int64_t status = global_init(start, end);
-  if (status) {
-    // error = QString("Global init failed with status %1").arg(status);
-    return -1;
-  }
-  vals = YaboValCreator(YaboValStorage(*size));
   return 0;
 }
 
