@@ -24,6 +24,10 @@ struct FileUpdate {
   std::shared_ptr<std::vector<FileInfo>> files;
   FileOffsets offsets;
   FileOrder order;
+  ByteSpan span_at_index(size_t index) const;
+  size_t valid_end() const;
+  size_t lower_bound(ByteSpan bytes) const;
+  size_t upper_bound(ByteSpan bytes) const;
 };
 
 class MultiFileParser : public QObject {

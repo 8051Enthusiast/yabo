@@ -1,5 +1,6 @@
 #include "color.hpp"
 #include <complex>
+#include <numbers>
 #include <random>
 
 bool use_dark_colors = false;
@@ -12,6 +13,8 @@ struct ColorSpaceSlice {
   std::complex<float> first_axis;
   std::complex<float> second_axis;
 };
+
+using ColorMatrix = std::array<std::array<float, 3>, 3>;
 
 static constexpr ColorSpaceSlice LIGHT_SPACE = {0.8,
                                                 {-0.10987016, -0.09824207},
@@ -29,10 +32,10 @@ static ColorSpaceSlice const &current_slice() {
 
 struct Color {
   std::array<float, 3> component;
-  float &operator[](size_t i) { return component.at(i); }
+  constexpr float &operator[](size_t i) { return component.at(i); }
 };
 
-static Color lin_srgb_to_srgb(Color srgb) {
+constexpr static Color lin_srgb_to_srgb(Color srgb) {
   Color rgb;
   for (size_t i = 0; i < 3; i++) {
     if (srgb[i] <= 0.0031308) {
@@ -44,23 +47,21 @@ static Color lin_srgb_to_srgb(Color srgb) {
   return rgb;
 }
 
-constexpr std::array<std::array<float, 3>, 3> xyz_to_srgb_matrix = {
-    {{3.2406, -1.5372, -0.4986},
-     {-0.9689, 1.8758, 0.0415},
-     {0.0557, -0.2040, 1.0570}}};
+constexpr ColorMatrix xyz_to_srgb_matrix = {{{3.2406, -1.5372, -0.4986},
+                                             {-0.9689, 1.8758, 0.0415},
+                                             {0.0557, -0.2040, 1.0570}}};
 
-constexpr std::array<std::array<float, 3>, 3> m1_inv = {
+constexpr ColorMatrix m1_inv = {
     {{1.22701385110352, -0.557799980651822, 0.281256148966468},
      {-0.0405801784232806, 1.11225686961683, -0.0716766786656012},
      {-0.0763812845057069, -0.421481978418013, 1.58616322044079}}};
 
-constexpr std::array<std::array<float, 3>, 3> m2_inv = {
+constexpr ColorMatrix m2_inv = {
     {{0.999999998450521, 0.396337792173768, 0.215803758060759},
      {1.00000000888176, -0.105561342323656, -0.0638541747717059},
      {1.00000005467241, -0.0894841820949657, -1.29148553786409}}};
 
-static Color matrix_multiply(const std::array<std::array<float, 3>, 3> &m,
-                             Color c) {
+constexpr static Color matrix_multiply(const ColorMatrix &m, Color c) {
   Color res = {0, 0, 0};
   for (size_t i = 0; i < 3; i++) {
     for (size_t j = 0; j < 3; j++) {
@@ -70,17 +71,23 @@ static Color matrix_multiply(const std::array<std::array<float, 3>, 3> &m,
   return res;
 }
 
-static Color xyz_to_lin_srgb(Color xyz) {
+constexpr static Color xyz_to_lin_srgb(Color xyz) {
   return matrix_multiply(xyz_to_srgb_matrix, xyz);
 }
 
-static Color oklab_to_xyz(Color lab) {
+constexpr static Color oklab_to_xyz(Color lab) {
   auto lms = matrix_multiply(m2_inv, lab);
   for (float &comp : lms.component) {
     comp = comp * comp * comp;
   }
   auto xyz = matrix_multiply(m1_inv, lms);
   return xyz;
+}
+
+constexpr static Color oklch_to_oklab(float l, float c, float h) {
+  auto a = c * cos(h);
+  auto b = c * sin(h);
+  return Color{l, static_cast<float>(a), static_cast<float>(b)};
 }
 
 // check whether our color falls within the srgb gamut
@@ -217,4 +224,30 @@ QColor style_color(HighlightName name) {
   } else {
     return style_color_light(name);
   }
+}
+
+static constexpr std::array<Color, 256> create_color_wheel(float l, float c) {
+  std::array<Color, 256> array;
+  for (int i = 0; i < 256; i++) {
+    auto hue = i * 2.0 * std::numbers::pi / 256.0;
+    auto oklab = oklch_to_oklab(l, c, hue);
+    auto xyz = oklab_to_xyz(oklab);
+    auto rgb = xyz_to_lin_srgb(xyz);
+    auto srgb = lin_srgb_to_srgb(rgb);
+    array[i] = srgb;
+  }
+  return array;
+}
+
+static const std::array<Color, 256> byte_color_wheel = create_color_wheel(0.8, 0.1);
+static const std::array<Color, 256> byte_outline_color_wheel = create_color_wheel(0.6, 0.1);
+
+QColor byte_wheel_color(uint8_t byte) {
+  auto color = byte_color_wheel[byte];
+  return QColor::fromRgbF(color[0], color[1], color[2]);
+}
+
+QColor byte_wheel_outline_color(uint8_t byte) {
+  auto color = byte_outline_color_wheel[byte];
+  return QColor::fromRgbF(color[0], color[1], color[2]);
 }

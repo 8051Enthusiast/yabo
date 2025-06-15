@@ -15,47 +15,67 @@
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
-    <widget class="QSplitter" name="splitter">
+    <widget class="QSplitter" name="splitter_3">
      <property name="orientation">
-      <enum>Qt::Orientation::Horizontal</enum>
+      <enum>Qt::Orientation::Vertical</enum>
      </property>
-     <widget class="QSplitter" name="splitter_2">
+     <widget class="QSplitter" name="splitter">
       <property name="orientation">
-       <enum>Qt::Orientation::Vertical</enum>
+       <enum>Qt::Orientation::Horizontal</enum>
       </property>
-      <widget class="SourceEditor" name="plainTextEdit">
-       <property name="plainText">
-        <string>export
+      <widget class="QSplitter" name="splitter_2">
+       <property name="orientation">
+        <enum>Qt::Orientation::Vertical</enum>
+       </property>
+       <widget class="SourceEditor" name="plainTextEdit">
+        <property name="plainText">
+         <string>export
 def ~main = {
   # Imagine a world where your code is here
 }
 </string>
-       </property>
+        </property>
+       </widget>
+       <widget class="CompilerErrorView" name="errorView">
+        <property name="enabled">
+         <bool>true</bool>
+        </property>
+        <property name="font">
+         <font>
+          <family>DejaVu Sans Mono</family>
+          <pointsize>12</pointsize>
+          <italic>false</italic>
+          <bold>false</bold>
+         </font>
+        </property>
+        <property name="lineWrapMode">
+         <enum>QTextEdit::LineWrapMode::NoWrap</enum>
+        </property>
+        <property name="readOnly">
+         <bool>true</bool>
+        </property>
+        <property name="textInteractionFlags">
+         <set>Qt::TextInteractionFlag::TextSelectableByMouse</set>
+        </property>
+       </widget>
       </widget>
-      <widget class="CompilerErrorView" name="errorView">
-       <property name="enabled">
-        <bool>true</bool>
-       </property>
-       <property name="font">
-        <font>
-         <family>DejaVu Sans Mono</family>
-         <pointsize>12</pointsize>
-         <italic>false</italic>
-         <bold>false</bold>
-        </font>
-       </property>
-       <property name="lineWrapMode">
-        <enum>QTextEdit::LineWrapMode::NoWrap</enum>
-       </property>
-       <property name="readOnly">
-        <bool>true</bool>
-       </property>
-       <property name="textInteractionFlags">
-        <set>Qt::TextInteractionFlag::TextSelectableByMouse</set>
+      <widget class="MultiFileHexView" name="tableView"/>
+     </widget>
+     <widget class="QScrollArea" name="scrollArea">
+      <property name="widgetResizable">
+       <bool>true</bool>
+      </property>
+      <widget class="FlameGraph" name="scrollAreaWidgetContents">
+       <property name="geometry">
+        <rect>
+         <x>0</x>
+         <y>0</y>
+         <width>620</width>
+         <height>68</height>
+        </rect>
        </property>
       </widget>
      </widget>
-     <widget class="MultiFileHexView" name="tableView"/>
     </widget>
    </item>
   </layout>
@@ -83,6 +103,12 @@ def ~main = {
    <class>MultiFileHexView</class>
    <extends>QTableView</extends>
    <header>multifilehexview.hpp</header>
+  </customwidget>
+  <customwidget>
+   <class>FlameGraph</class>
+   <extends>QWidget</extends>
+   <header>flamegraph.hpp</header>
+   <container>1</container>
   </customwidget>
  </customwidgets>
  <resources/>

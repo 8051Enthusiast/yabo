@@ -1,6 +1,7 @@
 #include "multifileview.hpp"
 #include "compile.hpp"
 #include "filerequester.hpp"
+#include "flamegraph.hpp"
 #include "multifilemodel.hpp"
 #include "parserview.hpp"
 #include "sourceeditor.hpp"
@@ -17,6 +18,8 @@ MultiFileView::MultiFileView(std::unique_ptr<MultiFileParser> parser,
   ui->errorView->hide();
   connect(this->parser.get(), &MultiFileParser::files_updated, model.get(),
           &MultiFileHexModel::update_files);
+  connect(this->parser.get(), &MultiFileParser::files_updated,
+          ui->scrollAreaWidgetContents, &FlameGraph::get_update);
   addAction(ui->actionCompile);
 }
 
