@@ -5,11 +5,38 @@
 #include <QPaintEvent>
 #include <QPainter>
 #include <QResizeEvent>
+#include <qwidget.h>
 
 namespace {
-size_t overlap(ByteSpan lhs, ByteSpan rhs) {
+bool can_reach(const Square &square, unsigned int row, unsigned int offset) {
+  return row >= square.row && offset >= square.start &&
+         offset < square.start + square.width;
+}
+
+bool get_prefix(const Square &parent, std::vector<uint8_t> &prefix,
+                unsigned int row, unsigned int offset) {
+  for (const auto &child : parent.children) {
+    if (!can_reach(child, row, offset)) {
+      continue;
+    }
+
+    if (child.kind == SquareKind::Byte) {
+      prefix.push_back(child.value);
+    }
+
+    if (child.row == row) {
+      return true;
+    }
+
+    [[clang::musttail]] return get_prefix(child, prefix, row, offset);
+  }
+  return false;
+}
+
+size_t overlap(ByteSpan lhs, ByteSpan rhs, size_t max_overlap) {
   size_t i = 0;
-  while (i < lhs.size() && i < rhs.size() && lhs[i] == rhs[i]) {
+  while (i < max_overlap && i < lhs.size() && i < rhs.size() &&
+         lhs[i] == rhs[i]) {
     i++;
   }
   if (lhs.size() == rhs.size() && i == lhs.size()) {
@@ -38,7 +65,7 @@ size_t pos_for_pixel_offset(size_t start_pos, size_t end_pos,
   return start_pos + offset;
 }
 
-constinit size_t max_overlap = 32;
+constinit size_t MAX_OVERLAP = 64;
 
 size_t find_row_count(const FileUpdate &update, unsigned int width,
                       size_t start_pos, size_t end_pos) {
@@ -50,7 +77,7 @@ size_t find_row_count(const FileUpdate &update, unsigned int width,
     auto pos = pos_for_pixel_offset(start_pos, end_pos, width, i);
     auto index = update.order.ordered_to_index[pos];
     auto new_span = update.span_at_index(index);
-    auto new_overlap = std::min(overlap(old_span, new_span), max_overlap);
+    auto new_overlap = overlap(old_span, new_span, MAX_OVERLAP);
     total_overlap = std::max(new_overlap, total_overlap);
     old_overlap = new_overlap;
     old_span = new_span;
@@ -93,7 +120,7 @@ Square find_squares(const FileUpdate &update, unsigned int width,
     auto pos = pos_for_pixel_offset(start_pos, end_pos, width, i);
     auto index = update.order.ordered_to_index[pos];
     auto new_span = update.span_at_index(index);
-    auto new_overlap = std::min(overlap(old_span, new_span), max_overlap);
+    auto new_overlap = overlap(old_span, new_span, MAX_OVERLAP);
 
     if (new_overlap > old_overlap) {
       for (size_t j = old_overlap; j < new_overlap; j++) {
@@ -213,10 +240,10 @@ void FlameGraph::paintEvent(QPaintEvent *event) {
     return;
   }
 
-  paintSquare(painter, *root);
+  paint_square(painter, *root);
 }
 
-void FlameGraph::paintSquare(QPainter &painter, const Square &square) {
+void FlameGraph::paint_square(QPainter &painter, const Square &square) const {
   QRect rect = box_for_node(square);
 
   if (square.kind == SquareKind::Root) {
@@ -249,6 +276,29 @@ void FlameGraph::paintSquare(QPainter &painter, const Square &square) {
   }
 
   for (const auto &child : square.children) {
-    paintSquare(painter, child);
+    paint_square(painter, child);
   }
+}
+
+void FlameGraph::focus_on(QPoint pos) {
+  auto row = pos.y() / cached_line_height;
+  auto new_prefix = std::vector<uint8_t>{};
+
+  if (row != 0) {
+    auto res = get_prefix(*root, new_prefix, row, pos.x());
+    if (!res) {
+      return;
+    }
+  }
+
+  chosen_prefix = std::move(new_prefix);
+  update_on_size_change();
+  QWidget::update();
+}
+
+void FlameGraph::mouseDoubleClickEvent(QMouseEvent *event) {
+  auto pos = event->pos();
+  focus_on(pos);
+  auto row = range_for_current_prefix().first;
+  emit jump_to_pos(row);
 }

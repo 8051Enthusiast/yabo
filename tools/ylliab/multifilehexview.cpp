@@ -3,6 +3,7 @@
 #include <QHeaderView>
 #include <QMessageBox>
 #include <algorithm>
+#include <qabstractitemmodel.h>
 
 MultiFileHexModel::MultiFileHexModel(QObject *parent)
     : QAbstractTableModel(parent) {}
@@ -230,4 +231,10 @@ MultiFileHexModel::get_file_info_for_index(const QModelIndex &index) const {
   }
 
   return (*update->files)[*file_idx];
+}
+
+void MultiFileHexView::jump_to_pos(size_t row) {
+  auto parse_boundary_column = model->get_parsed_context_bytes();
+  auto index = model->index(row, parse_boundary_column);
+  scrollTo(index, QAbstractItemView::PositionAtCenter);
 }
