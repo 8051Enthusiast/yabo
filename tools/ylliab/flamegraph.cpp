@@ -124,16 +124,35 @@ Square find_squares(const FileUpdate &update, unsigned int width,
 
 FlameGraph::FlameGraph(QWidget *parent) : QWidget(parent) {
   setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+
+  QFont hex_font("Monospace");
+  hex_font.setStyleHint(QFont::TypeWriter);
+  hex_font.setPointSize(10);
+  set_font(hex_font);
 }
 
 FlameGraph::~FlameGraph() {}
 
+void FlameGraph::update_on_size_change() {
+  update_for_size(width());
+  auto height = heightForWidth(width());
+  setFixedHeight(height);
+  updateGeometry();
+}
+
+void FlameGraph::set_font(const QFont &font) {
+  hex_font = font;
+  QFontMetrics fm(font);
+  cached_line_height = fm.height();
+  cached_hex_digit_width = fm.horizontalAdvance("00");
+
+  update_on_size_change();
+  QWidget::update();
+}
+
 void FlameGraph::resizeEvent(QResizeEvent *event) {
   if (event->size().width() != event->oldSize().width()) {
-    update_for_size(event->size().width());
-    auto height = heightForWidth(event->size().width());
-    setFixedHeight(height);
-    updateGeometry();
+    update_on_size_change();
   }
   QWidget::resizeEvent(event);
 }
@@ -167,13 +186,13 @@ int FlameGraph::heightForWidth(int width) const {
     return 0;
   }
   auto rows = find_row_count(*update, width, start, end) + 1;
-  return rows * row_height;
+  return rows * cached_line_height;
 }
 
 QRect FlameGraph::box_for_node(const Square &node) const {
-  auto row_start = (node.row) * row_height;
+  auto row_start = (node.row) * cached_line_height;
   return QRect{(int)node.start, (int)row_start, (int)node.width - 1,
-               row_height - 1};
+               cached_line_height - 1};
 }
 
 void FlameGraph::get_update(std::shared_ptr<FileUpdate> update) {
@@ -213,7 +232,7 @@ void FlameGraph::paintSquare(QPainter &painter, const Square &square) {
 
   painter.drawRect(rect);
 
-  QFontMetrics fm(painter.font());
+  painter.setFont(hex_font);
   QString text;
 
   if (square.kind == SquareKind::Root) {
@@ -224,9 +243,7 @@ void FlameGraph::paintSquare(QPainter &painter, const Square &square) {
     text = QString("%1").arg(square.value, 2, 16, QChar('0')).toUpper();
   }
 
-  auto textWidth = fm.horizontalAdvance(text);
-
-  if (textWidth <= rect.width()) {
+  if (cached_hex_digit_width <= rect.width()) {
     painter.setPen(Qt::black);
     painter.drawText(rect, Qt::AlignCenter, text);
   }
