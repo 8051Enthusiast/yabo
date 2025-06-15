@@ -2,6 +2,7 @@
 #include "compile.hpp"
 #include "filerequester.hpp"
 #include "flamegraph.hpp"
+#include "multifilehexview.hpp"
 #include "multifilemodel.hpp"
 #include "parserview.hpp"
 #include "sourceeditor.hpp"
@@ -20,6 +21,8 @@ MultiFileView::MultiFileView(std::unique_ptr<MultiFileParser> parser,
           &MultiFileHexModel::update_files);
   connect(this->parser.get(), &MultiFileParser::files_updated,
           ui->scrollAreaWidgetContents, &FlameGraph::get_update);
+  connect(this->ui->scrollAreaWidgetContents, &FlameGraph::jump_to_pos,
+          this->ui->tableView, &MultiFileHexView::jump_to_pos);
   addAction(ui->actionCompile);
 }
 

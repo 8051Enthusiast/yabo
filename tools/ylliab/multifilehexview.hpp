@@ -45,6 +45,8 @@ public:
   explicit MultiFileHexView(QWidget *parent = nullptr);
 
   void set_model(MultiFileHexModel *model);
+public slots:
+  void jump_to_pos(size_t row);
 
 private slots:
   void handle_model_reset();
