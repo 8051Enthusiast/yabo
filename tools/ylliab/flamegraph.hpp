@@ -1,5 +1,6 @@
 #pragma once
 #include <QWidget>
+#include <QFont>
 #include <memory>
 
 enum class SquareKind : uint8_t {
@@ -29,6 +30,9 @@ public:
   bool hasHeightForWidth() const override;
   int heightForWidth(int) const override;
 
+  void update_on_size_change();
+  void set_font(const QFont &font);
+
 public slots:
   void get_update(std::shared_ptr<FileUpdate>);
 
@@ -46,4 +50,8 @@ private:
   std::unique_ptr<Square> root;
   std::vector<uint8_t> chosen_prefix{};
   static constinit const int row_height = 20;
+
+  QFont hex_font;
+  int cached_line_height = 20;
+  int cached_hex_digit_width = 10;
 };
