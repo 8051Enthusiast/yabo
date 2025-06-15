@@ -31,3 +31,6 @@ enum class HighlightName {
 };
 
 QColor style_color(HighlightName name);
+
+QColor byte_wheel_color(uint8_t byte);
+QColor byte_wheel_outline_color(uint8_t byte);

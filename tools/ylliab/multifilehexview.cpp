@@ -106,9 +106,9 @@ void MultiFileHexModel::update_files(std::shared_ptr<FileUpdate> update) {
     auto file_size = file_info.file_ref->total_size();
     auto parse_end = update->offsets.offsets[i];
 
-    auto before = (int)std::min(parse_end, (size_t)INT_MAX / 2);
+    auto before = (int)std::min(parse_end, (size_t)255);
     before_columns = std::max(before_columns, before);
-    auto after = (int)std::min(file_size - parse_end, (size_t)INT_MAX / 2);
+    auto after = (int)std::min(file_size - parse_end, (size_t)256);
     after_columns = std::max(after_columns, after);
   }
 

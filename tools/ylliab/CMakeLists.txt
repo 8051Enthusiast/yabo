@@ -39,6 +39,7 @@ qt_add_library(ylliab_core STATIC
     init.hpp init.cpp
     multifilemodel.hpp multifilemodel.cpp
     multifilehexview.hpp multifilehexview.cpp
+    flamegraph.hpp flamegraph.cpp
 )
 
 qt_add_executable(ylliab
