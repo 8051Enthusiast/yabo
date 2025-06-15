@@ -3,11 +3,11 @@
 #include "color.hpp"
 #include <QObject>
 #include <QPlainTextEdit>
+#include <QRegularExpression>
 #include <QSyntaxHighlighter>
 #include <QWidget>
 
 class SourceEditor;
-class QRegularExpression;
 
 enum class LexerState : int {
   None = -1,
