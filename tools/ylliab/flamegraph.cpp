@@ -170,8 +170,9 @@ void FlameGraph::update_on_size_change() {
 void FlameGraph::set_font(const QFont &font) {
   hex_font = font;
   QFontMetrics fm(font);
-  cached_line_height = fm.height();
+  cached_line_height = fm.height() + 4;
   cached_hex_digit_width = fm.horizontalAdvance("00");
+  cached_char_width = fm.horizontalAdvance("m");
 
   update_on_size_change();
   QWidget::update();
@@ -224,6 +225,7 @@ QRect FlameGraph::box_for_node(const Square &node) const {
 
 void FlameGraph::get_update(std::shared_ptr<FileUpdate> update) {
   this->update = update;
+  this->chosen_prefix = {};
   update_for_size(width());
 
   auto height = heightForWidth(width());
@@ -266,11 +268,16 @@ void FlameGraph::paint_square(QPainter &painter, const Square &square) const {
     text = "^";
   } else if (square.kind == SquareKind::Eof) {
     text = "$";
+  } else if (ascii && square.value >= 0x20 && square.value < 0x7f) {
+    text = QString(QChar(square.value));
   } else {
     text = QString("%1").arg(square.value, 2, 16, QChar('0')).toUpper();
   }
 
-  if (cached_hex_digit_width <= rect.width()) {
+  if (text.size() == 1 && rect.width() >= cached_char_width + 2) {
+    painter.setPen(Qt::black);
+    painter.drawText(rect, Qt::AlignCenter, text);
+  } else if (text.size() == 2 && rect.width() >= cached_hex_digit_width + 2) {
     painter.setPen(Qt::black);
     painter.drawText(rect, Qt::AlignCenter, text);
   }
@@ -301,4 +308,9 @@ void FlameGraph::mouseDoubleClickEvent(QMouseEvent *event) {
   focus_on(pos);
   auto row = range_for_current_prefix().first;
   emit jump_to_pos(row);
+}
+
+void FlameGraph::set_ascii(bool ascii) {
+  this->ascii = ascii;
+  QWidget::update();
 }

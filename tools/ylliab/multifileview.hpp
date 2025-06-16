@@ -1,5 +1,6 @@
 #pragma once
 #include <QWidget>
+#include <QKeyEvent>
 
 class MultiFileParser;
 class MultiFileHexModel;
@@ -18,6 +19,11 @@ public:
 
 signals:
   void new_tab_requested(QWidget *widget, QString name);
+  void ascii_mode_changed(bool ascii);
+
+protected:
+  void keyPressEvent(QKeyEvent *event) override;
+  void keyReleaseEvent(QKeyEvent *event) override;
 
 private slots:
   void on_actionCompile_triggered();

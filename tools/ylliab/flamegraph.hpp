@@ -38,6 +38,7 @@ signals:
   void jump_to_pos(size_t row);
 public slots:
   void get_update(std::shared_ptr<FileUpdate>);
+  void set_ascii(bool ascii);
 
 protected:
   void resizeEvent(QResizeEvent *event) override;
@@ -54,9 +55,10 @@ private:
   std::shared_ptr<FileUpdate> update;
   std::unique_ptr<Square> root;
   std::vector<uint8_t> chosen_prefix{};
-  static constinit const int row_height = 20;
 
   QFont hex_font;
-  int cached_line_height = 20;
+  int cached_line_height = 24;
   int cached_hex_digit_width = 10;
+  int cached_char_width = 10;
+  bool ascii = false;
 };

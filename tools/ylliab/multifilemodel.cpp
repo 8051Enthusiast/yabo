@@ -91,7 +91,7 @@ void MultiFileParser::new_library(QString lib_path) {
     handle = new_handle;
   }
 
-  parse_fun = *(ParseFun *)dlsym(handle, parser_name.toStdString().c_str());
+  auto parse_fun = *(ParseFun *)dlsym(handle, parser_name.toStdString().c_str());
   if (!parse_fun) {
     emit error(QString("Failed to find parse function in library '%1': %2")
                    .arg(lib_path)
