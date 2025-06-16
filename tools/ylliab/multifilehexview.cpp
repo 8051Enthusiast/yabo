@@ -33,8 +33,11 @@ QVariant MultiFileHexModel::data(const QModelIndex &index, int role) const {
     if (!byte_val) {
       return QVariant();
     }
-
-    return QString("%1").arg(*byte_val, 2, 16, QChar('0'));
+    if (ascii && *byte_val >= 0x20 && *byte_val < 0x7f) {
+      return QString(QChar(*byte_val));
+    } else {
+      return QString("%1").arg(*byte_val, 2, 16, QChar('0'));
+    }
   } else if (role == Qt::BackgroundRole) {
     auto file_idx = get_file_index_for_row(row);
 
@@ -152,6 +155,11 @@ std::optional<uint8_t> MultiFileHexModel::get_byte_at(int row,
   }
 
   return update->files->at(*file_idx).file_ref->get_addr(*absolute_offset);
+}
+
+void MultiFileHexModel::set_ascii(bool ascii) {
+  this->ascii = ascii;
+  emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1));
 }
 
 MultiFileHexView::MultiFileHexView(QWidget *parent) : QTableView(parent) {

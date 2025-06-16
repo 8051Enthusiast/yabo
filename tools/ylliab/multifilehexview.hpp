@@ -27,11 +27,13 @@ public:
 
 public slots:
   void update_files(std::shared_ptr<FileUpdate> update);
+  void set_ascii(bool ascii);
 
 private:
   std::shared_ptr<FileUpdate> update;
   int after_columns = 0;
   int before_columns = 0;
+  bool ascii = false;
 
   std::optional<size_t> get_file_index_for_row(int row) const;
   std::optional<size_t> get_byte_offset_for_column(int row, int column) const;

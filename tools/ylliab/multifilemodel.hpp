@@ -48,7 +48,6 @@ private:
   std::shared_ptr<std::vector<FileInfo>> files;
   YaboValCreator vals{};
   QString parser_name;
-  ParseFun parse_fun{};
   void *handle{};
 };
 
