@@ -37,8 +37,7 @@ impl Linker for UnixClangLinker {
         }
         let output = cmd.arg("-o").arg(output_path).arg(path).output()?;
         if !output.status.success() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 format!(
                     "Linker failed with status {}:\n{}",
                     output.status,
@@ -73,8 +72,7 @@ impl WasmLinker {
             .arg(&self.rt_path)
             .output()?;
         if !output.status.success() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 format!(
                     "Runtime build failed with status {}:\n{}",
                     output.status,
@@ -105,8 +103,7 @@ impl Linker for WasmLinker {
             .arg(path)
             .output()?;
         if !output.status.success() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 format!(
                     "Linker failed with status {}:\n{}",
                     output.status,
@@ -138,8 +135,7 @@ impl Linker for EmscriptenLinker {
             .arg(path)
             .output()?;
         if !output.status.success() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 format!(
                     "Linker failed with status {}:\n{}",
                     output.status,

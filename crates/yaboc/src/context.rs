@@ -110,8 +110,7 @@ impl Driver {
 
     pub fn write_deps(&self, outfile: &OsStr) -> Result<(), std::io::Error> {
         let Ok(s) = yaboc_dependents::dependency_dot(&self.db) else {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 "Error while generating dependency graph",
             ));
         };
@@ -121,8 +120,7 @@ impl Driver {
 
     pub fn write_lens(&self, outfile: &OsStr) -> Result<(), std::io::Error> {
         let Ok(s) = yaboc_constraint::represent::len_dot(&self.db) else {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 "Error while generating length graph",
             ));
         };
@@ -132,8 +130,7 @@ impl Driver {
 
     pub fn write_backtrack(&self, outfile: &OsStr) -> Result<(), std::io::Error> {
         let Ok(s) = yaboc_constraint::represent::backtrack(&self.db) else {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 "Error while generating backtrack info",
             ));
         };
