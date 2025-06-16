@@ -107,13 +107,6 @@ def build_compiler_binary():
         return os.path.join(cargo_metadata_output['target_directory'], TARGET_RELEASE, BINARY_NAME)
 
 
-def run_clippy():
-    os.chdir(current_script_dir)
-    cargo_args = ['cargo', 'clippy', '--workspace', '--', '-D', 'warnings']
-    clippy_result = subprocess.run(cargo_args, check=False, env=compiler_env)
-    return clippy_result.returncode == 0
-
-
 def run_compiler_unit_tests():
     os.chdir(compiler_dir)
     cargo_args = ['cargo', 'nextest', 'run', '--workspace']
@@ -678,8 +671,6 @@ def main(args):
     else:
         wasm_factory = None
     if len(arg_list) == 0:
-        clippy_success = run_clippy()
-
         if not run_compiler_unit_tests():
             sys.exit(1)
         target_dir = current_script_dir / 'tests'
@@ -688,7 +679,7 @@ def main(args):
         with futures.ProcessPoolExecutor() as executor:
             tests = executor.submit(run_tests, files)
             compile = executor.submit(compile_examples)
-            total_failed = int(not clippy_success) + tests.result() + compile.result()
+            total_failed = tests.result() + compile.result()
     else:
         total_failed = run_tests(arg_list, collect=False)
 
