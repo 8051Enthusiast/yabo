@@ -134,8 +134,8 @@ MultiFileHexModel::get_byte_offset_for_column(int row, int column) const {
     return {};
   }
 
-  auto shift = before_columns - update->offsets.offsets[*file_idx];
-  if (column < shift) {
+  auto shift = (ssize_t)before_columns - (ssize_t)update->offsets.offsets[*file_idx];
+  if (column < 0 || column < shift) {
     return {};
   }
   auto offset = column - shift;
