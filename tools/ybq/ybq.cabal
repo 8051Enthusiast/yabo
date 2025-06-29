@@ -1,13 +1,9 @@
 cabal-version: 2.2
 
--- This file has been generated from package.yaml by hpack version 0.36.0.
---
--- see: https://github.com/sol/hpack
-
 name:           ybq
 version:        0.1.0.0
-description:    Please see the README on GitHub at <https://github.com/8051enthusiast/ybq#readme>
-homepage:       https://github.com/8051enthusiast/yabo#readme
+description:    Please see the README on GitHub at <https://github.com/8051enthusiast/yabo>
+homepage:       https://github.com/8051enthusiast/yabo
 bug-reports:    https://github.com/8051enthusiast/yabo/issues
 author:         8051enthusiast
 maintainer:     8051enthusiast@protonmail.com
@@ -40,6 +36,8 @@ library
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   c-sources:
       src/yabo-bindings.c
+  include-dirs:
+      ../../include
   build-depends:
       base >=4.7 && <5
     , bytestring
