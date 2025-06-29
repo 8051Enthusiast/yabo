@@ -1,7 +1,6 @@
 /.cargo
 /target
-/compiler/target
-/compiler/tree-sitter-yabo/target
+/crates/*/target
 node_modules
 /*.yb
 a.out
@@ -17,3 +16,4 @@ build-*
 .cache
 treereduce.out
 /test_order.txt
+dist-newstyle
