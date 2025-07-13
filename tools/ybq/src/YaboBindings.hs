@@ -10,7 +10,8 @@ module YaboBindings
     ybqCallInit,
     ybqType,
     ybqAllocSize,
-    ybqParseBytes,
+    ybqParseBytesWithArgs,
+    ybqExportArgCount,
     ybqFieldAccess,
     ybqFieldNameAtIndex,
     ybqFieldCount,
@@ -76,7 +77,9 @@ foreign import capi "yabo-bindings.h ybq_type" ybqType :: Ptr () -> IO CInt
 
 foreign import capi "yabo-bindings.h ybq_alloc_size" ybqAllocSize :: Ptr () -> IO CSize
 
-foreign import capi "yabo-bindings.h ybq_parse_bytes" ybqParseBytes :: Ptr () -> Ptr () -> CSize -> Ptr () -> IO Word64
+foreign import capi "yabo-bindings.h ybq_parse_bytes_with_args" ybqParseBytesWithArgs :: Ptr () -> Ptr () -> CSize -> Ptr () -> Ptr () -> IO Word64
+
+foreign import capi "yabo-bindings.h ybq_export_arg_count" ybqExportArgCount :: Ptr () -> IO CSize
 
 foreign import capi "yabo-bindings.h ybq_field_access" ybqFieldAccess :: Ptr () -> Ptr () -> CSize -> IO Word64
 

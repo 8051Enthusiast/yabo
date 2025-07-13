@@ -12,6 +12,9 @@ license:        BSD-3-Clause
 build-type:     Simple
 extra-source-files:
     README.md
+    src/yabo-bindings.h
+    src/builtin.ybq
+    include/yabo/*.h
 
 source-repository head
   type: git
@@ -37,7 +40,7 @@ library
   c-sources:
       src/yabo-bindings.c
   include-dirs:
-      ../../include
+      include
   build-depends:
       base >=4.7 && <5
     , bytestring
@@ -50,7 +53,7 @@ library
     , unix
   default-language: GHC2021
 
-executable ybq-exe
+executable ybq
   main-is: Main.hs
   other-modules:
       Paths_ybq

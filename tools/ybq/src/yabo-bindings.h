@@ -28,8 +28,10 @@ int ybq_type(const struct DynValue *val);
 
 size_t ybq_alloc_size(const struct DynValue *val);
 
-int64_t ybq_parse_bytes(struct DynValue *ret, const uint8_t *begin, size_t len,
-                        void *parser);
+int64_t ybq_parse_bytes_with_args(struct DynValue *ret, const uint8_t *begin, size_t len,
+                                  void *parser_export, const void *args);
+
+size_t ybq_export_arg_count(void *export_info);
 
 size_t ybq_field_name_index(const struct DynValue *block, const char *name);
 

@@ -39,14 +39,26 @@ size_t ybq_alloc_size(const struct DynValue *val) {
   return val->vtable->size + offsetof(DynValue, data);
 }
 
-int64_t ybq_parse_bytes(struct DynValue *ret, const uint8_t *begin, size_t len,
-                        void *parser) {
+int64_t ybq_parse_bytes_with_args(struct DynValue *ret, const uint8_t *begin, size_t len,
+                                  void *parser_export, const void *args) {
+  const struct ParserExport *exported = (const struct ParserExport *)parser_export;
   struct Slice bytes = {begin, begin + len};
-  int64_t status = ((ParseFun)parser)(ret->data, NULL, YABO_VTABLE, &bytes);
+  int64_t status = exported->parser(ret->data, args, YABO_VTABLE, &bytes);
   if (status) {
     return dyn_invalidate(ret, status);
   }
   return status;
+}
+
+size_t ybq_export_arg_count(void *export_info) {
+  const struct ParserExport *exported = (const struct ParserExport *)export_info;
+  const struct VTableHeader *const *vtable = exported->args;
+  size_t count = 0;
+  while (*vtable) {
+    vtable++;
+    count++;
+  }
+  return count;
 }
 
 size_t ybq_field_name_index(const struct DynValue *block, const char *name) {
