@@ -662,7 +662,7 @@ impl<'a> MatrixView<'a> {
         }
     }
 
-    pub fn rect(&self, col: u32, arg_col: u32) -> Rect<MatrixView> {
+    pub fn rect(&self, col: u32, arg_col: u32) -> Rect<MatrixView<'a>> {
         Rect {
             matrix: *self,
             bound: col,

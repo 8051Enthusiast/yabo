@@ -24,7 +24,7 @@ enum YaboHead {
   YABO_VTABLE = 1,
 };
 
-#define YABO_MAX_ALIGN ((alignof(int64_t) - 1 | alignof(void *) - 1) + 1)
+#define YABO_MAX_ALIGN (((alignof(int64_t) - 1) | (alignof(void *) - 1)) + 1)
 
 enum ReturnStatus {
   YABO_STATUS_OK = 0,
@@ -77,6 +77,11 @@ struct ArrayVTable {
   int64_t (*skip_impl)(void *, uint64_t);
   int64_t (*span_impl)(void *, const void *, uint64_t, const void *);
   int64_t (*inner_array_impl)(void *, const void *, uint64_t);
+};
+
+struct ParserExport {
+  ParseFun parser;
+  const struct VTableHeader *args[];
 };
 
 typedef int64_t (*InitFun)(const uint8_t *, const uint8_t *);

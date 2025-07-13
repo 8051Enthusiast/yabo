@@ -681,6 +681,14 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             let sig = self.ctx.db.parser_args(*pd)?;
             let thunk_ty = self.ctx.db.intern_type(Type::Nominal(sig.thunk));
             let thunk_layout = canon_layout(self.ctx, thunk_ty)?;
+
+            let mut args = Vec::default();
+            for arg_ty in sig.args.iter().flat_map(|x| x.iter()) {
+                let arg_layout = canon_layout(self.ctx, *arg_ty)?;
+                self.register_layouts(arg_layout);
+                args.push((arg_layout, *arg_ty));
+            }
+
             if let Some(from) = sig.from {
                 let from_layout = canon_layout(self.ctx, from)?;
                 self.register_layouts(from_layout);
@@ -689,7 +697,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     arg: from,
                 });
                 let parser_layout = self.ctx.dcx.intern(Layout::Mono(
-                    MonoLayout::NominalParser(*pd, Default::default(), true),
+                    MonoLayout::NominalParser(*pd, args, true),
                     parser_ty,
                 ));
                 self.register_layouts(parser_layout);

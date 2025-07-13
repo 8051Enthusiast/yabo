@@ -93,6 +93,13 @@ target_struct! {
     }
 }
 
+target_struct! {
+    pub struct ParserExport {
+        pub parser: ParserFun,
+        pub args: [*const VTableHeader; 0],
+    }
+}
+
 pub type InitFun = fn(start: *const u8, end: *const u8) -> i64;
 
 #[cfg(test)]

@@ -90,9 +90,9 @@ impl TypeCache {
 }
 
 pub trait TypeBtInfo {
-    fn deref_matrix(&self, def: DefId) -> SResult<Option<TransformInfo>>;
-    fn field(&self, id: DefId) -> SResult<TransformInfo>;
-    fn parserdef(&self, id: DefId) -> SResult<TransformInfo>;
+    fn deref_matrix(&self, def: DefId) -> SResult<Option<TransformInfo<'_>>>;
+    fn field(&self, id: DefId) -> SResult<TransformInfo<'_>>;
+    fn parserdef(&self, id: DefId) -> SResult<TransformInfo<'_>>;
     fn partial_apply_ty(&self, ty: TypeId, applied_arg_count: usize) -> TypeId;
     type Lookup: TypeLookup + TypeInterner + ?Sized;
     fn types(&self) -> &Self::Lookup;

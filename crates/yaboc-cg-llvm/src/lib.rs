@@ -143,7 +143,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         );
     }
 
-    fn resize_struct_end_array(&self, field_types: &mut [BasicTypeEnum<'llvm>], size: u32) {
+    fn resize_struct_end_array(field_types: &mut [BasicTypeEnum<'llvm>], size: u32) {
         if let Some(BasicTypeEnum::ArrayType(array)) = field_types.last_mut() {
             *array = array.get_element_type().array_type(size);
         } else {
@@ -151,7 +151,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         };
     }
 
-    fn resize_struct_start_array(&self, field_types: &mut [BasicTypeEnum<'llvm>], size: u32) {
+    fn resize_struct_start_array(field_types: &mut [BasicTypeEnum<'llvm>], size: u32) {
         if let Some(BasicTypeEnum::ArrayType(array)) = field_types.first_mut() {
             *array = array.get_element_type().array_type(size);
         } else {
@@ -246,6 +246,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn invalid_ptr(&self) -> PointerValue<'llvm> {
+        self.any_ptr().const_null()
+    }
+
+    fn null_ptr(&self) -> PointerValue<'llvm> {
         self.any_ptr().const_null()
     }
 
@@ -483,7 +487,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
 
         let mut info_fields = vtable::BlockFields::struct_type(self).get_field_types();
-        self.resize_struct_end_array(&mut info_fields, field_info.len() as u32);
+        Self::resize_struct_end_array(&mut info_fields, field_info.len() as u32);
         let info_type = self.llvm.struct_type(&info_fields, false);
         let field_info_array = <*const u8>::codegen_ty(self)
             .into_pointer_type()
@@ -692,10 +696,27 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             FieldName::Return => unreachable!(),
             FieldName::Ident(d) => self.compiler_database.db.lookup_intern_identifier(d).name,
         };
-        let val = self.parser_impl_struct_val(layout, from, root_req());
-        let global_ty = ParserFun::codegen_ty(self);
+        let MonoLayout::NominalParser(_, args, _) = layout.mono_layout().0 else {
+            panic!("attempting to create parser export for non-nominal layout")
+        };
+        let mut export_fields = vtable::ParserExport::struct_type(self).get_field_types();
+        // mind the null terminator
+        Self::resize_struct_end_array(&mut export_fields, args.len() as u32 + 1);
+        let global_ty = self.llvm.struct_type(&export_fields, false);
         let global = self.module.add_global(global_ty, None, &name);
-        global.set_initializer(&val);
+        let mut vals = vec![];
+        let parser = self.parser_impl_struct_val(layout, from, root_req());
+        for (arg, _) in args.iter() {
+            let arg_val = arg.maybe_mono().unwrap();
+            let llvm_ptr = self.sym_ptr(arg_val, LayoutPart::VTable);
+            vals.push(llvm_ptr);
+        }
+        vals.push(self.null_ptr());
+        let val_array = self.any_ptr().const_array(&vals);
+        let struct_init = self
+            .llvm
+            .const_struct(&[parser.into(), val_array.into()], false);
+        global.set_initializer(&struct_init);
         global.set_linkage(Linkage::External);
         global.set_visibility(GlobalVisibility::Default);
     }

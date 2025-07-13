@@ -4,6 +4,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <yabo/dynamic.h>
+#include <yabo/parse_export_call.h>
 #include <yabo/vtable.h>
 
 typedef struct {
@@ -264,8 +265,40 @@ struct Slice map_file(char *filename) {
 struct LibInfo {
   size_t max_dyn_size;
   InitFun global_init;
-  ParseFun *parser;
+  const struct ParserExport *parser;
+  const void *args;
 };
+
+const struct ParserExport *get_export(void *lib, char *parser_desc) {
+  size_t end = yabo_export_identifier_end(parser_desc);
+  char old = parser_desc[end];
+  parser_desc[end] = '\0';
+  const struct ParserExport *export_info = dlsym(lib, parser_desc);
+  parser_desc[end] = old;
+  return export_info;
+}
+
+const void* export_args(const struct ParserExport *export_info, char *parser_desc) {
+  size_t size = yabo_export_args_size(export_info);
+  if (size == -1) {
+    fprintf(stderr, "unsupported export argument\n");
+    exit(1);
+  }
+
+  void *args = malloc(size);
+  if (!args) {
+    fprintf(stderr, "Could not allocate args");
+    exit(1);
+  }
+
+  void *parser_args = parser_desc + yabo_export_identifier_end(parser_desc);
+  enum YaboArgParseError err = yabo_export_parse_arg(parser_args, export_info, args);
+  if (err) {
+    fprintf(stderr, "Could not parse args: %s\n", yabo_export_parse_error_message(err));
+    exit(1);
+  }
+  return args;
+}
 
 #ifndef STATIC_PARSER
 
@@ -283,7 +316,12 @@ struct LibInfo dynamic_lib(char *filename, char *parser_name) {
   }
   ret.max_dyn_size = *max_dyn_size_ptr;
   ret.global_init = dlsym(lib, "yabo_global_init");
-  ret.parser = (ParseFun *)dlsym(lib, parser_name);
+  ret.parser = get_export(lib, parser_name);
+  if (ret.parser) {
+    ret.args = export_args(ret.parser, parser_name);
+  } else {
+    ret.args = NULL;
+  }
   return ret;
 }
 
@@ -294,10 +332,11 @@ struct LibInfo static_lib() {
   extern size_t yabo_max_buf_size;
   __attribute__((weak)) extern struct Slice yabo_global_address;
   extern int64_t yabo_global_init(const uint8_t *, const uint8_t *);
-  extern ParseFun STATIC_PARSER;
+  extern struct ParserExport STATIC_PARSER;
   ret.max_dyn_size = yabo_max_buf_size;
   ret.global_init = yabo_global_init;
   ret.parser = &STATIC_PARSER;
+  ret.args = NULL;
   return ret;
 }
 
@@ -312,6 +351,11 @@ int main(int argc, char *argv[argc]) {
     exit(1);
   }
   struct LibInfo lib = dynamic_lib(argv[1], argv[2]);
+
+  if (!lib.parser) {
+    fprintf(stderr, "could not find parser: %s\n", dlerror());
+    exit(1);
+  }
 
 #else
 
@@ -329,10 +373,6 @@ int main(int argc, char *argv[argc]) {
     exit(1);
   }
 
-  if (!lib.parser) {
-    perror("could not find parser");
-    exit(1);
-  }
   if (lib.global_init) {
     int64_t status = lib.global_init(file.start, file.end);
     if (status != 0) {
@@ -343,7 +383,7 @@ int main(int argc, char *argv[argc]) {
     }
   }
   Stack stack = init_stack(lib.max_dyn_size);
-  dyn_parse_bytes(stack.current, file, *lib.parser);
+  dyn_parse_bytes(stack.current, file, lib.args, *lib.parser->parser);
   print_recursive(0, stack, stdout);
   free_stack(stack);
   putchar('\n');

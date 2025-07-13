@@ -66,6 +66,7 @@ pub trait TyHirs: Hirs + yaboc_types::TypeInterner + resolve::Resolves {
     fn bound_args(&self, id: DefId) -> SResult<Arc<[TypeId]>>;
     fn lambda_type(&self, id: hir::LambdaId) -> SResult<TypeId>;
     fn block_type(&self, id: hir::BlockId) -> SResult<TypeId>;
+    fn validate_export_arguments(&self) -> SResult<Vec<SpannedTypeError>>;
 }
 
 #[derive(Clone, Copy)]
@@ -839,6 +840,33 @@ fn block_type(db: &dyn TyHirs, id: hir::BlockId) -> SResult<TypeId> {
             })
             .unwrap(),
     )
+}
+
+fn validate_export_arguments(db: &dyn TyHirs) -> SResult<Vec<SpannedTypeError>> {
+    let exported_parserdefs = db.all_exported_parserdefs();
+    let int = db.int();
+    let mut errors = Vec::new();
+
+    for pd in exported_parserdefs {
+        let args = pd.lookup(db)?.args.unwrap_or_default();
+        let arg_tys = db.parser_args(pd)?.args.unwrap_or_default();
+
+        for (arg, ty) in args.iter().zip(arg_tys.iter()) {
+            if *ty == int {
+                continue;
+            }
+
+            errors.push(SpannedTypeError::new(
+                TypeError::UnsupportedExportArgument {
+                    def_id: arg.0,
+                    arg_name: arg.lookup(db)?.name,
+                },
+                IndirectSpan::default_span(arg.0),
+            ));
+        }
+    }
+
+    Ok(errors)
 }
 
 #[cfg(test)]

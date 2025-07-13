@@ -174,6 +174,10 @@ pub enum TypeError {
     NonThunkReference(Identifier),
     NonInferTypeVar(TypeVarRef),
     NonInfer,
+    UnsupportedExportArgument {
+        def_id: DefId,
+        arg_name: Identifier,
+    },
     Silenced(SilencedError),
 }
 
