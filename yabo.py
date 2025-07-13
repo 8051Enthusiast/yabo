@@ -3,6 +3,7 @@ Python bindings to the dynamic interface of the yabo language.
 """
 
 from copy import copy
+from sys import byteorder
 import ctypes
 import threading
 from os import getenv
@@ -175,6 +176,38 @@ class ArrayVTable(Structure):
         ('inner_array_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64)),
     ]
 
+
+class ParserExport(Structure):
+    __slots__ = [
+        'parser',
+        'args',
+    ]
+    _fields_ = [
+        ('parser', PARSER_TY),
+        ('args', POINTER(POINTER(VTableHeader)) * 0),
+    ]
+
+    def get_arg_count(self) -> int:
+        count = 0
+        offset = ctypes.sizeof(self)
+        while True:
+            addr = addressof(self) + offset + count * ctypes.sizeof(POINTER(VTableHeader))
+            arg_ptr = POINTER(VTableHeader).from_address(addr)
+            if not arg_ptr:
+                break
+            count += 1
+        return count
+
+    def get_arg_types(self) -> list[int]:
+        arg_types = []
+        count = self.get_arg_count()
+        offset = ctypes.sizeof(self)
+        for i in range(count):
+            addr = addressof(self) + offset + i * ctypes.sizeof(POINTER(VTableHeader))
+            head = POINTER(VTableHeader).from_address(addr).contents.head
+            arg_types.append(head)
+        return arg_types
+
 MAX_ALIGNMENT = max(alignment(_voidptr), alignment(c_int64))
 
 class Slice(Structure):
@@ -249,18 +282,55 @@ def _check_status(status: int):
     raise Exception
 
 
+def _pack_export_args(args: list, export_info: ParserExport) -> bytearray:
+    arg_types = export_info.get_arg_types()
+
+    if len(args) != len(arg_types):
+        if len(args) < len(arg_types):
+            raise ValueError("not enough arguments provided")
+        else:
+            raise ValueError("too many arguments provided")
+
+    result = bytearray()
+    for i, (arg_value, arg_type) in enumerate(zip(args, arg_types)):
+        if arg_type != YABO_INTEGER:
+            raise ValueError("unsupported type - only integer arguments supported")
+
+        if not isinstance(arg_value, int):
+            raise ValueError(f"argument {i+1} must be an integer")
+
+        if arg_value < -(2**63) or arg_value >= 2**63:
+            raise ValueError(f"argument {i+1} out of range for int64")
+
+        result.extend(arg_value.to_bytes(8, byteorder=byteorder, signed=True))
+
+    return result
+
+
 class Parser:
-    impl: PARSER_TY
+    export_info: ParserExport
     _lib: "YaboLib"
 
-    def __init__(self, impl: PARSER_TY, lib: "YaboLib"):
-        self.impl = impl
+    def __init__(self, export_info: ParserExport, lib: "YaboLib"):
+        self.export_info = export_info
         self._lib = lib
 
-    def parse(self, buf: bytearray):
-        parse = self.impl
-        nullptr = ctypes.c_void_p()
-        return self._lib.new_val(lambda ret: parse(ret, nullptr, self._lib.discriminant(), byref(Slice(buf))))
+    def parse(self, buf: bytearray, *args):
+        parse = self.export_info.parser
+
+        if args:
+            try:
+                arg_data = _pack_export_args(list(args), self.export_info)
+                args_ptr = (ctypes.c_char * len(arg_data)).from_buffer(arg_data)
+                args_void_ptr = ctypes.cast(args_ptr, ctypes.c_void_p)
+            except ValueError as e:
+                raise ValueError(f"Argument error: {e}")
+        else:
+            if self.export_info.get_arg_count() > 0:
+                raise ValueError("Parser expects arguments but none provided")
+            args_void_ptr = ctypes.c_void_p()
+
+        return self._lib.new_val(lambda ret: parse(ret, args_void_ptr, self._lib.discriminant(), byref(Slice(buf))))
 
 
 class YaboLib(ctypes.CDLL):
@@ -288,8 +358,8 @@ class YaboLib(ctypes.CDLL):
             return YABO_ANY | YABO_VTABLE
 
     def parser(self, name: str) -> Parser:
-        impl = PARSER_TY.in_dll(self, name)
-        return Parser(impl, self)
+        export_info = ParserExport.in_dll(self, name)
+        return Parser(export_info, self)
 
     def _ret_buf(self):
         try:
