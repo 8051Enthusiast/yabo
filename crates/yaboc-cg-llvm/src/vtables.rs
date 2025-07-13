@@ -74,9 +74,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         size: u32,
     ) -> GlobalValue<'llvm> {
         let mut vtable_fields = T::codegen_ty(self).into_struct_type().get_field_types();
-        self.resize_struct_end_array(&mut vtable_fields, size);
+        Self::resize_struct_end_array(&mut vtable_fields, size);
         if let Some((argnum, _)) = layout.arg_num(&self.compiler_database.db).unwrap() {
-            self.resize_struct_start_array(&mut vtable_fields, argnum as u32)
+            Self::resize_struct_start_array(&mut vtable_fields, argnum as u32)
         }
         let vtable_ty = self.vtable_ty(layout);
         vtable_ty.set_body(&vtable_fields, false);

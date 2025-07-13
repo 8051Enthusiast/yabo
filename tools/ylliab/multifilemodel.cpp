@@ -18,7 +18,7 @@ FileOffsets find_offsets(YaboValCreator &vals, ParseFun parse_fun,
   for (const auto &file : files) {
     auto [start, end] = file.file_ref->slice();
     auto span = ByteSpan(start, end);
-    auto parsed = vals.parse(parse_fun, span);
+    auto parsed = vals.parse(parse_fun, nullptr, span);
     if (parsed->is_exceptional()) {
       offsets.is_valid[&file - &files[0]] = false;
       offsets.offsets.push_back(0);

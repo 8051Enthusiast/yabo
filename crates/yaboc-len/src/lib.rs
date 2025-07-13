@@ -748,7 +748,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             | Val::PartialPolyApply(..)
             | Val::Arg(..)
             | Val::Const(..)] => {
-                ops.map(|x| self.eval_poly(x));
+                _ = ops.map(|x| self.eval_poly(x));
                 if self.poly_vals[lidx] == self.poly_vals[ridx] {
                     lhs
                 } else {

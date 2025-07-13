@@ -495,7 +495,7 @@ impl<'a> BtInferContext<'a> {
         &self,
         pd: ParserDefId,
         get_node: impl FnOnce(&BtTerm) -> &ExprNode,
-    ) -> SResult<TransformInfo> {
+    ) -> SResult<TransformInfo<'_>> {
         let term = if let Some(term) = self.terms.get(&pd.0) {
             term.clone()
         } else {
@@ -565,7 +565,7 @@ impl<'a> BtInferContext<'a> {
 }
 
 impl<'a> TypeBtInfo for BtInferContext<'a> {
-    fn deref_matrix(&self, def: DefId) -> SResult<Option<TransformInfo>> {
+    fn deref_matrix(&self, def: DefId) -> SResult<Option<TransformInfo<'_>>> {
         let pd = self.db.hir_parent_parserdef(def)?;
         if pd.0 != def {
             return Ok(None);
@@ -574,7 +574,7 @@ impl<'a> TypeBtInfo for BtInferContext<'a> {
             .map(Some)
     }
 
-    fn field(&self, def: DefId) -> SResult<TransformInfo> {
+    fn field(&self, def: DefId) -> SResult<TransformInfo<'_>> {
         let pd = self.db.hir_parent_parserdef(def)?;
         self.get_transform_info(pd, |term| {
             let field_idx = term.field_idx[&def];
@@ -582,7 +582,7 @@ impl<'a> TypeBtInfo for BtInferContext<'a> {
         })
     }
 
-    fn parserdef(&self, def: DefId) -> SResult<TransformInfo> {
+    fn parserdef(&self, def: DefId) -> SResult<TransformInfo<'_>> {
         let pd = self.db.hir_parent_parserdef(def)?;
         assert!(pd.0 == def);
         self.get_transform_info(pd, |term| term.lookup_node())

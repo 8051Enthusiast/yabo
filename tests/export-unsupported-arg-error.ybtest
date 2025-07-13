@@ -1,0 +1,3 @@
+====[ source code ]====
+export def ~test(x: [u8]) = u8
+#~^ error[515] exported function has unsupported argument type

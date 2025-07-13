@@ -37,6 +37,9 @@ pub fn errors(db: &(impl TyHirs + ?Sized)) -> Vec<Report> {
             errors.push(e);
         }
     }
+    if let Ok(errs) = db.validate_export_arguments() {
+        errors.extend(errs);
+    }
     errors
         .into_iter()
         .flat_map(|x| make_report(db, x))
@@ -164,6 +167,14 @@ fn make_type_error(
                 ),
             )
         }
+        TypeError::UnsupportedExportArgument { def_id: _, arg_name } => (
+            515,
+            dbformat!(
+                db,
+                "exported function has unsupported argument type: argument '{}' has unsupported type. Only integer arguments are supported for exported functions.",
+                &arg_name
+            ),
+        ),
         TypeError::NonInfer => (514, String::from("could not infer type")),
     };
     let mut rbuild = Report::new(DiagnosticKind::Error, spans[0].file, &message).with_code(code);

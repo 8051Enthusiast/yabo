@@ -1,6 +1,8 @@
 #include "executor.hpp"
 #include "request.hpp"
 #include "yabo.hpp"
+#include "yabo/parse_export_call.h"
+#include "yabo/vtable.h"
 
 #include <dlfcn.h>
 #ifdef __linux__
@@ -179,18 +181,46 @@ std::optional<Response> Executor::execute_request(Request req) {
   }
 }
 
+namespace {
+const ParserExport *get_export(void *lib, char const *func_name) {
+  size_t end = yabo_export_identifier_end(func_name);
+  auto id_part = std::string_view(func_name, end);
+  auto part = std::string(id_part);
+  return reinterpret_cast<const ParserExport *>(dlsym(lib, part.c_str()));
+}
+
+std::optional<std::vector<char>> get_args(const ParserExport *parser,
+                                          char const *func_name) {
+  func_name += yabo_export_identifier_end(func_name);
+  auto size = yabo_export_args_size(parser);
+  if (size == -1) {
+    return {};
+  }
+  std::vector<char> args(size, 0);
+  auto err = yabo_export_parse_arg(func_name, parser, args.data());
+  if (err) {
+    return {};
+  }
+  return args;
+}
+} // namespace
+
 std::optional<Response>
 Executor::execute_parser(Meta meta, char const *func_name, size_t pos) {
-  auto parser_ptr = reinterpret_cast<ParseFun const *>(dlsym(lib, func_name));
+  auto parser_ptr = get_export(lib, func_name);
   if (!parser_ptr) {
     return {};
   }
-  auto parser = *parser_ptr;
+  auto parser = parser_ptr->parser;
   auto span = file->segment_from(pos);
   if (!span.data()) {
     return {};
   }
-  auto ret = vals.parse(parser, span);
+  auto args = get_args(parser_ptr, func_name);
+  if (!args) {
+    return {};
+  }
+  auto ret = vals.parse(parser, args->data(), span);
   if (ret.has_value()) {
     auto normalized = normalize(ret.value(), ret->span);
     auto handle = SpannedHandle(normalized, file);

@@ -186,7 +186,7 @@ public:
   int64_t array_len(YaboVal val);
   std::optional<YaboVal> index(YaboVal val, size_t idx);
   std::optional<YaboVal> skip(YaboVal val, size_t offset);
-  std::optional<SpannedVal> parse(ParseFun parser, ByteSpan buf);
+  std::optional<SpannedVal> parse(ParseFun parser, const void *args, ByteSpan buf);
   std::optional<ByteSpan> extent(YaboVal val);
 
 private:

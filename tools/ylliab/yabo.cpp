@@ -56,7 +56,7 @@ static void handler(int sig) {
     siglongjmp(*resume, 1);
   } else {
     // in this case we can only call signal-safe functions
-    static constexpr char msg[] = "Segmentation fault\n";
+    static constinit char msg[] = "Segmentation fault\n";
     write(STDERR_FILENO, msg, sizeof(msg) - 1);
     _exit(128 + sig);
   }
@@ -351,16 +351,17 @@ std::optional<ByteSpan> YaboValCreator::extent(YaboVal val) {
       });
 }
 
-std::optional<SpannedVal> YaboValCreator::parse(ParseFun parser, ByteSpan buf) {
+std::optional<SpannedVal>
+YaboValCreator::parse(ParseFun parser, const void *args, ByteSpan buf) {
   return storage.with_span_and_return_buf(buf, [=](void *addr, uint8_t *ret) {
-    return catch_segfault(parser, segfault_err_code, (void *)ret,
-                          (const void *)nullptr, DEFAULT_LEVEL | YABO_VTABLE,
-                          addr);
+    return catch_segfault(parser, segfault_err_code, (void *)ret, args,
+                          DEFAULT_LEVEL | YABO_VTABLE, addr);
   });
 }
 
 YaboValCreator
-init_vals_from_lib(void *lib, std::pair<const uint8_t *, const uint8_t *> span) {
+init_vals_from_lib(void *lib,
+                   std::pair<const uint8_t *, const uint8_t *> span) {
   auto size = reinterpret_cast<size_t *>(dlsym(lib, "yabo_max_buf_size"));
   if (!size) {
     throw std::runtime_error("Failed to get yabo_max_buf_size from library");
