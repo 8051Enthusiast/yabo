@@ -1,4 +1,4 @@
-module YaboVal (YaboVal (..), getParser, openLibrary, toString) where
+module YaboVal (YaboVal (..), getParser, parseWithArgs, openLibrary, toString) where
 
 import Control.Monad.Identity (Identity (Identity), runIdentity)
 import Control.Monad.Trans (liftIO)
@@ -9,9 +9,13 @@ import Data.List (intercalate)
 import Data.Map (Map, fromList, toList)
 import Data.Maybe (catMaybes)
 import Data.Sequence (Seq, fromFunction)
-import Foreign (FunPtr, Ptr, allocaBytes, castFunPtrToPtr, castPtr, nullFunPtr, peek, plusForeignPtr, touchForeignPtr, withForeignPtr)
+import Foreign (FunPtr, Ptr, allocaBytes, castFunPtrToPtr, castPtr, nullFunPtr, nullPtr, plusForeignPtr, plusPtr, touchForeignPtr, withForeignPtr)
+import Foreign qualified
+import Foreign.Storable (Storable(..), peek, sizeOf)
+import Foreign.Marshal.Array (pokeArray)
 import Foreign.C (CChar, CSize)
 import Foreign.ForeignPtr (ForeignPtr)
+import Data.Int (Int64)
 import GHC.IO (unsafePerformIO)
 import System.Posix.DynamicLinker qualified as DL
 import YaboBindings
@@ -32,12 +36,13 @@ import YaboBindings
     ybqArrayAccess,
     ybqArraySize,
     ybqCallInit,
+    ybqExportArgCount,
     ybqFieldAccess,
     ybqFieldCount,
     ybqFieldNameAtIndex,
     ybqGetError,
     ybqGetInt,
-    ybqParseBytes,
+    ybqParseBytesWithArgs,
     ybqStatusFromWord64,
     ybqType,
     ybqTypeFromCInt,
@@ -120,28 +125,51 @@ intoYaboVal lib rawVal = do
       YbqTypeParser -> return YaboParser
       YbqTypeFunction -> return YaboFunction
 
-data Parser = Parser Library (Ptr ())
+newtype ParserExport = ParserExport (Ptr ())
 
-parse :: Parser -> Int -> IO YaboVal
-parse (Parser lib ptr) offset = do
+data Parser = Parser Library ParserExport
+
+withPackedArgs :: [YaboVal] -> (Ptr () -> IO a) -> IO a
+withPackedArgs args action = do
+  let int64Args = map yaboValToInt64 args
+  let argCount = length int64Args
+  let totalBytes = argCount * sizeOf (0 :: Int64)
+
+  allocaBytes totalBytes $ \ptr -> do
+    pokeArray (castPtr ptr) int64Args
+    action (castPtr ptr)
+  where
+    yaboValToInt64 :: YaboVal -> Int64
+    yaboValToInt64 (YaboInt i) = fromIntegral i
+    yaboValToInt64 _ = error "Only integer arguments are supported"
+
+parseWithArgs :: Parser -> Int -> [YaboVal] -> IO YaboVal
+parseWithArgs (Parser lib (ParserExport parserExport)) offset args = do
   let offsetFile = atOffset offset (origFile lib)
-  asPtrLen offsetFile $ \(charptr, len) ->
-    do
-      let filePtr = castPtr charptr
-      ret <- withReturnBuf (maxBuf lib) $ \retBuf -> do
-        _ <- ybqParseBytes retBuf filePtr (fromIntegral len) ptr
-        return $ Identity ()
-      intoYaboVal lib $ runIdentity ret
+  asPtrLen offsetFile $ \(charptr, len) -> do
+    let filePtr = castPtr charptr
+
+    expectedCount <- ybqExportArgCount parserExport
+    if fromIntegral expectedCount /= length args
+      then error $ "Expected " ++ show expectedCount ++ " arguments, got " ++ show (length args)
+      else do
+        withPackedArgs args $ \argsPtr -> do
+          ret <- withReturnBuf (maxBuf lib) $ \retBuf -> do
+            _ <- ybqParseBytesWithArgs retBuf filePtr (fromIntegral len) parserExport argsPtr
+            return $ Identity ()
+
+          intoYaboVal lib $ runIdentity ret
 
 getPtr :: (Monad m) => FunPtr a -> MaybeT m (Ptr b)
 getPtr ptr = (MaybeT . return) $ if ptr == nullFunPtr then Nothing else Just (castFunPtrToPtr ptr)
 
-getParser :: Library -> String -> Int -> IO (Maybe YaboVal)
-getParser lib name offset = runMaybeT $ do
-  parserFunPtrPtr <- liftIO $ DL.dlsym (dl lib) name
-  parserPtrPtr <- getPtr parserFunPtrPtr
-  parserPtr <- liftIO $ peek (parserPtrPtr :: Ptr (Ptr ()))
-  liftIO $ parse (Parser lib parserPtr) offset
+getParser :: Library -> String -> Int -> [YaboVal] -> IO (Maybe YaboVal)
+getParser lib name offset args = runMaybeT $ do
+  exportPtrPtr <- liftIO $ DL.dlsym (dl lib) name
+  exportPtr <- getPtr exportPtrPtr
+
+  let parserExport = ParserExport exportPtr
+  liftIO $ parseWithArgs (Parser lib parserExport) offset args
 
 data ByteFile = ByteFile
   { pointer :: ForeignPtr CChar,
