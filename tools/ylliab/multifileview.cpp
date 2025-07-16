@@ -1,11 +1,10 @@
 #include "multifileview.hpp"
-#include "compile.hpp"
+#include "compilewidget.hpp"
 #include "filerequester.hpp"
 #include "flamegraph.hpp"
 #include "multifilehexview.hpp"
 #include "multifilemodel.hpp"
 #include "parserview.hpp"
-#include "sourceeditor.hpp"
 #include "ui_multifileview.h"
 
 MultiFileView::MultiFileView(std::unique_ptr<MultiFileParser> parser,
@@ -16,7 +15,13 @@ MultiFileView::MultiFileView(std::unique_ptr<MultiFileParser> parser,
           &MultiFileView::on_error);
   model = std::make_unique<MultiFileHexModel>(this);
   ui->tableView->set_model(model.get());
-  ui->errorView->hide();
+  connect(ui->compileWidget, &CompileWidget::compile_success, this,
+          &MultiFileView::load_compiled_file);
+  ui->compileWidget->set_source(R"(export
+def ~main = {
+  # Imagine a world where your code is here
+}
+)");
   connect(this->parser.get(), &MultiFileParser::files_updated, model.get(),
           &MultiFileHexModel::update_files);
   connect(this->parser.get(), &MultiFileParser::files_updated,
@@ -25,8 +30,8 @@ MultiFileView::MultiFileView(std::unique_ptr<MultiFileParser> parser,
           this->ui->tableView, &MultiFileHexView::jump_to_pos);
   connect(this, &MultiFileView::ascii_mode_changed,
           ui->scrollAreaWidgetContents, &FlameGraph::set_ascii);
-  connect(this, &MultiFileView::ascii_mode_changed,
-          model.get(), &MultiFileHexModel::set_ascii);
+  connect(this, &MultiFileView::ascii_mode_changed, model.get(),
+          &MultiFileHexModel::set_ascii);
   addAction(ui->actionCompile);
 }
 
@@ -38,18 +43,11 @@ MultiFileView::~MultiFileView() {
 }
 
 void MultiFileView::on_actionCompile_triggered() {
-  auto program = ui->plainTextEdit->toPlainText();
-  ui->errorView->clear();
-  ui->errorView->hide();
-
-  start_local_compile(program, SourceKind::Content, this,
-                      &MultiFileView::load_compiled_file,
-                      &MultiFileView::on_error);
+  ui->compileWidget->trigger_compile();
 }
 
 void MultiFileView::on_error(QString error) {
-  ui->errorView->show();
-  ui->errorView->set_error(error);
+  ui->compileWidget->show_error(error);
 }
 
 void MultiFileView::load_compiled_file(QString filePath) {
@@ -71,8 +69,7 @@ void MultiFileView::on_tableView_doubleClicked(const QModelIndex &index) {
   auto file_requester = FileRequesterFactory{}.create_file_requester(
       current_lib_name, file_ref, false);
   if (file_requester->error_message() != "") {
-    ui->errorView->set_error(file_requester->error_message());
-    ui->errorView->show();
+    ui->compileWidget->show_error(file_requester->error_message());
     return;
   }
 

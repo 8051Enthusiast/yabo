@@ -26,78 +26,7 @@
       <property name="orientation">
        <enum>Qt::Orientation::Horizontal</enum>
       </property>
-      <widget class="QSplitter" name="splitter_2">
-       <property name="orientation">
-        <enum>Qt::Orientation::Vertical</enum>
-       </property>
-       <widget class="SourceEditor" name="plainTextEdit">
-        <property name="plainText">
-         <string>import list
-
-# a parser for the rough structure of a png
-
-def ~chunk[T](ty: ~[u8], data_parser: ~T) = {
-  length: u32b
-  type: [4] |&gt; ty?
-  value: [length] |&gt; data_parser
-  crc: u32b
-}
-
-def ~head = {
-  width: u32b
-  height: u32b
-  bit_depth: u8
-  color_type: u8
-  compression_method: u8
-  filter_method: u8
-  interlace_method: u8
-}
-
-def ~rgb = {
-  red: u8
-  green: u8
-  blue: u8
-}
-
-export
-def ~main = {
-  h/89 50 4e 47 0d 0a 1a 0a/
-
-  header: chunk(/IHDR/, head)!
-
-  chunks: list.list({
-    | palette: chunk(/PLTE/, rgb[..])?
-    | data: chunk(/IDAT/, [..])?
-    \ optional: chunk(/[a-z].{3}/, [..])?
-  })
-  end: chunk(/IEND/, nil)!
-}
-</string>
-        </property>
-       </widget>
-       <widget class="CompilerErrorView" name="errorView">
-        <property name="enabled">
-         <bool>true</bool>
-        </property>
-        <property name="font">
-         <font>
-          <family>DejaVu Sans Mono</family>
-          <pointsize>12</pointsize>
-          <italic>false</italic>
-          <bold>false</bold>
-         </font>
-        </property>
-        <property name="lineWrapMode">
-         <enum>QTextEdit::LineWrapMode::NoWrap</enum>
-        </property>
-        <property name="readOnly">
-         <bool>true</bool>
-        </property>
-        <property name="textInteractionFlags">
-         <set>Qt::TextInteractionFlag::TextSelectableByMouse</set>
-        </property>
-       </widget>
-      </widget>
+      <widget class="CompileWidget" name="compileWidget"/>
       <widget class="QSplitter" name="splitter">
        <property name="orientation">
         <enum>Qt::Orientation::Vertical</enum>
@@ -220,9 +149,9 @@ def ~main = {
  </widget>
  <customwidgets>
   <customwidget>
-   <class>CompilerErrorView</class>
-   <extends>QTextEdit</extends>
-   <header>compiler_error_view.hpp</header>
+   <class>CompileWidget</class>
+   <extends>QWidget</extends>
+   <header>compilewidget.hpp</header>
   </customwidget>
   <customwidget>
    <class>HexTableView</class>
@@ -233,11 +162,6 @@ def ~main = {
    <class>ValTreeView</class>
    <extends>QTreeView</extends>
    <header>valtreeview.hpp</header>
-  </customwidget>
-  <customwidget>
-   <class>SourceEditor</class>
-   <extends>QPlainTextEdit</extends>
-   <header>sourceeditor.hpp</header>
   </customwidget>
  </customwidgets>
  <resources/>

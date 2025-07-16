@@ -2,8 +2,6 @@
 #include <QObject>
 #include <QRunnable>
 #include <QString>
-#include <filesystem>
-#include <memory>
 
 #include <QThreadPool>
 #include <QUrl>

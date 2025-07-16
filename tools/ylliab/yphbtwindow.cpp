@@ -1,5 +1,5 @@
 #include "yphbtwindow.hpp"
-#include "compile.hpp"
+#include "compilewidget.hpp"
 #include "filecontent.hpp"
 #include "filerequester.hpp"
 #include "hex.hpp"
@@ -34,6 +34,49 @@ static constexpr uint8_t PNG_EXAMPLE[] = {
     0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x01, 0x63, 0x60, 0x00, 0x00, 0x00,
     0x02, 0x00, 0x01, 0x73, 0x75, 0x01, 0x18, 0x00, 0x00, 0x00, 0x00, 0x49,
     0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82};
+
+static constexpr const char *PNG_SOURCE = R"(import list
+
+# a parser for the rough structure of a png
+
+def ~chunk[T](ty: ~[u8], data_parser: ~T) = {
+  length: u32b
+  type: [4] |> ty?
+  value: [length] |> data_parser
+  crc: u32b
+}
+
+def ~head = {
+  width: u32b
+  height: u32b
+  bit_depth: u8
+  color_type: u8
+  compression_method: u8
+  filter_method: u8
+  interlace_method: u8
+}
+
+def ~rgb = {
+  red: u8
+  green: u8
+  blue: u8
+}
+
+export
+def ~main = {
+  h/89 50 4e 47 0d 0a 1a 0a/
+
+  header: chunk(/IHDR/, head)!
+
+  chunks: list.list({
+    | palette: chunk(/PLTE/, rgb[..])?
+    | data: chunk(/IDAT/, [..])?
+    \ optional: chunk(/[a-z].{3}/, [..])?
+  })
+  end: chunk(/IEND/, nil)!
+}
+)";
+
 
 ExampleLoader::ExampleLoader(QObject *parent)
     : QObject(parent), json_data(),
@@ -163,14 +206,20 @@ YphbtWindow::YphbtWindow(QWidget *parent, std::optional<QString> source,
       file(std::make_shared<FileContent>(std::vector<uint8_t>(
           PNG_EXAMPLE, PNG_EXAMPLE + sizeof(PNG_EXAMPLE)))) {
   ui->setupUi(this);
-  ui->errorView->hide();
   set_font(current_font);
   auto compile_url_env = qEnvironmentVariable("YPHBT_COMPILE_URL");
   if (compile_url_env != "") {
     compile_url = QUrl(compile_url_env);
   }
+  ui->compileWidget->set_compile_url(compile_url);
+
+  connect(ui->compileWidget, &CompileWidget::compile_success,
+          this, &YphbtWindow::load_compiled_file);
+
   if (source) {
-    ui->plainTextEdit->setPlainText(*source);
+    ui->compileWidget->set_source(*source);
+  } else {
+    ui->compileWidget->set_source(PNG_SOURCE);
   }
   if (input) {
     file = std::make_shared<FileContent>(
@@ -191,23 +240,15 @@ void YphbtWindow::after_init() { on_actionCompile_triggered(); }
 void YphbtWindow::load_example(QString source, QByteArray input) {
   file = std::make_shared<FileContent>(
       std::vector<uint8_t>(input.data(), input.data() + input.size()));
-  ui->plainTextEdit->setPlainText(source);
+  ui->compileWidget->set_source(source);
   on_actionCompile_triggered();
 }
 
 void YphbtWindow::on_actionCompile_triggered() {
-  auto program = ui->plainTextEdit->toPlainText();
+  auto program = ui->compileWidget->get_source();
   QSettings settings;
   settings.setValue("source", program);
-  if (compile_url) {
-    start_remote_compile(*compile_url, program, this,
-                         &YphbtWindow::load_compiled_file,
-                         &YphbtWindow::compile_error);
-  } else {
-    start_local_compile(program, SourceKind::Content, this,
-                        &YphbtWindow::load_compiled_file,
-                        &YphbtWindow::compile_error);
-  }
+  ui->compileWidget->trigger_compile();
 }
 
 void YphbtWindow::on_actionLoadFile_triggered() {
@@ -235,13 +276,11 @@ void YphbtWindow::load_compiled_file(QString file_path) {
   // by the file requester
   std::filesystem::remove(file_path.toStdString());
   set_new_file_requester(std::move(new_file_requester));
-  ui->errorView->hide();
-  ui->errorView->clear();
+  ui->compileWidget->clear_error();
 }
 
 void YphbtWindow::compile_error(QString error) {
-  ui->errorView->set_error(error);
-  ui->errorView->show();
+  ui->compileWidget->show_error(error);
 }
 
 void YphbtWindow::set_new_file_requester(
@@ -282,7 +321,7 @@ void YphbtWindow::on_actioncopyURL_triggered() {
   auto compressed_file =
       qCompress(file_content).toBase64(QByteArray::Base64UrlEncoding);
 
-  QByteArray source = ui->plainTextEdit->toPlainText().toUtf8();
+  QByteArray source = ui->compileWidget->get_source().toUtf8();
   auto compressed_source =
       qCompress(source).toBase64(QByteArray::Base64UrlEncoding);
 
@@ -303,8 +342,7 @@ void YphbtWindow::set_font(const QFont &font) {
   ui->tableView->verticalHeader()->setFont(font);
   ui->treeView->setFont(font);
   ui->treeView->header()->setFont(font);
-  ui->plainTextEdit->set_font(font);
-  ui->errorView->setFont(font);
+  ui->compileWidget->set_font(font);
   ui->toolBar->setFont(font);
 }
 
