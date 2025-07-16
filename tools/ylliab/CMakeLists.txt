@@ -29,6 +29,7 @@ qt_add_library(ylliab_core STATIC
     hexview.hpp hexview.cpp
     compiler_error_view.hpp compiler_error_view.cpp
     sourceeditor.cpp sourceeditor.hpp
+    compilewidget.hpp compilewidget.cpp compilewidget.ui
     dataprovider.hpp
     executor.hpp executor.cpp
     filerequester.hpp filerequester.cpp
