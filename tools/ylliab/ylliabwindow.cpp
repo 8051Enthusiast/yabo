@@ -83,6 +83,14 @@ void YlliabWindow::on_actionNewTab_triggered() {
   }
   auto fileRequester = new_tab->get_file_requester();
   auto view = new ParserView(nullptr, std::move(fileRequester));
+  auto source_path = new_tab->get_parser_path();
+  QFile file(source_path);
+  if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    QString source = file.readAll();
+    view->set_source(source);
+    file.close();
+  }
+
   auto name = new_tab->get_input_file();
   ui->tabWidget->addTab(view, name);
   auto newTabIndex = ui->tabWidget->count() - 1;

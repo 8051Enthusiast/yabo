@@ -48,23 +48,61 @@
        </attribute>
       </widget>
      </widget>
-     <widget class="GraphView" name="graphicsView">
+     <widget class="QTabWidget" name="tabWidget">
       <property name="sizePolicy">
        <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
         <horstretch>0</horstretch>
         <verstretch>0</verstretch>
        </sizepolicy>
       </property>
-      <property name="dragMode">
-       <enum>QGraphicsView::ScrollHandDrag</enum>
+      <property name="currentIndex">
+       <number>0</number>
       </property>
-      <property name="viewportUpdateMode">
-       <enum>QGraphicsView::FullViewportUpdate</enum>
-      </property>
+      <widget class="QWidget" name="graphTab">
+       <attribute name="title">
+        <string>Graph</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="graphLayout">
+        <item>
+         <widget class="GraphView" name="graphicsView">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="dragMode">
+           <enum>QGraphicsView::ScrollHandDrag</enum>
+          </property>
+          <property name="viewportUpdateMode">
+           <enum>QGraphicsView::FullViewportUpdate</enum>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="compileTab">
+       <attribute name="title">
+        <string>Source</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="compileLayout">
+        <item>
+         <widget class="CompileWidget" name="compileWidget"/>
+        </item>
+       </layout>
+      </widget>
      </widget>
     </widget>
    </item>
   </layout>
+  <action name="actionCompile">
+   <property name="text">
+    <string>Compile</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+S</string>
+   </property>
+  </action>
  </widget>
  <customwidgets>
   <customwidget>
@@ -81,6 +119,11 @@
    <class>ValTreeView</class>
    <extends>QTreeView</extends>
    <header>valtreeview.hpp</header>
+  </customwidget>
+  <customwidget>
+   <class>CompileWidget</class>
+   <extends>QWidget</extends>
+   <header>compilewidget.hpp</header>
   </customwidget>
  </customwidgets>
  <resources/>

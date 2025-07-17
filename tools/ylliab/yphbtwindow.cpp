@@ -77,7 +77,6 @@ def ~main = {
 }
 )";
 
-
 ExampleLoader::ExampleLoader(QObject *parent)
     : QObject(parent), json_data(),
       network_manager(new QNetworkAccessManager(this)), source({0}),
@@ -213,8 +212,8 @@ YphbtWindow::YphbtWindow(QWidget *parent, std::optional<QString> source,
   }
   ui->compileWidget->set_compile_url(compile_url);
 
-  connect(ui->compileWidget, &CompileWidget::compile_success,
-          this, &YphbtWindow::load_compiled_file);
+  connect(ui->compileWidget, &CompileWidget::compile_success, this,
+          &YphbtWindow::load_compiled_file);
 
   if (source) {
     ui->compileWidget->set_source(*source);
@@ -292,8 +291,7 @@ void YphbtWindow::set_new_file_requester(
                                        new_file_requester.get());
   ui->tableView->set_model(newHexModel, select);
   file_requester = std::move(new_file_requester);
-  init_hex_and_tree(ui->tableView, ui->treeView, newHexModel, newTreeModel,
-                    file_requester.get(), select);
+  init_hex(ui->tableView, newHexModel, file_requester.get());
   auto root = file_requester->request_parse("main", 0);
   select->set_root(root);
   file_requester->start_provider_thread();

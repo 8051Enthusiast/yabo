@@ -16,6 +16,7 @@ public:
 
   void undo();
   void redo();
+  void clear_history();
 
   void jump_addr(size_t addr);
 

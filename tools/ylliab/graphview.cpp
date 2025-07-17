@@ -7,13 +7,13 @@
 GraphView::GraphView(QWidget *parent) : QGraphicsView(parent) {}
 
 void GraphView::setScene(GraphScene *scene) {
-  if (this->scene) {
-    disconnect(this->scene, &GraphScene::selected_node_moved, this,
+  auto *old_scene = this->graph_scene();
+  if (old_scene) {
+    disconnect(old_scene, &GraphScene::selected_node_moved, this,
                &GraphView::on_selected_moved);
   }
   QGraphicsView::setScene(scene);
   follow_node = true;
-  this->scene = scene;
   connect(scene, &GraphScene::selected_node_moved, this,
           &GraphView::on_selected_moved);
 }
@@ -53,7 +53,8 @@ void GraphView::mousePressEvent(QMouseEvent *event) {
     return QGraphicsView::mousePressEvent(event);
   }
   auto node = node_at(event->pos());
-  if (node) {
+  auto *scene = graph_scene();
+  if (scene && node) {
     follow_node = false;
     last_pos = mapToScene(event->pos());
     dragged_node = node->node();
@@ -67,7 +68,9 @@ void GraphView::mouseMoveEvent(QMouseEvent *event) {
   if (!(event->buttons() & Qt::RightButton)) {
     return QGraphicsView::mouseMoveEvent(event);
   }
-  if (dragged_node) {
+
+  auto *scene = graph_scene();
+  if (scene && dragged_node) {
     auto node = scene->node(*dragged_node);
     auto pos = mapToScene(event->pos());
     auto diff = pos - last_pos;
@@ -80,11 +83,16 @@ void GraphView::mouseMoveEvent(QMouseEvent *event) {
 }
 
 void GraphView::mouseReleaseEvent(QMouseEvent *event) {
-  if (event->button() == Qt::RightButton && dragged_node) {
+  auto *scene = graph_scene();
+  if (scene && event->button() == Qt::RightButton && dragged_node) {
     auto node = scene->node(*dragged_node);
     auto pos = node->centerPos();
     scene->move_node(pos, *dragged_node, pin_dragged_node);
     dragged_node = {};
   }
   QGraphicsView::mouseReleaseEvent(event);
+}
+
+GraphScene *GraphView::graph_scene() const {
+  return qobject_cast<GraphScene*>(QGraphicsView::scene());
 }

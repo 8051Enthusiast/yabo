@@ -39,15 +39,16 @@ RootIndex Arborist::add_root_node(QString &field_name, RootInfo info) {
   return RootIndex(index, row);
 }
 
-FileRequester::FileRequester(std::unique_ptr<DataProvider> provider, FileRef file,
-                             bool recursive_fetch)
+FileRequester::FileRequester(std::unique_ptr<DataProvider> provider,
+                             FileRef file, bool recursive_fetch)
     : recursive_fetch(recursive_fetch) {
   provider_thread = new QThread();
   this->file = file;
   auto *data_provider = provider.release();
   data_provider->moveToThread(provider_thread);
   arborist = std::make_unique<Arborist>();
-  connect(provider_thread, &QThread::finished, data_provider, &QObject::deleteLater);
+  connect(provider_thread, &QThread::finished, data_provider,
+          &QObject::deleteLater);
   connect(data_provider, &DataProvider::response, this,
           &FileRequester::process_response);
   connect(this, &FileRequester::request, data_provider,
@@ -319,7 +320,8 @@ std::unique_ptr<FileRequester> FileRequesterFactory::create_file_requester(
   std::filesystem::path p = parser_lib_path.toStdString();
   try {
     auto provider = std::make_unique<Executor>(p, file);
-    auto req = std::make_unique<FileRequester>(std::move(provider), file, recursive_fetch);
+    auto req = std::make_unique<FileRequester>(std::move(provider), file,
+                                               recursive_fetch);
     return req;
   } catch (ExecutorError &e) {
     auto msg = std::stringstream() << "Could not open file: " << e.what();
@@ -330,11 +332,14 @@ std::unique_ptr<FileRequester> FileRequesterFactory::create_file_requester(
 }
 
 #ifdef YLLIAB_ENABLE_YAML_TESTS
-std::unique_ptr<FileRequester> FileRequesterFactory::create_file_requester_from_yaml(
-    QString yaml_path, FileRef file, bool recursive_fetch) {
+std::unique_ptr<FileRequester>
+FileRequesterFactory::create_file_requester_from_yaml(QString yaml_path,
+                                                      FileRef file,
+                                                      bool recursive_fetch) {
   try {
     auto provider = std::make_unique<YamlDataProvider>(yaml_path);
-    auto req = std::make_unique<FileRequester>(std::move(provider), file, recursive_fetch);
+    auto req = std::make_unique<FileRequester>(std::move(provider), file,
+                                               recursive_fetch);
     return req;
   } catch (std::exception &e) {
     auto msg = std::stringstream() << "Could not load YAML file: " << e.what();
@@ -388,4 +393,13 @@ std::optional<Node> FileRequester::link(TreeIndex idx) const {
     return Node{bubble};
   }
   return {};
+}
+
+std::unique_ptr<FileRequester> FileRequester::with_lib(const QString &path) {
+  if (!error_msg.isEmpty()) {
+    return std::make_unique<FileRequester>(error_msg);
+  }
+
+  return FileRequesterFactory().create_file_requester(path, file,
+                                                      recursive_fetch);
 }
