@@ -64,6 +64,10 @@ QString NewTab::get_input_file() {
   return ui->inputFileEdit->text();
 }
 
+QString NewTab::get_parser_path() {
+  return ui->parserFileEdit->text();
+}
+
 void NewTab::load_compiled_file(QString file_path) {
   auto factory = FileRequesterFactory();
   std::unique_ptr<FileRequester> new_file_requester;

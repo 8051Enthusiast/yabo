@@ -168,6 +168,8 @@ public:
   void start_provider_thread() { provider_thread->start(); }
   RootIndex root_idx(Node node) const override;
 
+  std::unique_ptr<FileRequester> with_lib(const QString &path);
+
 public slots:
   void process_response(Response resp);
 

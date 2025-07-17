@@ -4,7 +4,5 @@
 #include <QTreeView>
 void init_runtime();
 
-void init_hex_and_tree(HexTableView *hex_view, QTreeView *tree_view,
-                       HexTableModel *hex_model, ValTreeModel *tree_model,
-                       FileRequester *file_requester,
-                       std::shared_ptr<SelectionState> &select);
+void init_hex(HexTableView *hex_view, HexTableModel *hex_model,
+                       FileRequester *file_requester);

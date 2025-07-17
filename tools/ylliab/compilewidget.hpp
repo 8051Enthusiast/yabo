@@ -33,8 +33,8 @@ signals:
     void compile_error(const QString &error);
 
 private slots:
-    void on_compile_finished(QString file_path);
-    void on_compile_error(QString error);
+    void handle_compile_finished(QString file_path);
+    void handle_compile_error(QString error);
 
 private:
     Ui::CompileWidget *ui;

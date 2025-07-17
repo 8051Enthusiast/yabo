@@ -20,6 +20,7 @@ public:
     return std::move(file_requester);
   }
   QString get_input_file();
+  QString get_parser_path();
 
   void set_preset_file_path(QString p);
   void set_preset_file(FileRef f);

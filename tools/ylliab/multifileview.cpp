@@ -74,6 +74,7 @@ void MultiFileView::on_tableView_doubleClicked(const QModelIndex &index) {
   }
 
   auto view = new ParserView(nullptr, std::move(file_requester));
+  view->set_source(ui->compileWidget->get_source());
   view->request_parse("main", 0);
   emit new_tab_requested(view, file_info->file_name);
 }

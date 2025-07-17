@@ -49,3 +49,11 @@ void SelectionState::set_root_internal(Node root) {
 }
 
 void SelectionState::jump_addr(size_t addr) { emit goto_addr(addr); }
+
+void SelectionState::clear_history() {
+  undo_stack.clear();
+  undo_stack_idx = 0;
+  selected_idx = {};
+  selected_root = {};
+  emit selection_changed({});
+}

@@ -45,20 +45,20 @@ void CompileWidget::trigger_compile() {
 
   if (compile_url) {
     start_remote_compile(*compile_url, program, this,
-                         &CompileWidget::on_compile_finished,
-                         &CompileWidget::on_compile_error);
+                         &CompileWidget::handle_compile_finished,
+                         &CompileWidget::handle_compile_error);
   } else {
     start_local_compile(program, SourceKind::Content, this,
-                        &CompileWidget::on_compile_finished,
-                        &CompileWidget::on_compile_error);
+                        &CompileWidget::handle_compile_finished,
+                        &CompileWidget::handle_compile_error);
   }
 }
 
-void CompileWidget::on_compile_finished(QString file_path) {
+void CompileWidget::handle_compile_finished(QString file_path) {
   emit compile_success(file_path);
 }
 
-void CompileWidget::on_compile_error(QString error) {
+void CompileWidget::handle_compile_error(QString error) {
   show_error(error);
   emit compile_error(error);
 }
