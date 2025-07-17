@@ -21,6 +21,7 @@
 #include <QStringView>
 #include <QTemporaryFile>
 #include <QThreadPool>
+#include <QScrollBar>
 #include <Qt>
 #include <QtEnvironmentVariables>
 #include <QtGlobal>
@@ -274,8 +275,9 @@ void YphbtWindow::load_compiled_file(QString file_path) {
   // we do not need the .so file at file_path anymore, since it was copied
   // by the file requester
   std::filesystem::remove(file_path.toStdString());
+  size_t address = ui->tableView->current_addr();
   set_new_file_requester(std::move(new_file_requester));
-  ui->compileWidget->clear_error();
+  ui->tableView->goto_addr(address);
 }
 
 void YphbtWindow::compile_error(QString error) {

@@ -12,6 +12,8 @@
 #include <QKeyEvent>
 #include <QObject>
 #include <QOpenGLWidget>
+#include <QScrollBar>
+#include <QTimer>
 #include <filesystem>
 
 ParserView::ParserView(QWidget *parent, std::unique_ptr<FileRequester> &&req)
@@ -92,9 +94,12 @@ void ParserView::set_new_file_requester(
   graph_thread.quit();
   graph_thread.wait();
 
+  size_t address = ui->tableView->current_addr();
+
   setup_models(*new_file_requester);
   setup_graph_scene(*new_file_requester);
   fileRequester = std::move(new_file_requester);
+  ui->tableView->goto_addr(address);
   start_threads();
 }
 
