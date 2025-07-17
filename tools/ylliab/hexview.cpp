@@ -108,6 +108,14 @@ void HexTableView::goto_addr(size_t addr) {
   verticalScrollBar()->update();
 }
 
+size_t HexTableView::current_addr() {
+  auto index = indexAt(QPoint(0, 0));
+  if (!index.isValid() || !select) {
+    return 0;
+  }
+  return hexModel->index_addr(index);
+}
+
 void HexTableView::goto_node(Node node) {
   auto addr = hexModel->node_addr(node);
   if (!addr) {

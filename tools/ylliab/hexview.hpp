@@ -59,6 +59,7 @@ public:
     this->parseRequester = parseRequester;
   }
   void parse_menu(QPoint pos);
+  size_t current_addr();
 
 public slots:
   void goto_addr(size_t addr);
