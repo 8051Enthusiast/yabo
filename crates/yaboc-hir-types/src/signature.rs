@@ -27,16 +27,25 @@ pub fn bound_args(db: &dyn TyHirs, id: DefId) -> SResult<Arc<[TypeId]>> {
                 .find(|(head, _)| matches!(head, ExprHead::Niladic(ResolvedAtom::Block(id, _)) if *id == block.id))
                 .expect("block not found in containing expr");
             let arg_ty = match db.lookup_intern_type(*ty) {
-                Type::ParserArg { arg, .. } => Some(arg),
-                Type::FunctionArg(..) => None,
+                Type::ParserArg { arg, .. } => vec![arg],
+                Type::FunctionArg(..) => vec![],
                 _ => panic!("block not in function or parser arg"),
             };
             (arg_ty, expr_id.0)
         }
-        HirNode::Context(ctx) => (None, ctx.block_id.0),
+        HirNode::Context(ctx) => (vec![], ctx.block_id.0),
+        HirNode::Lambda(lid) => {
+            let expr_id = lid.enclosing_expr;
+            let tys = lid
+                .args
+                .iter()
+                .map(|arg| db.parser_type_at(arg.0))
+                .collect::<SResult<Vec<TypeId>>>()?;
+            (tys, expr_id.0)
+        }
         _ => {
             let parent = id.parent(db).unwrap();
-            (None, parent)
+            (vec![], parent)
         }
     };
     let mut ret = Vec::from(db.bound_args(ancestor)?.as_ref());
