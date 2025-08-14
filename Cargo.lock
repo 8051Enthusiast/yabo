@@ -539,11 +539,11 @@ dependencies = [
 
 [[package]]
 name = "nu-ansi-term"
-version = "0.48.0"
+version = "0.50.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db8e83967c32f9210ce85ac7e9c4b731048c1f51c4262e08bad01af30097a424"
+checksum = "d4a28e057d01f97e61255210fcff094d74ed0466038633e95017f5beb68e4399"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1048,15 +1048,15 @@ dependencies = [
 
 [[package]]
 name = "treereduce"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fd121f11f99660017a0bde6d4414a6a13c159f6746c59688edc57d54ff8d08b"
+checksum = "25140845f21c4c0e2cd87350e15b1f0c8f2f13befec2382544384af3362d0cf5"
 dependencies = [
  "anyhow",
  "clap",
  "clap-verbosity-flag",
  "log",
- "nu-ansi-term 0.48.0",
+ "nu-ansi-term 0.50.1",
  "num_cpus",
  "regex",
  "serde",
