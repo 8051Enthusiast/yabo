@@ -1,0 +1,37 @@
+import math
+fun from_fun[T](n: int, f: (int) -> T) = range(0, n) ~> {
+  i: ~
+  let return = f(i)
+}[..]
+
+fun [T] ~> on_array[T, R](f: ([T]) -> R) = {
+  input: [..]
+  let return = f(input)
+}
+
+fun [T] ~> index_map[T, R](f: (int, T) -> R) = on_array(<input>
+  from_fun(input.sizeof, <i> f(i, input.[i]))
+)
+
+fun [T] ~> zip[T, R](other: [R]) = on_array(<array>
+  from_fun(
+    math.min(array.sizeof, other.sizeof),
+    <i> {|
+      let first = array.[i]
+      let second = other.[i]
+    |}
+  )
+)
+
+fun [T] ~> concat[T](other: [T]) = on_array(<array>
+  from_fun(
+    array.sizeof + other.sizeof,
+    <i> if?(i < array.sizeof) then (
+      array.[i]
+    ) else (
+      other.[i - array.sizeof]
+    )
+  )
+)
+
+fun repeat[T](n: int, value: T) = from_fun(n, <_> value)
