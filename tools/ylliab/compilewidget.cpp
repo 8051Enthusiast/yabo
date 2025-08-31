@@ -8,6 +8,7 @@ CompileWidget::CompileWidget(QWidget *parent)
     : QWidget(parent), ui(new Ui::CompileWidget) {
   ui->setupUi(this);
   ui->errorView->hide();
+  set_font(QFontDatabase::systemFont(QFontDatabase::FixedFont));
 }
 
 CompileWidget::~CompileWidget() { delete ui; }
