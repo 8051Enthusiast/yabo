@@ -214,6 +214,8 @@ void GraphNodeItem::paint(QPainter *painter,
   QPen pen(Qt::black);
   if (selected) {
     pen.setColor(Qt::red);
+  } else if (!visited) {
+    pen.setColor(Qt::darkGreen);
   }
   if (pinned) {
     pen.setStyle(Qt::DotLine);
