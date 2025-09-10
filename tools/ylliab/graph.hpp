@@ -123,6 +123,7 @@ public:
   QPointF centerPos() const;
   void setSelected(bool selected) {
     this->selected = selected;
+    visited |= selected;
     update();
   }
   void setPinned(bool pinned);
@@ -139,6 +140,7 @@ private:
   QColor color;
   bool selected = false;
   bool pinned = false;
+  bool visited = false;
 };
 
 class GraphScene : public QGraphicsScene {
