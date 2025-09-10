@@ -3,6 +3,7 @@
 #include "node.hpp"
 #include <QMouseEvent>
 #include <qnamespace.h>
+#include <cmath>
 
 GraphView::GraphView(QWidget *parent) : QGraphicsView(parent) {}
 
@@ -94,5 +95,18 @@ void GraphView::mouseReleaseEvent(QMouseEvent *event) {
 }
 
 GraphScene *GraphView::graph_scene() const {
-  return qobject_cast<GraphScene*>(QGraphicsView::scene());
+  return qobject_cast<GraphScene *>(QGraphicsView::scene());
+}
+
+void GraphView::wheelEvent(QWheelEvent *event) {
+  if (event->modifiers() & Qt::ControlModifier) {
+    auto anchor = transformationAnchor();
+    setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
+    double scaleFactor = std::pow(4.0, event->angleDelta().y() / (8.0 * 180.0));
+    scale(scaleFactor, scaleFactor);
+    setTransformationAnchor(anchor);
+    event->accept();
+  } else {
+    QGraphicsView::wheelEvent(event);
+  }
 }
