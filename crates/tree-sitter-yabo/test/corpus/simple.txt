@@ -50,8 +50,8 @@ def [u8] ~> choice = {
         content: (parser_choice
           content: (parser_sequence
             content: (parse_statement
-              parser: (unary_expression
-                right: (identifier)))
+              parser: (single_constraint_apply
+                constraint: (identifier)))
             content: (parse_statement
               name: (retvrn)
               parser: (identifier)))
@@ -129,7 +129,7 @@ def [u8] ~> nested = {
                 (parser_sequence
                   (parse_statement
                     (identifier)
-                    (unary_expression
+                    (single_constraint_apply
                       (number_literal))))
                 (parser_sequence
                   (let_statement
@@ -172,14 +172,14 @@ def [u8] ~> three = {
         (parser_choice
           (parser_sequence
             (parse_statement
-              (unary_expression
+              (single_constraint_apply
                 (number_literal)))
             (parse_statement
               (retvrn)
               (identifier)))
           (parser_sequence
             (parse_statement
-              (unary_expression
+              (single_constraint_apply
                 (number_literal)))
             (parse_statement
               (retvrn)
