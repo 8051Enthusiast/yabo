@@ -2,10 +2,12 @@
 #include "graph.hpp"
 #include "node.hpp"
 #include <QMouseEvent>
-#include <qnamespace.h>
 #include <cmath>
+#include <qnamespace.h>
 
-GraphView::GraphView(QWidget *parent) : QGraphicsView(parent) {}
+GraphView::GraphView(QWidget *parent) : QGraphicsView(parent) {
+  setBackgroundBrush(Qt::white);
+}
 
 void GraphView::setScene(GraphScene *scene) {
   auto *old_scene = this->graph_scene();
