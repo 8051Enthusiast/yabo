@@ -1,0 +1,29 @@
+====[ source code ]====
+import text
+import parse
+import aoc
+
+fun ~joltage_digit(n: int, clearance: int) = {
+  d: text.digit(10)? is !eof
+  | if?(d > n) then parse.lookahead([clearance] is !eof)?
+    | return: joltage_digit(d, clearance)?
+    \ let return = d
+  \ return: joltage_digit(n, clearance)?
+}
+
+fun ~joltage(size: int, acc: int) = {
+  | let return = size is 0 then acc
+  \ d: joltage_digit(-1, size - 1)!
+    return: joltage(size - 1, 10 * acc + d)
+}
+
+export
+fun ~test = aoc.summap(text.line? |> joltage(2, 0))
+
+====[ text 1 ]====
+987654321111111
+811111111111119
+234234234234278
+818181911112111
+====[ output 1 ]====
+357
