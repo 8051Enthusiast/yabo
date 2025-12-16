@@ -1,4 +1,4 @@
-FROM golang:1-bookworm AS server
+FROM golang:1-trixie AS server
 
 COPY tools/yaboc-server/go.mod tools/yaboc-server/go.sum tools/yaboc-server/yaboc-server.go /src/
 WORKDIR /src
@@ -6,21 +6,11 @@ WORKDIR /src
 RUN go build -o yaboc-server
 
 
-FROM rust:1-bookworm AS compiler
+FROM rust:1-trixie AS compiler
 
-RUN apt-get update && apt-get install -y cmake
+RUN apt-get update && apt-get install -y cmake llvm-19-dev
 
-ARG LLVM_VERSION=18.1.8
-
-ADD https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/llvm-project-${LLVM_VERSION}.src.tar.xz \
-    /src/
-RUN --mount=type=tmpfs,target=/build \
-    cd /build \
- && tar -xf /src/llvm-project-${LLVM_VERSION}.src.tar.xz -C /src \
- && cmake -DLLVM_ENABLE_PROJECTS=polly -DCMAKE_BUILD_TYPE=Release -DLLVM_TARGETS_TO_BUILD="WebAssembly" /src/llvm-project-${LLVM_VERSION}.src/llvm \
- && make -j$(nproc) \
- && make install \
- && rm -rf /src/llvm-project-${LLVM_VERSION}.src
+ARG LLVM_VERSION=19.1.7
 
 COPY Cargo.toml Cargo.lock /src/yabo/
 ADD crates /src/yabo/crates/
@@ -29,7 +19,7 @@ WORKDIR /src/yabo
 
 RUN cargo build --release
 
-FROM debian:bookworm AS emscripten
+FROM debian:trixie AS emscripten
 
 ARG EMSCRIPTEN_VERSION=3.1.70
 
@@ -43,7 +33,7 @@ RUN apt-get update && apt-get install -y python3 xz-utils \
  && /opt/emsdk/emsdk install $EMSCRIPTEN_VERSION \
  && /opt/emsdk/emsdk activate $EMSCRIPTEN_VERSION
 
-FROM debian:bookworm AS qt
+FROM debian:trixie AS qt
 
 ARG QT_VERSION=6.9.1
 
@@ -85,9 +75,9 @@ RUN --mount=type=tmpfs,target=/build bash -c '\
  && make -j $(nproc) yphbt && mkdir -p /opt/yphbt \
  && cp yphbt.js yphbt.html yphbt.wasm qtlogo.svg qtloader.js /opt/yphbt'
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
-RUN apt-get update && apt-get install -y python3 git
+RUN apt-get update && apt-get install -y python3 git llvm-19
 
 COPY tools/yaboc-server/build.sh /opt/bin/build.sh
 ADD ./lib /opt/lib
