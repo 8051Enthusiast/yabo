@@ -61,7 +61,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         let call = self.builder.build_call(fun, &args, "call")?;
         self.set_tail_call(call, tail);
-        let ret = call.try_as_basic_value().left().unwrap().into_int_value();
+        let ret = call.try_as_basic_value().basic().unwrap().into_int_value();
         self.builder.build_return(Some(&ret))?;
         Ok(wrapper)
     }

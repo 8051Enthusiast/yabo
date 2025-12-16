@@ -201,7 +201,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.set_tail_call(call_ret, tail);
         let ret = call_ret
             .try_as_basic_value()
-            .left()
+            .basic()
             .unwrap()
             .into_int_value();
         Ok(ret)
@@ -275,7 +275,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.set_tail_call(call_ret, true);
         let ret = call_ret
             .try_as_basic_value()
-            .left()
+            .basic()
             .unwrap()
             .into_int_value();
         Ok(ret)
@@ -365,7 +365,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         Ok(call
             .try_as_basic_value()
-            .left()
+            .basic()
             .expect("function shuold not return void")
             .into_int_value())
     }
