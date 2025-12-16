@@ -137,7 +137,7 @@ impl<'llvm, 'comp, 'r> RegexTranslator<'llvm, 'comp, 'r> {
             "next_ret",
         )?;
         ret.set_call_convention(self.cg.tailcc());
-        let ret = ret.try_as_basic_value().left().unwrap().into_int_value();
+        let ret = ret.try_as_basic_value().basic().unwrap().into_int_value();
         let ret_bb = self.cg.llvm.append_basic_block(self.llvm_fun, "ret");
         let cont_bb = self.cg.llvm.append_basic_block(self.llvm_fun, "cont");
         let bt_bb = if self.dfa.is_match_state(eoi_state) {

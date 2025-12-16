@@ -354,7 +354,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 .try_as_basic_value(),
         };
         Ok(call
-            .left()
+            .basic()
             .expect("function shuold not return void")
             .into_int_value())
     }
@@ -368,7 +368,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         call.set_call_convention(self.tailcc());
         Ok(call
             .try_as_basic_value()
-            .left()
+            .basic()
             .expect("function shuold not return void")
             .into_int_value())
     }
