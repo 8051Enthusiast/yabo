@@ -82,6 +82,7 @@ pub struct CodeGenOptions {
     pub target: yaboc_target::Target,
     pub asan: bool,
     pub msan: bool,
+    pub dynamic_linker: Option<String>,
 }
 
 impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
@@ -857,12 +858,26 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         buf_size.set_constant(true);
     }
 
+    pub fn add_interpreter(&mut self, name: &str) {
+        let cstr = self.llvm.const_string(name.as_bytes(), true);
+        let global_value = self.module.add_global(cstr.get_type(), None, "interp_path");
+        global_value.set_initializer(&cstr);
+        global_value.set_constant(true);
+        global_value.set_section(Some(".interp"));
+        global_value.set_alignment(16);
+    }
+
     pub fn run_codegen(&mut self) {
         self.create_all_vtables();
         self.create_all_statics().expect("Codegen failed");
         self.create_all_funs().expect("Codegen failed");
         self.create_pd_exports().expect("Codegen failed");
         self.create_max_buf_size();
+        if let Some(interp) = self.options.dynamic_linker.clone() {
+            self.add_interpreter(&interp);
+        } else if let Ok(interp) = std::env::var("YABO_ELF_INTERPRETER_PATH") {
+            self.add_interpreter(&interp);
+        }
     }
 
     pub fn llvm_code(self, outfile: &OsStr) -> Result<(), LLVMString> {

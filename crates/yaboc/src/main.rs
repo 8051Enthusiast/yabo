@@ -53,6 +53,9 @@ struct Args {
     /// The C compiler to use as linker
     cc: Option<String>,
     #[clap(long)]
+    /// Set the dynamic linker (PT_INTERP) for dynamic libraries
+    dynamic_linker: Option<String>,
+    #[clap(long)]
     /// The sysroot to use (for WASI)
     sysroot: Option<PathBuf>,
     #[clap(short, long)]
@@ -96,6 +99,7 @@ fn main() {
         cc: args.cc,
         asan: args.sanitize == Some(Sanitizer::Address),
         msan: args.sanitize == Some(Sanitizer::Memory),
+        dynamic_linker: args.dynamic_linker,
     }) {
         Ok(ctx) => ctx,
         Err(e) => exit_with_message(&format!("Could not create context: {e}")),
