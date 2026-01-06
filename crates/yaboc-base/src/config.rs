@@ -7,6 +7,7 @@ pub struct Config {
     pub target_features: Option<String>,
     pub sysroot: Option<PathBuf>,
     pub cc: Option<String>,
+    pub dynamic_linker: Option<String>,
     pub output_json: bool,
     pub asan: bool,
     pub msan: bool,

@@ -53,6 +53,7 @@ impl Driver {
             target,
             asan: config.asan,
             msan: config.msan,
+            dynamic_linker: config.dynamic_linker.clone(),
         };
         let config = Arc::new(config);
         ctx.db.set_config(config);
