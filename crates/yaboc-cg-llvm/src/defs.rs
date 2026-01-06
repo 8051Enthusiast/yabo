@@ -393,6 +393,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             let global = self.module.add_global(llvm_ty, None, &sym);
             global.set_alignment(sa.align() as u32);
             global.set_initializer(&llvm_ty.const_zero());
+            global.set_visibility(GlobalVisibility::Hidden);
+            global.set_linkage(Linkage::Internal);
             global
         };
         let center_offset = sa.allocation_center_offset();

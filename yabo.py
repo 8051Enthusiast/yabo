@@ -2,19 +2,34 @@
 Python bindings to the dynamic interface of the yabo language.
 """
 
-from copy import copy
-from sys import byteorder
 import ctypes
-import threading
-from os import getenv
-from ctypes import (addressof, alignment, sizeof, c_char_p, c_int64,
-                    c_int8, c_ubyte, c_uint32, c_uint64, c_size_t, c_char,
-                    Structure, CFUNCTYPE, POINTER, byref, c_void_p, pointer)
 import tempfile
+import threading
+from copy import copy
+from ctypes import (
+    CFUNCTYPE,
+    POINTER,
+    Structure,
+    addressof,
+    alignment,
+    byref,
+    c_char,
+    c_char_p,
+    c_int8,
+    c_int32,
+    c_int64,
+    c_size_t,
+    c_ubyte,
+    c_uint32,
+    c_uint64,
+    c_void_p,
+    pointer,
+    sizeof,
+)
 from shutil import copyfileobj
+from sys import byteorder
 
-
-YABO_DISC_MASK = ((1 << 64) - 1) & ~0xff
+YABO_DISC_MASK = ((1 << 64) - 1) & ~0xFF
 
 YABO_INTEGER = 0x100
 YABO_BIT = 0x200
@@ -37,56 +52,80 @@ ERROR = 1
 EOS = 2
 BACKTRACK = 3
 
-_voidptr = ctypes.c_void_p
+_voidptr = c_void_p
 
 MASK_TEST_MODE: bool = False
 
+
 class MaskError(Exception):
-    def __init__(self, left: bytearray, right: bytearray):
+    def __init__(self, left: bytes, right: bytes):
         self.left = left
         self.right = right
-    
+
     def __str__(self):
         return f"MaskError: {self.left.hex()} != {self.right.hex()}"
-    
+
     def __repr__(self):
         return f"MaskError({self.left}, {self.right})"
+
 
 class BacktrackError(Exception):
     def __str__(self):
         return "BacktrackError"
-    
+
     def __repr__(self):
-        return "BacktrackError()"    
+        return "BacktrackError()"
 
 
-class VTableHeader(Structure):
+def vptr(ty: type):
+    class RelPtr(c_int32):
+        pointer = ty
+
+        def get_vptr(self, vtable_ptr: int):
+            if self.value == 0:
+                return ctypes.cast(0, RelPtr.pointer)
+            address = vtable_ptr + self.value
+            return ctypes.cast(address, RelPtr.pointer)
+
+    return RelPtr
+
+
+class VTable(Structure):
+    def __getattribute__(self, name: str):
+        attr = super().__getattribute__(name)
+        if hasattr(attr, "get_vptr"):
+            vtable_ptr = addressof(self)
+            return attr.get_vptr(vtable_ptr)
+        return attr
+
+
+class VTableHeader(VTable):
     __slots__ = [
-        'head',
-        'deref_level',
-        'typecast_impl',
-        'mask_impl',
-        'size',
-        'align',
+        "head",
+        "deref_level",
+        "typecast_impl",
+        "mask_impl",
+        "size",
+        "align",
     ]
     _fields_ = [
-        ('head', c_int64),
-        ('deref_level', c_int64),
-        ('typecast_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64)),
-        ('mask_impl', CFUNCTYPE(c_size_t, _voidptr)),
-        ('size', c_size_t),
-        ('align', c_size_t),
+        ("head", c_int64),
+        ("deref_level", c_int64),
+        ("typecast_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64))),
+        ("mask_impl", vptr(CFUNCTYPE(c_size_t, _voidptr))),
+        ("size", c_size_t),
+        ("align", c_size_t),
     ]
 
 
-class BlockFields(Structure):
+class BlockFields(VTable):
     __slots__ = [
-        'number_fields',
-        'fields',
+        "number_fields",
+        "fields",
     ]
     _fields_ = [
-        ('number_fields', c_size_t),
-        ('fields', c_char_p * 0),
+        ("number_fields", c_size_t),
+        ("fields", vptr(c_char_p) * 0),
     ]
 
     def __len__(self) -> int:
@@ -95,21 +134,25 @@ class BlockFields(Structure):
     def __getitem__(self, index):
         if index > len(self):
             raise IndexError(index)
-        offset = ctypes.sizeof(self) + index * ctypes.sizeof(c_void_p)
-        addr = addressof(self) + offset
-        return c_char_p.from_address(addr).value.decode()
+        ty = vptr(c_char_p)
+        offset = BlockFields.fields.offset + index * ctypes.sizeof(ty)
+        vtable_ptr = addressof(self)
+        addr = vtable_ptr + offset
+        name = ty.from_address(addr).get_vptr(vtable_ptr).value
+        assert name is not None
+        return name.decode()
 
 
-class BlockVTable(Structure):
+class BlockVTable(VTable):
     __slots__ = [
-        'head',
-        'fields',
-        'access_impl',
+        "head",
+        "fields",
+        "access_impl",
     ]
     _fields_ = [
-        ('head', VTableHeader),
-        ('fields', POINTER(BlockFields)),
-        ('access_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64) * 0),
+        ("head", VTableHeader),
+        ("fields", vptr(POINTER(BlockFields))),
+        ("access_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64)) * 0),
     ]
 
     def __len__(self) -> int:
@@ -118,24 +161,25 @@ class BlockVTable(Structure):
     def __getitem__(self, index):
         if index > len(self):
             raise IndexError(index)
-        offset = ctypes.sizeof(self) + index * \
-            ctypes.sizeof(self.access_impl._type_)
-        addr = addressof(self) + offset
-        return self.access_impl._type_.from_address(addr)
+        ty = vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64))
+        offset = BlockVTable.access_impl.offset + index * ctypes.sizeof(ty)
+        vtable_ptr = addressof(self)
+        addr = vtable_ptr + offset
+        return ty.from_address(addr).get_vptr(vtable_ptr)
 
 
-class NominalVTable(Structure):
+class NominalVTable(VTable):
     __slots__ = [
-        'head',
-        'name',
-        'start_impl',
-        'end_impl',
+        "head",
+        "name",
+        "start_impl",
+        "end_impl",
     ]
     _fields_ = [
-        ('head', VTableHeader),
-        ('name', c_char_p),
-        ('start_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64)),
-        ('end_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64)),
+        ("head", VTableHeader),
+        ("name", vptr(c_char_p)),
+        ("start_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64))),
+        ("end_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64))),
     ]
 
 
@@ -143,56 +187,62 @@ PARSER_TY = CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64, _voidptr)
 LEN_FUN_TY = CFUNCTYPE(c_int64, POINTER(c_int64), POINTER(c_ubyte))
 INIT_TY = CFUNCTYPE(c_int64)
 
-class ParserVTable(Structure):
+
+class ParserVTable(VTable):
     __slots__ = [
-        'head',
-        'len_impl',
-        'apply_table',
+        "head",
+        "len_impl",
+        "apply_table",
     ]
     _fields_ = [
-        ('head', VTableHeader),
-        ('len_impl', LEN_FUN_TY),
-        ('apply_table', POINTER(PARSER_TY)),
+        ("head", VTableHeader),
+        ("len_impl", vptr(LEN_FUN_TY)),
+        ("apply_table", vptr(POINTER(PARSER_TY))),
     ]
 
 
-class ArrayVTable(Structure):
+class ArrayVTable(VTable):
     __slots__ = [
-        'head',
-        'single_forward_impl',
-        'current_element_impl',
-        'array_len_impl',
-        'skip_impl',
-        'span_impl',
-        'inner_array_impl',
+        "head",
+        "single_forward_impl",
+        "current_element_impl",
+        "array_len_impl",
+        "skip_impl",
+        "span_impl",
+        "inner_array_impl",
     ]
     _fields_ = [
-        ('head', VTableHeader),
-        ('single_forward_impl', CFUNCTYPE(c_int64, _voidptr)),
-        ('current_element_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64)),
-        ('array_len_impl', CFUNCTYPE(c_int64, _voidptr)),
-        ('skip_impl', CFUNCTYPE(c_int64, _voidptr, c_uint64)),
-        ('span_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_uint64, _voidptr)),
-        ('inner_array_impl', CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64)),
+        ("head", VTableHeader),
+        ("single_forward_impl", vptr(CFUNCTYPE(c_int64, _voidptr))),
+        ("current_element_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64))),
+        ("array_len_impl", vptr(CFUNCTYPE(c_int64, _voidptr))),
+        ("skip_impl", vptr(CFUNCTYPE(c_int64, _voidptr, c_uint64))),
+        ("span_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, c_uint64, _voidptr))),
+        ("inner_array_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64))),
     ]
 
 
-class ParserExport(Structure):
+class ParserExport(VTable):
     __slots__ = [
-        'parser',
-        'args',
+        "parser",
+        "args",
     ]
     _fields_ = [
-        ('parser', PARSER_TY),
-        ('args', POINTER(POINTER(VTableHeader)) * 0),
+        ("parser", vptr(PARSER_TY)),
+        ("args", vptr(POINTER(VTableHeader)) * 0),
     ]
+
+    def _get_arg(self, idx: int):
+        offset = ParserExport.args.offset
+        vtable_ptr = addressof(self)
+        ty = vptr(POINTER(VTableHeader))
+        addr = vtable_ptr + offset + idx * ctypes.sizeof(ty)
+        return ty.from_address(addr).get_vptr(vtable_ptr)
 
     def get_arg_count(self) -> int:
         count = 0
-        offset = ctypes.sizeof(self)
         while True:
-            addr = addressof(self) + offset + count * ctypes.sizeof(POINTER(VTableHeader))
-            arg_ptr = POINTER(VTableHeader).from_address(addr)
+            arg_ptr = self._get_arg(count)
             if not arg_ptr:
                 break
             count += 1
@@ -201,23 +251,23 @@ class ParserExport(Structure):
     def get_arg_types(self) -> list[int]:
         arg_types = []
         count = self.get_arg_count()
-        offset = ctypes.sizeof(self)
         for i in range(count):
-            addr = addressof(self) + offset + i * ctypes.sizeof(POINTER(VTableHeader))
-            head = POINTER(VTableHeader).from_address(addr).contents.head
+            head = self._get_arg(i).contents.head
             arg_types.append(head)
         return arg_types
 
+
 MAX_ALIGNMENT = max(alignment(_voidptr), alignment(c_int64))
+
 
 class Slice(Structure):
     __slots__ = [
-        'start',
-        'end',
+        "start",
+        "end",
     ]
     _fields_ = [
-        ('start', POINTER(c_ubyte)),
-        ('end', POINTER(c_ubyte)),
+        ("start", POINTER(c_ubyte)),
+        ("end", POINTER(c_ubyte)),
     ]
 
     def __init__(self, buf: bytearray):
@@ -226,10 +276,11 @@ class Slice(Structure):
         end = (c_ubyte * 0).from_buffer(buf, len(buf))
         self.end = ctypes.cast(pointer(end), POINTER(c_ubyte))
 
+
 class DynValue(Structure):
     def get_vtable(self):
         raise NotImplementedError
-    
+
     def data_array(self):
         raise NotImplementedError
 
@@ -241,18 +292,20 @@ class DynValue(Structure):
         mask_impl = self.get_vtable().mask_impl
         return mask_impl(self.data_ptr())
 
+
 def sized_dyn_value(size: int):
     class SizedDynValue(DynValue):
         __slots__ = [
-            'padding',
-            'vtable',
-            'data',
+            "padding",
+            "vtable",
+            "data",
         ]
         _fields_ = [
-            ('padding', c_char * (MAX_ALIGNMENT - sizeof(_voidptr))),
-            ('vtable', POINTER(VTableHeader)),
-            ('data', c_char * size),
+            ("padding", c_char * (MAX_ALIGNMENT - sizeof(_voidptr))),
+            ("vtable", POINTER(VTableHeader)),
+            ("data", c_char * size),
         ]
+
         def __copy__(self):
             size = self.get_vtable().size
             val_ty = sized_dyn_value(size)
@@ -297,10 +350,10 @@ def _pack_export_args(args: list, export_info: ParserExport) -> bytearray:
             raise ValueError("unsupported type - only integer arguments supported")
 
         if not isinstance(arg_value, int):
-            raise ValueError(f"argument {i+1} must be an integer")
+            raise ValueError(f"argument {i + 1} must be an integer")
 
         if arg_value < -(2**63) or arg_value >= 2**63:
-            raise ValueError(f"argument {i+1} out of range for int64")
+            raise ValueError(f"argument {i + 1} out of range for int64")
 
         result.extend(arg_value.to_bytes(8, byteorder=byteorder, signed=True))
 
@@ -330,25 +383,31 @@ class Parser:
                 raise ValueError("Parser expects arguments but none provided")
             args_void_ptr = ctypes.c_void_p()
 
-        return self._lib.new_val(lambda ret: parse(ret, args_void_ptr, self._lib.discriminant(), byref(Slice(buf))))
+        return self._lib.new_val(
+            lambda ret: parse(
+                ret, args_void_ptr, self._lib.discriminant(), byref(Slice(buf))
+            )
+        )
 
 
 class YaboLib(ctypes.CDLL):
     _loc: threading.local
     _autoderef: bool
-    def __init__(self, path: str, global_address: bytearray, autoderef: bool=True):
+
+    def __init__(self, path: str, global_address: bytearray, autoderef: bool = True):
         self._autoderef = autoderef
         # we need to copy the library to a temporary path because
         # loading the same library twice will deduplicates globals
         # and cause a mess if it is overwritten
         with tempfile.NamedTemporaryFile() as tmp_file:
-            with open(path, 'rb') as f:
+            with open(path, "rb") as f:
                 copyfileobj(f, tmp_file)
+            tmp_file.flush()
             super().__init__(tmp_file.name)
         slice_addr = Slice(global_address)
         status = self[YABO_GLOBAL_INIT_NAME](slice_addr.start, slice_addr.end)
         _check_status(status)
-        
+
         self._loc = threading.local()
 
     def discriminant(self) -> int:
@@ -368,7 +427,7 @@ class YaboLib(ctypes.CDLL):
             size = c_size_t.in_dll(self, "yabo_max_buf_size").value
             self._loc.ret_buf = sized_dyn_value(size)()
             return self._loc.ret_buf
-    
+
     def new_val(self, f):
         ret_buf = self._ret_buf()
         status = f(ret_buf.data_ptr())
@@ -379,17 +438,26 @@ class YaboLib(ctypes.CDLL):
             # test that the mask implementation properly
             # deletes the padding bytes
             for i in range(ret_buf.get_vtable().size):
-                ret_buf.data_array().contents[i] = ret_buf.data_array().contents[:][i] ^ 0xFF
+                ret_buf.data_array().contents[i] = (
+                    ret_buf.data_array().contents[:][i] ^ 0xFF
+                )
             status = f(ret_buf.data_ptr())
             _check_status(status)
             second_val = _new_value(ret_buf, self)
             if isinstance(ret_val, YaboValue):
-                first_bytes = bytes(ret_val._val.data_array().contents[:ret_val._val.get_vtable().size])
-                second_bytes = bytes(second_val._val.data_array().contents[:second_val._val.get_vtable().size])
+                assert isinstance(second_val, YaboValue)
+                first_bytes = bytes(
+                    ret_val._val.data_array().contents[: ret_val._val.get_vtable().size]
+                )
+                second_bytes = bytes(
+                    second_val._val.data_array().contents[
+                        : second_val._val.get_vtable().size
+                    ]
+                )
                 if first_bytes != second_bytes:
                     raise MaskError(first_bytes, second_bytes)
         return ret_val
-            
+
 
 class YaboValue:
     _val: DynValue
@@ -411,7 +479,7 @@ class YaboValue:
         if not isinstance(other, YaboValue):
             return False
         return self._val.data_array().contents[:] == other._val.data_array().contents[:]
-    
+
     def __hash__(self):
         return hash(self._val.data_array().contents[:])
 
@@ -429,7 +497,8 @@ class BlockValue(YaboValue):
     def __init__(self, val: DynValue, lib: YaboLib):
         super().__init__(val, lib)
         casted_vtable = ctypes.cast(
-            pointer(self._val.get_vtable()), POINTER(BlockVTable))
+            pointer(self._val.get_vtable()), POINTER(BlockVTable)
+        )
         self._access_impl = {}
         for i in range(len(casted_vtable.contents)):
             field_name = casted_vtable.contents.fields.contents[i]
@@ -446,10 +515,10 @@ class BlockValue(YaboValue):
         try:
             access = self._access_impl[name]
         except KeyError:
-            raise AttributeError(f'{name} is not a valid field')
+            raise AttributeError(f"{name} is not a valid field")
         try:
-            return self._lib.new_val(lambda ret:
-                access(ret, self._val.data_ptr(), self._lib.discriminant())
+            return self._lib.new_val(
+                lambda ret: access(ret, self._val.data_ptr(), self._lib.discriminant())
             )
         except BacktrackError:
             return None
@@ -470,43 +539,50 @@ class BlockValue(YaboValue):
 class ArrayValue(YaboValue):
     def __len__(self):
         array_vtable = ctypes.cast(
-            pointer(self._val.get_vtable()), POINTER(ArrayVTable))
+            pointer(self._val.get_vtable()), POINTER(ArrayVTable)
+        )
         array_len_impl = array_vtable.contents.array_len_impl
         return array_len_impl(self._val.data_ptr())
 
     def skip(self, n: int):
         array_vtable = ctypes.cast(
-            pointer(self._val.get_vtable()), POINTER(ArrayVTable))
+            pointer(self._val.get_vtable()), POINTER(ArrayVTable)
+        )
         skip_impl = array_vtable.contents.skip_impl
         status = skip_impl(self._val.data_ptr(), n)
         _check_status(status)
 
     def current_element(self):
         array_vtable = ctypes.cast(
-            pointer(self._val.get_vtable()), POINTER(ArrayVTable))
+            pointer(self._val.get_vtable()), POINTER(ArrayVTable)
+        )
         current_element_impl = array_vtable.contents.current_element_impl
-        return self._lib.new_val(lambda ret:
-            current_element_impl(ret, self._val.data_ptr(), self._lib.discriminant())
+        return self._lib.new_val(
+            lambda ret: current_element_impl(
+                ret, self._val.data_ptr(), self._lib.discriminant()
+            )
         )
 
     def __getitem__(self, index: int):
         if len(self) <= index:
-            raise IndexError(f'{index} is out of bounds')
+            raise IndexError(f"{index} is out of bounds")
         cop = copy(self)
         cop.skip(index)
         return cop.current_element()
-    
+
     def as_list(self):
         return [self[i] for i in range(len(self))]
 
     def inner_array(self):
         array_vtable = ctypes.cast(
-            pointer(self._val.get_vtable()), POINTER(ArrayVTable))
-        inner_array_impl = array_vtable.contents.inner_array_impl
-        return self._lib.new_val(lambda ret:
-            inner_array_impl(ret, self._val.data_ptr(), self._lib.discriminant())
+            pointer(self._val.get_vtable()), POINTER(ArrayVTable)
         )
-    
+        inner_array_impl = array_vtable.contents.inner_array_impl
+        return self._lib.new_val(
+            lambda ret: inner_array_impl(
+                ret, self._val.data_ptr(), self._lib.discriminant()
+            )
+        )
 
 
 class FunArgValue(YaboValue):
@@ -516,18 +592,18 @@ class FunArgValue(YaboValue):
 class ParserValue(YaboValue):
     def len(self):
         casted_vtable = ctypes.cast(
-            pointer(self._val.get_vtable()), POINTER(ParserVTable))
-        casted_data = ctypes.cast(
-            self._val.data_ptr(), POINTER(c_ubyte))
+            pointer(self._val.get_vtable()), POINTER(ParserVTable)
+        )
+        casted_data = ctypes.cast(self._val.data_ptr(), POINTER(c_ubyte))
         len_int = c_int64(0)
-        ret = casted_vtable.contents.len_impl(POINTER(c_int64)(len_int),
-                                                casted_data)
+        ret = casted_vtable.contents.len_impl(POINTER(c_int64)(len_int), casted_data)
         _check_status(ret)
         return len_int.value
 
 
 class UnitValue(YaboValue):
     pass
+
 
 class U8Value(YaboValue):
     def deref(self):

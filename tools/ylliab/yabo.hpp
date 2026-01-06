@@ -60,7 +60,7 @@ struct YaboVal {
 
   const uint8_t *access_u8() const noexcept { return dyn_u8(val); }
 
-  std::optional<ptrdiff_t> field_offset(char const *name) const noexcept;
+  std::optional<size_t> field_offset(char const *name) const noexcept;
 
   uint64_t access_error() const noexcept { return dyn_error(val); }
 

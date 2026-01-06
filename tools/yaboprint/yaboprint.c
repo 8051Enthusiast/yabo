@@ -101,7 +101,7 @@ int print_bit(DynValue *val, int indent, Stack stack, FILE *out) {
 int print_parser(DynValue *val, int indent, Stack stack, FILE *out) {
   struct ParserVTable *vtable = (struct ParserVTable *)val->vtable;
   int64_t len;
-  int64_t ret = vtable->len_impl(&len, val->data);
+  int64_t ret = YABO_ACCESS_VPTR(vtable, len_impl)(&len, val->data);
   if (ret != YABO_STATUS_OK) {
     return fputs("\"parser\"", out);
   } else {
@@ -115,39 +115,37 @@ int print_fun_args(DynValue *val, int indent, Stack stack, FILE *out) {
 }
 
 int print_block(DynValue *val, int indent, Stack stack, FILE *out) {
-  struct BlockVTable *vtable = (struct BlockVTable *)val->vtable;
-  const char **field_desc = vtable->fields->fields;
-  const char **field_end = field_desc + vtable->fields->number_fields;
+  size_t count = dyn_block_field_count(val);
   if (fputs("{\n", out) == EOF)
     return EOF;
-  int64_t (**access_impl)(void *, const void *, uint64_t) = vtable->access_impl;
+
   int first = 1;
-  while (field_desc != field_end) {
+  for (size_t i = 0; i < count; i++) {
     DynValue *sub_value = (DynValue *)stack.current;
-    int64_t return_val =
-        (*access_impl)(sub_value->data, val->data, YABO_VTABLE);
+    int64_t return_val = dyn_access_field_index(sub_value, val, i);
     if (return_val == 3) {
-      access_impl++;
-      field_desc++;
       continue;
     }
     if (return_val != 0) {
       return -1;
     }
+
+    const char *field_desc = dyn_block_field_name_at_index(val, i);
+
     if (!first) {
       if (fputs(",\n", out) == EOF) {
         return EOF;
       }
     }
-    first = 0;
+
     if (print_indent(indent + 2, out) == EOF)
       return EOF;
-    if (fprintf(out, "\"%s\": ", *field_desc) < 0)
+    if (fprintf(out, "\"%s\": ", field_desc) < 0)
       return EOF;
     if (print_recursive(indent + 2, stack, out) < 0)
       return EOF;
-    access_impl++;
-    field_desc++;
+
+    first = 0;
   }
   if (fputs("\n", out) == EOF) {
     return EOF;
@@ -198,7 +196,7 @@ int print_recursive(int indent, Stack stack, FILE *out) {
     return fputs("null", out);
   }
   struct VTableHeader *vtable = val->vtable;
-  vtable->mask_impl(val->data);
+  dyn_mask(val);
   int64_t head = vtable->head & YABO_DISC_MASK;
   Stack substack = bump(stack);
   if (head < 0 || head == YABO_U8) {
@@ -264,7 +262,7 @@ struct Slice map_file(char *filename) {
 
 struct LibInfo {
   size_t max_dyn_size;
-  InitFun global_init;
+  InitFun *global_init;
   const struct ParserExport *parser;
   const void *args;
 };
@@ -278,7 +276,8 @@ const struct ParserExport *get_export(void *lib, char *parser_desc) {
   return export_info;
 }
 
-const void* export_args(const struct ParserExport *export_info, char *parser_desc) {
+const void *export_args(const struct ParserExport *export_info,
+                        char *parser_desc) {
   size_t size = yabo_export_args_size(export_info);
   if (size == -1) {
     fprintf(stderr, "unsupported export argument\n");
@@ -292,15 +291,169 @@ const void* export_args(const struct ParserExport *export_info, char *parser_des
   }
 
   void *parser_args = parser_desc + yabo_export_identifier_end(parser_desc);
-  enum YaboArgParseError err = yabo_export_parse_arg(parser_args, export_info, args);
+  enum YaboArgParseError err =
+      yabo_export_parse_arg(parser_args, export_info, args);
   if (err) {
-    fprintf(stderr, "Could not parse args: %s\n", yabo_export_parse_error_message(err));
+    fprintf(stderr, "Could not parse args: %s\n",
+            yabo_export_parse_error_message(err));
     exit(1);
   }
   return args;
 }
 
-#ifndef STATIC_PARSER
+#if defined(STATIC_PARSER)
+
+struct LibInfo static_lib() {
+  struct LibInfo ret;
+  extern size_t yabo_max_buf_size;
+  __attribute__((weak)) extern struct Slice yabo_global_address;
+  extern int64_t yabo_global_init(const uint8_t *, const uint8_t *);
+  extern struct ParserExport STATIC_PARSER;
+  ret.max_dyn_size = yabo_max_buf_size;
+  ret.global_init = yabo_global_init;
+  ret.parser = &STATIC_PARSER;
+  ret.args = NULL;
+  return ret;
+}
+
+#elif defined(ELF_INTERP)
+
+#include <elf.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/auxv.h>
+
+struct DynInfo {
+  uint32_t *gnu_hash;
+  char *strtab;
+  char *symtab;
+  size_t syment;
+  size_t offset;
+};
+
+int find_dyn_info(struct DynInfo *out, Elf64_Phdr *dynamic_phdr,
+                  size_t offset) {
+  *out = (struct DynInfo){0};
+  size_t dyn_count = dynamic_phdr->p_memsz / sizeof(Elf64_Dyn);
+  Elf64_Dyn *dyn_addr = (Elf64_Dyn *)(dynamic_phdr->p_vaddr + offset);
+  for (size_t i = 0; i < dyn_count; i++) {
+    switch (dyn_addr[i].d_tag) {
+    case DT_STRTAB:
+      out->strtab = (char *)(dyn_addr[i].d_un.d_ptr + offset);
+      break;
+    case DT_SYMTAB:
+      out->symtab = (char *)(dyn_addr[i].d_un.d_ptr + offset);
+      break;
+    case DT_SYMENT:
+      out->syment = dyn_addr[i].d_un.d_val;
+      break;
+    case DT_GNU_HASH:
+      out->gnu_hash = (uint32_t *)(dyn_addr[i].d_un.d_ptr + offset);
+      break;
+    }
+  }
+
+  return out->gnu_hash && out->strtab && out->symtab && out->syment;
+}
+
+uint32_t djb2(char *str) {
+  uint32_t hash = 5381;
+  unsigned char c;
+
+  while ((c = (unsigned char)*str++)) {
+    hash = 33 * hash + c;
+  }
+
+  return hash;
+}
+
+char *get_sym(struct DynInfo *info, uint32_t idx) {
+  uint32_t stridx = *(uint32_t *)(info->symtab + info->syment * idx);
+  return info->strtab + stridx;
+}
+
+void *lookup_gnu_hash(struct DynInfo *info, char *name, size_t offset) {
+  uint32_t nbuckets = info->gnu_hash[0];
+  uint32_t symoffset = info->gnu_hash[1];
+  uint32_t bloom_size = info->gnu_hash[2];
+  uint32_t *bloom = info->gnu_hash + 4;
+  uint32_t *buckets = bloom + bloom_size * 2;
+  uint32_t *chain = buckets + nbuckets;
+  uint32_t sym_hash = djb2(name);
+
+  uint32_t idx = buckets[sym_hash % nbuckets];
+  if (idx < symoffset) {
+    return NULL;
+  }
+
+  uint32_t *cur_hash = chain + (idx - symoffset);
+  do {
+    if ((*cur_hash ^ sym_hash) > 1) {
+      continue;
+    }
+
+    Elf64_Sym *sym = (Elf64_Sym *)(info->symtab + info->syment * idx);
+    if (!strcmp(info->strtab + sym->st_name, name)) {
+      return (void *)(sym->st_value + offset);
+    }
+  } while (idx++, !(*cur_hash++ & 1));
+  return NULL;
+}
+
+struct LibInfo exec_lib() {
+  size_t phdr = (size_t)getauxval(AT_PHDR);
+  size_t size = (size_t)getauxval(AT_PHENT);
+  size_t count = (size_t)getauxval(AT_PHNUM);
+  Elf64_Phdr *phdr_phdr = NULL;
+  Elf64_Phdr *dynamic_phdr = NULL;
+  for (size_t i = 0; i < count; i++) {
+    Elf64_Phdr *cur = (Elf64_Phdr *)(phdr + size * i);
+    if (cur->p_type == PT_PHDR)
+      phdr_phdr = cur;
+    else if (cur->p_type == PT_DYNAMIC)
+      dynamic_phdr = cur;
+  }
+
+  if (!phdr_phdr) {
+    fprintf(stderr, "could not find phdr for phdr\n");
+    exit(1);
+  }
+
+  if (!dynamic_phdr) {
+    fprintf(stderr, "could not find the dynamic segment\n");
+    exit(1);
+  }
+
+  ptrdiff_t offset = phdr - phdr_phdr->p_vaddr;
+
+  struct DynInfo info;
+  if (!find_dyn_info(&info, dynamic_phdr, offset)) {
+    fprintf(stderr, "could not find dynamic info\n");
+    exit(1);
+  }
+
+  struct LibInfo lib;
+  lib.global_init = lookup_gnu_hash(&info, "yabo_global_init", offset);
+  lib.parser = lookup_gnu_hash(&info, "main", offset);
+  size_t *yabo_max_buf_size =
+      lookup_gnu_hash(&info, "yabo_max_buf_size", offset);
+  if (!lib.parser) {
+    fprintf(stderr, "could not find main function\n");
+    exit(1);
+  }
+  if (!yabo_max_buf_size) {
+    fprintf(stderr,
+            "could not find yabo_max_buf_size (is this a yabo library?)\n");
+    exit(1);
+  }
+  lib.max_dyn_size = *yabo_max_buf_size;
+  lib.args = NULL;
+  return lib;
+}
+
+#else
 
 struct LibInfo dynamic_lib(char *filename, char *parser_name) {
   struct LibInfo ret;
@@ -325,26 +478,24 @@ struct LibInfo dynamic_lib(char *filename, char *parser_name) {
   return ret;
 }
 
-#else
-
-struct LibInfo static_lib() {
-  struct LibInfo ret;
-  extern size_t yabo_max_buf_size;
-  __attribute__((weak)) extern struct Slice yabo_global_address;
-  extern int64_t yabo_global_init(const uint8_t *, const uint8_t *);
-  extern struct ParserExport STATIC_PARSER;
-  ret.max_dyn_size = yabo_max_buf_size;
-  ret.global_init = yabo_global_init;
-  ret.parser = &STATIC_PARSER;
-  ret.args = NULL;
-  return ret;
-}
-
 #endif
 
 int main(int argc, char *argv[argc]) {
 
-#ifndef STATIC_PARSER
+#if defined(STATIC_PARSER) || defined(ELF_INTERP)
+
+  if (argc != 2) {
+    fprintf(stderr, "usage: %s FILE\n", argv[0]);
+    exit(1);
+  }
+
+#ifdef STATIC_PARSER
+  struct LibInfo lib = static_lib();
+#else
+  struct LibInfo lib = exec_lib();
+#endif
+
+#else
 
   if (argc != 4) {
     fprintf(stderr, "usage: %s SOFILE PARSERNAME FILE\n", argv[0]);
@@ -356,15 +507,6 @@ int main(int argc, char *argv[argc]) {
     fprintf(stderr, "could not find parser: %s\n", dlerror());
     exit(1);
   }
-
-#else
-
-  if (argc != 2) {
-    fprintf(stderr, "usage: %s FILE\n", argv[0]);
-    exit(1);
-  }
-
-  struct LibInfo lib = static_lib();
 
 #endif
 
@@ -383,7 +525,9 @@ int main(int argc, char *argv[argc]) {
     }
   }
   Stack stack = init_stack(lib.max_dyn_size);
-  dyn_parse_bytes(stack.current, file, lib.args, *lib.parser->parser);
+
+  ParseFun *parse = YABO_ACCESS_VPTR(lib.parser, parser);
+  dyn_parse_bytes(stack.current, file, lib.args, parse);
   print_recursive(0, stack, stdout);
   free_stack(stack);
   putchar('\n');

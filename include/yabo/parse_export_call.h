@@ -20,13 +20,18 @@ static size_t yabo_export_identifier_end(const char *identifier) {
 
 static size_t yabo_export_args_size(const struct ParserExport *export_info) {
   size_t size = 0;
-  const struct VTableHeader *const *vtable = export_info->args;
-  while (*vtable) {
-    if ((*vtable)->head != YABO_INTEGER) {
+  size_t index = 0;
+  while (1) {
+    const struct VTableHeader* vtable = YABO_ACCESS_VPTR(export_info, args[index]);
+    if (!vtable) {
+      break;
+    }
+
+    if (vtable->head != YABO_INTEGER) {
       return -1;
     }
-    vtable++;
     size += sizeof(int64_t);
+    index += 1;
   }
   return size;
 }
@@ -66,11 +71,11 @@ static inline const char *yabo_export_parse_error_message(enum YaboArgParseError
 static enum YaboArgParseError yabo_export_parse_arg(const char *args,
                                                const struct ParserExport *export_info,
                                                char *out_buffer) {
-  const struct VTableHeader *const *vtable = export_info->args;
+  size_t index = 0;
   WS(args);
   switch (*args) {
   case '\0':
-    if (*vtable) {
+    if (YABO_ACCESS_VPTR(export_info, args[index])) {
       return YABO_EXPORT_NOT_ENOUGH_ARGS;
     } else {
       return YABO_EXPORT_SUCCESS;
@@ -83,10 +88,16 @@ static enum YaboArgParseError yabo_export_parse_arg(const char *args,
   }
   WS(args);
 
-  while (*vtable) {
+  while (1) {
+    const struct VTableHeader *vtable = YABO_ACCESS_VPTR(export_info, args[index]);
+    if (!vtable) {
+      break;
+    }
+    index++;
+
     int64_t res = 0;
     char *end = NULL;
-    if ((*vtable)->head != YABO_INTEGER) {
+    if (vtable->head != YABO_INTEGER) {
       return YABO_EXPORT_UNSUPPORTED_TYPE;
     }
 
@@ -107,13 +118,12 @@ static enum YaboArgParseError yabo_export_parse_arg(const char *args,
     }
 
     args = end;
-    vtable++;
     memcpy(out_buffer, &res, sizeof(int64_t));
     out_buffer += sizeof(int64_t);
 
     WS(args);
 
-    if (!*vtable) {
+    if (!YABO_ACCESS_VPTR(export_info, args[index])) {
       break;
     }
 

@@ -30,8 +30,8 @@ SpannedHandle::SpannedHandle(SpannedVal val, const FileRef &file) noexcept
       flags(val) {
   switch (kind) {
   case YaboValKind::YABONOM:
-    name = QString::fromUtf8(
-        reinterpret_cast<NominalVTable *>(val.val->vtable)->name);
+    name = QString::fromUtf8(YABO_ACCESS_VPTR(
+        reinterpret_cast<NominalVTable *>(val.val->vtable), name));
   case YaboValKind::YABOARRAY:
   case YaboValKind::YABOBLOCK:
   case YaboValKind::YABOPARSER:
