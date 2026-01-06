@@ -10,8 +10,6 @@ FROM rust:1-trixie AS compiler
 
 RUN apt-get update && apt-get install -y cmake llvm-19-dev
 
-ARG LLVM_VERSION=19.1.7
-
 COPY Cargo.toml Cargo.lock /src/yabo/
 ADD crates /src/yabo/crates/
 
@@ -21,7 +19,7 @@ RUN cargo build --release
 
 FROM debian:trixie AS emscripten
 
-ARG EMSCRIPTEN_VERSION=3.1.70
+ARG EMSCRIPTEN_VERSION=4.0.7
 
 ADD https://github.com/emscripten-core/emsdk/archive/refs/tags/${EMSCRIPTEN_VERSION}.tar.gz \
     /src/
@@ -35,7 +33,7 @@ RUN apt-get update && apt-get install -y python3 xz-utils \
 
 FROM debian:trixie AS qt
 
-ARG QT_VERSION=6.9.1
+ARG QT_VERSION=6.10.1
 
 ADD https://github.com/qt/qtbase/archive/refs/tags/v$QT_VERSION.zip /src/
 RUN apt-get update && apt-get install -y build-essential cmake unzip libgl1-mesa-dev
@@ -51,7 +49,6 @@ COPY --from=emscripten /opt/emsdk/ /opt/emsdk/
 RUN apt-get update && apt-get install -y python3 git
 COPY tools/yaboc-server/qt.patch /src/qt.patch
 
-# draganddrop requires asyncify so we disable it
 RUN --mount=type=tmpfs,target=/build bash -c "\
     . /opt/emsdk/emsdk_env.sh \
  && patch -p1 -d /src/qtbase-$QT_VERSION < /src/qt.patch \
