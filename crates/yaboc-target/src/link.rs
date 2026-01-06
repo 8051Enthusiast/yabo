@@ -11,14 +11,16 @@ pub trait Linker {
 pub struct UnixClangLinker {
     cc: String,
     triple: String,
+    rt_path: PathBuf,
     sysroot: Option<PathBuf>,
 }
 
 impl UnixClangLinker {
-    pub fn new(triple: String, cc: String, sysroot: Option<PathBuf>) -> Self {
+    pub fn new(triple: String, cc: String, sysroot: Option<PathBuf>, rt_path: PathBuf) -> Self {
         Self {
             cc,
             triple,
+            rt_path,
             sysroot,
         }
     }
@@ -31,19 +33,28 @@ impl Linker for UnixClangLinker {
             .arg("-fuse-ld=lld")
             .arg("-fPIC")
             .arg("-target")
-            .arg(&self.triple);
+            .arg(&self.triple)
+            .arg("-ffunction-sections")
+            .arg("-ffreestanding")
+            .arg("-nostdlib")
+            .arg("-Wl,--gc-sections")
+            .arg("-O3");
         if let Some(sysroot) = &self.sysroot {
             cmd.arg("--sysroot").arg(sysroot);
         }
-        let output = cmd.arg("-o").arg(output_path).arg(path).output()?;
+        let output = cmd
+            .arg(path)
+            .arg(&self.rt_path)
+            .arg("-lgcc")
+            .arg("-o")
+            .arg(output_path)
+            .output()?;
         if !output.status.success() {
-            return Err(std::io::Error::other(
-                format!(
-                    "Linker failed with status {}:\n{}",
-                    output.status,
-                    String::from_utf8_lossy(&output.stderr)
-                ),
-            ));
+            return Err(std::io::Error::other(format!(
+                "Linker failed with status {}:\n{}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr)
+            )));
         }
         Ok(())
     }
@@ -72,13 +83,11 @@ impl WasmLinker {
             .arg(&self.rt_path)
             .output()?;
         if !output.status.success() {
-            return Err(std::io::Error::other(
-                format!(
-                    "Runtime build failed with status {}:\n{}",
-                    output.status,
-                    String::from_utf8_lossy(&output.stderr)
-                ),
-            ));
+            return Err(std::io::Error::other(format!(
+                "Runtime build failed with status {}:\n{}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr)
+            )));
         }
         Ok(tmp_rt_obj)
     }
@@ -103,13 +112,11 @@ impl Linker for WasmLinker {
             .arg(path)
             .output()?;
         if !output.status.success() {
-            return Err(std::io::Error::other(
-                format!(
-                    "Linker failed with status {}:\n{}",
-                    output.status,
-                    String::from_utf8_lossy(&output.stderr)
-                ),
-            ));
+            return Err(std::io::Error::other(format!(
+                "Linker failed with status {}:\n{}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr)
+            )));
         }
         Ok(())
     }
@@ -135,13 +142,11 @@ impl Linker for EmscriptenLinker {
             .arg(path)
             .output()?;
         if !output.status.success() {
-            return Err(std::io::Error::other(
-                format!(
-                    "Linker failed with status {}:\n{}",
-                    output.status,
-                    String::from_utf8_lossy(&output.stderr)
-                ),
-            ));
+            return Err(std::io::Error::other(format!(
+                "Linker failed with status {}:\n{}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr)
+            )));
         }
         Ok(())
     }

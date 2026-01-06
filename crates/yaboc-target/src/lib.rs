@@ -35,6 +35,7 @@ pub struct Target {
     pub cpu: Cow<'static, str>,
     pub use_tailcc: bool,
     pub use_musttail: bool,
+    pub relative_vptrs: bool,
 }
 
 pub fn target(config: &Config, rt_path: &Path) -> Option<Target> {
@@ -45,11 +46,13 @@ pub fn target(config: &Config, rt_path: &Path) -> Option<Target> {
                 config.target_triple.clone(),
                 config.cc.as_deref().unwrap_or("clang").to_string(),
                 config.sysroot.as_ref().map(PathBuf::from),
+                rt_path.to_path_buf(),
             )),
             features: Cow::Borrowed(""),
             cpu: Cow::Borrowed("x86-64-v2"),
             use_tailcc: true,
             use_musttail: true,
+            relative_vptrs: true,
         },
         "aarch64-unknown-linux-gnu" => Target {
             data: layout::POINTER64,
@@ -57,11 +60,13 @@ pub fn target(config: &Config, rt_path: &Path) -> Option<Target> {
                 config.target_triple.clone(),
                 config.cc.as_deref().unwrap_or("clang").to_string(),
                 config.sysroot.as_ref().map(PathBuf::from),
+                rt_path.to_path_buf(),
             )),
             features: Cow::Borrowed(""),
             cpu: Cow::Borrowed("generic"),
             use_tailcc: true,
             use_musttail: true,
+            relative_vptrs: true,
         },
         "wasm32-unknown-unknown" => Target {
             data: layout::POINTER32,
@@ -73,6 +78,7 @@ pub fn target(config: &Config, rt_path: &Path) -> Option<Target> {
             cpu: Cow::Borrowed("generic"),
             use_tailcc: false,
             use_musttail: false,
+            relative_vptrs: false,
         },
         "wasm32-unknown-emscripten" | "wasm32-emscripten" => Target {
             data: layout::POINTER32,
@@ -83,6 +89,7 @@ pub fn target(config: &Config, rt_path: &Path) -> Option<Target> {
             cpu: Cow::Borrowed("generic"),
             use_tailcc: false,
             use_musttail: false,
+            relative_vptrs: false,
         },
         "wasm32-unknown-wasi" | "wasm32-wasi" => Target {
             data: layout::POINTER32,
@@ -90,11 +97,13 @@ pub fn target(config: &Config, rt_path: &Path) -> Option<Target> {
                 config.target_triple.clone(),
                 config.cc.as_deref().unwrap_or("clang").to_string(),
                 config.sysroot.as_ref().map(PathBuf::from),
+                rt_path.to_path_buf(),
             )),
             features: Cow::Borrowed(""),
             cpu: Cow::Borrowed("generic"),
             use_tailcc: false,
             use_musttail: false,
+            relative_vptrs: false,
         },
         _ => return None,
     };

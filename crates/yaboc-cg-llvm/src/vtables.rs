@@ -1,9 +1,14 @@
-use yaboc_layout::vtable::{BlockFieldFun, CreateArgFun, EvalFunFun, LenFun};
+use yaboc_layout::vtable::{CreateArgFun, EvalFunFun, LenFun};
 
 use super::*;
 
 impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
-    fn vtable_header(&mut self, layout: IMonoLayout<'comp>, named: bool) -> StructValue<'llvm> {
+    fn vtable_header(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+        named: bool,
+        vtable_global: GlobalValue<'llvm>,
+    ) -> StructValue<'llvm> {
         let size_align = layout
             .inner()
             .size_align_without_vtable(self.layouts)
@@ -11,35 +16,32 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let head_disc = layout.head_disc(&self.compiler_database.db);
         let head_disc_val = self.const_i64(head_disc);
         let deref_level = self.deref_level(layout.mono_layout().1);
-        let typecast = self
-            .typecast_fun_val(layout)
-            .as_global_value()
-            .as_pointer_value();
-        let mask = self
-            .mask_fun_val(layout)
-            .as_global_value()
-            .as_pointer_value();
+        let typecast = self.typecast_fun_val(layout);
+        let mask = self.mask_fun_val(layout);
         let size = self.const_size_t(size_align.after as i64);
         let align = self.const_size_t(size_align.align() as i64);
+        let zst = self.const_zst();
         if named {
-            let vtable_ty = self.vtable_ty(layout);
+            let vtable_ty = vtable_global.get_value_type().into_struct_type();
             vtable_ty.const_named_struct(&[
                 head_disc_val.into(),
                 deref_level.into(),
-                typecast.into(),
-                mask.into(),
+                self.vtable_ptr_from_function(vtable_global, typecast),
+                self.vtable_ptr_from_function(vtable_global, mask),
                 size.into(),
                 align.into(),
+                zst.into(),
             ])
         } else {
             self.llvm.const_struct(
                 &[
                     head_disc_val.into(),
                     deref_level.into(),
-                    typecast.into(),
-                    mask.into(),
+                    self.vtable_ptr_from_function(vtable_global, typecast),
+                    self.vtable_ptr_from_function(vtable_global, mask),
                     size.into(),
                     align.into(),
+                    zst.into(),
                 ],
                 false,
             )
@@ -90,8 +92,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_primitive_vtable(&mut self, layout: IMonoLayout<'comp>) {
-        let vtable = self.create_vtable::<vtable::VTableHeader>(layout);
-        let vtable_header = self.vtable_header(layout, true);
+        let vtable = if self.options.target.relative_vptrs {
+            self.create_vtable::<vtable::VTableHeader<RelPtr>>(layout)
+        } else {
+            self.create_vtable::<vtable::VTableHeader<AbsPtr>>(layout)
+        };
+        let vtable_header = self.vtable_header(layout, true, vtable);
         if let MonoLayout::Primitive(PrimitiveType::U8) = layout.mono_layout().0 {
             // predeclare the current_element function so that we can call it
             // but don't put it into a vtable since it's a primitive type
@@ -102,9 +108,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_array_vtable(&mut self, layout: IMonoLayout<'comp>) {
-        let vtable = self.create_vtable::<vtable::ArrayVTable>(layout);
-        let vtable_header = self.vtable_header(layout, false);
-        let single_foward = self.single_forward_fun_val(layout);
+        let vtable = if self.options.target.relative_vptrs {
+            self.create_vtable::<vtable::ArrayVTable<RelPtr>>(layout)
+        } else {
+            self.create_vtable::<vtable::ArrayVTable<AbsPtr>>(layout)
+        };
+        let vtable_header = self.vtable_header(layout, false, vtable);
+        let single_forward = self.single_forward_fun_val(layout);
         let current_element = self.current_element_fun_val(layout);
         let array_len = self.array_len_fun_val(layout);
         let skip = self.skip_fun_val(layout);
@@ -113,19 +123,23 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let vtable_ty = self.vtable_ty(layout);
         let vtable_val = vtable_ty.const_named_struct(&[
             vtable_header.into(),
-            single_foward.as_global_value().as_pointer_value().into(),
-            current_element.as_global_value().as_pointer_value().into(),
-            array_len.as_global_value().as_pointer_value().into(),
-            skip.as_global_value().as_pointer_value().into(),
-            span.as_global_value().as_pointer_value().into(),
-            inner_array.as_global_value().as_pointer_value().into(),
+            self.vtable_ptr_from_function(vtable, single_forward),
+            self.vtable_ptr_from_function(vtable, current_element),
+            self.vtable_ptr_from_function(vtable, array_len),
+            self.vtable_ptr_from_function(vtable, skip),
+            self.vtable_ptr_from_function(vtable, span),
+            self.vtable_ptr_from_function(vtable, inner_array),
         ]);
         vtable.set_initializer(&vtable_val);
     }
 
     fn create_nominal_vtable(&mut self, layout: IMonoLayout<'comp>) {
-        let vtable = self.create_vtable::<vtable::NominalVTable>(layout);
-        let vtable_header = self.vtable_header(layout, false);
+        let vtable = if self.options.target.relative_vptrs {
+            self.create_vtable::<vtable::NominalVTable<RelPtr>>(layout)
+        } else {
+            self.create_vtable::<vtable::NominalVTable<AbsPtr>>(layout)
+        };
+        let vtable_header = self.vtable_header(layout, false, vtable);
         let MonoLayout::Nominal(pd, _, _) = layout.mono_layout().0 else {
             panic!("attempting to create nominal vtable of non-nominal layout")
         };
@@ -141,9 +155,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let vtable_ty = self.vtable_ty(layout);
         let vtable_val = vtable_ty.const_named_struct(&[
             vtable_header.into(),
-            llvm_name.into(),
-            start.as_global_value().as_pointer_value().into(),
-            end.as_global_value().as_pointer_value().into(),
+            self.vtable_ptr_from_ptr(vtable, llvm_name),
+            self.vtable_ptr_from_function(vtable, start),
+            self.vtable_ptr_from_function(vtable, end),
         ]);
         vtable.set_initializer(&vtable_val);
     }
@@ -159,28 +173,28 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .db
             .sorted_block_fields(id, false)
             .expect("no sort block fields");
+        let vtable = if self.options.target.relative_vptrs {
+            self.create_resized_vtable::<vtable::BlockVTable<RelPtr>>(layout, fields.len() as u32)
+        } else {
+            self.create_resized_vtable::<vtable::BlockVTable<AbsPtr>>(layout, fields.len() as u32)
+        };
         let funs: Vec<_> = fields
             .iter()
             .map(|field| {
-                let name = match field {
-                    FieldName::Return => panic!("no field access for return"),
-                    FieldName::Ident(id) => *id,
+                let FieldName::Ident(name) = field else {
+                    panic!("no field access for return")
                 };
-                self.access_field_fun_val(layout, name)
-                    .as_global_value()
-                    .as_pointer_value()
+                let access_field = self.access_field_fun_val(layout, *name);
+                self.vtable_ptr_from_function(vtable, access_field)
             })
             .collect();
-        let vtable = self.create_resized_vtable::<vtable::BlockVTable>(layout, funs.len() as u32);
-        let vtable_header = self.vtable_header(layout, false);
+        let vtable_header = self.vtable_header(layout, false, vtable);
         let block_info = self.block_info(id);
-        let access_array = BlockFieldFun::codegen_ty(self)
-            .into_pointer_type()
-            .const_array(&funs);
+        let access_array = self.vtable_ptr_const_array(&funs);
         let vtable_ty = self.vtable_ty(layout);
         let vtable_val = vtable_ty.const_named_struct(&[
             vtable_header.into(),
-            block_info.into(),
+            self.vtable_ptr_from_ptr(vtable, block_info),
             access_array.into(),
         ]);
         vtable.set_initializer(&vtable_val);
@@ -219,12 +233,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .unwrap_or_default();
         let max = slots.keys().copied().max().unwrap_or(0);
         let arg_impl_array = self.create_set_arg_array(layout);
-        let vtable = self.create_resized_vtable::<vtable::ParserVTable>(layout, (max + 1) as u32);
-        let vtable_header = self.vtable_header(layout, false);
+        let vtable = if self.options.target.relative_vptrs {
+            self.create_resized_vtable::<vtable::ParserVTable<RelPtr>>(layout, (max + 1) as u32)
+        } else {
+            self.create_resized_vtable::<vtable::ParserVTable<AbsPtr>>(layout, (max + 1) as u32)
+        };
+        let vtable_header = self.vtable_header(layout, false, vtable);
         let vtable_impls: Vec<_> = (0..=max)
             .map(|slot| {
                 let is_non_null = slots.contains_key(&slot);
-                if let Some((from, req)) = slots.get(&slot).copied() {
+                let val = if let Some((from, req)) = slots.get(&slot).copied() {
                     if is_non_null {
                         self.parser_impl_struct_val(layout, from, req)
                     } else {
@@ -232,7 +250,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     }
                 } else {
                     ParserFun::codegen_ty(self).into_pointer_type().const_null()
-                }
+                };
+                self.vtable_ptr_from_ptr(vtable, val)
             })
             .collect();
         let len_impl = if self.collected_layouts.lens.contains(&layout) {
@@ -242,14 +261,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         } else {
             LenFun::codegen_ty(self).into_pointer_type().const_null()
         };
-        let vtable_array = ParserFun::codegen_ty(self)
-            .into_pointer_type()
-            .const_array(&vtable_impls);
+        let vtable_array = self.vtable_ptr_const_array(&vtable_impls);
         let vtable_ty = self.vtable_ty(layout);
         let vtable_val = vtable_ty.const_named_struct(&[
             arg_impl_array.into(),
             vtable_header.into(),
-            len_impl.into(),
+            self.vtable_ptr_from_ptr(vtable, len_impl),
             vtable_array.into(),
         ]);
         vtable.set_initializer(&vtable_val)
@@ -265,12 +282,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .unwrap_or_default();
         let max = slots.keys().copied().max().unwrap_or(0);
         let arg_impl_array = self.create_set_arg_array(layout);
-        let vtable = self.create_resized_vtable::<vtable::FunctionVTable>(layout, (max + 1) as u32);
-        let vtable_header = self.vtable_header(layout, false);
+        let vtable = if self.options.target.relative_vptrs {
+            self.create_resized_vtable::<vtable::FunctionVTable<RelPtr>>(layout, (max + 1) as u32)
+        } else {
+            self.create_resized_vtable::<vtable::FunctionVTable<AbsPtr>>(layout, (max + 1) as u32)
+        };
+        let vtable_header = self.vtable_header(layout, false, vtable);
         let vtable_impls: Vec<_> = (0..=max)
             .map(|slot| {
                 let is_non_null = slots.contains_key(&slot);
-                if is_non_null {
+                let val = if is_non_null {
                     self.function_create_args_fun_val(layout, slot)
                         .as_global_value()
                         .as_pointer_value()
@@ -278,7 +299,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     CreateArgFun::codegen_ty(self)
                         .into_pointer_type()
                         .const_null()
-                }
+                };
+                self.vtable_ptr_from_ptr(vtable, val)
             })
             .collect();
         let ty = self
@@ -299,14 +321,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 .into_pointer_type()
                 .const_null()
         };
-        let vtable_array = CreateArgFun::codegen_ty(self)
-            .into_pointer_type()
-            .const_array(&vtable_impls);
+        let vtable_array = self.vtable_ptr_const_array(&vtable_impls);
         let vtable_ty = self.vtable_ty(layout);
         let vtable_val = vtable_ty.const_named_struct(&[
             arg_impl_array.into(),
             vtable_header.into(),
-            eval_fun_impl.into(),
+            self.vtable_ptr_from_ptr(vtable, eval_fun_impl),
             vtable_array.into(),
         ]);
         vtable.set_initializer(&vtable_val)

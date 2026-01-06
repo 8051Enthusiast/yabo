@@ -24,7 +24,10 @@ use inkwell::{
         CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetData, TargetMachine,
         TargetTriple,
     },
-    types::{ArrayType, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, PointerType},
+    types::{
+        ArrayType, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, IntType, PointerType,
+        StructType,
+    },
     values::{
         ArrayValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue, GlobalValue,
         IntValue, PointerValue, StructValue, UnnamedAddress,
@@ -52,7 +55,9 @@ use yaboc_layout::{
 };
 use yaboc_mir::{CallMeta, Mirs, ReturnStatus};
 use yaboc_req::RequirementSet;
-use yaboc_target::layout::{CodegenTypeContext, PSize, SizeAlign, TargetSized};
+use yaboc_target::layout::{
+    AbsPtr, CodegenTypeContext, PSize, RelPtr, RelativeVPtr, SizeAlign, TargetSized,
+};
 use yaboc_types::{PrimitiveType, Type, TypeInterner};
 
 use self::{convert_mir::MirTranslator, convert_thunk::ThunkContext};
@@ -191,11 +196,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .unwrap()
     }
 
-    fn build_get_vtable_tag(&mut self, layout: IMonoLayout<'comp>) -> PointerValue<'llvm> {
-        let vtable = self.sym_ptr(layout, LayoutPart::VTable);
+    fn const_vtable_tag(
+        &self,
+        vtable: PointerValue<'llvm>,
+        vtable_ty: StructType<'llvm>,
+    ) -> PointerValue<'llvm> {
         // parsers and function have an extra array at the front of the vtable, which we will have to skip
-        let vtable_ty_name = self.sym(layout, LayoutPart::VTableTy);
-        let vtable_ty = self.llvm.get_struct_type(&vtable_ty_name).unwrap();
         let header = if matches!(
             vtable_ty.get_field_type_at_index(0),
             Some(BasicTypeEnum::ArrayType(_))
@@ -213,6 +219,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             vtable
         };
         header.const_cast(self.any_ptr())
+    }
+
+    fn build_get_vtable_tag(&mut self, layout: IMonoLayout<'comp>) -> PointerValue<'llvm> {
+        let vtable = self.sym_ptr(layout, LayoutPart::VTable);
+        let vtable_ty_name = self.sym(layout, LayoutPart::VTableTy);
+        let vtable_ty = self.llvm.get_struct_type(&vtable_ty_name).unwrap();
+        self.const_vtable_tag(vtable, vtable_ty)
     }
 
     fn sym_callable(
@@ -437,6 +450,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let global_value = self.module.add_global(cstr.get_type(), None, &sym_name);
         global_value.set_visibility(GlobalVisibility::Hidden);
         global_value.set_initializer(&cstr);
+        global_value.set_linkage(Linkage::Internal);
+        global_value.set_constant(true);
         global_value.as_pointer_value().const_cast(self.any_ptr())
     }
 
@@ -452,8 +467,74 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let cstr = self.llvm.const_string(s, true);
         let global_value = self.module.add_global(cstr.get_type(), None, &sym_name);
         global_value.set_visibility(GlobalVisibility::Hidden);
+        global_value.set_linkage(Linkage::Internal);
+        global_value.set_constant(true);
         global_value.set_initializer(&cstr);
         global_value.as_pointer_value().const_cast(self.any_ptr())
+    }
+
+    fn vtable_ptr(
+        &self,
+        vtable: PointerValue<'llvm>,
+        ptr: PointerValue<'llvm>,
+    ) -> BasicValueEnum<'llvm> {
+        if self.options.target.relative_vptrs {
+            let int_type = self.llvm.i32_type();
+            if ptr.is_null() {
+                int_type.const_zero().into()
+            } else {
+                let vtable_int = vtable.const_to_int(self.word_type());
+                let ptr_int = ptr.const_to_int(self.word_type());
+                let const_diff = ptr_int.const_sub(vtable_int);
+                const_diff.const_truncate_or_bit_cast(int_type).into()
+            }
+        } else {
+            ptr.into()
+        }
+    }
+
+    fn vtable_ptr_from_ptr(
+        &self,
+        vtable: GlobalValue<'llvm>,
+        ptr: PointerValue<'llvm>,
+    ) -> BasicValueEnum<'llvm> {
+        let vtable_ptr = self.const_vtable_tag(
+            vtable.as_pointer_value(),
+            vtable.get_value_type().into_struct_type(),
+        );
+        self.vtable_ptr(vtable_ptr, ptr)
+    }
+
+    fn vtable_ptr_from_global(
+        &self,
+        vtable: GlobalValue<'llvm>,
+        ptr: GlobalValue<'llvm>,
+    ) -> BasicValueEnum<'llvm> {
+        self.vtable_ptr_from_ptr(vtable, ptr.as_pointer_value())
+    }
+
+    fn vtable_ptr_from_function(
+        &self,
+        vtable: GlobalValue<'llvm>,
+        ptr: FunctionValue<'llvm>,
+    ) -> BasicValueEnum<'llvm> {
+        self.vtable_ptr_from_global(vtable, ptr.as_global_value())
+    }
+
+    fn const_array(
+        &self,
+        ty: BasicTypeEnum<'llvm>,
+        vals: &[BasicValueEnum<'llvm>],
+    ) -> ArrayValue<'llvm> {
+        for val in vals {
+            assert_eq!(val.get_type(), ty);
+        }
+        unsafe { ArrayValue::new_const_array(&ty, vals) }
+    }
+
+    fn vtable_ptr_const_array(&mut self, vals: &[BasicValueEnum<'llvm>]) -> ArrayValue<'llvm> {
+        let vtable_ptr_ty = self.vtable_pointer_ty();
+        self.const_array(vtable_ptr_ty.into(), vals)
     }
 
     fn field_info(&mut self, name: Identifier) -> PointerValue<'llvm> {
@@ -463,6 +544,20 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .lookup_intern_identifier(name)
             .name;
         self.module_string(&name)
+    }
+
+    fn vtable_pointer_ty(&mut self) -> BasicTypeEnum<'llvm> {
+        if self.options.target.relative_vptrs {
+            RelativeVPtr::<()>::codegen_ty(self).into()
+        } else {
+            <*const u8>::codegen_ty(self).into()
+        }
+    }
+
+    fn const_zst(&mut self) -> ArrayValue<'llvm> {
+        <yaboc_target::layout::Zst>::codegen_ty(self)
+            .into_array_type()
+            .const_zero()
     }
 
     fn block_info(&mut self, block: BlockId) -> PointerValue<'llvm> {
@@ -477,28 +572,36 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .db
             .sorted_block_fields(block, false)
             .unwrap();
+
+        let mut info_fields = if self.options.target.relative_vptrs {
+            vtable::BlockFields::<RelPtr>::struct_type
+        } else {
+            vtable::BlockFields::<AbsPtr>::struct_type
+        }(self)
+        .get_field_types();
+        Self::resize_struct_end_array(&mut info_fields, fields.len() as u32);
+        let info_type = self.llvm.struct_type(&info_fields, false);
+        let global = self.module.add_global(info_type, None, &info_sym);
+
         let mut field_info = Vec::new();
         for field in fields.iter() {
             let name = match field {
                 FieldName::Ident(id) => id,
                 FieldName::Return => panic!("return field should not be in fields"),
             };
-            field_info.push(self.field_info(*name));
+            let name = self.field_info(*name);
+            field_info.push(self.vtable_ptr_from_ptr(global, name));
         }
-
-        let mut info_fields = vtable::BlockFields::struct_type(self).get_field_types();
-        Self::resize_struct_end_array(&mut info_fields, field_info.len() as u32);
-        let info_type = self.llvm.struct_type(&info_fields, false);
-        let field_info_array = <*const u8>::codegen_ty(self)
-            .into_pointer_type()
-            .const_array(&field_info);
+        let field_info_array = self.vtable_ptr_const_array(&field_info);
         let len = self.const_size_t(field_info.len() as i64);
-        let info_val = self
-            .llvm
-            .const_struct(&[len.into(), field_info_array.into()], false);
-        let global = self.module.add_global(info_type, None, &info_sym);
+        let info_val = self.llvm.const_struct(
+            &[len.into(), self.const_zst().into(), field_info_array.into()],
+            false,
+        );
         global.set_initializer(&info_val);
         global.set_visibility(GlobalVisibility::Hidden);
+        global.set_linkage(Linkage::Internal);
+        global.set_constant(true);
         global.as_pointer_value()
     }
 
@@ -601,6 +704,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         Ok(R::try_from(casted).expect("could not cast"))
     }
 
+    fn word_type(&self) -> IntType<'llvm> {
+        self.llvm.ptr_sized_int_type(&self.target_data, None)
+    }
+
     fn build_byte_gep(
         &mut self,
         ptr: PointerValue<'llvm>,
@@ -699,25 +806,33 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let MonoLayout::NominalParser(_, args, _) = layout.mono_layout().0 else {
             panic!("attempting to create parser export for non-nominal layout")
         };
-        let mut export_fields = vtable::ParserExport::struct_type(self).get_field_types();
+        let mut export_fields = if self.options.target.relative_vptrs {
+            vtable::ParserExport::<RelPtr>::struct_type
+        } else {
+            vtable::ParserExport::<AbsPtr>::struct_type
+        }(self)
+        .get_field_types();
         // mind the null terminator
         Self::resize_struct_end_array(&mut export_fields, args.len() as u32 + 1);
         let global_ty = self.llvm.struct_type(&export_fields, false);
         let global = self.module.add_global(global_ty, None, &name);
+
         let mut vals = vec![];
         let parser = self.parser_impl_struct_val(layout, from, root_req());
+        let parser = self.vtable_ptr_from_ptr(global, parser);
         for (arg, _) in args.iter() {
             let arg_val = arg.maybe_mono().unwrap();
             let llvm_ptr = self.sym_ptr(arg_val, LayoutPart::VTable);
-            vals.push(llvm_ptr);
+            vals.push(self.vtable_ptr_from_ptr(global, llvm_ptr));
         }
-        vals.push(self.null_ptr());
-        let val_array = self.any_ptr().const_array(&vals);
+        vals.push(self.vtable_ptr_from_ptr(global, self.null_ptr()));
+        let val_array = self.vtable_ptr_const_array(&vals);
         let struct_init = self
             .llvm
-            .const_struct(&[parser.into(), val_array.into()], false);
+            .const_struct(&[parser, self.const_zst().into(), val_array.into()], false);
         global.set_initializer(&struct_init);
         global.set_linkage(Linkage::External);
+        global.set_constant(true);
         global.set_visibility(GlobalVisibility::Default);
     }
 

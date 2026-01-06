@@ -1,6 +1,7 @@
 #include "executor.hpp"
 #include "request.hpp"
 #include "yabo.hpp"
+#include "yabo/dynamic.h"
 #include "yabo/parse_export_call.h"
 #include "yabo/vtable.h"
 
@@ -78,9 +79,11 @@ Executor::~Executor() {
 std::optional<Response> Executor::get_fields(Request &req) {
   std::vector<NamedYaboVal> fields;
   auto val = from_spanned_handle(req.val);
-  auto vtable = reinterpret_cast<BlockVTable *>(val->vtable);
-  for (size_t i = 0; i < vtable->fields->number_fields; i++) {
-    auto name = vtable->fields->fields[i];
+  const auto vtable = reinterpret_cast<BlockVTable *>(val->vtable);
+  const auto fields_table = YABO_ACCESS_VPTR(vtable, fields);
+  auto field_count = dyn_block_field_count(val.val);
+  for (size_t i = 0; i < fields_table->number_fields; i++) {
+    auto name = YABO_ACCESS_VPTR(fields_table, fields[i]);
     auto field_val = vals.access_field(val, name);
     if (field_val.has_value()) {
       auto new_val = normalize(field_val.value(), req.val.span);
@@ -168,7 +171,8 @@ std::optional<Response> Executor::execute_request(Request req) {
   case MessageType::DEREF: {
     auto val = from_spanned_handle(req.val);
     auto normalized = normalize(val, req.val.span);
-    auto name = reinterpret_cast<NominalVTable *>(val->vtable)->name;
+    const auto vtable = reinterpret_cast<NominalVTable *>(val->vtable);
+    const auto name = YABO_ACCESS_VPTR(vtable, name);
     return Response(req.metadata, {name, normalized});
   }
   case MessageType::PARSE:
@@ -211,7 +215,7 @@ Executor::execute_parser(Meta meta, char const *func_name, size_t pos) {
   if (!parser_ptr) {
     return {};
   }
-  auto parser = parser_ptr->parser;
+  auto parser = YABO_ACCESS_VPTR(parser_ptr, parser);
   auto span = file->segment_from(pos);
   if (!span.data()) {
     return {};

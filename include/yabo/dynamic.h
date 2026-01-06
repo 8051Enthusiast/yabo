@@ -6,7 +6,6 @@ extern "C" {
 #include "vtable.h"
 #include <stdalign.h>
 #include <stddef.h>
-#include <stdlib.h>
 #include <string.h>
 
 struct Slice {
@@ -57,8 +56,8 @@ static inline int64_t dyn_deref(DynValue *ret, const DynValue *val) {
   if (level > 0) {
     level -= 256;
   }
-  int64_t status =
-      vtable->head.typecast_impl(ret->data, val->data, level | YABO_VTABLE);
+  TypecastFun *typecast_impl = YABO_ACCESS_VPTR(&vtable->head, typecast_impl);
+  int64_t status = typecast_impl(ret->data, val->data, level | YABO_VTABLE);
   if (status) {
     return dyn_invalidate(ret, status);
   }
@@ -78,15 +77,24 @@ static inline size_t dyn_field_name_index(const DynValue *block,
                                           const char *name) {
   const struct BlockVTable *vtable = (const struct BlockVTable *)block->vtable;
 
-  const char **result = (const char **)bsearch(
-      &name, vtable->fields->fields, vtable->fields->number_fields,
-      sizeof(char *), (int (*)(const void *, const void *))strcmp);
+  const struct BlockFields *fields = YABO_ACCESS_VPTR(vtable, fields);
+  size_t start = 0;
+  size_t end = fields->number_fields;
 
-  if (!result) {
-    return -1;
+  while (start < end) {
+    size_t mid = start + (end - start) / 2;
+    const char *mid_name = YABO_ACCESS_VPTR(fields, fields[mid]);
+    int cmp = strcmp(name, mid_name);
+    if (cmp == 0) {
+      return mid;
+    } else if (cmp < 0) {
+      end = mid;
+    } else {
+      start = mid + 1;
+    }
   }
 
-  return result - vtable->fields->fields;
+  return (size_t)-1;
 }
 
 // accesses the field of the block at the given index, and stores the result in
@@ -94,21 +102,25 @@ static inline size_t dyn_field_name_index(const DynValue *block,
 static inline int64_t
 dyn_access_field_index(DynValue *ret, const DynValue *block, size_t index) {
   const struct BlockVTable *vtable = (const struct BlockVTable *)block->vtable;
-  if (index >= vtable->fields->number_fields) {
+  const struct BlockFields *fields = YABO_ACCESS_VPTR(vtable, fields);
+  if (index >= fields->number_fields) {
     return dyn_invalidate(ret, YABO_STATUS_ERROR);
   }
-  int64_t status = vtable->access_impl[index](ret->data, block->data,
-                                              YABO_ANY | YABO_VTABLE);
+
+  AccessFun *access_impl = YABO_ACCESS_VPTR(vtable, access_impl[index]);
+  int64_t status = access_impl(ret->data, block->data, YABO_ANY | YABO_VTABLE);
   if (status) {
     return dyn_invalidate(ret, status);
   }
+
   return status;
 }
 
 // returns the number of fields in the block
 static inline size_t dyn_block_field_count(const DynValue *block) {
   const struct BlockVTable *vtable = (const struct BlockVTable *)block->vtable;
-  return vtable->fields->number_fields;
+  const struct BlockFields *fields = YABO_ACCESS_VPTR(vtable, fields);
+  return fields->number_fields;
 }
 
 // returns the name of the field at the given index, or NULL if the index
@@ -116,16 +128,17 @@ static inline size_t dyn_block_field_count(const DynValue *block) {
 static inline const char *dyn_block_field_name_at_index(const DynValue *block,
                                                         size_t index) {
   const struct BlockVTable *vtable = (const struct BlockVTable *)block->vtable;
-  if (index >= vtable->fields->number_fields) {
+  const struct BlockFields *fields = YABO_ACCESS_VPTR(vtable, fields);
+  if (index >= fields->number_fields) {
     return NULL;
   }
-  return vtable->fields->fields[index];
+  return YABO_ACCESS_VPTR(fields, fields[index]);
 }
 
 // modifies `array` to point to the next element in the array
 static inline int64_t dyn_array_single_forward(DynValue *array) {
   const struct ArrayVTable *vtable = (const struct ArrayVTable *)array->vtable;
-  uint64_t status = vtable->single_forward_impl(array->data);
+  uint64_t status = YABO_ACCESS_VPTR(vtable, single_forward_impl)(array->data);
   if (status) {
     return dyn_invalidate(array, status);
   }
@@ -135,7 +148,7 @@ static inline int64_t dyn_array_single_forward(DynValue *array) {
 // skips `count` elements in the array
 static inline int64_t dyn_array_skip(DynValue *array, size_t count) {
   const struct ArrayVTable *vtable = (const struct ArrayVTable *)array->vtable;
-  uint64_t status = vtable->skip_impl(array->data, count);
+  uint64_t status = YABO_ACCESS_VPTR(vtable, skip_impl)(array->data, count);
   if (status) {
     return dyn_invalidate(array, status);
   }
@@ -146,8 +159,8 @@ static inline int64_t dyn_array_skip(DynValue *array, size_t count) {
 static inline int64_t dyn_array_current_element(DynValue *ret,
                                                 const DynValue *array) {
   const struct ArrayVTable *vtable = (const struct ArrayVTable *)array->vtable;
-  uint64_t status = vtable->current_element_impl(ret->data, array->data,
-                                                 YABO_ANY | YABO_VTABLE);
+  uint64_t status = YABO_ACCESS_VPTR(vtable, current_element_impl)(
+      ret->data, array->data, YABO_ANY | YABO_VTABLE);
   if (status) {
     return dyn_invalidate(ret, status);
   }
@@ -157,7 +170,7 @@ static inline int64_t dyn_array_current_element(DynValue *ret,
 // gets the length of `array`
 static inline int64_t dyn_array_len(const DynValue *array) {
   const struct ArrayVTable *vtable = (const struct ArrayVTable *)array->vtable;
-  return vtable->array_len_impl(array->data);
+  return YABO_ACCESS_VPTR(vtable, array_len_impl)(array->data);
 }
 
 static inline int64_t dyn_int(const DynValue *integer) {
@@ -188,6 +201,11 @@ static inline uint64_t dyn_error(const DynValue *error) {
   uint64_t ret;
   memcpy(&ret, error->data, sizeof(ret));
   return ret;
+}
+
+static inline size_t dyn_mask(DynValue *val) {
+  MaskFun *mask_impl = YABO_ACCESS_VPTR(val->vtable, mask_impl);
+  return mask_impl(val->data);
 }
 
 #ifdef __cplusplus
