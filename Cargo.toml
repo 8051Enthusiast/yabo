@@ -9,7 +9,7 @@ description = "runtimeless functional language for defining binary parsers"
 license = "MIT"
 [workspace.dependencies]
 smallvec = { version = "1.13.2", features = ["union", "const_generics"] }
-inkwell = { version = "0.7.1", features = ["llvm19-1-prefer-dynamic"] }
+inkwell = { version = "0.7.1", features = ["llvm21-1-prefer-dynamic"] }
 petgraph = "0.6.5"
 
 [workspace.dependencies.salsa]

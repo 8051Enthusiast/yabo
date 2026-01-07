@@ -5,10 +5,11 @@ WORKDIR /src
 
 RUN go build -o yaboc-server
 
-
 FROM rust:1-trixie AS compiler
 
-RUN apt-get update && apt-get install -y cmake llvm-19-dev
+RUN apt-get update && apt-get install -y cmake lsb-release gnupg
+ADD https://apt.llvm.org/llvm.sh /llvm.sh
+RUN bash /llvm.sh 21
 
 COPY Cargo.toml Cargo.lock /src/yabo/
 ADD crates /src/yabo/crates/
@@ -49,7 +50,7 @@ COPY --from=emscripten /opt/emsdk/ /opt/emsdk/
 RUN apt-get update && apt-get install -y python3 git
 COPY tools/yaboc-server/qt.patch /src/qt.patch
 
-RUN --mount=type=tmpfs,target=/build bash -c "\
+RUN --mount=type=tmpfs,target=/build,size=6G bash -c "\
     . /opt/emsdk/emsdk_env.sh \
  && patch -p1 -d /src/qtbase-$QT_VERSION < /src/qt.patch \
  && cd /build \
@@ -63,7 +64,7 @@ RUN tar -xf /src/v3.2.2.tar.gz -C /src
 COPY tools/ylliab/* /src/tools/ylliab/
 COPY include/yabo/* /src/include/yabo/
 
-RUN --mount=type=tmpfs,target=/build bash -c '\
+RUN --mount=type=tmpfs,target=/build,size=6G bash -c '\
     . /opt/emsdk/emsdk_env.sh \
  && export EMCC_FORCE_STDLIBS=1 \
  && cd /build \
@@ -74,7 +75,9 @@ RUN --mount=type=tmpfs,target=/build bash -c '\
 
 FROM debian:trixie-slim
 
-RUN apt-get update && apt-get install -y python3 git llvm-19
+RUN apt-get update && apt-get install -y python3 lsb-release wget gnupg
+ADD https://apt.llvm.org/llvm.sh /llvm.sh
+RUN bash /llvm.sh 21
 
 COPY tools/yaboc-server/build.sh /opt/bin/build.sh
 ADD ./lib /opt/lib
@@ -92,6 +95,7 @@ ENV HOME=/home/emscripten
 RUN bash -c '. /opt/emsdk/emsdk_env.sh \
  && emcc -O3 -c /opt/lib/rt.c -fvisibility=hidden -o /opt/lib/rt.o'
 
+RUN apt-get remove -y lsb-release wget gnupg
 
 USER 1000:1000
 # initialize emcc's cache by running once
