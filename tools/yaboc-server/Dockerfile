@@ -39,7 +39,7 @@ ARG QT_VERSION=6.10.1
 ADD https://github.com/qt/qtbase/archive/refs/tags/v$QT_VERSION.zip /src/
 RUN apt-get update && apt-get install -y build-essential cmake unzip libgl1-mesa-dev
 RUN unzip /src/v$QT_VERSION.zip -d /src
-RUN --mount=type=tmpfs,target=/build \
+RUN --mount=type=tmpfs,target=/build,size=6G \
     cd /build \
  && /src/qtbase-$QT_VERSION/configure -prefix /opt/qt6 -nomake examples -nomake tests \
  && cmake --build . -t qtbase --parallel $(nproc)\
