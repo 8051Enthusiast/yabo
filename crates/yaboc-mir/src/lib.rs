@@ -12,7 +12,6 @@ use len::LenMirCtx;
 pub use strictness::Strictness;
 use yaboc_ast::expr::WiggleKind;
 use yaboc_ast::ConstraintAtom;
-use yaboc_base::dbpanic;
 use yaboc_base::interner::Regex;
 use yaboc_base::{
     error::{SResult, Silencable},
@@ -21,13 +20,10 @@ use yaboc_base::{
 use yaboc_constraint::{Constraints, Origin};
 use yaboc_dependents::{Dependents, SubValue};
 use yaboc_expr::ExprIdx;
-use yaboc_hir::{
-    Block, BlockId, ExprId, HirConstraintId, HirIdWrapper, Lambda, LambdaId, ParserDefId,
-};
+use yaboc_hir::{BlockId, ExprId, HirConstraintId, HirIdWrapper, LambdaId, ParserDefId};
 use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_resolve::expr::Resolved;
 use yaboc_resolve::expr::{ValBinOp, ValUnOp};
-use yaboc_types::{Type, TypeId};
 
 use self::convert::ConvertCtx;
 
@@ -49,20 +45,20 @@ fn mir(db: &dyn Mirs, kind: FunKind, mir_kind: MirKind) -> SResult<Function> {
     match (kind, mir_kind) {
         (FunKind::Block(block), MirKind::Call(req)) => mir_block(db, block, req),
         (FunKind::ParserDef(pd), MirKind::Call(req)) => mir_pd(db, pd, req),
-        (FunKind::If(constraint, ty, wiggle), MirKind::Call(req)) => {
-            mir_if(db, constraint, ty, wiggle, req)
+        (FunKind::If(constraint, wiggle), MirKind::Call(req)) => {
+            mir_if(db, constraint, wiggle, req)
         }
         (FunKind::Lambda(lambda), MirKind::Call(req)) => mir_lambda(db, lambda, req),
         (FunKind::Block(block), MirKind::Len) => LenMirCtx::new_block(db, block),
         (FunKind::ParserDef(pd), MirKind::Len) => LenMirCtx::new_pd(db, pd),
-        (FunKind::If(_, ty, _), MirKind::Len) => LenMirCtx::new_if(db, ty),
+        (FunKind::If(_, _), MirKind::Len) => LenMirCtx::new_if(),
         (FunKind::Lambda(_), MirKind::Len) => panic!("lambda does not have len"),
     }
 }
 
 fn strictness(db: &dyn Mirs, kind: FunKind, mir_kind: MirKind) -> SResult<Vec<Strictness>> {
     let fun = db.mir(kind, mir_kind)?;
-    strictness::StrictnessCtx::new(&fun, db)?.run()
+    strictness::StrictnessCtx::new(&fun)?.run()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -70,7 +66,7 @@ pub enum FunKind {
     Block(BlockId),
     ParserDef(ParserDefId),
     Lambda(LambdaId),
-    If(HirConstraintId, TypeId, WiggleKind),
+    If(HirConstraintId, WiggleKind),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -280,7 +276,7 @@ pub enum MirInstr {
     SetDiscriminant(PlaceRef, FieldName, bool),
     Range(PlaceRef, PlaceRef, PlaceRef, ControlFlow),
     GetAddr(PlaceRef, PlaceRef, ControlFlow),
-    ApplyArgs(PlaceRef, PlaceRef, Vec<(PlaceRef, bool)>, u64, ControlFlow),
+    ApplyArgs(PlaceRef, PlaceRef, Vec<(PlaceRef, bool)>, ControlFlow),
     Copy(PlaceRef, PlaceRef, ControlFlow),
     EvalFun(PlaceRef, PlaceRef, ControlFlow),
     ParseCall(
@@ -292,6 +288,7 @@ pub enum MirInstr {
         Option<ControlFlow>,
     ),
     LenCall(PlaceRef, PlaceRef, ControlFlow),
+    ArrayLenCall(PlaceRef, PlaceRef, ControlFlow),
     Field(PlaceRef, PlaceRef, FieldName, ControlFlow),
     AssertVal(PlaceRef, ConstraintAtom, ControlFlow),
     Span(PlaceRef, PlaceRef, PlaceRef, ControlFlow),
@@ -309,6 +306,7 @@ impl MirInstr {
                 | MirInstr::Field(..)
                 | MirInstr::ParseCall(..)
                 | MirInstr::LenCall(..)
+                | MirInstr::ArrayLenCall(..)
                 | MirInstr::GetAddr(..)
                 | MirInstr::ApplyArgs(..)
                 | MirInstr::Copy(..)
@@ -329,6 +327,7 @@ impl MirInstr {
             | MirInstr::Field(_, _, _, control_flow)
             | MirInstr::ParseCall(.., Some(control_flow))
             | MirInstr::LenCall(_, _, control_flow)
+            | MirInstr::ArrayLenCall(_, _, control_flow)
             | MirInstr::GetAddr(_, _, control_flow)
             | MirInstr::ApplyArgs(.., control_flow)
             | MirInstr::Copy(_, _, control_flow)
@@ -367,11 +366,14 @@ impl MirInstr {
             MirInstr::LenCall(ret, val, control_flow) => {
                 MirInstr::LenCall(*ret, *val, control_flow.map_bb(f))
             }
+            MirInstr::ArrayLenCall(ret, val, control_flow) => {
+                MirInstr::ArrayLenCall(*ret, *val, control_flow.map_bb(f))
+            }
             MirInstr::GetAddr(ret, val, control_flow) => {
                 MirInstr::GetAddr(*ret, *val, control_flow.map_bb(f))
             }
-            MirInstr::ApplyArgs(ret, val, args, offset, control_flow) => {
-                MirInstr::ApplyArgs(*ret, *val, args.clone(), *offset, control_flow.map_bb(f))
+            MirInstr::ApplyArgs(ret, val, args, control_flow) => {
+                MirInstr::ApplyArgs(*ret, *val, args.clone(), control_flow.map_bb(f))
             }
             MirInstr::Copy(ret, val, control_flow) => {
                 MirInstr::Copy(*ret, *val, control_flow.map_bb(f))
@@ -499,8 +501,8 @@ impl From<Origin> for PlaceOrigin {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PlaceInfo {
     pub place: Place,
-    pub ty: TypeId,
     pub remove_bt: bool,
+    pub eval: bool,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -664,12 +666,7 @@ pub struct FunctionWriter {
 }
 
 impl FunctionWriter {
-    pub fn new(
-        fun_ty: TypeId,
-        from_ty: Option<TypeId>,
-        ret_ty: TypeId,
-        req: RequirementSet,
-    ) -> Self {
+    pub fn new(req: RequirementSet, has_from: bool, ret_eval: bool) -> Self {
         let fun = Function {
             bb: vec![Default::default()],
             place: Default::default(),
@@ -686,76 +683,50 @@ impl FunctionWriter {
         };
         builder.add_place(PlaceInfo {
             place: Place::Captures,
-            ty: fun_ty,
             remove_bt: false,
+            eval: true,
         });
-        if let Some(from_ty) = from_ty {
+        if has_from {
             let arg = builder.add_place(PlaceInfo {
                 place: Place::Arg,
-                ty: from_ty,
                 remove_bt: false,
+                eval: true,
             });
             builder.fun.arg = Some(arg);
         }
         if req.contains(NeededBy::Val) {
             let ret = builder.add_place(PlaceInfo {
                 place: Place::Return,
-                ty: ret_ty,
                 remove_bt: false,
+                eval: ret_eval,
             });
             builder.fun.ret = Some(ret);
         }
         if req.contains(NeededBy::Len) {
             let retlen = builder.add_place(PlaceInfo {
                 place: Place::ReturnLen,
-                ty: from_ty.unwrap(),
                 remove_bt: false,
+                eval: true,
             });
             builder.fun.retlen = Some(retlen);
         }
         builder
     }
 
-    pub fn new_block(db: &dyn Mirs, block: &Block, req: RequirementSet) -> SResult<Self> {
-        let block_ty = db.block_type(block.id)?;
-        let ty = db.lookup_intern_type(block_ty);
-        let (result, arg) = if let Type::ParserArg { result, arg } = ty {
-            (result, Some(arg))
-        } else if let Type::FunctionArg(result, _) = ty {
-            (result, None)
-        } else {
-            dbpanic!(db, "should have been a parser type, was {}", &block_ty)
-        };
-        let f = FunctionWriter::new(block_ty, arg, result, req);
+    pub fn new_block(req: RequirementSet, has_from: bool) -> SResult<Self> {
+        let f = FunctionWriter::new(req, has_from, false);
         Ok(f)
     }
 
     pub fn new_pd(db: &dyn Mirs, id: ParserDefId, req: RequirementSet) -> SResult<Self> {
         let sig = db.parser_args(id)?;
         let from = sig.from;
-        let thunk = db.intern_type(Type::Nominal(sig.thunk));
-        let ret_ty = db.parser_returns(id)?.deref;
-        let fun_ty = if let Some(from) = from {
-            db.intern_type(Type::ParserArg {
-                result: thunk,
-                arg: from,
-            })
-        } else {
-            db.intern_type(Type::FunctionArg(thunk, Default::default()))
-        };
-        let arg_ty = from;
-        let f = FunctionWriter::new(fun_ty, arg_ty, ret_ty, req);
+        let f = FunctionWriter::new(req, from.is_some(), sig.thunky);
         Ok(f)
     }
 
-    pub fn new_lambda(db: &dyn Mirs, lambda: &Lambda, req: RequirementSet) -> SResult<Self> {
-        let lambda_ty = db.lambda_type(lambda.id)?;
-        let ty = db.lookup_intern_type(lambda_ty);
-        let Type::FunctionArg(result, _) = ty else {
-            dbpanic!(db, "should have been a function type, was {}", &lambda_ty)
-        };
-        let ty = db.intern_type(Type::FunctionArg(result, Default::default()));
-        let f = FunctionWriter::new(ty, None, result, req);
+    pub fn new_lambda(req: RequirementSet) -> SResult<Self> {
+        let f = FunctionWriter::new(req, false, false);
         Ok(f)
     }
 
@@ -938,12 +909,23 @@ impl FunctionWriter {
         self.set_bb(new_block);
     }
 
+    pub fn array_len_call(&mut self, fun: PlaceRef, ret: PlaceRef, exc: ExceptionRetreat) {
+        let new_block = self.new_bb();
+        self.fun
+            .bb_mut(self.current_bb)
+            .append_ins(MirInstr::ArrayLenCall(
+                ret,
+                fun,
+                ControlFlow::new_with_exc(new_block, exc),
+            ));
+        self.set_bb(new_block);
+    }
+
     pub fn apply_args(
         &mut self,
         fun: PlaceRef,
         args: Vec<(PlaceRef, bool)>,
         target: PlaceRef,
-        first_arg_index: u64,
         error: BBRef,
     ) {
         let new_block = self.new_bb();
@@ -953,7 +935,6 @@ impl FunctionWriter {
                 target,
                 fun,
                 args,
-                first_arg_index,
                 ControlFlow::new_with_error(new_block, error),
             ));
         self.set_bb(new_block);
@@ -1012,25 +993,25 @@ impl FunctionWriter {
         InsRef(current_bb, offset as u32)
     }
 
-    pub fn make_place_ref(&mut self, place: Place, ty: TypeId) -> PlaceRef {
+    pub fn make_place_ref(&mut self, place: Place, eval: bool) -> PlaceRef {
         let place_info = PlaceInfo {
             place,
-            ty,
+            eval,
             remove_bt: false,
         };
         self.add_place(place_info)
     }
 
-    pub fn new_stack_place(&mut self, ty: TypeId, origin: PlaceOrigin) -> PlaceRef {
+    pub fn new_stack_place(&mut self, origin: PlaceOrigin, eval: bool) -> PlaceRef {
         let new_place = Place::Stack(self.new_stack_ref(origin));
-        self.make_place_ref(new_place, ty)
+        self.make_place_ref(new_place, eval)
     }
 
-    pub fn new_remove_bt_stack_place(&mut self, ty: TypeId, origin: PlaceOrigin) -> PlaceRef {
+    pub fn new_remove_bt_stack_place(&mut self, origin: PlaceOrigin) -> PlaceRef {
         let new_place = Place::Stack(self.new_stack_ref(origin));
         let place_info = PlaceInfo {
             place: new_place,
-            ty,
+            eval: true,
             remove_bt: true,
         };
         self.add_place(place_info)
@@ -1099,11 +1080,10 @@ fn mir_pd(db: &dyn Mirs, pd: ParserDefId, requirements: RequirementSet) -> SResu
 fn mir_if(
     db: &dyn Mirs,
     constr: HirConstraintId,
-    ty: TypeId,
     kind: WiggleKind,
     requirements: RequirementSet,
 ) -> SResult<Function> {
-    let mut ctx = ConvertCtx::new_if_builder(db, ty, requirements, kind == WiggleKind::Try)?;
+    let mut ctx = ConvertCtx::new_if_builder(db, requirements, kind == WiggleKind::Try)?;
     ctx.if_parser(constr)?;
     Ok(ctx.finish_fun())
 }

@@ -13,18 +13,17 @@ use fxhash::FxHashMap;
 use hir::HirConstraintId;
 use yaboc_absint::{AbsInt, AbsIntCtx, AbstractDomain, Arg};
 use yaboc_ast::expr::{BtMarkKind, WiggleKind};
-use yaboc_ast::ArrayKind;
-use yaboc_base::dbpanic;
 use yaboc_base::error::{IsSilenced, SResult, SilencedError};
 use yaboc_base::interner::{DefId, FieldName, Regex};
 use yaboc_base::low_effort_interner::{Interner, Uniq};
+use yaboc_base::{dbformat, dbpanic};
 use yaboc_expr::ExprHead;
-use yaboc_hir::{self as hir, HirIdWrapper};
-use yaboc_hir_types::{ty_head_discriminant, DerefLevel, HeadDiscriminant, NominalId};
+use yaboc_hir::{self as hir, DefKind, HirIdWrapper};
+use yaboc_hir_types::{HeadDiscriminant, NominalId, DISCRIMINANT_MASK};
 use yaboc_mir::Mirs;
 use yaboc_resolve::expr::{Resolved, ResolvedAtom, ValBinOp, ValUnOp, ValVarOp};
 use yaboc_target::layout::{PSize, SizeAlign, TargetLayoutData, TargetSized, Zst};
-use yaboc_types::{PrimitiveType, Type, TypeId, TypeInterner};
+use yaboc_types::{PrimitiveType, Type, TypeId};
 
 pub use self::collect::TailInfo;
 use self::represent::{LayoutHasher, LayoutPart, LayoutSymbol};
@@ -81,7 +80,7 @@ impl UnfinishedManifestation {
         for i in 0..disc_sa.after {
             disc_padding[i as usize] = 0xff;
         }
-        if manifest.discriminant_mapping.len() % 8 != 0 {
+        if !manifest.discriminant_mapping.len().is_multiple_of(8) {
             let last_byte = manifest.discriminant_mapping.len() / 8;
             let last_bit = manifest.discriminant_mapping.len() % 8;
             disc_padding[last_byte] = !(0xff << last_bit);
@@ -95,10 +94,15 @@ impl UnfinishedManifestation {
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Layout<Inner> {
     None,
-    Mono(MonoLayout<Inner>, TypeId),
+    Mono(MonoLayout<Inner>),
     Multi(MultiLayout<Inner>),
 }
 
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum FuncLayoutKind {
+    Fun,
+    Parse,
+}
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum MonoLayout<Inner> {
     Primitive(PrimitiveType),
@@ -107,27 +111,14 @@ pub enum MonoLayout<Inner> {
     Single,
     Regex(Regex, bool),
     IfParser(Inner, HirConstraintId, WiggleKind),
-    ArrayParser(Option<(Inner, Option<Inner>)>),
-    ArrayFillParser(Option<Inner>),
-    Nominal(
-        hir::ParserDefId,
-        Option<(Inner, TypeId)>,
-        Vec<(Inner, TypeId)>,
-    ),
-    NominalParser(hir::ParserDefId, Vec<(Inner, TypeId)>, bool),
+    ArrayParser(Option<(Inner, Option<(Inner, FuncLayoutKind)>)>),
+    ArrayFillParser(Option<(Inner, FuncLayoutKind)>),
+    Nominal(hir::ParserDefId, Option<Inner>, Vec<Inner>),
+    NominalParser(hir::ParserDefId, Vec<Inner>, bool, FuncLayoutKind),
     Block(hir::BlockId, BTreeMap<FieldName, Inner>),
-    BlockParser(hir::BlockId, BTreeMap<DefId, Inner>, Arc<Vec<TypeId>>, bool),
-    Lambda(
-        hir::LambdaId,
-        BTreeMap<DefId, Inner>,
-        Vec<(Inner, TypeId)>,
-        Arc<Vec<TypeId>>,
-        bool,
-    ),
-    Array {
-        parser: Inner,
-        slice: Inner,
-    },
+    BlockParser(hir::BlockId, BTreeMap<DefId, Inner>, bool),
+    Lambda(hir::LambdaId, BTreeMap<DefId, Inner>, Vec<Inner>, bool),
+    Array { parser: Inner, slice: Inner },
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -147,9 +138,9 @@ pub struct ILayout<'a> {
 pub struct IMonoLayout<'a>(ILayout<'a>);
 
 impl<'a> IMonoLayout<'a> {
-    pub fn mono_layout(self) -> (&'a MonoLayout<ILayout<'a>>, TypeId) {
+    pub fn mono_layout(self) -> &'a MonoLayout<ILayout<'a>> {
         match self.0.layout.1 {
-            Layout::Mono(ref mono, ty) => (mono, ty),
+            Layout::Mono(ref mono) => mono,
             _ => unreachable!("Expected mono layout"),
         }
     }
@@ -160,20 +151,12 @@ impl<'a> IMonoLayout<'a> {
     }
 
     pub fn u8_single(ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> IMonoLayout<'a> {
-        let u8 = ctx.db.intern_type(Type::Primitive(PrimitiveType::U8));
-        let for_u8 = ctx.db.intern_type(Type::Loop(ArrayKind::Each, u8));
-        let parser_ty = ctx.db.intern_type(Type::ParserArg {
-            result: u8,
-            arg: for_u8,
-        });
-        let single = ctx.dcx.intern(Layout::Mono(MonoLayout::Single, parser_ty));
+        let single = ctx.dcx.intern(Layout::Mono(MonoLayout::Single));
         single.maybe_mono().unwrap()
     }
 
     pub fn u8_array(ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> IMonoLayout<'a> {
-        let u8 = ctx.db.intern_type(Type::Primitive(PrimitiveType::U8));
-        let for_u8 = ctx.db.intern_type(Type::Loop(ArrayKind::Each, u8));
-        let array = ctx.dcx.intern(Layout::Mono(MonoLayout::SlicePtr, for_u8));
+        let array = ctx.dcx.intern(Layout::Mono(MonoLayout::SlicePtr));
         array.maybe_mono().unwrap()
     }
 
@@ -190,42 +173,83 @@ impl<'a> IMonoLayout<'a> {
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Option<ILayout<'a>>, SilencedError> {
-        Ok(match self.mono_layout().0 {
-            MonoLayout::Nominal(_, _, _) => {
-                let res_ty = self.mono_layout().1;
-                Some(
-                    ctx.eval_pd(self.inner(), res_ty)
-                        .ok_or_else(SilencedError::new)?,
-                )
-            }
-            MonoLayout::Primitive(PrimitiveType::U8) => Some(ctx.dcx.int(ctx.db)),
+        Ok(match self.mono_layout() {
+            MonoLayout::Nominal(pd, _, _) => Some(
+                ctx.eval_pd(self.inner(), *pd)
+                    .ok_or_else(SilencedError::new)?,
+            ),
+            MonoLayout::Primitive(PrimitiveType::U8) => Some(ctx.dcx.int()),
             _ => None,
         })
     }
 
     pub fn arg_num<DB: Layouts + ?Sized>(&self, db: &DB) -> SResult<Option<(usize, usize)>> {
-        match self.mono_layout().0 {
-            MonoLayout::NominalParser(pd, args, _) => Ok(db.argnum(*pd)?.map(|n| (n, args.len()))),
+        match self.mono_layout() {
+            MonoLayout::NominalParser(pd, args, _, _) => {
+                Ok(db.argnum(*pd)?.map(|n| (n, args.len())))
+            }
             MonoLayout::ArrayParser(Some((_, Some(_)))) => Ok(Some((2, 2))),
             MonoLayout::ArrayParser(Some((_, None))) => Ok(Some((2, 1))),
             MonoLayout::ArrayParser(None) => Ok(Some((2, 0))),
             MonoLayout::ArrayFillParser(Some(_)) => Ok(Some((1, 1))),
             MonoLayout::ArrayFillParser(None) => Ok(Some((1, 0))),
-            MonoLayout::Lambda(id, _, args, _, _) => {
+            MonoLayout::Lambda(id, _, args, _) => {
                 let lambda = id.lookup(db)?;
                 let arg_count = lambda.args.len();
                 Ok(Some((arg_count, args.len())))
             }
+            MonoLayout::BlockParser(..) => Ok(Some((0, 0))),
             _ => Ok(None),
         }
     }
 
-    pub fn head_disc<DB: Layouts + ?Sized>(&self, db: &DB) -> i64 {
-        let (mono, ty) = self.mono_layout();
+    pub fn head_kind<DB: Layouts + ?Sized>(&self, db: &DB) -> HeadDiscriminant {
+        let mono = self.mono_layout();
         match mono {
-            MonoLayout::SlicePtr => HeadDiscriminant::SlicePtr as i64,
-            MonoLayout::Range => HeadDiscriminant::Range as i64,
-            _ => ty_head_discriminant(db, ty),
+            MonoLayout::SlicePtr => HeadDiscriminant::SlicePtr,
+            MonoLayout::Range => HeadDiscriminant::Range,
+            MonoLayout::Primitive(PrimitiveType::Bit) => HeadDiscriminant::Bit,
+            MonoLayout::Primitive(PrimitiveType::Char) => HeadDiscriminant::Char,
+            MonoLayout::Primitive(PrimitiveType::Int) => HeadDiscriminant::Int,
+            MonoLayout::Primitive(PrimitiveType::U8) => HeadDiscriminant::U8,
+            MonoLayout::Primitive(PrimitiveType::Unit) => HeadDiscriminant::Unit,
+            MonoLayout::NominalParser(.., kind) => match kind {
+                FuncLayoutKind::Fun => HeadDiscriminant::FunctionArgs,
+                FuncLayoutKind::Parse => HeadDiscriminant::Parser,
+            },
+            MonoLayout::Block(_, _) => HeadDiscriminant::Block,
+            MonoLayout::Lambda(_, _, _, _) => HeadDiscriminant::FunctionArgs,
+            MonoLayout::Array { .. } => HeadDiscriminant::Loop,
+            MonoLayout::BlockParser(bid, ..) => match bid.lookup(db).unwrap().kind {
+                yaboc_hir::BlockKind::Parser => HeadDiscriminant::Parser,
+                yaboc_hir::BlockKind::Inline => HeadDiscriminant::FunctionArgs,
+            },
+            MonoLayout::ArrayFillParser(Some((_, FuncLayoutKind::Parse)))
+            | MonoLayout::ArrayParser(Some((_, Some((_, FuncLayoutKind::Parse))))) => {
+                HeadDiscriminant::Parser
+            }
+            MonoLayout::ArrayFillParser(_) | MonoLayout::ArrayParser(_) => {
+                HeadDiscriminant::FunctionArgs
+            }
+            MonoLayout::Single | MonoLayout::Regex(_, _) | MonoLayout::IfParser(_, _, _) => {
+                HeadDiscriminant::Parser
+            }
+            MonoLayout::Nominal(_, _, _) => HeadDiscriminant::Nominal,
+        }
+    }
+
+    pub fn head_disc<DB: Layouts + ?Sized>(&self, db: &DB) -> i64 {
+        let mono = self.mono_layout();
+        let disc = self.head_kind(db);
+        if let MonoLayout::Nominal(parser_def_id, _, _) = mono {
+            let def_hash: [u8; 8] = db.def_hash(parser_def_id.0)[0..8].try_into().unwrap();
+            // highest bit is set for nominal types (so that it is negative)
+            // and the rest is derived from the first 8 bytes of the hash
+            //
+            // the lowest eight bits are for flags so they get zeroed out
+            i64::from_le_bytes(def_hash) & DISCRIMINANT_MASK | i64::MIN
+        } else {
+            disc as i64
         }
     }
 
@@ -234,34 +258,36 @@ impl<'a> IMonoLayout<'a> {
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
         bt: bool,
     ) -> IMonoLayout<'a> {
-        match self.mono_layout().0 {
-            MonoLayout::NominalParser(pd, f, status) if *status != bt => {
-                IMonoLayout(ctx.dcx.intern(Layout::Mono(
-                    MonoLayout::NominalParser(*pd, f.clone(), bt),
-                    self.mono_layout().1,
-                )))
+        match self.mono_layout() {
+            MonoLayout::NominalParser(pd, f, status, kind) if *status != bt => {
+                IMonoLayout(ctx.dcx.intern(Layout::Mono(MonoLayout::NominalParser(
+                    *pd,
+                    f.clone(),
+                    bt,
+                    *kind,
+                ))))
             }
-            MonoLayout::BlockParser(bd, cap, typeargs, status) if *status != bt => {
-                IMonoLayout(ctx.dcx.intern(Layout::Mono(
-                    MonoLayout::BlockParser(*bd, cap.clone(), typeargs.clone(), bt),
-                    self.mono_layout().1,
-                )))
+            MonoLayout::BlockParser(bd, cap, status) if *status != bt => IMonoLayout(
+                ctx.dcx
+                    .intern(Layout::Mono(MonoLayout::BlockParser(*bd, cap.clone(), bt))),
+            ),
+            MonoLayout::Regex(r, status) if *status != bt => {
+                IMonoLayout(ctx.dcx.intern(Layout::Mono(MonoLayout::Regex(*r, true))))
             }
-            MonoLayout::Regex(r, status) if *status != bt => IMonoLayout(ctx.dcx.intern(
-                Layout::Mono(MonoLayout::Regex(*r, true), self.mono_layout().1),
-            )),
             MonoLayout::IfParser(inner, c, status) if bool::from(*status) != bt => {
                 let new_status = if bt { WiggleKind::Is } else { WiggleKind::Try };
-                IMonoLayout(ctx.dcx.intern(Layout::Mono(
-                    MonoLayout::IfParser(*inner, *c, new_status),
-                    self.mono_layout().1,
-                )))
+                IMonoLayout(
+                    ctx.dcx
+                        .intern(Layout::Mono(MonoLayout::IfParser(*inner, *c, new_status))),
+                )
             }
-            MonoLayout::Lambda(id, cap, args, subst, status) if *status != bt => {
-                IMonoLayout(ctx.dcx.intern(Layout::Mono(
-                    MonoLayout::Lambda(*id, cap.clone(), args.clone(), subst.clone(), bt),
-                    self.mono_layout().1,
-                )))
+            MonoLayout::Lambda(id, cap, args, status) if *status != bt => {
+                IMonoLayout(ctx.dcx.intern(Layout::Mono(MonoLayout::Lambda(
+                    *id,
+                    cap.clone(),
+                    args.clone(),
+                    bt,
+                ))))
             }
             _ => self,
         }
@@ -282,7 +308,7 @@ impl<'a> IMonoLayout<'a> {
         &self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> (ILayout<'a>, IMonoLayout<'a>) {
-        let mono = self.mono_layout().0;
+        let mono = self.mono_layout();
         let MonoLayout::Nominal(pd, Some(from), to) = mono else {
             dbpanic!(
                 ctx.db,
@@ -290,23 +316,19 @@ impl<'a> IMonoLayout<'a> {
                 &self.inner()
             );
         };
-        let parser_ty = ctx.db.intern_type(Type::ParserArg {
-            result: self.mono_layout().1,
-            arg: from.1,
-        });
-        let to_layout = ctx.dcx.intern(Layout::Mono(
-            MonoLayout::NominalParser(*pd, to.clone(), false),
-            parser_ty,
-        ));
+        let to_layout = ctx.dcx.intern(Layout::Mono(MonoLayout::NominalParser(
+            *pd,
+            to.clone(),
+            false,
+            FuncLayoutKind::Parse,
+        )));
         let to_mono = IMonoLayout(to_layout);
-        let from_layout = from.0;
-        (from_layout, to_mono)
+        (*from, to_mono)
     }
 
     pub fn make_thunk(
         id: hir::ParserDefId,
-        ty: TypeId,
-        fields: &FxHashMap<Arg, (ILayout<'a>, TypeId)>,
+        fields: &FxHashMap<Arg, ILayout<'a>>,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> SResult<Self> {
         let parserdef = id.lookup(ctx.db)?;
@@ -316,7 +338,7 @@ impl<'a> IMonoLayout<'a> {
             let layout = fields[&Arg::Named(arg.0)];
             args.push(layout);
         }
-        let new_layout = Layout::Mono(MonoLayout::Nominal(id, from, args), ty);
+        let new_layout = Layout::Mono(MonoLayout::Nominal(id, from, args));
         Ok(IMonoLayout(ctx.dcx.intern(new_layout)))
     }
 }
@@ -328,13 +350,13 @@ impl<'a, 'l> IntoIterator for &'l ILayout<'a> {
 
     fn into_iter(self) -> Self::IntoIter {
         match &self.layout.1 {
-            Layout::Mono(_, _) => std::slice::from_ref(self),
+            Layout::Mono(_) => std::slice::from_ref(self),
             Layout::Multi(l) => l.layouts.as_slice(),
             Layout::None => &[],
         }
         .iter()
         .map(|l| match l.layout.1 {
-            Layout::Mono(_, _) => IMonoLayout(*l),
+            Layout::Mono(_) => IMonoLayout(*l),
             _ => unreachable!(),
         })
     }
@@ -344,14 +366,14 @@ impl<'a> ILayout<'a> {
     pub fn maybe_mono(self) -> Option<IMonoLayout<'a>> {
         match self.layout.1 {
             Layout::None => None,
-            Layout::Mono(_, _) => Some(IMonoLayout(self)),
+            Layout::Mono(_) => Some(IMonoLayout(self)),
             Layout::Multi(_) => None,
         }
     }
 
     pub fn contains_deref(&self) -> bool {
         self.into_iter()
-            .any(|x| matches!(x.mono_layout().0, MonoLayout::Nominal(_, _, _)))
+            .any(|x| matches!(x.mono_layout(), MonoLayout::Nominal(_, _, _)))
     }
 
     pub fn is_multi(self) -> bool {
@@ -361,7 +383,7 @@ impl<'a> ILayout<'a> {
     pub fn is_int(self) -> bool {
         matches!(
             self.layout.1,
-            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int), _)
+            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int))
         )
     }
     fn map(
@@ -373,7 +395,7 @@ impl<'a> ILayout<'a> {
         for layout in &self {
             let result_layout = f(layout, ctx);
             match &result_layout.layout.1 {
-                Layout::Mono(_, _) => {
+                Layout::Mono(_) => {
                     acc.insert(result_layout);
                 }
                 Layout::Multi(l) => {
@@ -406,7 +428,7 @@ impl<'a> ILayout<'a> {
         for layout in &self {
             let result_layout = f(layout, ctx)?;
             match &result_layout.layout.1 {
-                Layout::Mono(_, _) => {
+                Layout::Mono(_) => {
                     acc.insert(result_layout);
                 }
                 Layout::Multi(l) => {
@@ -425,47 +447,13 @@ impl<'a> ILayout<'a> {
         })
     }
 
-    pub fn deref_to_level(
-        self,
-        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
-        level: DerefLevel,
-    ) -> Result<(ILayout<'a>, bool), LayoutError> {
-        let mut changed = false;
-        let res = self.try_map(ctx, |layout, ctx| {
-            if let MonoLayout::Primitive(PrimitiveType::U8) = layout.mono_layout().0 {
-                if level == DerefLevel::zero() {
-                    return Ok(ctx.dcx.int(ctx.db));
-                } else {
-                    return Ok(layout.0);
-                }
-            };
-            let is_fun = if let MonoLayout::Nominal(pd, _, _) = layout.mono_layout().0 {
-                !pd.lookup(ctx.db)?.kind.thunky()
-            } else {
-                false
-            };
-            let mono_level = ctx.db.deref_level(layout.mono_layout().1)?;
-            Ok(if mono_level <= level && !is_fun {
-                layout.0
-            } else {
-                changed = true;
-                let res_ty = layout.mono_layout().1;
-                ctx.eval_pd(layout.inner(), res_ty)
-                    .ok_or_else(SilencedError::new)?
-                    .deref_to_level(ctx, level)?
-                    .0
-            })
-        });
-        res.map(|x| (x, changed))
-    }
-
     fn get_captured(
         self,
         ctx: &AbsIntCtx<'a, ILayout<'a>>,
         id: DefId,
     ) -> Result<Option<ILayout<'a>>, LayoutError> {
         Ok(match match &self.layout.1 {
-            Layout::Mono(m, _) => m,
+            Layout::Mono(m) => m,
             Layout::Multi(_) => {
                 dbpanic!(
                     ctx.db,
@@ -480,13 +468,13 @@ impl<'a> ILayout<'a> {
             MonoLayout::BlockParser(_, captures, ..) => captures,
             MonoLayout::Lambda(lambda_id, captures, args, ..) => {
                 if id.parent(ctx.db) == Some(lambda_id.0) {
-                    return Ok(ctx.db.lambda_arg_index(*lambda_id, id)?.map(|i| args[i].0));
+                    return Ok(ctx.db.lambda_arg_index(*lambda_id, id)?.map(|i| args[i]));
                 } else {
                     captures
                 }
             }
-            MonoLayout::Nominal(pd, _, args) | MonoLayout::NominalParser(pd, args, _) => {
-                return Ok(ctx.db.parserdef_arg_index(*pd, id)?.map(|i| args[i].0))
+            MonoLayout::Nominal(pd, _, args) | MonoLayout::NominalParser(pd, args, _, _) => {
+                return Ok(ctx.db.parserdef_arg_index(*pd, id)?.map(|i| args[i]))
             }
             otherwise => panic!("Attempting to get captured variable inside {:?}", otherwise),
         }
@@ -498,15 +486,12 @@ impl<'a> ILayout<'a> {
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<ILayout<'a>, LayoutError> {
-        self.try_map(ctx, |layout, ctx| match layout.mono_layout().0 {
+        self.try_map(ctx, |layout, ctx| match layout.mono_layout() {
             MonoLayout::SlicePtr => {
                 let u8 = PrimitiveType::U8;
-                let u8_ty = ctx.db.intern_type(Type::Primitive(u8));
-                Ok(ctx
-                    .dcx
-                    .intern(Layout::Mono(MonoLayout::Primitive(u8), u8_ty)))
+                Ok(ctx.dcx.intern(Layout::Mono(MonoLayout::Primitive(u8))))
             }
-            MonoLayout::Range => Ok(ctx.dcx.int(ctx.db)),
+            MonoLayout::Range => Ok(ctx.dcx.int()),
             MonoLayout::Array { parser, slice } => parser.apply_arg(ctx, *slice),
             // for calculating the length of a parser, the argument is an int, and the result
             // of applying an int to a parser is never used, so here we use the bottom
@@ -521,57 +506,44 @@ impl<'a> ILayout<'a> {
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
         from: ILayout<'a>,
     ) -> Result<ILayout<'a>, LayoutError> {
-        self.deref_to_level(ctx, DerefLevel::zero())?
+        self.evaluate(ctx)?
             .0
-            .try_map(ctx, |layout, ctx| {
-                let (result_type, arg_type) =
-                    match ctx.db.lookup_intern_type(layout.mono_layout().1) {
-                        Type::ParserArg { result, arg } => (result, arg),
-                        _ => panic!("Attempting to apply argument to non-parser type"),
-                    };
-                let from = from.typecast(ctx, arg_type)?.0;
-                match layout.mono_layout().0 {
-                    MonoLayout::NominalParser(pd, args, _) => {
-                        let ret = ctx.apply_thunk_arg(*pd, result_type, (from, arg_type), args)?;
-                        Ok(ret)
-                    }
-                    MonoLayout::BlockParser(block_id, _, subst, _) => {
-                        let res = ctx
-                            .eval_block(
-                                *block_id,
-                                layout.inner(),
-                                Some((from, arg_type)),
-                                result_type,
-                                subst.clone(),
-                            )
-                            .ok_or_else(|| SilencedError::new().into());
-                        if from.is_int() {
-                            Ok(ctx.dcx.intern(Layout::None))
-                        } else {
-                            res
-                        }
-                    }
-                    MonoLayout::Single => from.array_primitive(ctx),
-                    MonoLayout::Regex(..) => Ok(from),
-                    MonoLayout::IfParser(inner, ..) => inner.apply_arg(ctx, from),
-                    MonoLayout::ArrayParser(Some((parser, Some(_))))
-                    | MonoLayout::ArrayFillParser(Some(parser)) => {
-                        if from.is_int() {
-                            return Ok(ctx.dcx.intern(Layout::None));
-                        }
-                        if let Layout::Mono(MonoLayout::Single, _) = parser.layout.1 {
-                            return Ok(from);
-                        }
-                        Ok(ctx.dcx.intern(Layout::Mono(
-                            MonoLayout::Array {
-                                parser: *parser,
-                                slice: from,
-                            },
-                            result_type,
-                        )))
-                    }
-                    _ => panic!("Attempting to apply argument to non-parser layout"),
+            .try_map(ctx, |layout, ctx| match layout.mono_layout() {
+                MonoLayout::NominalParser(pd, args, _, FuncLayoutKind::Parse) => {
+                    let ret = ctx.apply_thunk_arg(*pd, from, args)?;
+                    Ok(ret)
                 }
+                MonoLayout::BlockParser(block_id, _, _) => {
+                    let res = ctx
+                        .eval_block(*block_id, layout.inner(), Some(from))
+                        .ok_or_else(|| SilencedError::new().into());
+                    if from.is_int() {
+                        Ok(ctx.dcx.intern(Layout::None))
+                    } else {
+                        res
+                    }
+                }
+                MonoLayout::Single => from.array_primitive(ctx),
+                MonoLayout::Regex(..) => Ok(from),
+                MonoLayout::IfParser(inner, ..) => inner.apply_arg(ctx, from),
+                MonoLayout::ArrayParser(Some((parser, Some(_))))
+                | MonoLayout::ArrayFillParser(Some((parser, _))) => {
+                    if from.is_int() {
+                        return Ok(ctx.dcx.intern(Layout::None));
+                    }
+                    if let Layout::Mono(MonoLayout::Single) = parser.layout.1 {
+                        return Ok(from);
+                    }
+                    Ok(ctx.dcx.intern(Layout::Mono(MonoLayout::Array {
+                        parser: *parser,
+                        slice: from,
+                    })))
+                }
+                _ => dbpanic!(
+                    ctx.db,
+                    "Attempting to apply argument to non-parser layout {}",
+                    &layout
+                ),
             })
     }
 
@@ -580,121 +552,130 @@ impl<'a> ILayout<'a> {
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<ILayout<'a>, LayoutError> {
         self.try_map(ctx, |layout, ctx| {
-            let Type::FunctionArg(result_type, _) =
-                ctx.db.lookup_intern_type(layout.mono_layout().1)
-            else {
-                panic!("Attempting to apply function to non-function type")
-            };
-            let (pd, present_args) = match layout.mono_layout().0 {
-                MonoLayout::NominalParser(pd, present_args, _) => (pd, present_args),
-                MonoLayout::BlockParser(block_id, _, subst, _) => {
+            let (pd, present_args) = match layout.mono_layout() {
+                MonoLayout::NominalParser(pd, present_args, _, FuncLayoutKind::Fun) => {
+                    (pd, present_args)
+                }
+                MonoLayout::BlockParser(block_id, _, _) => {
                     return ctx
-                        .eval_block(*block_id, layout.inner(), None, result_type, subst.clone())
+                        .eval_block(*block_id, layout.inner(), None)
                         .ok_or_else(|| SilencedError::new().into())
                 }
-                MonoLayout::Lambda(lambda_id, _, _, subst, _) => {
+                MonoLayout::Lambda(lambda_id, _, _, _) => {
                     return ctx
-                        .eval_lambda(*lambda_id, layout.inner(), result_type, subst.clone())
+                        .eval_lambda(*lambda_id, layout.inner())
                         .ok_or_else(|| SilencedError::new().into())
                 }
-                MonoLayout::ArrayParser(Some((parser, Some(int)))) => {
-                    return Ok(ctx.dcx.intern(Layout::Mono(
-                        MonoLayout::ArrayParser(Some((*parser, Some(*int)))),
-                        result_type,
-                    )))
+                MonoLayout::ArrayParser(Some((parser, Some((int, FuncLayoutKind::Fun))))) => {
+                    return Ok(ctx.dcx.intern(Layout::Mono(MonoLayout::ArrayParser(Some((
+                        *parser,
+                        Some((*int, FuncLayoutKind::Parse)),
+                    ))))))
                 }
-                MonoLayout::ArrayFillParser(Some(parser)) => {
-                    return Ok(ctx.dcx.intern(Layout::Mono(
-                        MonoLayout::ArrayFillParser(Some(*parser)),
-                        result_type,
-                    )))
+                MonoLayout::ArrayFillParser(Some((parser, FuncLayoutKind::Fun))) => {
+                    return Ok(ctx
+                        .dcx
+                        .intern(Layout::Mono(MonoLayout::ArrayFillParser(Some((
+                            *parser,
+                            FuncLayoutKind::Parse,
+                        ))))))
                 }
-                _ => panic!("Attempting to apply function to non-function layout"),
+                _ => {
+                    dbpanic!(
+                        ctx.db,
+                        "Attempting to apply function to non-function layout {}",
+                        &layout
+                    );
+                }
             };
             let parserdef = pd.lookup(ctx.db)?;
             if parserdef.from.is_some() {
-                return Ok(ctx.dcx.intern(Layout::Mono(
-                    MonoLayout::NominalParser(*pd, present_args.clone(), true),
-                    result_type,
-                )));
+                Ok(ctx.dcx.intern(Layout::Mono(MonoLayout::NominalParser(
+                    *pd,
+                    present_args.clone(),
+                    true,
+                    FuncLayoutKind::Parse,
+                ))))
+            } else {
+                Ok(ctx.dcx.intern(Layout::Mono(MonoLayout::Nominal(
+                    *pd,
+                    None,
+                    present_args.clone(),
+                ))))
             }
-            Ok(ctx.dcx.intern(Layout::Mono(
-                MonoLayout::Nominal(*pd, None, present_args.clone()),
-                result_type,
-            )))
         })
     }
 
     pub fn apply_fun(
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
-        args: impl Iterator<Item = (ILayout<'a>, TypeId)> + Clone,
+        args: impl Iterator<Item = ILayout<'a>> + Clone,
     ) -> Result<ILayout<'a>, LayoutError> {
-        self.try_map(ctx, |layout, ctx| {
-            let (result_type, arg_types) = match ctx.db.lookup_intern_type(layout.mono_layout().1) {
-                Type::FunctionArg(ret, args) => (ret, args),
-                _ => panic!("Attempting to apply function to non-function type"),
-            };
-            let typecast_args = arg_types
-                .iter()
-                .zip(args.clone())
-                .map(|(ty, (arg, _))| arg.typecast(ctx, *ty).map(|x| (x.0, *ty)))
+        let fun = self.evaluate(ctx)?.0;
+        fun.try_map(ctx, |layout, ctx| {
+            let evaluated_args = args
+                .clone()
+                .map(|arg| arg.evaluate(ctx).map(|x| x.0))
                 .collect::<Result<Vec<_>, _>>()?;
-            let fun_ty = ctx.db.intern_type(Type::FunctionArg(
-                result_type,
-                Arc::new(arg_types[typecast_args.len()..].to_vec()),
-            ));
-            match layout.mono_layout().0 {
-                MonoLayout::NominalParser(pd, present_args, backtracks) => {
+            match layout.mono_layout() {
+                MonoLayout::NominalParser(pd, present_args, backtracks, FuncLayoutKind::Fun) => {
                     let present_args = present_args
                         .iter()
-                        .chain(typecast_args.iter())
+                        .chain(evaluated_args.iter())
                         .copied()
                         .collect();
-                    let layout = MonoLayout::NominalParser(*pd, present_args, *backtracks);
-                    let res = ctx.dcx.intern(Layout::Mono(layout, fun_ty));
+                    let layout = MonoLayout::NominalParser(
+                        *pd,
+                        present_args,
+                        *backtracks,
+                        FuncLayoutKind::Fun,
+                    );
+                    let res = ctx.dcx.intern(Layout::Mono(layout));
                     Ok(res)
                 }
-                MonoLayout::Lambda(lambda_id, captures, present_args, subst, backtracks) => {
+                MonoLayout::Lambda(lambda_id, captures, present_args, backtracks) => {
                     let present_args = present_args
                         .iter()
-                        .chain(typecast_args.iter())
+                        .chain(evaluated_args.iter())
                         .copied()
                         .collect();
-                    let layout = MonoLayout::Lambda(
-                        *lambda_id,
-                        captures.clone(),
-                        present_args,
-                        subst.clone(),
-                        *backtracks,
-                    );
-                    let res = ctx.dcx.intern(Layout::Mono(layout, fun_ty));
+                    let layout =
+                        MonoLayout::Lambda(*lambda_id, captures.clone(), present_args, *backtracks);
+                    let res = ctx.dcx.intern(Layout::Mono(layout));
                     Ok(res)
                 }
                 MonoLayout::ArrayParser(args) => {
-                    let new_args = match (args, typecast_args.as_slice()) {
-                        (args, []) => *args,
-                        (None, [(parser, _)]) => Some((*parser, None)),
-                        (None, [(parser, _), (arg, _)]) | (Some((parser, None)), [(arg, _)]) => {
-                            Some(((*parser), Some(*arg)))
+                    let new_args = match (args, evaluated_args.as_slice()) {
+                        (None, []) => None,
+                        (None, [parser]) | (Some((parser, None)), []) => Some((*parser, None)),
+                        (None, [parser, arg])
+                        | (Some((parser, None)), [arg])
+                        | (Some((parser, Some((arg, _)))), []) => {
+                            Some((*parser, Some((*arg, FuncLayoutKind::Fun))))
                         }
                         _ => panic!("Invalid number of arguments for array parser"),
                     };
                     let layout = MonoLayout::ArrayParser(new_args);
-                    let res = ctx.dcx.intern(Layout::Mono(layout, fun_ty));
+                    let res = ctx.dcx.intern(Layout::Mono(layout));
                     Ok(res)
                 }
                 MonoLayout::ArrayFillParser(arg) => {
-                    let new_arg = match (arg, typecast_args.as_slice()) {
-                        (arg, []) => *arg,
-                        (None, [(parser, _)]) => Some(*parser),
+                    let new_arg = match (arg, evaluated_args.as_slice()) {
+                        (None, []) => None,
+                        (None, [parser]) | (Some((parser, _)), []) => {
+                            Some((*parser, FuncLayoutKind::Fun))
+                        }
                         _ => panic!("Invalid number of arguments for array fill parser"),
                     };
                     let layout = MonoLayout::ArrayFillParser(new_arg);
-                    let res = ctx.dcx.intern(Layout::Mono(layout, fun_ty));
+                    let res = ctx.dcx.intern(Layout::Mono(layout));
                     Ok(res)
                 }
-                _ => panic!("Attempting to apply function to non-function layout"),
+                _ => dbpanic!(
+                    ctx.db,
+                    "Attempting to apply function to non-function layout {}",
+                    &layout
+                ),
             }
         })
     }
@@ -704,27 +685,19 @@ impl<'a> ILayout<'a> {
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
         field: FieldName,
     ) -> Result<ILayout<'a>, LayoutError> {
-        self.try_map(ctx, |layout, ctx| {
-            let ty = layout.mono_layout().1;
-            let ldt = ctx.db.least_deref_type(ty)?;
-            let casted_layout = layout.0.typecast(ctx, ldt)?.0;
-            Ok(
-                casted_layout.map(ctx, |layout, _| match layout.mono_layout().0 {
-                    MonoLayout::Block(_, fields) => fields[&field],
-                    _ => panic!("Field access on non-block {layout:?}"),
-                }),
-            )
+        let block = self.evaluate(ctx)?.0;
+        block.try_map(ctx, |layout, ctx| {
+            Ok(layout.0.map(ctx, |layout, _| match layout.mono_layout() {
+                MonoLayout::Block(_, fields) => fields[&field],
+                _ => panic!("Field access on non-block {layout:?}"),
+            }))
         })
     }
 
     fn access_front(self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> ILayout<'a> {
-        self.map(ctx, |layout, _| match layout.mono_layout().0 {
-            MonoLayout::Nominal(_, from, _) => {
-                from.expect(
-                    "Attempting to get 'front' field from non-from field containing nominal",
-                )
-                .0
-            }
+        self.map(ctx, |layout, _| match layout.mono_layout() {
+            MonoLayout::Nominal(_, from, _) => from
+                .expect("Attempting to get 'front' field from non-from field containing nominal"),
             MonoLayout::IfParser(inner, _, _) => *inner,
             _ => dbpanic!(
                 ctx.db,
@@ -755,47 +728,44 @@ impl<'a> ILayout<'a> {
         let data = &ctx.dcx.target_data;
         let ret = match &self.layout.1 {
             Layout::None => Zst::tsize(data),
-            Layout::Mono(MonoLayout::Block(id, fields), _) => {
+            Layout::Mono(MonoLayout::Block(id, fields)) => {
                 self.block_manifestation(ctx, *id, fields)?.size
             }
-            Layout::Mono(MonoLayout::BlockParser(_, captures, ..), _) => {
+            Layout::Mono(MonoLayout::BlockParser(_, captures, ..)) => {
                 self.block_parser_manifestation(ctx, captures)?.size
             }
-            Layout::Mono(MonoLayout::Lambda(id, captures, args, _, _), _) => {
+            Layout::Mono(MonoLayout::Lambda(id, captures, args, _)) => {
                 self.lambda_manifestation(ctx, *id, captures, args)?.size
             }
             Layout::Mono(
                 MonoLayout::IfParser(inner, _, _)
-                | MonoLayout::ArrayFillParser(Some(inner))
+                | MonoLayout::ArrayFillParser(Some((inner, _)))
                 | MonoLayout::ArrayParser(Some((inner, None))),
-                _,
             ) => SizeAlign::ZST.cat(inner.size_align(ctx)?),
             Layout::Mono(
-                MonoLayout::ArrayParser(Some((parser, Some(l))))
+                MonoLayout::ArrayParser(Some((parser, Some((l, _)))))
                 | MonoLayout::Array { parser, slice: l },
-                _,
             ) => SizeAlign::ZST
                 .cat(parser.size_align(ctx)?)
                 .cat(l.size_align(ctx)?),
-            Layout::Mono(MonoLayout::Nominal(id, from, args), _) => {
+            Layout::Mono(MonoLayout::Nominal(id, from, args)) => {
                 self.nominal_manifestation(ctx, *id, *from, args)?.size
             }
-            Layout::Mono(MonoLayout::NominalParser(id, args, _), _) => {
+            Layout::Mono(MonoLayout::NominalParser(id, args, _, _)) => {
                 self.nominal_parser_manifestation(ctx, *id, args)?.size
             }
-            Layout::Mono(MonoLayout::SlicePtr, _) => <&Zst>::tsize(data).array(2),
-            Layout::Mono(MonoLayout::Range, _) => i64::tsize(data).array(2),
-            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Bit), _) => bool::tsize(data),
-            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Char), _) => char::tsize(data),
-            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int), _) => i64::tsize(data),
-            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Unit), _) => Zst::tsize(data),
-            Layout::Mono(MonoLayout::Primitive(PrimitiveType::U8), _) => <&Zst>::tsize(data),
+            Layout::Mono(MonoLayout::SlicePtr) => <&Zst>::tsize(data).array(2),
+            Layout::Mono(MonoLayout::Range) => i64::tsize(data).array(2),
+            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Bit)) => bool::tsize(data),
+            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Char)) => char::tsize(data),
+            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int)) => i64::tsize(data),
+            Layout::Mono(MonoLayout::Primitive(PrimitiveType::Unit)) => Zst::tsize(data),
+            Layout::Mono(MonoLayout::Primitive(PrimitiveType::U8)) => <&Zst>::tsize(data),
             Layout::Mono(
                 MonoLayout::Single
                 | MonoLayout::Regex(_, _)
                 | MonoLayout::ArrayParser(None)
                 | MonoLayout::ArrayFillParser(None),
-                _,
             ) => SizeAlign::ZST,
             Layout::Multi(m) => m.layouts.iter().try_fold(Zst::tsize(data), |sa, layout| {
                 Ok::<_, SilencedError>(sa.union(layout.size_align(ctx)?))
@@ -864,7 +834,7 @@ impl<'a> ILayout<'a> {
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
         id: hir::LambdaId,
         captures: &BTreeMap<DefId, ILayout<'a>>,
-        args: &[(ILayout<'a>, TypeId)],
+        args: &[ILayout<'a>],
     ) -> SResult<Arc<StructManifestation>> {
         if let Some(man) = ctx.dcx.manifestations.get(&self) {
             return Ok(man.clone());
@@ -875,7 +845,7 @@ impl<'a> ILayout<'a> {
             manifest.add_field(*capture, sa);
         }
         let arg_ids = id.lookup(ctx.db)?.args;
-        for ((arg, _), id) in args.iter().zip(arg_ids.iter()) {
+        for (arg, id) in args.iter().zip(arg_ids.iter()) {
             let sa = arg.size_align(ctx)?;
             manifest.add_field(id.0, sa);
         }
@@ -888,14 +858,14 @@ impl<'a> ILayout<'a> {
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
         id: hir::ParserDefId,
-        args: &[(ILayout<'a>, TypeId)],
+        args: &[ILayout<'a>],
     ) -> SResult<Arc<StructManifestation>> {
         if let Some(man) = ctx.dcx.manifestations.get(&self) {
             return Ok(man.clone());
         }
         let mut manifest = UnfinishedManifestation::new();
         let arg_ids = id.lookup(ctx.db)?.args.unwrap_or_default();
-        for ((arg, _), id) in args.iter().zip(arg_ids.iter()) {
+        for (arg, id) in args.iter().zip(arg_ids.iter()) {
             let sa = arg.size_align(ctx)?;
             manifest.add_field(id.0, sa);
         }
@@ -908,20 +878,20 @@ impl<'a> ILayout<'a> {
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
         id: hir::ParserDefId,
-        from: Option<(ILayout<'a>, TypeId)>,
-        args: &[(ILayout<'a>, TypeId)],
+        from: Option<ILayout<'a>>,
+        args: &[ILayout<'a>],
     ) -> SResult<Arc<StructManifestation>> {
         if let Some(man) = ctx.dcx.manifestations.get(&self) {
             return Ok(man.clone());
         }
         let mut manifest = UnfinishedManifestation::new();
         let parserdef = id.lookup(ctx.db)?;
-        if let Some((from, _)) = from {
+        if let Some(from) = from {
             let sa = from.size_align(ctx)?;
             manifest.add_field(parserdef.from.unwrap().0, sa);
         }
         let arg_ids = id.lookup(ctx.db)?.args.unwrap_or_default();
-        for ((arg, _), id) in args.iter().zip(arg_ids.iter()) {
+        for (arg, id) in args.iter().zip(arg_ids.iter()) {
             let sa = arg.size_align(ctx)?;
             manifest.add_field(id.0, sa);
         }
@@ -936,8 +906,7 @@ pub fn canon_layout<'a, 'b>(
     ty: TypeId,
 ) -> Result<ILayout<'a>, LayoutError> {
     let typ = ctx.db.lookup_intern_type(ty);
-    let make_layout =
-        |ctx: &'b mut AbsIntCtx<'a, ILayout<'a>>, x| ctx.dcx.intern(Layout::Mono(x, ty));
+    let make_layout = |ctx: &'b mut AbsIntCtx<'a, ILayout<'a>>, x| ctx.dcx.intern(Layout::Mono(x));
     match typ {
         Type::Primitive(x) => Ok(make_layout(ctx, MonoLayout::Primitive(x))),
         Type::Loop(_, inner_ty) => {
@@ -956,12 +925,12 @@ pub fn canon_layout<'a, 'b>(
             };
             let from = n
                 .parse_arg
-                .map(|arg| -> Result<_, LayoutError> { Ok((canon_layout(ctx, arg)?, arg)) })
+                .map(|arg| -> Result<_, LayoutError> { canon_layout(ctx, arg) })
                 .transpose()?;
             let args: Vec<_> = n
                 .fun_args
                 .iter()
-                .map(|arg| Ok((canon_layout(ctx, *arg)?, *arg)))
+                .map(|arg| canon_layout(ctx, *arg))
                 .collect::<Result<_, LayoutError>>()?;
             Ok(make_layout(ctx, MonoLayout::Nominal(def_id, from, args)))
         }
@@ -973,18 +942,20 @@ pub fn canon_layout<'a, 'b>(
 pub fn init_globals<'comp>(ctx: &mut AbsIntCtx<'comp, ILayout<'comp>>) -> Result<(), LayoutError> {
     let pds = ctx.db.global_sequence()?;
     for pd in pds.iter() {
-        let ret_ty = ctx.db.parser_returns(*pd)?.deref;
-        let thunk_ty = ctx
-            .db
-            .intern_type(Type::Nominal(ctx.db.parser_args(*pd)?.thunk));
-        let thunk_fun_ty = ctx
-            .db
-            .intern_type(Type::FunctionArg(thunk_ty, Default::default()));
-        let fun_layout = ctx.dcx.intern(Layout::Mono(
-            MonoLayout::NominalParser(*pd, Default::default(), true),
-            thunk_fun_ty,
-        ));
-        let return_layout = fun_layout.eval_fun(ctx)?.typecast(ctx, ret_ty)?.0;
+        let parserdef = pd.lookup(ctx.db)?;
+        let kind = if parserdef.args.is_some() || parserdef.kind == DefKind::Static {
+            FuncLayoutKind::Fun
+        } else {
+            FuncLayoutKind::Parse
+        };
+
+        let fun_layout = ctx.dcx.intern(Layout::Mono(MonoLayout::NominalParser(
+            *pd,
+            Default::default(),
+            true,
+            kind,
+        )));
+        let return_layout = fun_layout.eval_fun(ctx)?.evaluate(ctx)?.0;
         ctx.dcx
             .globals
             .insert(*pd, (fun_layout.maybe_mono().unwrap(), return_layout));
@@ -1047,21 +1018,12 @@ impl<'a> LayoutContext<'a> {
         self.manifestations[&layout].clone()
     }
 
-    pub fn int(&mut self, db: &(impl TypeInterner + ?Sized)) -> ILayout<'a> {
-        let int_ty = db.intern_type(Type::Primitive(PrimitiveType::Int));
-        self.intern(Layout::Mono(
-            MonoLayout::Primitive(PrimitiveType::Int),
-            int_ty,
-        ))
+    pub fn int(&mut self) -> ILayout<'a> {
+        self.intern(Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int)))
     }
 
-    pub fn primitive(
-        &mut self,
-        db: &(impl TypeInterner + ?Sized),
-        prim: PrimitiveType,
-    ) -> ILayout<'a> {
-        let int_ty = db.intern_type(Type::Primitive(prim));
-        self.intern(Layout::Mono(MonoLayout::Primitive(prim), int_ty))
+    pub fn primitive(&mut self, prim: PrimitiveType) -> ILayout<'a> {
+        self.intern(Layout::Mono(MonoLayout::Primitive(prim)))
     }
 
     pub fn layout_hash(&mut self, db: &(impl Layouts + ?Sized), layout: ILayout<'a>) -> [u8; 8] {
@@ -1077,13 +1039,12 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
     fn make_block(
         ctx: &mut AbsIntCtx<'a, Self>,
         id: hir::BlockId,
-        ty: TypeId,
         fields: &FxHashMap<FieldName, Self>,
     ) -> Result<Self, Self::Err> {
-        let new_layout = ctx.dcx.intern(Layout::Mono(
-            MonoLayout::Block(id, fields.iter().map(|(a, b)| (*a, *b)).collect()),
-            ty,
-        ));
+        let new_layout = ctx.dcx.intern(Layout::Mono(MonoLayout::Block(
+            id,
+            fields.iter().map(|(a, b)| (*a, *b)).collect(),
+        )));
         Ok(new_layout)
     }
 
@@ -1095,9 +1056,8 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
             (Layout::None, Layout::None) => return Ok((self, false)),
             (Layout::None, _) => return Ok((other, true)),
             (_, Layout::None) => return Ok((self, false)),
-            (Layout::Mono(_, _), Layout::Mono(_, _)) => vec![self, other],
-            (Layout::Multi(first), Layout::Mono(_, _)) => match first.layouts.binary_search(&other)
-            {
+            (Layout::Mono(_), Layout::Mono(_)) => vec![self, other],
+            (Layout::Multi(first), Layout::Mono(_)) => match first.layouts.binary_search(&other) {
                 Ok(_) => return Ok((self, false)),
                 Err(i) => {
                     let mut new_layouts = first.layouts.clone();
@@ -1105,16 +1065,14 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                     new_layouts
                 }
             },
-            (Layout::Mono(_, _), Layout::Multi(second)) => {
-                match second.layouts.binary_search(&self) {
-                    Ok(_) => return Ok((other, true)),
-                    Err(i) => {
-                        let mut new_layouts = second.layouts.clone();
-                        new_layouts.insert(i, self);
-                        new_layouts
-                    }
+            (Layout::Mono(_), Layout::Multi(second)) => match second.layouts.binary_search(&self) {
+                Ok(_) => return Ok((other, true)),
+                Err(i) => {
+                    let mut new_layouts = second.layouts.clone();
+                    new_layouts.insert(i, self);
+                    new_layouts
                 }
-            }
+            },
             (Layout::Multi(first), Layout::Multi(second)) => {
                 let mut first_index = 0;
                 let mut second_index = 0;
@@ -1156,11 +1114,10 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
 
     fn eval_expr(
         ctx: &mut AbsIntCtx<'a, Self>,
-        expr: ExprHead<Resolved, &(Self, TypeId)>,
-        ty: TypeId,
+        expr: ExprHead<Resolved, &Self>,
     ) -> Result<Self, Self::Err> {
-        let mut make_layout = |x| ctx.dcx.intern(Layout::Mono(x, ty));
-        Ok(match expr {
+        let mut make_layout = |x| ctx.dcx.intern(Layout::Mono(x));
+        let res = match expr {
             ExprHead::Niladic(n) => match n {
                 ResolvedAtom::Char(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Char)),
                 ResolvedAtom::Number(_) => make_layout(MonoLayout::Primitive(PrimitiveType::Int)),
@@ -1170,12 +1127,18 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ResolvedAtom::Array => make_layout(MonoLayout::ArrayParser(None)),
                 ResolvedAtom::ArrayFill => make_layout(MonoLayout::ArrayFillParser(None)),
                 ResolvedAtom::Span(..) => {
-                    ctx.active_ambience().expect("Span in non-parser context").0
+                    ctx.active_ambience().expect("Span in non-parser context")
                 }
                 ResolvedAtom::String(_) => make_layout(MonoLayout::SlicePtr),
                 ResolvedAtom::Regex(r) => make_layout(MonoLayout::Regex(r, true)),
                 ResolvedAtom::ParserDef(pd) => {
-                    make_layout(MonoLayout::NominalParser(pd, Vec::new(), true))
+                    let parserdef = pd.lookup(ctx.db)?;
+                    let kind = if parserdef.args.is_some() || parserdef.kind == DefKind::Static {
+                        FuncLayoutKind::Fun
+                    } else {
+                        FuncLayoutKind::Parse
+                    };
+                    make_layout(MonoLayout::NominalParser(pd, Vec::new(), true, kind))
                 }
                 ResolvedAtom::Global(pd) => ctx.dcx.globals[&pd].1,
                 ResolvedAtom::Block(block_id, _) => {
@@ -1193,11 +1156,9 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                         };
                         captures.insert(*capture, capture_value);
                     }
-                    let typeargs = ctx.current_type_substitutions();
-                    let res = ctx.dcx.intern(Layout::Mono(
-                        MonoLayout::BlockParser(block_id, captures, typeargs, true),
-                        ty,
-                    ));
+                    let res = ctx.dcx.intern(Layout::Mono(MonoLayout::BlockParser(
+                        block_id, captures, true,
+                    )));
                     res
                 }
                 ResolvedAtom::Lambda(lambda_id) => {
@@ -1212,11 +1173,12 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                         };
                         captures.insert(*capture, capture_value);
                     }
-                    let typeargs = ctx.current_type_substitutions();
-                    ctx.dcx.intern(Layout::Mono(
-                        MonoLayout::Lambda(lambda_id, captures, Vec::new(), typeargs, true),
-                        ty,
-                    ))
+                    ctx.dcx.intern(Layout::Mono(MonoLayout::Lambda(
+                        lambda_id,
+                        captures,
+                        Vec::new(),
+                        true,
+                    )))
                 }
                 ResolvedAtom::Captured(capture) => {
                     ctx.active_env().get_captured(ctx, capture)?.unwrap()
@@ -1227,27 +1189,34 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                     make_layout(MonoLayout::Primitive(PrimitiveType::Int))
                 }
                 ValUnOp::Wiggle(cid, kind) => {
-                    let ldt_parser_ty = ctx.db.least_deref_type(inner.1)?;
-                    let parser_type = ctx.db.lookup_intern_type(ldt_parser_ty);
-                    if matches!(parser_type, Type::ParserArg { .. }) {
-                        let casted_inner = inner.0.typecast(ctx, ldt_parser_ty)?.0;
-                        ctx.dcx.intern(Layout::Mono(
-                            MonoLayout::IfParser(casted_inner, cid, kind),
-                            ty,
-                        ))
+                    let eval_inner = inner.evaluate(ctx)?.0;
+                    let mut has_parser = false;
+                    let mut has_non_parser = false;
+                    for mono in &eval_inner {
+                        let is_parser = mono.head_kind(ctx.db) == HeadDiscriminant::Parser;
+                        has_parser |= is_parser;
+                        has_non_parser |= !is_parser;
+                    }
+                    assert!(!has_parser | !has_non_parser);
+                    if has_parser {
+                        ctx.dcx
+                            .intern(Layout::Mono(MonoLayout::IfParser(eval_inner, cid, kind)))
                     } else {
-                        inner.0
+                        *inner
                     }
                 }
-                ValUnOp::Dot(a, ..) => inner.0.access_field(ctx, a)?,
-                ValUnOp::BtMark(bt) => inner.0.with_backtrack_status(ctx, bt),
-                ValUnOp::EvalFun => inner.0.eval_fun(ctx)?,
+                ValUnOp::Dot(a, ..) => inner.access_field(ctx, a)?,
+                ValUnOp::BtMark(bt) => inner.with_backtrack_status(ctx, bt),
+                ValUnOp::EvalFun => inner.eval_fun(ctx)?,
                 ValUnOp::GetAddr => IMonoLayout::u8_array(ctx).inner(),
             },
             ExprHead::Dyadic(op, [lhs, rhs]) => match op {
-                ValBinOp::ParserApply => rhs.0.apply_arg(ctx, lhs.0)?,
-                ValBinOp::Else => lhs.0.join(ctx, rhs.0)?.0,
-                ValBinOp::Then => rhs.0,
+                ValBinOp::ParserApply => {
+                    let arg = lhs.evaluate(ctx)?.0;
+                    rhs.apply_arg(ctx, arg)?
+                }
+                ValBinOp::Else => lhs.join(ctx, *rhs)?.0,
+                ValBinOp::Then => *rhs,
                 ValBinOp::Range => make_layout(MonoLayout::Range),
                 ValBinOp::LesserEq
                 | ValBinOp::Lesser
@@ -1266,19 +1235,50 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 | ValBinOp::Modulo
                 | ValBinOp::Mul => make_layout(MonoLayout::Primitive(PrimitiveType::Int)),
             },
-            ExprHead::Variadic(ValVarOp::PartialApply(_), inner) => inner[0]
-                .0
-                .apply_fun(ctx, inner[1..].iter().copied().copied())?,
-        })
+            ExprHead::Variadic(ValVarOp::PartialApply(_), inner) => {
+                inner[0].apply_fun(ctx, inner[1..].iter().copied().copied())?
+            }
+        };
+        Ok(res)
     }
 
-    fn typecast(
-        self,
-        ctx: &mut AbsIntCtx<'a, Self>,
-        ty: TypeId,
-    ) -> Result<(Self, bool), Self::Err> {
-        let deref_level = ctx.db.deref_level(ty)?;
-        self.deref_to_level(ctx, deref_level)
+    fn evaluate(self, ctx: &mut AbsIntCtx<'a, Self>) -> Result<(Self, bool), Self::Err> {
+        let mut changed = false;
+        let res = self.try_map(ctx, |layout, ctx| match layout.mono_layout() {
+            MonoLayout::Primitive(PrimitiveType::U8) => {
+                changed = true;
+                Ok(ctx.dcx.int())
+            }
+            MonoLayout::Nominal(pd, _, _) => {
+                changed = true;
+                Ok(ctx
+                    .eval_pd(layout.inner(), *pd)
+                    .ok_or_else(SilencedError::new)?
+                    .evaluate(ctx)?
+                    .0)
+            }
+            _ => Ok(layout.inner()),
+        });
+        res.map(|x| (x, changed))
+    }
+
+    fn normalize(self, ctx: &mut AbsIntCtx<'a, Self>) -> Result<(Self, bool), Self::Err> {
+        let mut changed = false;
+        let res = self.try_map(ctx, |layout, ctx| match layout.mono_layout() {
+            MonoLayout::Nominal(pd, _, _) => {
+                if yaboc_hir::DefKind::Def == pd.lookup(ctx.db)?.kind {
+                    return Ok(layout.inner())
+                }
+                changed = true;
+                Ok(ctx
+                    .eval_pd(layout.inner(), *pd)
+                    .ok_or_else(SilencedError::new)?
+                    .normalize(ctx)?
+                    .0)
+            }
+            _ => Ok(layout.inner()),
+        });
+        res.map(|x| (x, changed))
     }
 
     fn get_arg(
@@ -1286,16 +1286,16 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
         ctx: &mut AbsIntCtx<'a, Self>,
         arg: yaboc_absint::Arg,
     ) -> Result<Self, Self::Err> {
-        self.try_map(ctx, |l, _| match l.mono_layout().0 {
+        self.try_map(ctx, |l, _| match l.mono_layout() {
             MonoLayout::Nominal(pd, from, args) => match arg {
                 Arg::Named(def) => {
                     let idx = ctx
                         .db
                         .parserdef_arg_index(*pd, def)?
                         .expect("arg not found");
-                    Ok(args[idx].0)
+                    Ok(args[idx])
                 }
-                Arg::From => Ok(from.expect("unexpectedly did not have from arg").0),
+                Arg::From => Ok(from.expect(&dbformat!(ctx.db, "{} did not have from arg", &l))),
             },
             _ => panic!("get_arg called on non-nominal layout"),
         })
@@ -1304,18 +1304,17 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
     fn make_thunk(
         ctx: &mut AbsIntCtx<'a, Self>,
         id: hir::ParserDefId,
-        ty: TypeId,
-        fields: &FxHashMap<Arg, (Self, TypeId)>,
+        fields: &FxHashMap<Arg, Self>,
     ) -> Result<Self, Self::Err> {
-        Ok(IMonoLayout::make_thunk(id, ty, fields, ctx)?.inner())
+        Ok(IMonoLayout::make_thunk(id, fields, ctx)?.inner())
     }
 
     fn bottom(ctx: &mut Self::DomainContext) -> Self {
         ctx.intern(Layout::None)
     }
 
-    fn unit(ctx: &mut Self::DomainContext, ty: TypeId) -> Self {
-        ctx.intern(Layout::Mono(MonoLayout::Primitive(PrimitiveType::Unit), ty))
+    fn unit(ctx: &mut Self::DomainContext) -> Self {
+        ctx.intern(Layout::Mono(MonoLayout::Primitive(PrimitiveType::Unit)))
     }
 }
 
@@ -1324,10 +1323,10 @@ mod tests {
     use bumpalo::Bump;
     use yaboc_absint::AbsIntDatabase;
     use yaboc_ast::{import::Import, AstDatabase};
+    use yaboc_base::dbeprintln;
     use yaboc_base::{
         config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase, Context,
     };
-    use yaboc_base::{dbeprintln, dbformat};
     use yaboc_constraint::ConstraintDatabase;
     use yaboc_dependents::DependentsDatabase;
     use yaboc_hir::{HirDatabase, Parser};
@@ -1335,6 +1334,7 @@ mod tests {
     use yaboc_mir::MirDatabase;
     use yaboc_req::NeededBy;
     use yaboc_resolve::ResolveDatabase;
+    use yaboc_types::TypeInterner;
     use yaboc_types::TypeInternerDatabase;
 
     #[salsa::database(
@@ -1367,18 +1367,18 @@ mod tests {
     fn layouts() {
         let ctx = Context::<LayoutTestDatabase>::mock(
             r"
-def ~first = ~
-def ~second = ~
-def ~main = {
-    a: ~
-    b: ~
-    c: {
-      | let c: ~first = first!
-      \ let c: ~second = second?
+    def ~first = ~
+    fun ~second = ~
+    def ~main = {
+        a: ~
+        b: ~
+        c: {
+          | let c = first!
+          \ let c = second?
+        }
+        d: c.c
     }
-    d: c.c
-}
-        ",
+            ",
         );
         let bump = Bump::new();
         let layout_ctx = LayoutContext::new(&bump, yaboc_target::layout::POINTER64);
@@ -1402,7 +1402,7 @@ def ~main = {
                     ),
                     &ctx.db
                 ),
-                "main$88082689c1307225$parse_278b484a9faf573c_lb_worker"
+                "main$466398b15b97e804$parse_9dcf97a184f32623_lb_worker"
             );
         }
         let main_block = outlayer.pd_result()[&canon_2004]
@@ -1421,7 +1421,7 @@ def ~main = {
                     ),
                     &ctx.db
                 ),
-                "block_6c872ebf06064930$3b75767829875ed1$parse_278b484a9faf573c_vb"
+                "block_6c872ebf06064930$dbb80b4b51e59d5b$parse_9dcf97a184f32623_vb"
             );
         }
         let field = |name| FieldName::Ident(ctx.id(name));
@@ -1451,18 +1451,20 @@ def ~main = {
                 .unwrap()
         );
         assert!([
-            "nominal-parser?[[u8] ~> file[_].second]() | nominal-parser[[u8] ~> file[_].first]()",
-            "nominal-parser[[u8] ~> file[_].first]() | nominal-parser?[[u8] ~> file[_].second]()"
+            "nominal-parser?[file[_].second]() | nominal-parser[file[_].first]()",
+            "nominal-parser[file[_].first]() | nominal-parser?[file[_].second]()"
         ]
         .contains(&out.as_str()));
-        assert_eq!(
-            dbformat!(
-                &ctx.db,
-                "{}",
-                &main_block.access_field(&mut outlayer, field("d")).unwrap(),
-            ),
-            "u8"
+        let res = dbformat!(
+            &ctx.db,
+            "{}",
+            &main_block.access_field(&mut outlayer, field("d")).unwrap(),
         );
+        assert!([
+            "u8 | nominal[file[_].first](from: sliceptr)",
+            "nominal[file[_].first](from: sliceptr) | u8"
+        ]
+        .contains(&res.as_str()));
     }
     #[test]
     fn tailsize() {
@@ -1484,12 +1486,7 @@ def ~test = [2][3][5]
             .unwrap()
             .maybe_mono()
             .unwrap();
-        let array_ty = ctx
-            .db
-            .intern_type(Type::Loop(ArrayKind::Each, ctx.db.int()));
-        let slice = outlayer
-            .dcx
-            .intern(Layout::Mono(MonoLayout::SlicePtr, array_ty));
+        let slice = outlayer.dcx.intern(Layout::Mono(MonoLayout::SlicePtr));
         dbeprintln!(&ctx.db, "layout: {} -> {}", &slice, &canon);
         for ((from, to), sa) in layouts.tail_sa {
             dbeprintln!(&ctx.db, "tail: {} -> {}", &from, &to);

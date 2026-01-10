@@ -1,9 +1,10 @@
 mod represent;
 
-use std::{num::NonZeroU64, sync::Arc};
+use std::num::NonZeroU64;
 
 use hir::{BlockId, Hirs};
 use yaboc_base::{
+    databased_display::DatabasedDisplay,
     dbpanic,
     error::{IsSilenced, Silencable},
     interner::{DefId, FieldName},
@@ -11,11 +12,10 @@ use yaboc_base::{
 };
 use yaboc_dependents::{Dependents, SubValueKind};
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, ShapedData, TakeRef};
-use yaboc_hir::HirIdWrapper;
-use yaboc_hir::{self as hir, BlockReturnKind};
-use yaboc_hir_types::{FullTypeId, NominalId, TyHirs};
+use yaboc_hir::{self as hir, BlockReturnKind, DefKind};
+use yaboc_hir::{HirIdWrapper, ParserDefId};
 use yaboc_resolve::expr::{self, Resolved};
-use yaboc_types::{PrimitiveType, Type, TypeId, TypeInterner};
+use yaboc_types::TypeId;
 
 use fxhash::{FxHashMap, FxHashSet};
 
@@ -86,25 +86,22 @@ pub trait AbstractDomain<'a>: Sized + Clone + std::hash::Hash + Eq + std::fmt::D
     fn make_block(
         ctx: &mut AbsIntCtx<'a, Self>,
         id: hir::BlockId,
-        ty: TypeId,
         fields: &FxHashMap<FieldName, Self>,
     ) -> Result<Self, Self::Err>;
     fn make_thunk(
         ctx: &mut AbsIntCtx<'a, Self>,
         id: hir::ParserDefId,
-        ty: TypeId,
-        args: &FxHashMap<Arg, (Self, TypeId)>,
+        args: &FxHashMap<Arg, Self>,
     ) -> Result<Self, Self::Err>;
     fn eval_expr(
         ctx: &mut AbsIntCtx<'a, Self>,
-        expr: ExprHead<Resolved, &(Self, TypeId)>,
-        ty: TypeId,
+        expr: ExprHead<Resolved, &Self>,
     ) -> Result<Self, Self::Err>;
-    fn typecast(self, ctx: &mut AbsIntCtx<'a, Self>, ty: TypeId)
-        -> Result<(Self, bool), Self::Err>;
+    fn evaluate(self, ctx: &mut AbsIntCtx<'a, Self>) -> Result<(Self, bool), Self::Err>;
+    fn normalize(self, ctx: &mut AbsIntCtx<'a, Self>) -> Result<(Self, bool), Self::Err>;
     fn get_arg(self, ctx: &mut AbsIntCtx<'a, Self>, arg: Arg) -> Result<Self, Self::Err>;
     fn bottom(ctx: &mut Self::DomainContext) -> Self;
-    fn unit(ctx: &mut Self::DomainContext, ty: TypeId) -> Self;
+    fn unit(ctx: &mut Self::DomainContext) -> Self;
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -115,21 +112,19 @@ pub struct AbstractExprInfo<Dom> {
     pub ty: TypeId,
 }
 
-pub type AbstractData<Dom> = ShapedData<Vec<(Dom, TypeId)>, Resolved>;
+pub type AbstractData<Dom> = ShapedData<Vec<Dom>, Resolved>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PdEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
     pub returned: Dom,
     pub from: Option<Dom>,
     pub expr_vals: Option<AbstractData<Dom>>,
-    pub typesubst: Arc<Vec<TypeId>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LambdaEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
     pub returned: Dom,
     pub expr_vals: AbstractData<Dom>,
-    pub typesubst: Arc<Vec<TypeId>>,
 }
 
 impl<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> From<LambdaEvaluated<Dom>>
@@ -140,7 +135,6 @@ impl<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> From<LambdaEvaluated<D
             returned: lambda.returned,
             from: None,
             expr_vals: Some(lambda.expr_vals),
-            typesubst: lambda.typesubst,
         }
     }
 }
@@ -152,7 +146,6 @@ pub struct BlockEvaluated<Dom: Clone + std::hash::Hash + Eq + std::fmt::Debug> {
     pub from: Option<Dom>,
     pub vals: FxHashMap<DefId, Dom>,
     pub returned: Dom,
-    pub typesubst: Arc<Vec<TypeId>>,
 }
 
 type CallSite<Dom> = (Option<Dom>, Dom);
@@ -166,9 +159,7 @@ pub struct AbsIntCtx<'a, Dom: AbstractDomain<'a>> {
     // previous epochs are stable
     cache_epoch: Epoch,
 
-    type_substitutions: Arc<Vec<TypeId>>,
-
-    current_ambience: Option<(Dom, TypeId)>,
+    current_ambience: Option<Dom>,
 
     current_pd: Dom,
     depth: usize,
@@ -186,7 +177,7 @@ pub struct AbsIntCtx<'a, Dom: AbstractDomain<'a>> {
     errors: Vec<(Dom, Dom::Err)>,
 }
 
-impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
+impl<'a, Dom: AbstractDomain<'a> + DatabasedDisplay<Dom::DB>> AbsIntCtx<'a, Dom> {
     pub fn new(db: &'a Dom::DB, mut dcx: Dom::DomainContext) -> Self {
         let bottom = Dom::bottom(&mut dcx);
         Self {
@@ -194,7 +185,6 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             dcx,
             current_pd: bottom.clone(),
             cache_epoch: Default::default(),
-            type_substitutions: Default::default(),
             current_ambience: Default::default(),
             depth: Default::default(),
             call_needs_fixpoint: Default::default(),
@@ -233,22 +223,6 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         }
     }
 
-    fn type_substitutions(&self, ty: TypeId) -> Arc<Vec<TypeId>> {
-        match self.db.lookup_intern_type(ty) {
-            Type::Nominal(nom) => nom.ty_args,
-            _ => panic!("type_substitutions called on non-nominal type"),
-        }
-    }
-
-    fn subst_type(&self, ty: TypeId) -> TypeId {
-        self.db
-            .substitute_typevar(ty, self.type_substitutions.clone())
-    }
-
-    pub fn current_type_substitutions(&self) -> Arc<Vec<TypeId>> {
-        self.type_substitutions.clone()
-    }
-
     fn set_pd_ret(&mut self, evaluated: Option<PdEvaluated<Dom>>) -> Option<Dom> {
         let ret = evaluated.as_ref().map(|x| x.returned.clone());
         self.pd_result.insert(
@@ -258,24 +232,20 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         ret
     }
 
-    fn eval_expr<'b, 'c>(
-        &'b mut self,
-        expr: impl Expression<Resolved, Part = (ExprHead<Resolved, ExprIdx<Resolved>>, &'c TypeId)>,
+    fn eval_expr(
+        &mut self,
+        expr: impl Expression<Resolved, Part = ExprHead<Resolved, ExprIdx<Resolved>>>,
     ) -> Result<AbstractData<Dom>, Dom::Err> {
-        expr.try_scan(
-            |(expr, ty): (ExprHead<_, _>, _)| -> Result<(Dom, TypeId), Dom::Err> {
-                let ty = self.subst_type(*ty);
-                let ret = Dom::eval_expr(self, expr, ty)?;
-                let casted_ret = ret.typecast(self, ty).map(|x| x.0)?;
-                Ok((casted_ret, ty))
-            },
-        )
+        expr.try_scan(|expr: ExprHead<_, _>| -> Result<Dom, Dom::Err> {
+            let ret = Dom::eval_expr(self, expr)?;
+            let normalized = ret.normalize(self)?.0;
+            Ok(normalized)
+        })
     }
 
-    fn eval_expr_with_ambience<'b, 'c>(
-        &'b mut self,
-        expr: impl Expression<Resolved, Part = (ExprHead<Resolved, ExprIdx<Resolved>>, &'c TypeId)>,
-        result_type: TypeId,
+    fn eval_expr_with_ambience(
+        &mut self,
+        expr: impl Expression<Resolved, Part = ExprHead<Resolved, ExprIdx<Resolved>>>,
     ) -> Result<(Dom, AbstractData<Dom>), Dom::Err> {
         let res = self.eval_expr(expr)?;
         let root = res.root_data().clone();
@@ -283,29 +253,29 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             panic!("called eval_expr_with_ambience without ambience")
         };
         let applied = ExprHead::new_dyadic(expr::ValBinOp::ParserApply, [&from, &root]);
-        let ret_val = Dom::eval_expr(self, applied, result_type)?;
-        let casted_ret = ret_val.typecast(self, result_type)?.0;
-        Ok((casted_ret, res))
+        let ret_val = Dom::eval_expr(self, applied)?;
+        let normalized = ret_val.normalize(self)?.0;
+        Ok((normalized, res))
     }
 
     fn eval_pd_expr(&mut self, parserdef: &hir::ParserDef) -> Result<PdEvaluated<Dom>, Dom::Err> {
-        let expr = Resolved::expr_with_data::<FullTypeId>(self.db, parserdef.to)?;
-        let result_type = self.subst_type(self.db.parser_returns(parserdef.id)?.deref);
-        let ((ret_val, expr_vals), from) = if let Some((from, _)) = self.current_ambience.clone() {
-            (
-                self.eval_expr_with_ambience(expr.take_ref(), result_type)?,
-                Some(from),
-            )
+        let expr = Resolved::fetch_expr(self.db, parserdef.to)?;
+        let ((ret_val, expr_vals), from) = if let Some(from) = self.current_ambience.clone() {
+            (self.eval_expr_with_ambience(expr.take_ref())?, Some(from))
         } else {
             let res = self.eval_expr(expr.take_ref())?;
-            let root = res.root_data().clone().0;
+            let root = res.root_data().clone();
             ((root, res), None)
         };
+        let returned = if parserdef.kind == DefKind::Def {
+            ret_val.evaluate(self)?.0
+        } else {
+            ret_val.normalize(self)?.0
+        };
         let ret = PdEvaluated {
-            returned: ret_val,
+            returned,
             from,
             expr_vals: Some(expr_vals),
-            typesubst: self.type_substitutions.clone(),
         };
         Ok(ret)
     }
@@ -335,41 +305,33 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             }
         }
     }
-    pub fn eval_pd(&mut self, pd: Dom, ty: TypeId) -> Option<Dom> {
-        let new_type_substitutions = self.type_substitutions(ty);
-        if let Some(val) = self.pd_result.get(&pd) {
+    pub fn eval_pd(&mut self, pd_val: Dom, pd: ParserDefId) -> Option<Dom> {
+        if let Some(val) = self.pd_result.get(&pd_val) {
             // if we are in the same epoch, the value still might
             // change due to a fixpoint
             if let Some(pd) = val.val_with_epoch(self.cache_epoch) {
                 return Some(pd.as_ref()?.returned.clone());
             }
         }
-        let parserdef = match self.db.lookup_intern_type(ty) {
-            Type::Nominal(nomhead) => match NominalId::from_nominal_head(&nomhead) {
-                NominalId::Def(parserdef) => parserdef.lookup(self.db).ok()?,
-                NominalId::Block(_) => panic!("called eval_pd with non-pd type"),
-            },
-            _ => panic!("called eval_pd with non-pd type"),
-        };
-        if let Some(&depth) = self.active_calls.get(&pd) {
+        let parserdef = pd.lookup(self.db).ok()?;
+        if let Some(&depth) = self.active_calls.get(&pd_val) {
             if self.call_needs_fixpoint.is_empty() {
                 // we can only increment the epoch if we are not
                 // currently in a fixpoint computation
                 self.cache_epoch.update();
             }
             self.call_needs_fixpoint.insert(depth);
-            if let Some(pd) = self.pd_result.get(&pd) {
+            if let Some(pd) = self.pd_result.get(&pd_val) {
                 return pd.val().as_ref().map(|x| x.returned.clone());
             }
             let bottom = Dom::bottom(&mut self.dcx);
             self.pd_result.insert(
-                pd,
+                pd_val,
                 EpochVal::new(
                     Some(PdEvaluated {
                         returned: bottom.clone(),
                         from: parserdef.from.is_some().then(|| bottom.clone()),
                         expr_vals: None,
-                        typesubst: new_type_substitutions,
                     }),
                     self.cache_epoch,
                 ),
@@ -377,22 +339,17 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             return Some(bottom);
         }
         self.depth += 1;
-        self.active_calls.insert(pd.clone(), self.depth);
-        let old_pd = std::mem::replace(&mut self.current_pd, pd.clone());
-        let old_type_substitutions =
-            std::mem::replace(&mut self.type_substitutions, new_type_substitutions);
-        let from = self.db.parser_args(parserdef.id).ok()?.from.map(|from_ty| {
-            let ty = self
-                .db
-                .substitute_typevar(from_ty, self.type_substitutions.clone());
-            let from = pd.clone().get_arg(self, Arg::From)?;
-            Ok((from, ty))
-        });
-        let from = self.strip_error(from.transpose())?;
+        self.active_calls.insert(pd_val.clone(), self.depth);
+        let old_pd = std::mem::replace(&mut self.current_pd, pd_val.clone());
+        let from = if parserdef.from.is_some() {
+            pd_val.clone().get_arg(self, Arg::From).ok()
+        } else {
+            None
+        };
         let old_ambienece = std::mem::replace(&mut self.current_ambience, from);
         // to make sure
         self.call_needs_fixpoint.remove(&self.depth);
-        let old_active_env = std::mem::replace(&mut self.active_env, pd.clone());
+        let old_active_env = std::mem::replace(&mut self.active_env, pd_val.clone());
 
         let result = self.eval_pd_expr(&parserdef);
         let result = self.strip_error(result);
@@ -410,9 +367,8 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
 
         self.active_env = old_active_env;
         self.current_ambience = old_ambienece;
-        self.type_substitutions = old_type_substitutions;
         self.current_pd = old_pd;
-        self.active_calls.remove(&pd);
+        self.active_calls.remove(&pd_val);
         self.depth -= 1;
 
         ret
@@ -437,15 +393,11 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         &self.current_pd
     }
 
-    pub fn active_ambience(&self) -> &Option<(Dom, TypeId)> {
+    pub fn active_ambience(&self) -> &Option<Dom> {
         &self.current_ambience
     }
 
-    fn eval_block_impl(
-        &mut self,
-        block_id: hir::BlockId,
-        result_type: TypeId,
-    ) -> Result<Dom, Dom::Err> {
+    fn eval_block_impl(&mut self, block_id: hir::BlockId) -> Result<Dom, Dom::Err> {
         let block = block_id.lookup(self.db)?;
         let order = self.db.block_serialization(block_id).silence()?.eval_order;
         for subvalue_info in order.iter() {
@@ -463,23 +415,20 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                 | hir::HirNode::ChoiceIndirection(_) => {}
                 _ => continue,
             }
-            let unsub_ty = self.db.parser_type_at(subvalue.id)?;
-            let result_ty = self.subst_type(unsub_ty);
             let val = match self.db.hir_node(subvalue.id)? {
                 hir::HirNode::Let(statement) => {
-                    let expr = Resolved::expr_with_data::<FullTypeId>(self.db, statement.expr)?;
+                    let expr = Resolved::fetch_expr(self.db, statement.expr)?;
                     let res_expr = self.eval_expr(expr.take_ref())?;
                     let res = res_expr.root_data();
-                    self.set_block_var(statement.expr.0, res.0.clone());
-                    let ret = res.0.clone().typecast(self, result_ty)?.0;
-                    self.block_expr_vals.insert(statement.expr, res_expr);
-                    ret
+                    self.set_block_var(statement.expr.0, res.clone());
+                    self.block_expr_vals
+                        .insert(statement.expr, res_expr.clone());
+                    res.clone()
                 }
                 hir::HirNode::Parse(statement) => {
-                    let expr = Resolved::expr_with_data::<FullTypeId>(self.db, statement.expr)?;
-                    let (res, res_expr) =
-                        self.eval_expr_with_ambience(expr.take_ref(), result_ty)?;
-                    self.set_block_var(statement.expr.0, res_expr.root_data().0.clone());
+                    let expr = Resolved::fetch_expr(self.db, statement.expr)?;
+                    let (res, res_expr) = self.eval_expr_with_ambience(expr.take_ref())?;
+                    self.set_block_var(statement.expr.0, res_expr.root_data().clone());
                     self.block_expr_vals.insert(statement.expr, res_expr);
                     res
                 }
@@ -490,10 +439,9 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                         None,
                         |acc: Option<Dom>, (_, choice_id)| -> Result<_, Dom::Err> {
                             let new = self.var_by_id(*choice_id)?;
-                            let derefed = new.typecast(self, result_ty)?.0;
                             match acc {
-                                None => Ok(Some(derefed)),
-                                Some(acc) => Ok(Some(acc.join(self, derefed)?.0)),
+                                None => Ok(Some(new)),
+                                Some(acc) => Ok(Some(acc.join(self, new)?.0)),
                             }
                         },
                     )?
@@ -510,8 +458,7 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
                 return Ok(ret);
             }
             BlockReturnKind::Nothing => {
-                let unit = self.db.intern_type(Type::Primitive(PrimitiveType::Unit));
-                return Ok(Dom::unit(&mut self.dcx, unit));
+                return Ok(Dom::unit(&mut self.dcx));
             }
             BlockReturnKind::Fields => {}
         }
@@ -522,18 +469,15 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
             .iter()
             .map(|(name, id)| Ok((*name, self.var_by_id(*id.inner())?)))
             .collect::<Result<FxHashMap<_, _>, Dom::Err>>()?;
-        Dom::make_block(self, block_id, result_type, &vars)
+        Dom::make_block(self, block_id, &vars)
     }
 
     pub fn eval_block(
         &mut self,
         block_id: hir::BlockId,
         block: Dom,
-        from: Option<(Dom, TypeId)>,
-        result_type: TypeId,
-        typesubst: Arc<Vec<TypeId>>,
+        from: Option<Dom>,
     ) -> Option<Dom> {
-        let from_copy = || from.as_ref().map(|(x, _)| x.clone());
         // FIXME: caching is currently broken and i'm too tired for this
         //if let Some(val) = self.block_result.get(&(from_copy(), block.clone())) {
         //    if let Some(block_info) = val.val_with_epoch(self.cache_epoch) {
@@ -543,15 +487,12 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         let mut old_block_vars = std::mem::take(&mut self.block_vars);
         let mut old_block_expr = std::mem::take(&mut self.block_expr_vals);
         let old_env = std::mem::replace(&mut self.active_env, block.clone());
-        let old_type_substitutions =
-            std::mem::replace(&mut self.type_substitutions, typesubst.clone());
         let old_ambience = std::mem::replace(&mut self.current_ambience, from.clone());
 
-        let res = self.eval_block_impl(block_id, result_type);
+        let res = self.eval_block_impl(block_id);
         let res = self.strip_error(res);
 
         self.current_ambience = old_ambience;
-        self.type_substitutions = old_type_substitutions;
         self.active_env = old_env;
         std::mem::swap(&mut self.block_expr_vals, &mut old_block_expr);
         std::mem::swap(&mut self.block_vars, &mut old_block_vars);
@@ -559,13 +500,12 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
         let evaluated = res.clone().map(|returned| BlockEvaluated {
             id: block_id,
             expr_vals: old_block_expr,
-            from: from_copy(),
+            from: from.clone(),
             vals: old_block_vars,
             returned,
-            typesubst,
         });
         self.block_result.insert(
-            (from_copy(), block),
+            (from.clone(), block),
             EpochVal::new(evaluated, self.cache_epoch),
         );
 
@@ -575,35 +515,24 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
     pub fn eval_lambda_impl(
         &mut self,
         lambda_id: hir::LambdaId,
-        result_ty: TypeId,
     ) -> Result<LambdaEvaluated<Dom>, Dom::Err> {
         let lambda = lambda_id.lookup(self.db)?;
-        let expr = Resolved::expr_with_data::<FullTypeId>(self.db, lambda.expr)?;
+        let expr = Resolved::fetch_expr(self.db, lambda.expr)?;
         let expr_res = self.eval_expr(expr.take_ref())?;
-        let ret = expr_res.root_data().0.clone().typecast(self, result_ty)?.0;
+        let ret = expr_res.root_data().clone();
         let ret = LambdaEvaluated {
             returned: ret,
             expr_vals: expr_res,
-            typesubst: self.type_substitutions.clone(),
         };
         Ok(ret)
     }
 
-    pub fn eval_lambda(
-        &mut self,
-        lambda_id: hir::LambdaId,
-        lambda: Dom,
-        result_ty: TypeId,
-        typesubst: Arc<Vec<TypeId>>,
-    ) -> Option<Dom> {
+    pub fn eval_lambda(&mut self, lambda_id: hir::LambdaId, lambda: Dom) -> Option<Dom> {
         let old_env = std::mem::replace(&mut self.active_env, lambda.clone());
-        let old_type_substitutions =
-            std::mem::replace(&mut self.type_substitutions, typesubst.clone());
 
-        let res = self.eval_lambda_impl(lambda_id, result_ty);
+        let res = self.eval_lambda_impl(lambda_id);
         let res = self.strip_error(res);
 
-        self.type_substitutions = old_type_substitutions;
         self.active_env = old_env;
 
         let ret = res.as_ref().map(|evaluated| evaluated.returned.clone());
@@ -618,18 +547,17 @@ impl<'a, Dom: AbstractDomain<'a>> AbsIntCtx<'a, Dom> {
     pub fn apply_thunk_arg(
         &mut self,
         pd_id: hir::ParserDefId,
-        result_type: TypeId,
-        from: (Dom, TypeId),
-        thunk_args: &[(Dom, TypeId)],
+        from: Dom,
+        thunk_args: &[Dom],
     ) -> Result<Dom, Dom::Err> {
         let mut args = FxHashMap::default();
         args.insert(Arg::From, from);
         let pd = pd_id.lookup(self.db)?;
-        for (idx, (arg, ty)) in thunk_args.iter().enumerate() {
+        for (idx, arg) in thunk_args.iter().enumerate() {
             let def = pd.args.as_ref().unwrap()[idx].0;
-            args.insert(Arg::Named(def), (arg.clone(), *ty));
+            args.insert(Arg::Named(def), arg.clone());
         }
-        let pd = Dom::make_thunk(self, pd_id, result_type, &args)?;
+        let pd = Dom::make_thunk(self, pd_id, &args)?;
         Ok(pd)
     }
 }

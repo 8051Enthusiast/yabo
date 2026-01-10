@@ -8,7 +8,6 @@ pub type MaskFun = fn(ret: *mut u8) -> usize;
 target_struct! {
     pub struct VTableHeader<T: VtablePointer> {
         pub head: i64,
-        pub deref_level: i64,
         pub typecast_impl: T::FPtr<TypecastFun>,
         pub mask_impl: T::FPtr<MaskFun>,
         pub size: usize,
@@ -120,7 +119,7 @@ mod tests {
             VTableHeader::<AbsPtr>::tsize(&data),
             SizeAlign {
                 before: 0,
-                after: 48,
+                after: 40,
                 align_mask: 0b111
             }
         );
@@ -128,7 +127,7 @@ mod tests {
             BlockVTable::<AbsPtr>::tsize(&data),
             SizeAlign {
                 before: 0,
-                after: 56,
+                after: 48,
                 align_mask: 0b111,
             }
         );
@@ -136,7 +135,7 @@ mod tests {
             ParserVTable::<AbsPtr>::tsize(&data),
             SizeAlign {
                 before: 0,
-                after: 56,
+                after: 48,
                 align_mask: 0b111,
             }
         );
@@ -144,7 +143,7 @@ mod tests {
             ArrayVTable::<AbsPtr>::tsize(&data),
             SizeAlign {
                 before: 0,
-                after: 96,
+                after: 88,
                 align_mask: 0b111,
             }
         );

@@ -261,13 +261,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         argnum: u64,
     ) -> Option<(i64, u64)> {
-        match (layout.mono_layout().0, argnum) {
+        match (layout.mono_layout(), argnum) {
             (MonoLayout::ArrayParser(Some((parser, _))), 1)
-            | (MonoLayout::ArrayFillParser(Some(parser)), 0) => {
+            | (MonoLayout::ArrayFillParser(Some((parser, _))), 0) => {
                 let offset = parser.size_align(self.layouts).unwrap().next_offset(0);
                 Some(((parser.is_multi() as i64) << VTABLE_BIT, offset))
             }
-            (MonoLayout::ArrayParser(Some((_, Some(len_layout)))), 0) => {
+            (MonoLayout::ArrayParser(Some((_, Some((len_layout, _))))), 0) => {
                 let int_size = len_layout.size_align(self.layouts).unwrap().after;
                 let whole_size = layout.inner().size_align(self.layouts).unwrap().after;
                 Some((0, whole_size - int_size))
@@ -284,8 +284,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         if let Some(value) = self.array_arg_level_and_offset(layout, argnum) {
             return value;
         }
-        let (arg_defs, args) = match layout.mono_layout().0 {
-            MonoLayout::NominalParser(pd, args, _) => {
+        let (arg_defs, args) = match layout.mono_layout() {
+            MonoLayout::NominalParser(pd, args, _, _) => {
                 let pd = pd.lookup(&self.compiler_database.db).unwrap();
                 let arg_defs = pd.args.unwrap();
                 (arg_defs, args)
@@ -304,15 +304,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             }
         };
         let arg_index = arg_defs.len() - argnum as usize - 1;
-        let (arg_layout, ty) = args[arg_index];
+        let arg_layout = args[arg_index];
         let is_multi = arg_layout.is_multi();
-        let head = self
-            .compiler_database
-            .db
-            .deref_level(ty)
-            .unwrap()
-            .into_shifted_runtime_value() as i64
-            | is_multi as i64;
+        let head = is_multi as i64;
         // needed so that the manifestation exists
         let _ = layout.inner().size_align(self.layouts).unwrap();
         let manifestation = self.layouts.dcx.manifestation(layout.inner());

@@ -8,6 +8,7 @@ extern "C" {
 #include <stddef.h>
 
 #define YABO_DISC_MASK (~(int64_t)0xff)
+#define YABO_THUNK_BIT (1 << 8)
 
 #ifndef YABO_RELATIVE_VPTR
 #if __EMSCRIPTEN__ || __wasi__
@@ -40,7 +41,6 @@ enum YaboHead {
   YABO_BLOCK = 0x700,
   YABO_UNIT = 0x800,
   YABO_U8 = 0x900,
-  YABO_ANY = UINT64_MAX & YABO_DISC_MASK,
   YABO_VTABLE = 1,
 };
 
@@ -58,7 +58,6 @@ typedef size_t MaskFun(void *);
 
 struct VTableHeader {
   int64_t head;
-  int64_t deref_level;
   YABO_VPTR(TypecastFun) typecast_impl;
   YABO_VPTR(MaskFun) mask_impl;
   size_t size;

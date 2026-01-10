@@ -41,7 +41,8 @@ static inline size_t dyn_val_size(const DynValue *val) {
 // calls the parser with the given bytes, and stores the result in ret
 static inline int64_t dyn_parse_bytes(DynValue *ret, struct Slice bytes,
                                       const void *args, ParseFun parser) {
-  int64_t status = parser(ret->data, args, YABO_ANY | YABO_VTABLE, &bytes);
+  int64_t status =
+      parser(ret->data, args, YABO_THUNK_BIT | YABO_VTABLE, &bytes);
   if (status) {
     return dyn_invalidate(ret, status);
   }
@@ -52,12 +53,8 @@ static inline int64_t dyn_parse_bytes(DynValue *ret, struct Slice bytes,
 static inline int64_t dyn_deref(DynValue *ret, const DynValue *val) {
   const struct NominalVTable *vtable =
       (const struct NominalVTable *)val->vtable;
-  uint64_t level = vtable->head.deref_level;
-  if (level > 0) {
-    level -= 256;
-  }
   TypecastFun *typecast_impl = YABO_ACCESS_VPTR(&vtable->head, typecast_impl);
-  int64_t status = typecast_impl(ret->data, val->data, level | YABO_VTABLE);
+  int64_t status = typecast_impl(ret->data, val->data, YABO_VTABLE);
   if (status) {
     return dyn_invalidate(ret, status);
   }
@@ -108,7 +105,8 @@ dyn_access_field_index(DynValue *ret, const DynValue *block, size_t index) {
   }
 
   AccessFun *access_impl = YABO_ACCESS_VPTR(vtable, access_impl[index]);
-  int64_t status = access_impl(ret->data, block->data, YABO_ANY | YABO_VTABLE);
+  int64_t status =
+      access_impl(ret->data, block->data, YABO_THUNK_BIT | YABO_VTABLE);
   if (status) {
     return dyn_invalidate(ret, status);
   }
@@ -160,7 +158,7 @@ static inline int64_t dyn_array_current_element(DynValue *ret,
                                                 const DynValue *array) {
   const struct ArrayVTable *vtable = (const struct ArrayVTable *)array->vtable;
   uint64_t status = YABO_ACCESS_VPTR(vtable, current_element_impl)(
-      ret->data, array->data, YABO_ANY | YABO_VTABLE);
+      ret->data, array->data, YABO_THUNK_BIT | YABO_VTABLE);
   if (status) {
     return dyn_invalidate(ret, status);
   }

@@ -42,12 +42,11 @@ use yaboc_hir::{self, BlockReturnKind, Hirs};
 pub struct FullTypeId;
 pub struct PubTypeId;
 
-pub use returns::DerefLevel;
 use returns::{
-    deref_level, deref_type, least_deref_type, normalize_head, parser_expr_at, parser_returns,
-    parser_type_at, ssc_types, ParserDefType, SscTypes,
+    deref_type, least_deref_type, normalize_head, parser_expr_at, parser_returns, parser_type_at,
+    ssc_types, ParserDefType, SscTypes,
 };
-pub use returns::{NOBACKTRACK_BIT, VTABLE_BIT};
+pub use returns::{NOBACKTRACK_BIT, VTABLE_BIT, THUNK_BIT};
 use signature::{bound_args, fun_arg_count, get_signature, parser_args, parser_args_error};
 
 #[salsa::query_group(HirTypesDatabase)]
@@ -57,7 +56,6 @@ pub trait TyHirs: Hirs + yaboc_types::TypeInterner + resolve::Resolves {
     fn parser_returns(&self, id: hir::ParserDefId) -> SResult<ParserDefType>;
     fn ssc_types(&self, id: FunctionSscId) -> Result<SscTypes, SpannedTypeError>;
     fn deref_type(&self, ty: TypeId) -> SResult<Option<TypeId>>;
-    fn deref_level(&self, ty: TypeId) -> SResult<DerefLevel>;
     fn normalize_head(&self, ty: TypeId) -> SResult<TypeId>;
     fn least_deref_type(&self, ty: TypeId) -> SResult<TypeId>;
     fn fun_arg_count(&self, ty: TypeId) -> SResult<Option<u32>>;
@@ -69,7 +67,8 @@ pub trait TyHirs: Hirs + yaboc_types::TypeInterner + resolve::Resolves {
     fn validate_export_arguments(&self) -> SResult<Vec<SpannedTypeError>>;
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(i64)]
 pub enum HeadDiscriminant {
     Int = 0x100,
     Bit = 0x200,
@@ -82,6 +81,7 @@ pub enum HeadDiscriminant {
     Block = 0x700,
     Unit = 0x800,
     U8 = 0x900,
+    Nominal = -0x8000_0000_0000_0000,
 }
 
 pub const DISCRIMINANT_MASK: i64 = !0xff;

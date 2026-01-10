@@ -102,7 +102,6 @@ class VTable(Structure):
 class VTableHeader(VTable):
     __slots__ = [
         "head",
-        "deref_level",
         "typecast_impl",
         "mask_impl",
         "size",
@@ -110,7 +109,6 @@ class VTableHeader(VTable):
     ]
     _fields_ = [
         ("head", c_int64),
-        ("deref_level", c_int64),
         ("typecast_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64))),
         ("mask_impl", vptr(CFUNCTYPE(c_size_t, _voidptr))),
         ("size", c_size_t),
@@ -473,7 +471,7 @@ class YaboValue:
         return self._lib.new_val(lambda ret: typecast(ret, self._val.data_ptr(), typ))
 
     def __copy__(self):
-        return self._typecast(self._val.get_vtable().deref_level | YABO_VTABLE)
+        return self._typecast(YABO_ANY | YABO_VTABLE)
 
     def __eq__(self, other):
         if not isinstance(other, YaboValue):
@@ -486,9 +484,7 @@ class YaboValue:
 
 class NominalValue(YaboValue):
     def deref(self):
-        level = self._val.get_vtable().deref_level
-        level = max(level - 0x100, 0)
-        return self._typecast(level | YABO_VTABLE)
+        return self._typecast(YABO_VTABLE)
 
 
 class BlockValue(YaboValue):

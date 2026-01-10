@@ -1,8 +1,6 @@
-use std::sync::Arc;
-
 use fxhash::FxHashMap;
 
-use yaboc_absint::{AbsIntCtx, PdEvaluated};
+use yaboc_absint::{AbsIntCtx, AbstractDomain, PdEvaluated};
 use yaboc_base::{error::SilencedError, interner::DefId};
 use yaboc_expr::{IndexExpr, ShapedData};
 use yaboc_hir::{
@@ -10,14 +8,14 @@ use yaboc_hir::{
 };
 use yaboc_mir::{FunKind, Function, MirKind, Place, PlaceOrigin, PlaceRef, StackRef, Strictness};
 use yaboc_resolve::expr::Resolved;
-use yaboc_types::{PrimitiveType, Type, TypeId};
+use yaboc_types::PrimitiveType;
 
 use super::{ILayout, IMonoLayout, Layout, LayoutError, MonoLayout};
 
 pub struct FunctionSubstitute<'a> {
     pub f: Function,
     pub stack_layouts: Vec<ILayout<'a>>,
-    pub place_layouts: Vec<(ILayout<'a>, TypeId, Strictness)>,
+    pub place_layouts: Vec<(ILayout<'a>, Strictness)>,
 }
 
 impl<'a> FunctionSubstitute<'a> {
@@ -28,17 +26,16 @@ impl<'a> FunctionSubstitute<'a> {
         block: IMonoLayout<'a>,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
-        let (def, captures) =
-            if let MonoLayout::BlockParser(def, captures, _, _) = block.mono_layout().0 {
-                (def, captures)
-            } else {
-                panic!("non-block-parser as argument")
-            };
+        let (def, captures) = if let MonoLayout::BlockParser(def, captures, _) = block.mono_layout()
+        {
+            (def, captures)
+        } else {
+            panic!("non-block-parser as argument")
+        };
         let evaluated = ctx.block_result()[&(from, block.0)]
             .val()
             .as_ref()
             .ok_or_else(SilencedError::new)?;
-        let subst = Some(evaluated.typesubst.clone());
         let mut expr_map = FxHashMap::default();
         for (id, expr) in evaluated.expr_vals.iter() {
             expr_map.insert(*id, expr.clone());
@@ -51,11 +48,9 @@ impl<'a> FunctionSubstitute<'a> {
             .without_kinds(HirNodeKind::Block | HirNodeKind::Lambda)
         {
             if let HirNode::Choice(choice) = node {
-                let int_ty = ctx.db.intern_type(Type::Primitive(PrimitiveType::Int));
-                let int_layout = ctx.dcx.intern(Layout::Mono(
-                    MonoLayout::Primitive(PrimitiveType::Int),
-                    int_ty,
-                ));
+                let int_layout = ctx
+                    .dcx
+                    .intern(Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int)));
                 vals.insert(choice.id.0, int_layout);
             }
         }
@@ -64,10 +59,9 @@ impl<'a> FunctionSubstitute<'a> {
             fun: block.0,
             arg: from,
             ret,
-            int: ctx.dcx.int(ctx.db),
+            int: ctx.dcx.int(),
             expr: expr_map,
             vals,
-            subst,
         };
         let mut stack_layouts = sub_info.stack_layouts(&f);
         let place_layouts = sub_info.place_layouts(&f, &mut stack_layouts, strictness, ctx)?;
@@ -87,7 +81,6 @@ impl<'a> FunctionSubstitute<'a> {
         expr_id: ExprId,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<FunctionSubstitute<'a>, LayoutError> {
-        let subst = Some(evaluated.typesubst.clone());
         let mut expr_map = FxHashMap::default();
         if let Some(expr) = evaluated.expr_vals.as_ref() {
             expr_map.insert(expr_id, expr.clone());
@@ -97,10 +90,9 @@ impl<'a> FunctionSubstitute<'a> {
             fun: fun.inner(),
             arg: from,
             ret: evaluated.returned,
-            int: ctx.dcx.int(ctx.db),
+            int: ctx.dcx.int(),
             expr: expr_map,
             vals,
-            subst,
         };
         let mut stack_layouts = sub_info.stack_layouts(&f);
         let place_layouts = sub_info.place_layouts(&f, &mut stack_layouts, strictness, ctx)?;
@@ -119,7 +111,7 @@ impl<'a> FunctionSubstitute<'a> {
         pd: ParserDefId,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
-        let MonoLayout::NominalParser(..) = fun.mono_layout().0 else {
+        let MonoLayout::NominalParser(..) = fun.mono_layout() else {
             panic!("non-nominal-parser as argument")
         };
         let expr_id = pd.lookup(ctx.db)?.to;
@@ -143,7 +135,7 @@ impl<'a> FunctionSubstitute<'a> {
         lambda: LambdaId,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
-        let MonoLayout::Lambda(..) = fun.mono_layout().0 else {
+        let MonoLayout::Lambda(..) = fun.mono_layout() else {
             panic!("non-lambda-parser as argument")
         };
         let expr_id = lambda.lookup(ctx.db)?.expr;
@@ -162,7 +154,7 @@ impl<'a> FunctionSubstitute<'a> {
         fun: IMonoLayout<'a>,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
-        let MonoLayout::IfParser(inner, _, _) = fun.mono_layout().0 else {
+        let MonoLayout::IfParser(inner, _, _) = fun.mono_layout() else {
             panic!("non-if-parser as argument")
         };
         let result = inner.apply_arg(ctx, from)?;
@@ -173,9 +165,8 @@ impl<'a> FunctionSubstitute<'a> {
             arg: Some(from),
             ret: result,
             expr: exprs,
-            int: ctx.dcx.int(ctx.db),
+            int: ctx.dcx.int(),
             vals,
-            subst: None,
         };
         let mut stack_layouts = sub_info.stack_layouts(&f);
         let place_layouts = sub_info.place_layouts(&f, &mut stack_layouts, strictness, ctx)?;
@@ -190,12 +181,8 @@ impl<'a> FunctionSubstitute<'a> {
         self.place_layouts[place.as_index()].0
     }
 
-    pub fn place_type(&self, place: PlaceRef) -> TypeId {
-        self.place_layouts[place.as_index()].1
-    }
-
     pub fn place_strictness(&self, place: PlaceRef) -> Strictness {
-        self.place_layouts[place.as_index()].2
+        self.place_layouts[place.as_index()].1
     }
 
     pub fn stack(&self, stack: StackRef) -> ILayout<'a> {
@@ -220,7 +207,7 @@ pub fn function_substitute<'a>(
         FunKind::Lambda(lambda_id) => {
             FunctionSubstitute::new_from_lambda(mir, &strictness, fun, lambda_id, ctx)
         }
-        FunKind::If(_, _, _) => {
+        FunKind::If(_, _) => {
             FunctionSubstitute::new_from_if(mir, &strictness, from.unwrap(), fun, ctx)
         }
     }
@@ -232,9 +219,8 @@ struct SubInfo<T> {
     arg: Option<T>,
     ret: T,
     int: T,
-    expr: FxHashMap<ExprId, ShapedData<Vec<(T, TypeId)>, Resolved>>,
+    expr: FxHashMap<ExprId, ShapedData<Vec<T>, Resolved>>,
     vals: FxHashMap<DefId, T>,
-    subst: Option<Arc<Vec<TypeId>>>,
 }
 
 impl<'intern> SubInfo<ILayout<'intern>> {
@@ -243,7 +229,7 @@ impl<'intern> SubInfo<ILayout<'intern>> {
             .map(|(_, place_origin)| match place_origin {
                 PlaceOrigin::Node(id) => self.vals[&id],
                 PlaceOrigin::Ambient(_, _) => self.arg.expect("used arg in non-parser"),
-                PlaceOrigin::Expr(e, idx) => self.expr[&e].index_expr(idx).0,
+                PlaceOrigin::Expr(e, idx) => *self.expr[&e].index_expr(idx),
                 PlaceOrigin::PolyLen => self.int,
                 PlaceOrigin::Ret => self.ret,
                 PlaceOrigin::Arg => self.arg.expect("used arg in non-parser"),
@@ -257,8 +243,8 @@ impl<'intern> SubInfo<ILayout<'intern>> {
         stack_layouts: &mut [ILayout<'intern>],
         strictness: &[Strictness],
         ctx: &mut AbsIntCtx<'intern, ILayout<'intern>>,
-    ) -> Result<Vec<(ILayout<'intern>, TypeId, Strictness)>, LayoutError> {
-        let mut place_layouts: Vec<(ILayout<'intern>, TypeId, Strictness)> = Vec::new();
+    ) -> Result<Vec<(ILayout<'intern>, Strictness)>, LayoutError> {
+        let mut place_layouts: Vec<(ILayout<'intern>, Strictness)> = Vec::new();
         for (p, place_info) in f.iter_places() {
             let layout = match place_info.place {
                 Place::Captures => self.fun,
@@ -289,26 +275,10 @@ impl<'intern> SubInfo<ILayout<'intern>> {
                 Place::Undefined => ctx.dcx.intern(Layout::None),
             };
 
-            // we don't want any type variables to appear here in general because we want a defined
-            // deref level, but for the case of if-parsers, type variables cannot actually occur in a
-            // position that would be relevant for the deref level, so we can just ignore them
-            let ty = self
-                .subst
-                .as_ref()
-                .map(|subst| ctx.db.substitute_typevar(place_info.ty, subst.clone()))
-                .unwrap_or(place_info.ty);
+            let strict = strictness[p.as_index()];
 
-            let strict = if let Type::TypeVarRef(..) = ctx
-                .db
-                .lookup_intern_type(ctx.db.normalize_head(place_info.ty)?)
-            {
-                Strictness::Static(ctx.db.deref_level(ty)?)
-            } else {
-                strictness[p.as_index()]
-            };
-
-            let cast_layout = if let Strictness::Static(level) = strict {
-                layout.deref_to_level(ctx, level)?.0
+            let cast_layout = if let Strictness::Strict = strict {
+                layout.evaluate(ctx)?.0
             } else {
                 layout
             };
@@ -318,7 +288,7 @@ impl<'intern> SubInfo<ILayout<'intern>> {
             if let Place::Stack(idx) = place_info.place {
                 stack_layouts[idx.as_index()] = cast_layout;
             }
-            place_layouts.push((cast_layout, ty, strict));
+            place_layouts.push((cast_layout, strict));
         }
         Ok(place_layouts)
     }

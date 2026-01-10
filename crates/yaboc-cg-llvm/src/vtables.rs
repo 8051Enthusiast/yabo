@@ -15,7 +15,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .unwrap();
         let head_disc = layout.head_disc(&self.compiler_database.db);
         let head_disc_val = self.const_i64(head_disc);
-        let deref_level = self.deref_level(layout.mono_layout().1);
         let typecast = self.typecast_fun_val(layout);
         let mask = self.mask_fun_val(layout);
         let size = self.const_size_t(size_align.after as i64);
@@ -25,7 +24,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             let vtable_ty = vtable_global.get_value_type().into_struct_type();
             vtable_ty.const_named_struct(&[
                 head_disc_val.into(),
-                deref_level.into(),
                 self.vtable_ptr_from_function(vtable_global, typecast),
                 self.vtable_ptr_from_function(vtable_global, mask),
                 size.into(),
@@ -36,7 +34,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.llvm.const_struct(
                 &[
                     head_disc_val.into(),
-                    deref_level.into(),
                     self.vtable_ptr_from_function(vtable_global, typecast),
                     self.vtable_ptr_from_function(vtable_global, mask),
                     size.into(),
@@ -98,7 +95,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.create_vtable::<vtable::VTableHeader<AbsPtr>>(layout)
         };
         let vtable_header = self.vtable_header(layout, true, vtable);
-        if let MonoLayout::Primitive(PrimitiveType::U8) = layout.mono_layout().0 {
+        if let MonoLayout::Primitive(PrimitiveType::U8) = layout.mono_layout() {
             // predeclare the current_element function so that we can call it
             // but don't put it into a vtable since it's a primitive type
             // and cannot be in a multilayout with other types having this function
@@ -140,7 +137,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.create_vtable::<vtable::NominalVTable<AbsPtr>>(layout)
         };
         let vtable_header = self.vtable_header(layout, false, vtable);
-        let MonoLayout::Nominal(pd, _, _) = layout.mono_layout().0 else {
+        let MonoLayout::Nominal(pd, _, _) = layout.mono_layout() else {
             panic!("attempting to create nominal vtable of non-nominal layout")
         };
         let ident = pd.0.unwrap_name(&self.compiler_database.db);
@@ -163,7 +160,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_block_vtable(&mut self, layout: IMonoLayout<'comp>) {
-        let id = if let MonoLayout::Block(id, _) = layout.mono_layout().0 {
+        let id = if let MonoLayout::Block(id, _) = layout.mono_layout() {
             *id
         } else {
             panic!("attempting to create block vtable of non-block layout")
@@ -303,16 +300,15 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 self.vtable_ptr_from_ptr(vtable, val)
             })
             .collect();
-        let ty = self
-            .compiler_database
-            .db
-            .lookup_intern_type(layout.mono_layout().1);
-        let is_full = if let Type::FunctionArg(_, args) = ty {
-            args.is_empty()
-        } else {
-            panic!("expected function type")
+
+        let Some((total, used)) = layout.arg_num(&self.compiler_database.db).unwrap() else {
+            dbpanic!(
+                &self.compiler_database.db,
+                "Expected function layout, got {}",
+                &layout
+            );
         };
-        let eval_fun_impl = if is_full {
+        let eval_fun_impl = if total == used {
             self.eval_fun_fun_val_wrapper(layout)
                 .as_global_value()
                 .as_pointer_value()

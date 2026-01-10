@@ -1,19 +1,17 @@
 use fxhash::{FxHashMap, FxHashSet};
 use yaboc_base::error::SResult;
-use yaboc_hir_types::DerefLevel;
-use yaboc_types::Type;
 
-use crate::{BBRef, BasicBlock, Function, MirInstr, Mirs, Place, PlaceRef};
+use crate::{BBRef, BasicBlock, Function, MirInstr, Place, PlaceRef};
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Strictness {
-    Static(DerefLevel),
-    Return,
+    Strict,
+    Lazy,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Use {
-    pub strictness: DerefLevel,
+    pub strictness: Strictness,
     pub return_origin: bool,
     pub always: bool,
 }
@@ -25,17 +23,10 @@ impl Use {
             ..self
         }
     }
-    fn new_static(deref_level: DerefLevel) -> Self {
+    fn new_static(strictness: Strictness) -> Self {
         Use {
-            strictness: deref_level,
+            strictness,
             return_origin: false,
-            always: true,
-        }
-    }
-    fn new_return(deref_level: DerefLevel) -> Self {
-        Use {
-            strictness: deref_level,
-            return_origin: true,
             always: true,
         }
     }
@@ -105,7 +96,6 @@ impl PlaceStrictness {
 
 pub struct StrictnessCtx<'a> {
     fun: &'a Function,
-    db: &'a dyn Mirs,
     pred: Vec<Vec<BBRef>>,
     block_in: Vec<PlaceStrictness>,
     kill: Vec<PlaceStrictness>,
@@ -117,25 +107,20 @@ pub struct StrictnessCtx<'a> {
 }
 
 impl<'a> StrictnessCtx<'a> {
-    pub fn new(fun: &'a Function, db: &'a dyn Mirs) -> SResult<Self> {
+    pub fn new(fun: &'a Function) -> SResult<Self> {
         let pred = fun.preds();
         let num_blocks = fun.iter_bb().count();
         let block_in = vec![PlaceStrictness::default(); num_blocks];
         let kill = vec![PlaceStrictness::default(); num_blocks];
         let mut fixed = PlaceStrictness::default();
         for (place, info) in fun.iter_places() {
-            let deref_level = db.deref_level(info.ty)?;
-            //dbeprintln!(&(fun, db), "deref {} place {}", &deref_level, &place);
-            if deref_level == DerefLevel::zero() {
-                // note that this makes return places of level 0 also have static,
-                // but that does not matter as the range of strictness is just 0..0 in both cases
-                fixed.map.insert(place, Use::new_static(deref_level));
+            if info.eval {
+                fixed.map.insert(place, Use::new_static(Strictness::Strict));
                 continue;
             }
             match info.place {
-                Place::Return => fixed.map.insert(place, Use::new_return(deref_level)),
                 Place::Stack(_) => continue,
-                _ => fixed.map.insert(place, Use::new_static(deref_level)),
+                _ => fixed.map.insert(place, Use::new_static(Strictness::Lazy)),
             };
         }
         let worklist = fun.success_returns().to_vec();
@@ -152,7 +137,6 @@ impl<'a> StrictnessCtx<'a> {
         }
         Ok(StrictnessCtx {
             fun,
-            db,
             pred,
             block_in,
             kill,
@@ -195,6 +179,7 @@ impl<'a> StrictnessCtx<'a> {
             | MirInstr::ApplyArgs(ret, ..)
             | MirInstr::Copy(ret, _, _)
             | MirInstr::LenCall(ret, _, _)
+            | MirInstr::ArrayLenCall(ret, _, _)
             | MirInstr::EvalFun(ret, _, _)
             | MirInstr::Field(ret, _, _, _)
             | MirInstr::Span(ret, ..)
@@ -228,27 +213,23 @@ impl<'a> StrictnessCtx<'a> {
             | MirInstr::Span(_, a, b, _)
             | MirInstr::Range(_, a, b, _)
             | MirInstr::ParseCall(_, _, _, a, b, _) => {
-                insert(*a, Use::new_static(DerefLevel::zero()));
-                insert(*b, Use::new_static(DerefLevel::zero()));
+                insert(*a, Use::new_static(Strictness::Strict));
+                insert(*b, Use::new_static(Strictness::Strict));
             }
             MirInstr::IntUn(_, _, a)
             | MirInstr::AssertVal(a, _, _)
             | MirInstr::GetAddr(_, a, _)
             | MirInstr::LenCall(_, a, _)
+            | MirInstr::ArrayLenCall(_, a, _)
             | MirInstr::EvalFun(_, a, _)
             | MirInstr::Field(_, a, _, _) => {
-                insert(*a, Use::new_static(DerefLevel::zero()));
+                insert(*a, Use::new_static(Strictness::Strict));
             }
-            MirInstr::ApplyArgs(_, fun, args, _, _) => {
-                insert(*fun, Use::new_static(DerefLevel::zero()));
-                let ty = self.fun.place(*fun).ty;
-                let Type::FunctionArg(_, arg_tys) = self.db.lookup_intern_type(ty) else {
-                    panic!("Expected function type");
-                };
-                for ((place, used), ty) in args.iter().zip(arg_tys.iter()) {
-                    let deref_level = self.db.deref_level(*ty)?;
+            MirInstr::ApplyArgs(_, fun, args, _) => {
+                insert(*fun, Use::new_static(Strictness::Strict));
+                for (place, used) in args.iter() {
                     if *used {
-                        insert(*place, Use::new_static(deref_level));
+                        insert(*place, Use::new_static(Strictness::Strict));
                     }
                 }
             }
@@ -288,14 +269,11 @@ impl<'a> StrictnessCtx<'a> {
                 .or_else(|| kills.map.get(&place))
                 .filter(|x| x.always);
             let strict = if let Some(strict) = overall_use {
-                if strict.return_origin {
-                    Strictness::Return
-                } else {
-                    Strictness::Static(strict.strictness)
-                }
+                strict.strictness
+            } else if info.eval {
+                Strictness::Strict
             } else {
-                let deref_level = self.db.deref_level(info.ty)?;
-                Strictness::Static(deref_level)
+                Strictness::Lazy
             };
             strictness.push(strict);
         }
