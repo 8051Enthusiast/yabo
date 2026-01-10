@@ -58,9 +58,9 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
         site: CallSite<'comp>,
         mut f: impl FnMut(&mut Self, CallSite<'comp>) -> Result<(), LayoutError>,
     ) -> Result<(), LayoutError> {
-        let fun_kind = match site.1.mono_layout().0 {
-            MonoLayout::NominalParser(pd, _, _) => FunKind::ParserDef(*pd),
-            MonoLayout::BlockParser(b, _, _, _) => FunKind::Block(*b),
+        let fun_kind = match site.1.mono_layout() {
+            MonoLayout::NominalParser(pd, _, _, _) => FunKind::ParserDef(*pd),
+            MonoLayout::BlockParser(b, _, _) => FunKind::Block(*b),
             _ => return Ok(()),
         };
         let fsub = function_substitute(

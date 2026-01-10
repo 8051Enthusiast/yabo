@@ -7,20 +7,18 @@ use fxhash::{FxHashMap, FxHashSet};
 
 use hir::{HirConstraintId, HirNodeKind};
 use yaboc_base::{
-    dbpanic,
     error::SResult,
     interner::{DefId, FieldName, PathComponent},
 };
 use yaboc_dependents::{requirements::ExprDepData, BlockSerialization, SubValue, SubValueKind};
 use yaboc_expr::{ExprIdx, Expression, FetchExpr, TakeRef};
 use yaboc_hir::{
-    self as hir, variable_set::VarStatus, BlockId, BlockReturnKind, ChoiceId, ContextId, ExprId,
-    HirIdWrapper, HirNode, LambdaId, ParserDefId, ParserPredecessor,
+    self as hir, variable_set::VarStatus, BlockId, BlockKind, BlockReturnKind, ChoiceId, ContextId,
+    ExprId, HirIdWrapper, LambdaId, ParserDefId, ParserPredecessor,
 };
 use yaboc_hir_types::FullTypeId;
 use yaboc_req::{NeededBy, RequirementMatrix, RequirementSet};
 use yaboc_resolve::expr::Resolved;
-use yaboc_types::{Type, TypeId};
 
 use crate::{
     expr::{ConvertExpr, ExpressionLoc},
@@ -349,12 +347,12 @@ impl<'a> ConvertCtx<'a> {
 
     fn call_expr(&mut self, call_loc: DefId, expr: ExprId, call_info: CallMeta) -> SResult<()> {
         let parser_fun = self.w.val_place_at_def(expr.0).unwrap();
-        let parser_ty = self.w.f.fun.place(parser_fun).ty;
         let arg_place = self.w.f.fun.arg().unwrap();
+        let root = Resolved::fetch_expr(self.db, expr)?.root();
         let loc = ExpressionLoc {
-            ty: parser_ty,
+            eval: true,
             place: None,
-            origin: PlaceOrigin::Node(expr.0),
+            origin: PlaceOrigin::Expr(expr, root),
         };
         let ldt_parser_fun = self.w.copy_if_deref(loc, |_, _| Ok(parser_fun))?;
         let addr = self.w.front_place_at_def(call_loc).unwrap();
@@ -362,12 +360,11 @@ impl<'a> ConvertCtx<'a> {
         if call_info.tail && self.returns_self {
             self.tail_terminate_all_contexts(call_loc)?;
         }
-        let ty = self.w.f.fun.place(arg_place).ty;
         let retlen = if call_info.req.contains(NeededBy::Len) {
             if call_info.tail {
                 self.w.f.fun.retlen()
             } else {
-                Some(self.w.create_current_ins_retlen_place(ty, call_loc))
+                Some(self.w.create_current_ins_retlen_place(call_loc))
             }
         } else {
             None
@@ -420,11 +417,11 @@ impl<'a> ConvertCtx<'a> {
         let call_loc = pd.id.0;
         let expr = pd.to;
         let parser_fun = self.w.val_place_at_def(expr.0).unwrap();
-        let parser_ty = self.w.f.fun.place(parser_fun).ty;
+        let root = Resolved::fetch_expr(self.db, expr)?.root();
         let loc = ExpressionLoc {
-            ty: parser_ty,
+            eval: true,
             place: None,
-            origin: PlaceOrigin::Node(expr.0),
+            origin: PlaceOrigin::Expr(expr, root),
         };
         let ldt_parser_fun = self.w.copy_if_deref(loc, |_, _| Ok(parser_fun))?;
         let addr = self.w.front_place_at_def(call_loc).unwrap();
@@ -458,23 +455,14 @@ impl<'a> ConvertCtx<'a> {
 
     pub fn if_parser(&mut self, constr: HirConstraintId) -> SResult<()> {
         let constr = self.db.lookup_intern_hir_constraint(constr);
-        let ldt_ret = if let Some(ret) = self.w.f.fun.ret() {
-            let ret_ty = self.w.f.fun.place(ret).ty;
-            let ldt_ret = self.db.least_deref_type(ret_ty)?;
-            Some(ldt_ret)
-        } else {
-            None
-        };
-        let tmp_place = self.w.f.new_stack_place(ldt_ret.unwrap(), PlaceOrigin::Ret);
+        let tmp_place = self.w.f.new_stack_place(PlaceOrigin::Ret, true);
         let arg_place = self.w.f.fun.arg().unwrap();
-        let arg_ty = self.w.f.fun.place(arg_place).ty;
-        let arg_tmp_place = self.w.f.new_stack_place(arg_ty, PlaceOrigin::Arg);
+        let arg_tmp_place = self.w.f.new_stack_place(PlaceOrigin::Arg, true);
         let retlen = self.req.contains(NeededBy::Len).then_some(arg_place);
         let fun_place = self.w.f.fun.cap();
-        let fun_ty = self.w.f.fun.place(fun_place).ty;
         let inner_fun_place = self.w.f.add_place(PlaceInfo {
             place: Place::Front(fun_place),
-            ty: fun_ty,
+            eval: true,
             remove_bt: false,
         });
 
@@ -655,7 +643,6 @@ impl<'a> ConvertCtx<'a> {
         order: &BlockSerialization,
         f: &mut FunctionWriter,
     ) -> SResult<FxHashMap<SubValue, PlaceRef>> {
-        let ambient_type = f.fun.arg().map(|pl| f.fun.place(pl).ty);
         let mut places: FxHashMap<SubValue, PlaceRef> = Default::default();
         let root_context = block.root_context.lookup(db)?;
         let returns = matches!(block.returns, BlockReturnKind::Returns);
@@ -688,7 +675,7 @@ impl<'a> ConvertCtx<'a> {
                 let place = Place::Stack(f.new_stack_ref(PlaceOrigin::Ambient(block.id, val.id)));
                 let place_ref = f.add_place(PlaceInfo {
                     place,
-                    ty: ambient_type.unwrap(),
+                    eval: true,
                     remove_bt: false,
                 });
                 places.insert(val, place_ref);
@@ -702,26 +689,9 @@ impl<'a> ConvertCtx<'a> {
                 } else {
                     Place::Stack(f.new_stack_ref(PlaceOrigin::Node(val.id)))
                 };
-                let ty: TypeId = match &hirval {
-                    HirNode::Let(_)
-                    | HirNode::Parse(_)
-                    | HirNode::ChoiceIndirection(_)
-                    | HirNode::ArgDef(_) => db.parser_type_at(val.id)?,
-                    HirNode::Expr(e) => *db.parser_expr_at(e.id)?.root_data(),
-                    HirNode::Choice(_) => continue,
-                    HirNode::Block(_) => continue,
-                    HirNode::TExpr(_)
-                    | HirNode::Module(_)
-                    | HirNode::Context(_)
-                    | HirNode::Import(_)
-                    | HirNode::Lambda(_)
-                    | HirNode::ParserDef(_) => {
-                        dbpanic!(db, "subvalue {} should not occur here", &val)
-                    }
-                };
                 let place_ref = f.add_place(PlaceInfo {
                     place,
-                    ty,
+                    eval: false,
                     remove_bt: false,
                 });
                 places.insert(val, place_ref);
@@ -737,7 +707,7 @@ impl<'a> ConvertCtx<'a> {
         order: &BlockSerialization,
     ) -> SResult<Self> {
         let block = id.lookup(db)?;
-        let mut f = FunctionWriter::new_block(db, &block, requirements)?;
+        let mut f = FunctionWriter::new_block(requirements, block.kind == BlockKind::Parser)?;
         let mut top_level_retreat = f.make_top_level_retreat();
         if !requirements.contains(NeededBy::Backtrack) {
             top_level_retreat.backtrack = top_level_retreat.error;
@@ -783,7 +753,7 @@ impl<'a> ConvertCtx<'a> {
         let expr_place = Place::Stack(f.new_stack_ref(PlaceOrigin::Expr(expr_id, expr.root())));
         let expr_place_ref = f.add_place(PlaceInfo {
             place: expr_place,
-            ty: *expr.root_data(),
+            eval: false,
             remove_bt: false,
         });
         places.insert(SubValue::new_val(expr_id.0), expr_place_ref);
@@ -870,21 +840,17 @@ impl<'a> ConvertCtx<'a> {
         requirements: RequirementSet,
     ) -> SResult<Self> {
         let lambda = id.lookup(db)?;
-        let mut f = FunctionWriter::new_lambda(db, &lambda, requirements)?;
+        let mut f = FunctionWriter::new_lambda(requirements)?;
         let places = Self::fun_places(db, id.0, lambda.expr, &mut f)?;
         Self::new_fun_builder(f, requirements, id.0, lambda.expr, db, places)
     }
 
     pub fn new_if_builder(
         db: &'a dyn Mirs,
-        ty: TypeId,
         requirements: RequirementSet,
         is_try: bool,
     ) -> SResult<Self> {
-        let Type::ParserArg { result, arg } = db.lookup_intern_type(ty) else {
-            panic!("Expected ParserArg, got {ty:?}")
-        };
-        let mut f = FunctionWriter::new(ty, Some(arg), result, requirements | NeededBy::Val);
+        let mut f = FunctionWriter::new(requirements | NeededBy::Val, true, false);
         let mut top_level_retreat = f.make_top_level_retreat();
         if !requirements.contains(NeededBy::Backtrack) || is_try {
             top_level_retreat.backtrack = top_level_retreat.error;

@@ -1,7 +1,6 @@
 use inkwell::types::FunctionType;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::represent::ParserFunKind;
-use yaboc_types::TypeId;
 
 use super::*;
 
@@ -69,7 +68,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.module.add_function(LOAD_RELATIVE, ty, None)
     }
 
-    fn vtable_get_val_at_offset<T: TargetSized, Target: TargetSized>(
+    fn vtable_get_val_at_offset<Target: TargetSized>(
         &mut self,
         vtable_ptr: PointerValue<'llvm>,
         offset: i64,
@@ -79,7 +78,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.builder.build_load(target_ty, target, "vtable_val")
     }
 
-    fn vtable_get_rel_ptr_at_offset<T: TargetSized>(
+    fn vtable_get_rel_ptr_at_offset(
         &mut self,
         vtable_ptr: PointerValue<'llvm>,
         offset: i64,
@@ -108,32 +107,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let vtable_ptr = self.read_vtable_pointer::<T>(value_ptr)?;
         let offset = T::path_offset(&self.options.target.data, field_path);
         if self.options.target.relative_vptrs {
-            self.vtable_get_rel_ptr_at_offset::<T>(vtable_ptr, offset)
+            self.vtable_get_rel_ptr_at_offset(vtable_ptr, offset)
         } else {
-            self.vtable_get_val_at_offset::<T, *const u8>(vtable_ptr, offset)
+            self.vtable_get_val_at_offset::<*const u8>(vtable_ptr, offset)
                 .map(|x| x.into_pointer_value())
-        }
-    }
-
-    fn vtable_get_val<T: TargetSized, Target: TargetSized>(
-        &mut self,
-        value_ptr: PointerValue<'llvm>,
-        field_path: &[i64],
-    ) -> IResult<BasicValueEnum<'llvm>> {
-        let vtable_ptr = self.read_vtable_pointer::<T>(value_ptr)?;
-        let offset = T::path_offset(&self.options.target.data, field_path);
-        self.vtable_get_val_at_offset::<T, Target>(vtable_ptr, offset)
-    }
-
-    fn vtable_get<Abs: TargetSized, Rel: TargetSized, Target: TargetSized>(
-        &mut self,
-        value_ptr: PointerValue<'llvm>,
-        field_path: &[i64],
-    ) -> IResult<BasicValueEnum<'llvm>> {
-        if self.options.target.relative_vptrs {
-            self.vtable_get_val::<Rel, Target>(value_ptr, field_path)
-        } else {
-            self.vtable_get_val::<Abs, Target>(value_ptr, field_path)
         }
     }
 
@@ -515,30 +492,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         )
     }
 
-    pub(super) fn deref_level(&mut self, ty: TypeId) -> IntValue<'llvm> {
-        let level = self.compiler_database.db.deref_level(ty).unwrap();
-        self.const_i64(level.into_shifted_runtime_value() as i64)
-    }
-
-    pub(super) fn build_deref_level_get(
-        &mut self,
-        layout: Option<IMonoLayout<'comp>>,
-        ptr: PointerValue<'llvm>,
-    ) -> IResult<IntValue<'llvm>> {
-        Ok(match layout {
-            Some(mono) => {
-                let ty = mono.mono_layout().1;
-                self.deref_level(ty)
-            }
-            None => self
-                .vtable_get::<vtable::VTableHeader<AbsPtr>, vtable::VTableHeader<RelPtr>, i64>(
-                    ptr,
-                    &[VTableHeaderFields::deref_level as i64],
-                )?
-                .into_int_value(),
-        })
-    }
-
     pub(super) fn build_return_value(
         &mut self,
         val: CgValue<'comp, 'llvm>,
@@ -655,7 +608,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> IResult<CgValue<'comp, 'llvm>> {
         let (MonoLayout::Array { parser, .. }
         | MonoLayout::ArrayParser(Some((parser, _)))
-        | MonoLayout::ArrayFillParser(Some(parser))) = array.layout.mono_layout().0
+        | MonoLayout::ArrayFillParser(Some((parser, _)))) = array.layout.mono_layout()
         else {
             panic!("array_parser_field called on non-array");
         };
@@ -667,7 +620,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         array: CgMonoValue<'comp, 'llvm>,
     ) -> IResult<CgValue<'comp, 'llvm>> {
-        let MonoLayout::Array { slice, .. } = array.layout.mono_layout().0 else {
+        let MonoLayout::Array { slice, .. } = array.layout.mono_layout() else {
             panic!("array_slice_field called on non-array");
         };
         let offset = array

@@ -26,7 +26,7 @@ impl SmallBitVec {
     pub fn ones(bits: usize) -> Self {
         let len = bits.div_ceil(64);
         let mut words = SmallVec::from_elem(u64::MAX, len);
-        if bits % 64 != 0 {
+        if !bits.is_multiple_of(64) {
             let mask = (1 << (bits % 64)) - 1;
             *words.last_mut().unwrap() &= mask;
         }
@@ -69,7 +69,7 @@ impl SmallBitVec {
     pub fn truncate(&self, n: usize) -> Self {
         let len = n.div_ceil(64);
         let mut words = SmallVec::from_slice(&self.0[..len.min(self.0.len())]);
-        if n % 64 != 0 {
+        if !n.is_multiple_of(64) {
             let mask = (1 << (n % 64)) - 1;
             if let Some(last) = words.last_mut() {
                 *last &= mask;

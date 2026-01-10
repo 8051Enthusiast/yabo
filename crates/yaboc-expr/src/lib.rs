@@ -55,7 +55,8 @@ pub trait TakeRef {
 }
 
 impl<T: TakeRef> TakeRef for std::sync::Arc<T> {
-    type Ref<'a> = T::Ref<'a>
+    type Ref<'a>
+        = T::Ref<'a>
     where
         Self: 'a;
 
@@ -65,7 +66,8 @@ impl<T: TakeRef> TakeRef for std::sync::Arc<T> {
 }
 
 impl<T: TakeRef> TakeRef for std::rc::Rc<T> {
-    type Ref<'a> = T::Ref<'a>
+    type Ref<'a>
+        = T::Ref<'a>
     where
         Self: 'a;
 
@@ -419,7 +421,8 @@ impl<K: ExprKind> Index<ExprIdx<K>> for IdxExprRef<'_, K> {
 }
 
 impl<K: ExprKind> IndexExpr<K> for IdxExprRef<'_, K> {
-    type Output<'b> = &'b ExprHead<K, ExprIdx<K>>
+    type Output<'b>
+        = &'b ExprHead<K, ExprIdx<K>>
     where
         Self: 'b;
 

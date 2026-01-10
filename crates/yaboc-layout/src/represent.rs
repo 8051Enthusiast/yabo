@@ -11,7 +11,7 @@ use yaboc_base::{
 };
 use yaboc_target::layout::PSize;
 
-use crate::ILayout;
+use crate::{FuncLayoutKind, ILayout};
 
 use super::{IMonoLayout, Layout, Layouts, MonoLayout};
 use yaboc_absint::AbsInt;
@@ -20,17 +20,17 @@ impl<DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'_> {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match &self.layout.1 {
             Layout::None => write!(f, "<null>"),
-            Layout::Mono(d, ty) => match d {
+            Layout::Mono(d) => match d {
                 MonoLayout::Primitive(p) => p.db_fmt(f, db),
                 MonoLayout::SlicePtr => write!(f, "sliceptr"),
                 MonoLayout::Range => write!(f, "range"),
                 MonoLayout::Single => write!(f, "single"),
-                MonoLayout::Nominal(_, from, args) => {
-                    dbwrite!(f, db, "nominal[{}](", ty)?;
-                    if let Some((inner_layout, _)) = from {
+                MonoLayout::Nominal(pd, from, args) => {
+                    dbwrite!(f, db, "nominal[{}](", &pd.0)?;
+                    if let Some(inner_layout) = from {
                         dbwrite!(f, db, "from: {}", inner_layout)?;
                     }
-                    for (i, (_, arg)) in args.iter().enumerate() {
+                    for (i, arg) in args.iter().enumerate() {
                         if i > 0 || from.is_some() {
                             write!(f, ", ")?;
                         }
@@ -38,22 +38,29 @@ impl<DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'_> {
                     }
                     write!(f, ")")
                 }
-                MonoLayout::NominalParser(_, args, backtracks) => {
-                    write!(f, "nominal-parser")?;
+                MonoLayout::NominalParser(pd, args, backtracks, kind) => {
+                    match kind {
+                        FuncLayoutKind::Fun => {
+                            write!(f, "nominal-func")?;
+                        }
+                        FuncLayoutKind::Parse => {
+                            write!(f, "nominal-parser")?;
+                        }
+                    }
                     if *backtracks {
                         write!(f, "?")?;
                     }
-                    dbwrite!(f, db, "[{}](", ty)?;
-                    for (i, (layout, ty)) in args.iter().enumerate() {
+                    dbwrite!(f, db, "[{}](", &pd.0)?;
+                    for (i, layout) in args.iter().enumerate() {
                         if i > 0 {
                             write!(f, ", ")?;
                         }
-                        dbwrite!(f, db, "{}: {}", layout, ty)?;
+                        dbwrite!(f, db, "{}", layout)?;
                     }
                     write!(f, ")")
                 }
-                MonoLayout::Block(_, vars) => {
-                    dbwrite!(f, db, "block[{}]{{", ty)?;
+                MonoLayout::Block(pd, vars) => {
+                    dbwrite!(f, db, "block[{}]{{", &pd.0)?;
                     for (i, (var, layout)) in vars.iter().enumerate() {
                         if i > 0 {
                             write!(f, ", ")?;
@@ -62,19 +69,12 @@ impl<DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'_> {
                     }
                     write!(f, "}}")
                 }
-                MonoLayout::BlockParser(bd, captures, tysubs, bt) => {
+                MonoLayout::BlockParser(bd, captures, bt) => {
                     write!(f, "block-parser")?;
                     if *bt {
                         write!(f, "?")?;
                     }
-                    dbwrite!(f, db, "[{}, {}, [", &bd.0, ty)?;
-                    for (i, ty) in tysubs.iter().enumerate() {
-                        if i > 0 {
-                            write!(f, ", ")?;
-                        }
-                        dbwrite!(f, db, "{}", ty)?;
-                    }
-                    write!(f, "]]{{")?;
+                    dbwrite!(f, db, "[{}]{{", &bd.0)?;
                     for (i, (capture, layout)) in captures.iter().enumerate() {
                         if i > 0 {
                             write!(f, ", ")?;
@@ -83,19 +83,12 @@ impl<DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'_> {
                     }
                     write!(f, "}}")
                 }
-                MonoLayout::Lambda(ld, captures, args, tysubs, bt) => {
+                MonoLayout::Lambda(ld, captures, args, bt) => {
                     write!(f, "lambda")?;
                     if *bt {
                         write!(f, "?")?;
                     }
-                    dbwrite!(f, db, "[{}, [", &ld.0)?;
-                    for (i, ty) in tysubs.iter().enumerate() {
-                        if i > 0 {
-                            write!(f, ", ")?;
-                        }
-                        dbwrite!(f, db, "{}", ty)?;
-                    }
-                    write!(f, "]]{{")?;
+                    dbwrite!(f, db, "[{}]{{", &ld.0)?;
                     for (i, (capture, layout)) in captures.iter().enumerate() {
                         if i > 0 {
                             write!(f, ", ")?;
@@ -103,11 +96,11 @@ impl<DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'_> {
                         dbwrite!(f, db, "{}: {}", capture, layout)?;
                     }
                     write!(f, "}}(")?;
-                    for (i, (layout, ty)) in args.iter().enumerate() {
+                    for (i, layout) in args.iter().enumerate() {
                         if i > 0 {
                             write!(f, ", ")?;
                         }
-                        dbwrite!(f, db, "{}: {}", layout, ty)?;
+                        dbwrite!(f, db, "{}", layout)?;
                     }
                     write!(f, ")")
                 }
@@ -119,31 +112,27 @@ impl<DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'_> {
                     Ok(())
                 }
                 MonoLayout::IfParser(inner, referenced, wiggle) => {
-                    dbwrite!(
-                        f,
-                        db,
-                        "if-parser-{}[{}]({}, {})",
-                        wiggle,
-                        ty,
-                        inner,
-                        referenced
-                    )?;
+                    dbwrite!(f, db, "if-parser-{}({}, {})", wiggle, inner, referenced)?;
                     Ok(())
                 }
                 MonoLayout::ArrayParser(Some((parser, inner))) => {
-                    if let Some(inner) = inner {
-                        dbwrite!(f, db, "array-parser[{}]({}, {})", ty, parser, inner)
+                    if let Some((inner, kind)) = inner {
+                        match kind {
+                            FuncLayoutKind::Fun => write!(f, "array-func")?,
+                            FuncLayoutKind::Parse => write!(f, "array-parser")?,
+                        }
+                        dbwrite!(f, db, "({}, {})", parser, inner)
                     } else {
-                        dbwrite!(f, db, "array-parser[{}]({})", ty, parser)
+                        dbwrite!(f, db, "array-func({})", parser)
                     }
                 }
-                MonoLayout::ArrayParser(None) => dbwrite!(f, db, "array-parser[{}]()", ty),
-                MonoLayout::ArrayFillParser(Some(inner)) => {
-                    dbwrite!(f, db, "array-fill-parser[{}]({})", ty, inner)
+                MonoLayout::ArrayParser(None) => write!(f, "array-func()"),
+                MonoLayout::ArrayFillParser(Some((inner, _))) => {
+                    dbwrite!(f, db, "array-fill-parser({})", inner)
                 }
-                MonoLayout::ArrayFillParser(None) => dbwrite!(f, db, "array-fill-parser[{}]()", ty),
+                MonoLayout::ArrayFillParser(None) => dbwrite!(f, db, "array-fill-parser()"),
                 MonoLayout::Array { parser, slice } => {
-                    dbwrite!(f, db, "array[{}]({}, {})", ty, parser, slice)
+                    dbwrite!(f, db, "array({}, {})", parser, slice)
                 }
             },
             Layout::Multi(subs) => {
@@ -193,17 +182,15 @@ impl<'a> LayoutHasher<'a> {
     ) {
         match &layout.layout.1 {
             Layout::None => state.update([0]),
-            Layout::Mono(mono, ty) => {
+            Layout::Mono(mono) => {
                 state.update([1]);
-                state.update(db.type_hash(*ty));
                 self.hash_mono(state, mono, db);
             }
             Layout::Multi(ml) => {
                 state.update([2]);
                 ml.layouts.len().update_hash(state, db);
                 for layout in &layout {
-                    state.update(db.type_hash(layout.mono_layout().1));
-                    self.hash_mono(state, layout.mono_layout().0, db);
+                    self.hash_mono(state, layout.mono_layout(), db);
                 }
             }
         }
@@ -249,29 +236,27 @@ impl<'a> LayoutHasher<'a> {
             MonoLayout::Nominal(def, from, args) => {
                 state.update([3]);
                 def.0.update_hash(state, db);
-                if let Some((from, ty)) = from {
+                if let Some(from) = from {
                     state.update([1]);
                     let from_hash = self.hash(*from, db);
                     state.update(from_hash);
-                    state.update(db.type_hash(*ty));
                 } else {
                     state.update([0]);
                 }
                 args.len().update_hash(state, db);
-                for (layout, ty) in args.iter() {
+                for layout in args.iter() {
                     state.update(self.hash(*layout, db));
-                    state.update(db.type_hash(*ty));
                 }
             }
-            MonoLayout::NominalParser(def, args, bt) => {
+            MonoLayout::NominalParser(def, args, bt, kind) => {
                 state.update([4]);
                 def.0.update_hash(state, db);
                 args.len().update_hash(state, db);
-                for (layout, ty) in args.iter() {
+                for layout in args.iter() {
                     state.update(self.hash(*layout, db));
-                    state.update(db.type_hash(*ty));
                 }
                 state.update([*bt as u8]);
+                state.update([*kind as u8]);
             }
             MonoLayout::Block(def, map) => {
                 state.update([5]);
@@ -296,28 +281,19 @@ impl<'a> LayoutHasher<'a> {
                     state.update(hash);
                 }
             }
-            MonoLayout::BlockParser(def, map, tysubs, bt) => {
+            MonoLayout::BlockParser(def, map, bt) => {
                 state.update([6]);
                 def.0.update_hash(state, db);
                 self.hash_captures(state, map, db);
-                tysubs.len().update_hash(state, db);
-                for ty in tysubs.iter() {
-                    state.update(db.type_hash(*ty));
-                }
                 state.update([*bt as u8]);
             }
-            MonoLayout::Lambda(def, map, args, tysubs, bt) => {
+            MonoLayout::Lambda(def, map, args, bt) => {
                 state.update([7]);
                 def.0.update_hash(state, db);
                 self.hash_captures(state, map, db);
-                tysubs.len().update_hash(state, db);
-                for ty in tysubs.iter() {
-                    state.update(db.type_hash(*ty));
-                }
                 args.len().update_hash(state, db);
-                for (layout, ty) in args.iter() {
+                for layout in args.iter() {
                     state.update(self.hash(*layout, db));
-                    state.update(db.type_hash(*ty));
                 }
                 state.update([*bt as u8]);
             }
@@ -349,9 +325,10 @@ impl<'a> LayoutHasher<'a> {
             MonoLayout::ArrayParser(Some((parser, inner))) => {
                 state.update([12, 1]);
                 state.update(self.hash(*parser, db));
-                if let Some(inner) = inner {
+                if let Some((inner, kind)) = inner {
                     state.update([1]);
                     state.update(self.hash(*inner, db));
+                    state.update([*kind as u8]);
                 } else {
                     state.update([0]);
                 }
@@ -364,9 +341,10 @@ impl<'a> LayoutHasher<'a> {
                 state.update(self.hash(*parser, db));
                 state.update(self.hash(*slice, db));
             }
-            MonoLayout::ArrayFillParser(Some(inner)) => {
+            MonoLayout::ArrayFillParser(Some((inner, kind))) => {
                 state.update([13, 1]);
                 state.update(self.hash(*inner, db));
+                state.update([*kind as u8]);
             }
             MonoLayout::ArrayFillParser(None) => {
                 state.update([13, 0]);
@@ -472,8 +450,8 @@ pub fn truncated_hex(array: &[u8]) -> String {
 
 impl<'a> LayoutSymbol<'a> {
     pub fn symbol<DB: Layouts + ?Sized>(&self, hasher: &mut LayoutHasher<'a>, db: &DB) -> String {
-        let name_prefix = match self.layout.mono_layout().0 {
-            MonoLayout::BlockParser(def, _, _, backtracks) => {
+        let name_prefix = match self.layout.mono_layout() {
+            MonoLayout::BlockParser(def, _, backtracks) => {
                 if *backtracks {
                     format!("parse_block_{}_b", &truncated_hex(&db.def_hash(def.0)))
                 } else {
@@ -486,7 +464,7 @@ impl<'a> LayoutSymbol<'a> {
             MonoLayout::Nominal(id, _, _) => {
                 dbformat!(db, "{}", &db.def_name(id.0).unwrap())
             }
-            MonoLayout::NominalParser(id, _, backtracks) => {
+            MonoLayout::NominalParser(id, _, backtracks, _) => {
                 if *backtracks {
                     dbformat!(db, "parse_{}_b", &db.def_name(id.0).unwrap())
                 } else {

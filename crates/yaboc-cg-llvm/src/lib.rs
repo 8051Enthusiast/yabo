@@ -42,7 +42,7 @@ use yaboc_base::dbpanic;
 use yaboc_base::interner::{DefId, FieldName, Identifier, Interner};
 use yaboc_database::YabocDatabase;
 use yaboc_hir::{BlockId, HirIdWrapper, Hirs, ParserDefId};
-use yaboc_hir_types::{DerefLevel, TyHirs};
+use yaboc_hir_types::THUNK_BIT;
 use yaboc_layout::{
     collect::{root_req, LayoutCollection},
     mir_subst::FunctionSubstitute,
@@ -58,11 +58,24 @@ use yaboc_req::RequirementSet;
 use yaboc_target::layout::{
     AbsPtr, CodegenTypeContext, PSize, RelPtr, RelativeVPtr, SizeAlign, TargetSized,
 };
-use yaboc_types::{PrimitiveType, Type, TypeInterner};
+use yaboc_types::PrimitiveType;
 
 use self::{convert_mir::MirTranslator, convert_thunk::ThunkContext};
 
 pub type IResult<T> = Result<T, BuilderError>;
+
+fn byte_gep<'llvm>(
+    builder: &Builder<'llvm>,
+    llvm: &'llvm Context,
+    ptr: PointerValue<'llvm>,
+    int: IntValue<'llvm>,
+    name: &str,
+) -> IResult<PointerValue<'llvm>> {
+    assert!(ptr.get_type() == llvm.ptr_type(AddressSpace::default()));
+    let ty = llvm.i8_type();
+    let byte = unsafe { builder.build_in_bounds_gep(ty, ptr, &[int], name) }?;
+    Ok(byte)
+}
 
 pub struct CodeGenCtx<'llvm, 'comp> {
     llvm: &'llvm Context,
@@ -275,14 +288,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.llvm.i8_type().array_type(sa.allocation_size() as u32)
     }
 
-    fn set_last_instr_align(&mut self, sa: SizeAlign) -> Option<()> {
-        let instr = self.builder.get_insert_block()?.get_last_instruction()?;
-        instr.set_alignment(sa.align() as u32).ok()
-    }
-
     fn undef_ret(&self) -> CgReturnValue<'llvm> {
         let undef_ptr = self.invalid_ptr();
-        let head = self.const_i64(DerefLevel::max().into_shifted_runtime_value() as i64);
+        let head = self.const_i64(1 << THUNK_BIT);
         CgReturnValue::new(head, undef_ptr)
     }
 
@@ -307,14 +315,38 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn build_sa_alloca(&mut self, sa: SizeAlign, name: &str) -> IResult<PointerValue<'llvm>> {
         let ty = self.sa_type(sa);
-        let ptr = self.builder.build_alloca(ty, name)?;
-        self.set_last_instr_align(sa).unwrap();
-        let cast_ptr = self.build_cast::<*mut u8, _>(ptr)?;
-        let offset = sa.allocation_center_offset();
-        if offset == 0 {
-            return Ok(cast_ptr);
+        let entry_block = self
+            .builder
+            .get_insert_block()
+            .expect("Builder does not have block")
+            .get_parent()
+            .expect("Insert block does not have parent function")
+            .get_first_basic_block()
+            .expect("Function has no blocks");
+
+        let builder = self.llvm.create_builder();
+        if let Some(first) = &entry_block.get_first_instruction() {
+            builder.position_before(first);
+        } else {
+            builder.position_at_end(entry_block);
         }
-        self.build_byte_gep(cast_ptr, self.const_i64(offset as i64), name)
+
+        let ptr = builder.build_alloca(ty, name)?;
+        let instr = entry_block.get_first_instruction().unwrap();
+        instr.set_alignment(sa.align() as u32).unwrap();
+        let offset = sa.allocation_center_offset();
+
+        if offset == 0 {
+            return Ok(ptr);
+        }
+
+        byte_gep(
+            &builder,
+            self.llvm,
+            ptr,
+            self.const_i64(offset as i64),
+            name,
+        )
     }
 
     fn build_layout_alloca(
@@ -347,7 +379,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn build_alloca_int(&mut self, name: &str) -> IResult<CgMonoValue<'comp, 'llvm>> {
-        let int_layout = self.layouts.dcx.int(self.layouts.db);
+        let int_layout = self.layouts.dcx.int();
         let ptr = self.build_layout_alloca(int_layout, name)?;
         Ok(CgMonoValue::new(int_layout.maybe_mono().unwrap(), ptr))
     }
@@ -535,7 +567,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn vtable_ptr_const_array(&mut self, vals: &[BasicValueEnum<'llvm>]) -> ArrayValue<'llvm> {
         let vtable_ptr_ty = self.vtable_pointer_ty();
-        self.const_array(vtable_ptr_ty.into(), vals)
+        self.const_array(vtable_ptr_ty, vals)
     }
 
     fn field_info(&mut self, name: Identifier) -> PointerValue<'llvm> {
@@ -549,9 +581,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn vtable_pointer_ty(&mut self) -> BasicTypeEnum<'llvm> {
         if self.options.target.relative_vptrs {
-            RelativeVPtr::<()>::codegen_ty(self).into()
+            RelativeVPtr::<()>::codegen_ty(self)
         } else {
-            <*const u8>::codegen_ty(self).into()
+            <*const u8>::codegen_ty(self)
         }
     }
 
@@ -715,10 +747,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         int: IntValue<'llvm>,
         name: &str,
     ) -> IResult<PointerValue<'llvm>> {
-        assert!(ptr.get_type() == self.any_ptr());
-        let ty = self.llvm.i8_type();
-        let byte = unsafe { self.builder.build_in_bounds_gep(ty, ptr, &[int], name) }?;
-        Ok(byte)
+        byte_gep(&self.builder, self.llvm, ptr, int, name)
     }
 
     fn const_byte_gep(&mut self, ptr: PointerValue<'llvm>, int: i64) -> PointerValue<'llvm> {
@@ -748,7 +777,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         val: CgMonoValue<'comp, 'llvm>,
     ) -> IResult<(CgValue<'comp, 'llvm>, CgMonoValue<'comp, 'llvm>)> {
-        let MonoLayout::Nominal(pd, _, args) = val.layout.mono_layout().0 else {
+        let MonoLayout::Nominal(pd, _, args) = val.layout.mono_layout() else {
             panic!("build_nominal_components has to be called with a nominal parser layout");
         };
 
@@ -804,7 +833,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             FieldName::Return => unreachable!(),
             FieldName::Ident(d) => self.compiler_database.db.lookup_intern_identifier(d).name,
         };
-        let MonoLayout::NominalParser(_, args, _) = layout.mono_layout().0 else {
+        let MonoLayout::NominalParser(_, args, _, _) = layout.mono_layout() else {
             panic!("attempting to create parser export for non-nominal layout")
         };
         let mut export_fields = if self.options.target.relative_vptrs {
@@ -821,7 +850,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let mut vals = vec![];
         let parser = self.parser_impl_struct_val(layout, from, root_req());
         let parser = self.vtable_ptr_from_ptr(global, parser);
-        for (arg, _) in args.iter() {
+        for arg in args.iter() {
             let arg_val = arg.maybe_mono().unwrap();
             let llvm_ptr = self.sym_ptr(arg_val, LayoutPart::VTable);
             vals.push(self.vtable_ptr_from_ptr(global, llvm_ptr));
@@ -841,7 +870,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let collected_layouts = self.collected_layouts.clone();
         let from = IMonoLayout::u8_array(self.layouts);
         for (layout, _) in collected_layouts.root.iter() {
-            if let MonoLayout::NominalParser(pd, _, _) = layout.mono_layout().0 {
+            if let MonoLayout::NominalParser(pd, _, _, _) = layout.mono_layout() {
                 self.create_pd_export(*pd, *layout, from.inner());
             }
         }

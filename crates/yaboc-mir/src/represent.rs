@@ -6,7 +6,7 @@ use yaboc_base::{
     interner::{DefinitionPath, IdentifierName},
     source::FileId,
 };
-use yaboc_hir::{HirIdWrapper, HirNode, Module, ParserDefId};
+use yaboc_hir::{HirIdWrapper, HirNode, Hirs, Module, ParserDefId};
 use yaboc_req::{NeededBy, RequirementSet};
 
 use crate::{strictness::Strictness, CallMeta, ControlFlow, FunKind, InsRef, MirKind, UninitVal};
@@ -188,6 +188,9 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
             MirInstr::LenCall(ret, fun, retreat) => {
                 dbwrite!(f, db, "{} = len {}, {}", ret, fun, retreat)
             }
+            MirInstr::ArrayLenCall(ret, fun, retreat) => {
+                dbwrite!(f, db, "{} = array_len {}, {}", ret, fun, retreat)
+            }
             MirInstr::Field(target, inner, field, cont) => {
                 dbwrite!(f, db, "{} = access_field {}.", target, inner)?;
                 dbwrite!(f, db.1, "{}, {}", field, cont)
@@ -215,7 +218,7 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
             MirInstr::Span(target, start, end, cont) => {
                 dbwrite!(f, db, "{} = span {}..{}, {}", target, start, end, cont)
             }
-            MirInstr::ApplyArgs(target, origin, args, arg_start, cont) => {
+            MirInstr::ApplyArgs(target, origin, args, cont) => {
                 dbwrite!(f, db, "{} = apply_args {}, (", target, origin)?;
                 for (i, (arg, used)) in args.iter().enumerate() {
                     if i != 0 {
@@ -227,7 +230,7 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
                         dbwrite!(f, db, "({})", arg)?;
                     }
                 }
-                dbwrite!(f, db, "), {}, {}", arg_start, cont)
+                dbwrite!(f, db, "), {}", cont)
             }
             MirInstr::Branch(next) => {
                 dbwrite!(f, db, "branch {{ next: {} }}", next)
@@ -304,7 +307,7 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<DB> for Function {
             }
             write!(f, "define ")?;
             place_ref.db_fmt(f, &(self, db))?;
-            dbwrite!(f, db, ": {}\n", &place.ty)?;
+            writeln!(f, ": {}", &place.eval)?;
         }
         for (bb_ref, bb) in self.iter_bb() {
             dbwrite!(f, db, "{}:\n", &bb_ref)?;
@@ -319,8 +322,8 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<DB> for Function {
 impl Display for Strictness {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Strictness::Return => write!(f, "return"),
-            Strictness::Static(c) => write!(f, "static {c}"),
+            Strictness::Strict => write!(f, "strict"),
+            Strictness::Lazy => write!(f, "lazy"),
         }
     }
 }
@@ -330,6 +333,19 @@ impl Display for MirKind {
         match self {
             MirKind::Call(req) => write!(f, "call {}", req),
             MirKind::Len => write!(f, "len"),
+        }
+    }
+}
+
+impl<DB: ?Sized + Hirs> DatabasedDisplay<DB> for FunKind {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
+        match self {
+            FunKind::Block(block_id) => dbwrite!(f, db, "block {}", &block_id.0),
+            FunKind::ParserDef(pd) => dbwrite!(f, db, "parserdef {}", &pd.0),
+            FunKind::Lambda(lid) => dbwrite!(f, db, "lambda {}", &lid.0),
+            FunKind::If(hir_constraint_id, wiggle_kind) => {
+                dbwrite!(f, db, "{} {}", &wiggle_kind, hir_constraint_id)
+            }
         }
     }
 }
@@ -397,34 +413,47 @@ pub fn print_all_mir<DB: Mirs, W: Write>(
             }
         }
 
-        for block in db.all_parserdef_blocks(pd).iter() {
+        for element in db
+            .all_parserdef_blocks(pd)
+            .iter()
+            .copied()
+            .map(FunKind::Block)
+            .chain(
+                db.all_parserdef_lambdas(pd)
+                    .iter()
+                    .copied()
+                    .map(FunKind::Lambda),
+            )
+        {
             let fun = db
-                .mir(FunKind::Block(*block), MirKind::Call(RequirementSet::all()))
+                .mir(element, MirKind::Call(RequirementSet::all()))
                 .map_err(convert_error_ignore)?;
-            dbwrite!(w, db, "---\nmir block {}:\n", &block.0)?;
+            dbwrite!(w, db, "---\nmir {}:\n", &element)?;
             dbwrite!(w, db, "{}", &fun)?;
             if include_strictness {
                 writeln!(w, "--strictness:")?;
                 let strictness = db
-                    .strictness(FunKind::Block(*block), MirKind::Call(RequirementSet::all()))
+                    .strictness(element, MirKind::Call(RequirementSet::all()))
                     .map_err(convert_error_ignore)?;
                 for ((place, _), strictness) in fun.iter_places().zip(strictness.iter()) {
                     dbwrite!(w, &(&fun, db), "{}: {}\n", &place, &strictness)?;
                 }
             }
 
-            let fun = db
-                .mir(FunKind::Block(*block), MirKind::Len)
-                .map_err(convert_error_ignore)?;
-            dbwrite!(w, db, "---\nmir len block {}:\n", &block.0)?;
-            dbwrite!(w, db, "{}", &fun)?;
-            if include_strictness {
-                writeln!(w, "--strictness:")?;
-                let strictness = db
-                    .strictness(FunKind::Block(*block), MirKind::Len)
+            if let FunKind::Block(_) = element {
+                let fun = db
+                    .mir(element, MirKind::Len)
                     .map_err(convert_error_ignore)?;
-                for ((place, _), strictness) in fun.iter_places().zip(strictness.iter()) {
-                    dbwrite!(w, &(&fun, db), "{}: {}\n", &place, &strictness)?;
+                dbwrite!(w, db, "---\nmir len {}:\n", &element)?;
+                dbwrite!(w, db, "{}", &fun)?;
+                if include_strictness {
+                    writeln!(w, "--strictness:")?;
+                    let strictness = db
+                        .strictness(element, MirKind::Len)
+                        .map_err(convert_error_ignore)?;
+                    for ((place, _), strictness) in fun.iter_places().zip(strictness.iter()) {
+                        dbwrite!(w, &(&fun, db), "{}: {}\n", &place, &strictness)?;
+                    }
                 }
             }
         }

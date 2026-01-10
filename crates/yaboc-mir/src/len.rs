@@ -10,14 +10,13 @@ use yaboc_constraint::{LenVal, LenVals};
 use yaboc_dependents::{requirements::ExprDepData, BlockSerialization, SubValue, SubValueKind};
 use yaboc_expr::{ExprIdx, Expression, FetchExpr, ShapedData, TakeRef};
 use yaboc_hir::{
-    BlockId, ContextId, ExprId, HirIdWrapper, HirNode, LetStatement, ParseStatement, ParserDef,
-    ParserDefId, ParserPredecessor, StructChoice,
+    BlockId, BlockKind, ContextId, ExprId, HirIdWrapper, HirNode, LetStatement, ParseStatement,
+    ParserDef, ParserDefId, ParserPredecessor, StructChoice,
 };
 use yaboc_hir_types::FullTypeId;
 use yaboc_len::Val;
 use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_resolve::expr::Resolved;
-use yaboc_types::{Type, TypeId};
 
 use crate::{
     expr::ConvertExpr, ExceptionRetreat, Function, FunctionWriter, IntBinOp, Mirs, Place,
@@ -34,7 +33,6 @@ pub struct LenMirCtx<'a> {
     // the vectors in this hash table are in reverse order
     subctx_rev_orders: FxHashMap<ContextId, Vec<SubValue>>,
     is_dep: FxHashSet<SubValue>,
-    int: TypeId,
     block: Option<BlockId>,
 }
 
@@ -155,10 +153,9 @@ impl<'a> LenMirCtx<'a> {
     fn init_captures(&mut self, block: BlockId) -> SResult<()> {
         let captures = self.db.captures(block);
         for capture in captures.iter() {
-            let ty = self.db.parser_type_at(*capture)?;
             let place = self.w.f.add_place(PlaceInfo {
                 place: Place::Captured(self.w.f.fun.cap(), *capture),
-                ty,
+                eval: false,
                 remove_bt: false,
             });
             self.w.register_place(SubValue::new_val(*capture), place);
@@ -167,12 +164,11 @@ impl<'a> LenMirCtx<'a> {
     }
 
     fn init_args(&mut self, pd: &ParserDef) -> SResult<()> {
-        let arg_tys = self.db.parser_args(pd.id)?.args.unwrap_or_default();
         let arg_ids = pd.args.clone().unwrap_or_default();
-        for (arg_id, arg_ty) in arg_ids.iter().zip(arg_tys.iter()) {
+        for arg_id in arg_ids.iter() {
             let place = self.w.f.add_place(PlaceInfo {
                 place: Place::Captured(self.w.f.fun.cap(), arg_id.0),
-                ty: *arg_ty,
+                eval: true,
                 remove_bt: false,
             });
             self.w.register_place(SubValue::new_val(arg_id.0), place);
@@ -189,9 +185,8 @@ impl<'a> LenMirCtx<'a> {
     }
 
     fn build_let(&mut self, subval: SubValue, let_statement: &LetStatement) -> SResult<()> {
-        let ty = self.db.parser_type_at(let_statement.id.0)?;
         let origin = PlaceOrigin::Node(let_statement.id.0);
-        let place = self.w.f.new_stack_place(ty, origin);
+        let place = self.w.f.new_stack_place(origin, false);
         self.w.register_place(subval, place);
         let expr_place = self.build_expr(let_statement.expr)?;
         self.w.copy(expr_place, place);
@@ -200,30 +195,22 @@ impl<'a> LenMirCtx<'a> {
 
     fn build_parse(&mut self, subval: SubValue, parse: &ParseStatement) -> SResult<()> {
         let origin = PlaceOrigin::Ambient(self.block.unwrap(), parse.id.0);
-        let len_place = self.w.f.new_stack_place(self.int, origin);
+        let len_place = self.w.f.new_stack_place(origin, true);
         let val = self.val_at_id(parse.expr.0);
         if let Val::Const(0, c, _) = val {
             let n = i64::try_from(c).unwrap();
             self.w.f.load_int(n, len_place);
         } else {
             let expr_place = self.build_expr(parse.expr)?;
-            let expr_tys = self.db.parser_expr_at(parse.expr)?;
-            let expr_ty = *expr_tys.root_data();
-            let ldt_ty = self.db.least_deref_type(expr_ty)?;
-            let ldt_place = if ldt_ty != expr_ty {
-                let expr_origin = PlaceOrigin::Node(parse.expr.0);
-                let ldt_place = self.w.f.new_stack_place(ldt_ty, expr_origin);
-                self.w.copy(expr_place, ldt_place);
-                ldt_place
-            } else {
-                expr_place
-            };
+            let expr_origin = PlaceOrigin::Node(parse.expr.0);
+            let ldt_place = self.w.f.new_stack_place(expr_origin, true);
+            self.w.copy(expr_place, ldt_place);
             self.w.f.len_call(ldt_place, len_place, self.w.retreat);
         }
 
         if let ParserPredecessor::After(prev) = parse.front {
             let prev_place = self.w.back_place_at_def(prev).unwrap();
-            let sum_place = self.w.f.new_stack_place(self.int, origin);
+            let sum_place = self.w.f.new_stack_place(origin, true);
             self.w
                 .f
                 .int_bin_op(sum_place, IntBinOp::Plus, prev_place, len_place);
@@ -237,7 +224,7 @@ impl<'a> LenMirCtx<'a> {
 
     fn build_choice(&mut self, subval: SubValue, choice: &StructChoice) -> SResult<()> {
         let origin = PlaceOrigin::Ambient(self.block.unwrap(), choice.id.0);
-        let len_place = self.w.f.new_stack_place(self.int, origin);
+        let len_place = self.w.f.new_stack_place(origin, true);
         let val = self.back_val_at_id(choice.id.0);
         let cont_bb = self.w.f.new_bb();
         if let Val::Const(0, c, _) = val {
@@ -272,7 +259,7 @@ impl<'a> LenMirCtx<'a> {
 
         if let Some([ParserPredecessor::After(prev), _]) = choice.endpoints {
             let prev_place = self.w.back_place_at_def(prev).unwrap();
-            let sum_place = self.w.f.new_stack_place(self.int, origin);
+            let sum_place = self.w.f.new_stack_place(origin, true);
             self.w
                 .f
                 .int_bin_op(sum_place, IntBinOp::Plus, prev_place, len_place);
@@ -311,7 +298,8 @@ impl<'a> LenMirCtx<'a> {
 
     pub fn new_block(db: &dyn Mirs, id: BlockId) -> SResult<Function> {
         let block = id.lookup(db)?;
-        let mut f = FunctionWriter::new_block(db, &block, NeededBy::Val.into())?;
+        let mut f =
+            FunctionWriter::new_block(NeededBy::Val.into(), block.kind == BlockKind::Parser)?;
         let retreat = f.make_top_level_retreat();
         f.set_bb(f.fun.entry());
         let mut w = ConvertExpr::new(db, f, retreat, Default::default());
@@ -337,7 +325,6 @@ impl<'a> LenMirCtx<'a> {
             w,
             block: Some(id),
             subctx_rev_orders: FxHashMap::default(),
-            int: db.int(),
             vals,
             terms,
             term_req,
@@ -379,7 +366,6 @@ impl<'a> LenMirCtx<'a> {
             w,
             block: None,
             subctx_rev_orders: FxHashMap::default(),
-            int: db.int(),
             vals,
             terms,
             term_req,
@@ -396,15 +382,12 @@ impl<'a> LenMirCtx<'a> {
         Ok(lenctx.w.f.fun)
     }
 
-    pub fn new_if(db: &'a dyn Mirs, ty: TypeId) -> SResult<Function> {
-        let Type::ParserArg { result, arg } = db.lookup_intern_type(ty) else {
-            panic!("Expected ParserArg, got {ty:?}")
-        };
-        let mut f = FunctionWriter::new(ty, Some(arg), result, NeededBy::Val.into());
+    pub fn new_if() -> SResult<Function> {
+        let mut f = FunctionWriter::new(NeededBy::Val.into(), true, false);
         let top_level_retreat = f.make_top_level_retreat();
         let inner_fun_place = f.add_place(PlaceInfo {
             place: Place::Front(f.fun.cap()),
-            ty,
+            eval: true,
             remove_bt: false,
         });
         f.set_bb(f.fun.entry());

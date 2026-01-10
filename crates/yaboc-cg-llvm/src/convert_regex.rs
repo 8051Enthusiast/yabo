@@ -5,11 +5,10 @@ use inkwell::{
 };
 use regex_automata::{dfa::dense::DFA, util::primitives::StateID};
 use regex_automata::{dfa::Automaton, util::start::Config};
-use yaboc_hir_types::DerefLevel;
 use yaboc_layout::{ILayout, IMonoLayout, MonoLayout};
 use yaboc_mir::{CallMeta, ReturnStatus};
 use yaboc_req::RequirementSet;
-use yaboc_types::{PrimitiveType, Type, TypeInterner};
+use yaboc_types::PrimitiveType;
 
 use crate::{
     parser_args,
@@ -43,18 +42,16 @@ impl<'llvm, 'comp, 'r> RegexTranslator<'llvm, 'comp, 'r> {
         dfa: &'r DFA<Vec<u32>>,
         retlen: ILayout<'comp>,
     ) -> IResult<Self> {
-        let int = cg
-            .compiler_database
-            .db
-            .intern_type(Type::Primitive(PrimitiveType::Int));
         let single = IMonoLayout::u8_single(cg.layouts);
         let info = CallMeta::new(RequirementSet::all(), false);
         let parser_fun = cg.parser_fun_val_tail(single, retlen, info.req);
 
-        let int_layout = cg.layouts.dcx.intern(yaboc_layout::Layout::Mono(
-            MonoLayout::Primitive(PrimitiveType::Int),
-            int,
-        ));
+        let int_layout = cg
+            .layouts
+            .dcx
+            .intern(yaboc_layout::Layout::Mono(MonoLayout::Primitive(
+                PrimitiveType::Int,
+            )));
 
         cg.add_entry_block(llvm_fun);
         let next_byte = cg.build_alloca_value(int_layout, "next_byte")?;
@@ -124,14 +121,13 @@ impl<'llvm, 'comp, 'r> RegexTranslator<'llvm, 'comp, 'r> {
     fn next_byte(&mut self, eoi_state: StateID) -> IResult<IntValue<'llvm>> {
         self.copy_position(self.active_pos, self.next_byte_pos)?;
         let undef = self.cg.invalid_ptr();
-        let head = DerefLevel::zero().into_shifted_runtime_value();
         let ret = self.cg.builder.build_call(
             self.parser_fun,
             &[
                 self.next_byte.ptr.into(),
                 // the single parser is a zero-sized type
                 undef.into(),
-                self.cg.const_i64(head as i64).into(),
+                self.cg.const_i64(0i64).into(),
                 self.next_byte_pos.ptr.into(),
             ],
             "next_ret",

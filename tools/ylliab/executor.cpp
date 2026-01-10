@@ -129,7 +129,7 @@ std::optional<Response> Executor::get_list_members(Request &req) {
       break;
     }
     auto head = vals.access_field(current, YaboVal::list_head);
-    auto tail = vals.access_field(current, YaboVal::list_tail, 0);
+    auto tail = vals.access_field(current, YaboVal::list_tail, true);
     if (!head.has_value()) {
       if (tail.has_value()) {
         ret_vals.push_back(*tail);

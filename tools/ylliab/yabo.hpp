@@ -1,5 +1,6 @@
 #pragma once
 
+#include "yabo/vtable.h"
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -35,7 +36,6 @@ static bool span_contains(ByteSpan outer, ByteSpan inner) noexcept {
          outer.data() + outer.size() >= inner.data() + inner.size();
 }
 
-
 // interned yabo value, can be compared by pointer comparison
 struct YaboVal {
   // is not null
@@ -61,6 +61,8 @@ struct YaboVal {
 
   bool is_exceptional() const noexcept { return !val->vtable; }
 
+  bool is_thunk() const noexcept { return val->vtable->head < 0; }
+
   bool is_backtrack() const noexcept {
     return !val->vtable && access_error() == YABO_STATUS_BACKTRACK;
   }
@@ -79,7 +81,7 @@ struct SpannedVal : public YaboVal {
 };
 
 struct YaboValBytes {
-  YaboValBytes(ByteSpan byte_span) noexcept : bytes(byte_span){};
+  YaboValBytes(ByteSpan byte_span) noexcept : bytes(byte_span) {};
 
   YaboValBytes(const DynValue *x) noexcept {
     bytes = std::span((uint8_t *)&x->vtable, dyn_val_size(x));
@@ -170,22 +172,25 @@ template <> struct std::hash<YaboVal> {
   }
 };
 
-constexpr uint64_t DEFAULT_LEVEL = YABO_ANY;
+constexpr uint64_t DEFAULT_LEVEL = YABO_THUNK_BIT;
+constexpr uint64_t EVAL_LEVEL = 0;
 class YaboValCreator {
 public:
   YaboValCreator(YaboValStorage &&store) : storage(std::move(store)) {}
   YaboValCreator() = default;
   std::optional<YaboVal> access_field(YaboVal val, const char *name,
-                                      int64_t level = DEFAULT_LEVEL);
+                                      bool eval = false);
   std::optional<YaboVal> deref(YaboVal val);
   int64_t array_len(YaboVal val);
   std::optional<YaboVal> index(YaboVal val, size_t idx);
   std::optional<YaboVal> skip(YaboVal val, size_t offset);
-  std::optional<SpannedVal> parse(ParseFun parser, const void *args, ByteSpan buf);
+  std::optional<SpannedVal> parse(ParseFun parser, const void *args,
+                                  ByteSpan buf);
   std::optional<ByteSpan> extent(YaboVal val);
 
 private:
   YaboValStorage storage;
 };
 
-YaboValCreator init_vals_from_lib(void *lib, std::pair<const uint8_t*, const uint8_t*> span);
+YaboValCreator
+init_vals_from_lib(void *lib, std::pair<const uint8_t *, const uint8_t *> span);

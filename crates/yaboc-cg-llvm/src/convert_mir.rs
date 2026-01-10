@@ -1,4 +1,5 @@
 use std::rc::Rc;
+use yaboc_absint::AbstractDomain;
 
 use inkwell::{
     basic_block::BasicBlock,
@@ -7,18 +8,16 @@ use inkwell::{
 };
 
 use mir::{CallMeta, ControlFlow, Place, Strictness};
-use yaboc_absint::AbstractDomain;
 use yaboc_ast::expr::Atom;
 use yaboc_ast::ConstraintAtom;
 use yaboc_base::{dbpanic, interner::FieldName};
 use yaboc_hir::BlockId;
-use yaboc_hir_types::{NominalId, TyHirs, NOBACKTRACK_BIT, VTABLE_BIT};
+use yaboc_hir_types::{NOBACKTRACK_BIT, THUNK_BIT, VTABLE_BIT};
 use yaboc_layout::{mir_subst::FunctionSubstitute, ILayout, Layout, MonoLayout};
 use yaboc_mir::{
     self as mir, BBRef, Comp, IntBinOp, IntUnOp, MirInstr, PlaceRef, ReturnStatus, Val,
 };
 use yaboc_target::layout::TargetSized;
-use yaboc_types::{Type, TypeInterner};
 
 use crate::{
     val::{CgMonoValue, CgReturnValue, CgValue},
@@ -91,7 +90,6 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
 
     fn is_ret_place(&self, placeref: mir::PlaceRef) -> bool {
         Some(placeref) == self.mir_fun.f.ret()
-            || self.mir_fun.place_strictness(placeref) == Strictness::Return
     }
 
     fn place_ptr(&mut self, placeref: mir::PlaceRef) -> IResult<PointerValue<'llvm>> {
@@ -146,13 +144,10 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             return self.ret.unwrap().head;
         }
         let place_strictness = self.mir_fun.place_strictness(place);
-        let deref_level = match place_strictness {
-            Strictness::Return => {
-                return self.ret.unwrap().head;
-            }
-            Strictness::Static(level) => level,
+        let mut level = match place_strictness {
+            Strictness::Strict => 0,
+            Strictness::Lazy => 1 << THUNK_BIT,
         };
-        let mut level = deref_level.into_shifted_runtime_value();
         level |= (place_layout.is_multi() as u64) << VTABLE_BIT;
         level |= (remove_bt as u64) << NOBACKTRACK_BIT;
         self.cg.const_i64(level as i64)
@@ -190,6 +185,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     }
 
     fn copy(&mut self, to: PlaceRef, from: PlaceRef, ctrl: ControlFlow) -> IResult<()> {
+        //dbeprintln!(&(&self.mir_fun.f, &self.cg.compiler_database.db), "{} {}", &to, &from);
         if self.is_ret_place(to) && self.is_ret_place(from) {
             let block = self.bb(ctrl.next);
             self.cg.builder.build_unconditional_branch(block)?;
@@ -231,7 +227,6 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             .maybe_mono()
             .expect("set_discrimant can only be called on mono layouts")
             .mono_layout()
-            .0
         {
             MonoLayout::Block(id, _) => *id,
             _ => panic!("set_discriminant can only be called on block layouts"),
@@ -367,41 +362,40 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             }
             FieldName::Ident(ident) => ident,
         };
-        let ty = self.mir_fun.place_type(place);
-        let ldt_ty = self.cg.compiler_database.db.least_deref_type(ty).unwrap();
-        let block = match self.cg.compiler_database.db.lookup_intern_type(ldt_ty) {
-            Type::Nominal(nom) => NominalId::from_nominal_head(&nom).unwrap_block(),
-            _ => panic!("field called on non-block"),
-        };
         let place_val = self.place_val(place)?;
         let ret_val = self.return_val(ret)?;
-        let ret = self
-            .cg
-            .call_field_access_fun(ret_val, place_val, block, field)?;
-        self.controlflow_case(ret, ctrl)
+        if let Some(x) = place_val.layout.into_iter().next() {
+            let MonoLayout::Block(block, _) = x.mono_layout() else {
+                dbpanic!(&self.cg.compiler_database.db, "{} is not a block", &x);
+            };
+            let ret = self
+                .cg
+                .call_field_access_fun(ret_val, place_val, *block, field)?;
+            self.controlflow_case(ret, ctrl)
+        } else {
+            let next = self.bb(ctrl.next);
+            self.cg.builder.build_unconditional_branch(next)?;
+            Ok(())
+        }
     }
 
     fn len_call(&mut self, ret: PlaceRef, fun: PlaceRef, ctrl: ControlFlow) -> IResult<()> {
         let len_val = self.place_val(fun)?;
-        let ty = self.mir_fun.place_type(fun);
-        match self.cg.compiler_database.db.lookup_intern_type(ty) {
-            Type::ParserArg { .. } => {
-                let ret_val = self.return_val(ret)?.ptr;
-                let ret = self.cg.call_len_fun(ret_val, len_val)?;
-                self.controlflow_case(ret, ctrl)
-            }
-            Type::Loop(..) => {
-                let ret_ptr = self.place_ptr(ret)?;
-                let ret_int = self.cg.call_array_len_fun(len_val)?;
-                self.cg.builder.build_store(ret_ptr, ret_int)?;
-                // we don't have any errors to handle here
-                self.cg
-                    .builder
-                    .build_unconditional_branch(self.bb(ctrl.next))?;
-                Ok(())
-            }
-            ty => panic!("len called on non-sized value {ty:?}"),
-        }
+        let ret_val = self.return_val(ret)?.ptr;
+        let ret = self.cg.call_len_fun(ret_val, len_val)?;
+        self.controlflow_case(ret, ctrl)
+    }
+
+    fn array_len_call(&mut self, ret: PlaceRef, fun: PlaceRef, ctrl: ControlFlow) -> IResult<()> {
+        let len_val = self.place_val(fun)?;
+        let ret_ptr = self.place_ptr(ret)?;
+        let ret_int = self.cg.call_array_len_fun(len_val)?;
+        self.cg.builder.build_store(ret_ptr, ret_int)?;
+        // we don't have any errors to handle here
+        self.cg
+            .builder
+            .build_unconditional_branch(self.bb(ctrl.next))?;
+        Ok(())
     }
 
     fn parse_call(
@@ -442,42 +436,77 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         Ok(())
     }
 
+    fn store_val_into(
+        &mut self,
+        ret: PlaceRef,
+        mlayout: MonoLayout<ILayout<'comp>>,
+        value: IntValue<'llvm>,
+    ) -> IResult<()> {
+        let layout = self.mir_fun.place(ret);
+        let int_layout = self.cg.layouts.dcx.intern(Layout::Mono(mlayout));
+        let do_indirection = int_layout != layout || self.is_ret_place(ret);
+        if do_indirection {
+            let alloc = self.cg.build_alloca_value(layout, "primitive")?;
+            self.cg.builder.build_store(alloc.ptr, value)?;
+            let ret_val = self.return_val(ret)?;
+            self.cg.call_typecast_fun(ret_val, alloc)?;
+        } else {
+            let ptr = self.build_typed_place_ptr(ret)?;
+            self.cg.builder.build_store(ptr, value)?;
+        }
+        Ok(())
+    }
+
     fn store_val(&mut self, ret: PlaceRef, val: Val) -> IResult<()> {
-        let ret_ptr = self.place_ptr(ret)?;
+        let mut primitive_layout = |primitive| {
+            self.cg
+                .layouts
+                .dcx
+                .intern(Layout::Mono(MonoLayout::Primitive(primitive)))
+        };
+        let layout = match val {
+            Val::Char(_) => primitive_layout(yaboc_types::PrimitiveType::Char),
+            Val::Int(_) => primitive_layout(yaboc_types::PrimitiveType::Int),
+            Val::Bool(_) => primitive_layout(yaboc_types::PrimitiveType::Bit),
+            Val::Parser(_) => self.mir_fun.place(ret),
+            Val::Undefined => self.cg.layouts.dcx.intern(Layout::None),
+        };
+        let alloc = self.cg.build_alloca_value(layout, "primitive")?;
         let llvm_val = match val {
             Val::Char(c) => self.cg.llvm.i32_type().const_int(c as u64, false),
             Val::Int(i) => self.cg.const_i64(i),
             Val::Bool(b) => self.cg.llvm.i8_type().const_int(b as u64, false),
             Val::Parser(_) | Val::Undefined => return Ok(()),
         };
-        let casted_ret_ptr = self
-            .cg
-            .builder
-            .build_bit_cast(
-                ret_ptr,
-                self.cg.llvm.ptr_type(AddressSpace::default()),
-                "cast_store_val",
-            )?
-            .into_pointer_value();
-        self.cg.builder.build_store(casted_ret_ptr, llvm_val)?;
+        let ret_ptr = self.return_val(ret)?;
+        self.cg.builder.build_store(alloc.ptr, llvm_val)?;
+        self.cg.call_typecast_fun(ret_ptr, alloc)?;
         Ok(())
     }
 
     fn store_bytes(&mut self, ret: PlaceRef, val: &[u8]) -> IResult<()> {
+        let slice = self
+            .cg
+            .layouts
+            .dcx
+            .intern(Layout::Mono(MonoLayout::SlicePtr));
+        let alloc = self.cg.build_alloca_value(slice, "slice")?;
         let bytes_start = self.cg.module_bytes(val);
         let count = self.cg.const_i64(val.len() as i64);
         let u8 = u8::codegen_ty(self.cg);
         let bytes_end = unsafe { bytes_start.const_in_bounds_gep(u8, &[count]) };
-        let ret_first = self.place_ptr(ret)?;
-        self.cg.builder.build_store(ret_first, bytes_start)?;
+        let alloc_first = alloc.ptr;
+        self.cg.builder.build_store(alloc_first, bytes_start)?;
         let ptr_ty = <*const u8>::codegen_ty(self.cg);
         let one = self.cg.const_i64(1);
-        let ret_second = unsafe {
+        let alloc_second = unsafe {
             self.cg
                 .builder
-                .build_gep(ptr_ty, ret_first, &[one], "init_end_ptr")
+                .build_gep(ptr_ty, alloc_first, &[one], "init_end_ptr")
         }?;
-        self.cg.builder.build_store(ret_second, bytes_end)?;
+        self.cg.builder.build_store(alloc_second, bytes_end)?;
+        let ret_val = self.return_val(ret)?;
+        self.cg.call_typecast_fun(ret_val, alloc)?;
         Ok(())
     }
 
@@ -549,22 +578,15 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         ret: PlaceRef,
         fun: PlaceRef,
         args: &[(PlaceRef, bool)],
-        first_index: u64,
         ctrl: ControlFlow,
     ) -> IResult<()> {
         let error = ctrl.error.map(|x| self.bb(x)).unwrap_or(self.undefined);
-        let ty = self.mir_fun.place_type(fun);
-        let Type::FunctionArg(_, arg_tys) = self.cg.compiler_database.db.lookup_intern_type(ty)
-        else {
-            panic!("apply_args on non-function");
-        };
         let arg_layout = args
             .iter()
-            .zip(arg_tys.iter())
-            .map(|((x, _), ty)| {
+            .map(|(x, _)| {
                 self.mir_fun
                     .place(*x)
-                    .typecast(self.cg.layouts, *ty)
+                    .evaluate(self.cg.layouts)
                     .map(|x| x.0)
             })
             .collect::<Result<Vec<_>, _>>()
@@ -588,9 +610,24 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         };
         let ret_val = self.return_val(ret)?;
         self.cg.call_fun_create(ret_val, fun, slot)?;
-        for (i, (arg, used)) in args.iter().enumerate() {
-            if *used {
-                self.set_arg(ret, *arg, first_index - i as u64, error)?;
+        let mut first_index = None;
+        for layout in &fun.layout {
+            let (available, used) = layout
+                .arg_num(&self.cg.compiler_database.db)
+                .unwrap()
+                .expect("Not a function");
+            let new_first_index = (available - used) as u64;
+            if let Some(existing) = first_index {
+                assert_eq!(new_first_index, existing);
+            } else {
+                first_index = Some(new_first_index);
+            }
+        }
+        if let Some(first_index) = first_index {
+            for (i, (arg, used)) in args.iter().enumerate() {
+                if *used {
+                    self.set_arg(ret, *arg, first_index - i as u64 - 1, error)?;
+                }
             }
         }
         self.cg
@@ -605,8 +642,11 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             IntUnOp::Not => self.cg.builder.build_not(rhs, "not")?,
             IntUnOp::Neg => self.cg.builder.build_int_neg(rhs, "neg")?,
         };
-        let ret_ptr = self.build_typed_place_ptr(ret)?;
-        self.cg.builder.build_store(ret_ptr, value)?;
+        self.store_val_into(
+            ret,
+            MonoLayout::Primitive(yaboc_types::PrimitiveType::Int),
+            value,
+        )?;
         Ok(())
     }
 
@@ -632,8 +672,11 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             IntBinOp::Modulo => b.build_int_signed_rem(lhs, rhs, "mod"),
             IntBinOp::Mul => b.build_int_mul(lhs, rhs, "mul"),
         }?;
-        let ret_ptr = self.build_typed_place_ptr(ret)?;
-        self.cg.builder.build_store(ret_ptr, value)?;
+        self.store_val_into(
+            ret,
+            MonoLayout::Primitive(yaboc_types::PrimitiveType::Int),
+            value,
+        )?;
         Ok(())
     }
 
@@ -721,6 +764,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 self.parse_call(ret, call_kind, fun, arg, ctrl)
             }
             MirInstr::LenCall(ret, fun, ctrl) => self.len_call(ret, fun, ctrl),
+            MirInstr::ArrayLenCall(ret, fun, ctrl) => self.array_len_call(ret, fun, ctrl),
             MirInstr::Field(ret, place, field, ctrl) => self.field(ret, place, field, ctrl),
             MirInstr::AssertVal(place, val, ctrl) => self.assert_value(place, val, ctrl),
             MirInstr::SetDiscriminant(block, field, val) => {
@@ -731,9 +775,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::GetAddr(ret, place, ctrl) => self.get_addr(ret, place, ctrl),
             MirInstr::Span(ret, start, end, ctrl) => self.span(ret, start, end, ctrl),
             MirInstr::Range(ret, start, end, ctrl) => self.range(ret, start, end, ctrl),
-            MirInstr::ApplyArgs(ret, fun, args, first_index, ctrl) => {
-                self.apply_args(ret, fun, &args, first_index, ctrl)
-            }
+            MirInstr::ApplyArgs(ret, fun, args, ctrl) => self.apply_args(ret, fun, &args, ctrl),
             MirInstr::Branch(target) => {
                 let target_block = self.bb(target);
                 self.cg.builder.build_unconditional_branch(target_block)?;

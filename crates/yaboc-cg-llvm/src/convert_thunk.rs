@@ -4,7 +4,7 @@ use inkwell::{
     IntPredicate,
 };
 
-use yaboc_hir_types::{TyHirs, NOBACKTRACK_BIT, VTABLE_BIT};
+use yaboc_hir_types::{NOBACKTRACK_BIT, THUNK_BIT, VTABLE_BIT};
 use yaboc_layout::{ILayout, IMonoLayout, MonoLayout, TailInfo};
 use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_target::layout::SizeAlign;
@@ -45,7 +45,7 @@ impl<'comp, 'llvm> TypecastThunk<'comp, 'llvm> {
     pub fn new(cg: &mut CodeGenCtx<'llvm, 'comp>, layout: IMonoLayout<'comp>) -> IResult<Self> {
         let f = cg.typecast_fun_val(layout);
         cg.add_entry_block(f);
-        let (arg_copy, fun_copy) = if let MonoLayout::Nominal(..) = layout.mono_layout().0 {
+        let (arg_copy, fun_copy) = if let MonoLayout::Nominal(..) = layout.mono_layout() {
             let (from, layout) = layout.unapply_nominal(cg.layouts);
             let arg_copy = cg.build_alloca_value(from, "arg_copy")?;
             let fun_copy = if let TailInfo {
@@ -117,7 +117,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TypecastThunk<'comp, 'llvm> {
         let thunk = CgMonoValue::new(self.layout, thunk_ptr);
         let ret = CgReturnValue::new(target_level, ret_ptr);
 
-        let ret = if let MonoLayout::Primitive(PrimitiveType::U8) = thunk.layout.mono_layout().0 {
+        let ret = if let MonoLayout::Primitive(PrimitiveType::U8) = thunk.layout.mono_layout() {
             cg.call_current_element_fun(ret, thunk.into())?
         } else {
             let arg_copy = self.arg_copy.unwrap();
@@ -365,12 +365,12 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
     }
 
     fn maybe_deref(&mut self) -> IResult<()> {
-        let ty = self.target_layout.mono_layout().1;
-        let deref_level = self.cg.compiler_database.db.deref_level(ty).unwrap();
-        if deref_level.is_deref() {
+        if let MonoLayout::Nominal(..) | MonoLayout::Primitive(PrimitiveType::U8) =
+            self.target_layout.mono_layout()
+        {
             let self_level = self
                 .cg
-                .build_deref_level_get(Some(self.target_layout), self.cg.invalid_ptr())?;
+                .const_i64(1 << THUNK_BIT);
             let no_deref = self.cg.builder.build_int_compare(
                 IntPredicate::ULE,
                 self_level,
@@ -483,7 +483,7 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
     fn build_vtable_any_ptr(&mut self) -> IResult<PointerValue<'llvm>> {
         let bt_ptr = self.cg.build_get_vtable_tag(self.target_layout);
         if !matches!(
-            self.target_layout.mono_layout().0,
+            self.target_layout.mono_layout(),
             MonoLayout::NominalParser(..)
         ) {
             return Ok(bt_ptr);

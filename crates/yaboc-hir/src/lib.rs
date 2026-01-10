@@ -335,6 +335,9 @@ fn discriminant_mapping(db: &dyn Hirs, block: BlockId) -> SResult<Arc<FxHashMap<
 
 fn argnum(db: &dyn Hirs, pd: ParserDefId) -> SResult<Option<usize>> {
     let pd = pd.lookup(db)?;
+    if pd.kind == DefKind::Static {
+        return Ok(Some(0));
+    }
     Ok(pd.args.map(|x| x.len()))
 }
 

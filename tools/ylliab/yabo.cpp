@@ -202,10 +202,12 @@ SpannedVal YaboValStorage::with_span_and_return_buf(
 }
 
 std::optional<YaboVal>
-YaboValCreator::access_field(YaboVal val, const char *name, int64_t level) {
+YaboValCreator::access_field(YaboVal val, const char *name, bool eval) {
   if (val.kind() != YaboValKind::YABOBLOCK) {
     return {};
   }
+
+  uint64_t level = (eval ? EVAL_LEVEL : DEFAULT_LEVEL) | YABO_VTABLE;
 
   auto maybe_offset = val.field_offset(name);
   if (!maybe_offset) {
@@ -216,7 +218,7 @@ YaboValCreator::access_field(YaboVal val, const char *name, int64_t level) {
   auto impl = YABO_ACCESS_VPTR(vtable, access_impl[offset]);
   auto ret = storage.with_return_buf([=](uint8_t *buf) {
     return catch_segfault(impl, segfault_err_code, (void *)buf,
-                          (const void *)val->data, level | YABO_VTABLE);
+                          (const void *)val->data, level);
   });
   if (ret.is_backtrack()) {
     return {};
@@ -225,16 +227,14 @@ YaboValCreator::access_field(YaboVal val, const char *name, int64_t level) {
 }
 
 std::optional<YaboVal> YaboValCreator::deref(YaboVal val) {
-  if (val.is_exceptional() || val->vtable->deref_level < 256 ||
-      val->vtable->head >= 0) {
+  if (val.is_exceptional() || !val.is_thunk()) {
     return {};
   }
 
-  auto target_level = val->vtable->deref_level - 256;
   auto impl = YABO_ACCESS_VPTR(val->vtable, typecast_impl);
   return storage.with_return_buf([=](uint8_t *buf) {
     return catch_segfault(impl, segfault_err_code, (void *)buf,
-                          (const void *)val->data, target_level | YABO_VTABLE);
+                          (const void *)val->data, EVAL_LEVEL | YABO_VTABLE);
   });
 }
 
@@ -272,19 +272,19 @@ std::optional<YaboVal> YaboValCreator::skip(YaboVal val, size_t offset) {
     return {};
   }
 
-  return storage.with_address_and_return_buf(
-      val, [=](DynValue *val, uint8_t *buf) {
-        auto vtable = reinterpret_cast<ArrayVTable *>(val->vtable);
-        auto skip = YABO_ACCESS_VPTR(vtable, skip_impl);
-        auto status = catch_segfault(skip, segfault_err_code, (void *)val->data,
-                                     (uint64_t)offset);
-        if (status)
-          return status;
+  return storage.with_address_and_return_buf(val, [=](DynValue *val,
+                                                      uint8_t *buf) {
+    auto vtable = reinterpret_cast<ArrayVTable *>(val->vtable);
+    auto skip = YABO_ACCESS_VPTR(vtable, skip_impl);
+    auto status = catch_segfault(skip, segfault_err_code, (void *)val->data,
+                                 (uint64_t)offset);
+    if (status)
+      return status;
 
-        auto typecast = YABO_ACCESS_VPTR(&vtable->head, typecast_impl);
-        return catch_segfault(typecast, segfault_err_code, (void *)buf,
-                              (const void *)val->data, 0 | YABO_VTABLE);
-      });
+    auto typecast = YABO_ACCESS_VPTR(&vtable->head, typecast_impl);
+    return catch_segfault(typecast, segfault_err_code, (void *)buf,
+                          (const void *)val->data, EVAL_LEVEL | YABO_VTABLE);
+  });
 }
 
 static std::optional<ByteSpan> primary_slice(DynValue *array, DynValue *buf) {
@@ -294,7 +294,7 @@ static std::optional<ByteSpan> primary_slice(DynValue *array, DynValue *buf) {
     auto inner_array = YABO_ACCESS_VPTR(vtable, inner_array_impl);
     auto status =
         catch_segfault(inner_array, segfault_err_code, (void *)next->data,
-                       (const void *)cur->data, 0 | YABO_VTABLE);
+                       (const void *)cur->data, EVAL_LEVEL | YABO_VTABLE);
     if (status != YABO_STATUS_OK) {
       return {};
     }
@@ -328,7 +328,7 @@ std::optional<ByteSpan> YaboValCreator::extent(YaboVal val) {
         auto start = t1;
         if (catch_segfault(YABO_ACCESS_VPTR(vtable, start_impl),
                            segfault_err_code, (void *)start->data,
-                           (const void *)val->data, 0 | YABO_VTABLE)) {
+                           (const void *)val->data, EVAL_LEVEL | YABO_VTABLE)) {
           return {};
         }
         auto end = t2;
@@ -340,10 +340,10 @@ std::optional<ByteSpan> YaboValCreator::extent(YaboVal val) {
         auto array_vtable =
             reinterpret_cast<const ArrayVTable *>(start->vtable);
         auto extent = t3;
-        auto status = catch_segfault(YABO_ACCESS_VPTR(array_vtable, span_impl),
-                                     segfault_err_code, (void *)extent->data,
-                                     (const void *)start->data, 0 | YABO_VTABLE,
-                                     (const void *)end->data);
+        auto status = catch_segfault(
+            YABO_ACCESS_VPTR(array_vtable, span_impl), segfault_err_code,
+            (void *)extent->data, (const void *)start->data,
+            EVAL_LEVEL | YABO_VTABLE, (const void *)end->data);
         if (status != YABO_STATUS_OK) {
           return {};
         }

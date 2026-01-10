@@ -106,6 +106,8 @@ impl Linker for WasmLinker {
             .arg("-Wl,--export-table")
             .arg(format!("-Wl,-z,stack-size={}", Self::STACK_SIZE))
             .arg("-Wl,--gc-sections")
+            .arg("-Wl,-z,norelro")
+            .arg("--no-rosegment")
             .arg("-o")
             .arg(output_path)
             .arg(tmp_rt_obj.path())

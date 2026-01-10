@@ -61,7 +61,7 @@ impl ExprInfo<'_> {
 
 #[derive(Clone, Copy)]
 pub struct ExpressionLoc {
-    pub ty: TypeId,
+    pub eval: bool,
     pub place: Option<PlaceRef>,
     pub origin: PlaceOrigin,
 }
@@ -133,10 +133,10 @@ impl<'a> ConvertExpr<'a> {
             .copied()
     }
 
-    pub fn create_current_ins_retlen_place(&mut self, ty: TypeId, call_loc: DefId) -> PlaceRef {
+    pub fn create_current_ins_retlen_place(&mut self, call_loc: DefId) -> PlaceRef {
         let place = self.f.add_place(PlaceInfo {
             place: Place::ModifiedBy(self.f.next_ins()),
-            ty,
+            eval: true,
             remove_bt: false,
         });
         self.places.insert(SubValue::new_back(call_loc), place);
@@ -145,19 +145,16 @@ impl<'a> ConvertExpr<'a> {
 
     pub fn unwrap_or_stack(&mut self, loc: ExpressionLoc) -> PlaceRef {
         loc.place
-            .unwrap_or_else(|| self.f.new_stack_place(loc.ty, loc.origin))
+            .unwrap_or_else(|| self.f.new_stack_place(loc.origin, loc.eval))
     }
 
     pub fn unwrap_or_undef(&mut self, loc: ExpressionLoc) -> PlaceRef {
         if let Some(place) = loc.place {
             return place;
         }
-        let placeholder_ty = self
-            .db
-            .intern_type(Type::Primitive(yaboc_types::PrimitiveType::Unit));
         let place_info = PlaceInfo {
             place: Place::Undefined,
-            ty: placeholder_ty,
+            eval: false,
             remove_bt: false,
         };
         self.f.add_place(place_info)
@@ -167,18 +164,18 @@ impl<'a> ConvertExpr<'a> {
         self.f.copy(origin, target, self.retreat.error);
     }
 
-    pub fn copy_if_different_levels(
+    pub fn copy_if_eval(
         &mut self,
-        target_ty: TypeId,
+        target_eval: bool,
         loc: ExpressionLoc,
         cont: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
     ) -> SResult<PlaceRef> {
-        if self.db.deref_level(loc.ty)? == self.db.deref_level(target_ty)? {
+        if loc.eval || !target_eval {
             return cont(self, loc.place);
         }
         let inner = cont(self, None)?;
         let loc = ExpressionLoc {
-            ty: target_ty,
+            eval: target_eval,
             ..loc
         };
         let target = self.unwrap_or_stack(loc);
@@ -191,13 +188,12 @@ impl<'a> ConvertExpr<'a> {
         loc: ExpressionLoc,
         cont: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
     ) -> SResult<PlaceRef> {
-        let ldt_ty = self.db.least_deref_type(loc.ty)?;
-        self.copy_if_different_levels(ldt_ty, loc, cont)
+        self.copy_if_eval(true, loc, cont)
     }
 
     fn load_var(&mut self, var: DefId, loc: ExpressionLoc) -> Option<PlaceRef> {
         let place_ref = self.val_place_at_def(var)?;
-        if self.f.fun.place(place_ref).ty == loc.ty && loc.place.is_none() {
+        if self.f.fun.place(place_ref).eval == loc.eval && loc.place.is_none() {
             return Some(place_ref);
         }
         let new_place = self.unwrap_or_stack(loc);
@@ -206,14 +202,13 @@ impl<'a> ConvertExpr<'a> {
     }
 
     fn load_global(&mut self, pd: ParserDefId, loc: ExpressionLoc) -> SResult<PlaceRef> {
-        let global_ty = self.db.parser_returns(pd)?.deref;
         let place_info = PlaceInfo {
             place: Place::Global(pd),
-            ty: loc.ty,
+            eval: true,
             remove_bt: false,
         };
         let place_ref = self.f.add_place(place_info);
-        if self.db.deref_level(loc.ty) == self.db.deref_level(global_ty) && loc.place.is_none() {
+        if loc.place.is_none() {
             return Ok(place_ref);
         }
         let new_place = self.unwrap_or_stack(loc);
@@ -222,13 +217,12 @@ impl<'a> ConvertExpr<'a> {
     }
 
     fn load_captured(&mut self, captured: DefId, loc: ExpressionLoc) -> SResult<PlaceRef> {
-        let cap_ty = self.db.parser_type_at(captured)?;
         let place_ref = self.f.add_place(PlaceInfo {
             place: Place::Captured(self.f.fun.cap(), captured),
-            ty: cap_ty,
+            eval: false,
             remove_bt: false,
         });
-        if self.db.deref_level(loc.ty) == self.db.deref_level(cap_ty) && loc.place.is_none() {
+        if !loc.eval && loc.place.is_none() {
             return Ok(place_ref);
         }
         let new_place = self.unwrap_or_stack(loc);
@@ -259,7 +253,7 @@ impl<'a> ConvertExpr<'a> {
         loc: ExpressionLoc,
         f: impl FnOnce(&mut Self, PlaceRef) -> Result<T, E>,
     ) -> Result<PlaceRef, E> {
-        let stack_place = self.new_stack_place(loc.ty, loc.origin);
+        let stack_place = self.new_stack_place(loc.origin, loc.eval);
         f(self, stack_place)?;
         if let Some(place) = loc.place {
             self.copy(stack_place, place);
@@ -308,11 +302,10 @@ impl<'a> ConvertExpr<'a> {
         place_ref: PlaceRef,
     ) -> SResult<PlaceRef> {
         for captured in captures.iter() {
-            let cap_ty = self.db.parser_type_at(*captured)?;
             let bp_ref = |ctx: &mut Self, block| {
                 ctx.f.add_place(PlaceInfo {
                     place: Place::Captured(block, *captured),
-                    ty: cap_ty,
+                    eval: false,
                     remove_bt: false,
                 })
             };
@@ -396,29 +389,29 @@ impl<'a> ConvertExpr<'a> {
         mut inner_loc: ExpressionLoc,
         kind: WiggleKind,
         constr: HirConstraintId,
+        is_parser: bool,
         recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
     ) -> SResult<PlaceRef> {
-        let res = if matches!(self.db.lookup_intern_type(loc.ty), Type::ParserArg { .. }) {
+        let res = if is_parser {
             let place_ref = self.unwrap_or_stack(loc);
             let inner_place = self.f.add_place(PlaceInfo {
                 place: Place::Front(place_ref),
-                ty: loc.ty,
+                eval: true,
                 remove_bt: false,
             });
             inner_loc.place = Some(inner_place);
-            self.copy_if_different_levels(loc.ty, inner_loc, recurse)?;
+            self.copy_if_eval(loc.eval, inner_loc, recurse)?;
             place_ref
         } else {
-            let place_ref = self.copy_if_different_levels(
-                loc.ty,
+            let place_ref = self.copy_if_eval(
+                loc.eval,
                 ExpressionLoc {
-                    ty: inner_loc.ty,
+                    eval: inner_loc.eval,
                     ..loc
                 },
                 recurse,
             )?;
-            let place_ldt = self.db.least_deref_type(loc.ty)?;
-            let ldt_ref = self.f.new_stack_place(place_ldt, loc.origin);
+            let ldt_ref = self.f.new_stack_place(loc.origin, true);
             self.copy(place_ref, ldt_ref);
             let old_backtrack = self.retreat.backtrack;
             self.retreat.backtrack = match kind {
@@ -476,8 +469,7 @@ impl<'a> ConvertExpr<'a> {
         rrecurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
         req: RequirementSet,
     ) -> SResult<PlaceRef> {
-        let left_ldt = self.db.least_deref_type(lloc.ty)?;
-        let left_plc = self.new_stack_place(left_ldt, lloc.origin);
+        let left_plc = self.new_stack_place(lloc.origin, true);
         let left_plc = lrecurse(self, Some(left_plc))?;
         let right = self.copy_if_deref(rloc, rrecurse)?;
         let place_ref = self.unwrap_or_stack(loc);
@@ -548,15 +540,20 @@ impl<'a> ConvertExpr<'a> {
         loc: ExpressionLoc,
         inner_loc: ExpressionLoc,
         inner_can_bt: bool,
+        inner_ty: TypeId,
         recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
     ) -> SResult<PlaceRef> {
         match &op {
             ValUnOp::Wiggle(constr, WiggleKind::Is) => {
-                if matches!(self.db.lookup_intern_type(loc.ty), Type::ParserArg { .. }) {
+                let typ = self
+                    .db
+                    .lookup_intern_type(self.db.least_deref_type(inner_ty)?);
+                let is_parser = matches!(typ, Type::ParserArg { .. });
+                if is_parser {
                     recurse(self, None)?;
                     return Ok(self.load_undef(loc));
                 }
-                self.convert_wiggle(loc, inner_loc, WiggleKind::Is, *constr, recurse)
+                self.convert_wiggle(loc, inner_loc, WiggleKind::Is, *constr, is_parser, recurse)
             }
             ValUnOp::Dot(field, FieldAccessMode::Backtrack) => {
                 self.convert_dot(inner_loc, loc, FieldAccessMode::Backtrack, *field, recurse)
@@ -581,6 +578,7 @@ impl<'a> ConvertExpr<'a> {
         op: &ValUnOp<HirConstraintId>,
         loc: ExpressionLoc,
         inner_loc: ExpressionLoc,
+        inner_ty: TypeId,
         recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
     ) -> SResult<PlaceRef> {
         Ok(match &op {
@@ -594,16 +592,27 @@ impl<'a> ConvertExpr<'a> {
             ValUnOp::Size => {
                 let inner = self.copy_if_deref(inner_loc, recurse)?;
                 let place_ref = self.unwrap_or_stack(loc);
-                self.f.len_call(inner, place_ref, self.retreat);
+                if let Type::Loop(..) = self
+                    .db
+                    .lookup_intern_type(self.db.least_deref_type(inner_ty)?)
+                {
+                    self.f.array_len_call(inner, place_ref, self.retreat);
+                } else {
+                    self.f.len_call(inner, place_ref, self.retreat);
+                }
                 place_ref
             }
             ValUnOp::Wiggle(constr, kind) => {
-                self.convert_wiggle(loc, inner_loc, *kind, *constr, recurse)?
+                let typ = self
+                    .db
+                    .lookup_intern_type(self.db.least_deref_type(inner_ty)?);
+                let is_parser = matches!(typ, Type::ParserArg { .. });
+                self.convert_wiggle(loc, inner_loc, *kind, *constr, is_parser, recurse)?
             }
             ValUnOp::Dot(field, acc) => self.convert_dot(inner_loc, loc, *acc, *field, recurse)?,
             ValUnOp::BtMark(BtMarkKind::KeepBt) => recurse(self, loc.place)?,
             ValUnOp::BtMark(BtMarkKind::RemoveBt) => {
-                let remove_bt = self.new_remove_bt_stack_place(loc.ty, loc.origin);
+                let remove_bt = self.new_remove_bt_stack_place(loc.origin);
                 let val_without_bt = recurse(self, Some(remove_bt))?;
                 if let Some(place) = loc.place {
                     self.copy(val_without_bt, place);
@@ -731,11 +740,11 @@ impl<'a> ConvertExpr<'a> {
                 let continue_bb = self.f.new_bb();
                 let old_backtrack = self.retreat.backtrack;
                 self.retreat.backtrack = right_bb;
-                self.copy_if_different_levels(loc.ty, lloc, lrecurse)?;
+                self.copy_if_eval(loc.eval, lloc, lrecurse)?;
                 self.f.branch(continue_bb);
                 self.f.set_bb(right_bb);
                 self.retreat.backtrack = old_backtrack;
-                self.copy_if_different_levels(loc.ty, rloc, rrecurse)?;
+                self.copy_if_eval(loc.eval, rloc, rrecurse)?;
                 self.f.branch(continue_bb);
                 self.f.set_bb(continue_bb);
                 place_ref
@@ -762,12 +771,6 @@ impl<'a> ConvertExpr<'a> {
         inner_locs: &[ExpressionLoc],
         mut recurse: impl FnMut(&mut Self, Option<PlaceRef>, usize) -> SResult<PlaceRef>,
     ) -> SResult<PlaceRef> {
-        let fun_ldt = self.db.least_deref_type(inner_locs[0].ty)?;
-        let fun_arg_num = if let Type::FunctionArg(_, args) = self.db.lookup_intern_type(fun_ldt) {
-            args.len()
-        } else {
-            unreachable!()
-        };
         let fun_place = self.copy_if_deref(inner_locs[0], |ctx, plc| recurse(ctx, plc, 0))?;
         let place_ref = self.unwrap_or_stack(loc);
         // if the place is already there, it means that argument is not used
@@ -787,21 +790,8 @@ impl<'a> ConvertExpr<'a> {
             // the `first_arg_index` below would end up negative which is not valid
             self.copy(fun_place, place_ref);
         } else {
-            // fun_arg_num: 6           (available arguments)
-            // inner_results.len(): 4   (given arguments)
-            // _________________________
-            // | 5 | 4 | 3 | 2 | 1 | 0 | <- index for set_arg functions (which lowers to vtable->set_arg_info[-1 - index])
-            // |[0]|[1]|[2]|[3]|___|___| <- inner_results ([i])
-            // \_______________/\______/
-            //    applied args  unapplied
-            let first_arg_index = fun_arg_num as u64 - 1;
-            self.f.apply_args(
-                fun_place,
-                inner_results,
-                place_ref,
-                first_arg_index,
-                self.retreat.error,
-            );
+            self.f
+                .apply_args(fun_place, inner_results, place_ref, self.retreat.error);
         }
         Ok(place_ref)
     }
@@ -812,10 +802,14 @@ impl<'a> ConvertExpr<'a> {
         idx: ExprIdx<Resolved>,
         place: Option<PlaceRef>,
     ) -> SResult<PlaceRef> {
-        let (idx, &ty) = expr.content.data.index_expr(idx).0;
+        let idx = expr.content.data.index_expr(idx).0 .0;
         let req = expr.req(idx);
         let origin = PlaceOrigin::Expr(expr.id, idx);
-        let loc = ExpressionLoc { ty, place, origin };
+        let loc = ExpressionLoc {
+            eval: false,
+            place,
+            origin,
+        };
         if req.is_empty() {
             return Ok(self.load_undef(loc));
         }
@@ -829,21 +823,22 @@ impl<'a> ConvertExpr<'a> {
             }
             ExprHead::Monadic(op, inner) => {
                 let recurse = |ctx: &mut Self, plc| ctx.convert_expr_impl(expr, *inner, plc);
-                let ((inner_idx, &inner_ty), inner_bt) = expr.content.data.index_expr(*inner);
+                let ((inner_idx, inner_ty), inner_bt) = expr.content.data.index_expr(*inner);
                 let inner_origin = PlaceOrigin::Expr(expr.id, inner_idx);
                 let inner_loc = ExpressionLoc {
-                    ty: inner_ty,
+                    eval: false,
                     place: None,
                     origin: inner_origin,
                 };
                 if req.contains(NeededBy::Val) {
-                    self.convert_monadic(op, loc, inner_loc, recurse)?
+                    self.convert_monadic(op, loc, inner_loc, *inner_ty, recurse)?
                 } else {
                     self.convert_monadic_no_val(
                         op,
                         loc,
                         inner_loc,
                         inner_bt.bt.can_backtrack(),
+                        *inner_ty,
                         recurse,
                     )?
                 }
@@ -851,17 +846,17 @@ impl<'a> ConvertExpr<'a> {
             ExprHead::Dyadic(op, [left, right]) => {
                 let lrecurse = |ctx: &mut Self, plc| ctx.convert_expr_impl(expr, *left, plc);
                 let rrecurse = |ctx: &mut Self, plc| ctx.convert_expr_impl(expr, *right, plc);
-                let ((left_idx, &left_ty), _) = expr.content.data.index_expr(*left);
-                let ((right_idx, &right_ty), right_bt) = expr.content.data.index_expr(*right);
+                let ((left_idx, _), _) = expr.content.data.index_expr(*left);
+                let ((right_idx, _), right_bt) = expr.content.data.index_expr(*right);
                 let lorigin = PlaceOrigin::Expr(expr.id, left_idx);
                 let rorigin = PlaceOrigin::Expr(expr.id, right_idx);
                 let lloc = ExpressionLoc {
-                    ty: left_ty,
+                    eval: false,
                     place: None,
                     origin: lorigin,
                 };
                 let rloc = ExpressionLoc {
-                    ty: right_ty,
+                    eval: false,
                     place: None,
                     origin: rorigin,
                 };
@@ -882,10 +877,10 @@ impl<'a> ConvertExpr<'a> {
                 let recurse = |ctx: &mut Self, plc, n| ctx.convert_expr_impl(expr, inner[n], plc);
                 let mut inner_locs = Vec::with_capacity(inner.len());
                 for idx in inner.iter() {
-                    let ((idx, &ty), _) = expr.content.data.index_expr(*idx);
+                    let ((idx, _), _) = expr.content.data.index_expr(*idx);
                     let origin = PlaceOrigin::Expr(expr.id, idx);
                     let mut loc = ExpressionLoc {
-                        ty,
+                        eval: false,
                         place: None,
                         origin,
                     };
@@ -896,7 +891,7 @@ impl<'a> ConvertExpr<'a> {
                     // the subexpressions will just write undef to the place if it is present
                     // and they don't calculate the value
                     if !expr.req(idx).contains(NeededBy::Val) {
-                        loc.place = Some(self.new_stack_place(loc.ty, loc.origin));
+                        loc.place = Some(self.new_stack_place(loc.origin, false));
                     }
                     inner_locs.push(loc);
                 }

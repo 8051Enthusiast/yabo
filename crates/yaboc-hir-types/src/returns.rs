@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use yaboc_base::{dbformat, dbpanic};
 use yaboc_expr::FetchKindData;
 use yaboc_resolve::parserdef_ssc::FunctionSscId;
@@ -23,36 +21,9 @@ pub fn deref_type(db: &dyn TyHirs, ty: TypeId) -> SResult<Option<TypeId>> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct DerefLevel(u64);
-
-const RESERVED_DEREF_METADATA_BITS: u8 = 8;
+pub const THUNK_BIT: u8 = 8;
 pub const VTABLE_BIT: u8 = 0;
 pub const NOBACKTRACK_BIT: u8 = 1;
-
-impl DerefLevel {
-    pub fn into_shifted_runtime_value(self) -> u64 {
-        self.0 << RESERVED_DEREF_METADATA_BITS
-    }
-    pub fn is_deref(self) -> bool {
-        self.0 > 0
-    }
-    pub fn zero() -> Self {
-        DerefLevel(0)
-    }
-    pub fn max() -> Self {
-        DerefLevel(u64::MAX >> RESERVED_DEREF_METADATA_BITS)
-    }
-    pub fn inc(self) -> Self {
-        DerefLevel(self.0 + 1)
-    }
-}
-
-impl Display for DerefLevel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
 
 /// Removes top-level `fun` and `static` nominals from the type
 pub fn normalize_head(db: &dyn TyHirs, ty: TypeId) -> SResult<TypeId> {
@@ -70,26 +41,6 @@ pub fn normalize_head(db: &dyn TyHirs, ty: TypeId) -> SResult<TypeId> {
             db.normalize_head(deref_ty)
         }
         _ => Ok(ty),
-    }
-}
-
-pub fn deref_level(db: &dyn TyHirs, ty: TypeId) -> SResult<DerefLevel> {
-    match db.lookup_intern_type(ty) {
-        Type::Primitive(PrimitiveType::U8) => Ok(DerefLevel::zero().inc()),
-        Type::Nominal(nom) => {
-            let id = match NominalId::from_nominal_head(&nom) {
-                NominalId::Def(id) => id,
-                NominalId::Block(_) => return Ok(DerefLevel::zero()),
-            };
-            let deref_ty = db.parser_returns(id)?.deref;
-            let subst_deref_ty = db.substitute_typevar(deref_ty, nom.ty_args);
-            let mut deref_level = db.deref_level(subst_deref_ty)?;
-            if nom.kind == NominalKind::Def {
-                deref_level = deref_level.inc();
-            }
-            Ok(deref_level)
-        }
-        _ => Ok(DerefLevel::zero()),
     }
 }
 

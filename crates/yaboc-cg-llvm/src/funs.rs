@@ -7,7 +7,7 @@ use yaboc_layout::{
     collect::{fun_req, pd_len_req, pd_val_req},
     mir_subst::function_substitute,
     represent::ParserFunKind,
-    Layout,
+    FuncLayoutKind, Layout,
 };
 use yaboc_mir::{FunKind, MirKind};
 use yaboc_req::NeededBy;
@@ -109,7 +109,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn mir_pd_fun(&mut self, layout: IMonoLayout<'comp>) -> IResult<FunctionSubstitute<'comp>> {
-        let MonoLayout::NominalParser(pd, _, _) = layout.mono_layout().0 else {
+        let MonoLayout::NominalParser(pd, _, _, FuncLayoutKind::Fun) = layout.mono_layout() else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
         let kind = FunKind::ParserDef(*pd);
@@ -123,7 +123,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn mir_lambda_fun(&mut self, layout: IMonoLayout<'comp>) -> IResult<FunctionSubstitute<'comp>> {
-        let MonoLayout::Lambda(ld, _, _, _, _) = layout.mono_layout().0 else {
+        let MonoLayout::Lambda(ld, _, _, _) = layout.mono_layout() else {
             panic!("mir_pd_len_fun has to be called with a lambda layout");
         };
         let kind = FunKind::Lambda(*ld);
@@ -142,7 +142,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         mut req: RequirementSet,
     ) -> FunctionSubstitute<'comp> {
-        let MonoLayout::NominalParser(pd, _, bt) = layout.mono_layout().0 else {
+        let MonoLayout::NominalParser(pd, _, bt, FuncLayoutKind::Parse) = layout.mono_layout()
+        else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
         if !*bt {
@@ -162,7 +163,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         mut req: RequirementSet,
     ) -> FunctionSubstitute<'comp> {
-        let MonoLayout::BlockParser(bd, _, _, bt) = layout.mono_layout().0 else {
+        let MonoLayout::BlockParser(bd, _, bt) = layout.mono_layout() else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
         if from.is_some() && !bt {
@@ -181,10 +182,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         req: RequirementSet,
     ) -> FunctionSubstitute<'comp> {
-        let (MonoLayout::IfParser(_, cid, wiggle), ty) = layout.mono_layout() else {
+        let MonoLayout::IfParser(_, cid, wiggle) = layout.mono_layout() else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
-        let kind = FunKind::If(*cid, ty, *wiggle);
+        let kind = FunKind::If(*cid, *wiggle);
         let req = MirKind::Call(req);
         let mir = self.compiler_database.db.mir(kind, req).unwrap();
         let strictness = self.compiler_database.db.strictness(kind, req).unwrap();
@@ -192,7 +193,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_typecast(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
-        if let MonoLayout::Nominal(..) = layout.mono_layout().0 {
+        if let MonoLayout::Nominal(..) = layout.mono_layout() {
             let (from, fun) = layout.unapply_nominal(self.layouts);
             self.create_pd_parse_impl(from, fun, pd_val_req().req)?;
         }
@@ -327,7 +328,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_mask_funs(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
-        match layout.mono_layout().0 {
+        match layout.mono_layout() {
             MonoLayout::Primitive(_)
             | MonoLayout::SlicePtr
             | MonoLayout::Range
@@ -337,36 +338,38 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             | MonoLayout::ArrayFillParser(None) => self.create_mask_simple(layout),
             MonoLayout::IfParser(inner, _, _)
             | MonoLayout::ArrayParser(Some((inner, None)))
-            | MonoLayout::ArrayFillParser(Some(inner)) => self.create_mask_single(layout, *inner),
-            MonoLayout::ArrayParser(Some((first, Some(second))))
+            | MonoLayout::ArrayFillParser(Some((inner, _))) => {
+                self.create_mask_single(layout, *inner)
+            }
+            MonoLayout::ArrayParser(Some((first, Some((second, _)))))
             | MonoLayout::Array {
                 parser: first,
                 slice: second,
             } => self.create_mask_pair(layout, [*first, *second]),
-            MonoLayout::BlockParser(_, cap, _, _) => {
+            MonoLayout::BlockParser(_, cap, _) => {
                 self.create_mask_manifested(layout, |id| cap[&id])
             }
-            MonoLayout::NominalParser(pd, args, _) => self.create_mask_manifested(layout, |id| {
-                let idx = self
-                    .compiler_database
-                    .db
-                    .parserdef_arg_index(*pd, id)
-                    .unwrap()
-                    .unwrap();
-                args[idx].0
-            }),
+            MonoLayout::NominalParser(pd, args, _, _) => {
+                self.create_mask_manifested(layout, |id| {
+                    let idx = self
+                        .compiler_database
+                        .db
+                        .parserdef_arg_index(*pd, id)
+                        .unwrap()
+                        .unwrap();
+                    args[idx]
+                })
+            }
             MonoLayout::Nominal(pd, from, args) => self.create_mask_manifested(layout, |id| {
-                let (inner, _) = self
-                    .compiler_database
+                self.compiler_database
                     .db
                     .parserdef_arg_index(*pd, id)
                     .unwrap()
                     .map(|idx| args[idx])
                     .or(*from)
-                    .unwrap();
-                inner
+                    .unwrap()
             }),
-            MonoLayout::Lambda(ld, captures, args, _, _) => {
+            MonoLayout::Lambda(ld, captures, args, _) => {
                 self.create_mask_manifested(layout, |id| {
                     let parent_id = id.parent(&self.compiler_database.db).unwrap();
                     if parent_id == ld.0 {
@@ -376,7 +379,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                             .lambda_arg_index(*ld, id)
                             .unwrap()
                             .unwrap();
-                        args[idx].0
+                        args[idx]
                     } else {
                         captures[&id]
                     }
@@ -397,13 +400,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> IResult<FunctionValue<'llvm>> {
         let impl_fun = self.create_pd_parse_impl(from, layout, req)?;
 
-        let MonoLayout::NominalParser(pd, args, _) = layout.mono_layout().0 else {
-            panic!("create_pd_parse has to be called with a nominal parser layout");
-        };
-        let Type::ParserArg { arg: arg_ty, .. } = self
-            .compiler_database
-            .db
-            .lookup_intern_type(layout.mono_layout().1)
+        let MonoLayout::NominalParser(pd, args, _, FuncLayoutKind::Parse) = layout.mono_layout()
         else {
             panic!("create_pd_parse has to be called with a nominal parser layout");
         };
@@ -420,13 +417,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.create_pd_parse_impl(from, layout, req & !NeededBy::Val)?;
         }
 
-        let result = self
-            .compiler_database
-            .db
-            .parser_result(layout.mono_layout().1)
-            .expect("pd parsers type is not parser");
         let mut map = FxHashMap::default();
-        map.insert(Arg::From, (from, arg_ty));
+        map.insert(Arg::From, from);
         let parserdef_args = pd
             .lookup(&self.compiler_database.db)
             .unwrap()
@@ -435,7 +427,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         for (idx, arg) in args.iter().enumerate() {
             map.insert(Arg::Named(parserdef_args[idx].0), *arg);
         }
-        let return_layout = ILayout::make_thunk(self.layouts, *pd, result, &map)
+        let return_layout = ILayout::make_thunk(self.layouts, *pd, &map)
             .unwrap()
             .maybe_mono()
             .unwrap();
@@ -579,10 +571,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.set_always_inline(fun);
         self.add_entry_block(fun);
         let [return_ptr, from, target_head] = get_fun_args(fun);
-        let layout = self
-            .layouts
-            .dcx
-            .primitive(self.layouts.db, PrimitiveType::U8);
+        let layout = self.layouts.dcx.primitive(PrimitiveType::U8);
         let ret = CgReturnValue::new(
             target_head.into_int_value(),
             return_ptr.into_pointer_value(),
@@ -661,7 +650,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             target_head.into_int_value(),
             return_ptr.into_pointer_value(),
         );
-        let i64_layout = self.layouts.dcx.int(self.layouts.db);
+        let i64_layout = self.layouts.dcx.int();
         let i64_val = CgValue::new(i64_layout, from.into_pointer_value());
         self.terminate_tail_typecast(i64_val, ret)
     }
@@ -780,8 +769,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let start_slice = self.build_array_slice_get(start)?;
         let end_slice = self.build_array_slice_get(end)?;
         let buf_slice = self.build_array_slice_get(bufsl)?;
-        let deref_level = self.const_i64(DerefLevel::zero().into_shifted_runtime_value() as i64);
-        let buf_slice_ret = self.build_return_value(buf_slice, deref_level)?;
+        let thunky = self.const_i64(0);
+        let buf_slice_ret = self.build_return_value(buf_slice, thunky)?;
         self.call_span_fun(buf_slice_ret, start_slice, end_slice)?;
         self.terminate_tail_typecast(bufsl.into(), ret)?;
         Ok(())
@@ -805,7 +794,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         req: RequirementSet,
     ) -> IResult<FunctionValue<'llvm>> {
-        let MonoLayout::BlockParser(block, _, _, _) = layout.mono_layout().0 else {
+        let MonoLayout::BlockParser(block, _, _) = layout.mono_layout() else {
             panic!("Expected block parser layout")
         };
         let block = block.lookup(&self.compiler_database.db).unwrap();
@@ -922,7 +911,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         req: RequirementSet,
     ) -> IResult<FunctionValue<'llvm>> {
-        let MonoLayout::Regex(regex, bt) = layout.mono_layout().0 else {
+        let MonoLayout::Regex(regex, bt) = layout.mono_layout() else {
             panic!("called build_regex_parse on non-regex")
         };
         let regex_str = self.compiler_database.db.lookup_intern_regex(*regex);
@@ -1033,7 +1022,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.build_copy_invariant(arg_copy, arg)?;
 
         let slice_len = self.call_array_len_fun(arg)?;
-        let (full_len, inner_parser_layout) = match layout.mono_layout().0 {
+        let (full_len, inner_parser_layout) = match layout.mono_layout() {
             MonoLayout::ArrayParser(Some((inner_parser, _))) => {
                 let status = self.call_len_fun(int_buf.ptr, parser.into())?;
                 self.non_zero_early_return(status)?;
@@ -1086,17 +1075,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let ret = self.call_skip_fun(arg, full_len)?;
         self.non_zero_early_return(ret)?;
         if req.contains(NeededBy::Val) {
-            let inner_slice =
-                if let Layout::Mono(MonoLayout::Single, _) = inner_parser_layout.layout.1 {
-                    CgValue::new(result_layout.inner(), ret_buf.ptr)
-                } else {
-                    let inner_parser = self.build_array_parser_get(parser)?;
-                    let result_parser = self.build_array_parser_get(ret_buf)?;
-                    self.build_copy_invariant(result_parser, inner_parser)?;
-                    self.build_array_slice_get(ret_buf)?
-                };
-            let deref_level =
-                self.const_i64(DerefLevel::zero().into_shifted_runtime_value() as i64);
+            let inner_slice = if let Layout::Mono(MonoLayout::Single) = inner_parser_layout.layout.1
+            {
+                CgValue::new(result_layout.inner(), ret_buf.ptr)
+            } else {
+                let inner_parser = self.build_array_parser_get(parser)?;
+                let result_parser = self.build_array_parser_get(ret_buf)?;
+                self.build_copy_invariant(result_parser, inner_parser)?;
+                self.build_array_slice_get(ret_buf)?
+            };
+            let deref_level = self.const_i64(0);
             let inner_slice_ret = self.build_return_value(inner_slice, deref_level)?;
             let ret = self.call_span_fun(inner_slice_ret, arg_copy, arg)?;
             self.non_zero_early_return(ret)?;
@@ -1122,7 +1110,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             target_head.into_int_value(),
             return_ptr.into_pointer_value(),
         );
-        let (id, inner_layout) = if let MonoLayout::Block(id, fields) = &layout.mono_layout().0 {
+        let (id, inner_layout) = if let MonoLayout::Block(id, fields) = &layout.mono_layout() {
             (id, fields[&FieldName::Ident(name)])
         } else {
             dbpanic!(
@@ -1195,17 +1183,15 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_mir_len_fun(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
         let fun = self.parser_len_fun_val(layout);
         let [return_ptr, fun_ptr] = get_fun_args(fun).map(|v| v.into_pointer_value());
-        let int_layout = self.layouts.dcx.int(&self.compiler_database.db);
+        let int_layout = self.layouts.dcx.int();
         let int_value = CgValue::new(int_layout, self.any_ptr().const_null());
         let fun_value = CgMonoValue::new(layout, fun_ptr);
-        let head = self.const_i64(DerefLevel::zero().into_shifted_runtime_value() as i64);
+        let head = self.const_i64(0);
         let ret_value = CgReturnValue::new(head, return_ptr);
-        let fun_kind = match layout.mono_layout().0 {
+        let fun_kind = match layout.mono_layout() {
             MonoLayout::NominalParser(pd, ..) => FunKind::ParserDef(*pd),
             MonoLayout::BlockParser(bd, ..) => FunKind::Block(*bd),
-            MonoLayout::IfParser(_, constr, wiggle) => {
-                FunKind::If(*constr, layout.mono_layout().1, *wiggle)
-            }
+            MonoLayout::IfParser(_, constr, wiggle) => FunKind::If(*constr, *wiggle),
             _ => dbpanic!(
                 &self.compiler_database.db,
                 "called create_mir_len_fun on non-parser {}",
@@ -1227,7 +1213,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_len_fun(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
-        match layout.mono_layout().0 {
+        match layout.mono_layout() {
             MonoLayout::Single => self.create_const_len_fun(layout, 1),
             MonoLayout::Regex(regex, _) => {
                 if let Some(len) = self.compiler_database.db.regex_len(*regex).unwrap() {
@@ -1239,8 +1225,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             MonoLayout::ArrayFillParser(_) => self.create_fail_len_fun(layout),
             MonoLayout::ArrayParser(_) => self.create_array_parser_len_fun(layout),
             MonoLayout::IfParser(_, _, _)
-            | MonoLayout::NominalParser(_, _, _)
-            | MonoLayout::BlockParser(_, _, _, _) => self.create_mir_len_fun(layout),
+            | MonoLayout::NominalParser(..)
+            | MonoLayout::BlockParser(_, _, _) => self.create_mir_len_fun(layout),
             _ => dbpanic!(
                 &self.compiler_database.db,
                 "called create_len_fun on non-parser {}",
@@ -1251,7 +1237,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_eval_block(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
-        let MonoLayout::BlockParser(block, _, _, _) = layout.mono_layout().0 else {
+        let MonoLayout::BlockParser(block, _, _) = layout.mono_layout() else {
             panic!("Expected block parser layout")
         };
         let block = block.lookup(&self.compiler_database.db).unwrap();
@@ -1334,7 +1320,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_eval_fun_fun(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
-        let impl_fun = match layout.mono_layout().0 {
+        let impl_fun = match layout.mono_layout() {
             MonoLayout::ArrayParser(_) | MonoLayout::ArrayFillParser(_) => {
                 return self.create_eval_fun_fun_copy(layout)
             }
@@ -1364,21 +1350,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         args: &[ILayout<'comp>],
         slot: u64,
     ) -> IResult<()> {
-        let fun_type = self
-            .compiler_database
-            .db
-            .lookup_intern_type(layout.mono_layout().1);
-        let return_layout = if let Type::FunctionArg(_, arg_tys) = fun_type {
-            let new_args = args.iter().copied().zip(arg_tys.iter().copied());
-            let result = layout.inner().apply_fun(self.layouts, new_args).unwrap();
-            result.maybe_mono().unwrap()
-        } else {
-            dbpanic!(
-                &self.compiler_database.db,
-                "called create_fun_create with non-nominal parser {}",
-                &layout.inner()
-            );
-        };
+        let new_args = args.iter().copied();
+        let result = layout.inner().apply_fun(self.layouts, new_args).unwrap();
+        let return_layout = result.maybe_mono().unwrap();
         let f = self.function_create_args_fun_val(layout, slot);
         self.add_entry_block(f);
         ThunkContext::new(
@@ -1426,7 +1400,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             if !visited.insert((from, meta.req)) {
                 continue;
             }
-            let mut create_fun = match layout.mono_layout().0 {
+            let mut create_fun = match layout.mono_layout() {
                 MonoLayout::Single => Self::create_single_parse,
                 MonoLayout::NominalParser(..) => Self::create_pd_parse,
                 MonoLayout::BlockParser(..) => Self::create_block_parse,
@@ -1452,11 +1426,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_funcalls(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
-        let Type::FunctionArg(_, args) = self.layouts.db.lookup_intern_type(layout.mono_layout().1)
-        else {
-            panic!("attempting to create funcalls of non-function layout")
-        };
-        if args.is_empty() {
+        let argnum = layout.arg_num(&self.compiler_database.db).unwrap();
+        if argnum.map(|(a, b)| a == b).unwrap_or(false) {
             self.create_eval_fun_fun(layout)?;
         }
         let collected_layouts = self.collected_layouts.clone();
@@ -1474,7 +1445,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_block_funs(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
-        let id = if let MonoLayout::Block(id, _) = layout.mono_layout().0 {
+        let id = if let MonoLayout::Block(id, _) = layout.mono_layout() {
             *id
         } else {
             panic!("attempting to create block funs of non-block layout")
@@ -1503,7 +1474,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_array_funs(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
-        for create in match layout.mono_layout().0 {
+        for create in match layout.mono_layout() {
             MonoLayout::SlicePtr => [
                 Self::create_sliceptr_current_element,
                 Self::create_sliceptr_single_forward,
@@ -1536,7 +1507,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_primitive_funs(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
-        if let MonoLayout::Primitive(PrimitiveType::U8) = layout.mono_layout().0 {
+        if let MonoLayout::Primitive(PrimitiveType::U8) = layout.mono_layout() {
             self.create_u8_current_element(layout)?;
         }
         Ok(())
@@ -1567,18 +1538,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             let Some(&(fun, layout)) = self.collected_layouts.globals.get(pd) else {
                 continue;
             };
-            let Type::FunctionArg(ret, _) = self
-                .compiler_database
-                .db
-                .lookup_intern_type(fun.mono_layout().1)
-            else {
-                panic!("attempting to create init function with non-function type stored in layout")
-            };
-            let level = self.layouts.db.deref_level(ret).unwrap();
             let global = self.global_constant(*pd);
-            let mut head = level.into_shifted_runtime_value();
-            head |= (layout.is_multi() as u64) << VTABLE_BIT;
-            let ret_val = CgReturnValue::new(self.const_i64(head as i64), global);
+            let mut head = 0;
+            head |= (layout.is_multi() as i64) << VTABLE_BIT;
+            let ret_val = CgReturnValue::new(self.const_i64(head), global);
             let fun_val = CgValue::new(fun.inner(), self.any_ptr().const_null());
             let status = self.call_eval_fun_fun(ret_val, fun_val, ParserFunKind::Wrapper)?;
             self.non_zero_early_return(status)?;
