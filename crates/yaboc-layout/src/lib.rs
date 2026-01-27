@@ -19,7 +19,7 @@ use yaboc_base::low_effort_interner::{Interner, Uniq};
 use yaboc_base::{dbformat, dbpanic};
 use yaboc_expr::ExprHead;
 use yaboc_hir::{self as hir, DefKind, HirIdWrapper};
-use yaboc_hir_types::{HeadDiscriminant, NominalId, DISCRIMINANT_MASK};
+use yaboc_hir_types::{HeadDiscriminant, NominalId};
 use yaboc_mir::Mirs;
 use yaboc_resolve::expr::{Resolved, ResolvedAtom, ValBinOp, ValUnOp, ValVarOp};
 use yaboc_target::layout::{PSize, SizeAlign, TargetLayoutData, TargetSized, Zst};
@@ -235,21 +235,6 @@ impl<'a> IMonoLayout<'a> {
                 HeadDiscriminant::Parser
             }
             MonoLayout::Nominal(_, _, _) => HeadDiscriminant::Nominal,
-        }
-    }
-
-    pub fn head_disc<DB: Layouts + ?Sized>(&self, db: &DB) -> i64 {
-        let mono = self.mono_layout();
-        let disc = self.head_kind(db);
-        if let MonoLayout::Nominal(parser_def_id, _, _) = mono {
-            let def_hash: [u8; 8] = db.def_hash(parser_def_id.0)[0..8].try_into().unwrap();
-            // highest bit is set for nominal types (so that it is negative)
-            // and the rest is derived from the first 8 bytes of the hash
-            //
-            // the lowest eight bits are for flags so they get zeroed out
-            i64::from_le_bytes(def_hash) & DISCRIMINANT_MASK | i64::MIN
-        } else {
-            disc as i64
         }
     }
 
@@ -1267,7 +1252,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
         let res = self.try_map(ctx, |layout, ctx| match layout.mono_layout() {
             MonoLayout::Nominal(pd, _, _) => {
                 if yaboc_hir::DefKind::Def == pd.lookup(ctx.db)?.kind {
-                    return Ok(layout.inner())
+                    return Ok(layout.inner());
                 }
                 changed = true;
                 Ok(ctx

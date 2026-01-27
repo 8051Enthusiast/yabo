@@ -199,7 +199,7 @@ int print_recursive(int indent, Stack stack, FILE *out) {
   dyn_mask(val);
   int64_t head = vtable->head & YABO_DISC_MASK;
   Stack substack = bump(stack);
-  if (head < 0 || head == YABO_U8) {
+  if (head == YABO_THUNK || head == YABO_U8) {
     status = print_indirect(val, indent, substack, out);
   } else {
     switch (head) {

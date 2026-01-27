@@ -89,10 +89,6 @@ YaboValKind YaboVal::kind() const noexcept {
     return YaboValKind::YABOERROR;
   }
 
-  if (val->vtable->head < 0) {
-    return YaboValKind::YABONOM;
-  }
-
   return static_cast<YaboValKind>(val->vtable->head & YABO_DISC_MASK);
 }
 
@@ -319,7 +315,7 @@ std::optional<ByteSpan> YaboValCreator::extent(YaboVal val) {
           return primary_slice(t1, t2);
         });
   }
-  if (val.kind() != YaboValKind::YABONOM) {
+  if (val.kind() != YaboValKind::YABOTHUNK) {
     return {};
   }
   auto vtable = reinterpret_cast<const NominalVTable *>(val->vtable);

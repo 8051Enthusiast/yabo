@@ -41,6 +41,7 @@ YABO_FUN_ARGS = 0x600
 YABO_BLOCK = 0x700
 YABO_UNIT = 0x800
 YABO_U8 = 0x900
+YABO_THUNK = 0xa00
 YABO_ANY = YABO_DISC_MASK
 YABO_VTABLE = 1
 
@@ -611,9 +612,9 @@ def _new_value(val: DynValue, lib: YaboLib):
     head = val.get_vtable().head
     if head not in [YABO_INTEGER, YABO_BIT, YABO_CHAR]:
         val = copy(val)
-    if head < 0:
-        return NominalValue(val, lib)
     masked_head = head & YABO_DISC_MASK
+    if masked_head == YABO_THUNK:
+        return NominalValue(val, lib)
     if masked_head == YABO_INTEGER:
         return ctypes.cast(val.data_ptr(), POINTER(c_int64)).contents.value
     if masked_head == YABO_BIT:

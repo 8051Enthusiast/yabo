@@ -41,6 +41,7 @@ enum YaboHead {
   YABO_BLOCK = 0x700,
   YABO_UNIT = 0x800,
   YABO_U8 = 0x900,
+  YABO_THUNK = 0xa00,
   YABO_VTABLE = 1,
 };
 

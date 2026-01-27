@@ -77,7 +77,7 @@ void FileRequester::set_value(TreeIndex idx, SpannedHandle val,
     size_t end = start + val.span.size();
     emit new_node({start, end, node});
   }
-  if (val.kind != YaboValKind::YABONOM) {
+  if (val.kind != YaboValKind::YABOTHUNK) {
     return;
   }
   auto val_handle = val.access_val();
@@ -183,7 +183,7 @@ QVariant FileRequester::data(TreeIndex idx) const {
     return QVariant::fromValue(*inner_val.access_bool());
   case YaboValKind::YABOCHAR:
     return QVariant::fromValue(*inner_val.access_char());
-  case YaboValKind::YABONOM: {
+  case YaboValKind::YABOTHUNK: {
     return inner_val.name;
   }
   case YaboValKind::YABOU8: {
@@ -266,7 +266,7 @@ void FileRequester::fetch_children(TreeIndex idx, RootIndex root) {
 
 std::optional<QColor> FileRequester::color(TreeIndex idx) const {
   auto &node = arborist->get_node(idx);
-  if (node.val.has_value() && node.val->kind == YaboValKind::YABONOM) {
+  if (node.val.has_value() && node.val->kind == YaboValKind::YABOTHUNK) {
     auto bubble = nominal_bubbles.at(*node.val->access_val());
     return node_color(bubble);
   }
@@ -388,7 +388,7 @@ QColor FileRequester::generate_new_node_color(QString val, size_t pos) const {
 
 std::optional<Node> FileRequester::link(TreeIndex idx) const {
   auto &node = arborist->get_node(idx);
-  if (node.val.has_value() && node.val->kind == YaboValKind::YABONOM) {
+  if (node.val.has_value() && node.val->kind == YaboValKind::YABOTHUNK) {
     auto bubble = nominal_bubbles.at(*node.val->access_val());
     return Node{bubble};
   }
