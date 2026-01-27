@@ -138,7 +138,7 @@ YaboValKind YamlDataProvider::string_to_kind(const QString &type_str) {
   if (type_str == "block")
     return YaboValKind::YABOBLOCK;
   if (type_str == "nominal")
-    return YaboValKind::YABONOM;
+    return YaboValKind::YABOTHUNK;
   if (type_str == "unit")
     return YaboValKind::YABOUNIT;
   if (type_str == "error")

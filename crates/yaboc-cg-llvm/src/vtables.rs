@@ -13,8 +13,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .inner()
             .size_align_without_vtable(self.layouts)
             .unwrap();
-        let head_disc = layout.head_disc(&self.compiler_database.db);
-        let head_disc_val = self.const_i64(head_disc);
+        let head_disc = layout.head_kind(&self.compiler_database.db);
+        let head_disc_val = self.const_i64(head_disc as i64);
         let typecast = self.typecast_fun_val(layout);
         let mask = self.mask_fun_val(layout);
         let size = self.const_size_t(size_align.after as i64);

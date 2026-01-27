@@ -29,7 +29,7 @@ SpannedHandle::SpannedHandle(SpannedVal val, const FileRef &file) noexcept
     : active(val.active), span(file->file_span(val.span)), kind(val.kind()),
       flags(val) {
   switch (kind) {
-  case YaboValKind::YABONOM:
+  case YaboValKind::YABOTHUNK:
     name = QString::fromUtf8(YABO_ACCESS_VPTR(
         reinterpret_cast<NominalVTable *>(val.val->vtable), name));
   case YaboValKind::YABOARRAY:
@@ -64,7 +64,7 @@ std::optional<ValHandle> SpannedHandle::access_val() const noexcept {
   case YaboValKind::YABOBLOCK:
   case YaboValKind::YABOPARSER:
   case YaboValKind::YABOFUNARGS:
-  case YaboValKind::YABONOM:
+  case YaboValKind::YABOTHUNK:
     return ValHandle(handle);
   case YaboValKind::YABOU8:
   case YaboValKind::YABOCHAR:

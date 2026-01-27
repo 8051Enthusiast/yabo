@@ -81,7 +81,7 @@ pub enum HeadDiscriminant {
     Block = 0x700,
     Unit = 0x800,
     U8 = 0x900,
-    Nominal = -0x8000_0000_0000_0000,
+    Nominal = 0xa00,
 }
 
 pub const DISCRIMINANT_MASK: i64 = !0xff;

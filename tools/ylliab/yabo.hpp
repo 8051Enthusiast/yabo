@@ -22,8 +22,8 @@ enum class YaboValKind : int64_t {
   YABOBLOCK = 0x700,
   YABOUNIT = 0x800,
   YABOU8 = 0x900,
-  YABONOM = -1,
-  YABOERROR = -2,
+  YABOTHUNK = 0xa00,
+  YABOERROR = -1,
 };
 
 static constexpr int64_t segfault_err_code = 0xff;
@@ -61,7 +61,7 @@ struct YaboVal {
 
   bool is_exceptional() const noexcept { return !val->vtable; }
 
-  bool is_thunk() const noexcept { return val->vtable->head < 0; }
+  bool is_thunk() const noexcept { return val->vtable->head == YABO_THUNK; }
 
   bool is_backtrack() const noexcept {
     return !val->vtable && access_error() == YABO_STATUS_BACKTRACK;
