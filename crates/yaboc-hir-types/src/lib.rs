@@ -10,7 +10,7 @@ use std::{collections::BTreeMap, fmt::Debug, hash::Hash, rc::Rc, sync::Arc};
 use bumpalo::Bump;
 use fxhash::FxHashMap;
 
-use hir::{BlockKind, DefKind, HirConstraint};
+use hir::{BlockKind, HirConstraint};
 use resolve::expr::Resolved;
 use resolve::parserdef_ssc::FunctionSscId;
 use yaboc_ast::expr::{self, Atom, TypeBinOp, TypeUnOp};
@@ -42,10 +42,7 @@ use yaboc_hir::{self, BlockReturnKind, Hirs};
 pub struct FullTypeId;
 pub struct PubTypeId;
 
-use returns::{
-    least_deref_type, parser_expr_at, parser_returns, parser_type_at, ssc_types, ParserDefType,
-    SscTypes,
-};
+use returns::{parser_expr_at, parser_returns, parser_type_at, ssc_types, ParserDefType, SscTypes};
 pub use returns::{NOBACKTRACK_BIT, THUNK_BIT, VTABLE_BIT};
 use signature::{bound_args, fun_arg_count, parser_args, parser_args_error};
 
@@ -55,7 +52,6 @@ pub trait TyHirs: Hirs + yaboc_types::TypeInterner + resolve::Resolves {
     fn parser_args_error(&self, id: hir::ParserDefId) -> Result<Signature, SpannedTypeError>;
     fn parser_returns(&self, id: hir::ParserDefId) -> SResult<ParserDefType>;
     fn ssc_types(&self, id: FunctionSscId) -> Result<SscTypes, SpannedTypeError>;
-    fn least_deref_type(&self, ty: TypeId) -> SResult<TypeId>;
     fn fun_arg_count(&self, ty: TypeId) -> SResult<Option<u32>>;
     fn parser_type_at(&self, loc: DefId) -> SResult<TypeId>;
     fn parser_expr_at(&self, loc: hir::ExprId) -> SResult<Arc<ExprTypeData>>;

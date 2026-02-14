@@ -12,10 +12,6 @@ pub const THUNK_BIT: u8 = 8;
 pub const VTABLE_BIT: u8 = 0;
 pub const NOBACKTRACK_BIT: u8 = 1;
 
-pub fn least_deref_type(_: &dyn TyHirs, ty: TypeId) -> SResult<TypeId> {
-    Ok(ty)
-}
-
 pub fn parser_type_at(db: &dyn TyHirs, id: DefId) -> SResult<TypeId> {
     let parent_pd = db.hir_parent_parserdef(id)?;
     let types = db.ssc_types(db.parser_ssc(parent_pd)?).silence()?;
@@ -101,12 +97,9 @@ pub fn ssc_types(db: &dyn TyHirs, id: FunctionSscId) -> Result<SscTypes, Spanned
         let spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(def.to.0));
         // here we are finished with inference so we can convert to actual types
         converter.set_id(def.id.0);
-        let mut deref = converter
+        let deref = converter
             .convert_to_type(ctx.inftypes[&def.id.0])
             .map_err(spanned)?;
-        if def.kind == DefKind::Static && def.ret_ty.is_none() {
-            deref = db.least_deref_type(deref)?;
-        }
         rets.push(ParserDefType { id: def.id, deref });
     }
     for (&id, &infty) in inftypes.iter() {

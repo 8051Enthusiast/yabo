@@ -308,7 +308,6 @@ impl<'a> ExpressionBuildCtx<'a> {
                             self.push(Instruction::Fail, *ty, orig)?;
                         }
                         let block_ty = self.builder.ty(inner);
-                        let block_ty = self.db.least_deref_type(block_ty)?;
                         let Type::Block(block) = self.db.lookup(block_ty) else {
                             panic!("expected block type");
                         };

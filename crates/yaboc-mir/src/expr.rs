@@ -545,9 +545,7 @@ impl<'a> ConvertExpr<'a> {
     ) -> SResult<PlaceRef> {
         match &op {
             ValUnOp::Wiggle(constr, WiggleKind::Is) => {
-                let typ = self
-                    .db
-                    .lookup_intern_type(self.db.least_deref_type(inner_ty)?);
+                let typ = self.db.lookup_intern_type(inner_ty);
                 let is_parser = matches!(typ, Type::ParserArg { .. });
                 if is_parser {
                     recurse(self, None)?;
@@ -592,10 +590,7 @@ impl<'a> ConvertExpr<'a> {
             ValUnOp::Size => {
                 let inner = self.copy_if_deref(inner_loc, recurse)?;
                 let place_ref = self.unwrap_or_stack(loc);
-                if let Type::Loop(..) = self
-                    .db
-                    .lookup_intern_type(self.db.least_deref_type(inner_ty)?)
-                {
+                if let Type::Loop(..) = self.db.lookup_intern_type(inner_ty) {
                     self.f.array_len_call(inner, place_ref, self.retreat);
                 } else {
                     self.f.len_call(inner, place_ref, self.retreat);
@@ -603,9 +598,7 @@ impl<'a> ConvertExpr<'a> {
                 place_ref
             }
             ValUnOp::Wiggle(constr, kind) => {
-                let typ = self
-                    .db
-                    .lookup_intern_type(self.db.least_deref_type(inner_ty)?);
+                let typ = self.db.lookup_intern_type(inner_ty);
                 let is_parser = matches!(typ, Type::ParserArg { .. });
                 self.convert_wiggle(loc, inner_loc, *kind, *constr, is_parser, recurse)?
             }
