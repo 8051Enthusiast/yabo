@@ -12,7 +12,7 @@ import tempfile
 import subprocess
 import json
 import time
-from typing import Optional, Sequence, Tuple
+from typing import Optional, Tuple
 from concurrent import futures
 import yabo
 
