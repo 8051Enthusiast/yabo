@@ -230,14 +230,9 @@ impl VarRow {
         }
     }
 
-    fn expand_typevar(
-        &self,
-        columns: &[TypeVarOccurence],
-        typevar_widths: &[u32],
-        var_idx: u32,
-    ) -> Self {
-        let new_total_bits = expanded_count(self.total_bits(), columns, typevar_widths);
-        let new_bound_bits = expanded_count(self.bound_bits, columns, typevar_widths);
+    fn expand_typevar(&self, columns: &[TypeVarOccurence], var_idx: u32) -> Self {
+        let new_total_bits = expanded_count(self.total_bits(), columns);
+        let new_bound_bits = expanded_count(self.bound_bits, columns);
         let new_bits = RowBits::with_capacity(new_total_bits as usize);
         let mut ret = Self {
             bound_bits: new_bound_bits,
@@ -248,7 +243,7 @@ impl VarRow {
         let mut column_var_idx = 0;
         for bit in 0..self.total_bits() {
             let (n, i) = if columns.get(column_var_idx).map(|x| x.matrix_idx) == Some(bit) {
-                let n = typevar_widths[columns[column_var_idx].typevar_idx as usize];
+                let n = columns[column_var_idx].substituted_width;
                 column_var_idx += 1;
                 (n, var_idx)
             } else {
@@ -413,15 +408,10 @@ impl Row {
         }
     }
 
-    pub fn expand_typevar(
-        &self,
-        columns: &[TypeVarOccurence],
-        typevar_widths: &[u32],
-        var_idx: u32,
-    ) -> Self {
+    pub fn expand_typevar(&self, columns: &[TypeVarOccurence], var_idx: u32) -> Self {
         match self {
             Row::True => Row::True,
-            Row::Vars(row) => Row::Vars(row.expand_typevar(columns, typevar_widths, var_idx)),
+            Row::Vars(row) => Row::Vars(row.expand_typevar(columns, var_idx)),
         }
     }
 
@@ -699,16 +689,16 @@ pub struct MatrixArena<'arena> {
 
 pub struct TypeVarOccurence {
     pub matrix_idx: u32,
-    pub typevar_idx: u32,
+    pub substituted_width: u32,
 }
 
-fn expanded_count(count: u32, occurences: &[TypeVarOccurence], typevar_widths: &[u32]) -> u32 {
+fn expanded_count(count: u32, occurences: &[TypeVarOccurence]) -> u32 {
     let mut ret = count;
     for occ in occurences {
         if occ.matrix_idx >= count {
             break;
         }
-        ret = ret + typevar_widths[occ.typevar_idx as usize] - 1;
+        ret = ret + occ.substituted_width - 1;
     }
     ret
 }
@@ -859,9 +849,8 @@ impl<'arena> MatrixArena<'arena> {
         matrix: Matrix,
         rows: &[TypeVarOccurence],
         columns: &[TypeVarOccurence],
-        typevar_widths: &[u32],
     ) -> Matrix<'arena> {
-        let new_rows = expanded_count(matrix.row_count(), rows, typevar_widths);
+        let new_rows = expanded_count(matrix.row_count(), rows);
         let out = self
             .arena
             .alloc_extend(std::iter::repeat_n(Row::True, new_rows as usize));
@@ -869,13 +858,13 @@ impl<'arena> MatrixArena<'arena> {
         let mut row_var_idx = 0;
         for (i, row) in matrix.rows.iter().enumerate() {
             for j in 0..if rows.get(row_var_idx).map(|x| x.matrix_idx) == Some(i as u32) {
-                let n = typevar_widths[rows[row_var_idx].typevar_idx as usize];
+                let n = rows[row_var_idx].substituted_width;
                 row_var_idx += 1;
                 n
             } else {
                 1
             } {
-                let new_row = row.expand_typevar(columns, typevar_widths, j);
+                let new_row = row.expand_typevar(columns, j);
                 out[out_idx] = new_row;
                 out_idx += 1;
             }
@@ -1140,33 +1129,32 @@ T
         let rows = vec![
             TypeVarOccurence {
                 matrix_idx: 0,
-                typevar_idx: 0,
+                substituted_width: 2,
             },
             TypeVarOccurence {
                 matrix_idx: 2,
-                typevar_idx: 1,
+                substituted_width: 3,
             },
             TypeVarOccurence {
                 matrix_idx: 4,
-                typevar_idx: 0,
+                substituted_width: 2,
             },
         ];
         let columns = vec![
             TypeVarOccurence {
                 matrix_idx: 0,
-                typevar_idx: 0,
+                substituted_width: 2,
             },
             TypeVarOccurence {
                 matrix_idx: 1,
-                typevar_idx: 1,
+                substituted_width: 3,
             },
             TypeVarOccurence {
                 matrix_idx: 3,
-                typevar_idx: 1,
+                substituted_width: 3,
             },
         ];
-        let typevar_widths = vec![2, 3];
-        let b = arena.replace_typevar(a, &rows, &columns, &typevar_widths);
+        let b = arena.replace_typevar(a, &rows, &columns);
         assert_eq!(
             b.to_string(),
             "\

@@ -14,7 +14,7 @@ use hir::{BlockKind, DefKind, HirConstraint};
 use resolve::expr::Resolved;
 use resolve::parserdef_ssc::FunctionSscId;
 use yaboc_ast::expr::{self, Atom, TypeBinOp, TypeUnOp};
-use yaboc_ast::{ArrayKind, ConstraintAtom};
+use yaboc_ast::ConstraintAtom;
 use yaboc_base::interner::Identifier;
 use yaboc_base::{
     error::{IsSilenced, SResult, Silencable, SilencedError},
@@ -30,12 +30,12 @@ use yaboc_resolve::{
     self as resolve,
     expr::{ResolvedAtom, ValBinOp, ValUnOp, ValVarOp},
 };
-use yaboc_types::inference::{Application, InternedNomHead};
+use yaboc_types::inference::Application;
 use yaboc_types::{
     inference::{InfTypeId, InfTypeInterner, InferenceContext, InferenceType, TypeResolver},
-    EitherType, NominalKind, NominalTypeHead, PrimitiveType, Signature, Type, TypeError, TypeId,
+    EitherType, PrimitiveType, Signature, Type, TypeError, TypeId,
 };
-use yaboc_types::{TypeConvError, TypeVarRef};
+use yaboc_types::{BlockTypeHead, TypeConvError, TypeVarRef};
 
 use yaboc_hir::{self, BlockReturnKind, Hirs};
 
@@ -43,11 +43,11 @@ pub struct FullTypeId;
 pub struct PubTypeId;
 
 use returns::{
-    deref_type, least_deref_type, normalize_head, parser_expr_at, parser_returns, parser_type_at,
-    ssc_types, ParserDefType, SscTypes,
+    least_deref_type, parser_expr_at, parser_returns, parser_type_at, ssc_types, ParserDefType,
+    SscTypes,
 };
-pub use returns::{NOBACKTRACK_BIT, VTABLE_BIT, THUNK_BIT};
-use signature::{bound_args, fun_arg_count, get_signature, parser_args, parser_args_error};
+pub use returns::{NOBACKTRACK_BIT, THUNK_BIT, VTABLE_BIT};
+use signature::{bound_args, fun_arg_count, parser_args, parser_args_error};
 
 #[salsa::query_group(HirTypesDatabase)]
 pub trait TyHirs: Hirs + yaboc_types::TypeInterner + resolve::Resolves {
@@ -55,8 +55,6 @@ pub trait TyHirs: Hirs + yaboc_types::TypeInterner + resolve::Resolves {
     fn parser_args_error(&self, id: hir::ParserDefId) -> Result<Signature, SpannedTypeError>;
     fn parser_returns(&self, id: hir::ParserDefId) -> SResult<ParserDefType>;
     fn ssc_types(&self, id: FunctionSscId) -> Result<SscTypes, SpannedTypeError>;
-    fn deref_type(&self, ty: TypeId) -> SResult<Option<TypeId>>;
-    fn normalize_head(&self, ty: TypeId) -> SResult<TypeId>;
     fn least_deref_type(&self, ty: TypeId) -> SResult<TypeId>;
     fn fun_arg_count(&self, ty: TypeId) -> SResult<Option<u32>>;
     fn parser_type_at(&self, loc: DefId) -> SResult<TypeId>;
@@ -92,26 +90,10 @@ pub fn ty_head_discriminant<DB: TyHirs + ?Sized>(db: &DB, ty: TypeId) -> i64 {
         Type::Primitive(PrimitiveType::Bit) => HeadDiscriminant::Bit as i64,
         Type::Primitive(PrimitiveType::Char) => HeadDiscriminant::Char as i64,
         Type::Primitive(PrimitiveType::Unit) => HeadDiscriminant::Unit as i64,
-        Type::Primitive(PrimitiveType::U8) => HeadDiscriminant::U8 as i64,
         Type::Loop(_, _) => HeadDiscriminant::Loop as i64,
         Type::ParserArg { .. } => HeadDiscriminant::Parser as i64,
         Type::FunctionArg(_, _) => HeadDiscriminant::FunctionArgs as i64,
-        Type::Nominal(NominalTypeHead {
-            kind: NominalKind::Block,
-            ..
-        }) => HeadDiscriminant::Block as i64,
-        Type::Nominal(NominalTypeHead {
-            kind: NominalKind::Def | NominalKind::Fun | NominalKind::Static,
-            def,
-            ..
-        }) => {
-            let def_hash: [u8; 8] = db.def_hash(def)[0..8].try_into().unwrap();
-            // highest bit is set for nominal types (so that it is negative)
-            // and the rest is derived from the first 8 bytes of the hash
-            //
-            // the lowest eight bits are for flags so they get zeroed out
-            i64::from_le_bytes(def_hash) & DISCRIMINANT_MASK | i64::MIN
-        }
+        Type::Block(BlockTypeHead { .. }) => HeadDiscriminant::Block as i64,
         Type::TypeVarRef(_) | Type::Unknown => 0,
     }
 }
@@ -156,7 +138,6 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
     ) -> Result<InfTypeId<'intern>, SpannedTypeError> {
         let span = IndirectSpan::new(id.0, *expr.data.index_expr(idx));
         let ret = match &expr.expr[idx] {
-            ExprHead::Dyadic(TypeBinOp::Ref, _) => unimplemented!(),
             ExprHead::Dyadic(TypeBinOp::ParseArg, [lhs, rhs]) => {
                 let from = self.resolve_type_expr_impl(expr, *lhs, id)?;
                 let inner = self.resolve_type_expr_impl(expr, *rhs, id)?;
@@ -166,8 +147,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                 self.resolve_type_expr_impl(expr, *inner, id)?
             }
             ExprHead::Monadic(TypeUnOp::ByteParser, inner) => {
-                let u8 = self.infctx.u8();
-                let from = self.infctx.array(ArrayKind::Each, u8);
+                let from = self.infctx.byte_array();
                 let inner = self.resolve_type_expr_impl(expr, *inner, id)?;
                 self.infctx.parser(inner, from)
             }
@@ -175,7 +155,6 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                 hir::TypePrimitive::Int => self.infctx.int(),
                 hir::TypePrimitive::Bit => self.infctx.bit(),
                 hir::TypePrimitive::Char => self.infctx.char(),
-                hir::TypePrimitive::U8 => self.infctx.u8(),
             },
             ExprHead::Niladic(hir::TypeAtom::ParserDef(pd)) => {
                 self.resolve_type_expr_parserdef_ref(pd, span, id)?
@@ -212,7 +191,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
             // in non-type contexts, we just refer to the fun u8, while in type contexts, we mean
             // the primitive type u8
             if real_name.name == "u8" {
-                return Ok(self.infctx.u8());
+                return Ok(self.infctx.int());
             }
 
             if let Some(arg) = self.loc.vars.get_var(name.atom) {
@@ -250,7 +229,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         while generic_args.len() < ty_args_len {
             generic_args.push(self.infctx.var());
         }
-        let def_type = self.db.intern_type(Type::Nominal(definition.thunk));
+        let def_type = self.db.parser_returns(def)?.deref;
         let inferred_def = self
             .infctx
             .convert_type_into_inftype_with_args(def_type, &generic_args);
@@ -392,8 +371,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         .map_err(spanned)?,
                     ValUnOp::GetAddr => {
                         constrain(inner, int)?;
-                        let u8 = self.infctx.u8();
-                        self.infctx.array(ArrayKind::Each, u8)
+                        self.infctx.byte_array()
                     }
                 },
                 ExprHead::Niladic(a) => match &a {
@@ -729,42 +707,6 @@ impl TypingLocation {
         let pd = db.hir_parent_parserdef(loc)?;
         let vars = TypeVarCollection::at_id(db, pd)?;
         Ok(TypingLocation { vars, loc, pd })
-    }
-}
-
-pub enum NominalId {
-    Def(hir::ParserDefId),
-    Block(hir::BlockId),
-}
-
-impl NominalId {
-    pub fn from_nominal_inf_head(head: &InternedNomHead) -> Self {
-        match head.kind {
-            NominalKind::Def | NominalKind::Fun | NominalKind::Static => {
-                NominalId::Def(hir::ParserDefId(head.def))
-            }
-            NominalKind::Block => NominalId::Block(hir::BlockId(head.def)),
-        }
-    }
-    pub fn from_nominal_head(head: &NominalTypeHead) -> Self {
-        match head.kind {
-            NominalKind::Def | NominalKind::Fun | NominalKind::Static => {
-                NominalId::Def(hir::ParserDefId(head.def))
-            }
-            NominalKind::Block => NominalId::Block(hir::BlockId(head.def)),
-        }
-    }
-    pub fn unwrap_block(self) -> hir::BlockId {
-        match self {
-            NominalId::Block(b) => b,
-            _ => panic!("Expected block id"),
-        }
-    }
-    pub fn unwrap_def(self) -> hir::ParserDefId {
-        match self {
-            NominalId::Def(b) => b,
-            _ => panic!("Expected def id"),
-        }
     }
 }
 

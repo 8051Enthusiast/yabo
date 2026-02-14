@@ -16,7 +16,7 @@ use yaboc_hir::{
     BlockId, BlockKind, BlockReturnKind, ContextId, ExprId, HirIdWrapper, HirNode, LambdaId,
     ParserDefId,
 };
-use yaboc_hir_types::{FullTypeId, NominalId};
+use yaboc_hir_types::FullTypeId;
 use yaboc_resolve::{
     expr::{Resolved, ResolvedAtom, ValBinOp, ValUnOp, ValVarOp},
     parserdef_ssc::FunctionSscId,
@@ -36,10 +36,6 @@ impl TypeLookup for dyn Constraints + '_ {
 
     fn subst_ty(&self, ty: TypeId, subst: Arc<Vec<TypeId>>) -> TypeId {
         self.substitute_typevar(ty, subst)
-    }
-
-    fn least_deref_type(&self, ty: TypeId) -> SResult<TypeId> {
-        self.least_deref_type(ty)
     }
 }
 
@@ -313,12 +309,10 @@ impl<'a> ExpressionBuildCtx<'a> {
                         }
                         let block_ty = self.builder.ty(inner);
                         let block_ty = self.db.least_deref_type(block_ty)?;
-                        let Type::Nominal(nom) = self.db.lookup(block_ty) else {
+                        let Type::Block(block) = self.db.lookup(block_ty) else {
                             panic!("expected block type");
                         };
-                        let NominalId::Block(block_id) = NominalId::from_nominal_head(&nom) else {
-                            panic!("expected block type");
-                        };
+                        let block_id = BlockId(block.def);
                         let ctx = block_id.lookup(self.db)?.root_context.lookup(self.db)?;
                         let field = *ctx.vars.get(name).expect("did not find field").inner();
                         self.push(Instruction::GetField(inner, field), *ty, orig)
@@ -388,7 +382,7 @@ impl<'a> ExpressionBuildCtx<'a> {
     fn build(mut self) -> SResult<BtTerm> {
         let sig = self.db.parser_args(self.pd)?;
         let origin = Origin::Node(self.pd.0);
-        let thunk_ty = self.db.intern_type(Type::Nominal(sig.thunk));
+        let thunk_ty = self.db.parser_returns(self.pd)?.deref;
         let parserdef = self.pd.lookup(self.db)?;
         let mut ty = thunk_ty;
         let parse_ty = if let Some(arg) = sig.from {
@@ -439,7 +433,7 @@ impl<'a> ExpressionBuildCtx<'a> {
                 origin,
             )?;
         }
-        let mut lookup_idx = self.push(Instruction::Identity, thunk_ty, origin)?;
+        let mut lookup_idx = return_idx;
         if let Some(parse_ty) = parse_ty {
             lookup_idx = self.push(Instruction::LeaveScope(lookup_idx), parse_ty, origin)?;
         }

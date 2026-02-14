@@ -8,7 +8,6 @@ use yaboc_hir_types::{NOBACKTRACK_BIT, THUNK_BIT, VTABLE_BIT};
 use yaboc_layout::{ILayout, IMonoLayout, MonoLayout, TailInfo};
 use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_target::layout::SizeAlign;
-use yaboc_types::PrimitiveType;
 
 use crate::{
     eval_fun_values, get_fun_args, parser_values,
@@ -117,7 +116,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TypecastThunk<'comp, 'llvm> {
         let thunk = CgMonoValue::new(self.layout, thunk_ptr);
         let ret = CgReturnValue::new(target_level, ret_ptr);
 
-        let ret = if let MonoLayout::Primitive(PrimitiveType::U8) = thunk.layout.mono_layout() {
+        let ret = if let MonoLayout::Ptr = thunk.layout.mono_layout() {
             cg.call_current_element_fun(ret, thunk.into())?
         } else {
             let arg_copy = self.arg_copy.unwrap();
@@ -365,12 +364,8 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
     }
 
     fn maybe_deref(&mut self) -> IResult<()> {
-        if let MonoLayout::Nominal(..) | MonoLayout::Primitive(PrimitiveType::U8) =
-            self.target_layout.mono_layout()
-        {
-            let self_level = self
-                .cg
-                .const_i64(1 << THUNK_BIT);
+        if let MonoLayout::Nominal(..) | MonoLayout::Ptr = self.target_layout.mono_layout() {
+            let self_level = self.cg.const_i64(1 << THUNK_BIT);
             let no_deref = self.cg.builder.build_int_compare(
                 IntPredicate::ULE,
                 self_level,

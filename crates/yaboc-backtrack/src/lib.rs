@@ -19,7 +19,6 @@ pub trait TypeLookup {
     fn lookup(&self, ty: TypeId) -> Type;
     fn bound_types(&self, id: DefId) -> SResult<Arc<[TypeId]>>;
     fn subst_ty(&self, ty: TypeId, subst: Arc<Vec<TypeId>>) -> TypeId;
-    fn least_deref_type(&self, ty: TypeId) -> SResult<TypeId>;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -179,7 +178,7 @@ impl<'arena, 'r, Trans: TypeBtInfo> EvalCtx<'arena, 'r, Trans> {
     ) -> SResult<T> {
         let (source_rows, target_rows) = self.rows[slot as usize].split_at_mut(range.start);
         let from = from_expr.info(source_rows);
-        let transformed_matrix = self.trans.transform_and_change_bound(from, to, slot)?;
+        let transformed_matrix = self.trans.transform_and_change_bound(from, to)?;
         Ok(combine_fun(
             &mut target_rows[0..range.len()],
             transformed_matrix.matrix.rows(),
@@ -229,9 +228,9 @@ impl<'arena, 'r, Trans: TypeBtInfo> EvalCtx<'arena, 'r, Trans> {
         let from = self.arg_matrix(idx);
         let to_expr = &self.exprs[self.cursor.idx];
 
-        let transformed_matrix =
-            self.trans
-                .transform_and_change_bound(from, to_expr.shape(), EffectSlot::Present)?;
+        let transformed_matrix = self
+            .trans
+            .transform_and_change_bound(from, to_expr.shape())?;
         self.rows[EffectSlot::Present as usize][to_expr.row_range.clone()]
             .clone_from_slice(transformed_matrix.matrix.rows());
         Ok(())
@@ -322,7 +321,7 @@ impl<'arena, 'r, Trans: TypeBtInfo> EvalCtx<'arena, 'r, Trans> {
             .map(|&idx| self.exprs[idx as usize].info(source_rows_present));
         let applied = self
             .trans
-            .partial_apply(fun_info, arg_infos, to_expr.shape(), slot)?;
+            .partial_apply(fun_info, arg_infos, to_expr.shape())?;
         let target = &mut target_rows[0..to_expr.row_range.len()];
         target.clone_from_slice(applied.matrix.rows());
         Ok(target)
@@ -342,9 +341,7 @@ impl<'arena, 'r, Trans: TypeBtInfo> EvalCtx<'arena, 'r, Trans> {
             .map(|&idx| self.exprs[idx as usize].info(self.rows[EffectSlot::Forbidden as usize]));
         let to = &self.exprs[self.cursor.idx].shape();
         let fun = &self.exprs[fun as usize].shape();
-        let (_, args) = self
-            .trans
-            .collect_args(arg_infos, *fun, *to, EffectSlot::Forbidden)?;
+        let (_, args) = self.trans.collect_args(arg_infos, *fun, *to)?;
         if args.matrix.rows().iter().any(|x| x.is_true()) {
             self.errors
                 .push(EffectError::ForbiddenParametersOnArg(self.cursor.idx));
@@ -397,9 +394,9 @@ impl<'arena, 'r, Trans: TypeBtInfo> EvalCtx<'arena, 'r, Trans> {
         let to_expr = &self.exprs[self.cursor.idx];
         let (source_rows, target_rows) =
             self.rows[slot as usize].split_at_mut(to_expr.row_range.start);
-        let (result, effect) =
-            self.trans
-                .eval(from_expr.info(source_rows), to_expr.shape(), slot)?;
+        let (result, effect) = self
+            .trans
+            .eval(from_expr.info(source_rows), to_expr.shape())?;
         target_rows[0..to_expr.row_range.len()].clone_from_slice(result.matrix.rows());
         Ok(effect)
     }
@@ -424,9 +421,7 @@ impl<'arena, 'r, Trans: TypeBtInfo> EvalCtx<'arena, 'r, Trans> {
         };
         let fun_info = fun_expr.info(source_rows);
         let arg_info = arg_expr.info(source_rows_present);
-        let (result, effect) = self
-            .trans
-            .parse(fun_info, arg_info, to_expr.shape(), slot)?;
+        let (result, effect) = self.trans.parse(fun_info, arg_info, to_expr.shape())?;
         let target = &mut target_rows[0..to_expr.row_range.len()];
         target.clone_from_slice(result.matrix.rows());
         Ok((effect, target))

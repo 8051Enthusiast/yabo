@@ -12,12 +12,12 @@ use yaboc_hir_types::HeadDiscriminant;
 use yaboc_mir::{CallMeta, MirInstr, MirKind, Place};
 use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_target::layout::{PSize, SizeAlign};
-use yaboc_types::{PrimitiveType, Type};
+use yaboc_types::PrimitiveType;
 
 use crate::{
     init_globals,
     mir_subst::{function_substitute, FunctionSubstitute},
-    FuncLayoutKind, LayoutSlice,
+    pd_parser, FuncLayoutKind, LayoutSlice,
 };
 
 pub use self::tailsize::TailInfo;
@@ -225,7 +225,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         }
                     }
                 }
-                MonoLayout::Primitive(_) => {}
+                MonoLayout::Primitive(_) | MonoLayout::Ptr => {}
             }
         }
     }
@@ -672,8 +672,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 dbeprintln!(self.ctx.db, "[collection]    parserdef {}", &pd.0);
             }
             let sig = self.ctx.db.parser_args(*pd)?;
-            let thunk_ty = self.ctx.db.intern_type(Type::Nominal(sig.thunk));
-            let thunk_layout = canon_layout(self.ctx, thunk_ty)?;
+            let mut parser_layout = pd_parser(self.ctx, *pd)?;
 
             let mut args = Vec::default();
             for arg_ty in sig.args.iter().flat_map(|x| x.iter()) {
@@ -681,23 +680,19 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 self.register_layouts(arg_layout);
                 args.push(arg_layout);
             }
+            if sig.args.is_some() {
+                parser_layout = parser_layout.apply_fun(self.ctx, args.into_iter())?;
+            }
+            self.register_layouts(parser_layout);
 
             if let Some(from) = sig.from {
                 let from_layout = canon_layout(self.ctx, from)?;
                 self.register_layouts(from_layout);
-                let parser_layout = self.ctx.dcx.intern(Layout::Mono(MonoLayout::NominalParser(
-                    *pd,
-                    args,
-                    true,
-                    FuncLayoutKind::Parse,
-                )));
-                self.register_layouts(parser_layout);
                 for mono in &parser_layout {
                     self.root.push((from_layout, mono));
                 }
                 self.register_parse(from_layout, parser_layout, root_req());
             }
-            self.register_layouts(thunk_layout);
         }
         if TRACE_COLLECTION {
             eprintln!("[collection] ---- starting collection ----");
@@ -729,11 +724,12 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             PrimitiveType::Bit,
             PrimitiveType::Char,
             PrimitiveType::Unit,
-            PrimitiveType::U8,
         ] {
             let layout = self.ctx.dcx.intern(Layout::Mono(MonoLayout::Primitive(x)));
             primitives.insert(IMonoLayout(layout));
         }
+        let ptr = self.ctx.dcx.intern(Layout::Mono(MonoLayout::Ptr));
+        primitives.insert(IMonoLayout(ptr));
 
         let root = self
             .root

@@ -1,56 +1,19 @@
 use yaboc_base::{dbformat, dbpanic};
 use yaboc_expr::FetchKindData;
+use yaboc_hir::{HirNode, ParserDefId};
 use yaboc_resolve::parserdef_ssc::FunctionSscId;
-use yaboc_types::inference::InternedNomHead;
+use yaboc_types::inference::InternedBlockHead;
+
+use crate::signature::get_signature;
 
 use super::*;
-
-pub fn deref_type(db: &dyn TyHirs, ty: TypeId) -> SResult<Option<TypeId>> {
-    match db.lookup_intern_type(ty) {
-        Type::Nominal(nom) => {
-            let id = match NominalId::from_nominal_head(&nom) {
-                NominalId::Def(id) => id,
-                NominalId::Block(_) => return Ok(None),
-            };
-            let deref_ty = db.parser_returns(id)?.deref;
-            let subst_deref_ty = db.substitute_typevar(deref_ty, nom.ty_args);
-            Ok(Some(subst_deref_ty))
-        }
-        Type::Primitive(PrimitiveType::U8) => Ok(Some(db.int())),
-        _ => Ok(None),
-    }
-}
 
 pub const THUNK_BIT: u8 = 8;
 pub const VTABLE_BIT: u8 = 0;
 pub const NOBACKTRACK_BIT: u8 = 1;
 
-/// Removes top-level `fun` and `static` nominals from the type
-pub fn normalize_head(db: &dyn TyHirs, ty: TypeId) -> SResult<TypeId> {
-    match db.lookup_intern_type(ty) {
-        Type::Nominal(nom) => {
-            let NominalId::Def(_) = NominalId::from_nominal_head(&nom) else {
-                return Ok(ty);
-            };
-            if nom.kind == NominalKind::Def {
-                return Ok(ty);
-            }
-            let Some(deref_ty) = db.deref_type(ty)? else {
-                return Ok(ty);
-            };
-            db.normalize_head(deref_ty)
-        }
-        _ => Ok(ty),
-    }
-}
-
-pub fn least_deref_type(db: &dyn TyHirs, mut ty: TypeId) -> SResult<TypeId> {
-    Ok(loop {
-        match db.deref_type(ty)? {
-            Some(t) => ty = t,
-            None => break ty,
-        }
-    })
+pub fn least_deref_type(_: &dyn TyHirs, ty: TypeId) -> SResult<TypeId> {
+    Ok(ty)
 }
 
 pub fn parser_type_at(db: &dyn TyHirs, id: DefId) -> SResult<TypeId> {
@@ -133,8 +96,7 @@ pub fn ssc_types(db: &dyn TyHirs, id: FunctionSscId) -> Result<SscTypes, Spanned
     let mut types = SscTypes::default();
     let inftypes = ctx.inftypes.clone();
     let inf_expressions = ctx.inf_expressions.clone();
-    let locals = defs.iter().map(|d| d.id.0).collect::<Vec<_>>();
-    let mut converter = ctx.infctx.type_converter(placeholder_id.0, &locals)?;
+    let mut converter = ctx.infctx.type_converter(placeholder_id.0)?;
     for def in defs.iter() {
         let spanned = |e| SpannedTypeError::new(e, IndirectSpan::default_span(def.to.0));
         // here we are finished with inference so we can convert to actual types
@@ -203,16 +165,12 @@ impl<'intern> TypeResolver<'intern> for ReturnResolver<'intern> {
 
     fn field_type(
         &self,
-        ty: &InternedNomHead<'intern>,
+        ty: &InternedBlockHead<'intern>,
         name: FieldName,
     ) -> Result<EitherType<'intern>, TypeError> {
-        let block = match NominalId::from_nominal_inf_head(ty) {
-            NominalId::Def(pd) => {
-                dbpanic!(self.db, "field_type called on parser def {}", &pd.0)
-            }
-            NominalId::Block(b) => b,
-        }
-        .lookup(self.db)?;
+        let HirNode::Block(block) = self.db.hir_node(ty.def)? else {
+            panic!("Non-block on field_type")
+        };
         let root_context = block.root_context.lookup(self.db)?;
         let Some(child_id) = root_context.vars.get(name) else {
             return Err(TypeError::UnknownField(name));
@@ -226,24 +184,17 @@ impl<'intern> TypeResolver<'intern> for ReturnResolver<'intern> {
         })
     }
 
-    fn deref(&self, ty: &InternedNomHead<'intern>) -> SResult<Option<EitherType<'intern>>> {
-        if let Some(deref_ty) = self.inftypes.get(&ty.def) {
-            Ok(Some(EitherType::Inference(*deref_ty)))
+    fn returns(&self, ty: DefId) -> SResult<EitherType<'intern>> {
+        if let Some(deref_ty) = self.inftypes.get(&ty) {
+            Ok(EitherType::Inference(*deref_ty))
         } else {
-            let id = match NominalId::from_nominal_inf_head(ty) {
-                NominalId::Def(d) => d,
-                NominalId::Block(_) => return Ok(None),
-            };
-            Ok(Some(EitherType::Regular(self.db.parser_returns(id)?.deref)))
+            let ty = self.db().parser_returns(ParserDefId(ty))?.deref;
+            Ok(EitherType::Regular(ty))
         }
     }
 
     fn signature(&self, id: DefId) -> SResult<Signature> {
         get_signature(self.db, id)
-    }
-
-    fn is_local(&self, pd: DefId) -> bool {
-        self.inftypes.get(&pd).is_some()
     }
 
     fn lookup(&self, val: DefId) -> Result<EitherType<'intern>, TypeError> {
@@ -276,11 +227,8 @@ mod tests {
     use yaboc_ast::import::Import;
     use yaboc_base::databased_display::DatabasedDisplay;
     use yaboc_base::interner::PathComponent;
-    use yaboc_base::source::FileId;
     use yaboc_base::Context;
     use yaboc_types::TypeInterner;
-
-    use self::id_cursor::IdCursor;
 
     use super::*;
     #[test]
@@ -302,7 +250,7 @@ def ~single = ~
         };
         assert_eq!(return_type("nil"), "unit");
         assert_eq!(return_type("expr1"), "<anonymous block file[_].expr1.1.0>");
-        assert_eq!(return_type("single"), "u8");
+        assert_eq!(return_type("single"), "int");
     }
     #[test]
     fn block_with_return() {
@@ -362,7 +310,7 @@ def ~expr6 = {
             for x in fields {
                 let block = ctx.db.lookup_intern_type(ret);
                 let def_id = match &block {
-                    Type::Nominal(n) => n.def,
+                    Type::Block(n) => n.def,
                     _ => panic!("expected nominal type"),
                 };
                 let block = hir::BlockId::extract(ctx.db.hir_node(def_id).unwrap());
@@ -378,54 +326,38 @@ def ~expr6 = {
         assert_eq!(full_type("expr1", &["a"]), "'0");
         assert_eq!(full_type("expr1", &["b", "c"]), "int");
         assert_eq!(full_type("expr1", &["b", "d"]), "'0");
-        assert_eq!(full_type("expr2", &["x"]), "file[_].expr1[u8]");
+        assert_eq!(
+            full_type("expr2", &["x"]),
+            "<anonymous block file[_].expr1.1.0[int]>"
+        );
         assert_eq!(full_type("expr2", &["y"]), "int");
         //assert_eq!(full_type("expr4", &["x"]), "int");
-        assert_eq!(full_type("expr4", &["b"]), "[u8] ~> int");
+        assert_eq!(full_type("expr4", &["b"]), "[int] ~> int");
         //assert_eq!(full_type("expr4", &["y"]), "int");
         assert_eq!(full_type("expr4", &["a"]), "int");
-        assert_eq!(full_type("expr5", &["x"]), "file[_].expr2");
-        assert_eq!(full_type("expr5", &["b"]), "file[_].expr2");
-        assert_eq!(full_type("expr6", &["expr3"]), "[u8] ~> file[_].expr5");
-        assert_eq!(full_type("expr6", &["b"]), "file[_].expr5");
+        assert_eq!(
+            full_type("expr5", &["x"]),
+            "<anonymous block file[_].expr2.1.0>"
+        );
+        assert_eq!(
+            full_type("expr5", &["b"]),
+            "<anonymous block file[_].expr2.1.0>"
+        );
+        assert_eq!(
+            full_type("expr6", &["expr3"]),
+            "[int] ~> <anonymous block file[_].expr5.1.0>"
+        );
+        assert_eq!(
+            full_type("expr6", &["b"]),
+            "<anonymous block file[_].expr5.1.0>"
+        );
         assert_eq!(
             full_type("expr6", &["inner", "expr3"]),
-            "[u8] ~> file[_].expr2"
+            "[int] ~> <anonymous block file[_].expr2.1.0>"
         );
-        assert_eq!(full_type("expr6", &["inner", "b"]), "file[_].expr2");
-    }
-    #[test]
-    fn uncached_normalization() {
-        let ctx = Context::<HirTypesTestDatabase>::mock(
-            r#"
-fun id[T](x: T) = x
-def ~entry = {}
-def ~dir_entries = entry
-def ~file_entry = entry
-
-def ~dir_entry = {
-  let subdir: dir_entries = id(dir_entries at 0)
-  let file: file_entry = id(file_entry at 0)
-}
-            "#,
+        assert_eq!(
+            full_type("expr6", &["inner", "b"]),
+            "<anonymous block file[_].expr2.1.0>"
         );
-        let block = IdCursor::at_file(&ctx.db, FileId::default())
-            .pd("dir_entry")
-            .expr()
-            .expr_block(0);
-        let subdir_expr = block.field("subdir").expr().id;
-        let subdir_ty = *ctx
-            .db
-            .parser_expr_at(ExprId(subdir_expr))
-            .unwrap()
-            .root_data();
-        assert_eq!(dbformat!(&ctx.db, "{}", &subdir_ty), "file[_].dir_entries");
-        let file_expr = block.field("file").expr().id;
-        let file_ty = *ctx
-            .db
-            .parser_expr_at(ExprId(file_expr))
-            .unwrap()
-            .root_data();
-        assert_eq!(dbformat!(&ctx.db, "{}", &file_ty), "file[_].file_entry");
     }
 }

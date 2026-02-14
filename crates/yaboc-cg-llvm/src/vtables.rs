@@ -95,7 +95,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.create_vtable::<vtable::VTableHeader<AbsPtr>>(layout)
         };
         let vtable_header = self.vtable_header(layout, true, vtable);
-        if let MonoLayout::Primitive(PrimitiveType::U8) = layout.mono_layout() {
+        if let MonoLayout::Ptr = layout.mono_layout() {
             // predeclare the current_element function so that we can call it
             // but don't put it into a vtable since it's a primitive type
             // and cannot be in a multilayout with other types having this function

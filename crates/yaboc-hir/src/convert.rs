@@ -789,7 +789,6 @@ impl From<ast::TypePrimitive> for TypePrimitive {
             ast::TypePrimitive::Int => TypePrimitive::Int,
             ast::TypePrimitive::Bit => TypePrimitive::Bit,
             ast::TypePrimitive::Char => TypePrimitive::Char,
-            ast::TypePrimitive::U8 => TypePrimitive::U8,
         }
     }
 }

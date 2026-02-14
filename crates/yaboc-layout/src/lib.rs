@@ -18,8 +18,8 @@ use yaboc_base::interner::{DefId, FieldName, Regex};
 use yaboc_base::low_effort_interner::{Interner, Uniq};
 use yaboc_base::{dbformat, dbpanic};
 use yaboc_expr::ExprHead;
-use yaboc_hir::{self as hir, DefKind, HirIdWrapper};
-use yaboc_hir_types::{HeadDiscriminant, NominalId};
+use yaboc_hir::{self as hir, DefKind, HirIdWrapper, ParserDefId};
+use yaboc_hir_types::HeadDiscriminant;
 use yaboc_mir::Mirs;
 use yaboc_resolve::expr::{Resolved, ResolvedAtom, ValBinOp, ValUnOp, ValVarOp};
 use yaboc_target::layout::{PSize, SizeAlign, TargetLayoutData, TargetSized, Zst};
@@ -106,6 +106,7 @@ pub enum FuncLayoutKind {
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum MonoLayout<Inner> {
     Primitive(PrimitiveType),
+    Ptr,
     SlicePtr,
     Range,
     Single,
@@ -178,7 +179,7 @@ impl<'a> IMonoLayout<'a> {
                 ctx.eval_pd(self.inner(), *pd)
                     .ok_or_else(SilencedError::new)?,
             ),
-            MonoLayout::Primitive(PrimitiveType::U8) => Some(ctx.dcx.int()),
+            MonoLayout::Ptr => Some(ctx.dcx.int()),
             _ => None,
         })
     }
@@ -211,7 +212,7 @@ impl<'a> IMonoLayout<'a> {
             MonoLayout::Primitive(PrimitiveType::Bit) => HeadDiscriminant::Bit,
             MonoLayout::Primitive(PrimitiveType::Char) => HeadDiscriminant::Char,
             MonoLayout::Primitive(PrimitiveType::Int) => HeadDiscriminant::Int,
-            MonoLayout::Primitive(PrimitiveType::U8) => HeadDiscriminant::U8,
+            MonoLayout::Ptr => HeadDiscriminant::U8,
             MonoLayout::Primitive(PrimitiveType::Unit) => HeadDiscriminant::Unit,
             MonoLayout::NominalParser(.., kind) => match kind {
                 FuncLayoutKind::Fun => HeadDiscriminant::FunctionArgs,
@@ -472,10 +473,7 @@ impl<'a> ILayout<'a> {
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<ILayout<'a>, LayoutError> {
         self.try_map(ctx, |layout, ctx| match layout.mono_layout() {
-            MonoLayout::SlicePtr => {
-                let u8 = PrimitiveType::U8;
-                Ok(ctx.dcx.intern(Layout::Mono(MonoLayout::Primitive(u8))))
-            }
+            MonoLayout::SlicePtr => Ok(ctx.dcx.intern(Layout::Mono(MonoLayout::Ptr))),
             MonoLayout::Range => Ok(ctx.dcx.int()),
             MonoLayout::Array { parser, slice } => parser.apply_arg(ctx, *slice),
             // for calculating the length of a parser, the argument is an int, and the result
@@ -745,7 +743,7 @@ impl<'a> ILayout<'a> {
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Char)) => char::tsize(data),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Int)) => i64::tsize(data),
             Layout::Mono(MonoLayout::Primitive(PrimitiveType::Unit)) => Zst::tsize(data),
-            Layout::Mono(MonoLayout::Primitive(PrimitiveType::U8)) => <&Zst>::tsize(data),
+            Layout::Mono(MonoLayout::Ptr) => <&Zst>::tsize(data),
             Layout::Mono(
                 MonoLayout::Single
                 | MonoLayout::Regex(_, _)
@@ -886,6 +884,25 @@ impl<'a> ILayout<'a> {
     }
 }
 
+pub fn pd_parser<'a, 'b>(
+    ctx: &'b mut AbsIntCtx<'a, ILayout<'a>>,
+    pd: ParserDefId,
+) -> Result<ILayout<'a>, LayoutError> {
+    let parserdef = pd.lookup(ctx.db)?;
+    let kind = if parserdef.args.is_some() || parserdef.kind == DefKind::Static {
+        FuncLayoutKind::Fun
+    } else {
+        FuncLayoutKind::Parse
+    };
+
+    Ok(ctx.dcx.intern(Layout::Mono(MonoLayout::NominalParser(
+        pd,
+        Default::default(),
+        true,
+        kind,
+    ))))
+}
+
 pub fn canon_layout<'a, 'b>(
     ctx: &'b mut AbsIntCtx<'a, ILayout<'a>>,
     ty: TypeId,
@@ -897,29 +914,13 @@ pub fn canon_layout<'a, 'b>(
         Type::Loop(_, inner_ty) => {
             let inner_type = ctx.db.lookup_intern_type(inner_ty);
             match inner_type {
-                Type::Primitive(PrimitiveType::Int | PrimitiveType::U8) => {
-                    Ok(make_layout(ctx, MonoLayout::SlicePtr))
-                }
+                Type::Primitive(PrimitiveType::Int) => Ok(make_layout(ctx, MonoLayout::SlicePtr)),
                 _ => Err(LayoutError::LayoutError),
             }
         }
-        Type::Nominal(n) => {
-            let def_id = match NominalId::from_nominal_head(&n) {
-                NominalId::Def(d) => d,
-                NominalId::Block(_) => return Err(LayoutError::LayoutError),
-            };
-            let from = n
-                .parse_arg
-                .map(|arg| -> Result<_, LayoutError> { canon_layout(ctx, arg) })
-                .transpose()?;
-            let args: Vec<_> = n
-                .fun_args
-                .iter()
-                .map(|arg| canon_layout(ctx, *arg))
-                .collect::<Result<_, LayoutError>>()?;
-            Ok(make_layout(ctx, MonoLayout::Nominal(def_id, from, args)))
+        Type::Block(..) | Type::ParserArg { .. } | Type::FunctionArg(_, _) => {
+            Err(LayoutError::LayoutError)
         }
-        Type::ParserArg { .. } | Type::FunctionArg(_, _) => Err(LayoutError::LayoutError),
         Type::TypeVarRef(_) | Type::Unknown => Err(LayoutError::LayoutError),
     }
 }
@@ -927,19 +928,7 @@ pub fn canon_layout<'a, 'b>(
 pub fn init_globals<'comp>(ctx: &mut AbsIntCtx<'comp, ILayout<'comp>>) -> Result<(), LayoutError> {
     let pds = ctx.db.global_sequence()?;
     for pd in pds.iter() {
-        let parserdef = pd.lookup(ctx.db)?;
-        let kind = if parserdef.args.is_some() || parserdef.kind == DefKind::Static {
-            FuncLayoutKind::Fun
-        } else {
-            FuncLayoutKind::Parse
-        };
-
-        let fun_layout = ctx.dcx.intern(Layout::Mono(MonoLayout::NominalParser(
-            *pd,
-            Default::default(),
-            true,
-            kind,
-        )));
+        let fun_layout = pd_parser(ctx, *pd)?;
         let return_layout = fun_layout.eval_fun(ctx)?.evaluate(ctx)?.0;
         ctx.dcx
             .globals
@@ -1230,7 +1219,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
     fn evaluate(self, ctx: &mut AbsIntCtx<'a, Self>) -> Result<(Self, bool), Self::Err> {
         let mut changed = false;
         let res = self.try_map(ctx, |layout, ctx| match layout.mono_layout() {
-            MonoLayout::Primitive(PrimitiveType::U8) => {
+            MonoLayout::Ptr => {
                 changed = true;
                 Ok(ctx.dcx.int())
             }
@@ -1315,11 +1304,10 @@ mod tests {
     use yaboc_constraint::ConstraintDatabase;
     use yaboc_dependents::DependentsDatabase;
     use yaboc_hir::{HirDatabase, Parser};
-    use yaboc_hir_types::{HirTypesDatabase, TyHirs};
+    use yaboc_hir_types::HirTypesDatabase;
     use yaboc_mir::MirDatabase;
     use yaboc_req::NeededBy;
     use yaboc_resolve::ResolveDatabase;
-    use yaboc_types::TypeInterner;
     use yaboc_types::TypeInternerDatabase;
 
     #[salsa::database(
@@ -1369,13 +1357,13 @@ mod tests {
         let layout_ctx = LayoutContext::new(&bump, yaboc_target::layout::POINTER64);
         let mut outlayer = AbsIntCtx::<ILayout>::new(&ctx.db, layout_ctx);
         let main = ctx.parser("main");
-        let main_ty = ctx
-            .db
-            .intern_type(Type::Nominal(ctx.db.parser_args(main).unwrap().thunk));
         collected_layouts(&mut outlayer, &[main]).unwrap();
-        let canon_2004 = canon_layout(&mut outlayer, main_ty).unwrap();
         let from = IMonoLayout::u8_array(&mut outlayer);
         let hash = outlayer.dcx.layout_hash(&ctx.db, from.inner());
+        let canon_2004 = pd_parser(&mut outlayer, main)
+            .unwrap()
+            .apply_arg(&mut outlayer, from.inner())
+            .unwrap();
         for lay in &canon_2004 {
             assert_eq!(
                 lay.symbol(
@@ -1406,7 +1394,7 @@ mod tests {
                     ),
                     &ctx.db
                 ),
-                "block_6c872ebf06064930$dbb80b4b51e59d5b$parse_9dcf97a184f32623_vb"
+                "block_6c872ebf06064930$ec2f3c2c48b8a550$parse_9dcf97a184f32623_vb"
             );
         }
         let field = |name| FieldName::Ident(ctx.id(name));
@@ -1416,7 +1404,7 @@ mod tests {
                 "{}",
                 &main_block.access_field(&mut outlayer, field("a")).unwrap(),
             ),
-            "u8"
+            "ptr"
         );
         assert_eq!(
             dbformat!(
@@ -1424,7 +1412,7 @@ mod tests {
                 "{}",
                 &main_block.access_field(&mut outlayer, field("b")).unwrap(),
             ),
-            "u8"
+            "ptr"
         );
         let out = dbformat!(
             &ctx.db,
@@ -1446,8 +1434,8 @@ mod tests {
             &main_block.access_field(&mut outlayer, field("d")).unwrap(),
         );
         assert!([
-            "u8 | nominal[file[_].first](from: sliceptr)",
-            "nominal[file[_].first](from: sliceptr) | u8"
+            "ptr | nominal[file[_].first](from: sliceptr)",
+            "nominal[file[_].first](from: sliceptr) | ptr"
         ]
         .contains(&res.as_str()));
     }
@@ -1463,14 +1451,8 @@ def ~test = [2][3][5]
         let layout_ctx = LayoutContext::new(&bump, yaboc_target::layout::POINTER64);
         let mut outlayer = AbsIntCtx::<ILayout>::new(&ctx.db, layout_ctx);
         let test = ctx.parser("test");
-        let test_ty = ctx
-            .db
-            .intern_type(Type::Nominal(ctx.db.parser_args(test).unwrap().thunk));
         let layouts = collected_layouts(&mut outlayer, &[test]).unwrap();
-        let canon = canon_layout(&mut outlayer, test_ty)
-            .unwrap()
-            .maybe_mono()
-            .unwrap();
+        let canon = pd_parser(&mut outlayer, test).unwrap();
         let slice = outlayer.dcx.intern(Layout::Mono(MonoLayout::SlicePtr));
         dbeprintln!(&ctx.db, "layout: {} -> {}", &slice, &canon);
         for ((from, to), sa) in layouts.tail_sa {

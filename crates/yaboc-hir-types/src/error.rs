@@ -66,34 +66,6 @@ fn get_var_name(db: &(impl TyHirs + ?Sized), var: TypeVarRef) -> Identifier {
 fn make_type_conv_error(err: TypeConvError, db: &(impl TyHirs + ?Sized)) -> Option<Report> {
     let def_span = |id: DefId| spans(db, IndirectSpan::default_span(id)).unwrap();
     let (code, spans, message) = match err {
-        TypeConvError::TypeVarReturn(def, var) => {
-            let var_name = get_var_name(db, var);
-            (
-                509,
-                def_span(def),
-                dbformat!(
-                    db,
-                    "cannot have a type variable {} as return type of {}",
-                    &var_name,
-                    &def
-                ),
-            )
-        }
-        TypeConvError::CyclicReturnThunks(cyclic_ids) => {
-            let mut spans = Vec::new();
-            for id in cyclic_ids.iter() {
-                spans.extend(def_span(*id));
-            }
-            let mut msg = String::from("cyclic return that can never terminate: ");
-            for (i, id) in cyclic_ids.iter().enumerate() {
-                if i != 0 {
-                    msg.push_str(" -> ");
-                }
-                msg.push_str(&dbformat!(db, "{}", id));
-            }
-            (510, spans, msg)
-        }
-
         TypeConvError::PolymorphicRecursion(var1, var2) => {
             let def = var1.0;
             let spans = def_span(def);

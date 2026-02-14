@@ -159,7 +159,6 @@ pub enum TypePrimitive {
     Int,
     Bit,
     Char,
-    U8,
 }
 
 impl From<ParserDefRef> for TypeAtom {
