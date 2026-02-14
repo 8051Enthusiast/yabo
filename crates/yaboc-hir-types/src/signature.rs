@@ -1,6 +1,7 @@
 use hir::HirNode;
 use yaboc_expr::FetchExpr;
-use yaboc_types::inference::InternedNomHead;
+use yaboc_hir::ParserDefId;
+use yaboc_types::inference::BlockInfHead;
 
 use super::*;
 
@@ -104,9 +105,7 @@ pub fn parser_args_error(
         arg_inftys.push(from_infty);
     }
     let inftys = &arg_inftys;
-    // we do not deref anything here, so we do not need to pass any
-    // local ids to the deref cache
-    let mut converter = tcx.infctx.type_converter(id.0, &[])?;
+    let mut converter = tcx.infctx.type_converter(id.0)?;
     let mut args = Vec::new();
     for infty in inftys {
         let new_ty = converter
@@ -114,7 +113,6 @@ pub fn parser_args_error(
             .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(pd.id.0)))?;
         args.push(new_ty);
     }
-    let ty_args = tcx.loc.vars.var_types(db, id);
     let from_ty = if pd.from.is_some() {
         Some(args.pop().unwrap())
     } else {
@@ -125,23 +123,10 @@ pub fn parser_args_error(
     } else {
         None
     };
-    let kind = match pd.kind {
-        DefKind::Def => NominalKind::Def,
-        DefKind::Fun => NominalKind::Fun,
-        DefKind::Static => NominalKind::Static,
-    };
-    let thunk = NominalTypeHead {
-        kind,
-        def: id.0,
-        parse_arg: from_ty,
-        fun_args: args.clone().unwrap_or_default(),
-        ty_args: Arc::new(ty_args),
-    };
     Ok(Signature {
         ty_args: Arc::new(tcx.loc.vars.defs),
         from: from_ty,
         args,
-        thunk,
         thunky: pd.kind.thunky(),
     })
 }
@@ -157,22 +142,19 @@ impl<'a> ArgResolver<'a> {
 impl<'a> TypeResolver<'a> for ArgResolver<'a> {
     fn field_type(
         &self,
-        _ty: &InternedNomHead<'a>,
+        _ty: &BlockInfHead<InfTypeId<'a>>,
         _name: FieldName,
     ) -> Result<EitherType<'a>, TypeError> {
         Ok(self.0.intern_type(Type::Unknown).into())
     }
 
-    fn deref(&self, _ty: &InternedNomHead<'a>) -> SResult<Option<EitherType<'a>>> {
-        Ok(None)
+    fn returns(&self, ty: DefId) -> SResult<EitherType<'a>> {
+        let ty = self.db().parser_returns(ParserDefId(ty))?.deref;
+        Ok(EitherType::Regular(ty))
     }
 
     fn signature(&self, id: DefId) -> SResult<Signature> {
         get_signature(self.0, id)
-    }
-
-    fn is_local(&self, _: DefId) -> bool {
-        false
     }
 
     fn lookup(&self, _val: DefId) -> Result<EitherType<'a>, TypeError> {
@@ -226,10 +208,10 @@ def [expr3[int]] ~> expr5 = {}
                 .unwrap()
                 .to_db_string(&ctx.db)
         };
-        assert_eq!("[u8]", arg_type("expr1"));
-        assert_eq!("[file[_].expr1]", arg_type("expr2"));
+        assert_eq!("[int]", arg_type("expr1"));
+        assert_eq!("[unit]", arg_type("expr2"));
         assert_eq!("['0]", arg_type("expr3"));
-        assert_eq!("[[file[_].expr1] ~> file[_].expr2]", arg_type("expr4"));
-        assert_eq!("[file[_].expr3[int]]", arg_type("expr5"));
+        assert_eq!("[[unit] ~> unit]", arg_type("expr4"));
+        assert_eq!("[unit]", arg_type("expr5"));
     }
 }

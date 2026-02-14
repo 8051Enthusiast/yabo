@@ -58,7 +58,6 @@ use yaboc_req::RequirementSet;
 use yaboc_target::layout::{
     AbsPtr, CodegenTypeContext, PSize, RelPtr, RelativeVPtr, SizeAlign, TargetSized,
 };
-use yaboc_types::PrimitiveType;
 
 use self::{convert_mir::MirTranslator, convert_thunk::ThunkContext};
 

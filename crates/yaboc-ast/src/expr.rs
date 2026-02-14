@@ -769,7 +769,6 @@ pub enum ValVarOp {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum TypeBinOp {
-    Ref,
     ParseArg,
 }
 
@@ -777,7 +776,6 @@ impl TypeBinOp {
     pub fn parse_from_str(s: &str) -> Result<Self, &str> {
         use TypeBinOp::*;
         Ok(match s {
-            "&>" => Ref,
             "~>" => ParseArg,
             otherwise => return Err(otherwise),
         })
@@ -790,7 +788,6 @@ impl Display for TypeBinOp {
             f,
             "{}",
             match self {
-                TypeBinOp::Ref => "&>",
                 TypeBinOp::ParseArg => "~>",
             }
         )

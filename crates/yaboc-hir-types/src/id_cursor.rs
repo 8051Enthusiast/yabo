@@ -4,7 +4,7 @@ use yaboc_base::{
 };
 use yaboc_hir::{HirIdWrapper, HirNode, HirNodeKind};
 
-use crate::{NominalId, TyHirs};
+use crate::TyHirs;
 
 /// a convenience cursor for navigating the hir tree
 /// for testing purposes
@@ -82,15 +82,12 @@ impl<'db, DB: ?Sized + TyHirs> IdCursor<'db, DB> {
             _ => panic!("attempt to get return block of non-parser node"),
         };
         let block = match self.db.lookup_intern_type(ty) {
-            yaboc_types::Type::Nominal(n) => match NominalId::from_nominal_head(&n) {
-                NominalId::Block(b) => b,
-                NominalId::Def(_) => panic!(),
-            },
+            yaboc_types::Type::Block(b) => b.def,
             _ => panic!(),
         };
         Self {
             db: self.db,
-            id: block.0,
+            id: block,
             kind: HirNodeKind::Block,
         }
     }

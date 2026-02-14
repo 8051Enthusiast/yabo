@@ -836,7 +836,7 @@ fn quali(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Qualifier> {
 fn byte_slice(_: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<TypeAtom> {
     let span = span_from_node(fd, &c.node());
     let byte_expr = OpWithData {
-        inner: TypeAtom::Primitive(TypePrimitive::U8),
+        inner: TypeAtom::Primitive(TypePrimitive::Int),
         data: span,
     };
     let array = TypeArray {
@@ -1056,7 +1056,6 @@ fn primitive_type(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<TypeP
         "int" => TypePrimitive::Int,
         "bit" => TypePrimitive::Bit,
         "char" => TypePrimitive::Char,
-        "u8" => TypePrimitive::U8,
         otherwise => panic!("Unknown type primitive: {otherwise}"),
     })
 }

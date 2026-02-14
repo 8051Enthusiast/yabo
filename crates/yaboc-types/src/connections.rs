@@ -16,7 +16,6 @@ impl Connections {
         Self::default()
     }
 
-    /// adds an unordered edge to the graph
     pub fn add_edge(&mut self, a: TypeVarRef, b: TypeVarRef) {
         let start = a.min(b);
         let end = a.max(b);

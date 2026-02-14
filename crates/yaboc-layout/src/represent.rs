@@ -23,6 +23,7 @@ impl<DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'_> {
             Layout::Mono(d) => match d {
                 MonoLayout::Primitive(p) => p.db_fmt(f, db),
                 MonoLayout::SlicePtr => write!(f, "sliceptr"),
+                MonoLayout::Ptr => write!(f, "ptr"),
                 MonoLayout::Range => write!(f, "range"),
                 MonoLayout::Single => write!(f, "single"),
                 MonoLayout::Nominal(pd, from, args) => {
@@ -342,13 +343,14 @@ impl<'a> LayoutHasher<'a> {
                 state.update(self.hash(*slice, db));
             }
             MonoLayout::ArrayFillParser(Some((inner, kind))) => {
-                state.update([13, 1]);
+                state.update([14, 1]);
                 state.update(self.hash(*inner, db));
                 state.update([*kind as u8]);
             }
             MonoLayout::ArrayFillParser(None) => {
-                state.update([13, 0]);
+                state.update([14, 0]);
             }
+            MonoLayout::Ptr => state.update([15]),
         }
     }
 }
@@ -501,6 +503,7 @@ impl<'a> LayoutSymbol<'a> {
             MonoLayout::ArrayFillParser(None) => String::from("fun_parse_array_fill"),
             MonoLayout::Primitive(_)
             | MonoLayout::SlicePtr
+            | MonoLayout::Ptr
             | MonoLayout::Range
             | MonoLayout::Single => {
                 dbformat!(db, "{}", &self.layout.0)

@@ -1,5 +1,4 @@
 mod connections;
-mod deref_levels;
 pub mod inference;
 pub mod represent;
 pub mod to_type;
@@ -59,11 +58,9 @@ fn type_hash(db: &dyn TypeInterner, id: TypeId) -> [u8; 32] {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct NominalTypeHead {
-    pub kind: NominalKind,
+pub struct BlockTypeHead {
     pub def: DefId,
     pub parse_arg: Option<TypeId>,
-    pub fun_args: Arc<Vec<TypeId>>,
     pub ty_args: Arc<Vec<TypeId>>,
 }
 
@@ -75,7 +72,7 @@ pub enum Type {
     Unknown,
     Primitive(PrimitiveType),
     TypeVarRef(TypeVarRef),
-    Nominal(NominalTypeHead),
+    Block(BlockTypeHead),
     Loop(ArrayKind, TypeId),
     ParserArg { result: TypeId, arg: TypeId },
     FunctionArg(TypeId, Arc<Vec<TypeId>>),
@@ -85,13 +82,8 @@ pub fn type_contains_unknown(db: &dyn TypeInterner, id: TypeId) -> bool {
     match db.lookup_intern_type(id) {
         Type::Primitive(_) | Type::TypeVarRef(_) => false,
         Type::Unknown => true,
-        Type::Nominal(NominalTypeHead {
-            parse_arg,
-            fun_args,
-            ..
-        }) => {
-            parse_arg.is_some_and(|x| db.type_contains_unknown(x))
-                || fun_args.iter().any(|x| db.type_contains_unknown(*x))
+        Type::Block(BlockTypeHead { ty_args, .. }) => {
+            ty_args.iter().any(|x| db.type_contains_unknown(*x))
         }
         Type::Loop(_, inner) => db.type_contains_unknown(inner),
         Type::ParserArg { result, arg } => {
@@ -107,13 +99,8 @@ pub fn type_contains_typevar(db: &dyn TypeInterner, id: TypeId) -> bool {
     match db.lookup_intern_type(id) {
         Type::Unknown | Type::Primitive(_) => false,
         Type::TypeVarRef(_) => true,
-        Type::Nominal(NominalTypeHead {
-            parse_arg,
-            fun_args,
-            ..
-        }) => {
-            parse_arg.is_some_and(|x| db.type_contains_typevar(x))
-                || fun_args.iter().any(|x| db.type_contains_typevar(*x))
+        Type::Block(BlockTypeHead { ty_args, .. }) => {
+            ty_args.iter().any(|x| db.type_contains_typevar(*x))
         }
         Type::Loop(_, inner) => db.type_contains_typevar(inner),
         Type::ParserArg { result, arg } => {
@@ -129,7 +116,7 @@ pub fn type_contains_typevar(db: &dyn TypeInterner, id: TypeId) -> bool {
 pub enum TypeHead {
     Primitive(PrimitiveType),
     TypeVarRef(TypeVarRef),
-    Nominal(DefId),
+    Block(DefId),
     Loop(ArrayKind),
     ParserArg,
     FunctionArgs(usize),
@@ -142,14 +129,11 @@ pub enum PrimitiveType {
     Int,
     Char,
     Unit,
-    U8,
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum NominalKind {
-    Fun,
     Def,
-    Static,
     Block,
 }
 
@@ -158,7 +142,6 @@ pub struct Signature {
     pub ty_args: Arc<Vec<Identifier>>,
     pub from: Option<TypeId>,
     pub args: Option<Arc<Vec<TypeId>>>,
-    pub thunk: NominalTypeHead,
     pub thunky: bool,
 }
 
@@ -174,10 +157,7 @@ pub enum TypeError {
     NonThunkReference(Identifier),
     NonInferTypeVar(TypeVarRef),
     NonInfer,
-    UnsupportedExportArgument {
-        def_id: DefId,
-        arg_name: Identifier,
-    },
+    UnsupportedExportArgument { def_id: DefId, arg_name: Identifier },
     Silenced(SilencedError),
 }
 
@@ -200,8 +180,6 @@ impl From<SilencedError> for TypeError {
 
 #[derive(Clone, Hash, Debug, PartialEq, Eq)]
 pub enum TypeConvError {
-    TypeVarReturn(DefId, TypeVarRef),
-    CyclicReturnThunks(Vec<DefId>),
     PolymorphicRecursion(TypeVarRef, TypeVarRef),
     Silenced(SilencedError),
 }
@@ -248,26 +226,20 @@ pub fn substitute_typevar(
 ) -> TypeId {
     match db.lookup_intern_type(ty) {
         Type::TypeVarRef(TypeVarRef(_, i)) => replacements[i as usize],
-        Type::Nominal(mut nom) => {
-            let parse_arg = nom
+        Type::Block(mut block) => {
+            let parse_arg = block
                 .parse_arg
                 .map(|x| substitute_typevar(db, x, replacements.clone()));
-            let fun_args = Arc::new(
-                nom.fun_args
-                    .iter()
-                    .map(|x| substitute_typevar(db, *x, replacements.clone()))
-                    .collect::<Vec<_>>(),
-            );
             let ty_args = Arc::new(
-                nom.ty_args
+                block
+                    .ty_args
                     .iter()
                     .map(|x| substitute_typevar(db, *x, replacements.clone()))
                     .collect::<Vec<_>>(),
             );
-            nom.parse_arg = parse_arg;
-            nom.fun_args = fun_args;
-            nom.ty_args = ty_args;
-            db.intern_type(Type::Nominal(nom))
+            block.parse_arg = parse_arg;
+            block.ty_args = ty_args;
+            db.intern_type(Type::Block(block))
         }
         Type::Loop(kind, inner) => {
             let inner = substitute_typevar(db, inner, replacements);

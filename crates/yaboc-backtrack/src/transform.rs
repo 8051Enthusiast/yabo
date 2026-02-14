@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use fxhash::FxHashMap;
 use yaboc_base::error::SResult;
-use yaboc_types::{DefId, NominalTypeHead, Type, TypeId, TypeInterner};
+use yaboc_types::{BlockTypeHead, DefId, Type, TypeId, TypeInterner};
 
 use crate::{
-    matrix::{Matrix, MatrixArena, MatrixView, Rect, Row, TypeVarOccurence, VarRow},
+    matrix::{Matrix, MatrixArena, Rect, Row, TypeVarOccurence, VarRow},
     EffectSlot, TypeLookup,
 };
 
@@ -62,6 +62,13 @@ pub struct TypeCache {
     rows: FxHashMap<TypeId, u32>,
 }
 
+pub struct DefTypeSubstitution {
+    pub ty: TypeId,
+    pub subst_ty: TypeId,
+    pub bound: Vec<TypeId>,
+    pub subst_bound: Vec<TypeId>,
+}
+
 impl TypeCache {
     pub fn row_count<Info: TypeLookup + ?Sized>(&mut self, ty: TypeId, db: &Info) -> SResult<u32> {
         if let Some(&rows) = self.rows.get(&ty) {
@@ -71,7 +78,7 @@ impl TypeCache {
             Type::Unknown => 0,
             Type::Primitive(_) => 0,
             Type::TypeVarRef(_) => 1,
-            Type::Nominal(nom) => {
+            Type::Block(nom) => {
                 let mut res = 0u32;
                 for arg in db.bound_types(nom.def)?.iter() {
                     let subst = db.subst_ty(*arg, nom.ty_args.clone());
@@ -110,15 +117,10 @@ impl<T: TypeBtInfo> TypeLookup for T {
     fn subst_ty(&self, ty: TypeId, subst: Arc<Vec<TypeId>>) -> TypeId {
         self.types().subst_ty(ty, subst)
     }
-
-    fn least_deref_type(&self, ty: TypeId) -> SResult<TypeId> {
-        self.types().least_deref_type(ty)
-    }
 }
 
 pub struct TypeMatrixCtx<'a, Info: TypeBtInfo> {
     rows: TypeCache,
-    derefs: FxHashMap<(TypeId, TypeId), Matrix<'a>>,
     pub db: &'a Info,
     arena: MatrixArena<'a>,
 }
@@ -135,7 +137,6 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
     pub fn new(db: &'arena Info, arena: MatrixArena<'arena>) -> Self {
         Self {
             rows: TypeCache::default(),
-            derefs: FxHashMap::default(),
             db,
             arena,
         }
@@ -145,340 +146,117 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
         self.rows.row_count(ty, self.db)
     }
 
-    fn transform_contravariant(
-        &mut self,
-        from_ty: TypeId,
-        to_ty: TypeId,
-        slot: EffectSlot,
-        subview: &mut MatrixView<'short>,
-        current_col: u32,
-    ) -> SResult<()> {
-        let [from, to] = [from_ty, to_ty].map(|ty| self.db.lookup(ty));
-        match [from, to] {
-            [_, Type::Unknown] => {
-                let row_num = self.row_count(from_ty)?;
-                let empty_matrix = self.arena.new_zeroes(subview.view_row_count(), 0, 0);
-                *subview = self.arena.replace_columns(
-                    *subview,
-                    empty_matrix,
-                    current_col,
-                    current_col + row_num,
-                );
-            }
-            [Type::Unknown, _] => {
-                let row_num = self.row_count(to_ty)?;
-                let empty_matrix = self.arena.new_zeroes(subview.view_row_count(), 0, row_num);
-                *subview =
-                    self.arena
-                        .replace_columns(*subview, empty_matrix, current_col, current_col);
-            }
-            [Type::Nominal(..), _] => {
-                let transform = self.deref_nom_flattened(from_ty, to_ty, slot)?;
-                *subview =
-                    self.arena
-                        .multiply_lhs_view_column_subrange(*subview, transform, current_col);
-            }
-            [Type::TypeVarRef(_), Type::TypeVarRef(_)]
-            | [Type::Primitive(_), Type::Primitive(_)] => {}
-            [Type::Loop(_, lhs_inner), Type::Loop(_, rhs_inner)] => {
-                self.transform_contravariant(lhs_inner, rhs_inner, slot, subview, current_col)?;
-            }
-            [Type::ParserArg {
-                result: lhs_result, ..
-            }, Type::ParserArg {
-                result: rhs_result, ..
-            }]
-            | [Type::FunctionArg(lhs_result, _), Type::FunctionArg(rhs_result, _)] => {
-                self.transform_contravariant(
-                    lhs_result,
-                    rhs_result,
-                    slot,
-                    subview,
-                    current_col + 1,
-                )?;
-            }
-            [l, r] => {
-                panic!("Mismatched types: {:?} and {:?}", &l, &r)
-            }
-        }
-        Ok(())
-    }
-
-    fn transform_args(
-        &mut self,
-        matrix: MatrixView<'short>,
-        from_ty: TypeId,
-        to_ty: TypeId,
-        arg_col: u32,
-        slot: EffectSlot,
-    ) -> SResult<(MatrixView<'short>, u32)> {
-        let [from, to] = [from_ty, to_ty].map(|ty| self.db.lookup(ty));
-        // note that the patterns are reversed here because of contravariance
-        let [Some((_, to_tys)), Some((_, from_tys))] = [&from, &to].map(fun_ty_parts) else {
-            panic!("Expected function type, got {:?} and {:?}", &from, &to);
-        };
-        assert_eq!(from_tys.len(), to_tys.len());
-        let mut current_col = arg_col;
-        let subview = matrix.subview_from(1);
-        let mut new_subview = subview;
-        for (from_ty, to_ty) in from_tys.iter().zip(to_tys.iter()) {
-            let col_count = self.row_count(*from_ty)?;
-            if from_ty == to_ty {
-                current_col += col_count;
-                continue;
-            }
-            self.transform_contravariant(*from_ty, *to_ty, slot, &mut new_subview, current_col)?;
-            current_col += col_count;
-        }
-        Ok((
-            matrix.transform_with_subview(subview, new_subview),
-            current_col,
-        ))
-    }
-
-    fn transform_impl(
-        &mut self,
-        matrix: MatrixView<'short>,
-        from_ty: TypeId,
-        to_ty: TypeId,
-        col: u32,
-        arg_col: u32,
-        slot: EffectSlot,
-    ) -> SResult<MatrixView<'short>> {
-        if from_ty == to_ty {
-            return Ok(matrix);
-        }
-        let [from_type, to_type] = [from_ty, to_ty].map(|ty| self.db.lookup(ty));
-        Ok(match [&from_type, &to_type] {
-            [_, Type::Unknown] => {
-                let empty_matrix = self.arena.new_matrix(None);
-                self.arena.replace_view_content(matrix, empty_matrix)
-            }
-            [Type::Unknown, _] => {
-                let empty_row = Row::Vars(VarRow::empty(col, arg_col));
-                let row_num = self.row_count(to_ty)?;
-                let replacement = self
-                    .arena
-                    .new_matrix(std::iter::repeat_n(empty_row, row_num as usize));
-                self.arena.replace_view_content(matrix, replacement)
-            }
-            [Type::Nominal(..), _] => {
-                let transform = self.deref_nom(from_ty, to_ty, slot)?;
-                self.arena
-                    .multiply_rhs_view(transform, matrix.rect(col, arg_col))
-            }
-            [Type::TypeVarRef(_), Type::TypeVarRef(_)]
-            | [Type::Primitive(_), Type::Primitive(_)] => matrix,
-            [Type::Loop(_, lhs_inner), Type::Loop(_, rhs_inner)] => {
-                self.transform_impl(matrix, *lhs_inner, *rhs_inner, col, arg_col, slot)?
-            }
-            [Type::ParserArg {
-                result: lhs_result, ..
-            }, Type::ParserArg {
-                result: rhs_result, ..
-            }]
-            | [Type::FunctionArg(lhs_result, _), Type::FunctionArg(rhs_result, _)] => {
-                let (subview, sub_arg_col) =
-                    self.transform_args(matrix, from_ty, to_ty, arg_col, slot)?;
-                let subview = subview.subview_from(1);
-                let new_subview =
-                    self.transform_impl(subview, *lhs_result, *rhs_result, col, sub_arg_col, slot)?;
-                matrix.transform_with_subview(subview, new_subview)
-            }
-            [l, r] => {
-                panic!("Mismatched types: {:?} and {:?}", &l, &r)
-            }
-        })
-    }
-
-    fn adjust_matching_nominal_head(
-        &mut self,
-        from: TypeId,
-        to: TypeId,
-        slot: EffectSlot,
-    ) -> SResult<Matrix<'arena>> {
-        let columns = self.row_count(from)?;
-        let matrix = self.arena.identity(columns);
-        let mut view = matrix.view(0..columns);
-        let mut subview = view.with_length(0);
-        let [Type::Nominal(from_head), Type::Nominal(to_head)] =
-            [from, to].map(|ty| self.db.lookup(ty))
-        else {
-            panic!("Arguments must both be nominal types");
-        };
-        assert_eq!(from_head.def, to_head.def);
-        let bound_types = self.db.bound_types(from_head.def)?;
-        for arg in bound_types.iter() {
-            let from_arg = self.db.subst_ty(*arg, from_head.ty_args.clone());
-            let to_arg = self.db.subst_ty(*arg, to_head.ty_args.clone());
-            subview = subview.next_subview(self.row_count(from_arg)?);
-            let new_subview = self.transform_impl(subview, from_arg, to_arg, 0, columns, slot)?;
-            view = view.transform_with_subview(subview, new_subview);
-            subview = new_subview;
-        }
-        Ok(self
-            .arena
-            .substitute_with_true_from(view.as_matrix(), columns))
-    }
-
     fn typevar_positions_impl(
         &mut self,
-        ty: TypeId,
+        orig: TypeId,
+        subst: TypeId,
         offset: &mut u32,
         res: &mut Vec<TypeVarOccurence>,
     ) -> SResult<()> {
-        match self.db.lookup(ty) {
-            Type::Unknown => {}
-            Type::Primitive(_) => {}
-            Type::TypeVarRef(var_ref) => {
-                let typevar_idx = var_ref.1;
+        match [self.db.lookup(orig), self.db.lookup(subst)] {
+            [Type::Unknown, Type::Unknown] => {}
+            [Type::Primitive(_), Type::Primitive(_)] => {}
+            [Type::TypeVarRef(_), _] => {
+                let rows = self.row_count(subst)?;
                 res.push(TypeVarOccurence {
                     matrix_idx: *offset,
-                    typevar_idx,
+                    substituted_width: rows,
                 });
                 *offset += 1;
             }
-            Type::Nominal(nom) => {
+            [Type::Block(nom), Type::Block(subst_nom)] => {
+                assert_eq!(nom.def, subst_nom.def);
                 for arg in self.db.bound_types(nom.def)?.iter() {
-                    let subst = self.db.subst_ty(*arg, nom.ty_args.clone());
-                    self.typevar_positions_impl(subst, offset, res)?;
+                    let subst = self.db.subst_ty(*arg, subst_nom.ty_args.clone());
+                    self.typevar_positions_impl(*arg, subst, offset, res)?;
                 }
             }
-            Type::Loop(_, inner) => {
-                self.typevar_positions_impl(inner, offset, res)?;
+            [Type::Loop(_, inner), Type::Loop(_, subst_inner)] => {
+                self.typevar_positions_impl(inner, subst_inner, offset, res)?;
             }
-            Type::ParserArg { result, .. } | Type::FunctionArg(result, _) => {
+            [Type::ParserArg { result, .. }, Type::ParserArg {
+                result: subst_result,
+                ..
+            }]
+            | [Type::FunctionArg(result, _), Type::FunctionArg(subst_result, _)] => {
                 *offset += 1;
-                self.typevar_positions_impl(result, offset, res)?;
+                self.typevar_positions_impl(result, subst_result, offset, res)?;
             }
+            [orig, subst] => panic!("Type mismatch: {orig:?} and {subst:?}"),
         }
         Ok(())
     }
 
-    fn typevar_positions(&mut self, tys: &[TypeId]) -> SResult<Vec<TypeVarOccurence>> {
+    fn typevar_positions(
+        &mut self,
+        tys: &[TypeId],
+        subst_tys: &[TypeId],
+    ) -> SResult<Vec<TypeVarOccurence>> {
         let mut res = Vec::new();
         let mut offset = 0;
-        for ty in tys {
-            self.typevar_positions_impl(*ty, &mut offset, &mut res)?;
+        for (ty, subst_ty) in tys.iter().zip(subst_tys) {
+            self.typevar_positions_impl(*ty, *subst_ty, &mut offset, &mut res)?;
         }
         Ok(res)
     }
 
-    fn nom_transform(
+    fn nom_subst_types(
         &mut self,
-        from: &NominalTypeHead,
-        deref: TransformInfo,
-        slot: EffectSlot,
-    ) -> SResult<(Matrix<'arena>, TypeId)> {
-        let sizes = from
-            .ty_args
-            .iter()
-            .map(|&ty| self.row_count(ty))
-            .collect::<SResult<Vec<_>>>()?;
-        let bound = self.db.bound_types(from.def)?;
-        let columns = self.typevar_positions(&bound)?;
-        let rows = self.typevar_positions(&[deref.to_ty])?;
-        let deref_matrix = match slot {
-            EffectSlot::Present => deref.matrix_present,
-            EffectSlot::Forbidden => deref.matrix_forbidden,
-        };
-        let subst_matrix = self
-            .arena
-            .replace_typevar(deref_matrix, &rows, &columns, &sizes);
-        let subst_to_ty = self.db.subst_ty(deref.to_ty, from.ty_args.clone());
-        Ok((subst_matrix, subst_to_ty))
-    }
-
-    fn deref_matrix(
-        &mut self,
-        from: &NominalTypeHead,
-        slot: EffectSlot,
-    ) -> SResult<Option<(Matrix<'arena>, TypeId)>> {
-        let deref = self.db.deref_matrix(from.def)?;
-        deref
-            .map(|deref| self.nom_transform(from, deref, slot))
-            .transpose()
-    }
-
-    fn deref_nom(
-        &mut self,
-        from_ty: TypeId,
-        to_ty: TypeId,
-        slot: EffectSlot,
-    ) -> SResult<Matrix<'arena>> {
-        if from_ty == to_ty {
-            let row_count = self.row_count(from_ty)?;
-            return Ok(self.arena.identity(row_count));
-        }
-        if let Some(matrix) = self.derefs.get(&(from_ty, to_ty)) {
-            return Ok(*matrix);
-        }
-        let from_type = self.db.lookup(from_ty);
-        let Type::Nominal(ref from) = from_type else {
-            panic!("Expected nominal type");
-        };
-        if let Type::Nominal(to) = self.db.lookup(to_ty) {
-            if from.def == to.def {
-                let matrix = self.adjust_matching_nominal_head(from_ty, to_ty, slot)?;
-                self.derefs.insert((from_ty, to_ty), matrix);
-                return Ok(matrix);
+        pd: DefId,
+        general_to: TypeId,
+        to: TypeId,
+    ) -> SResult<DefTypeSubstitution> {
+        let bound = self.db.bound_types(pd)?.to_vec();
+        let mut subst_bound = vec![];
+        let mut result_ty = to;
+        loop {
+            match self.db.lookup(result_ty) {
+                Type::ParserArg { arg, result } => {
+                    subst_bound.push(arg);
+                    result_ty = result;
+                }
+                Type::FunctionArg(result, args) => {
+                    subst_bound.extend_from_slice(args.as_slice());
+                    result_ty = result;
+                }
+                _ => break,
             }
         }
-        let (matrix, deref_to) = self
-            .deref_matrix(from, slot)?
-            .expect("Heads do not match, but from_ty is unable to get deref'ed");
-        let matrix = if let Type::Nominal(_) = self.db.lookup(deref_to) {
-            let post_mul_matrix = self.deref_nom(deref_to, to_ty, slot)?;
-            let cols = self.row_count(from_ty)?;
-            self.arena.multiply(post_mul_matrix, matrix.rect(0, cols))
-        } else {
-            let from = MatrixInfo {
-                shape: MatrixShape {
-                    ty: deref_to,
-                    bound: self.row_count(deref_to)?,
-                },
-                matrix,
-            };
-            self.transform(from, to_ty, slot)?
-        };
-        self.derefs.insert((from_ty, to_ty), matrix);
-        Ok(matrix)
-    }
-
-    fn deref_nom_flattened(
-        &mut self,
-        from_ty: TypeId,
-        to_ty: TypeId,
-        slot: EffectSlot,
-    ) -> SResult<Rect<Matrix<'arena>>> {
-        let deref = self.deref_nom(from_ty, to_ty, slot)?;
-        let col_count = self.row_count(from_ty)?;
-        Ok(Rect {
-            matrix: self.arena.substitute_with_true_from(deref, col_count),
-            bound: 0,
-            total: col_count,
+        Ok(DefTypeSubstitution {
+            ty: general_to,
+            subst_ty: to,
+            bound: bound,
+            subst_bound,
         })
     }
 
-    pub fn transform(
+    fn block_subst_types(
         &mut self,
-        from_matrix: MatrixInfo<'short>,
-        to_ty: TypeId,
-        slot: EffectSlot,
-    ) -> SResult<Matrix<'short>> {
-        let view = from_matrix
-            .matrix
-            .view(0..self.row_count(from_matrix.shape.ty)?);
-        Ok(self
-            .transform_impl(
-                view,
-                from_matrix.shape.ty,
-                to_ty,
-                from_matrix.shape.bound,
-                from_matrix.shape.bound,
-                slot,
-            )?
-            .as_matrix())
+        block: &BlockTypeHead,
+        to: TypeId,
+    ) -> SResult<DefTypeSubstitution> {
+        let bound = self.db.bound_types(block.def)?.to_vec();
+        let subst_bound = bound
+            .iter()
+            .map(|ty| self.db.subst_ty(*ty, block.ty_args.clone()))
+            .collect::<Vec<_>>();
+        let subst_to = self.db.subst_ty(to, block.ty_args.clone());
+        Ok(DefTypeSubstitution {
+            ty: to,
+            subst_ty: subst_to,
+            bound: bound,
+            subst_bound,
+        })
+    }
+    fn nom_transform(
+        &mut self,
+        sub: &DefTypeSubstitution,
+        deref_matrix: Matrix,
+    ) -> SResult<Matrix<'arena>> {
+        let columns = self.typevar_positions(&sub.bound, &sub.subst_bound)?;
+        let rows = self.typevar_positions(&[sub.ty], &[sub.subst_ty])?;
+        let subst_matrix = self.arena.replace_typevar(deref_matrix, &rows, &columns);
+        Ok(subst_matrix)
     }
 
     pub fn change_bound(
@@ -498,33 +276,9 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
         &mut self,
         from: MatrixInfo<'short>,
         to_shape: MatrixShape,
-        slot: EffectSlot,
     ) -> SResult<MatrixInfo<'short>> {
-        let transformed = self.transform(from, to_shape.ty, slot)?;
-        let res = self.change_bound(transformed, from.shape.bound, to_shape.bound);
+        let res = self.change_bound(from.matrix, from.shape.bound, to_shape.bound);
         Ok(to_shape.with_matrix(res))
-    }
-
-    fn on_ldt<'maybe_short, T>(
-        &mut self,
-        non_ldt: MatrixInfo<'short>,
-        target_shape: MatrixShape,
-        slot: EffectSlot,
-        f: impl FnOnce(&mut Self, MatrixInfo<'short>) -> SResult<(Matrix<'maybe_short>, TypeId, T)>,
-    ) -> SResult<(MatrixInfo<'maybe_short>, T)>
-    where
-        'arena: 'maybe_short,
-    {
-        let ldt = self.db.least_deref_type(non_ldt.shape.ty)?;
-        let ldt_matrix =
-            self.transform_and_change_bound(non_ldt, target_shape.with_ty(ldt), slot)?;
-        let (res, res_ty, ret) = f(self, ldt_matrix)?;
-        let transformed = self.transform(
-            target_shape.with_ty(res_ty).with_matrix(res),
-            target_shape.ty,
-            slot,
-        )?;
-        Ok((target_shape.with_matrix(transformed), ret))
     }
 
     pub fn arg_matrix(
@@ -548,7 +302,6 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
         args: impl Iterator<Item = MatrixInfo<'short>>,
         fun: MatrixShape,
         to: MatrixShape,
-        slot: EffectSlot,
     ) -> SResult<(usize, Rect<Matrix<'arena>>)> {
         let fun_type = self.db.lookup(fun.ty);
         let (_, fun_args) = fun_ty_parts(&fun_type).expect("Expected function type");
@@ -557,7 +310,7 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
             .zip(args)
             .map(|(to_ty, from)| {
                 Ok(self
-                    .transform_and_change_bound(from, MatrixShape::new(*to_ty, to.bound), slot)?
+                    .transform_and_change_bound(from, MatrixShape::new(*to_ty, to.bound))?
                     .matrix)
             })
             .collect::<SResult<Vec<Matrix>>>()?;
@@ -576,8 +329,7 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
         args: impl Iterator<Item = MatrixInfo<'short>>,
         to: MatrixShape,
     ) -> SResult<(Matrix<'short>, usize)> {
-        let (arg_count, arg_matrix) =
-            self.collect_args(args, fun.shape, to, EffectSlot::Present)?;
+        let (arg_count, arg_matrix) = self.collect_args(args, fun.shape, to)?;
         let fun_matrix = self.change_bound(fun.matrix, fun.shape.bound, to.bound);
         let result = self.arena.partial_apply(fun_matrix, arg_matrix, to.bound);
         Ok((result, arg_count))
@@ -588,31 +340,19 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
         fun: MatrixInfo<'short>,
         args: impl Iterator<Item = MatrixInfo<'short>>,
         to: MatrixShape,
-        slot: EffectSlot,
     ) -> SResult<MatrixInfo<'short>> {
-        self.on_ldt(fun, to, slot, |this, fun| {
-            let (res, arg_count) = this.partial_apply_impl(fun, args, to)?;
-            let ty = self.db.partial_apply_ty(fun.shape.ty, arg_count);
-            Ok((res, ty, ()))
-        })
-        .map(|x| x.0)
+        let (res, _) = self.partial_apply_impl(fun, args, to)?;
+        Ok(to.with_matrix(res))
     }
 
     pub fn eval(
         &mut self,
         from: MatrixInfo<'short>,
         to: MatrixShape,
-        slot: EffectSlot,
     ) -> SResult<(MatrixInfo<'short>, Row)> {
-        self.on_ldt(from, to, slot, |this, from| {
-            let ldt_type = this.db.lookup(from.shape.ty);
-            let Some((res, [])) = fun_ty_parts(&ldt_type) else {
-                panic!("Expected function type, got {:?}", &ldt_type);
-            };
-            let rest_matrix = Matrix::from_rows(&from.matrix.rows()[1..]);
-            let effect = from.matrix.rows()[0].clone();
-            Ok((rest_matrix, res, effect))
-        })
+        let rest_matrix = Matrix::from_rows(&from.matrix.rows()[1..]);
+        let effect = from.matrix.rows()[0].clone();
+        Ok((to.with_matrix(rest_matrix), effect))
     }
 
     // a combination of partial_apply and eval, for parsers where we don't store the intermediate type (well, it isn't representable)
@@ -621,21 +361,18 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
         fun: MatrixInfo<'short>,
         arg: MatrixInfo<'short>,
         to: MatrixShape,
-        slot: EffectSlot,
     ) -> SResult<(MatrixInfo<'short>, Row)> {
-        self.on_ldt(fun, to, slot, |this, fun| {
-            let fun_ldt_type = this.db.lookup(fun.shape.ty);
-            let Some((res, [arg_ty])) = fun_ty_parts(&fun_ldt_type) else {
-                panic!("Expected parser type, got {:?}", &fun_ldt_type);
-            };
-            let arg_matrix = this.transform_and_change_bound(arg, to.with_ty(*arg_ty), slot)?;
-            let applied = this
-                .partial_apply_impl(fun, Some(arg_matrix).into_iter(), to)?
-                .0;
-            let effect = applied.rows()[0].clone();
-            let rest_matrix = Matrix::from_rows(&applied.rows()[1..]);
-            Ok((rest_matrix, res, effect))
-        })
+        let fun_ldt_type = self.db.lookup(fun.shape.ty);
+        let Some((_, [arg_ty])) = fun_ty_parts(&fun_ldt_type) else {
+            panic!("Expected parser type, got {:?}", &fun_ldt_type);
+        };
+        let arg_matrix = self.transform_and_change_bound(arg, to.with_ty(*arg_ty))?;
+        let applied = self
+            .partial_apply_impl(fun, Some(arg_matrix).into_iter(), to)?
+            .0;
+        let effect = applied.rows()[0].clone();
+        let rest_matrix = Matrix::from_rows(&applied.rows()[1..]);
+        Ok((to.with_matrix(rest_matrix), effect))
     }
 
     pub fn identity(&mut self, shape: MatrixShape) -> SResult<Matrix<'arena>> {
@@ -646,12 +383,17 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
 
     fn field_matrix(
         &mut self,
-        block: &NominalTypeHead,
+        block: &BlockTypeHead,
         field_id: DefId,
         slot: EffectSlot,
     ) -> SResult<(Matrix<'arena>, TypeId)> {
         let field = self.db.field(field_id)?;
-        self.nom_transform(block, field, slot)
+        let matrix = match slot {
+            EffectSlot::Present => field.matrix_present,
+            EffectSlot::Forbidden => field.matrix_forbidden,
+        };
+        let subst = self.block_subst_types(block, field.to_ty)?;
+        Ok((self.nom_transform(&subst, matrix)?, subst.subst_ty))
     }
 
     pub fn get_field(
@@ -661,17 +403,13 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
         field_shape: MatrixShape,
         slot: EffectSlot,
     ) -> SResult<MatrixInfo<'arena>> {
-        Ok(self
-            .on_ldt(block, field_shape, slot, |this, block| {
-                let Type::Nominal(block_head) = this.db.lookup(block.shape.ty) else {
-                    panic!("Expected nominal type");
-                };
-                let (field_matrix, field_ty) = this.field_matrix(&block_head, field_id, slot)?;
-                let rect_matrix = block.matrix.rect(block.shape.bound, block.shape.bound);
-                let field_matrix = this.arena.multiply(field_matrix, rect_matrix);
-                Ok((field_matrix, field_ty, ()))
-            })?
-            .0)
+        let Type::Block(block_head) = self.db.lookup(block.shape.ty) else {
+            panic!("Expected nominal type");
+        };
+        let (field_matrix, _) = self.field_matrix(&block_head, field_id, slot)?;
+        let rect_matrix = block.matrix.rect(block.shape.bound, block.shape.bound);
+        let field_matrix = self.arena.multiply(field_matrix, rect_matrix);
+        Ok(field_shape.with_matrix(field_matrix))
     }
 
     pub fn pd_matrix(
@@ -681,18 +419,12 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
         slot: EffectSlot,
     ) -> SResult<Matrix<'arena>> {
         let trans = self.db.parserdef(pd)?;
-        let nom_head = match match match self.db.lookup(to.ty) {
-            Type::FunctionArg(result, _) => self.db.lookup(result),
-            otherwise => otherwise,
-        } {
-            Type::ParserArg { result, .. } => self.db.lookup(result),
-            otherwise => otherwise,
-        } {
-            Type::Nominal(nom) => nom,
-            otherwise => panic!("Expected nominal type, got {:?}", otherwise),
+        let nom_sub = self.nom_subst_types(pd, trans.to_ty, to.ty)?;
+        let matrix = match slot {
+            EffectSlot::Present => trans.matrix_present,
+            EffectSlot::Forbidden => trans.matrix_forbidden,
         };
-        assert_eq!(nom_head.def, pd);
-        let (matrix, _) = self.nom_transform(&nom_head, trans, slot)?;
+        let matrix = self.nom_transform(&nom_sub, matrix)?;
         Ok(self.change_bound(matrix, 0, to.bound))
     }
 
@@ -714,38 +446,6 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
     }
 
     pub fn array_parser_combinator(&mut self, to: MatrixShape) -> SResult<[Matrix<'arena>; 2]> {
-        // remember that the type of `array`` is (['arg] ~> 'ret, int) -> ['arg] ~> ['ret]
-        const MATRIX_ROWS_PRESENT: &[Row] = &[
-            //                 parse  'ret   'arg
-            Row::const_inner([false, false, false]), // fun
-            Row::const_inner([false, false, false]), // parse
-            Row::const_inner([false, true, false]),  // 'ret
-        ];
-        const MATRIX_PRESENT: Matrix<'static> = Matrix::from_rows(MATRIX_ROWS_PRESENT);
-        const MATRIX_ROWS_FORBIDDEN: &[Row] = &[
-            //                 parse  'ret   'arg
-            Row::const_inner([true, false, false]),  // fun
-            Row::const_inner([false, false, false]), // parse
-            Row::const_inner([false, false, false]), // 'ret
-        ];
-        const MATRIX_FORBIDDEN: Matrix<'static> = Matrix::from_rows(MATRIX_ROWS_FORBIDDEN);
-        const TYPEVAR_COLUMNS: [TypeVarOccurence; 2] = [
-            TypeVarOccurence {
-                // 'ret
-                matrix_idx: 1,
-                typevar_idx: 1,
-            },
-            TypeVarOccurence {
-                // 'arg
-                matrix_idx: 2,
-                typevar_idx: 0,
-            },
-        ];
-        const TYPEVAR_ROWS: [TypeVarOccurence; 1] = [TypeVarOccurence {
-            // 'ret
-            matrix_idx: 2,
-            typevar_idx: 1,
-        }];
         let Type::FunctionArg(res, _) = self.db.lookup(to.ty) else {
             panic!("Expected function type");
         };
@@ -753,13 +453,45 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
             panic!("Expected parser type");
         };
         let sizes = [self.row_count(arg)?, self.row_count(result)?];
+        // remember that the type of `array`` is (['arg] ~> 'ret, int) -> ['arg] ~> ['ret]
+        const MATRIX_ROWS_PRESENT: &[Row] = &[
+            //                 parse  'ret   'arg
+            Row::const_inner([false, false, false]), // fun
+            Row::const_inner([false, false, false]), // parse
+            Row::const_inner([false, true, false]),  // 'ret
+        ];
+        const MATRIX_PRESENT: Matrix = Matrix::from_rows(MATRIX_ROWS_PRESENT);
+        const MATRIX_ROWS_FORBIDDEN: &[Row] = &[
+            //                 parse  'ret   'arg
+            Row::const_inner([true, false, false]),  // fun
+            Row::const_inner([false, false, false]), // parse
+            Row::const_inner([false, false, false]), // 'ret
+        ];
+        const MATRIX_FORBIDDEN: Matrix = Matrix::from_rows(MATRIX_ROWS_FORBIDDEN);
+        let typevar_columns: [TypeVarOccurence; 2] = [
+            TypeVarOccurence {
+                // 'ret
+                matrix_idx: 1,
+                substituted_width: sizes[1],
+            },
+            TypeVarOccurence {
+                // 'arg
+                matrix_idx: 2,
+                substituted_width: sizes[0],
+            },
+        ];
+        let typevar_rows: [TypeVarOccurence; 1] = [TypeVarOccurence {
+            // 'ret
+            matrix_idx: 2,
+            substituted_width: sizes[1],
+        }];
         let matrix_present =
             self.arena
-                .replace_typevar(MATRIX_PRESENT, &TYPEVAR_ROWS, &TYPEVAR_COLUMNS, &sizes);
+                .replace_typevar(MATRIX_PRESENT, &typevar_rows, &typevar_rows);
         let matrix_present = self.change_bound(matrix_present, 0, to.bound);
         let matrix_forbidden =
             self.arena
-                .replace_typevar(MATRIX_FORBIDDEN, &TYPEVAR_ROWS, &TYPEVAR_COLUMNS, &sizes);
+                .replace_typevar(MATRIX_FORBIDDEN, &typevar_rows, &typevar_columns);
         let matrix_forbidden = self.change_bound(matrix_forbidden, 0, to.bound);
         Ok([matrix_present, matrix_forbidden])
     }

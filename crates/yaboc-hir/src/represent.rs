@@ -120,7 +120,6 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for TypePrimitive {
             TypePrimitive::Int => write!(f, "<int>"),
             TypePrimitive::Bit => write!(f, "<bit>"),
             TypePrimitive::Char => write!(f, "<char>"),
-            TypePrimitive::U8 => write!(f, "<u8>"),
         }
     }
 }

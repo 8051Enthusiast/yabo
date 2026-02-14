@@ -8,11 +8,9 @@ use yaboc_base::{
     low_effort_interner::{self, Uniq},
 };
 
-use self::{connections::Connections, deref_levels::DerefCache};
+use self::connections::Connections;
 
 use super::*;
-
-// subtype inference based on SimpleSub
 
 pub const TRACING_ENABLED: bool = false;
 
@@ -62,7 +60,7 @@ pub enum InferenceType<Ty: AsArray> {
     TypeVarRef(TypeVarRef),
     Var(VarId),
     Unknown,
-    Nominal(NominalInfHead<Ty>),
+    Block(BlockInfHead<Ty>),
     Loop(ArrayKind, Ty),
     ParserArg {
         result: Ty,
@@ -111,30 +109,22 @@ impl<Inner: AsArray> InferenceType<Inner> {
             InferenceType::Loop(kind, body) => {
                 InferenceType::Loop(kind, f(ctx, body, ChildLocation::LoopBody)?)
             }
-            InferenceType::Nominal(NominalInfHead {
-                kind,
+            InferenceType::Block(BlockInfHead {
                 def,
                 parse_arg,
-                fun_args,
                 ty_args,
                 internal,
             }) => {
                 let parse_arg = parse_arg
                     .map(|x| f(ctx, x, ChildLocation::NomParseArg))
                     .transpose()?;
-                let fun_args = Inner::slice(&fun_args)
-                    .iter()
-                    .map(|arg| f(ctx, arg.clone(), ChildLocation::NomFunArg(0)))
-                    .collect::<Result<Vec<_>, _>>()?;
                 let ty_args = Inner::slice(&ty_args)
                     .iter()
                     .map(|arg| f(ctx, arg.clone(), ChildLocation::NomTyArg(0)))
                     .collect::<Result<Vec<_>, _>>()?;
-                InferenceType::Nominal(NominalInfHead {
-                    kind,
+                InferenceType::Block(BlockInfHead {
                     def,
                     parse_arg,
-                    fun_args: ctx.make_array(&fun_args),
                     ty_args: ctx.make_array(&ty_args),
                     internal,
                 })
@@ -167,7 +157,16 @@ pub struct NominalInfHead<Ty: AsArray> {
     pub internal: bool,
 }
 
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct BlockInfHead<Ty: AsArray> {
+    pub def: DefId,
+    pub parse_arg: Option<Ty>,
+    pub ty_args: <Ty as AsArray>::ArrayType,
+    pub internal: bool,
+}
+
 pub type InternedNomHead<'intern> = NominalInfHead<InfTypeId<'intern>>;
+pub type InternedBlockHead<'intern> = BlockInfHead<InfTypeId<'intern>>;
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum ChildLocation {
@@ -201,7 +200,7 @@ pub enum Application {
 pub enum InfTypeHead {
     Primitive(PrimitiveType),
     TypeVarRef(TypeVarRef),
-    Nominal(DefId, bool, usize),
+    Block(DefId, bool),
     Loop(ArrayKind),
     ParserArg,
     FunctionArgs(usize, Application),
@@ -217,11 +216,7 @@ impl<T: AsArray> From<&InferenceType<T>> for InfTypeHead {
         match ty {
             InferenceType::Primitive(p) => InfTypeHead::Primitive(*p),
             InferenceType::TypeVarRef(var) => InfTypeHead::TypeVarRef(*var),
-            InferenceType::Nominal(head) => InfTypeHead::Nominal(
-                head.def,
-                head.parse_arg.is_some(),
-                T::slice(&head.fun_args).len(),
-            ),
+            InferenceType::Block(head) => InfTypeHead::Block(head.def, head.parse_arg.is_some()),
             InferenceType::Loop(kind, _) => InfTypeHead::Loop(*kind),
             InferenceType::ParserArg { .. } => InfTypeHead::ParserArg,
             InferenceType::FunctionArgs { args, partial, .. } => {
@@ -306,17 +301,15 @@ impl<'intern> InfTypeId<'intern> {
                 call_f(*body, *other_body, ChildLocation::LoopBody)?;
             }
             (
-                InferenceType::Nominal(NominalInfHead {
+                InferenceType::Block(BlockInfHead {
                     def,
                     parse_arg,
-                    fun_args,
                     ty_args,
                     ..
                 }),
-                InferenceType::Nominal(NominalInfHead {
+                InferenceType::Block(BlockInfHead {
                     def: other_def,
                     parse_arg: other_parse_arg,
-                    fun_args: other_fun_args,
                     ty_args: other_ty_args,
                     ..
                 }),
@@ -326,11 +319,6 @@ impl<'intern> InfTypeId<'intern> {
                 }
                 if let (Some(parse_arg), Some(other_parse_arg)) = (parse_arg, other_parse_arg) {
                     call_f(*parse_arg, *other_parse_arg, ChildLocation::NomParseArg)?;
-                }
-                for (index, (arg, other_arg)) in
-                    fun_args.iter().zip(other_fun_args.iter()).enumerate()
-                {
-                    call_f(*arg, *other_arg, ChildLocation::NomFunArg(index))?;
                 }
                 for (index, (arg, other_arg)) in
                     ty_args.iter().zip(other_ty_args.iter()).enumerate()
@@ -423,7 +411,7 @@ impl TryFrom<&InferenceType<InfTypeId<'_>>> for TypeHead {
         Ok(match value {
             &InferenceType::Primitive(p) => TypeHead::Primitive(p),
             &InferenceType::TypeVarRef(var) => TypeHead::TypeVarRef(var),
-            InferenceType::Nominal(NominalInfHead { def, .. }) => TypeHead::Nominal(*def),
+            InferenceType::Block(BlockInfHead { def, .. }) => TypeHead::Block(*def),
             InferenceType::Loop(kind, _) => TypeHead::Loop(*kind),
             InferenceType::ParserArg { .. } => TypeHead::ParserArg,
             InferenceType::FunctionArgs { args, .. } => TypeHead::FunctionArgs(args.len()),
@@ -473,12 +461,11 @@ pub trait TypeResolver<'intern> {
     fn db(&self) -> &Self::DB;
     fn field_type(
         &self,
-        ty: &InternedNomHead<'intern>,
+        ty: &InternedBlockHead<'intern>,
         name: FieldName,
     ) -> Result<EitherType<'intern>, TypeError>;
-    fn deref(&self, ty: &InternedNomHead<'intern>) -> SResult<Option<EitherType<'intern>>>;
+    fn returns(&self, pd: DefId) -> SResult<EitherType<'intern>>;
     fn signature(&self, pd: DefId) -> SResult<Signature>;
-    fn is_local(&self, pd: DefId) -> bool;
     fn lookup(&self, val: DefId) -> Result<EitherType<'intern>, TypeError>;
     fn name(&self) -> String;
 }
@@ -504,7 +491,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
 
     pub fn field_type(
         &mut self,
-        ty: &InternedNomHead<'intern>,
+        ty: &InternedBlockHead<'intern>,
         name: FieldName,
     ) -> Result<InfTypeId<'intern>, TypeError> {
         let ret = match self.tr.field_type(ty, name)? {
@@ -525,28 +512,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         }
         Ok(ret)
     }
-    pub fn deref(&mut self, ty: &InternedNomHead<'intern>) -> SResult<Option<InfTypeId<'intern>>> {
-        if let Some(deref_ty) = self.tr.deref(ty)? {
-            let ret = match deref_ty {
-                EitherType::Regular(deref_ty) => {
-                    self.convert_type_into_inftype_with_args(deref_ty, ty.ty_args)
-                }
-                EitherType::Inference(deref_ty) => deref_ty,
-            };
-            if self.trace {
-                dbeprintln!(
-                    self.tr.db(),
-                    "[{}] deref {}: {}",
-                    &self.tr.name(),
-                    &ty.def,
-                    &ret
-                );
-            }
-            Ok(Some(ret))
-        } else {
-            Ok(None)
-        }
-    }
+
     pub fn lookup(&mut self, val: DefId) -> Result<InfTypeId<'intern>, TypeError> {
         let ret = match self.tr.lookup(val) {
             Ok(EitherType::Regular(result_type)) => {
@@ -568,37 +534,21 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         };
         Ok(ret)
     }
-    pub fn thunk(&mut self, pd: DefId) -> SResult<InfTypeId<'intern>> {
-        let sig = self.tr.signature(pd)?;
-        let local = self.tr.is_local(pd);
-        let ret = self.tr.db().intern_type(Type::Nominal(sig.thunk));
-        let vars = if local {
-            Vec::new()
-        } else {
-            sig.ty_args.iter().map(|_| self.var()).collect::<Vec<_>>()
-        };
-        let ret = self.convert_type_into_inftype_with_args(ret, &vars);
-        if self.trace {
-            dbeprintln!(
-                self.tr.db(),
-                "[{}] thunk {}: {}",
-                &self.tr.name(),
-                &pd,
-                &ret
-            );
-        }
-        Ok(ret)
-    }
+
     pub fn parserdef(&mut self, pd: DefId) -> SResult<InfTypeId<'intern>> {
         let sig = self.tr.signature(pd)?;
-        let local = self.tr.is_local(pd);
-        let ret = self.tr.db().intern_type(Type::Nominal(sig.thunk));
-        let vars = if local {
+        let ret = self.tr.returns(pd)?;
+        let vars = if let EitherType::Inference(..) = ret {
             Vec::new()
         } else {
             sig.ty_args.iter().map(|_| self.var()).collect::<Vec<_>>()
         };
-        let mut ret = self.convert_type_into_inftype_with_args(ret, &vars);
+        let mut ret = match ret {
+            EitherType::Regular(type_id) => {
+                self.convert_type_into_inftype_with_args(type_id, &vars)
+            }
+            EitherType::Inference(inf_type_id) => inf_type_id,
+        };
         if let Some(parser_arg) = sig.from {
             let parser_arg = self.convert_type_into_inftype_with_args(parser_arg, &vars);
             ret = self.parser(ret, parser_arg);
@@ -698,23 +648,9 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                 Ok(())
             }
 
-            (
-                Nominal(
-                    ref nom @ NominalInfHead {
-                        kind: NominalKind::Block,
-                        ..
-                    },
-                ),
-                InferField(name, fieldtype),
-            ) => {
+            (Block(ref nom), InferField(name, fieldtype)) => {
                 let field_ty = self.field_type(nom, *name)?;
                 self.constrain(field_ty, *fieldtype)
-            }
-
-            (Nominal(l), InferIfResult(None, res, cont)) if l.kind != NominalKind::Block => {
-                let if_result_with_lower =
-                    self.intern_infty(InferIfResult(Some(lower), *res, *cont));
-                self.constrain(lower, if_result_with_lower)
             }
 
             (
@@ -738,24 +674,6 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                     partial: Application::Partial,
                 });
                 self.constrain(outer_ty, upper)
-            }
-
-            (Nominal(l), _) if l.kind != NominalKind::Block => {
-                // if they are not the same head, try upcasting/dereferencing/evaluating
-                if let Some(deref) = self.deref(l)? {
-                    self.constrain(deref, upper)
-                } else {
-                    Err(TypeError::HeadMismatch(
-                        InfTypeHead::Nominal(l.def, l.parse_arg.is_some(), l.fun_args.len()),
-                        upper.into(),
-                    ))
-                }
-            }
-
-            // a u8 can be dereferenced to an int
-            (Primitive(PrimitiveType::U8), _) => {
-                let int = self.int();
-                self.constrain(int, upper)
             }
 
             (ParserArg { result, .. }, InferIfResult(_, infer_res, cont)) => {
@@ -807,10 +725,6 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         let bit = InferenceType::Primitive(PrimitiveType::Bit);
         self.intern_infty(bit)
     }
-    pub fn u8(&mut self) -> InfTypeId<'intern> {
-        let u8 = InferenceType::Primitive(PrimitiveType::U8);
-        self.intern_infty(u8)
-    }
     pub fn range(&mut self) -> InfTypeId<'intern> {
         let int = self.int();
         self.intern_infty(InferenceType::Loop(ArrayKind::Each, int))
@@ -824,8 +738,8 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         })
     }
     pub fn byte_array(&mut self) -> InfTypeId<'intern> {
-        let u8 = self.u8();
-        self.array(ArrayKind::Each, u8)
+        let int = self.int();
+        self.array(ArrayKind::Each, int)
     }
     pub fn regex(&mut self) -> InfTypeId<'intern> {
         let u8_array = self.byte_array();
@@ -917,15 +831,13 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         ty_args: &[InfTypeId<'intern>],
     ) -> Result<InfTypeId<'intern>, TypeError> {
         let arg = is_parser.then(|| self.var());
-        let nominal = NominalInfHead {
-            kind: NominalKind::Block,
+        let block = BlockInfHead {
             def: id,
             parse_arg: arg,
-            fun_args: self.slice_interner.intern_slice(&[]),
             ty_args: self.slice_interner.intern_slice(ty_args),
             internal: true,
         };
-        let result = self.intern_infty(InferenceType::Nominal(nominal));
+        let result = self.intern_infty(InferenceType::Block(block));
         if let Some(arg) = arg {
             Ok(self.parser(result, arg))
         } else {
@@ -1051,31 +963,21 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                     None => InferenceType::TypeVarRef(TypeVarRef(*loc, *index)),
                 }
             }
-            Type::Nominal(NominalTypeHead {
-                kind,
+            Type::Block(BlockTypeHead {
                 def,
                 parse_arg,
-                fun_args,
                 ty_args,
             }) => {
                 let parse_arg = parse_arg.map(&mut recurse);
-                let fun_args = fun_args
-                    .iter()
-                    .copied()
-                    .map(&mut recurse)
-                    .collect::<Vec<_>>();
                 let ty_args = ty_args
                     .iter()
                     .copied()
                     .map(&mut recurse)
                     .collect::<Vec<_>>();
-                let fun_args = self.slice_interner.intern_slice(&fun_args);
                 let ty_args = self.slice_interner.intern_slice(&ty_args);
-                InferenceType::Nominal(NominalInfHead {
-                    kind: *kind,
+                InferenceType::Block(BlockInfHead {
                     def: *def,
                     parse_arg,
-                    fun_args,
                     ty_args,
                     internal: false,
                 })
@@ -1102,15 +1004,9 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     pub fn type_converter(
         &mut self,
         at: DefId,
-        locals: &[DefId],
     ) -> Result<TypeConvertMemo<'_, 'intern, TR>, TypeConvError> {
         let map = self.connections.connections_map()?;
-        let locals = locals
-            .iter()
-            .map(|x| self.thunk(*x))
-            .collect::<Result<Vec<_>, _>>()?;
-        let deref_cache = DerefCache::new(self, &locals)?;
-        Ok(TypeConvertMemo::new(self, at, map, deref_cache))
+        Ok(TypeConvertMemo::new(self, at, map))
     }
 }
 impl<'intern, TR: TypeResolver<'intern>> InfTypeInterner<'intern>

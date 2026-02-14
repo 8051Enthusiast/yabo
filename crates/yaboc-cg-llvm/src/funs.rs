@@ -331,6 +331,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         match layout.mono_layout() {
             MonoLayout::Primitive(_)
             | MonoLayout::SlicePtr
+            | MonoLayout::Ptr
             | MonoLayout::Range
             | MonoLayout::Single
             | MonoLayout::Regex(_, _)
@@ -571,7 +572,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.set_always_inline(fun);
         self.add_entry_block(fun);
         let [return_ptr, from, target_head] = get_fun_args(fun);
-        let layout = self.layouts.dcx.primitive(PrimitiveType::U8);
+        let layout = self.layouts.dcx.intern(Layout::Mono(MonoLayout::Ptr));
         let ret = CgReturnValue::new(
             target_head.into_int_value(),
             return_ptr.into_pointer_value(),
@@ -1507,7 +1508,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_primitive_funs(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
-        if let MonoLayout::Primitive(PrimitiveType::U8) = layout.mono_layout() {
+        if let MonoLayout::Ptr = layout.mono_layout() {
             self.create_u8_current_element(layout)?;
         }
         Ok(())

@@ -887,7 +887,6 @@ pub enum TypePrimitive {
     Int,
     Bit,
     Char,
-    U8,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]

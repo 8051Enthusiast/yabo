@@ -4,7 +4,7 @@ use yaboc_base::{databased_display::DatabasedDisplay, hash::StableHash, interner
 
 use crate::{
     inference::{Application, InfTypeHead},
-    NominalTypeHead, Type, TypeId, TypeVarRef,
+    BlockTypeHead, Type, TypeId, TypeVarRef,
 };
 
 use super::{inference::InferenceType, InfTypeId, NominalKind, PrimitiveType, TypeInterner};
@@ -18,11 +18,8 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeId<'_> {
             InferenceType::TypeVarRef(TypeVarRef(loc, index)) => {
                 dbwrite!(f, db, "<Var Ref ({}, {})>", loc, index)
             }
-            InferenceType::Nominal(n) => {
-                if let NominalKind::Block = n.kind {
-                    write!(f, "<anonymous block ")?;
-                }
-                dbwrite!(f, db, "{}", &n.def)?;
+            InferenceType::Block(n) => {
+                dbwrite!(f, db, "<anonymous block {}", &n.def)?;
                 if !n.ty_args.is_empty() {
                     write!(f, "[")?;
                     for (i, arg) in n.ty_args.iter().enumerate() {
@@ -33,9 +30,7 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeId<'_> {
                     }
                     write!(f, "]")?;
                 }
-                if let NominalKind::Block = n.kind {
-                    write!(f, ">")?;
-                }
+                write!(f, ">")?;
                 Ok(())
             }
             InferenceType::Loop(ArrayKind::Each, inner) => {
@@ -89,7 +84,6 @@ impl<DB: TypeInterner + ?Sized> StableHash<DB> for PrimitiveType {
             PrimitiveType::Int => 1,
             PrimitiveType::Char => 2,
             PrimitiveType::Unit => 3,
-            PrimitiveType::U8 => 4,
         }
         .update_hash(state, db)
     }
@@ -100,8 +94,6 @@ impl<DB: TypeInterner + ?Sized> StableHash<DB> for NominalKind {
         match self {
             NominalKind::Def => 0u8,
             NominalKind::Block => 1,
-            NominalKind::Fun => 2,
-            NominalKind::Static => 3,
         }
         .update_hash(state, db)
     }
@@ -122,11 +114,8 @@ impl<DB: TypeInterner + ?Sized> StableHash<DB> for TypeId {
                 def.update_hash(state, db);
                 index.update_hash(state, db);
             }
-            Type::Nominal(NominalTypeHead {
-                kind, def, ty_args, ..
-            }) => {
+            Type::Block(BlockTypeHead { def, ty_args, .. }) => {
                 state.update([6]);
-                kind.update_hash(state, db);
                 def.update_hash(state, db);
                 ty_args.len().update_hash(state, db);
                 for arg in ty_args.iter() {
@@ -162,7 +151,6 @@ impl std::fmt::Display for PrimitiveType {
             PrimitiveType::Bit => write!(f, "bit"),
             PrimitiveType::Char => write!(f, "char"),
             PrimitiveType::Unit => write!(f, "unit"),
-            PrimitiveType::U8 => write!(f, "u8"),
         }
     }
 }
@@ -178,7 +166,7 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeHead {
         match self {
             InfTypeHead::Primitive(p) => p.db_fmt(f, db),
             InfTypeHead::TypeVarRef(var) => var.db_fmt(f, db),
-            InfTypeHead::Nominal(def, ..) => {
+            InfTypeHead::Block(def, ..) => {
                 dbwrite!(f, db, "{}", def)
             }
             InfTypeHead::Loop(ArrayKind::Each) => write!(f, "array"),
@@ -209,11 +197,8 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for TypeId {
         match ty {
             Type::Primitive(p) => p.db_fmt(f, db),
             Type::TypeVarRef(var) => var.db_fmt(f, db),
-            Type::Nominal(n) => {
-                if let NominalKind::Block = n.kind {
-                    write!(f, "<anonymous block ")?;
-                }
-                dbwrite!(f, db, "{}", &n.def)?;
+            Type::Block(n) => {
+                dbwrite!(f, db, "<anonymous block {}", &n.def)?;
                 if !n.ty_args.is_empty() {
                     write!(f, "[")?;
                     for (i, arg) in n.ty_args.iter().enumerate() {
@@ -224,9 +209,7 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for TypeId {
                     }
                     write!(f, "]")?;
                 }
-                if let NominalKind::Block = n.kind {
-                    write!(f, ">")?;
-                }
+                write!(f, ">")?;
                 Ok(())
             }
             Type::Loop(ArrayKind::Each, inner) => {

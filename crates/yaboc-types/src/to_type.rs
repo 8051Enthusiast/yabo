@@ -1,9 +1,10 @@
+use core::slice;
 use std::{collections::HashMap, hash::Hash, sync::Arc};
 
 use crate::{
     connections::ConnectionMap,
-    deref_levels::DerefCache,
-    inference::{InfSlice, InfTypeHead, NominalInfHead, TRACING_ENABLED},
+    inference::{BlockInfHead, InfSlice, InfTypeHead, TRACING_ENABLED},
+    BlockTypeHead,
 };
 use yaboc_base::{
     dbeprintln,
@@ -14,7 +15,7 @@ use yaboc_base::{
 use super::{
     inference::{InfTypeId, InfTypeInterner, InferenceType},
     inference::{InferenceContext, TypeResolver},
-    NominalTypeHead, Type, TypeError, TypeId, TypeInterner,
+    Type, TypeError, TypeId, TypeInterner,
 };
 
 pub struct TyVars<'a, 'intern> {
@@ -101,16 +102,14 @@ pub fn collect_homogenous_children<'intern>(
                 body.push(*other_body);
             }
             (
-                InferenceType::Nominal(NominalInfHead {
+                InferenceType::Block(BlockInfHead {
                     parse_arg,
-                    fun_args,
                     ty_args,
                     internal,
                     ..
                 }),
-                InferenceType::Nominal(NominalInfHead {
+                InferenceType::Block(BlockInfHead {
                     parse_arg: other_parse_arg,
-                    fun_args: other_fun_args,
                     ty_args: other_ty_args,
                     internal: other_internal,
                     ..
@@ -118,9 +117,6 @@ pub fn collect_homogenous_children<'intern>(
             ) => {
                 if let (Some(parse_arg), Some(other_parse_arg)) = (parse_arg, other_parse_arg) {
                     parse_arg.push(*other_parse_arg);
-                }
-                for (i, arg) in other_fun_args.iter().enumerate() {
-                    fun_args[i].push(*arg);
                 }
                 for (i, arg) in other_ty_args.iter().enumerate() {
                     ty_args[i].push(*arg);
@@ -157,108 +153,46 @@ pub fn collect_homogenous_children<'intern>(
     Ok(arr)
 }
 
-struct NegativePolarity;
-struct PositivePolarity;
-
-trait Polarity {
-    type Opposite: Polarity<Opposite = Self>;
-    fn combine_impl<'a, 'intern, TR: TypeResolver<'intern>>(
-        ctx: &mut TypeConvertMemo<'a, 'intern, TR>,
-        nom: InfSlice<'intern>,
-    ) -> Result<InfTypeId<'intern>, TypeError>;
-    const IS_POSITIVE: bool;
-    fn check_dominating_ty<'intern>(tys: &[InfTypeId<'intern>]) -> Option<InfTypeId<'intern>> {
-        if let Some(unknown) = tys.iter().find(|x| x.value() == &InferenceType::Unknown) {
-            return Some(*unknown);
-        }
-        None
+fn check_dominating_ty<'intern>(tys: &[InfTypeId<'intern>]) -> Option<InfTypeId<'intern>> {
+    if let Some(unknown) = tys.iter().find(|x| x.value() == &InferenceType::Unknown) {
+        return Some(*unknown);
     }
+    None
 }
 
-impl Polarity for PositivePolarity {
-    type Opposite = NegativePolarity;
-
-    const IS_POSITIVE: bool = true;
-    fn combine_impl<'a, 'intern, TR: TypeResolver<'intern>>(
-        ctx: &mut TypeConvertMemo<'a, 'intern, TR>,
-        combinee: InfSlice<'intern>,
-    ) -> Result<InfTypeId<'intern>, TypeError> {
-        let homogenous = ctx.deref_cache.homogenize(combinee, ctx.ctx)?;
-        if let Some(dom) = Self::check_dominating_ty(&homogenous) {
-            return Ok(dom);
-        }
-        let normalized_homogenous = homogenous
-            .iter()
-            .copied()
-            .map(|x| ctx.normalize_typevar(x))
-            .collect::<Result<Vec<_>, _>>()?;
-        if normalized_homogenous.is_empty() {
-            return Err(TypeError::NonInfer);
-        }
-        let homogenous_children = collect_homogenous_children(&normalized_homogenous)
-            .map_err(|[lhs, rhs]| TypeError::HeadIncompatible(lhs, rhs))?;
-
-        let recursed = homogenous_children.try_map(ctx, |ctx, inner, loc| {
-            if loc.opposite_polarity() {
-                ctx.meet_inftype(&inner)
-            } else {
-                ctx.join_inftype(&inner)
-            }
-        })?;
-
-        Ok(ctx.ctx.intern_infty(recursed))
+fn combine_impl<'a, 'intern, TR: TypeResolver<'intern>>(
+    ctx: &mut TypeConvertMemo<'a, 'intern, TR>,
+    combinee: InfSlice<'intern>,
+) -> Result<InfTypeId<'intern>, TypeError> {
+    let combinee = combinee
+        .iter()
+        .flat_map(|ty| match ty.value() {
+            InferenceType::Var(vid) => ctx.ctx.var_store.get(*vid).lower(),
+            _ => slice::from_ref(ty),
+        })
+        .copied()
+        .filter(|t| !matches!(t.value(), InferenceType::Var(_)))
+        .collect::<Vec<_>>();
+    if let Some(dom) = check_dominating_ty(&combinee) {
+        return Ok(dom);
     }
+    if combinee.is_empty() {
+        return Err(TypeError::NonInfer);
+    }
+    let homogenous_children = collect_homogenous_children(&combinee)
+        .map_err(|[lhs, rhs]| TypeError::HeadIncompatible(lhs, rhs))?;
+
+    let recursed = homogenous_children.try_map(ctx, |ctx, inner, _| ctx.join_inftype(&inner))?;
+
+    Ok(ctx.ctx.intern_infty(recursed))
 }
 
-impl Polarity for NegativePolarity {
-    type Opposite = PositivePolarity;
-    const IS_POSITIVE: bool = false;
-    fn combine_impl<'a, 'intern, TR: TypeResolver<'intern>>(
-        ctx: &mut TypeConvertMemo<'a, 'intern, TR>,
-        combinee: InfSlice<'intern>,
-    ) -> Result<InfTypeId<'intern>, TypeError> {
-        let levels = combinee
-            .iter()
-            .map(|ty| ctx.deref_cache.deref_level(*ty, ctx.ctx))
-            .collect::<Result<Vec<_>, _>>()?;
-        let Some(max_level) = levels.iter().max() else {
-            return Err(TypeError::NonInfer);
-        };
-        let highest_level_subset = combinee
-            .iter()
-            .copied()
-            .zip(levels.iter())
-            .filter_map(|(ty, level)| (level == max_level).then_some(ty))
-            .map(|ty| ctx.normalize_typevar(ty))
-            .collect::<Result<Vec<_>, _>>()?;
-        let homogenous = ctx.deref_cache.homogenize(&highest_level_subset, ctx.ctx)?;
-        if homogenous.is_empty() {
-            return Err(TypeError::NonInfer);
-        }
-        if let Some(dom) = Self::check_dominating_ty(&homogenous) {
-            return Ok(dom);
-        }
-        let homogenous_children = collect_homogenous_children(&homogenous)
-            .map_err(|[lhs, rhs]| TypeError::HeadIncompatible(lhs, rhs))?;
-        let recursed = homogenous_children.try_map(ctx, |ctx, inner, loc| {
-            if loc.opposite_polarity() {
-                ctx.join_inftype(&inner)
-            } else {
-                ctx.meet_inftype(&inner)
-            }
-        })?;
-
-        Ok(ctx.ctx.intern_infty(recursed))
-    }
-}
 pub struct TypeConvertMemo<'a, 'intern, TR: TypeResolver<'intern>> {
     convert: MemoRecursor<InfTypeId<'intern>, TypeId>,
     normalize: MemoRecursor<InfTypeId<'intern>, InfTypeId<'intern>>,
-    meet: MemoRecursor<InfSlice<'intern>, InfTypeId<'intern>>,
     join: MemoRecursor<InfSlice<'intern>, InfTypeId<'intern>>,
     id: DefId,
     map: ConnectionMap,
-    deref_cache: DerefCache,
     ctx: &'a mut InferenceContext<'intern, TR>,
 }
 
@@ -267,64 +201,43 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
         ctx: &'a mut InferenceContext<'intern, TR>,
         id: DefId,
         map: ConnectionMap,
-        deref_cache: DerefCache,
     ) -> Self {
         TypeConvertMemo {
             convert: Default::default(),
             normalize: Default::default(),
-            meet: Default::default(),
             join: Default::default(),
             id,
             map,
-            deref_cache,
             ctx,
         }
     }
-    fn enter_fun<P: Polarity>(
+    fn enter_fun(
         &mut self,
         from: InfSlice<'intern>,
     ) -> Option<Result<InfTypeId<'intern>, TypeError>> {
-        if P::IS_POSITIVE {
-            self.join.enter_fun(from)
-        } else {
-            self.meet.enter_fun(from)
-        }
+        self.join.enter_fun(from)
     }
-    fn leave_fun<P: Polarity>(
+    fn leave_fun(
         &mut self,
         from: InfSlice<'intern>,
         to: InfTypeId<'intern>,
     ) -> Result<InfTypeId<'intern>, TypeError> {
-        if P::IS_POSITIVE {
-            self.join.leave_fun(from, to)
-        } else {
-            self.meet.leave_fun(from, to)
-        }
+        self.join.leave_fun(from, to)
     }
-    fn leave_fun_err<P: Polarity>(
+    fn leave_fun_err(
         &mut self,
         from: InfSlice<'intern>,
         err: TypeError,
     ) -> Result<InfTypeId<'intern>, TypeError> {
-        if P::IS_POSITIVE {
-            self.join.leave_fun_err(from, err)
-        } else {
-            self.meet.leave_fun_err(from, err)
-        }
-    }
-    fn meet_inftype(
-        &mut self,
-        combinee: &[InfTypeId<'intern>],
-    ) -> Result<InfTypeId<'intern>, TypeError> {
-        self.combine::<NegativePolarity>(combinee)
+        self.join.leave_fun_err(from, err)
     }
     fn join_inftype(
         &mut self,
         combinee: &[InfTypeId<'intern>],
     ) -> Result<InfTypeId<'intern>, TypeError> {
-        self.combine::<PositivePolarity>(combinee)
+        self.combine(combinee)
     }
-    fn combine<P: Polarity>(
+    fn combine(
         &mut self,
         combinee: &[InfTypeId<'intern>],
     ) -> Result<InfTypeId<'intern>, TypeError> {
@@ -332,12 +245,12 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
         combinee.sort_unstable();
         combinee.dedup();
         let combinee = self.ctx.slice_interner.intern_slice(&combinee);
-        if let Some(x) = self.enter_fun::<P>(combinee) {
+        if let Some(x) = self.enter_fun(combinee) {
             return x;
         }
-        match P::combine_impl(self, combinee) {
-            Ok(x) => self.leave_fun::<P>(combinee, x),
-            Err(e) => self.leave_fun_err::<P>(combinee, e),
+        match combine_impl(self, combinee) {
+            Ok(x) => self.leave_fun(combinee, x),
+            Err(e) => self.leave_fun_err(combinee, e),
         }
     }
     fn normalize_children(
@@ -349,6 +262,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
         }
         Ok(infty)
     }
+
     fn normalize_typevar(
         &mut self,
         infty: InfTypeId<'intern>,
@@ -404,30 +318,21 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {
                 panic!("Internal Compiler Error: normalized inference type contains variable");
             }
             InferenceType::Unknown => Type::Unknown,
-            InferenceType::Nominal(NominalInfHead {
-                kind,
+            InferenceType::Block(BlockInfHead {
                 def,
                 parse_arg,
-                fun_args,
                 ty_args,
                 internal: _,
             }) => {
                 let parse_arg = parse_arg.map(|x| self.convert_to_type(x)).transpose()?;
-                let fun_args = fun_args
-                    .iter()
-                    .copied()
-                    .map(|x| self.convert_to_type(x))
-                    .collect::<Result<_, _>>()?;
                 let ty_args = ty_args
                     .iter()
                     .copied()
                     .map(|x| self.convert_to_type(x))
                     .collect::<Result<_, _>>()?;
-                Type::Nominal(NominalTypeHead {
-                    kind: *kind,
+                Type::Block(BlockTypeHead {
                     def: *def,
                     parse_arg,
-                    fun_args: Arc::new(fun_args),
                     ty_args: Arc::new(ty_args),
                 })
             }
