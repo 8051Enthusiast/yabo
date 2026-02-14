@@ -157,12 +157,10 @@ impl<DB: Constraints + ?Sized> Env for LenInferCtx<'_, DB> {
 }
 
 fn arg_rank(db: &(impl Constraints + ?Sized), ty: TypeId) -> SResult<ArgRank> {
-    Ok(ArgRank(
-        match db.lookup_intern_type(db.least_deref_type(ty)?) {
-            Type::FunctionArg(_, args) => args.len() as u32,
-            _ => 0,
-        },
-    ))
+    Ok(ArgRank(match db.lookup_intern_type(ty) {
+        Type::FunctionArg(_, args) => args.len() as u32,
+        _ => 0,
+    }))
 }
 
 fn arg_ranks(

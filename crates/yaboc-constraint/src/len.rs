@@ -256,9 +256,7 @@ impl<'a> SizeTermBuilder<'a> {
                         }
                         ValUnOp::Wiggle(_, _) | ValUnOp::BtMark(_) | ValUnOp::EvalFun => inner,
                         ValUnOp::Size => {
-                            let ldt = self
-                                .db
-                                .lookup_intern_type(self.db.least_deref_type(inner_ty)?);
+                            let ldt = self.db.lookup_intern_type(inner_ty);
                             match ldt {
                                 Type::ParserArg { .. } => {
                                     self.push_term(Term::Size(true, inner), src)

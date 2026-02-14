@@ -74,7 +74,7 @@ pub fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<Arc<E
     Resolved::expr_with_data::<FullTypeId>(db, expr)?
         .take_ref()
         .try_scan(|(head, ty)| -> Result<BacktrackStatus, _> {
-            let ty = db.lookup_intern_type(db.least_deref_type(*ty)?);
+            let ty = db.lookup_intern_type(*ty);
             let is_parser = matches!(ty, Type::ParserArg { .. });
             Ok(match head {
                 ExprHead::Niladic(

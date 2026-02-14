@@ -55,9 +55,8 @@ pub fn bound_args(db: &dyn TyHirs, id: DefId) -> SResult<Arc<[TypeId]>> {
 }
 
 pub fn fun_arg_count(db: &dyn TyHirs, ty: TypeId) -> SResult<Option<u32>> {
-    let ldt_ty = db.least_deref_type(ty)?;
     Ok(
-        if let Type::FunctionArg(_, args) = db.lookup_intern_type(ldt_ty) {
+        if let Type::FunctionArg(_, args) = db.lookup_intern_type(ty) {
             Some(args.len().try_into().unwrap())
         } else {
             None
