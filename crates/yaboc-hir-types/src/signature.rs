@@ -1,7 +1,6 @@
 use hir::HirNode;
+use yaboc_base::dbpanic;
 use yaboc_expr::FetchExpr;
-use yaboc_hir::ParserDefId;
-use yaboc_types::inference::BlockInfHead;
 
 use super::*;
 
@@ -65,117 +64,24 @@ pub fn fun_arg_count(db: &dyn TyHirs, ty: TypeId) -> SResult<Option<u32>> {
 }
 
 pub fn parser_args(db: &dyn TyHirs, id: hir::ParserDefId) -> SResult<Signature> {
-    parser_args_error(db, id).silence()
-}
-
-pub fn parser_args_error(
-    db: &dyn TyHirs,
-    id: hir::ParserDefId,
-) -> Result<Signature, SpannedTypeError> {
-    let pd = id.lookup(db)?;
-    let loc = TypingLocation {
-        vars: TypeVarCollection::at_id(db, id)?,
-        loc: db.hir_parent_module(id.0)?.0,
-        pd: id,
-    };
-    let arg_resolver = ArgResolver::new(db);
-    let bump = Bump::new();
-    let mut tcx = TypingContext::new(db, arg_resolver, loc, &bump);
-    let mut arg_inftys = pd
+    let ssc_types = db.ssc_types(db.parser_ssc(id)?).silence()?;
+    let sig = ssc_types
         .args
-        .as_ref()
-        .map(|x| -> Result<_, SpannedTypeError> {
-            let mut ret = Vec::new();
-            for arg in x.iter() {
-                // top level definitions always have type annotation
-                // (enforced by syntax definition)
-                let arg_ty = arg.lookup(db)?.ty.unwrap();
-                let arg_expr = arg_ty.lookup(db)?;
-                let arg_infty = tcx.resolve_type_expr(arg_expr.expr.take_ref(), arg_ty)?;
-                ret.push(arg_infty);
-            }
-            Ok(ret)
-        })
-        .transpose()?
-        .unwrap_or_default();
-    if let Some(from) = pd.from {
-        let from_expr = from.lookup(db)?;
-        let from_infty = tcx.resolve_type_expr(from_expr.expr.take_ref(), from)?;
-        arg_inftys.push(from_infty);
-    }
-    let inftys = &arg_inftys;
-    let mut converter = tcx.infctx.type_converter(id.0)?;
-    let mut args = Vec::new();
-    for infty in inftys {
-        let new_ty = converter
-            .convert_to_type(*infty)
-            .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(pd.id.0)))?;
-        args.push(new_ty);
-    }
-    let from_ty = if pd.from.is_some() {
-        Some(args.pop().unwrap())
-    } else {
-        None
-    };
-    let args = if pd.args.is_some() {
-        Some(Arc::new(args))
-    } else {
-        None
-    };
-    Ok(Signature {
-        ty_args: Arc::new(tcx.loc.vars.defs),
-        from: from_ty,
-        args,
-        thunky: pd.kind.thunky(),
-    })
+        .get(&id)
+        .unwrap_or_else(|| dbpanic!(db, "parser_args: no signature for parserdef {}", &id.0))
+        .clone();
+    Ok(sig)
 }
 
-pub struct ArgResolver<'a>(&'a dyn TyHirs);
-
-impl<'a> ArgResolver<'a> {
-    pub fn new(db: &'a dyn TyHirs) -> Self {
-        ArgResolver(db)
-    }
-}
-
-impl<'a> TypeResolver<'a> for ArgResolver<'a> {
-    fn field_type(
-        &self,
-        _ty: &BlockInfHead<InfTypeId<'a>>,
-        _name: FieldName,
-    ) -> Result<EitherType<'a>, TypeError> {
-        Ok(self.0.intern_type(Type::Unknown).into())
-    }
-
-    fn returns(&self, ty: DefId) -> SResult<EitherType<'a>> {
-        let ty = self.db().parser_returns(ParserDefId(ty))?.deref;
-        Ok(EitherType::Regular(ty))
-    }
-
-    fn signature(&self, id: DefId) -> SResult<Signature> {
-        get_signature(self.0, id)
-    }
-
-    fn lookup(&self, _val: DefId) -> Result<EitherType<'a>, TypeError> {
-        Err(SilencedError::new().into())
-    }
-
-    type DB = dyn TyHirs + 'a;
-
-    fn db(&self) -> &Self::DB {
-        self.0
-    }
-
-    fn name(&self) -> String {
-        String::from("signature")
-    }
-}
-
-pub fn get_signature(db: &dyn TyHirs, id: DefId) -> SResult<Signature> {
-    let HirNode::ParserDef(pd) = db.hir_node(id)? else {
-        panic!("attempted to extract signature from non-parser-def")
-    };
-    db.parser_args(pd.id)
+pub fn parser_signature(db: &dyn TyHirs, id: hir::ParserDefId) -> SResult<(TypeId, usize)> {
+    let ssc_types = db.ssc_types(db.parser_ssc(id)?).silence()?;
+    let sig = ssc_types
+        .sigs
+        .get(&id)
+        .unwrap_or_else(|| dbpanic!(db, "parser_args: no signature for parserdef {}", &id.0))
+        .clone();
+    let args = db.parser_args(id)?;
+    Ok((sig, args.ty_args.len()))
 }
 
 #[cfg(test)]

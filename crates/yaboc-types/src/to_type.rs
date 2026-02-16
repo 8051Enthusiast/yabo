@@ -193,7 +193,7 @@ pub struct TypeConvertMemo<'a, 'intern, TR: TypeResolver<'intern>> {
     join: MemoRecursor<InfSlice<'intern>, InfTypeId<'intern>>,
     id: DefId,
     map: ConnectionMap,
-    ctx: &'a mut InferenceContext<'intern, TR>,
+    pub ctx: &'a mut InferenceContext<'intern, TR>,
 }
 
 impl<'a, 'intern, TR: TypeResolver<'intern>> TypeConvertMemo<'a, 'intern, TR> {

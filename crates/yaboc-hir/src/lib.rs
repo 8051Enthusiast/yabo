@@ -726,7 +726,7 @@ pub struct ParserDef {
     pub qualifier: Qualifier,
     pub kind: DefKind,
     pub from: Option<TExprId>,
-    pub generics: Option<Vec<Identifier>>,
+    pub generics: Vec<Identifier>,
     pub args: Option<Vec<ArgDefId>>,
     pub to: ExprId,
     pub ret_ty: Option<TExprId>,

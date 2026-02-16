@@ -464,8 +464,7 @@ pub trait TypeResolver<'intern> {
         ty: &InternedBlockHead<'intern>,
         name: FieldName,
     ) -> Result<EitherType<'intern>, TypeError>;
-    fn returns(&self, pd: DefId) -> SResult<EitherType<'intern>>;
-    fn signature(&self, pd: DefId) -> SResult<Signature>;
+    fn signature(&self, pd: DefId) -> SResult<(EitherType<'intern>, usize)>;
     fn lookup(&self, val: DefId) -> Result<EitherType<'intern>, TypeError>;
     fn name(&self) -> String;
 }
@@ -514,6 +513,9 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     }
 
     pub fn lookup(&mut self, val: DefId) -> Result<InfTypeId<'intern>, TypeError> {
+        if self.trace {
+            dbeprintln!(self.tr.db(), "[{}] looking up {}", &self.tr.name(), &val,);
+        }
         let ret = match self.tr.lookup(val) {
             Ok(EitherType::Regular(result_type)) => {
                 let ret = self.convert_type_into_inftype(result_type);
@@ -536,41 +538,24 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     }
 
     pub fn parserdef(&mut self, pd: DefId) -> SResult<InfTypeId<'intern>> {
-        let sig = self.tr.signature(pd)?;
-        let ret = self.tr.returns(pd)?;
-        let vars = if let EitherType::Inference(..) = ret {
-            Vec::new()
-        } else {
-            sig.ty_args.iter().map(|_| self.var()).collect::<Vec<_>>()
-        };
-        let mut ret = match ret {
+        let (ty, tyvar_count) = self.tr.signature(pd)?;
+        let ty = match ty {
             EitherType::Regular(type_id) => {
+                let vars = (0..tyvar_count).map(|_| self.var()).collect::<Vec<_>>();
                 self.convert_type_into_inftype_with_args(type_id, &vars)
             }
             EitherType::Inference(inf_type_id) => inf_type_id,
         };
-        if let Some(parser_arg) = sig.from {
-            let parser_arg = self.convert_type_into_inftype_with_args(parser_arg, &vars);
-            ret = self.parser(ret, parser_arg);
-        }
-        if let Some(fun_args) = sig.args {
-            let fun_args = fun_args
-                .iter()
-                .map(|arg| self.convert_type_into_inftype_with_args(*arg, &vars))
-                .collect::<Vec<_>>();
-            let fun_args_slice = self.intern_infty_slice(&fun_args);
-            ret = self.function(ret, fun_args_slice, Application::Full);
-        }
         if self.trace {
             dbeprintln!(
                 self.tr.db(),
                 "[{}] parserdef {}: {}",
                 &self.tr.name(),
                 &pd,
-                &ret
+                &ty
             );
         }
-        Ok(ret)
+        Ok(ty)
     }
     pub fn constrain(
         &mut self,

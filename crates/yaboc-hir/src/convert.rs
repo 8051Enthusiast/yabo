@@ -428,7 +428,8 @@ fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDef
     let generics = ast
         .type_params
         .as_ref()
-        .map(|generics| generics.args.clone());
+        .map(|generics| generics.args.clone())
+        .unwrap_or_default();
     let pdef = ParserDef {
         qualifier,
         id,

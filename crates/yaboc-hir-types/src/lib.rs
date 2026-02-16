@@ -44,12 +44,14 @@ pub struct PubTypeId;
 
 use returns::{parser_expr_at, parser_returns, parser_type_at, ssc_types, ParserDefType, SscTypes};
 pub use returns::{NOBACKTRACK_BIT, THUNK_BIT, VTABLE_BIT};
-use signature::{bound_args, fun_arg_count, parser_args, parser_args_error};
+use signature::{bound_args, fun_arg_count, parser_args, parser_signature};
+
+use crate::returns::ReturnResolver;
 
 #[salsa::query_group(HirTypesDatabase)]
 pub trait TyHirs: Hirs + yaboc_types::TypeInterner + resolve::Resolves {
     fn parser_args(&self, id: hir::ParserDefId) -> SResult<Signature>;
-    fn parser_args_error(&self, id: hir::ParserDefId) -> Result<Signature, SpannedTypeError>;
+    fn parser_signature(&self, id: hir::ParserDefId) -> SResult<(TypeId, usize)>;
     fn parser_returns(&self, id: hir::ParserDefId) -> SResult<ParserDefType>;
     fn ssc_types(&self, id: FunctionSscId) -> Result<SscTypes, SpannedTypeError>;
     fn fun_arg_count(&self, ty: TypeId) -> SResult<Option<u32>>;
@@ -96,22 +98,25 @@ pub fn ty_head_discriminant<DB: TyHirs + ?Sized>(db: &DB, ty: TypeId) -> i64 {
 pub type ExprTypeData = ShapedData<Vec<TypeId>, Resolved>;
 pub type ExprInfTypeData<'a> = ShapedData<Vec<InfTypeId<'a>>, Resolved>;
 
-pub struct TypingContext<'a, 'intern, TR: TypeResolver<'intern>> {
+pub struct TypingContext<'a, 'intern> {
     db: &'a dyn TyHirs,
-    infctx: InferenceContext<'intern, TR>,
+    infctx: InferenceContext<'intern, ReturnResolver<'intern>>,
     loc: TypingLocation,
-    inftypes: Rc<FxHashMap<DefId, InfTypeId<'intern>>>,
     inf_expressions: FxHashMap<hir::ExprId, Rc<ExprInfTypeData<'intern>>>,
     current_ambient: Option<InfTypeId<'intern>>,
 }
 
-impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
-    fn new(db: &'a dyn TyHirs, tr: TR, loc: TypingLocation, bump: &'intern Bump) -> Self {
+impl<'a, 'intern> TypingContext<'a, 'intern> {
+    fn new(
+        db: &'a dyn TyHirs,
+        tr: ReturnResolver<'intern>,
+        loc: TypingLocation,
+        bump: &'intern Bump,
+    ) -> Self {
         Self {
             db,
             infctx: InferenceContext::new(tr, bump),
             loc,
-            inftypes: Default::default(),
             inf_expressions: Default::default(),
             current_ambient: None,
         }
@@ -282,7 +287,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         Ok(match block.returns {
             BlockReturnKind::Returns => {
                 let to_id = block.root_context.0.child_field(self.db, FieldName::Return);
-                let result = self.inftypes[&to_id];
+                let result = self.infty_at(to_id);
                 self.wrap_block_return(kind, result)
             }
             BlockReturnKind::Fields => {
@@ -355,8 +360,6 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
                         }
                         cont
                     }
-                    // TODO: we should make a variable that enforces dereference level 0 here
-                    // so that backtracking can be toggled
                     ValUnOp::BtMark(_) => inner,
                     ValUnOp::Dot(name, _) => {
                         self.infctx.access_field(inner, *name).map_err(spanned)?
@@ -487,19 +490,24 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         &mut self,
         pd: hir::ParserDefId,
         vars: &mut FxHashMap<DefId, InfTypeId<'intern>>,
-    ) -> Result<(), SpannedTypeError> {
+    ) -> Result<(Option<InfTypeId<'intern>>, Option<Vec<InfTypeId<'intern>>>), SpannedTypeError>
+    {
         let pd = pd.lookup(self.db)?;
-        let sig = self.db.parser_args(pd.id)?;
-        for (ty, id) in sig
-            .args
-            .iter()
-            .flat_map(|x| x.iter())
-            .zip(pd.args.into_iter().flatten())
-        {
-            let ty = self.infctx.convert_type_into_inftype(*ty);
+        let mut args = Vec::new();
+        for id in pd.args.iter().flatten() {
+            let arg = id.lookup(self.db)?.ty.unwrap();
+            let texpr = arg.lookup(self.db)?;
+            let ty = self.resolve_type_expr(texpr.expr.take_ref(), texpr.id)?;
+            args.push(ty);
             vars.insert(id.0, ty);
         }
-        Ok(())
+        let from = if let Some(from) = pd.from {
+            let texpr = from.lookup(self.db)?;
+            Some(self.resolve_type_expr(texpr.expr.take_ref(), texpr.id)?)
+        } else {
+            None
+        };
+        Ok((from, pd.args.is_some().then_some(args)))
     }
     fn set_ambient_type(&mut self, infty: Option<InfTypeId<'intern>>) {
         self.current_ambient = infty;
@@ -508,7 +516,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         self.current_ambient
     }
     fn infty_at(&mut self, id: DefId) -> InfTypeId<'intern> {
-        self.inftypes[&id]
+        self.infctx.tr.inftypes[&id]
     }
     fn with_ambient_type<T>(
         &mut self,
@@ -528,10 +536,12 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         self.loc.loc = old_loc;
         ret
     }
-    fn type_parserdef(&mut self, pd: hir::ParserDefId) -> Result<(), SpannedTypeError> {
+    fn type_parserdef(
+        &mut self,
+        pd: hir::ParserDefId,
+        ambient: Option<InfTypeId<'intern>>,
+    ) -> Result<(), SpannedTypeError> {
         let parserdef = pd.lookup(self.db)?;
-        let sig = self.db.parser_args(pd)?;
-        let ambient = sig.from.map(|ty| self.infctx.convert_type_into_inftype(ty));
         self.set_ambient_type(ambient);
 
         let expr = parserdef.to.lookup(self.db)?;
@@ -587,7 +597,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         let args = lambda
             .args
             .iter()
-            .map(|arg| self.inftypes[&arg.0])
+            .map(|arg| self.infty_at(arg.0))
             .collect::<Vec<_>>();
         let args = self.infctx.slice_interner.intern_slice(&args);
         Ok(self.infctx.function(ret, args, Application::Full))
@@ -642,6 +652,7 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
         let self_ty = self.infty_at(parse.id.0);
         self.infctx.constrain(ret, self_ty).map_err(with_span)
     }
+
     fn type_let(&mut self, let_statement: &hir::LetStatement) -> Result<(), SpannedTypeError> {
         let expr = let_statement.expr.lookup(self.db)?;
         let ty = self.type_expr(&expr)?;
@@ -656,28 +667,22 @@ impl<'a, 'intern, TR: TypeResolver<'intern>> TypingContext<'a, 'intern, TR> {
 pub struct TypeVarCollection {
     pub defs: Vec<Identifier>,
     names: FxHashMap<Identifier, u32>,
-    frozen: bool,
 }
 
 impl TypeVarCollection {
     pub fn get_var(&mut self, var_name: Identifier) -> Option<u32> {
         self.names.get(&var_name).copied()
     }
-    pub fn freeze(&mut self) {
-        self.frozen = true
-    }
     pub fn at_id(db: &(impl TyHirs + ?Sized), id: hir::ParserDefId) -> SResult<Self> {
         let parserdef = id.lookup(db)?;
         let mut ret = TypeVarCollection {
             defs: vec![],
             names: FxHashMap::default(),
-            frozen: false,
         };
-        for (i, id) in parserdef.generics.iter().flatten().enumerate() {
+        for (i, id) in parserdef.generics.iter().enumerate() {
             ret.names.insert(*id, i as u32);
             ret.defs.push(*id);
         }
-        ret.freeze();
         Ok(ret)
     }
     pub fn var_types(&self, db: &(impl TyHirs + ?Sized), id: hir::ParserDefId) -> Vec<TypeId> {

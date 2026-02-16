@@ -19,7 +19,6 @@ use super::{SpannedTypeError, TyHirs};
 
 pub fn errors(db: &(impl TyHirs + ?Sized)) -> Vec<Report> {
     let modules = db.all_modules();
-    let parsers = db.all_parserdefs();
     let mut sscs: FxHashSet<FunctionSscId> = Default::default();
     for module in modules {
         if let Ok(x) = db.mod_parser_ssc(module) {
@@ -30,11 +29,6 @@ pub fn errors(db: &(impl TyHirs + ?Sized)) -> Vec<Report> {
     for ssc in sscs {
         if let Err(e) = db.ssc_types(ssc) {
             errors.push(e)
-        }
-    }
-    for parser in parsers {
-        if let Err(e) = db.parser_args_error(parser) {
-            errors.push(e);
         }
     }
     if let Ok(errs) = db.validate_export_arguments() {
