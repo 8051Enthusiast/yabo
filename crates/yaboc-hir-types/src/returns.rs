@@ -2,9 +2,7 @@ use yaboc_base::{dbformat, dbpanic};
 use yaboc_expr::FetchKindData;
 use yaboc_hir::{HirNode, ParserDefId};
 use yaboc_resolve::parserdef_ssc::FunctionSscId;
-use yaboc_types::inference::InternedBlockHead;
-
-use crate::signature::get_signature;
+use yaboc_types::{inference::InternedBlockHead, to_type::TypeConvertMemo};
 
 use super::*;
 
@@ -44,6 +42,8 @@ impl<DB: TyHirs + ?Sized> FetchKindData<FullTypeId, ExprId, DB> for Resolved {
 pub struct SscTypes {
     pub types: BTreeMap<DefId, TypeId>,
     pub exprs: BTreeMap<hir::ExprId, ExprTypeData>,
+    pub args: BTreeMap<hir::ParserDefId, Signature>,
+    pub sigs: BTreeMap<hir::ParserDefId, TypeId>,
 }
 
 pub fn parser_returns(db: &dyn TyHirs, id: hir::ParserDefId) -> SResult<ParserDefType> {
@@ -72,25 +72,41 @@ pub fn ssc_types(db: &dyn TyHirs, id: FunctionSscId) -> Result<SscTypes, Spanned
     let mut inftypes = FxHashMap::default();
     let mut local_inftypes = FxHashMap::default();
     let mut inftype_def = FxHashMap::default();
+    let mut froms = vec![];
+    let mut argss = vec![];
+    let mut ty_argss = vec![];
     for def in defs.iter() {
-        // in this loop we do not directly type the inference variables we are creating yet
+        ctx.loc = TypingLocation::at_id(db, def.id.0)?;
         ctx.initialize_vars_at(def.id.0, &mut local_inftypes)?;
-        ctx.initialize_parserdef_args(def.id, &mut local_inftypes)?;
+        let (from, args) = ctx.initialize_parserdef_args(def.id, &mut local_inftypes)?;
         for (id, inftype) in local_inftypes.drain() {
             inftypes.insert(id, inftype);
             inftype_def.insert(id, def.id);
         }
+        froms.push(from);
+        let mut sig = inftypes[&def.id.0];
+        if let Some(from) = from {
+            sig = ctx.infctx.parser(sig, from);
+        }
+        if let Some(args) = &args {
+            let arg_slice = ctx.infctx.intern_infty_slice(&args);
+            sig = ctx.infctx.function(sig, arg_slice, Application::Full);
+        }
+        argss.push(args);
+        let ty_args = ctx.loc.vars.defs.clone();
+        let tyarg_count = ty_args.len();
+        ty_argss.push(ty_args);
+
+        ctx.infctx.tr.signatures.insert(def.id, (sig, tyarg_count));
     }
-    ctx.inftypes = Rc::new(inftypes);
-    ctx.infctx.tr.inftypes = ctx.inftypes.clone();
-    for def in defs.iter() {
+    ctx.infctx.tr.inftypes = inftypes;
+    for (def, from) in defs.iter().zip(froms.iter()) {
         // in this separate loop we do the actual type inference
         ctx.loc = TypingLocation::at_id(db, def.id.0)?;
-        ctx.type_parserdef(def.id)?;
+        ctx.type_parserdef(def.id, *from)?;
     }
     let mut rets = Vec::new();
     let mut types = SscTypes::default();
-    let inftypes = ctx.inftypes.clone();
     let inf_expressions = ctx.inf_expressions.clone();
     let mut converter = ctx.infctx.type_converter(placeholder_id.0)?;
     for def in defs.iter() {
@@ -98,17 +114,74 @@ pub fn ssc_types(db: &dyn TyHirs, id: FunctionSscId) -> Result<SscTypes, Spanned
         // here we are finished with inference so we can convert to actual types
         converter.set_id(def.id.0);
         let deref = converter
-            .convert_to_type(ctx.inftypes[&def.id.0])
+            .convert_to_type(converter.ctx.tr.inftypes[&def.id.0])
             .map_err(spanned)?;
         rets.push(ParserDefType { id: def.id, deref });
     }
-    for (&id, &infty) in inftypes.iter() {
+    for (id, infty) in converter
+        .ctx
+        .tr
+        .inftypes
+        .iter()
+        .map(|(id, infty)| (*id, *infty))
+        .collect::<Vec<_>>()
+    {
         let def = inftype_def[&id];
         converter.set_id(def.0);
         let ty = converter
             .convert_to_type(infty)
             .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(id)))?;
         types.types.insert(id, ty);
+    }
+    for (id, infty) in converter
+        .ctx
+        .tr
+        .signatures
+        .iter()
+        .map(|(id, (infty, _))| (*id, *infty))
+        .collect::<Vec<_>>()
+    {
+        converter.set_id(id.0);
+        let ty = converter
+            .convert_to_type(infty)
+            .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(id.0)))?;
+        types.sigs.insert(id, ty);
+    }
+    for (id, ((args, from), ty_args)) in defs
+        .iter()
+        .zip(argss.iter().zip(froms.iter()).zip(ty_argss.into_iter()))
+    {
+        converter.set_id(id.id.0);
+        fn conv<'a, 'intern>(
+            converter: &mut TypeConvertMemo<'a, 'intern, ReturnResolver<'intern>>,
+            infty: InfTypeId<'intern>,
+            id: DefId,
+        ) -> Result<TypeId, SpannedTypeError> {
+            converter
+                .convert_to_type(infty)
+                .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(id)))
+        }
+
+        let args = args
+            .as_ref()
+            .map(|x| {
+                x.iter()
+                    .map(|infty| conv(&mut converter, *infty, id.id.0))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?
+            .map(Arc::new);
+        let from = from
+            .as_ref()
+            .map(|infty| conv(&mut converter, *infty, id.id.0))
+            .transpose()?;
+        let sig = Signature {
+            ty_args: Arc::new(ty_args),
+            from,
+            args,
+            thunky: id.kind.thunky(),
+        };
+        types.args.insert(id.id, sig);
     }
     // make sure we get the modified return
     for ParserDefType { id, deref } in rets.iter() {
@@ -136,7 +209,8 @@ pub fn ssc_types(db: &dyn TyHirs, id: FunctionSscId) -> Result<SscTypes, Spanned
 
 pub struct ReturnResolver<'intern> {
     db: &'intern dyn TyHirs,
-    inftypes: Rc<FxHashMap<DefId, InfTypeId<'intern>>>,
+    pub inftypes: FxHashMap<DefId, InfTypeId<'intern>>,
+    pub signatures: FxHashMap<ParserDefId, (InfTypeId<'intern>, usize)>,
 }
 
 impl<'intern> ReturnResolver<'intern> {
@@ -145,6 +219,7 @@ impl<'intern> ReturnResolver<'intern> {
         Self {
             db,
             inftypes: Default::default(),
+            signatures: Default::default(),
         }
     }
 }
@@ -177,17 +252,13 @@ impl<'intern> TypeResolver<'intern> for ReturnResolver<'intern> {
         })
     }
 
-    fn returns(&self, ty: DefId) -> SResult<EitherType<'intern>> {
-        if let Some(deref_ty) = self.inftypes.get(&ty) {
-            Ok(EitherType::Inference(*deref_ty))
+    fn signature(&self, id: DefId) -> SResult<(EitherType<'intern>, usize)> {
+        if let Some((ty, tyarg_count)) = self.signatures.get(&ParserDefId(id)) {
+            Ok((EitherType::Inference(*ty), *tyarg_count))
         } else {
-            let ty = self.db().parser_returns(ParserDefId(ty))?.deref;
-            Ok(EitherType::Regular(ty))
+            let (ty, tyarg_count) = self.db().parser_signature(ParserDefId(id))?;
+            Ok((EitherType::Regular(ty), tyarg_count))
         }
-    }
-
-    fn signature(&self, id: DefId) -> SResult<Signature> {
-        get_signature(self.db, id)
     }
 
     fn lookup(&self, val: DefId) -> Result<EitherType<'intern>, TypeError> {
