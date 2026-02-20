@@ -1,11 +1,10 @@
 use sha2::Digest;
 use yaboc_ast::ArrayKind;
-use yaboc_base::{databased_display::DatabasedDisplay, hash::StableHash, interner::FieldName};
-
-use crate::{
-    inference::{Application, InfTypeHead},
-    BlockTypeHead, Type, TypeId, TypeVarRef,
+use yaboc_base::{
+    databased_display::DatabasedDisplay, hash::StableHash, low_effort_interner::Uniq,
 };
+
+use crate::{inference::InfTypeHead, BlockTypeHead, Type, TypeId, TypeVarRef};
 
 use super::{inference::InferenceType, InfTypeId, NominalKind, PrimitiveType, TypeInterner};
 
@@ -39,40 +38,28 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeId<'_> {
             InferenceType::ParserArg { result, arg } => {
                 dbwrite!(f, db, "{} ~> {}", arg, result)
             }
-            InferenceType::FunctionArgs {
-                result,
-                args,
-                partial,
-            } => {
-                dbwrite!(f, db, "{}(", result)?;
-                for (i, arg) in args.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    dbwrite!(f, db, "{}", arg)?;
-                }
-                if *partial == Application::Partial {
-                    write!(f, ", ..")?;
-                }
-                write!(f, ")")
+            InferenceType::FunctionArgs { result, args } => {
+                dbwrite!(f, db, "{}({}", result, args)
             }
             InferenceType::Unknown => write!(f, "<unknown>"),
             InferenceType::Var(var_id) => {
                 write!(f, "<Var {}>", var_id.0)
             }
-            InferenceType::InferField(field_name, inner_type) => {
-                write!(f, "<InferField {field_name:?}: ")?;
-                dbwrite!(f, db, "{}>", inner_type)
+            InferenceType::FunArgCons(
+                head,
+                tail @ InfTypeId(Uniq(_, InferenceType::FunArgCons(..))),
+            ) => {
+                dbwrite!(f, db, "{}, {}", head, tail)
             }
-            InferenceType::InferIfResult(non_parser, inner_type, cont) => {
-                write!(f, "<InferIfResult")?;
-                if let Some(non_parser) = non_parser {
-                    dbwrite!(f, db, " {}", non_parser)?;
-                }
-                write!(f, ": ")?;
-                dbwrite!(f, db, "{}, {}>", inner_type, cont)
+            InferenceType::FunArgCons(head, InfTypeId(Uniq(_, InferenceType::FunArgNil))) => {
+                dbwrite!(f, db, "{})", head)
             }
-            InferenceType::SizeOf => write!(f, "<SizeOf>"),
+            InferenceType::FunArgCons(head, tail) => {
+                dbwrite!(f, db, "{}, ..{})", head, tail)
+            }
+            InferenceType::FunArgNil => {
+                write!(f, ")")
+            }
         }
     }
 }
@@ -171,22 +158,17 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeHead {
             }
             InfTypeHead::Loop(ArrayKind::Each) => write!(f, "array"),
             InfTypeHead::ParserArg => write!(f, "a parser"),
-            InfTypeHead::FunctionArgs(arg, Application::Full) => {
-                write!(f, "a function with {arg} arguments")
+            InfTypeHead::FunctionArgs => {
+                write!(f, "a function")
             }
-            InfTypeHead::FunctionArgs(arg, Application::Partial) => {
-                write!(f, "a function with at least {arg} arguments")
+            InfTypeHead::Unknown => write!(f, "unknown"),
+            InfTypeHead::FunctionArgCons => {
+                write!(f, "a function argument")
             }
-            InfTypeHead::Unknown => write!(f, "unknon"),
-            InfTypeHead::InferField(name) => match name {
-                FieldName::Return => write!(f, "field return"),
-                FieldName::Ident(name) => {
-                    dbwrite!(f, db, "field {}", name)
-                }
-            },
-            InfTypeHead::InferIfResult(_) => write!(f, "if result"),
-            InfTypeHead::SizeOf => write!(f, "array or parser"),
-            InfTypeHead::Var(_) => todo!(),
+            InfTypeHead::FunctionArgNil => {
+                write!(f, "no function argument")
+            }
+            InfTypeHead::Var(_) => write!(f, "an inference var"),
         }
     }
 }

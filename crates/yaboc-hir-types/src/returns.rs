@@ -90,7 +90,7 @@ pub fn ssc_types(db: &dyn TyHirs, id: FunctionSscId) -> Result<SscTypes, Spanned
         }
         if let Some(args) = &args {
             let arg_slice = ctx.infctx.intern_infty_slice(&args);
-            sig = ctx.infctx.function(sig, arg_slice, Application::Full);
+            sig = ctx.infctx.function(sig, arg_slice, None);
         }
         argss.push(args);
         let ty_args = ctx.loc.vars.defs.clone();

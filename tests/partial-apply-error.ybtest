@@ -6,5 +6,5 @@ def ~f(a: int, b: int) = {
 export
 def ~test = {
     let j = f(6, 7, 8, ..)
-           #~^error[507] expected a function with at least 3 arguments, but got a function with 2 arguments
+           #~^error[507] expected a function argument, but got no function argument, error introduced here
 }

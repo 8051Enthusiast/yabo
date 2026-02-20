@@ -173,7 +173,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern> {
                 }
                 let args = self.infctx.intern_infty_slice(&inner_ty[1..]);
                 let result = inner_ty[0];
-                self.infctx.function(result, args, Application::Full)
+                self.infctx.function(result, args, None)
             }
         };
         Ok(ret)
@@ -351,14 +351,14 @@ impl<'a, 'intern> TypingContext<'a, 'intern> {
                     }
                     ValUnOp::Size => self.infctx.check_size_of(inner).map_err(spanned)?,
                     ValUnOp::Wiggle(c, _) => {
-                        let (inner, cont) = self.infctx.if_checked(inner).map_err(spanned)?;
+                        let result = self.infctx.if_checked(inner).map_err(spanned)?;
                         let expr = self.db.lookup_intern_hir_constraint(*c);
-                        self.constr_expression_type(&expr.expr, inner)
+                        self.constr_expression_type(&expr.expr, result)
                             .map_err(spanned)?;
                         if expr.has_no_eof {
-                            self.infctx.check_parser(cont).map_err(spanned)?;
+                            self.infctx.check_parser(inner).map_err(spanned)?;
                         }
-                        cont
+                        inner
                     }
                     ValUnOp::BtMark(_) => inner,
                     ValUnOp::Dot(name, _) => {
@@ -600,7 +600,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern> {
             .map(|arg| self.infty_at(arg.0))
             .collect::<Vec<_>>();
         let args = self.infctx.slice_interner.intern_slice(&args);
-        Ok(self.infctx.function(ret, args, Application::Full))
+        Ok(self.infctx.function(ret, args, None))
     }
 
     fn type_context(&mut self, context: &hir::StructCtx) -> Result<(), SpannedTypeError> {
