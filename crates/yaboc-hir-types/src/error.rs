@@ -102,12 +102,6 @@ fn make_type_error(
             504,
             format!("cannot unify functions with different argument counts: {first} and {second}"),
         ),
-        TypeError::ParseDefFromMismatch => (
-            505,
-            String::from(
-                "parserdef with 'from' argument, but definition does not have a from argument",
-            ),
-        ),
         TypeError::RecursiveType => (506, String::from("recursive types are not supported")),
         TypeError::HeadMismatch(gotten, expected) => (
             507,
@@ -142,6 +136,7 @@ fn make_type_error(
             ),
         ),
         TypeError::NonInfer => (514, String::from("could not infer type")),
+        TypeError::NotSized => (515, String::from(".sizeof is invalid for this type"))
     };
     let mut rbuild = Report::new(DiagnosticKind::Error, spans[0].file, &message).with_code(code);
     for (i, span) in spans.iter().enumerate() {

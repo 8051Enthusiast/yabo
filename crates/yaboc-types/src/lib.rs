@@ -1,9 +1,10 @@
+pub mod binary_tree;
 mod connections;
 pub mod inference;
 pub mod represent;
 pub mod to_type;
 
-use std::{collections::HashSet, hash::Hash, sync::Arc};
+use std::{hash::Hash, sync::Arc};
 
 use inference::InfTypeHead;
 use salsa::InternId;
@@ -152,10 +153,10 @@ pub enum TypeError {
     RecursiveType,
     UnknownField(FieldName),
     UnknownName(Identifier),
-    ParseDefFromMismatch,
     ParserDefArgCountMismatch(usize, usize),
     NonThunkReference(Identifier),
     NonInferTypeVar(TypeVarRef),
+    NotSized,
     NonInfer,
     UnsupportedExportArgument { def_id: DefId, arg_name: Identifier },
     Silenced(SilencedError),
