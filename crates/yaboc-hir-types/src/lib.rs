@@ -245,15 +245,15 @@ impl<'a, 'intern> TypingContext<'a, 'intern> {
             ExprHead::Niladic(f) => match f {
                 ConstraintAtom::Atom(Atom::Number(_)) | ConstraintAtom::Range(_, _) => {
                     let int = self.infctx.int();
-                    self.infctx.constrain(ty, int)
+                    self.infctx.unify(ty, int)
                 }
                 ConstraintAtom::Atom(Atom::Char(_)) => {
                     let char = self.infctx.char();
-                    self.infctx.constrain(ty, char)
+                    self.infctx.unify(ty, char)
                 }
                 ConstraintAtom::Atom(Atom::Bool(_)) => {
                     let bool = self.infctx.bit();
-                    self.infctx.constrain(ty, bool)
+                    self.infctx.unify(ty, bool)
                 }
                 ConstraintAtom::Atom(Atom::Field(name)) => {
                     self.infctx.access_field(ty, name).map(|_| ())
@@ -322,7 +322,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern> {
         let expr = expr_ref.try_scan(|(expr, idx)| -> Result<_, SpannedTypeError> {
             let span = IndirectSpan::new(id.0, *idx);
             let spanned = |x| SpannedTypeError::new(x, span);
-            let mut constrain = |lower, upper| self.infctx.constrain(lower, upper).map_err(spanned);
+            let mut constrain = |lower, upper| self.infctx.unify(lower, upper).map_err(spanned);
             Ok(match expr {
                 ExprHead::Dyadic(op, [&left, &right]) => match op {
                     And | Xor | Or | ShiftR | ShiftL | Minus | Plus | Div | Modulo | Mul => {
@@ -552,7 +552,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern> {
         }
         let previous_ret = self.infty_at(pd.0);
         self.infctx
-            .constrain(ret, previous_ret)
+            .unify(ret, previous_ret)
             .map_err(return_spanned)?;
         Ok(())
     }
@@ -635,7 +635,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern> {
         let current = self.infty_at(choice_ind.id.0);
         for (_, choice_id) in choice_ind.choices.iter() {
             let choice = self.infty_at(*choice_id);
-            self.infctx.constrain(choice, current).map_err(|e| {
+            self.infctx.unify(choice, current).map_err(|e| {
                 SpannedTypeError::new(e, IndirectSpan::default_span(choice_ind.id.0))
             })?;
         }
@@ -650,7 +650,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern> {
             .parser_apply(ty, self.ambient_type().unwrap())
             .map_err(with_span)?;
         let self_ty = self.infty_at(parse.id.0);
-        self.infctx.constrain(ret, self_ty).map_err(with_span)
+        self.infctx.unify(ret, self_ty).map_err(with_span)
     }
 
     fn type_let(&mut self, let_statement: &hir::LetStatement) -> Result<(), SpannedTypeError> {
@@ -658,7 +658,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern> {
         let ty = self.type_expr(&expr)?;
         let self_ty = self.infty_at(let_statement.id.0);
         self.infctx
-            .constrain(ty, self_ty)
+            .unify(ty, self_ty)
             .map_err(|e| SpannedTypeError::new(e, IndirectSpan::default_span(let_statement.id.0)))
     }
 }
