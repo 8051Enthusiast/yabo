@@ -327,12 +327,10 @@ Given that this is a parser combinator language, it is important to be able to d
 Arguments can be specified in parentheses after the name of the parser:
 ```
 def ~biased_int(int_parser: ~int, bias: int) = {
-  parsed_int: int_parser!
+  parsed_int: int_parser
   let return = parsed_int + bias
 }
 ```
-
-Note that function arguments are always assumed to be fallible for now (I plan to change this in the future), hence the `!`.
 
 The parser combinator can then be applied by writing the arguments in parentheses after the name, like `biased_int(u16l, 42)`.
 We can also partially apply function arguments by writing two dots after the last given argument, like in this (a bit nonsensical) example:
@@ -421,7 +419,7 @@ Otherwise, it evaluates and returns the value of `b`.
 `then` has lower precedence compared to `else`, so it can essentially be used to replicate the functionality of `is` statements:
 `x is 0 then foo else bar` would evaluate `foo` if `x` is `0`, and to `bar` otherwise.
 
-As a convenience, there's also the `if?` function, which fails if the argument is false:
+As a convenience, there's also the `if` function, which fails if the argument is false:
 `if?(foo > bar) then foo else bar` would evaluate `foo` if `foo` is greater than `bar`, and to `bar` otherwise.
 
 Recursive Structures and Thunks
@@ -430,11 +428,11 @@ One unusual aspect of yabo is the absence of recursive values.
 This makes yabo Turing incomplete as every type can only contain finitely many values.
 However, this is precisely what allows yabo to avoid allocations and garbage collection.
 
-However, there is a pointer-like construct that allows indirection, called a thunk.
+To still make it possible to use this language for recursive binary formats, there is a pointer-like construct that allows indirection, called a thunk.
 When we parse a `u16l`, what is returned is not actually the value itself but is a thunk containing all the arguments to the `u16l` parser.
 The arguments to the `u16l` consist of just the `[u8]` at the current position, which is represented by a pair of pointers most of the time.
-The type of this thunk is `u16l` (which is different from the type of the parser `u16l`, which is actually `[u8] ~> u16l` - one `u16l` is a value, and the other a type).
-Values of type `u16l` can be used in any place where an `int` is expected, as `u16l` is a subtype of `int`.
+The type of this thunk is still `int`, but the run-time representation is different.
+The thunk gets evaluated into the `int` value whenever it is needed, which is when an operator uses it or it is passed as a function argument.
 
 How does one define recursive structures then?
 As an example, take a contiguous recursive list:
@@ -446,7 +444,7 @@ def ~list[T](f: ~T) = {
 }
 ```
 If we naively tried to construct the resulting value without using thunks, we would end up with arbitrarily deep nested structures like (leaving `head` out), `{tail: {tail: {tail: {}}}}`.
-However, since `list` is a thunk, the value is not actually recursive and the `tail` field just contains the `[u8]` slice where the next element starts, and the parser `f`.
+However, since `list` is a thunk, the value is not actually recursive and the `tail` field just contains the `[u8]` slice that indicates where the next element starts, and the parser `f`.
 
 For example let's access the thunk returned by the list.
 ```
@@ -457,13 +455,12 @@ def ~byte_3_of_c_string = {
   let return = s.?tail.?tail.?tail.?head
 }
 ```
-If we evaluate `list(u8 is 0x01..0xff)` (a C string) applied to `41 62 63 64 00`, we would only get back the thunk as a value, but it would still evaluate completely as it still has to find out the end of the string.
-However, when evaluating the thunk that was returned earlier from the parser, there's no need to recurse.
-We do not need the length of the list to get the values of both fields.
+If we evaluate `list(u8 is 0x01..0xff)` (a C string) applied to `41 62 63 64 00`, we would only get back the thunk as a value, but it would still evaluate the parts needed for the length of the whole, as it still has to find out the end of the string.
+When evaluating the thunk that was returned earlier from the parser, there's no need to recurse.
+This is because we do not need the length of the list to get the values of both fields.
 For `head`, `u8 is 0x01..0xff` does get evaluated, but the `tail` field is just a thunk and needs no further evaluation.
 
 If you use the `fun` keyword instead of the `def` keyword, no thunk will be returned.
-This is required especially if the return type is a type variable (for example, `def [u8] ~> rec[T]: T = rec`).
 It is meant more for calculations than data definitions.
 For example, the following calculates the sum of all bytes in a list:
 ```
@@ -473,7 +470,7 @@ fun ~sum(f: ~int, acc: int) = {
   \ let return = acc
 }
 ```
-A `def` would be overkill here since a thunk would be returned.
+A `def` would be unnecessary here since a thunk would be returned.
 If we do not immediately evaluate it but instead evaluate the thunk multiple times later whenever accessing it, that would result in unnecessary work.
 
 Functions that are not Parsers
