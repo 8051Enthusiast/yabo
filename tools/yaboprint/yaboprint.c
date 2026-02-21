@@ -189,11 +189,24 @@ int print_indirect(DynValue *val, int indent, Stack stack, FILE *out) {
   return print_recursive(indent, stack, out);
 }
 
+int print_error(DynValue *val, int indent, Stack stack, FILE *out) {
+  switch (dyn_error(val)) {
+  case YABO_STATUS_ERROR:
+    return fputs("\"ERROR\"", out);
+  case YABO_STATUS_EOS:
+    return fputs("\"EOS\"", out);
+  case YABO_STATUS_BACKTRACK:
+    return fputs("null", out);
+  default:
+    return 0;
+  }
+}
+
 int print_recursive(int indent, Stack stack, FILE *out) {
   int status;
   DynValue *val = stack.current;
   if (!val->vtable) {
-    return fputs("null", out);
+    return print_error(val, indent, stack, out);
   }
   struct VTableHeader *vtable = val->vtable;
   dyn_mask(val);
