@@ -27,9 +27,6 @@ pub trait Files: salsa::Database {
     fn input_file(&self, id: FileId) -> Arc<FileData>;
 
     #[salsa::input]
-    fn std(&self) -> SResult<FileId>;
-
-    #[salsa::input]
     fn core(&self) -> SResult<FileId>;
 
     fn file_content(&self, id: FileId) -> Arc<String>;

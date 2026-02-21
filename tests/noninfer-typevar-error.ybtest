@@ -1,9 +1,8 @@
 ====[ source code ]====
-# temporarily deactivated
 fun [T] ~> a[T] = {
   let next = b
-  #~^ error[513] could not find type variable of current function corresponding to T
 }
 fun [T] ~> b[T] = {
   let next = a
+  #~^ error[513] could not find type variable of current function corresponding to T
 }
