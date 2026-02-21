@@ -462,7 +462,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     ) -> Result<(), TypeError> {
         if let InferenceType::Block(block) = ty.value() {
             let f = self.field_type(block, name)?;
-            return self.constrain(f, field_type);
+            return self.unify(f, field_type);
         }
         Err(TypeError::UnknownField(name))
     }
@@ -483,8 +483,8 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         target: InfTypeId<'intern>,
     ) -> Result<(), TypeError> {
         match ty.value() {
-            InferenceType::ParserArg { result, .. } => self.constrain(*result, target),
-            _ => self.constrain(ty, target),
+            InferenceType::ParserArg { result, .. } => self.unify(*result, target),
+            _ => self.unify(ty, target),
         }
     }
 
@@ -508,7 +508,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         constraints.try_iterate(|constraint| self.apply_constraint(ty, constraint))
     }
 
-    pub fn constrain(
+    pub fn unify(
         &mut self,
         lower: InfTypeId<'intern>,
         upper: InfTypeId<'intern>,
@@ -528,7 +528,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         let lower_head = InfTypeHead::from(lower);
         let upper_head = InfTypeHead::from(upper);
         if lower_head == upper_head {
-            match lower.try_for_each_child_pair(upper, |l, u, _| self.constrain(l, u)) {
+            match lower.try_for_each_child_pair(upper, |l, u, _| self.unify(l, u)) {
                 Ok(()) => return Ok(()),
                 Err(None) => {}
                 Err(Some((e, _))) => return Err(e),
@@ -565,8 +565,8 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         left: InfTypeId<'intern>,
         right: InfTypeId<'intern>,
     ) -> Result<(), TypeError> {
-        self.constrain(left, right)?;
-        self.constrain(right, left)
+        self.unify(left, right)?;
+        self.unify(right, left)
     }
     pub fn fresh_var_id(&mut self) -> VarId {
         let var = self.unify.new_key(());
@@ -654,7 +654,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         ty: InfTypeId<'intern>,
     ) -> Result<InfTypeId<'intern>, TypeError> {
         let t = self.var_with_constraints(Constraint::SizeOf);
-        self.constrain(ty, t)?;
+        self.unify(ty, t)?;
         let int = self.int();
         Ok(int)
     }
@@ -714,14 +714,14 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     ) -> Result<InfTypeId<'intern>, TypeError> {
         let result = self.var();
         let if_result = self.var_with_constraints(Constraint::ParserIf(result));
-        self.constrain(to_be_checked, if_result)?;
+        self.unify(to_be_checked, if_result)?;
         Ok(result)
     }
     pub fn check_parser(&mut self, ty: InfTypeId<'intern>) -> Result<(), TypeError> {
         let result = self.var();
         let arg = self.var();
         let parser = self.parser(result, arg);
-        self.constrain(ty, parser)
+        self.unify(ty, parser)
     }
     pub fn block(
         &mut self,
@@ -749,7 +749,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     ) -> Result<InfTypeId<'intern>, TypeError> {
         let ret = self.var();
         for &inftype in these {
-            self.constrain(inftype, ret)?;
+            self.unify(inftype, ret)?;
         }
         Ok(ret)
     }
@@ -760,7 +760,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         let result = self.var();
         let arg = self.var();
         let other_parser = self.parser(result, arg);
-        self.constrain(other_parser, parser)?;
+        self.unify(other_parser, parser)?;
         Ok(arg)
     }
     pub fn parser_apply(
@@ -770,7 +770,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     ) -> Result<InfTypeId<'intern>, TypeError> {
         let ret = self.var();
         let new_parser = self.intern_infty(InferenceType::ParserArg { arg, result: ret });
-        self.constrain(parser, new_parser)?;
+        self.unify(parser, new_parser)?;
         Ok(ret)
     }
     pub fn function_apply(
@@ -788,13 +788,13 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                     args: args_tail,
                 });
                 let new_function = self.function(result, args, Some(args_tail));
-                self.constrain(function, new_function)?;
+                self.unify(function, new_function)?;
                 Ok(result_function)
             }
             Application::Full => {
                 let result = self.var();
                 let new_function = self.function(result, args, None);
-                self.constrain(function, new_function)?;
+                self.unify(function, new_function)?;
                 Ok(result)
             }
         }
@@ -806,7 +806,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     ) -> Result<InfTypeId<'intern>, TypeError> {
         let var = self.var();
         let infer_access = self.var_with_constraints(Constraint::HasField(name, var));
-        self.constrain(accessed, infer_access)?;
+        self.unify(accessed, infer_access)?;
         Ok(var)
     }
     pub fn replace_infvars_with(
