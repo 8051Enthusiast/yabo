@@ -154,6 +154,7 @@ fn hir_node(db: &dyn Hirs, id: DefId) -> SResult<HirNode> {
 fn all_modules(db: &dyn Hirs) -> Vec<ModuleId> {
     db.all_files()
         .iter()
+        .chain(db.core().iter())
         .map(|id| {
             let path = DefinitionPath::Module(*id);
             ModuleId(db.intern_hir_path(path))
