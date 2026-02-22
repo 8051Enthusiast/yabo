@@ -347,7 +347,9 @@ impl<'a, Dom: AbstractDomain<'a> + DatabasedDisplay<Dom::DB>> AbsIntCtx<'a, Dom>
             None
         };
         let old_ambienece = std::mem::replace(&mut self.current_ambience, from);
-        // to make sure
+        if self.call_needs_fixpoint.contains(&self.depth) {
+            panic!("contains fixpoint depth that was expected to be removed")
+        }
         self.call_needs_fixpoint.remove(&self.depth);
         let old_active_env = std::mem::replace(&mut self.active_env, pd_val.clone());
 
@@ -355,8 +357,9 @@ impl<'a, Dom: AbstractDomain<'a> + DatabasedDisplay<Dom::DB>> AbsIntCtx<'a, Dom>
         let result = self.strip_error(result);
 
         let mut ret = self.set_pd_ret(result);
-        if self.call_needs_fixpoint.remove(&self.depth) {
+        if self.call_needs_fixpoint.contains(&self.depth) {
             ret = self.eval_pd_fixpoint(ret, &parserdef);
+            self.call_needs_fixpoint.remove(&self.depth);
         }
         if self.call_needs_fixpoint.is_empty() {
             // update the epoch since we are not in a fixpoint computation
@@ -478,12 +481,11 @@ impl<'a, Dom: AbstractDomain<'a> + DatabasedDisplay<Dom::DB>> AbsIntCtx<'a, Dom>
         block: Dom,
         from: Option<Dom>,
     ) -> Option<Dom> {
-        // FIXME: caching is currently broken and i'm too tired for this
-        //if let Some(val) = self.block_result.get(&(from_copy(), block.clone())) {
-        //    if let Some(block_info) = val.val_with_epoch(self.cache_epoch) {
-        //        return block_info.as_ref().map(|x| x.returned.clone());
-        //    }
-        //}
+        if let Some(val) = self.block_result.get(&(from.clone(), block.clone())) {
+            if let Some(block_info) = val.val_with_epoch(self.cache_epoch) {
+                return block_info.as_ref().map(|x| x.returned.clone());
+            }
+        }
         let mut old_block_vars = std::mem::take(&mut self.block_vars);
         let mut old_block_expr = std::mem::take(&mut self.block_expr_vals);
         let old_env = std::mem::replace(&mut self.active_env, block.clone());
