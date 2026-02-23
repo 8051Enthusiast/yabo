@@ -32,9 +32,8 @@ impl<'a> FunctionSubstitute<'a> {
         } else {
             panic!("non-block-parser as argument")
         };
-        let evaluated = ctx.block_result()[&(from, block.0)]
-            .val()
-            .as_ref()
+        let evaluated = ctx
+            .block_result(&(from, block.0))
             .ok_or_else(SilencedError::new)?;
         let mut expr_map = FxHashMap::default();
         for (id, expr) in evaluated.expr_vals.iter() {
@@ -120,9 +119,8 @@ impl<'a> FunctionSubstitute<'a> {
         } else {
             fun.inner().eval_fun(ctx)?
         };
-        let evaluated = ctx.pd_result()[&lookup_layout]
-            .val()
-            .as_ref()
+        let evaluated = ctx
+            .pd_result(&lookup_layout)
             .ok_or_else(SilencedError::new)?
             .clone();
         Self::new_from_fun(f, strictness, from, fun, evaluated, expr_id, ctx)
@@ -139,9 +137,8 @@ impl<'a> FunctionSubstitute<'a> {
             panic!("non-lambda-parser as argument")
         };
         let expr_id = lambda.lookup(ctx.db)?.expr;
-        let evaluated = ctx.lambda_result()[&fun.0]
-            .val()
-            .as_ref()
+        let evaluated = ctx
+            .lambda_result(&fun.0)
             .ok_or_else(SilencedError::new)?
             .clone();
         Self::new_from_fun(f, strictness, None, fun, evaluated.into(), expr_id, ctx)
