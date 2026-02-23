@@ -1,7 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
-// Runtime library for yabo, right now only needed for the wasm32-unknown-unknown target.
-// These are required as llvm may syntheize calls to these functions.
+// Runtime library for yabo, linked into shared libraries so they can stand by themselves.
+// These are required as llvm may synthesize calls to these functions.
 __attribute__ ((visibility ("hidden")))
 void *memcpy(void *restrict dest, const void *restrict src, size_t n) {
   char *d = dest;
