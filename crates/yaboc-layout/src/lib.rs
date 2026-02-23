@@ -1378,11 +1378,7 @@ mod tests {
                 "main$466398b15b97e804$parse_9dcf97a184f32623_lb_worker"
             );
         }
-        let main_block = outlayer.pd_result()[&canon_2004]
-            .val()
-            .as_ref()
-            .unwrap()
-            .returned;
+        let main_block = outlayer.pd_result(&canon_2004).unwrap().returned;
         for lay in &main_block {
             assert_eq!(
                 lay.symbol(

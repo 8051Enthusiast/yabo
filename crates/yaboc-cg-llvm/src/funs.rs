@@ -819,9 +819,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             return Ok(llvm_fun);
         }
 
-        let return_layout = self.layouts.block_result()[&(Some(from), layout.inner())]
-            .val()
-            .as_ref()
+        let return_layout = self.layouts.block_result(&(Some(from), layout.inner()))
+
             .unwrap()
             .returned;
         let mono_layout = return_layout.maybe_mono().unwrap();
@@ -1258,9 +1257,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             return Ok(());
         }
 
-        let return_layout = self.layouts.block_result()[&(None, layout.inner())]
-            .val()
-            .as_ref()
+        let return_layout = self.layouts.block_result(&(None, layout.inner()))
             .unwrap()
             .returned;
         let mono_layout = return_layout.maybe_mono().unwrap();
