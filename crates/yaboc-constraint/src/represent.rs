@@ -1,12 +1,19 @@
 use std::fmt::Write;
 use yaboc_backtrack::Matrix;
-use yaboc_base::{dbformat, dbwrite, error::SResult};
+use yaboc_base::{dbformat, dbwrite, error::SResult, interner::DefinitionPath, source::FileId};
 use yaboc_len::len_graph;
 
 use crate::Constraints;
 pub fn len_dot<DB: Constraints + ?Sized>(db: &DB) -> SResult<String> {
     let mut ret = String::from("digraph {\nnode [shape=record];\nrankdir=LR;\n");
     for pd in db.all_parserdefs() {
+        let DefinitionPath::Module(file) = db.lookup_intern_hir_path(db.hir_parent_module(pd.0)?.0)
+        else {
+            continue;
+        };
+        if file != FileId::default() {
+            continue;
+        }
         let terms = db.len_term(pd).unwrap();
         let vals = db.len_vals(pd);
         let name = dbformat!(db, "{}", &pd.0);
@@ -23,6 +30,13 @@ pub fn len_dot<DB: Constraints + ?Sized>(db: &DB) -> SResult<String> {
 pub fn backtrack<DB: Constraints + ?Sized>(db: &DB) -> SResult<String> {
     let mut ret = String::new();
     for pd in db.all_parserdefs() {
+        let DefinitionPath::Module(file) = db.lookup_intern_hir_path(db.hir_parent_module(pd.0)?.0)
+        else {
+            continue;
+        };
+        if file != FileId::default() {
+            continue;
+        }
         let terms = db.bt_term(pd)?;
         let vals = db.bt_vals(pd);
         dbwrite!(ret, db, "Backtrack for {}\n", &pd.0).unwrap();
