@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 
 const PROB_WIDTH: usize = 16;
 
@@ -117,7 +117,7 @@ impl RandomArray {
 
     pub fn random_element(&mut self) {
         const PRIME_MASK: u32 = (1 << 31) - 1;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         loop {
             rng.fill(&mut self.0);
             // the probability of rejecting any of the elements of the array
