@@ -1,0 +1,40 @@
+{
+  "$schema": "https://tree-sitter.github.io/tree-sitter/assets/schemas/config.schema.json",
+  "grammars": [
+    {
+      "name": "yabo",
+      "camelcase": "Yabo",
+      "title": "yabo",
+      "scope": "source.yabo",
+      "file-types": [
+        "yabo",
+        "yb"
+      ],
+      "injection-regex": "^yabo$",
+      "class-name": "TreeSitterYabo"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "tree-sitter parser for yabo language",
+    "authors": [
+      {
+        "name": "8051enthusiast",
+        "email": "8051enthusiast@protonmail.com"
+      }
+    ],
+    "links": {
+      "repository": "https://github.com/8051enthusiast/yabo"
+    }
+  },
+  "bindings": {
+    "c": true,
+    "go": true,
+    "node": true,
+    "python": true,
+    "rust": true,
+    "swift": true,
+    "zig": false
+  }
+}
