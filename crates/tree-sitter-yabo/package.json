@@ -1,48 +1,52 @@
 {
   "name": "tree-sitter-yabo",
-  "version": "0.0.1",
-  "description": "yabo grammar for tree-sitter",
+  "version": "0.1.0",
+  "description": "tree-sitter parser for yabo language",
+  "repository": "https://github.com/8051enthusiast/yabo",
+  "license": "MIT",
+  "author": {
+    "name": "8051enthusiast",
+    "email": "8051enthusiast@protonmail.com"
+  },
   "main": "bindings/node",
   "types": "bindings/node",
   "keywords": [
+    "incremental",
     "parsing",
-    "incremental"
+    "tree-sitter",
+    "yabo"
   ],
   "files": [
     "grammar.js",
+    "tree-sitter.json",
     "binding.gyp",
     "prebuilds/**",
     "bindings/node/*",
     "queries/*",
-    "src/**"
+    "src/**",
+    "*.wasm"
   ],
   "dependencies": {
-    "node-addon-api": "^7.1.0",
-    "node-gyp-build": "^4.8.0"
+    "node-addon-api": "^8.5.0",
+    "node-gyp-build": "^4.8.4"
+  },
+  "devDependencies": {
+    "prebuildify": "^6.0.1",
+    "tree-sitter": "^0.22.4",
+    "tree-sitter-cli": "^0.25.10"
   },
   "peerDependencies": {
-    "tree-sitter": "^0.21.0"
+    "tree-sitter": "^0.22.4"
   },
   "peerDependenciesMeta": {
-    "tree_sitter": {
+    "tree-sitter": {
       "optional": true
     }
   },
-  "devDependencies": {
-    "tree-sitter-cli": "^0.20.0",
-    "prebuildify": "^6.0.0"
-  },
   "scripts": {
-    "test": "tree-sitter test",
     "install": "node-gyp-build",
-    "prebuildify": "prebuildify --napi --strip"
-  },
-  "tree-sitter": [
-    {
-      "scope": "source.yabo",
-      "file-types": [
-        "yb"
-      ]
-    }
-  ]
+    "prestart": "tree-sitter build --wasm",
+    "start": "tree-sitter playground",
+    "test": "node --test bindings/node/*_test.js"
+  }
 }

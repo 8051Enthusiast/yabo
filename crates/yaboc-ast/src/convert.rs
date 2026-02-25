@@ -1,5 +1,5 @@
 use tree_sitter::{Node, Parser, TreeCursor};
-use tree_sitter_yabo::language;
+use tree_sitter_yabo::LANGUAGE;
 use yaboc_base::interner::RegexKind;
 
 use super::*;
@@ -46,9 +46,9 @@ fn combine_errors<T: std::fmt::Debug, U: std::fmt::Debug, V, F: FnOnce(T, U) -> 
 
 pub fn parse(db: &dyn Asts, fd: FileId) -> Result<Module, Vec<ParseError>> {
     let mut parser = Parser::new();
-    let language = language();
+    let language = LANGUAGE;
     parser
-        .set_language(language)
+        .set_language(&language.into())
         .expect("Incompatible language version");
     let tree = parser.parse(db.file_content(fd).as_ref(), None).unwrap();
     let c = tree.walk();
