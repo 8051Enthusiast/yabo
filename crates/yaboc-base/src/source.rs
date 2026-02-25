@@ -82,14 +82,14 @@ impl Span {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FileId(u32);
+pub struct FileId(usize);
 
 impl FileId {
     fn inc(self) -> Self {
         FileId(self.0.checked_add(1).expect("too many files"))
     }
-    pub fn to_usize(self) -> usize {
-        self.0 as usize
+    pub fn to_usize(&self) -> &usize {
+        &self.0
     }
 }
 
@@ -150,7 +150,7 @@ impl FileCollection {
         old_id
     }
     pub fn file_data(&self, id: FileId) -> &FileData {
-        &self.files[id.to_usize()]
+        &self.files[*id.to_usize()]
     }
     pub fn content(&self, id: FileId) -> &str {
         &self.file_data(id).content
@@ -163,7 +163,7 @@ impl FileCollection {
     }
     pub fn insert_into_db(&self, db: &mut (impl ?Sized + Files)) {
         for (i, f) in self.files.iter().enumerate() {
-            let fid = FileId(i as u32);
+            let fid = FileId(i);
             db.set_input_file(fid, Arc::new(f.clone()));
         }
     }
@@ -379,8 +379,8 @@ impl<'a, DB: ?Sized> AriadneCache<'a, DB> {
     where
         DB: Files,
     {
-        let fun = Box::new(move |id: &usize| Ok(db.file_content(FileId(*id as u32)).to_string()))
-            as CacheFn<'a>;
+        let fun =
+            Box::new(move |id: &usize| Ok(db.file_content(FileId(*id)).to_string())) as CacheFn<'a>;
         let fncache = FnCache::new(fun);
         AriadneCache { db, fncache }
     }
@@ -392,11 +392,14 @@ where
 {
     type Storage = String;
 
-    fn fetch(&mut self, id: &FileId) -> Result<&ariadne::Source, Box<dyn std::fmt::Debug + '_>> {
+    fn fetch(
+        &mut self,
+        id: &FileId,
+    ) -> Result<&ariadne::Source<Self::Storage>, impl std::fmt::Debug> {
         self.fncache.fetch(&id.to_usize())
     }
 
-    fn display<'b>(&self, id: &'b FileId) -> Option<Box<dyn std::fmt::Display + 'b>> {
+    fn display<'b>(&self, id: &'b FileId) -> Option<impl std::fmt::Display + 'b> {
         Some(Box::new(id.to_db_string(self.db)))
     }
 }
