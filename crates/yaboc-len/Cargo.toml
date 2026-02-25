@@ -6,7 +6,7 @@ license.workspace = true
 description.workspace = true
 
 [dependencies]
-rand = "0.8.5"
+rand = "0.10.0"
 regex-syntax = "0.8.5"
 smallvec = { workspace = true }
 yaboc-req = { path = "../yaboc-req" }
