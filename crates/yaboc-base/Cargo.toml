@@ -6,7 +6,7 @@ license.workspace = true
 description.workspace = true
 
 [dependencies]
-ariadne = "0.4.1"
+ariadne = "0.6.0"
 bumpalo = "3.16.0"
 dirs = "6.0.0"
 fxhash = "0.2.1"
