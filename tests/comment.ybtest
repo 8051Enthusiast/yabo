@@ -4,13 +4,16 @@ def ~test = {   # test
   let x = 1 +   # test
           2     # test
   z: u32l       # test
+  case          # test
   |             # test
     y: u32l     # test
-  \             # test
+  |             # test
+    case        # test
     |           # test
       let y = 3 # test
-    \           # test
+    |           # test
       let y = 4 # test
+  \ \           # test
 }               # test
 
 ====[ binary 1 ]====

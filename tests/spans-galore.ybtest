@@ -3,15 +3,17 @@ export
 fun ~test = {
   a: ~
   ~
+  case
   | b: ~ is 2
     [4]
     let r = span a..b
     let s = span b..d
     d: ~
-  \ e: [3]
+  | e: [3]
     b: ~
     let r = span a..b
     let u = span e..b
+  \
   c: ~
   let t = span c..c
   let v = span a..c

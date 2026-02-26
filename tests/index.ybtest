@@ -11,8 +11,10 @@ def ~test = {
   let a2 = arr.[2]
   let a3 = arr.[3]
   let a4 = arr.[4]
+  case
   | let a5 = arr.?[5]
-  \ let a5_err = 1
+  | let a5_err = 1
+  \
 }
 
 ====[ binary 1 ]====

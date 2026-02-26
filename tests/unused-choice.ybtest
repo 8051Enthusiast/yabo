@@ -1,8 +1,10 @@
 ====[ source code ]====
 export
 fun ~test = {
+  case
   | let y = 3
-  \ {}
+  | {}
+  \
 }
 
 ====[ binary 1 ]====

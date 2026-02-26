@@ -4,11 +4,15 @@ import text
 import math
 
 fun ~color_power(red: int, green: int, blue: int): int = {
+  case
   | /[:,;] /, n: text.num?, ~
+    case
     | /red/, return: color_power(math.max(red, n), green, blue)
     | /green/, return: color_power(red, math.max(green, n), blue)
-    \ /blue/, return: color_power(red, green, math.max(blue, n))
-  \ let return = red * green * blue
+    | /blue/, return: color_power(red, green, math.max(blue, n))
+    \
+  | let return = red * green * blue
+  \
 }
 
 export

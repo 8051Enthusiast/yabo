@@ -2,8 +2,10 @@
 export
 def ~test = {
   c: is 'A'
+  case
   | d: is !eof
-  \ nil
+  | nil
+  \
 }
 
 ====[ binary 1 ]====

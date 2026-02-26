@@ -18,11 +18,13 @@ export def ~test = {
     let plus = a + b
     let minus = a - b
     let times = a * b
+    case
     | let _ = b is 0
       let div = 0
       let mod = 0
-    \ let div = a / b
+    | let div = a / b
       let mod = a % b
+    \
     let bit_and = a & b
     let bit_or = a | b
     let bit_xor = a ^ b

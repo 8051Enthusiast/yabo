@@ -369,8 +369,10 @@ mod tests {
             r#"
             def ~one = ~
             def ~const_size_choice = {
+                case
                 | left: one, one, one
-                \ right: ~, ~, ~
+                | right: ~, ~, ~
+                \
             }
         "#,
         );
@@ -386,12 +388,16 @@ mod tests {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
             def ~rec = {
-                | /AAAAA/?
-                \ rec
+              case
+              | /AAAAA/?
+              | rec
+              \
             }
             def ~rec2 = {
-                | /AAAAA/?
-                \ ~, rec
+              case
+              | /AAAAA/?
+              | ~, rec
+              \
             }
         "#,
         );
@@ -422,12 +428,14 @@ mod tests {
             r#"
             def ~square(n: int) = [n * n]
             def ~poly_unify(n: int, m: int) = {
+                case
                 | square(n + m)
                   poly_unify(0, 0)
-                \ [2 * n * m - 1]
+                | [2 * n * m - 1]
                   [n * n]
                   [m * m]
                   ~
+                \
             }
         "#,
         );
@@ -458,8 +466,10 @@ mod tests {
             fun ~number_acc(base: int, n: int): int = {
               x: ~
               let s = n * base + x
+              case
               | return: number_acc?(base, s)
-              \ let return = s
+              | let return = s
+              \
             }"#,
         );
         let number_acc = ctx.parser("number_acc");

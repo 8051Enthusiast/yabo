@@ -1,10 +1,10 @@
 [
     "["
     "]"
-    (block_open)
-    (block_close)
-    (parser_block_open)
-    (parser_block_close)
+    "{|"
+    "|}"
+    "{"
+    "}"
     "("
     ")"
 ] @punctuation.bracket
@@ -30,6 +30,7 @@
     "is"
     "else"
     "then"
+    "case"
 ] @keyword.control.conditional
 
 "try" @keyword.control.exception

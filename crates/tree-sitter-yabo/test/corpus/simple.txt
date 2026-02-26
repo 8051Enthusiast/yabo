@@ -16,24 +16,24 @@ def [u8] ~> complex = {
         name: (identifier)))
     name: (identifier)
     to: (parser_block
-      (parser_block_open)
       content: (parser_sequence
         content: (parse_statement
 	       name: (identifier)
 	       parser: (identifier))
         content: (parse_statement
 	       name: (identifier)
-	       parser: (identifier)))
-      (parser_block_close))))
+	       parser: (identifier))))))
 
 =============
 Choice Parser
 =============
 
 def [u8] ~> choice = {
+  case
   | is ascii
     return: utf8char
-  \ return: utf8char
+  | return: utf8char
+  \
 }
 
 ---
@@ -45,7 +45,6 @@ def [u8] ~> choice = {
         name: (identifier)))
     name: (identifier)
     to: (parser_block
-      (parser_block_open)
       content: (parser_sequence
         content: (parser_choice
           content: (parser_sequence
@@ -58,8 +57,7 @@ def [u8] ~> choice = {
           content: (parser_sequence
             content: (parse_statement
                 name: (retvrn)
-                parser: (identifier)))))
-        (parser_block_close))))
+                parser: (identifier))))))))
 
 
 =============
@@ -80,7 +78,6 @@ def [u8] ~> seven = {
         name: (identifier)))
     name: (identifier)
     to: (parser_block
-      (parser_block_open)
       content: (parser_sequence
         content: (parse_statement
   	      name: (identifier)
@@ -89,8 +86,7 @@ def [u8] ~> seven = {
         	name: (retvrn)
         	ty: (parserdef_ref
             name: (identifier))
-        	expr: (number_literal)))
-      (parser_block_close))))
+          expr: (number_literal))))))
 
 =============
 Nested Blocks
@@ -99,9 +95,11 @@ Nested Blocks
 def [u8] ~> nested = {
   val: ~
   return: {
+    case
     | val: is 0
-    \ let val: u8 = 3
+    | let val: u8 = 3
       ~
+    \
     let return: u8 = val
   }
 }
@@ -115,7 +113,6 @@ def [u8] ~> nested = {
         (identifier)))
     (identifier)
     (parser_block
-      (parser_block_open)
       (parser_sequence
         (parse_statement
           (identifier)
@@ -123,7 +120,6 @@ def [u8] ~> nested = {
         (parse_statement
           (retvrn)
           (parser_block
-            (parser_block_open)
             (parser_sequence
               (parser_choice
                 (parser_sequence
@@ -143,20 +139,20 @@ def [u8] ~> nested = {
                 (retvrn)
                 (parserdef_ref
                   (identifier))
-                (identifier)))
-              (parser_block_close))))
-        (parser_block_close))))
+                (identifier)))))))))
 
 =============
 Three Choices
 =============
 
 def [u8] ~> three = {
+  case
   | is 0
     return: u8
   | is 1
     return: u8
-  \ return: u8
+  | return: u8
+  \
 }
 
 ---
@@ -167,7 +163,6 @@ def [u8] ~> three = {
         (identifier)))
     (identifier)
     (parser_block
-      (parser_block_open)
       (parser_sequence
         (parser_choice
           (parser_sequence
@@ -187,8 +182,7 @@ def [u8] ~> three = {
           (parser_sequence
             (parse_statement
               (retvrn)
-              (identifier)))))
-        (parser_block_close))))
+              (identifier))))))))
 
 
 =======
@@ -212,15 +206,13 @@ def [u8] ~> test = {
         (identifier)))
     (identifier)
     (parser_block
-      (parser_block_open)
       (comment)
       (parser_sequence
         (parse_statement
           (identifier)
           (bt_mark
             (identifier))))
-      (comment)
-      (parser_block_close))))
+      (comment))))
 
 
 ====

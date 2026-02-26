@@ -619,20 +619,6 @@
           }
         ]
       }
-    },
-    "children": {
-      "multiple": true,
-      "required": true,
-      "types": [
-        {
-          "type": "block_close",
-          "named": true
-        },
-        {
-          "type": "block_open",
-          "named": true
-        }
-      ]
     }
   },
   {
@@ -1577,20 +1563,6 @@
           }
         ]
       }
-    },
-    "children": {
-      "multiple": true,
-      "required": true,
-      "types": [
-        {
-          "type": "parser_block_close",
-          "named": true
-        },
-        {
-          "type": "parser_block_open",
-          "named": true
-        }
-      ]
     }
   },
   {
@@ -1599,7 +1571,7 @@
     "fields": {
       "content": {
         "multiple": true,
-        "required": true,
+        "required": false,
         "types": [
           {
             "type": "parser_sequence",
@@ -2908,12 +2880,8 @@
     "named": false
   },
   {
-    "type": "block_close",
-    "named": true
-  },
-  {
-    "type": "block_open",
-    "named": true
+    "type": "case",
+    "named": false
   },
   {
     "type": "char",
@@ -2981,14 +2949,6 @@
     "named": false
   },
   {
-    "type": "parser_block_close",
-    "named": true
-  },
-  {
-    "type": "parser_block_open",
-    "named": true
-  },
-  {
     "type": "placeholder",
     "named": true
   },
@@ -3029,11 +2989,27 @@
     "named": false
   },
   {
+    "type": "{",
+    "named": false
+  },
+  {
+    "type": "{|",
+    "named": false
+  },
+  {
     "type": "|",
     "named": false
   },
   {
     "type": "|>",
+    "named": false
+  },
+  {
+    "type": "|}",
+    "named": false
+  },
+  {
+    "type": "}",
     "named": false
   },
   {

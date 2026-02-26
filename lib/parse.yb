@@ -9,10 +9,12 @@ def ~byteval(x: int) = {{
 fun [T] ~> not_if[T, R](f: [T] ~> R) = {
   {
     # check if `f` parses
+    case
     | f?
     # if not, parse a zero-length unit type
     # and put it into the `not_parsed` field
-    \ not_parsed: {}
+    | not_parsed: {}
+    \
   } is not_parsed
 }
 
@@ -25,13 +27,17 @@ fun [T] ~> eof[T] = not_if(~ is !eof)?
 
 # optionally parses `f`, or zero length if `f` fails
 fun [T] ~> optional[T, R](f: [T] ~> R) = {
+  case
   | some: f?
-  \ none: {}
+  | none: {}
+  \
 }
 
 fun [T] ~> _len_impl[T](acc: int): int = {
+  case
   | ~ is !eof, return: _len_impl(acc + 1)
-  \ let return = acc
+  | let return = acc
+  \
 }
 
 # gets the length of the rest of the stream
@@ -56,6 +62,8 @@ fun [T] ~> lift4[T, R, A0, A1, A2, A3](f: (A0, A1, A2, A3) -> R, a0: [T] ~> A0, 
 }
 
 fun [T] ~> find[T, R](p: [T] ~> R) = {
+  case
   | return: p? is !eof
-  \ is !eof, return: find(p)?
+  | is !eof, return: find(p)?
+  \
 }

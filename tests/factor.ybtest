@@ -2,9 +2,11 @@
 import text
 import parse
 def ~factor_impl(n: int, p: int) = (if?(n % p == 0) else if?(p > n)) then {
+  case
   | if?(n < p) then nil
-  \ let factor = p
+  | let factor = p
     next: factor_impl(n / p, p)
+  \
 } else factor_impl(n, p + 1)
 
 def ~factor(n: int) = factor_impl(n, 2)

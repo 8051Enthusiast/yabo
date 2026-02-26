@@ -1,9 +1,11 @@
 ====[ source code ]====
 def ~block = {
   tag: ~
+  case
   | let ignore: int = tag is 1
     next: block
-  \ more: ~
+  | more: ~
+  \
 }
 export def ~test = {
   a: block

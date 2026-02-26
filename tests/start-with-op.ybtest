@@ -1,10 +1,12 @@
 ====[ source code ]====
 export
 def ~test = {
+  case
   | start: /(fun|data)\n/
     inner: test?
     /end /, end: >start
-  \ nil
+  | nil
+  \
 }
 
 ====[ text 1 ]====

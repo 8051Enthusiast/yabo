@@ -5,10 +5,12 @@ import aoc
 
 fun ~ranged_diff(valid: (int) -> int) = {
   n: text.num!
+  case
   | parse.eof?, let return = 1
-  \ text.whitespace?
+  | text.whitespace?
     parse.lookahead(parse.lift(<x> valid?(x - n), text.num))?
     return: ranged_diff(valid)?
+  \
 }
 
 fun ~rising = ranged_diff(<x> x is 1..3)?

@@ -3,9 +3,11 @@ import aoc
 import text
 
 fun ~reduce_impl[T](init: T, cont: (T) -> ~T): T = {
+  case
   | next: cont?(init)?
     return: reduce_impl(next, cont)
-  \ let return = init
+  | let return = init
+  \
 }
 
 fun ~reduce[T](init: ~T, cont: (T) -> ~T): T = {
@@ -14,15 +16,19 @@ fun ~reduce[T](init: ~T, cont: (T) -> ~T): T = {
 }
 
 fun ~atom: int = {
+  case
   | return: text.num?
-  \ /\(/, return: expr!, /\)/!
+  | /\(/, return: expr!, /\)/!
+  \
 }
 
 fun ~expr_cont(lhs: int): int = {
+  case
   | / \+ /, rhs: atom!
     let return = lhs + rhs
-  \ / \* /, rhs: atom!
+  | / \* /, rhs: atom!
     let return = lhs * rhs
+  \
 }
 
 fun ~expr: int = reduce(atom, expr_cont)?

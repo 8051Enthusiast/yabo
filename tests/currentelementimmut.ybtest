@@ -1,8 +1,10 @@
 ====[ source code ]====
 fun ~elem = {
   asdf: ~
+  case
   | is '\n', let tert = 0
-  \ tert: ~
+  | tert: ~
+  \
 }
 
 export

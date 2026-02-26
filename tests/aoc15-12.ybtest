@@ -8,44 +8,58 @@ fun ~member[T](inner: ~T): T = {
   ws, string?, ws, /:/, return: inner?
 }
 fun ~members(acc: int, red: bit): int = {
+  case
   | member({ws, /"red"/, ws})?
     let now_red = true, let first = 0
-  \ first: member(element)?
+  | first: member(element)?
     let now_red = red
+  \
   let sum = acc + first
+  case
   | /,/, return: members(sum, now_red)?
-  \ let return = if?(now_red) then 0 else sum
+  | let return = if?(now_red) then 0 else sum
+  \
 }
 fun ~object: int = {
   /\{/
+  case
   | return: members(0, false)?
-  \ ws, let return = 0
+  | ws, let return = 0
+  \
   /\}/!
 }
 fun ~elements: int = {
   first: element?
+  case
   | /,/, cont: elements?
     let return = first + cont
-  \ let return = first
+  | let return = first
+  \
 }
 fun ~array: int = {
   /\[/
+  case
   | return: elements?
-  \ ws, let return = 0
+  | ws, let return = 0
+  \
   /\]/!
 }
 fun ~number: int = {
+  case
   | /-/, let sign = -1
-  \ let sign = 1
+  | let sign = 1
+  \
   num: text.num?
   let return = sign * num
 }
 fun ~value: int = {
+  case
   | return: object?
   | return: array?
   | return: number?
   | string?, let return = 0
-  \ /true|false|null/, let return = 0
+  | /true|false|null/, let return = 0
+  \
 }
 export
 fun ~test = element?

@@ -31,8 +31,9 @@ def ~flags = bit.b64l_lsb |> {
 
 def ~partition_entry = {
   # an all-zero partition type guid means empty
+  case
   | partition_type: /\x00{16}/
-  \ partition_type: guid
+  | partition_type: guid
     partition_guid: guid
     first_lba: lba
     # inclusive
@@ -41,6 +42,7 @@ def ~partition_entry = {
     partition_flags: flags
     # name encoded in utf-16le
     name: u16l[36]
+  \
 }
 
 def ~partition_table(size: int, count: int) = ([size] |> partition_entry)[count]

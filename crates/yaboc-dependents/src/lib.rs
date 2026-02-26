@@ -854,8 +854,10 @@ def ~cycle = {
         let ctx = Context::<DependentsTestDatabase>::mock(
             r#"
 def ~cycle = {
+    case
     | let x: int = y
-    \ x: ~
+    | x: ~
+    \
     y: ~
 }
         "#,
@@ -867,8 +869,10 @@ def ~cycle = {
         let ctx = Context::<DependentsTestDatabase>::mock(
             r#"
 def ~main = {
+    case
     | y: ~
-    \ let y: int = 0
+    | let y: int = 0
+    \
 }
         "#,
         );
@@ -890,8 +894,10 @@ def ~main = {
     b: second?
     c: {
         let x = a
+        case
         | c: first?
-        \ c: second
+        | c: second
+        \
     }
 }
             ",
@@ -948,9 +954,11 @@ def ~main = {
             r"
 def ~main: int = {
   x: ~
+  case
   | let _ = x is 3
     return: main
-  \ let return = 4
+  | let return = 4
+  \
 }
         ",
         );
@@ -973,9 +981,11 @@ def ~main: int = {
 def ~main: int = {
     x: ~
     let y = z is 3
+    case
     | let z = x is 3..4
       return: main
-    \ let return = 4
+    | let return = 4
+    \
 }
         ",
         );
@@ -993,8 +1003,10 @@ def ~main: int = {
             r"
 def ~main: int = {
     x: ~ is 1..4
+    case
     | return: main?
-    \ let return = x is 1..2
+    | let return = x is 1..2
+    \
 }
         ",
         );

@@ -9,10 +9,12 @@ fun ~match(f: int) = {
 fun ~match_count(f: int, len: int) = match(f)[len] |> aoc.summap(~ is !eof)
 
 fun ~same_count = {
+  case
   | f: ~, count: match_count(f, 4) is 2..4, let return = count + 1
   | ~, f: ~, count: match_count(f, 3) is 2..3, let return = count + 1
   | ~, ~, f: ~, count: match_count(f, 2) is 2, let return = 3
-  \ let return = 2
+  | let return = 2
+  \
 }
 
 fun ~charbit = {
@@ -36,12 +38,14 @@ fun ~diff_count: int = {
 
 fun ~card_rank = {
   card: ~
+  case
   | let return = card is 0x32..0x39 - 0x32
   | let return = card is 0x54 then 8
   | let return = card is 0x4a then 9
   | let return = card is 0x51 then 10
   | let return = card is 0x4b then 11
-  \ let return = card try 0x41 then 12
+  | let return = card try 0x41 then 12
+  \
 }
 
 fun ~hand_rank = {
@@ -53,10 +57,12 @@ fun rank(cards: [u8]) = {|
   let card_rank = cards ~> hand_rank
   let diff = cards ~> diff_count
   let same = cards ~> same_count
+  case
   | let ty = same is 4..5 then (same + 1)
   | let ty = diff is 2 then 4
   | let ty = same is 3 then 3
-  \ let ty = same try 2 then (5 - diff)
+  | let ty = same try 2 then (5 - diff)
+  \
   let return = ty << 20 | card_rank
 |}
 

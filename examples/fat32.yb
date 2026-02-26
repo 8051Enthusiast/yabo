@@ -4,7 +4,7 @@ def ~fat32_header = {
   jmp_boot: [3]
   oem_name: [8]
   byts_per_sec: u16l
-  sec_per_clus: u8 
+  sec_per_clus: u8
   let bytes_per_cluster = byts_per_sec * sec_per_clus
   rsvd_sec_cnt: u16l
   num_fats: u8
@@ -43,8 +43,10 @@ def ~masked_fat_val = {
 def ~fat_entry = {
   # if it is in the range 2 to 0x0FFFFFEF, it is a valid cluster
   # and points to the next cluster in the file
+  case
   | next: masked_fat_val is 2..0x0FFFFFEF
-  \ other: masked_fat_val
+  | other: masked_fat_val
+  \
 }
 
 # defines a fat table of a given size
@@ -96,14 +98,17 @@ def ~long_entry = {
 
 # a single entry in the directory, either a long or short entry, or empty
 def ~dir_entry = [32] |> {
+  case
   | empty: u8 is 0 or 0xE5
   | long: long_entry?
-  \ short: short_entry
+  | short: short_entry
+    case
     | assert(short.attr & 0x10 != 0)?
       # we have a subdirectory
       let subdir = parse_block(short.cluster, dir_entries)
-    \ # otherwise it's a regular file
+    | # otherwise it's a regular file
       let file = parse_block(short.cluster, file_entry)
+  \ \
 }
 
 # a chain of directory entries
@@ -115,9 +120,11 @@ def ~file_entry(idx: int) = entry([..], idx)
 # takes a data type and returns a linked list of entries using the FAT
 def ~entry[T](data_type: ~T, idx: int) = {
   data: data_type!
+  case
   | let next_idx = fat.[idx].?next
     let next = parse_block(next_idx, entry(data_type, ..))
-  \ nil
+  | nil
+  \
 }
 
 export

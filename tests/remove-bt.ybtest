@@ -1,8 +1,10 @@
 ====[ source code ]====
 fun ~last_byte: int = {
+  case
   | ~ is !eof
     return: last_byte?
-  \ return: ~ is !eof
+  | return: ~ is !eof
+  \
 }
 
 export fun ~test = last_byte!
