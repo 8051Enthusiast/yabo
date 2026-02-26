@@ -1,6 +1,7 @@
 ====[ source code ]====
 export def ~test = {
   tag: ~
+  case
   | let first: int = tag is 1
     let extra: int = 1
   
@@ -8,8 +9,9 @@ export def ~test = {
     extra: ~
     let additional: int = extra + tag
   
-  \ let third: int = tag is 3
+  | let third: int = tag is 3
     additional: ~
+  \
 }
 
 ====[ binary 1 ]====

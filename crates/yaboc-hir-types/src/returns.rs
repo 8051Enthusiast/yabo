@@ -339,9 +339,11 @@ def [T] ~> nil[T] = {}
 def [T] ~> expr1[T] = {
   a: ~
   b: {
+    case
     | let c: int = 2
       d: ~
-    \ let c: int = 1
+    | let c: int = 1
+    \
   }
 }
 def ~expr2 = {

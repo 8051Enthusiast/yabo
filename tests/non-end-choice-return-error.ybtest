@@ -1,8 +1,10 @@
 ====[ source code ]====
 fun test(x: int) = {|
+  case
   | x is 0 or 1
     #~^ error[210] implicit return not at end of block
-  \ test(x - 2) + test(x - 1)
+  | test(x - 2) + test(x - 1)
     #~^ error[210] implicit return not at end of block
+  \
   let t = 4
 |}

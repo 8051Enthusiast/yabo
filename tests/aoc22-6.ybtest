@@ -1,8 +1,10 @@
 ====[ source code ]====
 def ~find[R](needle: ~R, distance: int): int = {
+  case
   | needle?
     let return = distance
-  \ ~, return: find(needle, distance + 1)
+  | ~, return: find(needle, distance + 1)
+  \
 }
 
 def ~uniqc(bitset: int) = {
@@ -12,9 +14,11 @@ def ~uniqc(bitset: int) = {
 }
 
 def ~repeat_fold[T](f: (T) -> ~T, start: T, n: int): int = {
+  case
   | let return = n is 0
-  \ next: f?(start)?
+  | next: f?(start)?
     return: repeat_fold(f, next, n - 1)?
+  \
 }
 
 def ~marker = repeat_fold(uniqc, 0, 4)?

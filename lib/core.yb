@@ -19,23 +19,29 @@ fun [T] ~> map[T, R](f: (T) -> R) = {x: ~, let return = f?(x)}[..]
 
 # Tries to parse using the first parser, then the second if the first fails.
 fun [T] ~> alt[T, R](a0: [T] ~> R, a1: [T] ~> R) = {
+  case
   | return: a0?
-  \ return: a1?
+  | return: a1?
+  \
 }
 
 # Tries to parse, trying each parser in order
 fun [T] ~> alt3[T, R](a0: [T] ~> R, a1: [T] ~> R, a2: [T] ~> R) = {
+  case
   | return: a0?
   | return: a1?
-  \ return: a2?
+  | return: a2?
+  \
 }
 
 # Tries to parse, trying each parser in order
 fun [T] ~> alt4[T, R](a0: [T] ~> R, a1: [T] ~> R, a2: [T] ~> R, a3: [T] ~> R) = {
+  case
   | return: a0?
   | return: a1?
   | return: a2?
-  \ return: a3?
+  | return: a3?
+  \
 }
 
 # Parser of zero length that simply returns the input.
@@ -47,24 +53,34 @@ fun range(start: int, end: int) = start..<end
 # Repeatedly parses p until it backtracks, returns unit
 # (for a non-unit version, see the list module)
 fun [T] ~> repeat[T, R](p: [T] ~> R) = {
+  case
   | p?, repeat(p)
-  \ {}
+  | {}
+  \
 }
 
 # Returns whether `p` evaluated on any input element is true
 fun [T] ~> any[T](p: (T) -> bit) = {
+  case
   | x: is !eof
+    case
     | return: p(x) is false then any(p)
-    \ [..], let return = true
-  \ let return = false
+    | [..], let return = true
+    \
+  | let return = false
+  \
 }
 
 # Returns whether `p` is always true when evaluated on all input elements
 fun [T] ~> all[T](p: (T) -> bit) = {
+  case
   | x: is !eof
+    case
     | return: p(x) is true then all(p)
-    \ [..], let return = false
-  \ let return = true
+    | [..], let return = false
+    \
+  | let return = true
+  \
 }
 
 
@@ -82,15 +98,19 @@ def ~u8b = ~
 # Parses an 8-bit little endian signed integer.
 def ~i8l = {
   x: ~
+  case
   | let return = x is 0x00..0x7f
-  \ let return = x - 0x100
+  | let return = x - 0x100
+  \
 }
 
 # Parses an 8-bit big endian signed integer.
 def ~i8b = {
   x: ~
+  case
   | let return = x is 0x00..0x7f
-  \ let return = x - 0x100
+  | let return = x - 0x100
+  \
 }
 
 # Parses a 16-bit little endian unsigned integer.

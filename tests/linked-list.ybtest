@@ -6,8 +6,10 @@ fun ~u8ptr[T](t: ~T) = {
 
 export
 def ~test = {
+  case
   | u8 is 0
-  \ next: u8ptr(test)?
+  | next: u8ptr(test)?
+  \
   val: u8
 }
 

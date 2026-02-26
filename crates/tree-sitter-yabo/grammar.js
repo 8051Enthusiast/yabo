@@ -30,19 +30,6 @@ module.exports = grammar({
 
   word: $ => $.identifier,
 
-  externals: $ => [
-    $._newline,
-    $._indent,
-    $._dedent,
-    $.block_open,
-    $.block_close,
-    $.parser_block_open,
-    $.parser_block_close,
-    $._lexer_error,
-    // unused
-    $._notoken,
-  ],
-
   rules: {
     source_file: $ => repeat($._top_level_statement),
     _top_level_statement: $ => choice(
@@ -105,47 +92,30 @@ module.exports = grammar({
       field('right', $._type_expression)
     )),
     block: $ => seq(
-      $.block_open,
-      optional(seq(
-        $._indent,
-        field('content', $.parser_sequence),
-        $._dedent,
-      )),
-      $.block_close
+      '{|', optional(field('content', $.parser_sequence)), '|}'
     ),
     parser_block: $ => seq(
-      $.parser_block_open,
-      optional(seq(
-        $._indent,
-        field('content', $.parser_sequence),
-        $._dedent,
-      )),
-      $.parser_block_close,
+      '{', optional(field('content', $.parser_sequence)), '}'
     ),
     parser_sequence: $ => seq(
       field('content', $._parser_sequence_element),
       repeat(seq(
-        choice($._newline, ','),
+        choice(/[\n\r]/, ','),
         field('content', $._parser_sequence_element),
-      ))
+      )),
+      optional(choice(/[\n\r]/, ','))
     ),
     _parser_sequence_element: $ => choice(
       $._statement,
       $.parser_choice,
     ),
     parser_choice: $ => seq(
+      'case',
       repeat(seq(
         '|',
-        $._indent,
         field('content', $.parser_sequence),
-        $._dedent,
       )),
-      seq(
-        '\\',
-        $._indent,
-        field('content', $.parser_sequence),
-        $._dedent,
-      )
+      '\\',
     ),
     type_array: $ => seq(
       '[',

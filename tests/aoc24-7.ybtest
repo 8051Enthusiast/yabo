@@ -5,11 +5,14 @@ import math
 import text
 
 fun ~calc(total: int, acc: int) = {
+  case
   | /$/, let return = if?(total == acc) then total
-  \ / /, n: text.num?
+  | / /, n: text.num?
+    case
     | return: calc(total, acc + n)?
     | return: calc(total, acc * n)?
-    \ return: calc(total, acc * math.ipow(10, span n.sizeof) + n)?
+    | return: calc(total, acc * math.ipow(10, span n.sizeof) + n)?
+  \ \
 }
 
 export

@@ -458,9 +458,12 @@ mod tests {
             r#"
 def [u8] ~> expr1 = {
   x: u64
+  case
   | let b: u64 = 3
-  \ | let a: u64 = 0
-    \ let z: u64 = 1
+  | case
+    | let a: u64 = 0
+    | let z: u64 = 1
+  \ \
 }
         "#,
         );

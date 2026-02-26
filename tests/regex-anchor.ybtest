@@ -1,8 +1,10 @@
 ====[ source code ]====
 export
 def ~test = {
+  case
   | res: /A$/
-  \ {}
+  | {}
+  \
 }
 
 ====[ binary 1 ]====

@@ -1,10 +1,12 @@
 ====[ source code ]====
 fun ~right = {
   a: ~
+  case
   | b: ~
-  \ let r = span e..a
+  | let r = span e..a
     #~^ error[305] end of span is not after start of span
     e: ~
+  \
   d: ~
   let s = span d..a
   #~^ error[305] end of span is not after start of span

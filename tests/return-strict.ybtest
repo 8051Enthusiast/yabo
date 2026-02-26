@@ -1,8 +1,10 @@
 ====[ source code ]====
 def ~list[R](element: ~R) = {
+  case
   | this: element?
     next: list(element?)
-  \ {}
+  | {}
+  \
 }
 
 fun first[R](xs: list[R]): R = xs.?this

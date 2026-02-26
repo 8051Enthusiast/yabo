@@ -1,14 +1,18 @@
 ====[ source code ]====
 def ~u32b_or_16b(n: int) = {
+  case
   | let _ = n is 0
     let return = u32b
-  \ let return = u16b
+  | let return = u16b
+  \
 }
 export def ~test = {
   tag: ~
   parser: u32b_or_16b(tag)
+  case
   | return: parser is 0..1000
-  \ let return = 123
+  | let return = 123
+  \
 }
 
 ====[ binary 1 ]====

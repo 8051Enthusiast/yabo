@@ -86,14 +86,18 @@ fun inode_at(idx: int) = {|
 
 def ~inode_ptr = {
   inode_idx: u32l
+  case
   | inode_idx is 0 then nil
-  \ let pointee = inode_at(inode_idx - 1)
+  | let pointee = inode_at(inode_idx - 1)
+  \
 }
 
 def ~block_ptr[T](data: ~T) = {
   block: u32l
+  case
   | block is 0 then nil
-  \ let pointee = ([block_size] |> data!) at (block * block_size)
+  | let pointee = ([block_size] |> data!) at (block * block_size)
+  \
 }
 
 def ~indirect[T](data: ~T) = block_ptr(data)[..]
@@ -107,6 +111,7 @@ def ~data_blocks[T](data: ~T) = {
 
 fun inode_type(mode: int) = {|
   let masked = mode & 0xF000
+  case
   | let fifo = masked is 0x1000
   | let char_dev = masked is 0x2000
   | let dir = masked is 0x4000
@@ -114,7 +119,8 @@ fun inode_type(mode: int) = {|
   | let file = masked is 0x8000
   | let symlink = masked is 0xA000
   | let socket = masked is 0xC000
-  \ let unknown = masked
+  | let unknown = masked
+  \
 |}
 
 def ~byte_block = [..]
@@ -145,6 +151,7 @@ def ~inode = {
   flags: u32l
   osd1: u32l
   block_bytes: [u32l.sizeof * 15]
+  case
   | let file = mode_type is file then (block_bytes ~> data_blocks(byte_block))
   | let dir = mode_type is dir then (block_bytes ~> data_blocks(dir_entries))
   | let short_symlink = mode_type is symlink then size is 0..59 then (block_bytes ~> [size])
@@ -153,7 +160,8 @@ def ~inode = {
       minor: u8
       major: u8
     })
-  \ nil
+  | nil
+  \
   generation: u32l
   file_acl: u32l
   dir_acl: u32l

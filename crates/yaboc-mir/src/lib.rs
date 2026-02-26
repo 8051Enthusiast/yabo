@@ -1127,6 +1127,7 @@ mod tests {
         let ctx = Context::<MirTestDatabase>::mock(
             r"
 def ~main = {
+    case
     | a: ~
       b: ~
       e: {
@@ -1134,10 +1135,11 @@ def ~main = {
           x: ~
       }
 
-    \ b: ~
+    | b: ~
       a: ~
       c: ~
       let d: int = b + c * a * a
+    \
 }
         ",
         );

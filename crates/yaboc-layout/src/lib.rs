@@ -1346,8 +1346,10 @@ mod tests {
         a: ~
         b: ~
         c: {
+          case
           | let c = first!
-          \ let c = second?
+          | let c = second?
+          \
         }
         d: c.c
     }
