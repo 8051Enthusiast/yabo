@@ -109,7 +109,11 @@ def build_compiler_binary():
 
 def run_compiler_unit_tests():
     os.chdir(compiler_dir)
-    cargo_args = ['cargo', 'nextest', 'run', '--workspace']
+    if shutil.which('cargo-nextest'):
+        cargo_args = ['cargo', 'nextest', 'run']
+    else:
+        cargo_args = ['cargo', 'test']
+    cargo_args.append('--workspace')
     if TARGET_RELEASE == 'release':
         cargo_args.append('--release')
     cargo_test = subprocess.run(cargo_args, check=False, env=compiler_env)
