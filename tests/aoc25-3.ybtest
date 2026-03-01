@@ -6,7 +6,7 @@ import aoc
 fun ~joltage_digit(n: int, clearance: int) = {
   d: text.digit(10)? is !eof
   case
-  | if?(d > n) then parse.lookahead([clearance] is !eof)?
+  | when?(d > n) then parse.lookahead([clearance] is !eof)?
     case
     | return: joltage_digit(d, clearance)?
     | let return = d

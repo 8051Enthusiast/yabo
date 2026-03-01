@@ -1,9 +1,9 @@
 ====[ source code ]====
 import text
 import parse
-def ~factor_impl(n: int, p: int) = (if?(n % p == 0) else if?(p > n)) then {
+def ~factor_impl(n: int, p: int) = (when?(n % p == 0) else when?(p > n)) then {
   case
-  | if?(n < p) then nil
+  | when?(n < p) then nil
   | let factor = p
     next: factor_impl(n / p, p)
   \

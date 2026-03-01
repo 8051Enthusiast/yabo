@@ -483,7 +483,7 @@ mod tests {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
             def ~backtrack_is(x: int) = x is 0 then [1] else [2]
-            def ~backtrack_if(x: int) = if?(x == 0) then [1] else [2]
+            def ~backtrack_if(x: int) = when?(x == 0) then [1] else [2]
             def ~backtrack_field(x: int) = {| let y = x is 0 |}.?y then [1] else [2]
             "#,
         );

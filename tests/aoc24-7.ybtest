@@ -6,7 +6,7 @@ import text
 
 fun ~calc(total: int, acc: int) = {
   case
-  | /$/, let return = if?(total == acc) then total
+  | /$/, let return = when?(total == acc) then total
   | / /, n: text.num?
     case
     | return: calc(total, acc + n)?

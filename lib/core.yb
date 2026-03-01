@@ -7,9 +7,9 @@ fun [t] ~> assert[t](cond: bit) = {
 # Useful for writing if-statement-like expressions.
 # Example:
 # ```
-# fun fib(n: int) = if?(n < 2) then n else (fib(n - 1) + fib(n - 2))
+# fun fib(n: int) = when?(n < 2) then n else (fib(n - 1) + fib(n - 2))
 # ```
-fun if(cond: bit) = cond is true
+fun when(cond: bit) = cond is true
 
 # Same as {}
 fun [T] ~> nil[T] = {}
@@ -197,5 +197,5 @@ fun [A] ~> index[A](idx: int): A = {
 fun [int] ~> start_with(rhs: [int]) = {
   lhs: [rhs.sizeof]
   let is_equal = range(0, rhs.sizeof) ~> all(<i> lhs.[i] == rhs.[i])
-  let return = if?(is_equal) then lhs
+  let return = when?(is_equal) then lhs
 }
