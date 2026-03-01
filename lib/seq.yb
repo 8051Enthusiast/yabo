@@ -26,7 +26,7 @@ fun [T] ~> zip[T, R](other: [R]) = on_array(<array>
 fun [T] ~> concat[T](other: [T]) = on_array(<array>
   from_fun(
     array.sizeof + other.sizeof,
-    <i> if?(i < array.sizeof) then (
+    <i> when?(i < array.sizeof) then (
       array.[i]
     ) else (
       other.[i - array.sizeof]

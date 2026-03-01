@@ -17,7 +17,7 @@ fun ~members(acc: int, red: bit): int = {
   let sum = acc + first
   case
   | /,/, return: members(sum, now_red)?
-  | let return = if?(now_red) then 0 else sum
+  | let return = when?(now_red) then 0 else sum
   \
 }
 fun ~object: int = {
