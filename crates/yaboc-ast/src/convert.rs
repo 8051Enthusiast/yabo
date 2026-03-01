@@ -819,7 +819,7 @@ fn wiggle_kind(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<WiggleKi
     let str = node_to_string(db, fd, c)?;
     match &*str {
         "is" => Ok(WiggleKind::Is),
-        "try" => Ok(WiggleKind::Try),
+        "expect" => Ok(WiggleKind::Expect),
         _ => panic!("unknown wiggle kind: {str}"),
     }
 }

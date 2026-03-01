@@ -567,15 +567,11 @@
               "members": [
                 {
                   "type": "STRING",
-                  "value": "~"
-                },
-                {
-                  "type": "STRING",
                   "value": "is"
                 },
                 {
                   "type": "STRING",
-                  "value": "try"
+                  "value": "expect"
                 }
               ]
             }
@@ -2239,7 +2235,7 @@
               },
               {
                 "type": "STRING",
-                "value": "try"
+                "value": "expect"
               }
             ]
           }

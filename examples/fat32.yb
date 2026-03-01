@@ -8,10 +8,10 @@ def ~fat32_header = {
   let bytes_per_cluster = byts_per_sec * sec_per_clus
   rsvd_sec_cnt: u16l
   num_fats: u8
-  root_ent_cnt: u16l try 0
-  tot_sec16: u16l try 0
+  root_ent_cnt: u16l expect 0
+  tot_sec16: u16l expect 0
   media: u8
-  fat_sz16: u16l try 0
+  fat_sz16: u16l expect 0
   sec_per_trk: u16l
   num_heads: u16l
   hidd_sec: u32l

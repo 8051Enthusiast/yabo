@@ -124,7 +124,7 @@ module.exports = grammar({
     ),
     constraint_apply: $ => prec.left(PREC.LPOSTFIX, seq(
       field('left', $._expression),
-      field('op', choice('~', 'is', 'try')),
+      field('op', choice('is', 'expect')),
       field('right', $._constraint_expression),
     )),
     type_constraint: $ => prec.left(PREC.LPOSTFIX, seq(
@@ -337,7 +337,7 @@ module.exports = grammar({
       )),
     ),
     single_constraint_apply: $ => seq(
-      field('op', choice('is', 'try')),
+      field('op', choice('is', 'expect')),
       field('constraint', $._constraint_expression),
     ),
     _type_atom: $ => choice(

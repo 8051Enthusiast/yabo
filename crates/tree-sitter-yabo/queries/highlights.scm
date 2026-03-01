@@ -33,7 +33,7 @@
     "case"
 ] @keyword.control.conditional
 
-"try" @keyword.control.exception
+"expect" @keyword.control.exception
 
 (retvrn) @variable.builtin
 
