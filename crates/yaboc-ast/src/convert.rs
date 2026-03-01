@@ -473,7 +473,7 @@ astify! {
 
 astify! {
     struct let_statement = LetStatement {
-        name: fieldspan[!],
+        name: fieldspan[?],
         ty: expression(type_expression)[?],
         expr: expression(val_expression)[!],
     };

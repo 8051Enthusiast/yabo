@@ -1,0 +1,18 @@
+====[ source code ]====
+export
+def ~test = {
+  _a: u8
+  u8 is 1
+  _: u8 is 2
+  let _ = _a is 0
+  let _ = _a expect 0
+  b_: u8
+}
+
+====[ binary 1 ]====
+00 01 02 03
+====[ output 1 ]====
+{
+  "_a": 0,
+  "b_": 3
+}

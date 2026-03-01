@@ -225,7 +225,7 @@ impl Statement {
     pub fn field(&self) -> Option<FieldName> {
         match self {
             Statement::Parse(x) => x.name.as_ref().map(|i| i.inner),
-            Statement::Let(x) => Some(x.name.inner),
+            Statement::Let(x) => x.name.as_ref().map(|i| i.inner),
         }
     }
     pub fn span(&self) -> Span {
@@ -312,7 +312,7 @@ pub struct ParseStatement {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct LetStatement {
-    pub name: FieldSpan,
+    pub name: Option<FieldSpan>,
     pub ty: Option<TypeExpression>,
     pub expr: ValExpression,
     pub span: Span,

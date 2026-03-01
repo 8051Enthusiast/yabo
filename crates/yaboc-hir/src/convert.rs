@@ -665,10 +665,10 @@ fn struct_context(
                         }
                         let sub_id = new_id(Some(FieldName::Return));
                         let l = ast::LetStatement {
-                            name: Spanned {
+                            name: Some(Spanned {
                                 inner: FieldName::Return,
                                 span: p.span,
-                            },
+                            }),
                             ty: None,
                             expr: p.parser.clone(),
                             span: p.span,
@@ -737,8 +737,15 @@ fn let_statement(
         expr: val_id,
         context,
     };
-    ctx.insert(id.0, HirNode::Let(st), vec![ast.span, ast.name.span]);
-    VariableSet::singular(ast.name.inner, (id.0, ast.name.span))
+    let spans = match &ast.name {
+        Some(s) => vec![ast.span, s.span],
+        None => vec![ast.span],
+    };
+    ctx.insert(id.0, HirNode::Let(st), spans);
+    ast.name
+        .as_ref()
+        .map(|name| VariableSet::singular(name.inner, (id.0, name.span)))
+        .unwrap_or_default()
 }
 
 fn parse_statement(

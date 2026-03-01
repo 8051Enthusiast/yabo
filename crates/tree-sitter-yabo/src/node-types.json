@@ -1371,7 +1371,7 @@
       },
       "name": {
         "multiple": false,
-        "required": true,
+        "required": false,
         "types": [
           {
             "type": "identifier",
@@ -1953,6 +1953,11 @@
   },
   {
     "type": "partial_indicator",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "placeholder",
     "named": true,
     "fields": {}
   },
@@ -2860,6 +2865,10 @@
     "named": false
   },
   {
+    "type": "_",
+    "named": false
+  },
+  {
     "type": "and",
     "named": false
   },
@@ -2947,10 +2956,6 @@
   {
     "type": "or",
     "named": false
-  },
-  {
-    "type": "placeholder",
-    "named": true
   },
   {
     "type": "regex_literal",

@@ -25,7 +25,6 @@ export def ~test = {
 00 55 55 55 55
 ====[ output 1 ]====
 {
-  "_": 0,
   "a": 85,
   "m": 85,
   "p": "fun_args",
@@ -47,7 +46,6 @@ export def ~test = {
 00 22 33 44 55
 ====[ output 3 ]====
 {
-  "_": 0,
   "a": 51,
   "m": 34,
   "p": "fun_args",
