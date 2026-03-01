@@ -136,10 +136,14 @@ module.exports = grammar({
       $.parse_statement,
       $.let_statement,
     ),
+    _field_def_name: $ => choice(
+      '_',
+      field('name', $._field_name)
+    ),
     parse_statement: $ => seq(
       optional(
         seq(
-          field('name', $._field_name),
+          $._field_def_name,
           ':',
         )
       ),
@@ -147,7 +151,7 @@ module.exports = grammar({
     ),
     let_statement: $ => seq(
       'let',
-      field('name', $._field_name),
+      $._field_def_name,
       optional(seq(
         ':',
         field('ty', $._type_expression),

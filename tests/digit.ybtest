@@ -13,6 +13,5 @@ fun ~test = digit(10)?
 ====[ output 1 ]====
 {
   "x": 51,
-  "value": 3,
-  "_": true
+  "value": 3
 }
