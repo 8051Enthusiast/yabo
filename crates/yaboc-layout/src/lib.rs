@@ -261,7 +261,7 @@ impl<'a> IMonoLayout<'a> {
                 IMonoLayout(ctx.dcx.intern(Layout::Mono(MonoLayout::Regex(*r, true))))
             }
             MonoLayout::IfParser(inner, c, status) if bool::from(*status) != bt => {
-                let new_status = if bt { WiggleKind::Is } else { WiggleKind::Try };
+                let new_status = if bt { WiggleKind::Is } else { WiggleKind::Expect };
                 IMonoLayout(
                     ctx.dcx
                         .intern(Layout::Mono(MonoLayout::IfParser(*inner, *c, new_status))),

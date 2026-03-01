@@ -848,15 +848,11 @@
         "required": true,
         "types": [
           {
+            "type": "expect",
+            "named": false
+          },
+          {
             "type": "is",
-            "named": false
-          },
-          {
-            "type": "try",
-            "named": false
-          },
-          {
-            "type": "~",
             "named": false
           }
         ]
@@ -2063,11 +2059,11 @@
         "required": true,
         "types": [
           {
-            "type": "is",
+            "type": "expect",
             "named": false
           },
           {
-            "type": "try",
+            "type": "is",
             "named": false
           }
         ]
@@ -2905,6 +2901,10 @@
     "named": false
   },
   {
+    "type": "expect",
+    "named": false
+  },
+  {
     "type": "export",
     "named": false
   },
@@ -2982,10 +2982,6 @@
   },
   {
     "type": "true",
-    "named": false
-  },
-  {
-    "type": "try",
     "named": false
   },
   {

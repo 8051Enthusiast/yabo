@@ -1083,7 +1083,7 @@ fn mir_if(
     kind: WiggleKind,
     requirements: RequirementSet,
 ) -> SResult<Function> {
-    let mut ctx = ConvertCtx::new_if_builder(db, requirements, kind == WiggleKind::Try)?;
+    let mut ctx = ConvertCtx::new_if_builder(db, requirements, kind == WiggleKind::Expect)?;
     ctx.if_parser(constr)?;
     Ok(ctx.finish_fun())
 }

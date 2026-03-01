@@ -736,7 +736,7 @@ impl<C> ValUnOp<C> {
 #[repr(u8)]
 pub enum WiggleKind {
     Is,
-    Try,
+    Expect,
 }
 
 impl Display for WiggleKind {
@@ -746,7 +746,7 @@ impl Display for WiggleKind {
             "{}",
             match self {
                 WiggleKind::Is => "is",
-                WiggleKind::Try => "try",
+                WiggleKind::Expect => "expect",
             }
         )
     }
@@ -756,7 +756,7 @@ impl From<WiggleKind> for bool {
     fn from(kind: WiggleKind) -> Self {
         match kind {
             WiggleKind::Is => true,
-            WiggleKind::Try => false,
+            WiggleKind::Expect => false,
         }
     }
 }

@@ -316,7 +316,7 @@ impl<'a> ExpressionBuildCtx<'a> {
                         let field = *ctx.vars.get(name).expect("did not find field").inner();
                         self.push(Instruction::GetField(inner, field), *ty, orig)
                     }
-                    ValUnOp::Wiggle(_, WiggleKind::Try) | ValUnOp::BtMark(BtMarkKind::KeepBt) => {
+                    ValUnOp::Wiggle(_, WiggleKind::Expect) | ValUnOp::BtMark(BtMarkKind::KeepBt) => {
                         self.push(Instruction::Copy(inner), *ty, orig)
                     }
                     ValUnOp::BtMark(BtMarkKind::RemoveBt) => {

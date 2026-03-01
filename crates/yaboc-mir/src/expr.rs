@@ -416,7 +416,7 @@ impl<'a> ConvertExpr<'a> {
             let old_backtrack = self.retreat.backtrack;
             self.retreat.backtrack = match kind {
                 WiggleKind::Is => self.retreat.backtrack,
-                WiggleKind::Try => self.retreat.error,
+                WiggleKind::Expect => self.retreat.error,
             };
             let cont = self.f.new_bb();
             let constr = self.db.lookup_intern_hir_constraint(constr);
@@ -557,7 +557,7 @@ impl<'a> ConvertExpr<'a> {
                 self.convert_dot(inner_loc, loc, FieldAccessMode::Backtrack, *field, recurse)
             }
             ValUnOp::EvalFun if inner_can_bt => self.convert_eval_fun(inner_loc, loc, recurse),
-            ValUnOp::Wiggle(_, WiggleKind::Try)
+            ValUnOp::Wiggle(_, WiggleKind::Expect)
             | ValUnOp::Dot(_, FieldAccessMode::Normal)
             | ValUnOp::EvalFun
             | ValUnOp::Size
