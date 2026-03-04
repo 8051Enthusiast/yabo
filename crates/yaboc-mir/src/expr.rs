@@ -7,7 +7,7 @@ use std::{
 
 use super::Mirs;
 use fxhash::FxHashMap;
-use yaboc_ast::expr::{BtMarkKind, ConstraintBinOp, ConstraintUnOp, FieldAccessMode, WiggleKind};
+use yaboc_ast::expr::{BtMarkKind, ConstraintBinOp, ConstraintUnOp, WiggleKind};
 use yaboc_base::{
     error::SResult,
     interner::{DefId, FieldName},
@@ -433,7 +433,7 @@ impl<'a> ConvertExpr<'a> {
         &mut self,
         inner_loc: ExpressionLoc,
         loc: ExpressionLoc,
-        acc: FieldAccessMode,
+        acc: BtMarkKind,
         field: FieldName,
         recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
     ) -> SResult<PlaceRef> {
@@ -553,12 +553,12 @@ impl<'a> ConvertExpr<'a> {
                 }
                 self.convert_wiggle(loc, inner_loc, WiggleKind::Is, *constr, is_parser, recurse)
             }
-            ValUnOp::Dot(field, FieldAccessMode::Backtrack) => {
-                self.convert_dot(inner_loc, loc, FieldAccessMode::Backtrack, *field, recurse)
+            ValUnOp::Dot(field, Some(BtMarkKind::KeepBt)) => {
+                self.convert_dot(inner_loc, loc, BtMarkKind::KeepBt, *field, recurse)
             }
             ValUnOp::EvalFun if inner_can_bt => self.convert_eval_fun(inner_loc, loc, recurse),
             ValUnOp::Wiggle(_, WiggleKind::Expect)
-            | ValUnOp::Dot(_, FieldAccessMode::Normal)
+            | ValUnOp::Dot(_, None | Some(BtMarkKind::RemoveBt))
             | ValUnOp::EvalFun
             | ValUnOp::Size
             | ValUnOp::BtMark(_)
@@ -602,7 +602,13 @@ impl<'a> ConvertExpr<'a> {
                 let is_parser = matches!(typ, Type::ParserArg { .. });
                 self.convert_wiggle(loc, inner_loc, *kind, *constr, is_parser, recurse)?
             }
-            ValUnOp::Dot(field, acc) => self.convert_dot(inner_loc, loc, *acc, *field, recurse)?,
+            ValUnOp::Dot(field, acc) => self.convert_dot(
+                inner_loc,
+                loc,
+                acc.unwrap_or(BtMarkKind::RemoveBt),
+                *field,
+                recurse,
+            )?,
             ValUnOp::BtMark(BtMarkKind::KeepBt) => recurse(self, loc.place)?,
             ValUnOp::BtMark(BtMarkKind::RemoveBt) => {
                 let remove_bt = self.new_remove_bt_stack_place(loc.origin);

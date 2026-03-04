@@ -242,6 +242,10 @@
             "named": true
           },
           {
+            "type": "index",
+            "named": true
+          },
+          {
             "type": "lambda",
             "named": true
           },
@@ -317,14 +321,6 @@
           },
           {
             "type": "..<",
-            "named": false
-          },
-          {
-            "type": ".?[",
-            "named": false
-          },
-          {
-            "type": ".[",
             "named": false
           },
           {
@@ -431,6 +427,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "index",
             "named": true
           },
           {
@@ -655,6 +655,10 @@
             "named": true
           },
           {
+            "type": "index",
+            "named": true
+          },
+          {
             "type": "lambda",
             "named": true
           },
@@ -705,16 +709,17 @@
         "required": true,
         "types": [
           {
-            "type": "!",
-            "named": false
-          },
-          {
-            "type": "?",
-            "named": false
+            "type": "bt_mark_kind",
+            "named": true
           }
         ]
       }
     }
+  },
+  {
+    "type": "bt_mark_kind",
+    "named": true,
+    "fields": {}
   },
   {
     "type": "byte_slice",
@@ -763,6 +768,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "index",
             "named": true
           },
           {
@@ -922,6 +931,10 @@
             "named": true
           },
           {
+            "type": "index",
+            "named": true
+          },
+          {
             "type": "lambda",
             "named": true
           },
@@ -1005,6 +1018,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "index",
             "named": true
           },
           {
@@ -1098,6 +1115,202 @@
     }
   },
   {
+    "type": "index",
+    "named": true,
+    "fields": {
+      "left": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "array_fill",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "block",
+            "named": true
+          },
+          {
+            "type": "bool_literal",
+            "named": true
+          },
+          {
+            "type": "bt_mark",
+            "named": true
+          },
+          {
+            "type": "char_literal",
+            "named": true
+          },
+          {
+            "type": "constraint_apply",
+            "named": true
+          },
+          {
+            "type": "fun_application",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "index",
+            "named": true
+          },
+          {
+            "type": "lambda",
+            "named": true
+          },
+          {
+            "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "parser_span",
+            "named": true
+          },
+          {
+            "type": "regex_literal",
+            "named": true
+          },
+          {
+            "type": "retvrn",
+            "named": true
+          },
+          {
+            "type": "single",
+            "named": true
+          },
+          {
+            "type": "single_constraint_apply",
+            "named": true
+          },
+          {
+            "type": "string_literal",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          },
+          {
+            "type": "val_dot",
+            "named": true
+          }
+        ]
+      },
+      "op": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "bt_mark_kind",
+            "named": true
+          }
+        ]
+      },
+      "right": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "array_fill",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "block",
+            "named": true
+          },
+          {
+            "type": "bool_literal",
+            "named": true
+          },
+          {
+            "type": "bt_mark",
+            "named": true
+          },
+          {
+            "type": "char_literal",
+            "named": true
+          },
+          {
+            "type": "constraint_apply",
+            "named": true
+          },
+          {
+            "type": "fun_application",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "index",
+            "named": true
+          },
+          {
+            "type": "lambda",
+            "named": true
+          },
+          {
+            "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "parser_span",
+            "named": true
+          },
+          {
+            "type": "regex_literal",
+            "named": true
+          },
+          {
+            "type": "retvrn",
+            "named": true
+          },
+          {
+            "type": "single",
+            "named": true
+          },
+          {
+            "type": "single_constraint_apply",
+            "named": true
+          },
+          {
+            "type": "string_literal",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          },
+          {
+            "type": "val_dot",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "lambda",
     "named": true,
     "fields": {
@@ -1149,6 +1362,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "index",
             "named": true
           },
           {
@@ -1257,6 +1474,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "index",
             "named": true
           },
           {
@@ -1423,6 +1644,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "index",
             "named": true
           },
           {
@@ -1691,6 +1916,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "index",
             "named": true
           },
           {
@@ -2395,6 +2624,10 @@
             "named": true
           },
           {
+            "type": "index",
+            "named": true
+          },
+          {
             "type": "lambda",
             "named": true
           },
@@ -2549,6 +2782,10 @@
             "named": true
           },
           {
+            "type": "index",
+            "named": true
+          },
+          {
             "type": "lambda",
             "named": true
           },
@@ -2596,15 +2833,11 @@
       },
       "op": {
         "multiple": false,
-        "required": true,
+        "required": false,
         "types": [
           {
-            "type": ".",
-            "named": false
-          },
-          {
-            "type": ".?",
-            "named": false
+            "type": "bt_mark_kind",
+            "named": true
           }
         ]
       },
@@ -2698,18 +2931,6 @@
   },
   {
     "type": "..<",
-    "named": false
-  },
-  {
-    "type": ".?",
-    "named": false
-  },
-  {
-    "type": ".?[",
-    "named": false
-  },
-  {
-    "type": ".[",
     "named": false
   },
   {

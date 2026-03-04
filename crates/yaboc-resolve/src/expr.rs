@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{refs, RegexError};
 use hir::{ExprId, HirConstraintId};
-use yaboc_ast::expr::{self, Atom, BtMarkKind, FieldAccessMode, WiggleKind};
+use yaboc_ast::expr::{self, Atom, BtMarkKind, WiggleKind};
 use yaboc_base::error::{SResult, SilencedError};
 use yaboc_base::interner::{DefId, FieldName, Regex};
 use yaboc_base::source::SpanIndex;
@@ -107,7 +107,7 @@ pub enum ValUnOp<C> {
     Not,
     Neg,
     Wiggle(C, WiggleKind),
-    Dot(FieldName, FieldAccessMode),
+    Dot(FieldName, Option<BtMarkKind>),
     Size,
     BtMark(BtMarkKind),
     EvalFun,

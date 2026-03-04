@@ -49,7 +49,11 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for ValExpression {
                 dbwrite!(f, db, " {} {}", kind, right)
             }
             CloseMonadic(expr::ValUnOp::Dot(a, acc)) => {
-                dbwrite!(f, db, "{acc}{}", a)
+                write!(f, ".")?;
+                if let Some(acc) = acc {
+                    write!(f, "{acc}")?;
+                }
+                dbwrite!(f, db, "{}", a)
             }
             InterDyadic(op) => write!(f, " {} ", op),
             InterVariadic(_, 0) => write!(f, "("),

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use fxhash::FxHashMap;
-use yaboc_ast::expr::{BtMarkKind, FieldAccessMode, WiggleKind};
+use yaboc_ast::expr::{BtMarkKind, WiggleKind};
 use yaboc_backtrack::{
     Arena, EffectError, EvalCtx, EvalEffectKind, ExprNode, ExpressionBuilder, Instruction, Matrix,
     MatrixArena, Row, TransformInfo, TypeBtInfo, TypeLookup, TypeMatrixCtx, VarRow,
@@ -304,7 +304,7 @@ impl<'a> ExpressionBuildCtx<'a> {
                         }
                     }
                     ValUnOp::Dot(name, mode) => {
-                        if matches!(mode, FieldAccessMode::Backtrack) && !silent {
+                        if matches!(mode, Some(BtMarkKind::KeepBt)) && !silent {
                             self.push(Instruction::Fail, *ty, orig)?;
                         }
                         let block_ty = self.builder.ty(inner);
@@ -316,7 +316,8 @@ impl<'a> ExpressionBuildCtx<'a> {
                         let field = *ctx.vars.get(name).expect("did not find field").inner();
                         self.push(Instruction::GetField(inner, field), *ty, orig)
                     }
-                    ValUnOp::Wiggle(_, WiggleKind::Expect) | ValUnOp::BtMark(BtMarkKind::KeepBt) => {
+                    ValUnOp::Wiggle(_, WiggleKind::Expect)
+                    | ValUnOp::BtMark(BtMarkKind::KeepBt) => {
                         self.push(Instruction::Copy(inner), *ty, orig)
                     }
                     ValUnOp::BtMark(BtMarkKind::RemoveBt) => {

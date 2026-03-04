@@ -182,6 +182,7 @@ module.exports = grammar({
       $.unary_expression,
       $.fun_application,
       $.val_dot,
+      $.index,
       $.bt_mark,
       $.constraint_apply,
       $.parser_block,
@@ -311,7 +312,7 @@ module.exports = grammar({
         prec.left(PREC.POSTFIX,
           seq(
             field('left', $._expression),
-            field('op', choice('.[', '.?[', '[')),
+            field('op', '['),
             field('right', $._expression),
             ']'
           )
@@ -355,6 +356,16 @@ module.exports = grammar({
       '..',
       field('end', $._int_literal),
     )),
+    index: $ => prec.left(PREC.POSTFIX,
+      seq(
+        field('left', $._expression),
+        '.',
+        optional(field('op', $.bt_mark_kind)),
+        '[',
+        field('right', $._expression),
+        ']'
+      )
+    ),
     parser_span: $ => seq(
       'span',
       field('start', $._field_name),
@@ -370,12 +381,14 @@ module.exports = grammar({
     ),
     val_dot: $ => prec.left(PREC.POSTFIX, seq(
       field('left', $._expression),
-      field('op', choice('.', '.?')),
+      '.',
+      optional(field('op', $.bt_mark_kind)),
       field('right', $._atom),
     )),
+    bt_mark_kind: $ => choice('!', '?'),
     bt_mark: $ => prec.left(PREC.POSTFIX, seq(
       field('left', $._expression),
-      field('op', choice('!', '?')),
+      field('op', $.bt_mark_kind),
     )),
     parserdef_ref: $ => prec.left(PREC.ARGS, seq(
       seq(
