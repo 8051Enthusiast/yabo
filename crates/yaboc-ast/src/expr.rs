@@ -639,7 +639,7 @@ impl Display for ValBinOp {
                 ValBinOp::ParserApply => "~>",
                 ValBinOp::Else => "else",
                 ValBinOp::Then => "then",
-                ValBinOp::Index(BtMarkKind::RemoveBt) => ".[",
+                ValBinOp::Index(BtMarkKind::RemoveBt) => ".![",
                 ValBinOp::Index(BtMarkKind::KeepBt) => ".?[",
                 ValBinOp::Array => "[",
                 ValBinOp::At => "at",
@@ -649,24 +649,9 @@ impl Display for ValBinOp {
     }
 }
 
-#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
-pub enum FieldAccessMode {
-    Normal,
-    Backtrack,
-}
-
-impl FieldAccessMode {
+impl BtMarkKind {
     pub fn can_backtrack(self) -> bool {
-        matches!(self, FieldAccessMode::Backtrack)
-    }
-}
-
-impl Display for FieldAccessMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FieldAccessMode::Normal => write!(f, "."),
-            FieldAccessMode::Backtrack => write!(f, ".?"),
-        }
+        matches!(self, BtMarkKind::KeepBt)
     }
 }
 
@@ -674,6 +659,15 @@ impl Display for FieldAccessMode {
 pub enum BtMarkKind {
     KeepBt,
     RemoveBt,
+}
+
+impl Display for BtMarkKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BtMarkKind::KeepBt => write!(f, "?"),
+            BtMarkKind::RemoveBt => write!(f, "!"),
+        }
+    }
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -685,7 +679,7 @@ pub enum ValUnOp<C> {
     ArrayFill,
     Parens,
     Wiggle(C, WiggleKind),
-    Dot(FieldName, FieldAccessMode),
+    Dot(FieldName, Option<BtMarkKind>),
     Size,
     BtMark(BtMarkKind),
 }

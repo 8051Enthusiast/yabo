@@ -579,6 +579,7 @@ astify! {
     enum val_expression = ValExpressionInner {
         Variadic(fun_application),
         Dyadic(binary_expression),
+        Dyadic(index),
         Monadic(unary_expression),
         Monadic(constraint_apply),
         Monadic(single_constraint_apply),
@@ -744,7 +745,7 @@ impl From<TypeConstraint> for MonadicExpr<AstTypeSpanned> {
 
 struct ValDot {
     left: ValExpression,
-    op: String,
+    op: Option<BtMarkKind>,
     right: Spanned<FieldName>,
     #[allow(dead_code)]
     span: Span,
@@ -753,24 +754,17 @@ struct ValDot {
 astify! {
     struct val_dot = ValDot {
         left: expression(val_expression)[!],
-        op: node_to_string[!],
+        op: bt_mark_kind[?],
         right: spanned(field_name)[!],
     };
 }
 
 impl From<ValDot> for MonadicExpr<AstValSpanned> {
     fn from(val: ValDot) -> Self {
-        let access_mode = if val.op == "." {
-            FieldAccessMode::Normal
-        } else if val.op == ".?" {
-            FieldAccessMode::Backtrack
-        } else {
-            panic!("unknown field access mode: {}", val.op)
-        };
         Monadic {
             op: OpWithData {
                 data: val.right.span,
-                inner: ValUnOp::Dot(val.right.inner, access_mode),
+                inner: ValUnOp::Dot(val.right.inner, val.op),
             },
             inner: Box::new(val.left),
         }
@@ -799,6 +793,33 @@ impl From<BtMark> for MonadicExpr<AstValSpanned> {
                 inner: ValUnOp::BtMark(val.op.inner),
             },
             inner: Box::new(val.left),
+        }
+    }
+}
+
+struct Index {
+    left: ValExpression,
+    op: Option<Spanned<BtMarkKind>>,
+    right: ValExpression,
+    span: Span,
+}
+
+astify! {
+    struct index = Index {
+        left: expression(val_expression)[!],
+        op: spanned(bt_mark_kind)[?],
+        right: expression(val_expression)[!]
+    };
+}
+
+impl From<Index> for DyadicExpr<AstValSpanned> {
+    fn from(value: Index) -> Self {
+        Dyadic {
+            op: OpWithData {
+                data: value.op.as_ref().map(|x| x.span).unwrap_or(value.span),
+                inner: ValBinOp::Index(value.op.map(|x| x.inner).unwrap_or(BtMarkKind::RemoveBt)),
+            },
+            inner: [Box::new(value.left), Box::new(value.right)],
         }
     }
 }

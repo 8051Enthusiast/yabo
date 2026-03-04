@@ -211,7 +211,8 @@ def [u8] ~> test = {
         (parse_statement
           (identifier)
           (bt_mark
-            (identifier))))
+            (identifier)
+            (bt_mark_kind))))
       (comment))))
 
 
@@ -259,6 +260,6 @@ fun first_plus_one(arr: [u8]) = 1 + arr.[0]
             name: (identifier)))))
     to: (binary_expression
       left: (number_literal)
-      right: (binary_expression
+      right: (index
         left: (identifier)
         right: (number_literal)))))

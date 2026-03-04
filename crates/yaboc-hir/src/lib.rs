@@ -154,7 +154,7 @@ fn hir_node(db: &dyn Hirs, id: DefId) -> SResult<HirNode> {
 fn all_modules(db: &dyn Hirs) -> Vec<ModuleId> {
     db.all_files()
         .iter()
-        .chain(db.core().iter())
+        //.chain(db.core().iter())
         .map(|id| {
             let path = DefinitionPath::Module(*id);
             ModuleId(db.intern_hir_path(path))
@@ -955,9 +955,11 @@ mod tests {
         let ctx = <Context<HirTestDatabase> as Import>::mock(
             r#"
 def [u8] ~> expr1 = {
+  case
   | a: u64
     b: u32
   | a: u64,
+  \
 }
         "#,
         );

@@ -1,5 +1,5 @@
 use hir::ExprId;
-use yaboc_ast::expr::{FieldAccessMode, WiggleKind};
+use yaboc_ast::expr::{BtMarkKind, WiggleKind};
 use yaboc_expr::FetchKindData;
 use yaboc_resolve::expr::{ValBinOp, ValUnOp};
 
@@ -41,7 +41,7 @@ pub fn expr_reqs(
                         // we need to know its value to know whether to backtrack
                         inner_mat |= bt_to_val
                     }
-                    Wiggle(_, WiggleKind::Is) | Dot(_, FieldAccessMode::Backtrack) => {
+                    Wiggle(_, WiggleKind::Is) | Dot(_, Some(BtMarkKind::KeepBt)) => {
                         // this checks the inner value, which means we need to know
                         // the value to know whether to backtrack
                         inner_mat |= bt_to_val

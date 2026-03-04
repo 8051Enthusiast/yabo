@@ -87,7 +87,7 @@ pub fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<Arc<E
                 }
                 ExprHead::Niladic(_) => BacktrackStatus::empty(),
                 ExprHead::Monadic(ValUnOp::Dot(_, acc), status) => {
-                    status.backtrack_if(acc.can_backtrack())
+                    status.backtrack_if(acc.map(|x| x.can_backtrack()).unwrap_or(false))
                 }
                 ExprHead::Monadic(ValUnOp::Wiggle(_, kind), status) if !is_parser => {
                     status.backtrack_if(kind == WiggleKind::Is)

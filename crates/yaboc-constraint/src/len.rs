@@ -5,7 +5,7 @@ use crate::{arg_ranks, lambda_arg_ranks, Origin};
 use super::Constraints;
 use fxhash::FxHashMap;
 use hir::HirIdWrapper;
-use yaboc_ast::expr::{FieldAccessMode, WiggleKind};
+use yaboc_ast::expr::{BtMarkKind, WiggleKind};
 use yaboc_base::{
     error::{SResult, Silencable},
     interner::FieldName,
@@ -270,7 +270,7 @@ impl<'a> SizeTermBuilder<'a> {
                                 }
                             }
                         }
-                        ValUnOp::Dot(_, FieldAccessMode::Backtrack) if needs_bt => {
+                        ValUnOp::Dot(_, Some(BtMarkKind::KeepBt)) if needs_bt => {
                             let res = self.push_term(Term::OpaqueUn(inner), src);
                             self.push_term(Term::Backtracking(res), src)
                         }
