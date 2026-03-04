@@ -113,7 +113,7 @@ impl ExpressionKind for AstVal {
     type NiladicOp = ParserAtom;
     type MonadicOp = ValUnOp<Arc<ConstraintExpression>>;
     // the booleans on the side indicate whether that side has parentheses
-    type DyadicOp = (bool, ValBinOp, bool);
+    type DyadicOp = ValBinOp;
     type VariadicOp = ValVarOp;
 }
 

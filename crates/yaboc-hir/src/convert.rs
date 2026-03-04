@@ -118,7 +118,7 @@ fn constraint_expression(
 }
 
 fn compare_bin_precedence(
-    upper: OpWithData<ast::ValBinOp, Span>,
+    upper: &OpWithData<ast::ValBinOp, Span>,
     lower: &ExpressionHead<AstValSpanned, impl Any>,
     is_lhs: bool,
 ) -> Result<(), HirConversionError> {
@@ -157,7 +157,7 @@ fn compare_bin_precedence(
         (Comparison!() | IntegerOp!() | Control!() | Closed!() | ParserOp!() | Range): ValBinOp,
     ) {
     }
-    match (upper.inner, lower.op.inner.1.clone()) {
+    match (&upper.inner, &lower.op.inner) {
         (_, Closed!()) | (Closed!(), _) => Ok(()),
         (Comparison!(), IntegerOp!()) => Ok(()),
         (Control!(), _) if !is_lhs => Ok(()),
@@ -181,11 +181,11 @@ fn compare_bin_precedence(
         (ParserApply, Range) if is_lhs => Ok(()),
         (up, lo) => {
             let upper = Spanned {
-                inner: up,
+                inner: up.clone(),
                 span: upper.data,
             };
             let lower = Spanned {
-                inner: lo,
+                inner: lo.clone(),
                 span: lower.op.data,
             };
             Err(HirConversionError::UnparenthesizedDyadic { upper, lower })
@@ -248,16 +248,9 @@ fn val_expression(
                 op,
                 inner: [lhs, rhs],
             }) => {
-                let (left_parens, bin_op, right_parens) = &op.inner;
-                for (is_lhs, parens, inner) in
-                    [(true, left_parens, lhs), (false, right_parens, rhs)]
-                {
-                    if *parens {
-                        continue;
-                    }
-                    if let Err(e) =
-                        compare_bin_precedence(op.clone().map_inner(|x| x.1), &inner.0, is_lhs)
-                    {
+                let bin_op = &op.inner;
+                for (is_lhs, inner) in [(true, lhs), (false, rhs)] {
+                    if let Err(e) = compare_bin_precedence(op, &inner.0, is_lhs) {
                         ctx.add_errors(Some(e));
                     };
                 }
@@ -269,9 +262,13 @@ fn val_expression(
         };
         (expr_res, add_span(expr.0.root_data()))
     });
+    let new_expr = expr
+        .expr
+        .filter_monadic(|x| !matches!(x, expr::ValUnOp::Parens));
+    let new_data = new_expr.migrate_data(&expr.data);
     let expr = ValExpression {
         id,
-        expr,
+        expr: new_expr.into_expr().zip(new_data),
         children,
         parent_context,
     };

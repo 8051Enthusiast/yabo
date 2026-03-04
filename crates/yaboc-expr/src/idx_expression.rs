@@ -2,7 +2,7 @@ use std::ops::Index;
 
 use crate::{
     shaped_data::IndexExpr, ExprHead, ExprIdx, ExprKind, ExprRef, Expression, IdxExprRef,
-    InvariantLifetime, ShapedData, TakeRef, ZipExpr,
+    InvariantLifetime, ReidxExpr, ShapedData, TakeRef, ZipExpr,
 };
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -60,6 +60,33 @@ impl<K: ExprKind> IdxExpression<K> {
 
     pub fn zip<D>(self, data: ShapedData<D, K>) -> ZipExpr<Self, ShapedData<D, K>> {
         ZipExpr { expr: self, data }
+    }
+
+    pub fn filter_monadic(
+        self,
+        mut f: impl for<'id> FnMut(&K::MonadicOp) -> bool,
+    ) -> ReidxExpr<K, K> {
+        type Part<K> = ExprHead<K, ExprIdx<K>>;
+        let mut heads: Vec<Part<K>> = Vec::with_capacity(self.len());
+        let mut old_to_new: Vec<ExprIdx<K>> = Vec::with_capacity(self.len());
+        let mut new_to_old: Vec<ExprIdx<K>> = Vec::with_capacity(self.len());
+        let mut i = 0;
+        for (idx, part) in self.iter_parts_with_idx() {
+            let part = part.map_inner(|inner_idx| old_to_new[inner_idx.as_usize()]);
+            let new_idx = match &part {
+                ExprHead::Monadic(head, inner) if !f(head) => *inner,
+                _ => {
+                    heads.push(part);
+                    new_to_old.push(idx);
+                    ExprIdx::<K>::new(&mut i)
+                }
+            };
+            old_to_new.push(new_idx);
+        }
+        ReidxExpr {
+            expr: IdxExpression { heads },
+            reidx: new_to_old,
+        }
     }
 }
 
@@ -139,14 +166,18 @@ impl<'id, K: ExprKind, Data> ExprDataBuilder<'id, K, Data> {
 }
 
 impl<K: ExprKind> TakeRef for IdxExpression<K> {
-    type Ref<'a> = IdxExprRef<'a, K> where Self: 'a;
+    type Ref<'a>
+        = IdxExprRef<'a, K>
+    where
+        Self: 'a;
     fn take_ref(&self) -> Self::Ref<'_> {
         IdxExprRef(self)
     }
 }
 
 impl<K: ExprKind> IndexExpr<K> for IdxExpression<K> {
-    type Output<'a> = &'a ExprHead<K, ExprIdx<K>>
+    type Output<'a>
+        = &'a ExprHead<K, ExprIdx<K>>
     where
         Self: 'a;
 

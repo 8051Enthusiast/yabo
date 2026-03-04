@@ -110,7 +110,7 @@ fn sign<'id>(
     builder: &mut ExprDataBuilder<'id, Bivariate, Range<usize>>,
 ) -> Option<ExprRef<'id, Bivariate>> {
     Some(if let Some(span) = recognize(chars, '-') {
-        let expr = atom(chars, builder)?;
+        let expr = sign(chars, builder)?;
         builder.add_expr(ExprHead::new_monadic(UnOp::Neg, expr), span)
     } else {
         atom(chars, builder)?
@@ -147,6 +147,14 @@ fn parse(s: &str) -> DataExpr<Bivariate, Range<usize>> {
         skip_whitespace(&mut chars);
         add(&mut chars, builder).is_some()
     })
+}
+
+fn bivariate_string(s: PartialEval<Bivariate, i64>) -> String {
+    match s {
+        PartialEval::Eval(n) => n.to_string(),
+        PartialEval::Uneval(Bivariate::X) => "x".to_string(),
+        PartialEval::Uneval(Bivariate::Y) => "y".to_string(),
+    }
 }
 
 fn univariate_string(s: PartialEval<Univariate, i64>) -> String {
@@ -275,4 +283,11 @@ fn partial_eval() {
         as_string(&at_minus_3, univariate_string),
         "4 * x * x + -9 * x + 18"
     );
+}
+
+#[test]
+fn filter() {
+    let expr = parse("4 * -3 * -y + x + --5");
+    let new_expr = expr.expr.filter_monadic(|_| false);
+    assert_eq!(as_string(&new_expr.expr, bivariate_string), "4 * 3 * y + x + 5");
 }

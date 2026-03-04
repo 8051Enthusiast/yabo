@@ -129,6 +129,7 @@ impl<C> TryFrom<expr::ValUnOp<C>> for ValUnOp<C> {
             expr::ValUnOp::Array => Err(expr::ValUnOp::Array),
             expr::ValUnOp::ArrayFill => Err(expr::ValUnOp::ArrayFill),
             expr::ValUnOp::StartWith => Err(expr::ValUnOp::StartWith),
+            expr::ValUnOp::Parens => Err(expr::ValUnOp::Parens),
         }
     }
 }

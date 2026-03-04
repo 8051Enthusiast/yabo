@@ -191,9 +191,9 @@ module.exports = grammar({
       $.parser_span,
       $.array_fill,
       $.single_constraint_apply,
-      seq('(', $._expression, ')'),
       $._atom,
     ),
+    paren_expression: $ => seq('(', $._expression, ')'),
     _arg_list: $ => seq(
       '(',
       optional(seq(
@@ -325,6 +325,7 @@ module.exports = grammar({
           field('right', $._expression)
         ),
       ),
+      seq(field('op', '('), field('right', $._expression), ')'),
       prec(PREC.POSTFIX, seq(
         field('right', $._expression),
         field('op', $.array_fill)
