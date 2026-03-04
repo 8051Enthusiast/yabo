@@ -62,7 +62,7 @@ fun [T] ~> repeat[T, R](p: [T] ~> R) = {
 # Returns whether `p` evaluated on any input element is true
 fun [T] ~> any[T](p: (T) -> bit) = {
   case
-  | x: is !eof
+  | x: ~ is !eof
     case
     | return: p(x) is false then any(p)
     | [..], let return = true
@@ -74,7 +74,7 @@ fun [T] ~> any[T](p: (T) -> bit) = {
 # Returns whether `p` is always true when evaluated on all input elements
 fun [T] ~> all[T](p: (T) -> bit) = {
   case
-  | x: is !eof
+  | x: ~ is !eof
     case
     | return: p(x) is true then all(p)
     | [..], let return = false

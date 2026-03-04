@@ -191,7 +191,6 @@ module.exports = grammar({
       $.single,
       $.parser_span,
       $.array_fill,
-      $.single_constraint_apply,
       $._atom,
     ),
     paren_expression: $ => seq('(', $._expression, ')'),
@@ -341,10 +340,6 @@ module.exports = grammar({
         field('right', $._expression),
         ']'
       )),
-    ),
-    single_constraint_apply: $ => seq(
-      field('op', choice('is', 'expect')),
-      field('constraint', $._constraint_expression),
     ),
     _type_atom: $ => choice(
       $.primitive_type,

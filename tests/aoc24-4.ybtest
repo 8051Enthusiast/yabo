@@ -37,7 +37,7 @@ fun diagonals(matrix: [[u8]]) = {|
 
 fun sum_both[T](sum: (T) -> int, f: (T) -> T, in: T) = sum(in) + sum(f(in))
 
-fun score(matrix: [[u8]]) = matrix ~> aoc.summap(is !eof |> aoc.summap({
+fun score(matrix: [[u8]]) = matrix ~> aoc.summap(~ is !eof |> aoc.summap({
   parse.find(/XMAS/)?, let return = 1
 }))
 

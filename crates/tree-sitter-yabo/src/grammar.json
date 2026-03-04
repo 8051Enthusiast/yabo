@@ -892,10 +892,6 @@
         },
         {
           "type": "SYMBOL",
-          "name": "single_constraint_apply"
-        },
-        {
-          "type": "SYMBOL",
           "name": "_atom"
         }
       ]
@@ -2241,36 +2237,6 @@
                 "value": "]"
               }
             ]
-          }
-        }
-      ]
-    },
-    "single_constraint_apply": {
-      "type": "SEQ",
-      "members": [
-        {
-          "type": "FIELD",
-          "name": "op",
-          "content": {
-            "type": "CHOICE",
-            "members": [
-              {
-                "type": "STRING",
-                "value": "is"
-              },
-              {
-                "type": "STRING",
-                "value": "expect"
-              }
-            ]
-          }
-        },
-        {
-          "type": "FIELD",
-          "name": "constraint",
-          "content": {
-            "type": "SYMBOL",
-            "name": "_constraint_expression"
           }
         }
       ]

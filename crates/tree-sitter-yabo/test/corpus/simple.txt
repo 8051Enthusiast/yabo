@@ -30,7 +30,7 @@ Choice Parser
 
 def [u8] ~> choice = {
   case
-  | is ascii
+  | ~ is ascii
     return: utf8char
   | return: utf8char
   \
@@ -49,7 +49,7 @@ def [u8] ~> choice = {
         content: (parser_choice
           content: (parser_sequence
             content: (parse_statement
-              parser: (single_constraint_apply
+              parser: (constraint_apply (single)
                 constraint: (identifier)))
             content: (parse_statement
               name: (retvrn)
@@ -96,7 +96,7 @@ def [u8] ~> nested = {
   val: ~
   return: {
     case
-    | val: is 0
+    | val: ~ is 0
     | let val: u8 = 3
       ~
     \
@@ -125,7 +125,7 @@ def [u8] ~> nested = {
                 (parser_sequence
                   (parse_statement
                     (identifier)
-                    (single_constraint_apply
+                    (constraint_apply (single)
                       (number_literal))))
                 (parser_sequence
                   (let_statement
@@ -147,9 +147,9 @@ Three Choices
 
 def [u8] ~> three = {
   case
-  | is 0
+  | ~ is 0
     return: u8
-  | is 1
+  | ~ is 1
     return: u8
   | return: u8
   \
@@ -167,14 +167,14 @@ def [u8] ~> three = {
         (parser_choice
           (parser_sequence
             (parse_statement
-              (single_constraint_apply
+              (constraint_apply (single)
                 (number_literal)))
             (parse_statement
               (retvrn)
               (identifier)))
           (parser_sequence
             (parse_statement
-              (single_constraint_apply
+              (constraint_apply (single)
                 (number_literal)))
             (parse_statement
               (retvrn)
