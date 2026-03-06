@@ -18,9 +18,8 @@ use yaboc_base::{
 };
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, ShapedData, TakeRef};
 use yaboc_hir::{self as hir, BlockReturnKind, HirIdWrapper, HirNode, ParserPredecessor};
-use yaboc_hir_types::TyHirs;
 use yaboc_req::{NeededBy, RequirementMatrix, RequirementSet};
-use yaboc_resolve::expr::{Resolved, ResolvedAtom};
+use yaboc_resolve::{Resolves, expr::{Resolved, ResolvedAtom}};
 
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 
@@ -32,7 +31,7 @@ pub use represent::dependency_dot;
 pub use requirements::expr_reqs;
 
 #[salsa::query_group(DependentsDatabase)]
-pub trait Dependents: TyHirs {
+pub trait Dependents: Resolves {
     fn can_backtrack(&self, def: DefId) -> SResult<bool>;
     fn expr_backtrack_status(&self, expr: hir::ExprId) -> SResult<Arc<ExprBacktrackData>>;
     fn expr_reqs(&self, expr: hir::ExprId) -> SResult<Arc<ShapedData<Vec<ExprDepData>, Resolved>>>;
@@ -955,7 +954,7 @@ def ~main = {
 def ~main: int = {
   x: ~
   case
-  | let _ = x is 3
+  | let _ = x if 3
     return: main
   | let return = 4
   \
@@ -980,9 +979,9 @@ def ~main: int = {
             r"
 def ~main: int = {
     x: ~
-    let y = z is 3
+    let y = z if 3
     case
-    | let z = x is 3..4
+    | let z = x if 3..4
       return: main
     | let return = 4
     \
@@ -1005,7 +1004,7 @@ def ~main: int = {
     x: ~ is 1..4
     case
     | return: main?
-    | let return = x is 1..2
+    | let return = x if 1..2
     \
 }
         ",

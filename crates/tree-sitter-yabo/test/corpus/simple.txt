@@ -49,8 +49,9 @@ def [u8] ~> choice = {
         content: (parser_choice
           content: (parser_sequence
             content: (parse_statement
-              parser: (constraint_apply (single)
-                constraint: (identifier)))
+              parser: (constraint_apply
+                left: (single)
+                right: (identifier)))
             content: (parse_statement
               name: (retvrn)
               parser: (identifier)))

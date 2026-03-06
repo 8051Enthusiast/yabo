@@ -1,5 +1,5 @@
 ====[ source code ]====
-fun ~uses_arg_indirectly(x: int) = x is 0 then u32l else i64l
+fun ~uses_arg_indirectly(x: int) = x if 0 then u32l else i64l
 
 fun ~not_static_len = {x: ~, uses_arg_indirectly(x)}
 

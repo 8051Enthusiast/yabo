@@ -13,7 +13,7 @@ fun ~digit = {
   x: ~
   # the 0x3a > x comparison requires x with strictness 0
   # but the return may use strictness 1 or 0
-  let _ = (0x3a > x) is true
+  let _ = (0x3a > x) if true
   let return = x
 }
 

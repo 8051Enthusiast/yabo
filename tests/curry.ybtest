@@ -12,7 +12,7 @@ def ~affine_byte(m: int, a: int) = {
 export def ~test = {
   tag: ~
   case
-  | let _ = tag is 0
+  | let _ = tag if 0
     m: ~
     let p = affine_byte(m, ..)
   | let p = linear_byte

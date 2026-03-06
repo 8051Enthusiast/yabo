@@ -23,8 +23,8 @@ def ~partition_entry(base: int) = {
   # absolute LBA address of the first sector in the partition
   let real_sector = base + first_sector_lba
   case
-  | partition_type is 0x00 then nil
-  | let extended = partition_type is 0x05 or 0x0f then ebr(real_sector) at (real_sector * 512)
+  | partition_type if 0x00 then nil
+  | let extended = partition_type if 0x05 or 0x0f then ebr(real_sector) at (real_sector * 512)
   | let primary = primary_partition(sector_count) at (real_sector * 512)
   \
 }

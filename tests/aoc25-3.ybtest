@@ -17,7 +17,7 @@ fun ~joltage_digit(n: int, clearance: int) = {
 
 fun ~joltage(size: int, acc: int) = {
   case
-  | let return = size is 0 then acc
+  | let return = size if 0 then acc
   | d: joltage_digit(-1, size - 1)!
     return: joltage(size - 1, 10 * acc + d)
   \

@@ -799,6 +799,7 @@ fn wiggle_kind(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<WiggleKi
     match &*str {
         "is" => Ok(WiggleKind::Is),
         "expect" => Ok(WiggleKind::Expect),
+        "if" => Ok(WiggleKind::If),
         _ => panic!("unknown wiggle kind: {str}"),
     }
 }

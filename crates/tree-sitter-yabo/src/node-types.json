@@ -813,6 +813,10 @@
             "named": false
           },
           {
+            "type": "if",
+            "named": false
+          },
+          {
             "type": "is",
             "named": false
           }
@@ -2931,6 +2935,10 @@
   {
     "type": "identifier",
     "named": true
+  },
+  {
+    "type": "if",
+    "named": false
   },
   {
     "type": "import",

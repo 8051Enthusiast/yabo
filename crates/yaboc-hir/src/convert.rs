@@ -7,7 +7,7 @@ use fxhash::FxHashSet;
 use yaboc_expr::ExprHead;
 
 use super::*;
-use yaboc_ast::{self as ast, AstValSpanned};
+use yaboc_ast::{self as ast, expr::WiggleKind, AstValSpanned};
 use yaboc_base::{error::Silencable, error_type, source::Spanned};
 
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -45,6 +45,10 @@ pub enum HirConversionError {
     UnparenthesizedDyadic {
         upper: Spanned<ValBinOp>,
         lower: Spanned<ValBinOp>,
+    },
+    EofConstraintOnNonParser {
+        span: Span,
+        kind: WiggleKind,
     },
     Silenced,
 }
@@ -88,11 +92,21 @@ fn ignores_eof(ast: &ast::ConstraintExpression) -> Result<bool, HirConversionErr
 
 fn constraint_expression(
     ast: &ast::ConstraintExpression,
+    kind: WiggleKind,
+    span: Span,
     ctx: &HirConversionCtx,
     add_span: &impl Fn(&Span) -> SpanIndex,
 ) -> HirConstraintId {
     let ignores_eof = match ignores_eof(ast) {
-        Ok(k) => k,
+        Ok(k) => {
+            if !k && kind != WiggleKind::Is {
+                ctx.add_errors(Some(HirConversionError::EofConstraintOnNonParser {
+                    span,
+                    kind,
+                }));
+            }
+            k
+        }
         Err(e) => {
             ctx.add_errors(Some(e));
             true
@@ -240,8 +254,9 @@ fn val_expression(
                 }
             }),
             ExpressionHead::Monadic(m) => ExprHead::Monadic(
-                m.op.inner
-                    .map_expr(|constr| constraint_expression(constr, ctx, &add_span)),
+                m.op.inner.map_expr(|constr, kind| {
+                    constraint_expression(constr, kind, m.op.data, ctx, &add_span)
+                }),
                 &*m.inner,
             ),
             ExpressionHead::Dyadic(Dyadic {
@@ -315,10 +330,9 @@ fn convert_type_expression(
                 ast::TypeAtom::Placeholder => ExprHead::Niladic(TypeAtom::Placeholder),
             },
             ExpressionHead::Monadic(monadic) => {
-                let new_op = monadic
-                    .op
-                    .inner
-                    .map_expr(|constr| constraint_expression(constr, ctx, add_span));
+                let new_op = monadic.op.inner.map_expr(|constr| {
+                    constraint_expression(constr, WiggleKind::If, span, ctx, add_span)
+                });
                 ExprHead::Monadic(new_op, &*monadic.inner)
             }
             ExpressionHead::Dyadic(dyadic) => ExprHead::Dyadic(

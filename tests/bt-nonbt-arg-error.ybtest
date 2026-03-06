@@ -6,5 +6,5 @@ def ~h = f(u8 is 1)
 
 fun f2(g: (int) -> int) = <x: int> g(x)
 
-fun test() = f2(<x> x is 1)
+fun test() = f2(<x> x if 1)
 #~^error[606] Argument may backtrack, but invoked function does not allow backtracking

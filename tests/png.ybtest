@@ -4,7 +4,7 @@ import list
 # a parser for the rough structure of a png
 
 fun crc_shift(poly: int, n: int) =
-  (n & 1) is 1 then (n >> 1 ^ poly) else (n >> 1)
+  (n & 1) if 1 then (n >> 1 ^ poly) else (n >> 1)
 
 fun ~crc32_impl(acc: int): int = {
   case

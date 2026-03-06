@@ -9,13 +9,13 @@ def ~find[R](needle: ~R, distance: int): int = {
 
 def ~uniqc(bitset: int) = {
   char: ~
-  let bit = 1 << (char is 0x61..0x7a - 0x61)
-  let return = (bit & bitset) is 0 | bit | bitset
+  let bit = 1 << (char if 0x61..0x7a - 0x61)
+  let return = (bit & bitset) if 0 | bit | bitset
 }
 
 def ~repeat_fold[T](f: (T) -> ~T, start: T, n: int): int = {
   case
-  | let return = n is 0
+  | let return = n if 0
   | next: f?(start)?
     return: repeat_fold(f, next, n - 1)?
   \

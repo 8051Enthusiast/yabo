@@ -39,11 +39,11 @@ fun ~diff_count: int = {
 fun ~card_rank = {
   card: ~
   case
-  | let return = card is 0x32..0x39 - 0x32
-  | let return = card is 0x54 then 8
-  | let return = card is 0x4a then 9
-  | let return = card is 0x51 then 10
-  | let return = card is 0x4b then 11
+  | let return = card if 0x32..0x39 - 0x32
+  | let return = card if 0x54 then 8
+  | let return = card if 0x4a then 9
+  | let return = card if 0x51 then 10
+  | let return = card if 0x4b then 11
   | let return = card expect 0x41 then 12
   \
 }
@@ -58,9 +58,9 @@ fun rank(cards: [u8]) = {|
   let diff = cards ~> diff_count
   let same = cards ~> same_count
   case
-  | let ty = same is 4..5 then (same + 1)
-  | let ty = diff is 2 then 4
-  | let ty = same is 3 then 3
+  | let ty = same if 4..5 then (same + 1)
+  | let ty = diff if 2 then 4
+  | let ty = same if 3 then 3
   | let ty = same expect 2 then (5 - diff)
   \
   let return = ty << 20 | card_rank

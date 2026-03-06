@@ -10,6 +10,6 @@ def ~access = {
 }
 
 def ~matching = {
-  let b = block() is y
+  let b = block() if y
   #~^ error[502] unknown field y
 }

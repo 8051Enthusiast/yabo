@@ -389,10 +389,9 @@ impl<'a> ConvertExpr<'a> {
         mut inner_loc: ExpressionLoc,
         kind: WiggleKind,
         constr: HirConstraintId,
-        is_parser: bool,
         recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
     ) -> SResult<PlaceRef> {
-        let res = if is_parser {
+        let res = if kind == WiggleKind::Is {
             let place_ref = self.unwrap_or_stack(loc);
             let inner_place = self.f.add_place(PlaceInfo {
                 place: Place::Front(place_ref),
@@ -415,8 +414,9 @@ impl<'a> ConvertExpr<'a> {
             self.copy(place_ref, ldt_ref);
             let old_backtrack = self.retreat.backtrack;
             self.retreat.backtrack = match kind {
-                WiggleKind::Is => self.retreat.backtrack,
+                WiggleKind::If => self.retreat.backtrack,
                 WiggleKind::Expect => self.retreat.error,
+                _ => unreachable!(),
             };
             let cont = self.f.new_bb();
             let constr = self.db.lookup_intern_hir_constraint(constr);
@@ -540,18 +540,15 @@ impl<'a> ConvertExpr<'a> {
         loc: ExpressionLoc,
         inner_loc: ExpressionLoc,
         inner_can_bt: bool,
-        inner_ty: TypeId,
         recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
     ) -> SResult<PlaceRef> {
         match &op {
-            ValUnOp::Wiggle(constr, WiggleKind::Is) => {
-                let typ = self.db.lookup_intern_type(inner_ty);
-                let is_parser = matches!(typ, Type::ParserArg { .. });
-                if is_parser {
-                    recurse(self, None)?;
-                    return Ok(self.load_undef(loc));
-                }
-                self.convert_wiggle(loc, inner_loc, WiggleKind::Is, *constr, is_parser, recurse)
+            ValUnOp::Wiggle(_, WiggleKind::Is) => {
+                recurse(self, None)?;
+                Ok(self.load_undef(loc))
+            }
+            ValUnOp::Wiggle(constr, WiggleKind::If) => {
+                self.convert_wiggle(loc, inner_loc, WiggleKind::If, *constr, recurse)
             }
             ValUnOp::Dot(field, Some(BtMarkKind::KeepBt)) => {
                 self.convert_dot(inner_loc, loc, BtMarkKind::KeepBt, *field, recurse)
@@ -598,9 +595,7 @@ impl<'a> ConvertExpr<'a> {
                 place_ref
             }
             ValUnOp::Wiggle(constr, kind) => {
-                let typ = self.db.lookup_intern_type(inner_ty);
-                let is_parser = matches!(typ, Type::ParserArg { .. });
-                self.convert_wiggle(loc, inner_loc, *kind, *constr, is_parser, recurse)?
+                self.convert_wiggle(loc, inner_loc, *kind, *constr, recurse)?
             }
             ValUnOp::Dot(field, acc) => self.convert_dot(
                 inner_loc,
@@ -837,7 +832,6 @@ impl<'a> ConvertExpr<'a> {
                         loc,
                         inner_loc,
                         inner_bt.bt.can_backtrack(),
-                        *inner_ty,
                         recurse,
                     )?
                 }

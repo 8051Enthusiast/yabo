@@ -4,7 +4,7 @@ def ~test = {
   val: u8
   m: u8
 
-  let f = val is 0 then (<x> x * m) else (<x> x * val)
+  let f = val if 0 then (<x> x * m) else (<x> x * val)
   let return = f(m)
 }
 

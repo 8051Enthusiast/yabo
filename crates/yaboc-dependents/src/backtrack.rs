@@ -5,10 +5,8 @@ use yaboc_base::error::SilencedError;
 use yaboc_base::{error::SResult, interner::DefId};
 use yaboc_expr::{ExprHead, Expression, FetchExpr, FetchKindData, ShapedData, TakeRef};
 use yaboc_hir::{ExprId, HirNode};
-use yaboc_hir_types::FullTypeId;
 use yaboc_resolve::expr::{Origin, Resolved, ResolvedAtom, ValVarOp};
 use yaboc_resolve::expr::{ValBinOp, ValUnOp};
-use yaboc_types::Type;
 
 use crate::Dependents;
 
@@ -71,11 +69,9 @@ impl std::ops::BitOr for BacktrackStatus {
 pub type ExprBacktrackData = ShapedData<Vec<BacktrackStatus>, Resolved>;
 
 pub fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<Arc<ExprBacktrackData>> {
-    Resolved::expr_with_data::<FullTypeId>(db, expr)?
+    Resolved::fetch_expr(db, expr)?
         .take_ref()
-        .try_scan(|(head, ty)| -> Result<BacktrackStatus, _> {
-            let ty = db.lookup_intern_type(*ty);
-            let is_parser = matches!(ty, Type::ParserArg { .. });
+        .try_scan(|head| -> Result<BacktrackStatus, _> {
             Ok(match head {
                 ExprHead::Niladic(
                     ResolvedAtom::Val(_) | ResolvedAtom::Captured(_) | ResolvedAtom::ParserDef(_),
@@ -89,11 +85,12 @@ pub fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<Arc<E
                 ExprHead::Monadic(ValUnOp::Dot(_, acc), status) => {
                     status.backtrack_if(acc.map(|x| x.can_backtrack()).unwrap_or(false))
                 }
-                ExprHead::Monadic(ValUnOp::Wiggle(_, kind), status) if !is_parser => {
-                    status.backtrack_if(kind == WiggleKind::Is)
-                }
-                ExprHead::Monadic(ValUnOp::Wiggle(_, kind), status) if is_parser => {
-                    status.can_backtrack_if(kind == WiggleKind::Is)
+                ExprHead::Monadic(
+                    ValUnOp::Wiggle(_, kind @ (WiggleKind::Expect | WiggleKind::If)),
+                    status,
+                ) => status.backtrack_if(kind == WiggleKind::If),
+                ExprHead::Monadic(ValUnOp::Wiggle(_, WiggleKind::Is), status) => {
+                    status.can_backtrack_if(true)
                 }
                 ExprHead::Monadic(ValUnOp::BtMark(mark), status) => {
                     status.can_backtrack_if(mark == BtMarkKind::KeepBt)

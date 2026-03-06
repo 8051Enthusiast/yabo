@@ -111,7 +111,7 @@ pub enum MonoLayout<Inner> {
     Range,
     Single,
     Regex(Regex, bool),
-    IfParser(Inner, HirConstraintId, WiggleKind),
+    IfParser(Inner, HirConstraintId, bool),
     ArrayParser(Option<(Inner, Option<(Inner, FuncLayoutKind)>)>),
     ArrayFillParser(Option<(Inner, FuncLayoutKind)>),
     Nominal(hir::ParserDefId, Option<Inner>, Vec<Inner>),
@@ -260,13 +260,10 @@ impl<'a> IMonoLayout<'a> {
             MonoLayout::Regex(r, status) if *status != bt => {
                 IMonoLayout(ctx.dcx.intern(Layout::Mono(MonoLayout::Regex(*r, true))))
             }
-            MonoLayout::IfParser(inner, c, status) if bool::from(*status) != bt => {
-                let new_status = if bt { WiggleKind::Is } else { WiggleKind::Expect };
-                IMonoLayout(
-                    ctx.dcx
-                        .intern(Layout::Mono(MonoLayout::IfParser(*inner, *c, new_status))),
-                )
-            }
+            MonoLayout::IfParser(inner, c, status) if *status != bt => IMonoLayout(
+                ctx.dcx
+                    .intern(Layout::Mono(MonoLayout::IfParser(*inner, *c, bt))),
+            ),
             MonoLayout::Lambda(id, cap, args, status) if *status != bt => {
                 IMonoLayout(ctx.dcx.intern(Layout::Mono(MonoLayout::Lambda(
                     *id,
@@ -1162,23 +1159,12 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ValUnOp::Not | ValUnOp::Neg | ValUnOp::Size => {
                     make_layout(MonoLayout::Primitive(PrimitiveType::Int))
                 }
-                ValUnOp::Wiggle(cid, kind) => {
+                ValUnOp::Wiggle(cid, WiggleKind::Is) => {
                     let eval_inner = inner.evaluate(ctx)?.0;
-                    let mut has_parser = false;
-                    let mut has_non_parser = false;
-                    for mono in &eval_inner {
-                        let is_parser = mono.head_kind(ctx.db) == HeadDiscriminant::Parser;
-                        has_parser |= is_parser;
-                        has_non_parser |= !is_parser;
-                    }
-                    assert!(!has_parser | !has_non_parser);
-                    if has_parser {
-                        ctx.dcx
-                            .intern(Layout::Mono(MonoLayout::IfParser(eval_inner, cid, kind)))
-                    } else {
-                        *inner
-                    }
+                    ctx.dcx
+                        .intern(Layout::Mono(MonoLayout::IfParser(eval_inner, cid, true)))
                 }
+                ValUnOp::Wiggle(_, WiggleKind::If | WiggleKind::Expect) => *inner,
                 ValUnOp::Dot(a, ..) => inner.access_field(ctx, a)?,
                 ValUnOp::BtMark(bt) => inner.with_backtrack_status(ctx, bt),
                 ValUnOp::EvalFun => inner.eval_fun(ctx)?,
