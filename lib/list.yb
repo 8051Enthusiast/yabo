@@ -11,7 +11,7 @@ def ~list[R](element: ~R) = {
 fun len[T](xs: list[T]): int = (len(xs.?next) + 1) else 0
 
 # Skips the first n elements of a list xs.
-fun skip[T](xs: list[T], n: int): list = n is 0 then xs else skip?(xs.?next, n - 1)
+fun skip[T](xs: list[T], n: int): list = n if 0 then xs else skip?(xs.?next, n - 1)
 
 fun first[R](xs: list[R]): R = xs.?this
 

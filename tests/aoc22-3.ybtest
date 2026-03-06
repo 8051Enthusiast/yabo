@@ -4,16 +4,16 @@ import list
 def ~priority = {
   x: ~
   case
-  | let return = x is 0x61..0x7a - 0x60
-  | let return = 26 + x is 0x41..0x5a - 0x40
+  | let return = x if 0x61..0x7a - 0x60
+  | let return = 26 + x if 0x41..0x5a - 0x40
   \
 }
 
-fun bitset(xs: list.list[priority], n: int, bits: int): int = n is 0 then bits else (
+fun bitset(xs: list.list[priority], n: int, bits: int): int = n if 0 then bits else (
   bitset?(xs.?next, n - 1, bits | 1 << xs.?this)
 )
 
-fun is_nonzero(n: int) = n is 0 else 1
+fun is_nonzero(n: int) = n if 0 else 1
 
 fun bit_index(n: int) = {|
   let n5 = (n | n >> 32) & 0xffffffff

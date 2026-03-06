@@ -2,7 +2,7 @@
 export
 fun ~test = {
   x: ~
-  x is 0 then {~, ~} else {~}
+  x if 0 then {~, ~} else {~}
   return: ~
 }
 

@@ -115,10 +115,16 @@ fn conversion_report(error: HirConversionError) -> Option<Report> {
                 "implicit return not at end of block",
             )
             .with_code(210)
-            .with_label(
-                Label::new(span)
-                    .with_message("error introduced here"),
-            ),
+            .with_label(Label::new(span).with_message("error introduced here")),
+        ),
+        HirConversionError::EofConstraintOnNonParser { span, kind } => Some(
+            Report::new(
+                DiagnosticKind::Error,
+                span.file,
+                &format!("!eof on {kind} constraint"),
+            )
+            .with_code(211)
+            .with_label(Label::new(span).with_message("error introduced here")),
         ),
         HirConversionError::Silenced => None,
     }

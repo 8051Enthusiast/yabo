@@ -350,15 +350,21 @@ impl<'a, 'intern> TypingContext<'a, 'intern> {
                         int
                     }
                     ValUnOp::Size => self.infctx.check_size_of(inner).map_err(spanned)?,
-                    ValUnOp::Wiggle(c, _) => {
-                        let result = self.infctx.if_checked(inner).map_err(spanned)?;
+                    ValUnOp::Wiggle(c, expr::WiggleKind::If | expr::WiggleKind::Expect) => {
+                        let expr = self.db.lookup_intern_hir_constraint(*c);
+                        self.constr_expression_type(&expr.expr, inner)
+                            .map_err(spanned)?;
+                        inner
+                    }
+                    ValUnOp::Wiggle(c, expr::WiggleKind::Is) => {
+                        let arg = self.infctx.var();
+                        let result = self.infctx.var();
                         let expr = self.db.lookup_intern_hir_constraint(*c);
                         self.constr_expression_type(&expr.expr, result)
                             .map_err(spanned)?;
-                        if expr.has_no_eof {
-                            self.infctx.check_parser(inner).map_err(spanned)?;
-                        }
-                        inner
+                        let parser = self.infctx.parser(result, arg);
+                        self.infctx.unify(inner, parser).map_err(spanned)?;
+                        parser
                     }
                     ValUnOp::BtMark(_) => inner,
                     ValUnOp::Dot(name, _) => {

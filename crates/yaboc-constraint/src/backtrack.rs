@@ -294,14 +294,13 @@ impl<'a> ExpressionBuildCtx<'a> {
                 },
                 ExprHead::Monadic(op, (inner_bt, inner)) => match op {
                     ValUnOp::Wiggle(_, WiggleKind::Is) => {
-                        if matches!(self.db.lookup_intern_type(*ty), Type::ParserArg { .. }) {
-                            self.push(Instruction::Activate(inner), *ty, orig)
-                        } else {
-                            if !silent {
-                                self.push(Instruction::Fail, *ty, orig)?;
-                            }
-                            self.push(Instruction::Copy(inner), *ty, orig)
+                        self.push(Instruction::Activate(inner), *ty, orig)
+                    }
+                    ValUnOp::Wiggle(_, WiggleKind::If) => {
+                        if !silent {
+                            self.push(Instruction::Fail, *ty, orig)?;
                         }
+                        self.push(Instruction::Copy(inner), *ty, orig)
                     }
                     ValUnOp::Dot(name, mode) => {
                         if matches!(mode, Some(BtMarkKind::KeepBt)) && !silent {

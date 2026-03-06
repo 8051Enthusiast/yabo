@@ -1,8 +1,8 @@
 ====[ source code ]====
 fun ~digit(base: int) = {
   x: ~
-  let value = x is 0x30..0x39 - 0x30
-  let _ = (base > value) is true
+  let value = x if 0x30..0x39 - 0x30
+  let _ = (base > value) if true
 }
 
 export

@@ -2,7 +2,7 @@
 def ~block = {
   tag: ~
   case
-  | let ignore: int = tag is 1
+  | let ignore: int = tag if 1
     next: block
   | more: ~
   \

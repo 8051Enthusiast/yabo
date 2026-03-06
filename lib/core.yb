@@ -1,6 +1,6 @@
 # Backtracks if the argument is false.
 fun [t] ~> assert[t](cond: bit) = {
-  let _ = cond is true
+  let _ = cond if true
 }
 
 # Fails if the argument is false.
@@ -9,7 +9,7 @@ fun [t] ~> assert[t](cond: bit) = {
 # ```
 # fun fib(n: int) = when?(n < 2) then n else (fib(n - 1) + fib(n - 2))
 # ```
-fun when(cond: bit) = cond is true
+fun when(cond: bit) = cond if true
 
 # Same as {}
 fun [T] ~> nil[T] = {}
@@ -64,7 +64,7 @@ fun [T] ~> any[T](p: (T) -> bit) = {
   case
   | x: ~ is !eof
     case
-    | return: p(x) is false then any(p)
+    | return: p(x) if false then any(p)
     | [..], let return = true
     \
   | let return = false
@@ -76,7 +76,7 @@ fun [T] ~> all[T](p: (T) -> bit) = {
   case
   | x: ~ is !eof
     case
-    | return: p(x) is true then all(p)
+    | return: p(x) if true then all(p)
     | [..], let return = false
     \
   | let return = true
@@ -99,7 +99,7 @@ def ~u8b = ~
 def ~i8l = {
   x: ~
   case
-  | let return = x is 0x00..0x7f
+  | let return = x if 0x00..0x7f
   | let return = x - 0x100
   \
 }
@@ -108,7 +108,7 @@ def ~i8l = {
 def ~i8b = {
   x: ~
   case
-  | let return = x is 0x00..0x7f
+  | let return = x if 0x00..0x7f
   | let return = x - 0x100
   \
 }
@@ -190,7 +190,7 @@ fun [A] ~> compose[A, B, C](a: [A] ~> [B], b: [B] ~> C) = {
 }
 
 fun [A] ~> index[A](idx: int): A = {
-  [idx is 0..0x7fffffffffffffff] is !eof
+  [idx if 0..0x7fffffffffffffff] is !eof
   return: ~ is !eof
 }
 

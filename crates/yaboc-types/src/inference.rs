@@ -60,7 +60,6 @@ impl<T: Clone + std::fmt::Debug + Hash + PartialEq + Eq> MakeArray<Vec<T>> for (
 enum Constraint<'intern> {
     HasField(FieldName, InfTypeId<'intern>),
     SizeOf,
-    ParserIf(InfTypeId<'intern>),
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -477,17 +476,6 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         Ok(())
     }
 
-    fn parser_if(
-        &mut self,
-        ty: InfTypeId<'intern>,
-        target: InfTypeId<'intern>,
-    ) -> Result<(), TypeError> {
-        match ty.value() {
-            InferenceType::ParserArg { result, .. } => self.unify(*result, target),
-            _ => self.unify(ty, target),
-        }
-    }
-
     fn apply_constraint(
         &mut self,
         ty: InfTypeId<'intern>,
@@ -498,7 +486,6 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
                 self.has_field(ty, field_name, field_type)
             }
             Constraint::SizeOf => self.sized(ty),
-            Constraint::ParserIf(target) => self.parser_if(ty, target),
         }
     }
 
@@ -707,15 +694,6 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
     }
     pub fn array(&mut self, kind: ArrayKind, inner: InfTypeId<'intern>) -> InfTypeId<'intern> {
         self.intern_infty(InferenceType::Loop(kind, inner))
-    }
-    pub fn if_checked(
-        &mut self,
-        to_be_checked: InfTypeId<'intern>,
-    ) -> Result<InfTypeId<'intern>, TypeError> {
-        let result = self.var();
-        let if_result = self.var_with_constraints(Constraint::ParserIf(result));
-        self.unify(to_be_checked, if_result)?;
-        Ok(result)
     }
     pub fn check_parser(&mut self, ty: InfTypeId<'intern>) -> Result<(), TypeError> {
         let result = self.var();

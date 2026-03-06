@@ -16,8 +16,9 @@ use yaboc_base::{
 use yaboc_dependents::Dependents;
 use yaboc_expr::{ExprIdx, SmallVec};
 use yaboc_hir as hir;
+use yaboc_hir_types::TyHirs;
 use yaboc_len::{depvec::ArgDeps, ArgRank, Env, PolyCircuit, SizeCalcCtx, Term, Val};
-use yaboc_resolve::{expr::Resolved, parserdef_ssc::FunctionSscId, Resolves};
+use yaboc_resolve::{expr::Resolved, parserdef_ssc::FunctionSscId};
 
 use backtrack::{bt_term, ssc_bt_vals, BtResult, BtTerm, BtVals};
 use len::len_term;
@@ -25,7 +26,7 @@ pub use len::PdLenTerm;
 use yaboc_types::{DefId, Type, TypeId};
 
 #[salsa::query_group(ConstraintDatabase)]
-pub trait Constraints: Interner + Resolves + Dependents {
+pub trait Constraints: Interner + Dependents + TyHirs {
     fn regex_len(&self, regex: Regex) -> SResult<Option<i128>>;
     fn len_term(&self, pd: hir::ParserDefId) -> SResult<Arc<PdLenTerm>>;
     fn fun_len(&self, pd: hir::ParserDefId) -> LenVal;
@@ -482,16 +483,16 @@ mod tests {
     fn backtrack_dep() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            def ~backtrack_is(x: int) = x is 0 then [1] else [2]
+            def ~backtrack_is(x: int) = x if 0 then [1] else [2]
             def ~backtrack_if(x: int) = when?(x == 0) then [1] else [2]
-            def ~backtrack_field(x: int) = {| let y = x is 0 |}.?y then [1] else [2]
+            def ~backtrack_field(x: int) = {| let y = x if 0 |}.?y then [1] else [2]
             "#,
         );
         for parser_name in ["backtrack_is", "backtrack_if", "backtrack_field"] {
             let parser = ctx.parser(parser_name);
             let len = ctx.db.fun_len(parser);
             let Val::Static(1, deps) = len else {
-                panic!("got unexpected {:?}", len)
+                panic!("got unexpected {:?} in {parser_name}", len)
             };
             assert!(deps.has_val(0));
         }

@@ -5,7 +5,7 @@ fun [() -> int] ~> why = {
   let return = f!() + g?()
 }
 
-fun throw() = 1 is 2
+fun throw() = 1 if 2
 
 def ~test = {
   let arr = {~, let return = throw}[..]

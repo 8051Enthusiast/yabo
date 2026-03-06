@@ -4,7 +4,7 @@ def ~wrapped = ~
 export def ~test = {
   f: wrapped
   case
-  | let a = f is 0
+  | let a = f if 0
   | let b = 3
   \
 }

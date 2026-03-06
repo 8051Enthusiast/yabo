@@ -698,7 +698,7 @@ impl<C> ValUnOp<C> {
             otherwise => return Err(otherwise),
         })
     }
-    pub fn map_expr<D>(&self, f: impl FnOnce(&C) -> D) -> ValUnOp<D> {
+    pub fn map_expr<D>(&self, f: impl FnOnce(&C, WiggleKind) -> D) -> ValUnOp<D> {
         use ValUnOp::*;
         match self {
             Not => Not,
@@ -707,7 +707,7 @@ impl<C> ValUnOp<C> {
             Array => Array,
             ArrayFill => ArrayFill,
             Parens => Parens,
-            Wiggle(expr, kind) => Wiggle(f(expr), *kind),
+            Wiggle(expr, kind) => Wiggle(f(expr, *kind), *kind),
             Dot(atom, acc) => Dot(*atom, *acc),
             Size => Size,
             BtMark(kind) => BtMark(*kind),
@@ -735,6 +735,7 @@ impl<C> ValUnOp<C> {
 pub enum WiggleKind {
     Is,
     Expect,
+    If,
 }
 
 impl Display for WiggleKind {
@@ -745,17 +746,9 @@ impl Display for WiggleKind {
             match self {
                 WiggleKind::Is => "is",
                 WiggleKind::Expect => "expect",
+                WiggleKind::If => "if",
             }
         )
-    }
-}
-
-impl From<WiggleKind> for bool {
-    fn from(kind: WiggleKind) -> Self {
-        match kind {
-            WiggleKind::Is => true,
-            WiggleKind::Expect => false,
-        }
     }
 }
 

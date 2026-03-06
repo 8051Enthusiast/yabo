@@ -62,7 +62,7 @@ def ~b64l_lsb = from_int_lsb(i64l, 64)
 
 fun [bit] ~> flag = ~
 
-fun as_int(b: bit) = b is true then 1 else 0
+fun as_int(b: bit) = b if true then 1 else 0
 
 fun [bit] ~> uint_msb_impl(acc: int) = {
   case

@@ -28,6 +28,7 @@
 
 [
     "is"
+    "if"
     "else"
     "then"
     "case"

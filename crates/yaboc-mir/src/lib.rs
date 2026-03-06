@@ -10,7 +10,6 @@ use fxhash::FxHashMap;
 
 use len::LenMirCtx;
 pub use strictness::Strictness;
-use yaboc_ast::expr::WiggleKind;
 use yaboc_ast::ConstraintAtom;
 use yaboc_base::interner::Regex;
 use yaboc_base::{
@@ -66,7 +65,7 @@ pub enum FunKind {
     Block(BlockId),
     ParserDef(ParserDefId),
     Lambda(LambdaId),
-    If(HirConstraintId, WiggleKind),
+    If(HirConstraintId, bool),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -1080,10 +1079,10 @@ fn mir_pd(db: &dyn Mirs, pd: ParserDefId, requirements: RequirementSet) -> SResu
 fn mir_if(
     db: &dyn Mirs,
     constr: HirConstraintId,
-    kind: WiggleKind,
+    bt: bool,
     requirements: RequirementSet,
 ) -> SResult<Function> {
-    let mut ctx = ConvertCtx::new_if_builder(db, requirements, kind == WiggleKind::Expect)?;
+    let mut ctx = ConvertCtx::new_if_builder(db, requirements, !bt)?;
     ctx.if_parser(constr)?;
     Ok(ctx.finish_fun())
 }
