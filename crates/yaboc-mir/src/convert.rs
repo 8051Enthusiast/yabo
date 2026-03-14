@@ -441,15 +441,31 @@ impl<'a> ConvertCtx<'a> {
 
     pub fn lambda_eval_fun(&mut self, lambda: &hir::Lambda) -> SResult<()> {
         let expr = self.w.val_place_at_def(lambda.expr.0).unwrap();
-        let ret = self.w.f.fun.ret().unwrap();
-        self.w.copy(expr, ret);
+        let info = self.call_info_at_id(lambda.id.0);
+
+        if info.req.is_empty() {
+            return Ok(());
+        }
+
+        if info.req.contains(NeededBy::Val) {
+            let ret = self.w.val_place_at_def(lambda.id.0).unwrap();
+            self.w.copy(expr, ret);
+        }
         Ok(())
     }
 
     pub fn parserdef_eval_fun(&mut self, pd: &hir::ParserDef) -> SResult<()> {
         let expr = self.w.val_place_at_def(pd.to.0).unwrap();
-        let ret = self.w.f.fun.ret().unwrap();
-        self.w.copy(expr, ret);
+        let info = self.call_info_at_id(pd.id.0);
+
+        if info.req.is_empty() {
+            return Ok(());
+        }
+
+        if info.req.contains(NeededBy::Val) {
+            let ret = self.w.val_place_at_def(pd.id.0).unwrap();
+            self.w.copy(expr, ret);
+        }
         Ok(())
     }
 

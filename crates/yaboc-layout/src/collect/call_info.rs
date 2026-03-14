@@ -26,6 +26,15 @@ pub struct CallSlotResult<'a, Arg> {
     pub occupied_entries: FxHashMap<IMonoLayout<'a>, Rc<FxHashMap<PSize, Arg>>>,
 }
 
+impl<'a, Arg: std::hash::Hash + Eq + Copy> CallSlotResult<'a, Arg> {
+    pub fn occupied_slots(&self, layout: IMonoLayout<'a>) -> Rc<FxHashMap<PSize, Arg>> {
+        self.occupied_entries
+            .get(&layout)
+            .cloned()
+            .unwrap_or_default()
+    }
+}
+
 impl<'a, Arg: std::hash::Hash + Eq + Copy> CallInfo<'a, Arg> {
     pub fn add_call(&mut self, arg: Arg, parser: ILayout<'a>) {
         self.map.entry(arg).or_default().insert(parser);

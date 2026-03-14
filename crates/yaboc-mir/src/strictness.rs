@@ -180,7 +180,7 @@ impl<'a> StrictnessCtx<'a> {
             | MirInstr::Copy(ret, _, _)
             | MirInstr::LenCall(ret, _, _)
             | MirInstr::ArrayLenCall(ret, _, _)
-            | MirInstr::EvalFun(ret, _, _)
+            | MirInstr::EvalFun(ret, _, _, _)
             | MirInstr::Field(ret, _, _, _)
             | MirInstr::Span(ret, ..)
             | MirInstr::Range(ret, ..) => (Some(*ret), None),
@@ -221,7 +221,7 @@ impl<'a> StrictnessCtx<'a> {
             | MirInstr::GetAddr(_, a, _)
             | MirInstr::LenCall(_, a, _)
             | MirInstr::ArrayLenCall(_, a, _)
-            | MirInstr::EvalFun(_, a, _)
+            | MirInstr::EvalFun(_, a, _, _)
             | MirInstr::Field(_, a, _, _) => {
                 insert(*a, Use::new_static(Strictness::Strict));
             }

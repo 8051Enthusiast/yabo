@@ -15,7 +15,6 @@ use yaboc_target::layout::{PSize, SizeAlign};
 use yaboc_types::PrimitiveType;
 
 use crate::{
-    init_globals,
     mir_subst::{function_substitute, FunctionSubstitute},
     pd_parser, FuncLayoutKind, LayoutSlice,
 };
@@ -35,14 +34,11 @@ pub fn pd_len_req() -> CallMeta {
 pub fn pd_val_req() -> CallMeta {
     CallMeta::new(NeededBy::Val.into(), false)
 }
-pub fn fun_req() -> RequirementSet {
-    NeededBy::Val | NeededBy::Backtrack
+pub fn static_val_req() -> CallMeta {
+    CallMeta::new(NeededBy::Val.into(), false)
 }
 pub fn root_req() -> CallMeta {
     CallMeta::new(NeededBy::Val | NeededBy::Len | NeededBy::Backtrack, false)
-}
-pub fn apply_req() -> CallMeta {
-    CallMeta::new(NeededBy::Val | NeededBy::Backtrack, false)
 }
 
 #[derive(Debug)]
@@ -58,6 +54,7 @@ pub struct LayoutCollection<'a> {
     pub globals: FxHashMap<ParserDefId, (IMonoLayout<'a>, ILayout<'a>)>,
     pub parser_slots: call_info::CallSlotResult<'a, (ILayout<'a>, CallMeta)>,
     pub funcall_slots: call_info::CallSlotResult<'a, LayoutSlice<'a>>,
+    pub eval_slots: call_info::CallSlotResult<'a, RequirementSet>,
     pub tail_sa: FxHashMap<(ILayout<'a>, IMonoLayout<'a>), TailInfo>,
     pub max_sa: SizeAlign,
 }
@@ -67,6 +64,7 @@ pub struct LayoutCollector<'a, 'b> {
     int: ILayout<'a>,
     parses: call_info::CallInfo<'a, (ILayout<'a>, CallMeta)>,
     funcalls: call_info::CallInfo<'a, LayoutSlice<'a>>,
+    eval_slots: call_info::CallInfo<'a, RequirementSet>,
     arrays: LayoutSet<'a>,
     blocks: LayoutSet<'a>,
     nominals: LayoutSet<'a>,
@@ -77,16 +75,17 @@ pub struct LayoutCollector<'a, 'b> {
     root: Vec<(ILayout<'a>, IMonoLayout<'a>)>,
     max_sa: SizeAlign,
     processed_calls: FxHashSet<(ILayout<'a>, IMonoLayout<'a>, CallMeta)>,
+    processed_evals: FxHashSet<(IMonoLayout<'a>, RequirementSet)>,
     unprocessed: Vec<UnprocessedCall<'a>>,
 }
 
 #[derive(Debug)]
 pub enum UnprocessedCall<'a> {
     NominalParser(ILayout<'a>, IMonoLayout<'a>, MirKind),
-    NominalEvalFun(IMonoLayout<'a>),
-    LambdaEvalFun(IMonoLayout<'a>),
+    NominalEvalFun(IMonoLayout<'a>, MirKind),
+    LambdaEvalFun(IMonoLayout<'a>, MirKind),
     BlockParser(ILayout<'a>, IMonoLayout<'a>, MirKind),
-    BlockEvalFun(IMonoLayout<'a>),
+    BlockEvalFun(IMonoLayout<'a>, MirKind),
     IfParser(ILayout<'a>, IMonoLayout<'a>, MirKind),
 }
 
@@ -101,6 +100,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             int,
             parses: Default::default(),
             funcalls: Default::default(),
+            eval_slots: Default::default(),
             arrays: Default::default(),
             blocks: Default::default(),
             nominals: Default::default(),
@@ -110,35 +110,17 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             globals: Default::default(),
             max_sa,
             processed_calls: Default::default(),
+            processed_evals: Default::default(),
             unprocessed: Default::default(),
             root: Default::default(),
         }
     }
 
     fn register_function(&mut self, mono: IMonoLayout<'a>) {
-        let eval = match mono.mono_layout() {
-            MonoLayout::NominalParser(pd, args, _, FuncLayoutKind::Fun) => {
-                let parserdef = pd.lookup(self.ctx.db).unwrap();
-                let def_arg_count = parserdef.args.map(|x| x.len()).unwrap_or(0);
-                (args.len() == def_arg_count && parserdef.from.is_none())
-                    .then_some(UnprocessedCall::NominalEvalFun as fn(_) -> _)
-            }
-            MonoLayout::BlockParser(..) => Some(UnprocessedCall::BlockEvalFun as fn(_) -> _),
-            MonoLayout::Lambda(lambda_id, _, args, ..) => {
-                let lambda = lambda_id.lookup(self.ctx.db).unwrap();
-                let def_arg_count = lambda.args.len();
-                (args.len() == def_arg_count)
-                    .then_some(UnprocessedCall::LambdaEvalFun as fn(_) -> _)
-            }
-            _ => None,
-        };
         for bt_status in mono.backtrack_statuses(self.ctx) {
             if self.functions.insert(bt_status) {
                 if TRACE_COLLECTION {
                     dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
-                }
-                if let Some(eval) = eval {
-                    self.unprocessed.push(eval(bt_status));
                 }
             }
         }
@@ -365,6 +347,45 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         }
     }
 
+    fn register_eval(&mut self, fun: ILayout<'a>, req: RequirementSet) {
+        if req.is_empty() {
+            return;
+        }
+        if TRACE_COLLECTION {
+            dbeprintln!(
+                self.ctx.db,
+                "[collection] registered eval {}({})",
+                &fun,
+                &req
+            );
+        }
+        let fun = fun.evaluate(self.ctx).unwrap().0;
+        self.eval_slots.add_call(req, fun);
+        for mono in &fun {
+            let eval = match mono.mono_layout() {
+                MonoLayout::NominalParser(pd, args, _, FuncLayoutKind::Fun) => {
+                    let parserdef = pd.lookup(self.ctx.db).unwrap();
+                    let def_arg_count = parserdef.args.map(|x| x.len()).unwrap_or(0);
+                    (args.len() == def_arg_count && parserdef.from.is_none())
+                        .then_some(UnprocessedCall::NominalEvalFun as fn(_, _) -> _)
+                }
+                MonoLayout::BlockParser(..) => Some(UnprocessedCall::BlockEvalFun as fn(_, _) -> _),
+                MonoLayout::Lambda(lambda_id, _, args, ..) => {
+                    let lambda = lambda_id.lookup(self.ctx.db).unwrap();
+                    let def_arg_count = lambda.args.len();
+                    (args.len() == def_arg_count)
+                        .then_some(UnprocessedCall::LambdaEvalFun as fn(_, _) -> _)
+                }
+                _ => None,
+            };
+            if let Some(eval) = eval {
+                if self.processed_evals.insert((mono, req)) {
+                    self.unprocessed.push(eval(mono, MirKind::Call(req)));
+                }
+            }
+        }
+    }
+
     fn register_global(&mut self, pd: ParserDefId) {
         if let Entry::Vacant(v) = self.globals.entry(pd) {
             if TRACE_COLLECTION {
@@ -401,6 +422,11 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             MirInstr::LenCall(_, fun, _) => {
                 let fun_layout = mir.place(fun);
                 self.register_len(fun_layout);
+                Ok(())
+            }
+            MirInstr::EvalFun(_, fun, req, _) => {
+                let fun_layout = mir.place(fun);
+                self.register_eval(fun_layout, req);
                 Ok(())
             }
             _ => Ok(()),
@@ -462,7 +488,11 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         Ok(())
     }
 
-    fn collect_block_fun(&mut self, parser: IMonoLayout<'a>) -> Result<(), LayoutError> {
+    fn collect_block_fun(
+        &mut self,
+        parser: IMonoLayout<'a>,
+        info: MirKind,
+    ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
                 self.ctx.db,
@@ -474,14 +504,8 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             panic!("unexpected non-block-parser layout");
         };
         parser.inner().eval_fun(self.ctx)?;
-        let req = fun_req();
-        let fsub = function_substitute(
-            yaboc_mir::FunKind::Block(*id),
-            MirKind::Call(req),
-            None,
-            parser,
-            self.ctx,
-        )?;
+        let fsub =
+            function_substitute(yaboc_mir::FunKind::Block(*id), info, None, parser, self.ctx)?;
         self.collect_mir(&fsub)?;
         Ok(())
     }
@@ -554,7 +578,11 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         Ok(())
     }
 
-    fn collect_nominal_eval_fun(&mut self, fun: IMonoLayout<'a>) -> Result<(), LayoutError> {
+    fn collect_nominal_eval_fun(
+        &mut self,
+        fun: IMonoLayout<'a>,
+        info: MirKind,
+    ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
                 self.ctx.db,
@@ -565,10 +593,9 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         let MonoLayout::NominalParser(pd, _, _, FuncLayoutKind::Fun) = fun.mono_layout() else {
             panic!("unexpected non-nominal-parser layout");
         };
-        let req = fun_req();
         let fsub = function_substitute(
             yaboc_mir::FunKind::ParserDef(*pd),
-            MirKind::Call(req),
+            info,
             None,
             fun,
             self.ctx,
@@ -577,7 +604,11 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         Ok(())
     }
 
-    fn collect_lambda_eval_fun(&mut self, fun: IMonoLayout<'a>) -> Result<(), LayoutError> {
+    fn collect_lambda_eval_fun(
+        &mut self,
+        fun: IMonoLayout<'a>,
+        info: MirKind,
+    ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
                 self.ctx.db,
@@ -591,7 +622,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         fun.inner().eval_fun(self.ctx)?;
         let fsub = function_substitute(
             yaboc_mir::FunKind::Lambda(*lambda_id),
-            MirKind::Call(fun_req()),
+            info,
             None,
             fun,
             self.ctx,
@@ -621,12 +652,16 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 UnprocessedCall::BlockParser(arg, parser, info) => {
                     self.collect_block_parse(arg, parser, info)?
                 }
-                UnprocessedCall::BlockEvalFun(fun) => self.collect_block_fun(fun)?,
+                UnprocessedCall::BlockEvalFun(fun, info) => self.collect_block_fun(fun, info)?,
                 UnprocessedCall::NominalParser(arg, parser, info) => {
                     self.collect_nominal_parse(arg, parser, info)?
                 }
-                UnprocessedCall::NominalEvalFun(fun) => self.collect_nominal_eval_fun(fun)?,
-                UnprocessedCall::LambdaEvalFun(fun) => self.collect_lambda_eval_fun(fun)?,
+                UnprocessedCall::NominalEvalFun(fun, info) => {
+                    self.collect_nominal_eval_fun(fun, info)?
+                }
+                UnprocessedCall::LambdaEvalFun(fun, info) => {
+                    self.collect_lambda_eval_fun(fun, info)?
+                }
                 UnprocessedCall::IfParser(from, parser, info) => {
                     if TRACE_COLLECTION {
                         dbeprintln!(
@@ -659,11 +694,25 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         Ok(())
     }
 
+    fn init_globals(&mut self) -> Result<(), LayoutError> {
+        let pds = self.ctx.db.global_sequence()?;
+        for pd in pds.iter() {
+            let fun_layout = pd_parser(self.ctx, *pd)?;
+            self.register_eval(fun_layout, static_val_req().req);
+            let return_layout = fun_layout.eval_fun(self.ctx)?.evaluate(self.ctx)?.0;
+            self.ctx
+                .dcx
+                .globals
+                .insert(*pd, (fun_layout.maybe_mono().unwrap(), return_layout));
+        }
+        Ok(())
+    }
+
     pub fn collect(&mut self, pds: &[ParserDefId]) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             eprintln!("[collection] initializing globals...")
         }
-        init_globals(self.ctx)?;
+        self.init_globals()?;
         if TRACE_COLLECTION {
             eprintln!("[collection] collecting layouts for:");
         }
@@ -717,6 +766,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     pub fn into_results(self) -> Result<LayoutCollection<'a>, LayoutError> {
         let parser_slots = self.parses.into_layout_vtable_offsets();
         let funcall_slots = self.funcalls.into_layout_vtable_offsets();
+        let eval_slots = self.eval_slots.into_layout_vtable_offsets();
         let mut primitives = FxHashSet::default();
 
         for x in [
@@ -763,6 +813,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             primitives,
             parser_slots,
             funcall_slots,
+            eval_slots,
             tail_sa,
         })
     }

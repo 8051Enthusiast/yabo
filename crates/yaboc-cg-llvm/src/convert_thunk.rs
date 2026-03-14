@@ -208,7 +208,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for ValThunk<'comp> {
         let f = if let Some(from) = self.from {
             cg.parser_fun_val_tail(self.fun, from, self.req)
         } else {
-            cg.eval_fun_fun_val_wrapper(self.fun)
+            cg.eval_fun_fun_val_wrapper(self.fun, self.req)
         };
         cg.add_entry_block(f);
         f
@@ -265,7 +265,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for ValThunk<'comp> {
             cg.call_parser_fun_impl(ret, fun, arg, req, true)?
         } else {
             let (ret, fun) = eval_fun_values(fun, self.fun);
-            cg.call_eval_fun_fun_impl(ret, fun.into())?
+            cg.call_eval_fun_fun_impl(ret, fun.into(), req)?
         };
         cg.builder.build_return(Some(&ret))?;
         if let Some(bb) = previous_bb {
@@ -291,7 +291,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for BlockThunk<'comp> {
         let f = if let Some(from) = self.from {
             cg.parser_fun_val_tail(self.fun, from, self.req)
         } else {
-            cg.eval_fun_fun_val_wrapper(self.fun)
+            cg.eval_fun_fun_val_wrapper(self.fun, self.req)
         };
         cg.add_entry_block(f);
         f
@@ -325,7 +325,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for BlockThunk<'comp> {
         } else {
             let (ret_val, fun_val) = eval_fun_values(fun, self.fun);
             let ret_val = ret_val.with_ptr(return_ptr);
-            cg.call_eval_fun_fun_impl(ret_val, fun_val.into())?
+            cg.call_eval_fun_fun_impl(ret_val, fun_val.into(), self.req)?
         };
         cg.builder.build_return(Some(&ret))?;
         if let Some(bb) = previous_bb {

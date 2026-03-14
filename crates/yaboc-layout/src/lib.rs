@@ -922,18 +922,6 @@ pub fn canon_layout<'a, 'b>(
     }
 }
 
-pub fn init_globals<'comp>(ctx: &mut AbsIntCtx<'comp, ILayout<'comp>>) -> Result<(), LayoutError> {
-    let pds = ctx.db.global_sequence()?;
-    for pd in pds.iter() {
-        let fun_layout = pd_parser(ctx, *pd)?;
-        let return_layout = fun_layout.eval_fun(ctx)?.evaluate(ctx)?.0;
-        ctx.dcx
-            .globals
-            .insert(*pd, (fun_layout.maybe_mono().unwrap(), return_layout));
-    }
-    Ok(())
-}
-
 #[derive(Debug)]
 pub enum LayoutError {
     LayoutError,
