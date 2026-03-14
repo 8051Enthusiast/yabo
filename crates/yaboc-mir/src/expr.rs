@@ -454,10 +454,11 @@ impl<'a> ConvertExpr<'a> {
         inner_loc: ExpressionLoc,
         loc: ExpressionLoc,
         recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
+        req: RequirementSet,
     ) -> SResult<PlaceRef> {
         let fun_ref = self.copy_if_deref(inner_loc, recurse)?;
         let place_ref = self.unwrap_or_stack(loc);
-        self.f.eval_fun(fun_ref, place_ref, self.retreat);
+        self.f.eval_fun(fun_ref, place_ref, req & !NeededBy::Len, self.retreat);
         Ok(place_ref)
     }
 
@@ -540,6 +541,7 @@ impl<'a> ConvertExpr<'a> {
         loc: ExpressionLoc,
         inner_loc: ExpressionLoc,
         inner_can_bt: bool,
+        req: RequirementSet,
         recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
     ) -> SResult<PlaceRef> {
         match &op {
@@ -553,7 +555,7 @@ impl<'a> ConvertExpr<'a> {
             ValUnOp::Dot(field, Some(BtMarkKind::KeepBt)) => {
                 self.convert_dot(inner_loc, loc, BtMarkKind::KeepBt, *field, recurse)
             }
-            ValUnOp::EvalFun if inner_can_bt => self.convert_eval_fun(inner_loc, loc, recurse),
+            ValUnOp::EvalFun if inner_can_bt => self.convert_eval_fun(inner_loc, loc, recurse, req),
             ValUnOp::Wiggle(_, WiggleKind::Expect)
             | ValUnOp::Dot(_, None | Some(BtMarkKind::RemoveBt))
             | ValUnOp::EvalFun
@@ -574,6 +576,7 @@ impl<'a> ConvertExpr<'a> {
         loc: ExpressionLoc,
         inner_loc: ExpressionLoc,
         inner_ty: TypeId,
+        req: RequirementSet,
         recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
     ) -> SResult<PlaceRef> {
         Ok(match &op {
@@ -615,7 +618,7 @@ impl<'a> ConvertExpr<'a> {
                     val_without_bt
                 }
             }
-            ValUnOp::EvalFun => self.convert_eval_fun(inner_loc, loc, recurse)?,
+            ValUnOp::EvalFun => self.convert_eval_fun(inner_loc, loc, recurse, req)?,
             ValUnOp::GetAddr => {
                 let inner = self.copy_if_deref(inner_loc, recurse)?;
                 let place_ref = self.unwrap_or_stack(loc);
@@ -825,13 +828,14 @@ impl<'a> ConvertExpr<'a> {
                     origin: inner_origin,
                 };
                 if req.contains(NeededBy::Val) {
-                    self.convert_monadic(op, loc, inner_loc, *inner_ty, recurse)?
+                    self.convert_monadic(op, loc, inner_loc, *inner_ty, req, recurse)?
                 } else {
                     self.convert_monadic_no_val(
                         op,
                         loc,
                         inner_loc,
                         inner_bt.bt.can_backtrack(),
+                        req,
                         recurse,
                     )?
                 }

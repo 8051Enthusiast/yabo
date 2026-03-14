@@ -386,13 +386,20 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret: CgReturnValue<'llvm>,
         arg: CgValue<'comp, 'llvm>,
         kind: ParserFunKind,
+        req: RequirementSet,
     ) -> IResult<IntValue<'llvm>> {
         let eval_fun = match arg.layout.maybe_mono() {
-            Some(mono) => self.sym_callable(mono, LayoutPart::EvalFun(kind)).into(),
-            None => self.vtable_callable::<vtable::FunctionVTable<AbsPtr>, vtable::FunctionVTable<RelPtr>, vtable::EvalFunFun>(
+            Some(mono) => self
+                .sym_callable(mono, LayoutPart::EvalFun(req, kind))
+                .into(),
+            None => {
+                let slot =
+                    self.collected_layouts.eval_slots.layout_vtable_offsets[&(req, arg.layout)];
+                self.vtable_callable::<vtable::FunctionVTable<AbsPtr>, vtable::FunctionVTable<RelPtr>, vtable::EvalFunFun>(
                 arg.ptr,
-                &[FunctionVTableFields::eval_fun_impl as i64],
-            )?,
+                &[FunctionVTableFields::eval_fun_impl as i64, slot as i64],
+            )?
+            }
         };
         let args = &[ret.ptr.into(), arg.ptr.into(), ret.head.into()];
         let call = match eval_fun {
@@ -415,16 +422,18 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         ret: CgReturnValue<'llvm>,
         arg: CgValue<'comp, 'llvm>,
+        req: RequirementSet,
     ) -> IResult<IntValue<'llvm>> {
-        self.call_eval_fun_fun(ret, arg, ParserFunKind::Wrapper)
+        self.call_eval_fun_fun(ret, arg, ParserFunKind::Wrapper, req)
     }
 
     pub(super) fn call_eval_fun_fun_impl(
         &mut self,
         ret: CgReturnValue<'llvm>,
         arg: CgValue<'comp, 'llvm>,
+        req: RequirementSet,
     ) -> IResult<IntValue<'llvm>> {
-        self.call_eval_fun_fun(ret, arg, ParserFunKind::Worker)
+        self.call_eval_fun_fun(ret, arg, ParserFunKind::Worker, req)
     }
 
     pub(super) fn call_mask_fun(&mut self, arg: CgValue<'comp, 'llvm>) -> IResult<()> {

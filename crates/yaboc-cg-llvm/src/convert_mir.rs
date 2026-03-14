@@ -17,6 +17,7 @@ use yaboc_layout::{mir_subst::FunctionSubstitute, ILayout, Layout, MonoLayout};
 use yaboc_mir::{
     self as mir, BBRef, Comp, IntBinOp, IntUnOp, MirInstr, PlaceRef, ReturnStatus, Val,
 };
+use yaboc_req::RequirementSet;
 use yaboc_target::layout::TargetSized;
 
 use crate::{
@@ -211,14 +212,20 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         self.controlflow_case(ret, ctrl)
     }
 
-    fn eval_fun(&mut self, to: PlaceRef, from: PlaceRef, ctrl: ControlFlow) -> IResult<()> {
+    fn eval_fun(
+        &mut self,
+        to: PlaceRef,
+        from: PlaceRef,
+        req: RequirementSet,
+        ctrl: ControlFlow,
+    ) -> IResult<()> {
         let to = self.return_val(to)?;
         let from = self.place_val(from)?;
         if let Layout::None = from.layout.layout.1 {
             self.cg.builder.build_unreachable()?;
             return Ok(());
         }
-        let ret = self.cg.call_eval_fun_fun_wrapper(to, from)?;
+        let ret = self.cg.call_eval_fun_fun_wrapper(to, from, req)?;
         self.controlflow_case(ret, ctrl)
     }
 
@@ -770,7 +777,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::SetDiscriminant(block, field, val) => {
                 self.set_discriminant(block, field, val)
             }
-            MirInstr::EvalFun(to, from, ctrl) => self.eval_fun(to, from, ctrl),
+            MirInstr::EvalFun(to, from, req, ctrl) => self.eval_fun(to, from, req, ctrl),
             MirInstr::Copy(to, from, ctrl) => self.copy(to, from, ctrl),
             MirInstr::GetAddr(ret, place, ctrl) => self.get_addr(ret, place, ctrl),
             MirInstr::Span(ret, start, end, ctrl) => self.span(ret, start, end, ctrl),

@@ -277,7 +277,7 @@ pub enum MirInstr {
     GetAddr(PlaceRef, PlaceRef, ControlFlow),
     ApplyArgs(PlaceRef, PlaceRef, Vec<(PlaceRef, bool)>, ControlFlow),
     Copy(PlaceRef, PlaceRef, ControlFlow),
-    EvalFun(PlaceRef, PlaceRef, ControlFlow),
+    EvalFun(PlaceRef, PlaceRef, RequirementSet, ControlFlow),
     ParseCall(
         Option<PlaceRef>,
         Option<PlaceRef>,
@@ -330,7 +330,7 @@ impl MirInstr {
             | MirInstr::GetAddr(_, _, control_flow)
             | MirInstr::ApplyArgs(.., control_flow)
             | MirInstr::Copy(_, _, control_flow)
-            | MirInstr::EvalFun(_, _, control_flow)
+            | MirInstr::EvalFun(_, _, _, control_flow)
             | MirInstr::Span(.., control_flow)
             | MirInstr::Range(.., control_flow) => Some(*control_flow),
             MirInstr::IntBin(_, _, _, _)
@@ -377,8 +377,8 @@ impl MirInstr {
             MirInstr::Copy(ret, val, control_flow) => {
                 MirInstr::Copy(*ret, *val, control_flow.map_bb(f))
             }
-            MirInstr::EvalFun(ret, val, control_flow) => {
-                MirInstr::EvalFun(*ret, *val, control_flow.map_bb(f))
+            MirInstr::EvalFun(ret, val, req, control_flow) => {
+                MirInstr::EvalFun(*ret, *val, *req, control_flow.map_bb(f))
             }
             MirInstr::Span(ret, start, end, control_flow) => {
                 MirInstr::Span(*ret, *start, *end, control_flow.map_bb(f))
@@ -939,13 +939,20 @@ impl FunctionWriter {
         self.set_bb(new_block);
     }
 
-    pub fn eval_fun(&mut self, fun: PlaceRef, ret: PlaceRef, exc: ExceptionRetreat) {
+    pub fn eval_fun(
+        &mut self,
+        fun: PlaceRef,
+        ret: PlaceRef,
+        req: RequirementSet,
+        exc: ExceptionRetreat,
+    ) {
         let new_block = self.new_bb();
         self.fun
             .bb_mut(self.current_bb)
             .append_ins(MirInstr::EvalFun(
                 ret,
                 fun,
+                req,
                 ControlFlow::new_with_exc(new_block, exc),
             ));
         self.set_bb(new_block);

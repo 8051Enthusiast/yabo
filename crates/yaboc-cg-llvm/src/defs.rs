@@ -245,13 +245,18 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub(super) fn eval_fun_fun_val_wrapper(
         &mut self,
         layout: IMonoLayout<'comp>,
+        req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        let ret = self.ppi_fun_val(layout, LayoutPart::EvalFun(ParserFunKind::Wrapper));
+        let ret = self.ppi_fun_val(layout, LayoutPart::EvalFun(req, ParserFunKind::Wrapper));
         ret
     }
 
-    pub(super) fn eval_fun_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
-        let ret = self.ppi_fun_val(layout, LayoutPart::EvalFun(ParserFunKind::Worker));
+    pub(super) fn eval_fun_fun_val(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+        req: RequirementSet,
+    ) -> FunctionValue<'llvm> {
+        let ret = self.ppi_fun_val(layout, LayoutPart::EvalFun(req, ParserFunKind::Worker));
         ret.set_call_conventions(self.tailcc());
         ret
     }
