@@ -1,7 +1,7 @@
 ====[ source code ]====
 fun [int] ~> sum(acc: int) = {
   case
-  | x: ~ is !eof, return: sum(acc + x)
+  | x: if ~ is !eof, return: sum(acc + x)
   | let return = acc
   \
 }

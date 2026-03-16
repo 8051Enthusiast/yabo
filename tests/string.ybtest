@@ -1,7 +1,7 @@
 ====[ source code ]====
 export
 fun ~test = {
-  let a = "hello world" ~> /[a-z]*/
+  let a = "hello world" ~> if /[a-z]*/
   let b = "\n\n\0\"\\"
 }
 

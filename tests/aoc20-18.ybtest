@@ -4,38 +4,38 @@ import text
 
 fun ~reduce_impl[T](init: T, cont: (T) -> ~T): T = {
   case
-  | next: cont?(init)?
+  | next: if cont?(init)
     return: reduce_impl(next, cont)
   | let return = init
   \
 }
 
 fun ~reduce[T](init: ~T, cont: (T) -> ~T): T = {
-  start: init?
+  start: if init
   return: reduce_impl(start, cont)
 }
 
 fun ~atom: int = {
   case
-  | return: text.num?
-  | /\(/, return: expr!, /\)/!
+  | return: if text.num
+  | if /\(/, return: expect expr, expect /\)/
   \
 }
 
 fun ~expr_cont(lhs: int): int = {
   case
-  | / \+ /, rhs: atom!
+  | if / \+ /, rhs: expect atom
     let return = lhs + rhs
-  | / \* /, rhs: atom!
+  | if / \* /, rhs: expect atom
     let return = lhs * rhs
   \
 }
 
-fun ~expr: int = reduce(atom, expr_cont)?
+fun ~expr: int = expect reduce(atom, expr_cont)
 
 export
 fun ~test = aoc.summap({
-  return: expr?, text.newline?
+  return: if expr, if text.newline
 })
 
 ====[ text 1 ]====

@@ -6,18 +6,18 @@ import text
 
 fun ~calc(total: int, acc: int) = {
   case
-  | /$/, let return = when?(total == acc) then total
-  | / /, n: text.num?
+  | if /$/, let return = when?(total == acc) then total
+  | if / /, n: if text.num
     case
-    | return: calc(total, acc + n)?
-    | return: calc(total, acc * n)?
-    | return: calc(total, acc * math.ipow(10, span n.sizeof) + n)?
+    | return: if calc(total, acc + n)
+    | return: if calc(total, acc * n)
+    | return: if calc(total, acc * math.ipow(10, span n.sizeof) + n)
   \ \
 }
 
 export
-fun ~test = aoc.summap(text.line? |> {
-  total: text.num?, >": ", first: text.num?
+fun ~test = aoc.summap(text.line |> {
+  total: if text.num, if >": ", first: if text.num
   return: alt(calc(total, first), pure(0))
 })
 

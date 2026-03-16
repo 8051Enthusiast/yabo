@@ -10,7 +10,7 @@ export def ~test = {
   tag: ~
   parser: u32b_or_16b(tag)
   case
-  | return: parser is 0..1000
+  | return: if parser is 0..1000
   | let return = 123
   \
 }

@@ -1,7 +1,7 @@
 use hir::ExprId;
 use yaboc_ast::expr::{BtMarkKind, WiggleKind};
 use yaboc_expr::FetchKindData;
-use yaboc_resolve::expr::{ValBinOp, ValUnOp};
+use yaboc_resolve::expr::{EvalKind, ValBinOp, ValUnOp};
 
 use super::*;
 
@@ -36,17 +36,21 @@ pub fn expr_reqs(
                 use ValUnOp::*;
                 let mut inner_mat = RequirementMatrix::id();
                 match op {
-                    EvalFun if expr.data[inner].can_backtrack() => {
+                    EvalFun(EvalKind::IfInnerBlock) if expr.data[inner].can_backtrack() => {
                         // if the inner function can backtrack,
                         // we need to know its value to know whether to backtrack
                         inner_mat |= bt_to_val
                     }
-                    Wiggle(_, WiggleKind::If) | Dot(_, Some(BtMarkKind::KeepBt)) => {
+                    EvalFun(EvalKind::Backtrack(BtMarkKind::KeepBt)) => {
+                        inner_mat |= bt_to_val
+                    }
+                    Wiggle(_, WiggleKind::If | WiggleKind::Is)
+                    | Dot(_, Some(BtMarkKind::KeepBt)) => {
                         // this checks the inner value, which means we need to know
                         // the value to know whether to backtrack
                         inner_mat |= bt_to_val
                     }
-                    BtMark(_) | Wiggle(..) | Dot(..) | Size | GetAddr | Not | Neg | EvalFun => (),
+                    Wiggle(..) | Dot(..) | Size | GetAddr | Not | Neg | EvalFun(_) => (),
                 }
                 ret[inner].reqs = inner_mat * current;
             }
@@ -54,7 +58,7 @@ pub fn expr_reqs(
                 use ValBinOp::*;
                 let mut lhs_mat @ mut rhs_mat = RequirementMatrix::id();
                 match op {
-                    ParserApply if expr.data[rhs].can_backtrack() => {
+                    ParserApply(Some(BtMarkKind::KeepBt)) => {
                         // if the rhs is backtrackable, we need to know both values
                         // to evaluate
                         lhs_mat |= bt_to_val;
@@ -68,9 +72,24 @@ pub fn expr_reqs(
                         // the value of the lhs is ignored, so we only need backtracking
                         lhs_mat = bt_to_bt;
                     }
-                    And | Xor | Or | LesserEq | Lesser | GreaterEq | Greater | Uneq | Equals
-                    | ShiftR | ShiftL | Minus | Plus | Div | Modulo | Mul | ParserApply | Range => {
-                    }
+                    And
+                    | Xor
+                    | Or
+                    | LesserEq
+                    | Lesser
+                    | GreaterEq
+                    | Greater
+                    | Uneq
+                    | Equals
+                    | ShiftR
+                    | ShiftL
+                    | Minus
+                    | Plus
+                    | Div
+                    | Modulo
+                    | Mul
+                    | ParserApply(None | Some(BtMarkKind::RemoveBt))
+                    | Range => {}
                 }
                 ret[lhs].reqs = lhs_mat * current;
                 ret[rhs].reqs = rhs_mat * current;

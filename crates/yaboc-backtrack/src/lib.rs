@@ -36,16 +36,6 @@ pub enum EvalEffectKind {
     Silent,
 }
 
-impl EvalEffectKind {
-    pub fn from_flags(effect: bool, silent: bool) -> Self {
-        match (effect, silent) {
-            (false, _) => Self::None,
-            (true, false) => Self::Effectful,
-            (true, true) => Self::Silent,
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Instruction {
     Apply(u32, SmallVec<[u32; 4]>),

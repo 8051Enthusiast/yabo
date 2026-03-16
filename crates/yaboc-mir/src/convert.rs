@@ -479,7 +479,6 @@ impl<'a> ConvertCtx<'a> {
         let inner_fun_place = self.w.f.add_place(PlaceInfo {
             place: Place::Front(fun_place),
             eval: true,
-            remove_bt: false,
         });
 
         // the following parse call might mutate the argument, therefore we make a copy
@@ -692,7 +691,6 @@ impl<'a> ConvertCtx<'a> {
                 let place_ref = f.add_place(PlaceInfo {
                     place,
                     eval: true,
-                    remove_bt: false,
                 });
                 places.insert(val, place_ref);
             } else if matches!(val.kind, SubValueKind::Val) {
@@ -708,7 +706,6 @@ impl<'a> ConvertCtx<'a> {
                 let place_ref = f.add_place(PlaceInfo {
                     place,
                     eval: false,
-                    remove_bt: false,
                 });
                 places.insert(val, place_ref);
             }
@@ -770,7 +767,6 @@ impl<'a> ConvertCtx<'a> {
         let expr_place_ref = f.add_place(PlaceInfo {
             place: expr_place,
             eval: false,
-            remove_bt: false,
         });
         places.insert(SubValue::new_val(expr_id.0), expr_place_ref);
         if let Some(arg) = f.fun.arg() {

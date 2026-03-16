@@ -9,7 +9,7 @@ fun ~wsnum = {
 
 fun ~points(lo: int, hi: int, acc: int): int = {
   case
-  | n: wsnum is !eof
+  | n: if wsnum is !eof
     let right = (n & 64) if 0 else 1
     let shift = n & 63
     let winning = ((1 ^ right) << shift & lo | right << shift & hi) if 0 else acc
@@ -20,8 +20,8 @@ fun ~points(lo: int, hi: int, acc: int): int = {
 
 fun ~winning(lo: int, hi: int): int = {
   case
-  | ~, /\|/, return: points(lo, hi, 1)
-  | n: wsnum?
+  | ~, if /\|/, return: points(lo, hi, 1)
+  | n: if wsnum
     let right = (n & 64) if 0 else 1
     return: winning((1 ^ right) << n | lo, right << n | hi)
   \
@@ -29,12 +29,12 @@ fun ~winning(lo: int, hi: int): int = {
 
 export
 fun ~test = {
-  card: /Card *[0-9]*:/
-  first_line: /[^\n]+\n/
+  card: if /Card *[0-9]*:/
+  first_line: if /[^\n]+\n/
   let card_len = (card ~> parse.len) expect 0..16
   let len = ((first_line ~> parse.len) + card_len) expect 0..256
-  let first_num = first_line ~> winning(0, 0)
-  other_lines: aoc.summap([len] is !eof |> {[card_len] is !eof, return: winning(0, 0)})
+  let first_num = first_line ~> if winning(0, 0)
+  other_lines: aoc.summap([len] is !eof |> {if [card_len] is !eof, return: if winning(0, 0)})
   let return = other_lines + first_num
 }
 

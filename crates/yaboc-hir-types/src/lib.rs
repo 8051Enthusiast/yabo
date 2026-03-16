@@ -342,7 +342,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern> {
                         constrain(right, int)?;
                         self.infctx.range()
                     }
-                    ParserApply => self.infctx.parser_apply(right, left).map_err(spanned)?,
+                    ParserApply(_) => self.infctx.parser_apply(right, left).map_err(spanned)?,
                 },
                 ExprHead::Monadic(op, &inner) => match &op {
                     ValUnOp::Neg | ValUnOp::Not => {
@@ -366,11 +366,10 @@ impl<'a, 'intern> TypingContext<'a, 'intern> {
                         self.infctx.unify(inner, parser).map_err(spanned)?;
                         parser
                     }
-                    ValUnOp::BtMark(_) => inner,
                     ValUnOp::Dot(name, _) => {
                         self.infctx.access_field(inner, *name).map_err(spanned)?
                     }
-                    ValUnOp::EvalFun => self
+                    ValUnOp::EvalFun(_) => self
                         .infctx
                         .function_apply(inner, &[], Application::Full)
                         .map_err(spanned)?,

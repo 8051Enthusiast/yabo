@@ -1,8 +1,8 @@
 ===[ source code ]====
 def ~three[T, R, S](a: ~T, b: ~R, c: ~S) = {
-  f1: a?
-  f2: b?
-  f3: c?
+  f1: if a
+  f2: if b
+  f3: if c
 }
 
 def ~f = {

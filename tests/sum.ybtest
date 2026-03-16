@@ -1,7 +1,7 @@
 ====[ source code ]====
 def ~sum(acc: int) = {
   case
-  | x: u16l is !eof, return: sum(acc + x)
+  | x: if u16l is !eof, return: sum(acc + x)
   | let return = acc
   \
 }

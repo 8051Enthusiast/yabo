@@ -2,8 +2,8 @@
 export
 def ~test = {
   _a: u8
-  u8 is 1
-  _: u8 is 2
+  if u8 is 1
+  _: if u8 is 2
   let _ = _a if 0
   let _ = _a expect 0
   b_: u8

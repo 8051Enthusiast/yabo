@@ -1,7 +1,7 @@
 ====[ source code ]====
 fun ~apply_with_data[T](data: ~T, f: (T) -> ~T, default: T): T = {
   case
-  | x: data? is !eof, return: f(x)
+  | x: if data is !eof, return: f(x)
   | let return = default
   \
 }

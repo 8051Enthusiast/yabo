@@ -4,7 +4,7 @@ def ~array(n: int) = [n]
 fun ~lengthed[R](parser: ~R) = {
     len: ~
     # just to make sure composition works
-    return: [len] |> array(len) |> [len] |> u8[len] |> parser!
+    return: expect [len] |> array(len) |> [len] |> u8[len] |> parser
 }
 
 export

@@ -12,7 +12,7 @@ use fxhash::FxHashMap;
 
 use hir::HirConstraintId;
 use yaboc_absint::{AbsInt, AbsIntCtx, AbstractDomain, Arg};
-use yaboc_ast::expr::{BtMarkKind, WiggleKind};
+use yaboc_ast::expr::WiggleKind;
 use yaboc_base::error::{IsSilenced, SResult, SilencedError};
 use yaboc_base::interner::{DefId, FieldName, Regex};
 use yaboc_base::low_effort_interner::{Interner, Uniq};
@@ -687,17 +687,6 @@ impl<'a> ILayout<'a> {
         })
     }
 
-    fn with_backtrack_status(
-        self,
-        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
-        backtracks: BtMarkKind,
-    ) -> ILayout<'a> {
-        if backtracks == BtMarkKind::KeepBt {
-            return self;
-        }
-        self.map(ctx, |layout, ctx| layout.remove_backtracking(ctx).inner())
-    }
-
     pub fn size_align_without_vtable(
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
@@ -1154,12 +1143,11 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 }
                 ValUnOp::Wiggle(_, WiggleKind::If | WiggleKind::Expect) => *inner,
                 ValUnOp::Dot(a, ..) => inner.access_field(ctx, a)?,
-                ValUnOp::BtMark(bt) => inner.with_backtrack_status(ctx, bt),
-                ValUnOp::EvalFun => inner.eval_fun(ctx)?,
+                ValUnOp::EvalFun(_) => inner.eval_fun(ctx)?,
                 ValUnOp::GetAddr => IMonoLayout::u8_array(ctx).inner(),
             },
             ExprHead::Dyadic(op, [lhs, rhs]) => match op {
-                ValBinOp::ParserApply => {
+                ValBinOp::ParserApply(_) => {
                     let arg = lhs.evaluate(ctx)?.0;
                     rhs.apply_arg(ctx, arg)?
                 }
@@ -1321,8 +1309,8 @@ mod tests {
         b: ~
         c: {
           case
-          | let c = first!
-          | let c = second?
+          | let c = first
+          | let c = second
           \
         }
         d: c.c
@@ -1366,7 +1354,7 @@ mod tests {
                     ),
                     &ctx.db
                 ),
-                "block_6c872ebf06064930$ec2f3c2c48b8a550$parse_9dcf97a184f32623_vb"
+                "block_6c872ebf06064930$1d056945422aed00$parse_9dcf97a184f32623_vb"
             );
         }
         let field = |name| FieldName::Ident(ctx.id(name));
@@ -1396,8 +1384,8 @@ mod tests {
                 .unwrap()
         );
         assert!([
-            "nominal-parser?[file[_].second]() | nominal-parser[file[_].first]()",
-            "nominal-parser[file[_].first]() | nominal-parser?[file[_].second]()"
+            "nominal-parser?[file[_].second]() | nominal-parser?[file[_].first]()",
+            "nominal-parser?[file[_].first]() | nominal-parser?[file[_].second]()"
         ]
         .contains(&out.as_str()));
         let res = dbformat!(

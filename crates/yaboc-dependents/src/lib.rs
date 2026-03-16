@@ -890,11 +890,11 @@ def [A] ~> first[A] = {}
 def [B] ~> second[B] = {}
 def ~main = {
     a: ~
-    b: second?
+    b: if second
     c: {
         let x = a
         case
-        | c: first?
+        | c: if first
         | c: second
         \
     }
@@ -1001,9 +1001,9 @@ def ~main: int = {
         let ctx = Context::<DependentsTestDatabase>::mock(
             r"
 def ~main: int = {
-    x: ~ is 1..4
+    x: if ~ is 1..4
     case
-    | return: main?
+    | return: if main
     | let return = x if 1..2
     \
 }

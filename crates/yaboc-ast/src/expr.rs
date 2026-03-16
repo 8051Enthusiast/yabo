@@ -570,12 +570,12 @@ pub enum ValBinOp {
     Modulo,
     Mul,
     Compose,
-    ParserApply,
+    ParserApply(Option<BtMarkKind>),
     Else,
     Then,
     Range,
     Index(BtMarkKind),
-    At,
+    At(Option<BtMarkKind>),
     Array,
 }
 
@@ -600,14 +600,14 @@ impl ValBinOp {
             "%" => Modulo,
             "*" => Mul,
             "|>" => Compose,
-            "~>" => ParserApply,
+            "~>" => ParserApply(None),
             "else" => Else,
             "then" => Then,
             "..<" => Range,
             ".[" => Index(BtMarkKind::RemoveBt),
             ".?[" => Index(BtMarkKind::KeepBt),
             "[" => Array,
-            "at" => At,
+            "at" => At(None),
             otherwise => return Err(otherwise),
         })
     }
@@ -636,13 +636,17 @@ impl Display for ValBinOp {
                 ValBinOp::Modulo => "%",
                 ValBinOp::Mul => "*",
                 ValBinOp::Compose => "|>",
-                ValBinOp::ParserApply => "~>",
+                ValBinOp::ParserApply(None) => "~>",
+                ValBinOp::ParserApply(Some(BtMarkKind::KeepBt)) => "~> if",
+                ValBinOp::ParserApply(Some(BtMarkKind::RemoveBt)) => "~> expect",
                 ValBinOp::Else => "else",
                 ValBinOp::Then => "then",
                 ValBinOp::Index(BtMarkKind::RemoveBt) => ".![",
                 ValBinOp::Index(BtMarkKind::KeepBt) => ".?[",
                 ValBinOp::Array => "[",
-                ValBinOp::At => "at",
+                ValBinOp::At(None) => "at",
+                ValBinOp::At(Some(BtMarkKind::KeepBt)) => "if at",
+                ValBinOp::At(Some(BtMarkKind::RemoveBt)) => "expect at",
                 ValBinOp::Range => "..<",
             }
         )
@@ -681,7 +685,6 @@ pub enum ValUnOp<C> {
     Wiggle(C, WiggleKind),
     Dot(FieldName, Option<BtMarkKind>),
     Size,
-    BtMark(BtMarkKind),
 }
 
 impl<C> ValUnOp<C> {
@@ -710,7 +713,6 @@ impl<C> ValUnOp<C> {
             Wiggle(expr, kind) => Wiggle(f(expr, *kind), *kind),
             Dot(atom, acc) => Dot(*atom, *acc),
             Size => Size,
-            BtMark(kind) => BtMark(*kind),
         }
     }
     pub fn try_map_expr<D, E>(&self, f: impl FnOnce(&C) -> Result<D, E>) -> Result<ValUnOp<D>, E> {
@@ -725,7 +727,6 @@ impl<C> ValUnOp<C> {
             Wiggle(expr, kind) => Wiggle(f(expr)?, *kind),
             Dot(atom, acc) => Dot(*atom, *acc),
             Size => Size,
-            BtMark(kind) => BtMark(*kind),
         })
     }
 }
@@ -754,8 +755,8 @@ impl Display for WiggleKind {
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum ValVarOp {
-    Call,
-    PartialApply,
+    Call(Option<BtMarkKind>),
+    PartialApply(Option<BtMarkKind>),
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]

@@ -2,9 +2,9 @@
 export
 def ~test = {
   case
-  | start: /(fun|data)\n/
-    inner: test?
-    /end /, end: >start
+  | start: if /(fun|data)\n/
+    inner: if test
+    if /end /, end: if >start
   | nil
   \
 }

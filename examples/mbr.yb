@@ -35,7 +35,7 @@ def ~ebr(base: int) = {
   entries: partition_entry(base)[2]
   # the last 2 bytes of the EBR are unused
   unused_entires:  partition_entry(base)[2]
-  ibm: h/55 aa/!
+  ibm: expect h/55 aa/
 }
 
 # master boot record
@@ -45,5 +45,5 @@ def ~mbr = {
   disk_signature: u32l
   copy_protected: [2]
   entries: partition_entry(0)[4]
-  ibm: h/55 aa/
+  ibm: if h/55 aa/
 }

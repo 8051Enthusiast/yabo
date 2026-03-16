@@ -138,7 +138,7 @@ impl TryFrom<&ValBinOp> for IntBinOp {
             | ValBinOp::Greater
             | ValBinOp::Uneq
             | ValBinOp::Equals
-            | ValBinOp::ParserApply
+            | ValBinOp::ParserApply(_)
             | ValBinOp::Else
             | ValBinOp::Then
             | ValBinOp::Range => return Err(()),
@@ -167,7 +167,7 @@ impl TryFrom<&ValBinOp> for Comp {
             | ValBinOp::Div
             | ValBinOp::Modulo
             | ValBinOp::Mul
-            | ValBinOp::ParserApply
+            | ValBinOp::ParserApply(_)
             | ValBinOp::Else
             | ValBinOp::Then
             | ValBinOp::Range => return Err(()),
@@ -500,7 +500,6 @@ impl From<Origin> for PlaceOrigin {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PlaceInfo {
     pub place: Place,
-    pub remove_bt: bool,
     pub eval: bool,
 }
 
@@ -682,13 +681,11 @@ impl FunctionWriter {
         };
         builder.add_place(PlaceInfo {
             place: Place::Captures,
-            remove_bt: false,
             eval: true,
         });
         if has_from {
             let arg = builder.add_place(PlaceInfo {
                 place: Place::Arg,
-                remove_bt: false,
                 eval: true,
             });
             builder.fun.arg = Some(arg);
@@ -696,7 +693,6 @@ impl FunctionWriter {
         if req.contains(NeededBy::Val) {
             let ret = builder.add_place(PlaceInfo {
                 place: Place::Return,
-                remove_bt: false,
                 eval: ret_eval,
             });
             builder.fun.ret = Some(ret);
@@ -704,7 +700,6 @@ impl FunctionWriter {
         if req.contains(NeededBy::Len) {
             let retlen = builder.add_place(PlaceInfo {
                 place: Place::ReturnLen,
-                remove_bt: false,
                 eval: true,
             });
             builder.fun.retlen = Some(retlen);
@@ -1003,7 +998,6 @@ impl FunctionWriter {
         let place_info = PlaceInfo {
             place,
             eval,
-            remove_bt: false,
         };
         self.add_place(place_info)
     }
@@ -1013,15 +1007,7 @@ impl FunctionWriter {
         self.make_place_ref(new_place, eval)
     }
 
-    pub fn new_remove_bt_stack_place(&mut self, origin: PlaceOrigin) -> PlaceRef {
-        let new_place = Place::Stack(self.new_stack_ref(origin));
-        let place_info = PlaceInfo {
-            place: new_place,
-            eval: true,
-            remove_bt: true,
-        };
-        self.add_place(place_info)
-    }
+
 
     fn span(&mut self, target: PlaceRef, start_place: PlaceRef, end_place: PlaceRef, err: BBRef) {
         let new_block = self.new_bb();

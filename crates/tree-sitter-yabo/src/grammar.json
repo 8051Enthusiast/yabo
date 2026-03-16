@@ -81,7 +81,7 @@
         },
         {
           "type": "PREC",
-          "value": 18,
+          "value": 19,
           "content": {
             "type": "SEQ",
             "members": [
@@ -196,6 +196,22 @@
           "value": "="
         },
         {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "FIELD",
+              "name": "bt",
+              "content": {
+                "type": "SYMBOL",
+                "name": "bt_parse_mark_kind"
+              }
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
           "type": "FIELD",
           "name": "to",
           "content": {
@@ -299,7 +315,7 @@
       "members": [
         {
           "type": "PREC_RIGHT",
-          "value": 17,
+          "value": 18,
           "content": {
             "type": "SEQ",
             "members": [
@@ -334,7 +350,7 @@
     },
     "unary_type_expression": {
       "type": "PREC",
-      "value": 18,
+      "value": 19,
       "content": {
         "type": "SEQ",
         "members": [
@@ -679,6 +695,22 @@
           ]
         },
         {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "FIELD",
+              "name": "bt",
+              "content": {
+                "type": "SYMBOL",
+                "name": "bt_parse_mark_kind"
+              }
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        },
+        {
           "type": "FIELD",
           "name": "parser",
           "content": {
@@ -864,7 +896,11 @@
         },
         {
           "type": "SYMBOL",
-          "name": "bt_mark"
+          "name": "parsecall"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "atcall"
         },
         {
           "type": "SYMBOL",
@@ -1223,7 +1259,7 @@
     },
     "fun_application": {
       "type": "PREC",
-      "value": 16,
+      "value": 17,
       "content": {
         "type": "SEQ",
         "members": [
@@ -1234,6 +1270,22 @@
               "type": "SYMBOL",
               "name": "_expression"
             }
+          },
+          {
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "FIELD",
+                "name": "bt",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "bt_mark_kind"
+                }
+              },
+              {
+                "type": "BLANK"
+              }
+            ]
           },
           {
             "type": "SYMBOL",
@@ -1298,7 +1350,7 @@
     },
     "type_fun_application": {
       "type": "PREC_RIGHT",
-      "value": 17,
+      "value": 18,
       "content": {
         "type": "SEQ",
         "members": [
@@ -1329,7 +1381,7 @@
           "members": [
             {
               "type": "PREC_LEFT",
-              "value": 11,
+              "value": 16,
               "content": {
                 "type": "SEQ",
                 "members": [
@@ -1445,73 +1497,7 @@
                     "name": "op",
                     "content": {
                       "type": "STRING",
-                      "value": "~>"
-                    }
-                  },
-                  {
-                    "type": "FIELD",
-                    "name": "right",
-                    "content": {
-                      "type": "SYMBOL",
-                      "name": "_expression"
-                    }
-                  }
-                ]
-              }
-            },
-            {
-              "type": "PREC_LEFT",
-              "value": 10,
-              "content": {
-                "type": "SEQ",
-                "members": [
-                  {
-                    "type": "FIELD",
-                    "name": "left",
-                    "content": {
-                      "type": "SYMBOL",
-                      "name": "_expression"
-                    }
-                  },
-                  {
-                    "type": "FIELD",
-                    "name": "op",
-                    "content": {
-                      "type": "STRING",
                       "value": "|>"
-                    }
-                  },
-                  {
-                    "type": "FIELD",
-                    "name": "right",
-                    "content": {
-                      "type": "SYMBOL",
-                      "name": "_expression"
-                    }
-                  }
-                ]
-              }
-            },
-            {
-              "type": "PREC_LEFT",
-              "value": 10,
-              "content": {
-                "type": "SEQ",
-                "members": [
-                  {
-                    "type": "FIELD",
-                    "name": "left",
-                    "content": {
-                      "type": "SYMBOL",
-                      "name": "_expression"
-                    }
-                  },
-                  {
-                    "type": "FIELD",
-                    "name": "op",
-                    "content": {
-                      "type": "STRING",
-                      "value": "at"
                     }
                   },
                   {
@@ -2291,6 +2277,96 @@
         ]
       }
     },
+    "parsecall": {
+      "type": "PREC_LEFT",
+      "value": 10,
+      "content": {
+        "type": "SEQ",
+        "members": [
+          {
+            "type": "FIELD",
+            "name": "left",
+            "content": {
+              "type": "SYMBOL",
+              "name": "_expression"
+            }
+          },
+          {
+            "type": "STRING",
+            "value": "~>"
+          },
+          {
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "FIELD",
+                "name": "op",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "bt_parse_mark_kind"
+                }
+              },
+              {
+                "type": "BLANK"
+              }
+            ]
+          },
+          {
+            "type": "FIELD",
+            "name": "right",
+            "content": {
+              "type": "SYMBOL",
+              "name": "_expression"
+            }
+          }
+        ]
+      }
+    },
+    "atcall": {
+      "type": "PREC_LEFT",
+      "value": 10,
+      "content": {
+        "type": "SEQ",
+        "members": [
+          {
+            "type": "FIELD",
+            "name": "left",
+            "content": {
+              "type": "SYMBOL",
+              "name": "_expression"
+            }
+          },
+          {
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "FIELD",
+                "name": "op",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "bt_parse_mark_kind"
+                }
+              },
+              {
+                "type": "BLANK"
+              }
+            ]
+          },
+          {
+            "type": "STRING",
+            "value": "at"
+          },
+          {
+            "type": "FIELD",
+            "name": "right",
+            "content": {
+              "type": "SYMBOL",
+              "name": "_expression"
+            }
+          }
+        ]
+      }
+    },
     "index": {
       "type": "PREC_LEFT",
       "value": 15,
@@ -2461,34 +2537,22 @@
         }
       ]
     },
-    "bt_mark": {
-      "type": "PREC_LEFT",
-      "value": 15,
-      "content": {
-        "type": "SEQ",
-        "members": [
-          {
-            "type": "FIELD",
-            "name": "left",
-            "content": {
-              "type": "SYMBOL",
-              "name": "_expression"
-            }
-          },
-          {
-            "type": "FIELD",
-            "name": "op",
-            "content": {
-              "type": "SYMBOL",
-              "name": "bt_mark_kind"
-            }
-          }
-        ]
-      }
+    "bt_parse_mark_kind": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "expect"
+        },
+        {
+          "type": "STRING",
+          "value": "if"
+        }
+      ]
     },
     "parserdef_ref": {
       "type": "PREC_LEFT",
-      "value": 16,
+      "value": 17,
       "content": {
         "type": "SEQ",
         "members": [
@@ -2648,7 +2712,7 @@
     },
     "byte_slice": {
       "type": "PREC",
-      "value": 19,
+      "value": 20,
       "content": {
         "type": "STRING",
         "value": "~"

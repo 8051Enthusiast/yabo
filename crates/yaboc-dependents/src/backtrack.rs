@@ -5,7 +5,7 @@ use yaboc_base::error::SilencedError;
 use yaboc_base::{error::SResult, interner::DefId};
 use yaboc_expr::{ExprHead, Expression, FetchExpr, FetchKindData, ShapedData, TakeRef};
 use yaboc_hir::{ExprId, HirNode};
-use yaboc_resolve::expr::{Origin, Resolved, ResolvedAtom, ValVarOp};
+use yaboc_resolve::expr::{EvalKind, Origin, Resolved, ResolvedAtom, ValVarOp};
 use yaboc_resolve::expr::{ValBinOp, ValUnOp};
 
 use crate::Dependents;
@@ -14,8 +14,12 @@ use crate::Dependents;
 pub struct BacktrackStatus(u8);
 
 impl BacktrackStatus {
-    pub fn eval(self) -> Self {
-        Self(self.0 >> 1 | (self.0 & 1))
+    pub fn eval(self, bt_kind: Option<BtMarkKind>) -> Self {
+        match bt_kind {
+            Some(BtMarkKind::KeepBt) => Self(1),
+            None => Self(self.0 >> 1 | (self.0 & 1)),
+            Some(BtMarkKind::RemoveBt) => Self(self.0 & 1),
+        }
     }
 
     pub fn has_backtracked(self) -> bool {
@@ -78,9 +82,6 @@ pub fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<Arc<E
                 ) => BacktrackStatus::empty(),
                 ExprHead::Niladic(ResolvedAtom::Block(b, _)) => BacktrackStatus::empty()
                     .can_backtrack_if(db.can_backtrack(b.0).unwrap_or(false)),
-                ExprHead::Niladic(ResolvedAtom::Regex(_)) => {
-                    BacktrackStatus::empty().can_backtrack_if(true)
-                }
                 ExprHead::Niladic(_) => BacktrackStatus::empty(),
                 ExprHead::Monadic(ValUnOp::Dot(_, acc), status) => {
                     status.backtrack_if(acc.map(|x| x.can_backtrack()).unwrap_or(false))
@@ -89,15 +90,16 @@ pub fn expr_backtrack_status(db: &dyn Dependents, expr: ExprId) -> SResult<Arc<E
                     ValUnOp::Wiggle(_, kind @ (WiggleKind::Expect | WiggleKind::If)),
                     status,
                 ) => status.backtrack_if(kind == WiggleKind::If),
-                ExprHead::Monadic(ValUnOp::Wiggle(_, WiggleKind::Is), status) => {
-                    status.can_backtrack_if(true)
+                ExprHead::Monadic(ValUnOp::EvalFun(EvalKind::IfInnerBlock), status) => {
+                    status.eval(Some(BtMarkKind::KeepBt))
                 }
-                ExprHead::Monadic(ValUnOp::BtMark(mark), status) => {
-                    status.can_backtrack_if(mark == BtMarkKind::KeepBt)
+                ExprHead::Monadic(ValUnOp::EvalFun(eval_kind), status) => {
+                    status.backtrack_if(eval_kind == EvalKind::Backtrack(BtMarkKind::KeepBt))
                 }
-                ExprHead::Monadic(ValUnOp::EvalFun, status) => status.eval(),
                 ExprHead::Monadic(_, status) => *status,
-                ExprHead::Dyadic(ValBinOp::ParserApply, [lhs, rhs]) => rhs.eval() | *lhs,
+                ExprHead::Dyadic(ValBinOp::ParserApply(mark), [lhs, rhs]) => {
+                    (*rhs | *lhs).backtrack_if(mark == Some(BtMarkKind::KeepBt))
+                }
                 ExprHead::Dyadic(ValBinOp::Else, [lhs, rhs]) => lhs.combine_else(*rhs),
                 ExprHead::Dyadic(ValBinOp::Then, [lhs, rhs]) => lhs.combine_then(*rhs),
                 ExprHead::Dyadic(_, [lhs, rhs]) => *lhs | *rhs,
@@ -134,7 +136,7 @@ pub fn can_backtrack(db: &dyn Dependents, def: DefId) -> SResult<bool> {
         HirNode::Parse(p) => db
             .expr_backtrack_status(p.expr)?
             .root_data()
-            .eval()
+            .eval(p.bt)
             .has_backtracked(),
         HirNode::Choice(c) => db.can_backtrack(c.subcontexts.last().unwrap().0)?,
         HirNode::ChoiceIndirection(_) => false,

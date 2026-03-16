@@ -78,6 +78,202 @@
     }
   },
   {
+    "type": "atcall",
+    "named": true,
+    "fields": {
+      "left": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "array_fill",
+            "named": true
+          },
+          {
+            "type": "atcall",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "block",
+            "named": true
+          },
+          {
+            "type": "bool_literal",
+            "named": true
+          },
+          {
+            "type": "char_literal",
+            "named": true
+          },
+          {
+            "type": "constraint_apply",
+            "named": true
+          },
+          {
+            "type": "fun_application",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "index",
+            "named": true
+          },
+          {
+            "type": "lambda",
+            "named": true
+          },
+          {
+            "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parsecall",
+            "named": true
+          },
+          {
+            "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "parser_span",
+            "named": true
+          },
+          {
+            "type": "regex_literal",
+            "named": true
+          },
+          {
+            "type": "retvrn",
+            "named": true
+          },
+          {
+            "type": "single",
+            "named": true
+          },
+          {
+            "type": "string_literal",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          },
+          {
+            "type": "val_dot",
+            "named": true
+          }
+        ]
+      },
+      "op": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "bt_parse_mark_kind",
+            "named": true
+          }
+        ]
+      },
+      "right": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "array_fill",
+            "named": true
+          },
+          {
+            "type": "atcall",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "block",
+            "named": true
+          },
+          {
+            "type": "bool_literal",
+            "named": true
+          },
+          {
+            "type": "char_literal",
+            "named": true
+          },
+          {
+            "type": "constraint_apply",
+            "named": true
+          },
+          {
+            "type": "fun_application",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "index",
+            "named": true
+          },
+          {
+            "type": "lambda",
+            "named": true
+          },
+          {
+            "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parsecall",
+            "named": true
+          },
+          {
+            "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "parser_span",
+            "named": true
+          },
+          {
+            "type": "regex_literal",
+            "named": true
+          },
+          {
+            "type": "retvrn",
+            "named": true
+          },
+          {
+            "type": "single",
+            "named": true
+          },
+          {
+            "type": "string_literal",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          },
+          {
+            "type": "val_dot",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "binary_constraint_expression",
     "named": true,
     "fields": {
@@ -210,6 +406,10 @@
             "named": true
           },
           {
+            "type": "atcall",
+            "named": true
+          },
+          {
             "type": "binary_expression",
             "named": true
           },
@@ -219,10 +419,6 @@
           },
           {
             "type": "bool_literal",
-            "named": true
-          },
-          {
-            "type": "bt_mark",
             "named": true
           },
           {
@@ -251,6 +447,10 @@
           },
           {
             "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parsecall",
             "named": true
           },
           {
@@ -360,10 +560,6 @@
             "named": false
           },
           {
-            "type": "at",
-            "named": false
-          },
-          {
             "type": "else",
             "named": false
           },
@@ -378,10 +574,6 @@
           {
             "type": "|>",
             "named": false
-          },
-          {
-            "type": "~>",
-            "named": false
           }
         ]
       },
@@ -394,6 +586,10 @@
             "named": true
           },
           {
+            "type": "atcall",
+            "named": true
+          },
+          {
             "type": "binary_expression",
             "named": true
           },
@@ -403,10 +599,6 @@
           },
           {
             "type": "bool_literal",
-            "named": true
-          },
-          {
-            "type": "bt_mark",
             "named": true
           },
           {
@@ -435,6 +627,10 @@
           },
           {
             "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parsecall",
             "named": true
           },
           {
@@ -603,109 +799,12 @@
     "fields": {}
   },
   {
-    "type": "bt_mark",
+    "type": "bt_mark_kind",
     "named": true,
-    "fields": {
-      "left": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "array_fill",
-            "named": true
-          },
-          {
-            "type": "binary_expression",
-            "named": true
-          },
-          {
-            "type": "block",
-            "named": true
-          },
-          {
-            "type": "bool_literal",
-            "named": true
-          },
-          {
-            "type": "bt_mark",
-            "named": true
-          },
-          {
-            "type": "char_literal",
-            "named": true
-          },
-          {
-            "type": "constraint_apply",
-            "named": true
-          },
-          {
-            "type": "fun_application",
-            "named": true
-          },
-          {
-            "type": "identifier",
-            "named": true
-          },
-          {
-            "type": "index",
-            "named": true
-          },
-          {
-            "type": "lambda",
-            "named": true
-          },
-          {
-            "type": "number_literal",
-            "named": true
-          },
-          {
-            "type": "parser_block",
-            "named": true
-          },
-          {
-            "type": "parser_span",
-            "named": true
-          },
-          {
-            "type": "regex_literal",
-            "named": true
-          },
-          {
-            "type": "retvrn",
-            "named": true
-          },
-          {
-            "type": "single",
-            "named": true
-          },
-          {
-            "type": "string_literal",
-            "named": true
-          },
-          {
-            "type": "unary_expression",
-            "named": true
-          },
-          {
-            "type": "val_dot",
-            "named": true
-          }
-        ]
-      },
-      "op": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "bt_mark_kind",
-            "named": true
-          }
-        ]
-      }
-    }
+    "fields": {}
   },
   {
-    "type": "bt_mark_kind",
+    "type": "bt_parse_mark_kind",
     "named": true,
     "fields": {}
   },
@@ -727,6 +826,10 @@
             "named": true
           },
           {
+            "type": "atcall",
+            "named": true
+          },
+          {
             "type": "binary_expression",
             "named": true
           },
@@ -736,10 +839,6 @@
           },
           {
             "type": "bool_literal",
-            "named": true
-          },
-          {
-            "type": "bt_mark",
             "named": true
           },
           {
@@ -768,6 +867,10 @@
           },
           {
             "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parsecall",
             "named": true
           },
           {
@@ -887,6 +990,10 @@
             "named": true
           },
           {
+            "type": "atcall",
+            "named": true
+          },
+          {
             "type": "binary_expression",
             "named": true
           },
@@ -896,10 +1003,6 @@
           },
           {
             "type": "bool_literal",
-            "named": true
-          },
-          {
-            "type": "bt_mark",
             "named": true
           },
           {
@@ -928,6 +1031,10 @@
           },
           {
             "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parsecall",
             "named": true
           },
           {
@@ -973,6 +1080,10 @@
             "named": true
           },
           {
+            "type": "atcall",
+            "named": true
+          },
+          {
             "type": "binary_expression",
             "named": true
           },
@@ -982,10 +1093,6 @@
           },
           {
             "type": "bool_literal",
-            "named": true
-          },
-          {
-            "type": "bt_mark",
             "named": true
           },
           {
@@ -1014,6 +1121,10 @@
           },
           {
             "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parsecall",
             "named": true
           },
           {
@@ -1046,6 +1157,16 @@
           },
           {
             "type": "val_dot",
+            "named": true
+          }
+        ]
+      },
+      "bt": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "bt_mark_kind",
             "named": true
           }
         ]
@@ -1107,6 +1228,10 @@
             "named": true
           },
           {
+            "type": "atcall",
+            "named": true
+          },
+          {
             "type": "binary_expression",
             "named": true
           },
@@ -1116,10 +1241,6 @@
           },
           {
             "type": "bool_literal",
-            "named": true
-          },
-          {
-            "type": "bt_mark",
             "named": true
           },
           {
@@ -1148,6 +1269,10 @@
           },
           {
             "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parsecall",
             "named": true
           },
           {
@@ -1203,6 +1328,10 @@
             "named": true
           },
           {
+            "type": "atcall",
+            "named": true
+          },
+          {
             "type": "binary_expression",
             "named": true
           },
@@ -1212,10 +1341,6 @@
           },
           {
             "type": "bool_literal",
-            "named": true
-          },
-          {
-            "type": "bt_mark",
             "named": true
           },
           {
@@ -1244,6 +1369,10 @@
           },
           {
             "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parsecall",
             "named": true
           },
           {
@@ -1305,6 +1434,10 @@
             "named": true
           },
           {
+            "type": "atcall",
+            "named": true
+          },
+          {
             "type": "binary_expression",
             "named": true
           },
@@ -1314,10 +1447,6 @@
           },
           {
             "type": "bool_literal",
-            "named": true
-          },
-          {
-            "type": "bt_mark",
             "named": true
           },
           {
@@ -1346,6 +1475,10 @@
           },
           {
             "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parsecall",
             "named": true
           },
           {
@@ -1413,6 +1546,10 @@
             "named": true
           },
           {
+            "type": "atcall",
+            "named": true
+          },
+          {
             "type": "binary_expression",
             "named": true
           },
@@ -1422,10 +1559,6 @@
           },
           {
             "type": "bool_literal",
-            "named": true
-          },
-          {
-            "type": "bt_mark",
             "named": true
           },
           {
@@ -1454,6 +1587,10 @@
           },
           {
             "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parsecall",
             "named": true
           },
           {
@@ -1556,6 +1693,16 @@
     "type": "parse_statement",
     "named": true,
     "fields": {
+      "bt": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "bt_parse_mark_kind",
+            "named": true
+          }
+        ]
+      },
       "name": {
         "multiple": false,
         "required": false,
@@ -1579,6 +1726,10 @@
             "named": true
           },
           {
+            "type": "atcall",
+            "named": true
+          },
+          {
             "type": "binary_expression",
             "named": true
           },
@@ -1588,10 +1739,6 @@
           },
           {
             "type": "bool_literal",
-            "named": true
-          },
-          {
-            "type": "bt_mark",
             "named": true
           },
           {
@@ -1620,6 +1767,206 @@
           },
           {
             "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parsecall",
+            "named": true
+          },
+          {
+            "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "parser_span",
+            "named": true
+          },
+          {
+            "type": "regex_literal",
+            "named": true
+          },
+          {
+            "type": "retvrn",
+            "named": true
+          },
+          {
+            "type": "single",
+            "named": true
+          },
+          {
+            "type": "string_literal",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          },
+          {
+            "type": "val_dot",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "parsecall",
+    "named": true,
+    "fields": {
+      "left": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "array_fill",
+            "named": true
+          },
+          {
+            "type": "atcall",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "block",
+            "named": true
+          },
+          {
+            "type": "bool_literal",
+            "named": true
+          },
+          {
+            "type": "char_literal",
+            "named": true
+          },
+          {
+            "type": "constraint_apply",
+            "named": true
+          },
+          {
+            "type": "fun_application",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "index",
+            "named": true
+          },
+          {
+            "type": "lambda",
+            "named": true
+          },
+          {
+            "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parsecall",
+            "named": true
+          },
+          {
+            "type": "parser_block",
+            "named": true
+          },
+          {
+            "type": "parser_span",
+            "named": true
+          },
+          {
+            "type": "regex_literal",
+            "named": true
+          },
+          {
+            "type": "retvrn",
+            "named": true
+          },
+          {
+            "type": "single",
+            "named": true
+          },
+          {
+            "type": "string_literal",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          },
+          {
+            "type": "val_dot",
+            "named": true
+          }
+        ]
+      },
+      "op": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "bt_parse_mark_kind",
+            "named": true
+          }
+        ]
+      },
+      "right": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "array_fill",
+            "named": true
+          },
+          {
+            "type": "atcall",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "block",
+            "named": true
+          },
+          {
+            "type": "bool_literal",
+            "named": true
+          },
+          {
+            "type": "char_literal",
+            "named": true
+          },
+          {
+            "type": "constraint_apply",
+            "named": true
+          },
+          {
+            "type": "fun_application",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "index",
+            "named": true
+          },
+          {
+            "type": "lambda",
+            "named": true
+          },
+          {
+            "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parsecall",
             "named": true
           },
           {
@@ -1700,6 +2047,16 @@
         "types": [
           {
             "type": "arg_def_list",
+            "named": true
+          }
+        ]
+      },
+      "bt": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "bt_parse_mark_kind",
             "named": true
           }
         ]
@@ -1847,6 +2204,10 @@
             "named": true
           },
           {
+            "type": "atcall",
+            "named": true
+          },
+          {
             "type": "binary_expression",
             "named": true
           },
@@ -1856,10 +2217,6 @@
           },
           {
             "type": "bool_literal",
-            "named": true
-          },
-          {
-            "type": "bt_mark",
             "named": true
           },
           {
@@ -1888,6 +2245,10 @@
           },
           {
             "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parsecall",
             "named": true
           },
           {
@@ -2478,6 +2839,10 @@
             "named": true
           },
           {
+            "type": "atcall",
+            "named": true
+          },
+          {
             "type": "binary_expression",
             "named": true
           },
@@ -2487,10 +2852,6 @@
           },
           {
             "type": "bool_literal",
-            "named": true
-          },
-          {
-            "type": "bt_mark",
             "named": true
           },
           {
@@ -2519,6 +2880,10 @@
           },
           {
             "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parsecall",
             "named": true
           },
           {
@@ -2632,6 +2997,10 @@
             "named": true
           },
           {
+            "type": "atcall",
+            "named": true
+          },
+          {
             "type": "binary_expression",
             "named": true
           },
@@ -2641,10 +3010,6 @@
           },
           {
             "type": "bool_literal",
-            "named": true
-          },
-          {
-            "type": "bt_mark",
             "named": true
           },
           {
@@ -2673,6 +3038,10 @@
           },
           {
             "type": "number_literal",
+            "named": true
+          },
+          {
+            "type": "parsecall",
             "named": true
           },
           {

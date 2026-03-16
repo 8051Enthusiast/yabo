@@ -302,9 +302,6 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<DB> for Function {
             if let Place::Stack(st) = self.place(place_ref).place {
                 dbwrite!(f, db, "// origin: {}\n", &self.stack(st))?;
             }
-            if self.place(place_ref).remove_bt {
-                writeln!(f, "// remove_bt")?;
-            }
             write!(f, "define ")?;
             place_ref.db_fmt(f, &(self, db))?;
             writeln!(f, ": {}", &place.eval)?;

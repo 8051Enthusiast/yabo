@@ -1,6 +1,6 @@
 # Backtracks if the argument is false.
-fun [t] ~> assert[t](cond: bit) = {
-  let _ = cond if true
+fun [t] ~> assert[t](big: bit) = {
+  let _ = big if true
 }
 
 # Fails if the argument is false.
@@ -20,27 +20,27 @@ fun [T] ~> map[T, R](f: (T) -> R) = {x: ~, let return = f?(x)}[..]
 # Tries to parse using the first parser, then the second if the first fails.
 fun [T] ~> alt[T, R](a0: [T] ~> R, a1: [T] ~> R) = {
   case
-  | return: a0?
-  | return: a1?
+  | return: if a0
+  | return: if a1
   \
 }
 
 # Tries to parse, trying each parser in order
 fun [T] ~> alt3[T, R](a0: [T] ~> R, a1: [T] ~> R, a2: [T] ~> R) = {
   case
-  | return: a0?
-  | return: a1?
-  | return: a2?
+  | return: if a0
+  | return: if a1
+  | return: if a2
   \
 }
 
 # Tries to parse, trying each parser in order
 fun [T] ~> alt4[T, R](a0: [T] ~> R, a1: [T] ~> R, a2: [T] ~> R, a3: [T] ~> R) = {
   case
-  | return: a0?
-  | return: a1?
-  | return: a2?
-  | return: a3?
+  | return: if a0
+  | return: if a1
+  | return: if a2
+  | return: if a3
   \
 }
 
@@ -54,7 +54,7 @@ fun range(start: int, end: int) = start..<end
 # (for a non-unit version, see the list module)
 fun [T] ~> repeat[T, R](p: [T] ~> R) = {
   case
-  | p?, repeat(p)
+  | if p, repeat(p)
   | {}
   \
 }
@@ -62,7 +62,7 @@ fun [T] ~> repeat[T, R](p: [T] ~> R) = {
 # Returns whether `p` evaluated on any input element is true
 fun [T] ~> any[T](p: (T) -> bit) = {
   case
-  | x: ~ is !eof
+  | x: if ~ is !eof
     case
     | return: p(x) if false then any(p)
     | [..], let return = true
@@ -74,7 +74,7 @@ fun [T] ~> any[T](p: (T) -> bit) = {
 # Returns whether `p` is always true when evaluated on all input elements
 fun [T] ~> all[T](p: (T) -> bit) = {
   case
-  | x: ~ is !eof
+  | x: if ~ is !eof
     case
     | return: p(x) if true then all(p)
     | [..], let return = false
@@ -186,12 +186,12 @@ def ~i64b = {
 # =============== desugar ===============
 
 fun [A] ~> compose[A, B, C](a: [A] ~> [B], b: [B] ~> C) = {
-  x: a?, let return = x ~> b?
+  x: if a, let return = x ~> if b
 }
 
 fun [A] ~> index[A](idx: int): A = {
-  [idx if 0..0x7fffffffffffffff] is !eof
-  return: ~ is !eof
+  if [idx if 0..0x7fffffffffffffff] is !eof
+  return: if ~ is !eof
 }
 
 fun [int] ~> start_with(rhs: [int]) = {

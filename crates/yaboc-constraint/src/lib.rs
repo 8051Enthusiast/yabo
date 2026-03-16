@@ -390,13 +390,13 @@ mod tests {
             r#"
             def ~rec = {
               case
-              | /AAAAA/?
+              | if /AAAAA/
               | rec
               \
             }
             def ~rec2 = {
               case
-              | /AAAAA/?
+              | if /AAAAA/
               | ~, rec
               \
             }

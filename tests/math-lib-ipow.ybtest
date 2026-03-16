@@ -4,7 +4,9 @@ import math
 
 export
 fun ~test = {
-  a: text.num?, /, /, b: text.num?
+  a: if text.num
+  if /, /
+  b: if text.num
   let return = math.ipow(a, b)
 }
 

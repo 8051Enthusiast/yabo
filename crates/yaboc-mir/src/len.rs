@@ -156,7 +156,6 @@ impl<'a> LenMirCtx<'a> {
             let place = self.w.f.add_place(PlaceInfo {
                 place: Place::Captured(self.w.f.fun.cap(), *capture),
                 eval: false,
-                remove_bt: false,
             });
             self.w.register_place(SubValue::new_val(*capture), place);
         }
@@ -169,7 +168,6 @@ impl<'a> LenMirCtx<'a> {
             let place = self.w.f.add_place(PlaceInfo {
                 place: Place::Captured(self.w.f.fun.cap(), arg_id.0),
                 eval: true,
-                remove_bt: false,
             });
             self.w.register_place(SubValue::new_val(arg_id.0), place);
         }
@@ -388,7 +386,6 @@ impl<'a> LenMirCtx<'a> {
         let inner_fun_place = f.add_place(PlaceInfo {
             place: Place::Front(f.fun.cap()),
             eval: true,
-            remove_bt: false,
         });
         f.set_bb(f.fun.entry());
         f.len_call(inner_fun_place, f.fun.ret().unwrap(), top_level_retreat);

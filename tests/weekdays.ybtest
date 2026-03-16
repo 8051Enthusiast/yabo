@@ -2,14 +2,14 @@
 import text
 import math
 import list
-def ~ws = /\s*/!
+def ~ws = expect /\s*/
 
 def ~fixed_num = {
-  whole: text.num?
+  whole: if text.num
   case
-  | u8 is '.'
-    fract: /[0-9]+/
-    let fract_val = fract ~> text.num!
+  | if u8 is '.'
+    fract: if /[0-9]+/
+    let fract_val = fract ~> expect text.num
     let fract_len = list.len(fract ~> list.list(u8 is !eof))
     # use 3 digits behind comma
     let return = whole * 1000 +
@@ -22,8 +22,8 @@ def ~fixed_num = {
 export
 fun ~test = {
   days: list.list({
-    /(Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day:/, ws
-    return: fixed_num!, ws
+    if /(Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day:/, ws
+    return: expect fixed_num, ws
   })
   let num_days = list.len(days)
   let minimum = list.fold(days, days.this, math.min)

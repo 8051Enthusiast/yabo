@@ -163,7 +163,7 @@ fn compare_bin_precedence(
     }
     macro_rules! ParserOp {
         () => {
-            Compose | ParserApply | At
+            Compose | ParserApply(_) | At(_)
         };
     }
     #[allow(unused)]
@@ -192,7 +192,7 @@ fn compare_bin_precedence(
         (Or | Xor, And) => Ok(()),
         (Or | Xor | And, ShiftL | ShiftR) => Ok(()),
         // common pattern
-        (ParserApply, Range) if is_lhs => Ok(()),
+        (ParserApply(_), Range) if is_lhs => Ok(()),
         (up, lo) => {
             let upper = Spanned {
                 inner: up.clone(),
@@ -450,6 +450,7 @@ fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDef
         args,
         to,
         ret_ty,
+        bt: ast.bt,
     };
     ctx.insert(
         id.0,
@@ -774,6 +775,7 @@ fn parse_statement(
         back: ParserPredecessor::ChildOf(parent_context),
         expr,
         parent_context,
+        bt: ast.bt,
     };
     let spans = match &ast.name {
         Some(s) => vec![ast.span, s.span],

@@ -1,12 +1,12 @@
 ====[ source code ]====
 fun ~binary_tree[T](inner: ~T) = {
   case
-  | tag: u8 is 0
+  | tag: if u8 is 0
   | tag: u8
     val: u32l
     len: u32l
-    left: [len] |> inner!
-    right: inner!
+    left: expect [len] |> inner
+    right: expect inner
   \
 }
 
@@ -17,7 +17,7 @@ fun ~test = {
 }
 
 ====[ binary 1 ]====
-01  05 00 00 00  01 00 00 00 
+01  05 00 00 00  01 00 00 00
     00
     01  06 00 00 00  01 00 00 00
         00

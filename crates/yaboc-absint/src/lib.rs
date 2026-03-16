@@ -3,6 +3,7 @@ mod represent;
 use std::num::NonZeroU64;
 
 use hir::{BlockId, Hirs};
+use yaboc_ast::expr::BtMarkKind;
 use yaboc_base::{
     databased_display::DatabasedDisplay,
     dbpanic,
@@ -290,13 +291,14 @@ impl<'a, Dom: AbstractDomain<'a> + DatabasedDisplay<Dom::DB>> AbsIntCtx<'a, Dom>
     fn eval_expr_with_ambience(
         &mut self,
         expr: impl Expression<Resolved, Part = ExprHead<Resolved, ExprIdx<Resolved>>>,
+        bt: Option<BtMarkKind>,
     ) -> Result<(Dom, AbstractData<Dom>), Dom::Err> {
         let res = self.eval_expr(expr)?;
         let root = res.root_data().clone();
         let Some(from) = self.current_ambience.clone() else {
             panic!("called eval_expr_with_ambience without ambience")
         };
-        let applied = ExprHead::new_dyadic(expr::ValBinOp::ParserApply, [&from, &root]);
+        let applied = ExprHead::new_dyadic(expr::ValBinOp::ParserApply(bt), [&from, &root]);
         let ret_val = Dom::eval_expr(self, applied)?;
         let normalized = ret_val.normalize(self)?.0;
         Ok((normalized, res))
@@ -305,7 +307,10 @@ impl<'a, Dom: AbstractDomain<'a> + DatabasedDisplay<Dom::DB>> AbsIntCtx<'a, Dom>
     fn eval_pd_expr(&mut self, parserdef: &hir::ParserDef) -> Result<PdEvaluated<Dom>, Dom::Err> {
         let expr = Resolved::fetch_expr(self.db, parserdef.to)?;
         let ((ret_val, expr_vals), from) = if let Some(from) = self.current_ambience.clone() {
-            (self.eval_expr_with_ambience(expr.take_ref())?, Some(from))
+            (
+                self.eval_expr_with_ambience(expr.take_ref(), parserdef.bt)?,
+                Some(from),
+            )
         } else {
             let res = self.eval_expr(expr.take_ref())?;
             let root = res.root_data().clone();
@@ -540,7 +545,8 @@ impl<'a, Dom: AbstractDomain<'a> + DatabasedDisplay<Dom::DB>> AbsIntCtx<'a, Dom>
                 }
                 hir::HirNode::Parse(statement) => {
                     let expr = Resolved::fetch_expr(self.db, statement.expr)?;
-                    let (res, res_expr) = self.eval_expr_with_ambience(expr.take_ref())?;
+                    let (res, res_expr) =
+                        self.eval_expr_with_ambience(expr.take_ref(), statement.bt)?;
                     self.set_block_var(statement.expr.0, res_expr.root_data().clone());
                     self.block_expr_vals.insert(statement.expr, res_expr);
                     res

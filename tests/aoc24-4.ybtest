@@ -38,7 +38,7 @@ fun diagonals(matrix: [[u8]]) = {|
 fun sum_both[T](sum: (T) -> int, f: (T) -> T, in: T) = sum(in) + sum(f(in))
 
 fun score(matrix: [[u8]]) = matrix ~> aoc.summap(~ is !eof |> aoc.summap({
-  parse.find(/XMAS/)?, let return = 1
+  if parse.find(/XMAS/), let return = 1
 }))
 
 fun all_possible(matrix: [[u8]]) = {|
@@ -49,7 +49,7 @@ fun all_possible(matrix: [[u8]]) = {|
 
 export
 fun ~test = {
-  let cols = (/[^\n]*\n/ at 0).sizeof
+  let cols = (/[^\n]*\n/ expect at 0).sizeof
   matrix: [cols][..]
   let return = all_possible(matrix)
 }

@@ -3,7 +3,7 @@ import math
 
 fun [T] ~> _map_acc[T](f: [T] ~> int, acc: int, op: (int, int) -> int): int = {
   case
-  | x: f?
+  | x: if f
     return: _map_acc(f, op?(acc, x), op)
   | let return = acc
   \
@@ -12,15 +12,15 @@ fun [T] ~> _map_acc[T](f: [T] ~> int, acc: int, op: (int, int) -> int): int = {
 fun _add(a: int, b: int): int = a + b
 
 # Parses until `f` fails, returning the sum of all parsed values
-fun [T] ~> summap[T](f: [T] ~> int) = _map_acc(f?, 0, _add)
+fun [T] ~> summap[T](f: [T] ~> int) = _map_acc(f, 0, _add)
 
 fun _mul(a: int, b: int): int = a * b
 
 # Parses until `f` fails, returning the product of all parsed values
-fun [T] ~> mulmap[T](f: [T] ~> int) = _map_acc(f?, 1, _mul)
+fun [T] ~> mulmap[T](f: [T] ~> int) = _map_acc(f, 1, _mul)
 
 # Parses until `f` fails, returning the maximum of all parsed values
-fun [T] ~> maxmap[T](f: [T] ~> int) = _map_acc(f?, math.min_int(), math.max)
+fun [T] ~> maxmap[T](f: [T] ~> int) = _map_acc(f, math.min_int(), math.max)
 
 # Parses until `f` fails, returning the minimum of all parsed values
-fun [T] ~> minmap[T](f: [T] ~> int) = _map_acc(f?, math.max_int(), math.min)
+fun [T] ~> minmap[T](f: [T] ~> int) = _map_acc(f, math.max_int(), math.min)

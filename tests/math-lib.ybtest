@@ -4,7 +4,7 @@ import text
 
 export
 fun ~test = {
-  a: text.num?, /, /, b: text.num?
+  a: if text.num, if /, /, b: if text.num
   let abs_a = math.abs(a)
   let abs_b = math.abs(b)
   let sign_a = math.sign(a)

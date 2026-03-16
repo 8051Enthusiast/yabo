@@ -1,5 +1,5 @@
 ====[ source code ]====
-fun ~once[T](parser: ~T) = parser?
+fun ~once[T](parser: ~T) = if parser
 
 export
 def ~test = {

@@ -1,68 +1,68 @@
 ====[ source code ]====
 import text
 
-fun ~ws = /[\n\r \t]*/!
-fun ~string = /"(\\"|[^"])*"/
-fun ~element: int = {ws, return: value?, ws}
+fun ~ws = expect /[\n\r \t]*/
+fun ~string = if /"(\\"|[^"])*"/
+fun ~element: int = {ws, return: if value, ws}
 fun ~member[T](inner: ~T): T = {
-  ws, string?, ws, /:/, return: inner?
+  ws, if string, ws, if /:/, return: if inner
 }
 fun ~members(acc: int, red: bit): int = {
   case
-  | member({ws, /"red"/, ws})?
+  | if member({ws, if /"red"/, ws})
     let now_red = true, let first = 0
-  | first: member(element)?
+  | first: if member(element)
     let now_red = red
   \
   let sum = acc + first
   case
-  | /,/, return: members(sum, now_red)?
+  | if /,/, return: if members(sum, now_red)
   | let return = when?(now_red) then 0 else sum
   \
 }
 fun ~object: int = {
-  /\{/
+  if /\{/
   case
-  | return: members(0, false)?
+  | return: if members(0, false)
   | ws, let return = 0
   \
-  /\}/!
+  expect /\}/
 }
 fun ~elements: int = {
-  first: element?
+  first: if element
   case
-  | /,/, cont: elements?
+  | if /,/, cont: if elements
     let return = first + cont
   | let return = first
   \
 }
 fun ~array: int = {
-  /\[/
+  if /\[/
   case
-  | return: elements?
+  | return: if elements
   | ws, let return = 0
   \
-  /\]/!
+  expect /\]/
 }
 fun ~number: int = {
   case
-  | /-/, let sign = -1
+  | if /-/, let sign = -1
   | let sign = 1
   \
-  num: text.num?
+  num: if text.num
   let return = sign * num
 }
 fun ~value: int = {
   case
-  | return: object?
-  | return: array?
-  | return: number?
-  | string?, let return = 0
-  | /true|false|null/, let return = 0
+  | return: if object
+  | return: if array
+  | return: if number
+  | if string, let return = 0
+  | if /true|false|null/, let return = 0
   \
 }
 export
-fun ~test = element?
+fun ~test = if element
 
 ====[ text 1 ]====
 [1,2,3]

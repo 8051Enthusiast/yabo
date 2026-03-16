@@ -5,7 +5,7 @@
 def ~xor_linked_list(prev_addr: int, cur_addr: int) = {
   # this branch results in no fields is current address is zero
   case
-  | assert(cur_addr == 0)?
+  | if assert(cur_addr == 0)
   # otherwise we have a valid address
   # xor_addr is the value prev_addr ^ next_addr
   | xor_addr: u16l

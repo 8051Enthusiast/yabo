@@ -2,7 +2,7 @@
 fun ~elem = {
   asdf: ~
   case
-  | ~ is '\n', let tert = 0
+  | if ~ is '\n', let tert = 0
   | tert: ~
   \
 }

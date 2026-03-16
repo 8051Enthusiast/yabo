@@ -4,27 +4,27 @@ import parse
 import aoc
 
 fun ~joltage_digit(n: int, clearance: int) = {
-  d: text.digit(10)? is !eof
+  d: if text.digit(10) is !eof
   case
-  | when?(d > n) then parse.lookahead([clearance] is !eof)?
+  | if when?(d > n) then parse.lookahead([clearance] is !eof)
     case
-    | return: joltage_digit(d, clearance)?
+    | return: if joltage_digit(d, clearance)
     | let return = d
     \
-  | return: joltage_digit(n, clearance)?
+  | return: if joltage_digit(n, clearance)
   \
 }
 
 fun ~joltage(size: int, acc: int) = {
   case
   | let return = size if 0 then acc
-  | d: joltage_digit(-1, size - 1)!
+  | d: expect joltage_digit(-1, size - 1)
     return: joltage(size - 1, 10 * acc + d)
   \
 }
 
 export
-fun ~test = aoc.summap(text.line? |> joltage(2, 0))
+fun ~test = aoc.summap(text.line |> joltage(2, 0))
 
 ====[ text 1 ]====
 987654321111111

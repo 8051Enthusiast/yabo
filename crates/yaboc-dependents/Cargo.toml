@@ -12,10 +12,10 @@ yaboc-expr = { path = "../yaboc-expr" }
 yaboc-ast = { path = "../yaboc-ast" }
 yaboc-hir = { path = "../yaboc-hir" }
 yaboc-resolve = { path = "../yaboc-resolve" }
-yaboc-types = { path = "../yaboc-types" }
 yaboc-req = { path = "../yaboc-req" }
 fxhash = "0.2.1"
 petgraph = { workspace = true }
 
 [dev-dependencies]
 yaboc-hir-types = { path = "../yaboc-hir-types" }
+yaboc-types = { path = "../yaboc-types" }
