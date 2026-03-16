@@ -8,7 +8,7 @@ fun crc_shift(poly: int, n: int) =
 
 fun ~crc32_impl(acc: int): int = {
   case
-  | next: u8 is !eof
+  | next: if u8 is !eof
     let s = crc_shift(0xedb88320, ..)
     return: crc32_impl(s(s(s(s(s(s(s(s(next ^ acc)))))))))
   | let return = acc ^ 0xffffffff
@@ -19,8 +19,8 @@ fun crc32(arr: [u8]) = arr ~> crc32_impl(0xffffffff)
 
 def ~chunk[T](ty: ~[u8], data_parser: ~T) = {
   length: u32b
-  type: [4] |> ty?
-  value: [length] |> data_parser!
+  type: if [4] |> ty
+  value: expect [length] |> data_parser
   crc: u32b
   let crc_valid = crc32(span type..value) == crc
 }
@@ -43,18 +43,18 @@ def ~rgb = {
 
 export
 def ~test = {
-  h/89 50 4e 47 0d 0a 1a 0a/
+  if h/89 50 4e 47 0d 0a 1a 0a/
 
-  header: chunk(/IHDR/, head)!
+  header: expect chunk(/IHDR/, head)
 
   chunks: list.list({
     case
-    | palette: chunk(/PLTE/, rgb[..])?
-    | data: chunk(/IDAT/, [..])?
-    | optional: chunk(/[a-z].{3}/, [..])?
+    | palette: if chunk(/PLTE/, rgb[..])
+    | data: if chunk(/IDAT/, [..])
+    | optional: if chunk(/[a-z].{3}/, [..])
     \
   })
-  end: chunk(/IEND/, nil)!
+  end: expect chunk(/IEND/, nil)
 }
 
 ====[ binary 1 ]====

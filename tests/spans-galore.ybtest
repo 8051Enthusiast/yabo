@@ -4,7 +4,7 @@ fun ~test = {
   a: ~
   ~
   case
-  | b: ~ is 2
+  | b: if ~ is 2
     [4]
     let r = span a..b
     let s = span b..d

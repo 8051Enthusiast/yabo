@@ -18,7 +18,7 @@ use yaboc_hir::{self as hir, BlockReturnKind};
 use yaboc_hir_types::FullTypeId;
 use yaboc_len::{depvec::SmallBitVec, ArgRank, ScopeInfo, ScopeInfoIdx, ScopeKind, SizeExpr, Term};
 use yaboc_req::NeededBy;
-use yaboc_resolve::expr::{Resolved, ResolvedAtom};
+use yaboc_resolve::expr::{EvalKind, Resolved, ResolvedAtom};
 use yaboc_resolve::expr::{ValBinOp, ValUnOp, ValVarOp};
 use yaboc_types::Type;
 
@@ -251,10 +251,13 @@ impl<'a> SizeTermBuilder<'a> {
                         ValUnOp::Wiggle(_, WiggleKind::Is | WiggleKind::If) if needs_bt => {
                             self.push_term(Term::Backtracking(inner), src)
                         }
-                        ValUnOp::EvalFun if inner_bt && needs_bt => {
+                        ValUnOp::EvalFun(EvalKind::IfInnerBlock) if inner_bt && needs_bt => {
                             self.push_term(Term::Backtracking(inner), src)
                         }
-                        ValUnOp::Wiggle(_, _) | ValUnOp::BtMark(_) | ValUnOp::EvalFun => inner,
+                        ValUnOp::EvalFun(EvalKind::Backtrack(BtMarkKind::KeepBt)) if needs_bt => {
+                            self.push_term(Term::Backtracking(inner), src)
+                        }
+                        ValUnOp::Wiggle(_, _) | ValUnOp::EvalFun(_) => inner,
                         ValUnOp::Size => {
                             let ldt = self.db.lookup_intern_type(inner_ty);
                             match ldt {
@@ -278,7 +281,7 @@ impl<'a> SizeTermBuilder<'a> {
                         ValUnOp::Not => self.push_term(Term::OpaqueUn(inner), src),
                         ValUnOp::GetAddr => self.push_term(Term::OpaqueUn(inner), src),
                     },
-                    ExprHead::Dyadic(d, [&(lhs, _, _), &(rhs, rhs_bt, _)]) => match d {
+                    ExprHead::Dyadic(d, [&(lhs, _, _), &(rhs, _, _)]) => match d {
                         ValBinOp::Mul => self.push_term(Term::Mul([lhs, rhs]), src),
                         ValBinOp::Plus => self.push_term(Term::Add([lhs, rhs]), src),
                         ValBinOp::Minus => {
@@ -287,7 +290,7 @@ impl<'a> SizeTermBuilder<'a> {
                         }
                         ValBinOp::Else => self.push_term(Term::Unify([lhs, rhs]), src),
                         ValBinOp::Then => self.push_term(Term::Then([lhs, rhs]), src),
-                        ValBinOp::ParserApply if rhs_bt && needs_bt => {
+                        ValBinOp::ParserApply(Some(BtMarkKind::KeepBt)) if needs_bt => {
                             let res = self.push_term(Term::OpaqueBin([lhs, rhs]), src);
                             self.push_term(Term::Backtracking(res), src)
                         }
@@ -305,7 +308,9 @@ impl<'a> SizeTermBuilder<'a> {
                         | ValBinOp::Div
                         | ValBinOp::Modulo
                         | ValBinOp::Range
-                        | ValBinOp::ParserApply => self.push_term(Term::OpaqueBin([lhs, rhs]), src),
+                        | ValBinOp::ParserApply(_) => {
+                            self.push_term(Term::OpaqueBin([lhs, rhs]), src)
+                        }
                     },
                     ExprHead::Variadic(ValVarOp::PartialApply(_), args) => {
                         let (f, ..) = args[0];

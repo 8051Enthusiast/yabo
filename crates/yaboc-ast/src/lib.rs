@@ -288,6 +288,7 @@ pub struct ParserDefinition {
     pub to: ValExpression,
     pub ret_ty: Option<TypeExpression>,
     pub span: Span,
+    pub bt: Option<BtMarkKind>,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -307,6 +308,7 @@ pub struct Lambda {
 pub struct ParseStatement {
     pub name: Option<FieldSpan>,
     pub parser: ValExpression,
+    pub bt: Option<BtMarkKind>,
     pub span: Span,
 }
 
@@ -369,6 +371,7 @@ pub struct FunApplication {
     pub applicant: ValExpression,
     pub args: Vec<ValExpression>,
     pub partial: Option<()>,
+    pub bt: Option<BtMarkKind>,
     pub span: Span,
 }
 
@@ -377,9 +380,9 @@ impl From<FunApplication> for Variadic<OpWithData<ValVarOp, Span>, Box<ValExpres
         let mut inner = vec![Box::new(app.applicant)];
         inner.extend(app.args.into_iter().map(Box::new));
         let application = if app.partial.is_some() {
-            ValVarOp::PartialApply
+            ValVarOp::PartialApply(app.bt)
         } else {
-            ValVarOp::Call
+            ValVarOp::Call(app.bt)
         };
         Variadic {
             op: OpWithData {

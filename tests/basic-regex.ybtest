@@ -1,9 +1,9 @@
 ====[ source code ]====
 import text
 export def ~test = {
-  /[^0-9]*/
-  a: /[0-9]+./?
-  let return = a ~> text.num?
+  if /[^0-9]*/
+  a: if /[0-9]+./
+  let return = a ~> if text.num
 }
 
 ====[ text 1 ]====

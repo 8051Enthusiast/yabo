@@ -18,7 +18,7 @@ use yaboc_hir::{
 };
 use yaboc_hir_types::FullTypeId;
 use yaboc_resolve::{
-    expr::{Resolved, ResolvedAtom, ValBinOp, ValUnOp, ValVarOp},
+    expr::{EvalKind, Resolved, ResolvedAtom, ValBinOp, ValUnOp, ValVarOp},
     parserdef_ssc::FunctionSscId,
 };
 use yaboc_types::{DefId, Type, TypeId};
@@ -71,6 +71,17 @@ impl BtTerm {
 
     fn lookup_node(&self) -> &ExprNode {
         &self.expr[self.lookup_idx as usize]
+    }
+}
+
+pub fn kind_from_flags(effect: bool, silent: bool, kind: EvalKind) -> EvalEffectKind {
+    match (effect, silent, kind) {
+        (false, _, EvalKind::IfInnerBlock) | (_, _, EvalKind::Pure) => EvalEffectKind::None,
+        (true, false, EvalKind::IfInnerBlock)
+        | (_, false, EvalKind::Backtrack(BtMarkKind::KeepBt)) => EvalEffectKind::Effectful,
+        (_, true, _) | (_, false, EvalKind::Backtrack(BtMarkKind::RemoveBt)) => {
+            EvalEffectKind::Silent
+        }
     }
 }
 
@@ -182,7 +193,12 @@ impl<'a> ExpressionBuildCtx<'a> {
                     let silent = self.is_silent_context(p.parent_context, &mut context_cache)?;
                     let (effectful, expr) = self.build_expr(p.expr, silent)?;
                     let ty = self.db.parser_type_at(p.id.0)?;
-                    let effectful = EvalEffectKind::from_flags(effectful, silent);
+                    let kind = if effectful {
+                        EvalKind::IfInnerBlock
+                    } else {
+                        p.bt.into()
+                    };
+                    let effectful = kind_from_flags(effectful, silent, kind);
                     let parse_res = self.push(
                         Instruction::Parse {
                             effectful,
@@ -315,15 +331,11 @@ impl<'a> ExpressionBuildCtx<'a> {
                         let field = *ctx.vars.get(name).expect("did not find field").inner();
                         self.push(Instruction::GetField(inner, field), *ty, orig)
                     }
-                    ValUnOp::Wiggle(_, WiggleKind::Expect)
-                    | ValUnOp::BtMark(BtMarkKind::KeepBt) => {
+                    ValUnOp::Wiggle(_, WiggleKind::Expect) => {
                         self.push(Instruction::Copy(inner), *ty, orig)
                     }
-                    ValUnOp::BtMark(BtMarkKind::RemoveBt) => {
-                        self.push(Instruction::Deactivate(inner), *ty, orig)
-                    }
-                    ValUnOp::EvalFun => self.push(
-                        Instruction::Eval(EvalEffectKind::from_flags(inner_bt, silent), inner),
+                    ValUnOp::EvalFun(kind) => self.push(
+                        Instruction::Eval(kind_from_flags(inner_bt, silent, kind), inner),
                         *ty,
                         orig,
                     ),
@@ -332,9 +344,9 @@ impl<'a> ExpressionBuildCtx<'a> {
                     }
                 },
                 ExprHead::Dyadic(op, [(_, lhs), (rbt, rhs)]) => match op {
-                    ValBinOp::ParserApply => self.push(
+                    ValBinOp::ParserApply(kind) => self.push(
                         Instruction::Parse {
-                            effectful: EvalEffectKind::from_flags(rbt, silent),
+                            effectful: kind_from_flags(rbt, silent, kind.into()),
                             fun: rhs,
                             arg: lhs,
                         },
@@ -420,8 +432,13 @@ impl<'a> ExpressionBuildCtx<'a> {
         };
         let return_ty = self.db.parser_returns(self.pd)?.deref;
         let (effectful, mut return_idx) = self.build_expr(parserdef.to, false)?;
+        let kind = if effectful {
+            EvalKind::IfInnerBlock
+        } else {
+            parserdef.bt.into()
+        };
         if let Some(arg) = parse_arg {
-            let effectful = EvalEffectKind::from_flags(effectful, false);
+            let effectful = kind_from_flags(effectful, false, kind);
             return_idx = self.push(
                 Instruction::Parse {
                     effectful,

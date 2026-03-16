@@ -96,7 +96,7 @@ def ~block_ptr[T](data: ~T) = {
   block: u32l
   case
   | block if 0 then nil
-  | let pointee = ([block_size] |> data!) at (block * block_size)
+  | let pointee = ([block_size] |> data) expect at (block * block_size)
   \
 }
 
@@ -126,7 +126,7 @@ fun inode_type(mode: int) = {|
 def ~byte_block = [..]
 
 def ~dir_entry = {
-  inode_idx: inode_ptr is !eof and pointee
+  inode_idx: if inode_ptr is !eof and pointee
   rec_len: u16l
   name_len: u8
   file_type: u8

@@ -1,16 +1,16 @@
 # Parses a specific byte or fails
 def ~byteval(x: int) = {{
   y: ~
-  assert(x == y)?
+  if assert(x == y)
 }}
 
 # backtracks if `f` matches, otherwise parses
 # a zero length value
 fun [T] ~> not_if[T, R](f: [T] ~> R) = {
-  {
+  if {
     # check if `f` parses
     case
-    | f?
+    | if f
     # if not, parse a zero-length unit type
     # and put it into the `not_parsed` field
     | not_parsed: {}
@@ -20,22 +20,22 @@ fun [T] ~> not_if[T, R](f: [T] ~> R) = {
 
 # checks if `f` matches, but does not advance the
 # stream and does not return the value of `f`
-fun [T] ~> lookahead[T, R](f: [T] ~> R) = not_if(not_if(f))?
+fun [T] ~> lookahead[T, R](f: [T] ~> R) = if not_if(not_if(f))
 
 # succeeds if the current position is at the end of the stream
-fun [T] ~> eof[T] = not_if(~ is !eof)?
+fun [T] ~> eof[T] = if not_if(~ is !eof)
 
 # optionally parses `f`, or zero length if `f` fails
 fun [T] ~> optional[T, R](f: [T] ~> R) = {
   case
-  | some: f?
+  | some: if f
   | none: {}
   \
 }
 
 fun [T] ~> _len_impl[T](acc: int): int = {
   case
-  | ~ is !eof, return: _len_impl(acc + 1)
+  | if ~ is !eof, return: _len_impl(acc + 1)
   | let return = acc
   \
 }
@@ -46,24 +46,24 @@ fun [T] ~> len[T] = _len_impl(0)
 # Some parser combinators that parse the input using some given parsers,
 # and then apply a function to the results.
 fun [T] ~> lift[T, R, A](f: (A) -> R, a: [T] ~> A) = {
-  res: a?, let return = f?(res)
+  res: if a, let return = f?(res)
 }
 
 fun [T] ~> lift2[T, R, A0, A1](f: (A0, A1) -> R, a0: [T] ~> A0, a1: [T] ~> A1) = {
-  res0: a0?, res1: a1?, let return = f?(res0, res1)
+  res0: if a0, res1: if a1, let return = f?(res0, res1)
 }
 
 fun [T] ~> lift3[T, R, A0, A1, A2](f: (A0, A1, A2) -> R, a0: [T] ~> A0, a1: [T] ~> A1, a2: [T] ~> A2) = {
-  res0: a0?, res1: a1?, res2: a2?, let return = f?(res0, res1, res2)
+  res0: if a0, res1: if a1, res2: if a2, let return = f?(res0, res1, res2)
 }
 
 fun [T] ~> lift4[T, R, A0, A1, A2, A3](f: (A0, A1, A2, A3) -> R, a0: [T] ~> A0, a1: [T] ~> A1, a2: [T] ~> A2, a3: [T] ~> A3) = {
-  res0: a0?, res1: a1?, res2: a2?, res3: a3?, let return = f?(res0, res1, res2, res3)
+  res0: if a0, res1: if a1, res2: if a2, res3: if a3, let return = f?(res0, res1, res2, res3)
 }
 
 fun [T] ~> find[T, R](p: [T] ~> R) = {
   case
-  | return: p? is !eof
-  | ~ is !eof, return: find(p)?
+  | return: if p is !eof
+  | if ~ is !eof, return: if find(p)
   \
 }

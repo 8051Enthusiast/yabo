@@ -1,14 +1,14 @@
 ====[ source code ]====
 fun ~u8ptr[T](t: ~T) = {
-  addr: u8 is 0x01..0xff
-  let return = t? at addr
+  addr: if u8 is 0x01..0xff
+  let return = t if at addr
 }
 
 export
 def ~test = {
   case
-  | u8 is 0
-  | next: u8ptr(test)?
+  | if u8 is 0
+  | next: if u8ptr(test)
   \
   val: u8
 }

@@ -20,7 +20,7 @@ use yaboc_hir::{
 };
 use yaboc_hir_types::FullTypeId;
 use yaboc_req::{NeededBy, RequirementSet};
-use yaboc_resolve::expr::{Resolved, ResolvedAtom, ValBinOp, ValUnOp, ValVarOp};
+use yaboc_resolve::expr::{EvalKind, Resolved, ResolvedAtom, ValBinOp, ValUnOp, ValVarOp};
 use yaboc_types::{Type, TypeId};
 
 use crate::{
@@ -87,6 +87,13 @@ impl DerefMut for ConvertExpr<'_> {
     }
 }
 
+fn modify_reqs(reqs: RequirementSet, inner_can_bt: bool, eval_kind: EvalKind) -> RequirementSet {
+    match (inner_can_bt, eval_kind) {
+        (true, EvalKind::IfInnerBlock) | (_, EvalKind::Backtrack(BtMarkKind::KeepBt)) => reqs,
+        _ => reqs & !NeededBy::Backtrack,
+    }
+}
+
 impl<'a> ConvertExpr<'a> {
     pub fn new(
         db: &'a dyn Mirs,
@@ -137,7 +144,6 @@ impl<'a> ConvertExpr<'a> {
         let place = self.f.add_place(PlaceInfo {
             place: Place::ModifiedBy(self.f.next_ins()),
             eval: true,
-            remove_bt: false,
         });
         self.places.insert(SubValue::new_back(call_loc), place);
         place
@@ -155,7 +161,6 @@ impl<'a> ConvertExpr<'a> {
         let place_info = PlaceInfo {
             place: Place::Undefined,
             eval: false,
-            remove_bt: false,
         };
         self.f.add_place(place_info)
     }
@@ -205,7 +210,6 @@ impl<'a> ConvertExpr<'a> {
         let place_info = PlaceInfo {
             place: Place::Global(pd),
             eval: true,
-            remove_bt: false,
         };
         let place_ref = self.f.add_place(place_info);
         if loc.place.is_none() {
@@ -220,7 +224,6 @@ impl<'a> ConvertExpr<'a> {
         let place_ref = self.f.add_place(PlaceInfo {
             place: Place::Captured(self.f.fun.cap(), captured),
             eval: false,
-            remove_bt: false,
         });
         if !loc.eval && loc.place.is_none() {
             return Ok(place_ref);
@@ -306,7 +309,6 @@ impl<'a> ConvertExpr<'a> {
                 ctx.f.add_place(PlaceInfo {
                     place: Place::Captured(block, *captured),
                     eval: false,
-                    remove_bt: false,
                 })
             };
 
@@ -396,7 +398,6 @@ impl<'a> ConvertExpr<'a> {
             let inner_place = self.f.add_place(PlaceInfo {
                 place: Place::Front(place_ref),
                 eval: true,
-                remove_bt: false,
             });
             inner_loc.place = Some(inner_place);
             self.copy_if_eval(loc.eval, inner_loc, recurse)?;
@@ -458,7 +459,8 @@ impl<'a> ConvertExpr<'a> {
     ) -> SResult<PlaceRef> {
         let fun_ref = self.copy_if_deref(inner_loc, recurse)?;
         let place_ref = self.unwrap_or_stack(loc);
-        self.f.eval_fun(fun_ref, place_ref, req & !NeededBy::Len, self.retreat);
+        self.f
+            .eval_fun(fun_ref, place_ref, req & !NeededBy::Len, self.retreat);
         Ok(place_ref)
     }
 
@@ -555,12 +557,15 @@ impl<'a> ConvertExpr<'a> {
             ValUnOp::Dot(field, Some(BtMarkKind::KeepBt)) => {
                 self.convert_dot(inner_loc, loc, BtMarkKind::KeepBt, *field, recurse)
             }
-            ValUnOp::EvalFun if inner_can_bt => self.convert_eval_fun(inner_loc, loc, recurse, req),
+            ValUnOp::EvalFun(eval_kind) => self.convert_eval_fun(
+                inner_loc,
+                loc,
+                recurse,
+                modify_reqs(req, inner_can_bt, *eval_kind),
+            ),
             ValUnOp::Wiggle(_, WiggleKind::Expect)
             | ValUnOp::Dot(_, None | Some(BtMarkKind::RemoveBt))
-            | ValUnOp::EvalFun
             | ValUnOp::Size
-            | ValUnOp::BtMark(_)
             | ValUnOp::GetAddr
             | ValUnOp::Not
             | ValUnOp::Neg => {
@@ -575,6 +580,7 @@ impl<'a> ConvertExpr<'a> {
         op: &ValUnOp<HirConstraintId>,
         loc: ExpressionLoc,
         inner_loc: ExpressionLoc,
+        inner_can_bt: bool,
         inner_ty: TypeId,
         req: RequirementSet,
         recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
@@ -607,18 +613,12 @@ impl<'a> ConvertExpr<'a> {
                 *field,
                 recurse,
             )?,
-            ValUnOp::BtMark(BtMarkKind::KeepBt) => recurse(self, loc.place)?,
-            ValUnOp::BtMark(BtMarkKind::RemoveBt) => {
-                let remove_bt = self.new_remove_bt_stack_place(loc.origin);
-                let val_without_bt = recurse(self, Some(remove_bt))?;
-                if let Some(place) = loc.place {
-                    self.copy(val_without_bt, place);
-                    place
-                } else {
-                    val_without_bt
-                }
-            }
-            ValUnOp::EvalFun => self.convert_eval_fun(inner_loc, loc, recurse, req)?,
+            ValUnOp::EvalFun(eval_kind) => self.convert_eval_fun(
+                inner_loc,
+                loc,
+                recurse,
+                modify_reqs(req, inner_can_bt, *eval_kind),
+            )?,
             ValUnOp::GetAddr => {
                 let inner = self.copy_if_deref(inner_loc, recurse)?;
                 let place_ref = self.unwrap_or_stack(loc);
@@ -638,10 +638,9 @@ impl<'a> ConvertExpr<'a> {
             impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
         ),
         req: RequirementSet,
-        rhs_can_bt: bool,
     ) -> SResult<PlaceRef> {
         match op {
-            ValBinOp::ParserApply if rhs_can_bt => {
+            ValBinOp::ParserApply(Some(BtMarkKind::KeepBt)) => {
                 self.convert_parser_apply(loc, [lloc, rloc], lrecurse, rrecurse, req)
             }
             ValBinOp::Else => {
@@ -659,7 +658,7 @@ impl<'a> ConvertExpr<'a> {
                 Ok(self.load_undef(loc))
             }
             ValBinOp::Then
-            | ValBinOp::ParserApply
+            | ValBinOp::ParserApply(None | Some(BtMarkKind::RemoveBt))
             | ValBinOp::Range
             | ValBinOp::And
             | ValBinOp::Xor
@@ -726,7 +725,7 @@ impl<'a> ConvertExpr<'a> {
                 self.f.comp(place_ref, op, left, right);
                 place_ref
             }
-            ValBinOp::ParserApply => {
+            ValBinOp::ParserApply(_) => {
                 self.convert_parser_apply(loc, [lloc, rloc], lrecurse, rrecurse, req)?
             }
             ValBinOp::Else => {
@@ -828,7 +827,15 @@ impl<'a> ConvertExpr<'a> {
                     origin: inner_origin,
                 };
                 if req.contains(NeededBy::Val) {
-                    self.convert_monadic(op, loc, inner_loc, *inner_ty, req, recurse)?
+                    self.convert_monadic(
+                        op,
+                        loc,
+                        inner_loc,
+                        inner_bt.bt.can_backtrack(),
+                        *inner_ty,
+                        req,
+                        recurse,
+                    )?
                 } else {
                     self.convert_monadic_no_val(
                         op,
@@ -844,7 +851,7 @@ impl<'a> ConvertExpr<'a> {
                 let lrecurse = |ctx: &mut Self, plc| ctx.convert_expr_impl(expr, *left, plc);
                 let rrecurse = |ctx: &mut Self, plc| ctx.convert_expr_impl(expr, *right, plc);
                 let ((left_idx, _), _) = expr.content.data.index_expr(*left);
-                let ((right_idx, _), right_bt) = expr.content.data.index_expr(*right);
+                let ((right_idx, _), _) = expr.content.data.index_expr(*right);
                 let lorigin = PlaceOrigin::Expr(expr.id, left_idx);
                 let rorigin = PlaceOrigin::Expr(expr.id, right_idx);
                 let lloc = ExpressionLoc {
@@ -860,14 +867,7 @@ impl<'a> ConvertExpr<'a> {
                 if req.contains(NeededBy::Val) {
                     self.convert_dyadic(op, loc, [lloc, rloc], (lrecurse, rrecurse), req)?
                 } else {
-                    self.convert_dyadic_no_value(
-                        op,
-                        loc,
-                        [lloc, rloc],
-                        (lrecurse, rrecurse),
-                        req,
-                        right_bt.bt.can_backtrack(),
-                    )?
+                    self.convert_dyadic_no_value(op, loc, [lloc, rloc], (lrecurse, rrecurse), req)?
                 }
             }
             ExprHead::Variadic(ValVarOp::PartialApply(_), inner) => {

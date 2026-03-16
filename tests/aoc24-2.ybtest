@@ -4,20 +4,20 @@ import parse
 import aoc
 
 fun ~ranged_diff(valid: (int) -> int) = {
-  n: text.num!
+  n: expect text.num
   case
-  | parse.eof?, let return = 1
-  | text.whitespace?
-    parse.lookahead(parse.lift(<x> valid?(x - n), text.num))?
-    return: ranged_diff(valid)?
+  | if parse.eof, let return = 1
+  | if text.whitespace
+    if parse.lookahead(parse.lift(<x> valid?(x - n), text.num))
+    return: if ranged_diff(valid)
   \
 }
 
-fun ~rising = ranged_diff(<x> x if 1..3)?
-fun ~falling = ranged_diff(<x> x if -3..-1)?
+fun ~rising = if ranged_diff(<x> x if 1..3)
+fun ~falling = if ranged_diff(<x> x if -3..-1)
 
 export
-fun ~test = aoc.summap(text.line? |> alt3(rising, falling, pure(0)))
+fun ~test = aoc.summap(text.line |> alt3(rising, falling, pure(0)))
 
 ====[ text 1 ]====
 75 76 77 80 82 85 84

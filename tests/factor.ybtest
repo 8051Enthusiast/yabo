@@ -13,7 +13,7 @@ def ~factor(n: int) = factor_impl(n, 2)
 
 export
 def ~test = {
-  n: text.num?
+  n: if text.num
   return: factor(n)
 }
 

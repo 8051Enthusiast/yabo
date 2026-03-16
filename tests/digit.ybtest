@@ -6,7 +6,7 @@ fun ~digit(base: int) = {
 }
 
 export
-fun ~test = digit(10)?
+fun ~test = if digit(10)
 ====[ text 1 ]====
 3
 

@@ -1,11 +1,11 @@
 ====[ source code ]====
 fun [T] ~> lift2[R, T, A0, A1](f: (A0, A1) -> R, a0: [T] ~> A0, a1: [T] ~> A1) = {
-  res0: a0?, res1: a1?, let return = f?(res0, res1)
+  res0: if a0, res1: if a1, let return = f?(res0, res1)
 }
 fun [T] ~> alt[R, T](a0: [T] ~> R, a1: [T] ~> R) = {
   case
-  | return: a0?
-  | return: a1?
+  | return: if a0
+  | return: if a1
   \
 }
 

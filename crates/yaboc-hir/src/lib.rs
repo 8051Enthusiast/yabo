@@ -16,7 +16,9 @@ use std::{
 
 use salsa::InternId;
 use yaboc_ast::{
-    expr::{self, Atom, ConstraintBinOp, ConstraintUnOp, Expression, ExpressionHead, Unused},
+    expr::{
+        self, Atom, BtMarkKind, ConstraintBinOp, ConstraintUnOp, Expression, ExpressionHead, Unused,
+    },
     ConstraintAtom,
 };
 use yaboc_ast::{ArrayKind, TopLevelStatement};
@@ -731,6 +733,7 @@ pub struct ParserDef {
     pub args: Option<Vec<ArgDefId>>,
     pub to: ExprId,
     pub ret_ty: Option<TExprId>,
+    pub bt: Option<BtMarkKind>,
 }
 
 impl ParserDef {
@@ -867,6 +870,7 @@ pub struct ParseStatement {
     pub front: ParserPredecessor,
     pub back: ParserPredecessor,
     pub expr: ExprId,
+    pub bt: Option<BtMarkKind>,
 }
 
 impl ParseStatement {

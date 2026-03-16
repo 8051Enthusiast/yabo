@@ -31,7 +31,7 @@ fun bit_index(n: int) = {|
 |}
 
 export def ~test = {
-  line: list.list(priority?)
+  line: list.list(priority)
   let line_len = list.len(line)
   let second_half = list.skip!(line, line_len / 2)
   let first_set = bitset!(line, line_len / 2, 0)

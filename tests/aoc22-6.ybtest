@@ -1,7 +1,7 @@
 ====[ source code ]====
 def ~find[R](needle: ~R, distance: int): int = {
   case
-  | needle?
+  | if needle
     let return = distance
   | ~, return: find(needle, distance + 1)
   \
@@ -16,12 +16,12 @@ def ~uniqc(bitset: int) = {
 def ~repeat_fold[T](f: (T) -> ~T, start: T, n: int): int = {
   case
   | let return = n if 0
-  | next: f?(start)?
-    return: repeat_fold(f, next, n - 1)?
+  | next: if f?(start)
+    return: if repeat_fold(f, next, n - 1)
   \
 }
 
-def ~marker = repeat_fold(uniqc, 0, 4)?
+def ~marker = if repeat_fold(uniqc, 0, 4)
 
 export def ~test = find(marker, 4)
 

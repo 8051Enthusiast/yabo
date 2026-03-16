@@ -1,13 +1,13 @@
 ====[ source code ]====
 fun ~last_byte: int = {
   case
-  | ~ is !eof
-    return: last_byte?
-  | return: ~ is !eof
+  | if ~ is !eof
+    return: if last_byte
+  | return: if ~ is !eof
   \
 }
 
-export fun ~test = last_byte!
+export fun ~test = expect last_byte
 
 ====[ binary 1 ]====
 01 02 03

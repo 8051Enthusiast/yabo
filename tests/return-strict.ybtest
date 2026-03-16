@@ -1,8 +1,8 @@
 ====[ source code ]====
 def ~list[R](element: ~R) = {
   case
-  | this: element?
-    next: list(element?)
+  | this: if element
+    next: list(element)
   | {}
   \
 }
@@ -19,7 +19,7 @@ fun ~digit = {
 
 export
 fun ~test = {
-  digits: list({/[^0-9\n]*/, return: digit? is !eof})
+  digits: list({if /[^0-9\n]*/, return: if digit is !eof})
   let return = first?(digits) else 1000
 }
 

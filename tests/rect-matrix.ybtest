@@ -4,7 +4,7 @@ export
 def ~test = {
     rows: ~, columns: ~
     case
-    | m: matrix(rows, columns) is !eof
+    | m: if matrix(rows, columns) is !eof
     | let t = 1
     \
 }

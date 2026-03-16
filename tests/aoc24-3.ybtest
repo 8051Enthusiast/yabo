@@ -4,13 +4,13 @@ import text
 import aoc
 
 fun ~dont = {
-  >"don't()"
-  parse.find(alt(parse.eof, {>"do()"}))!
+  if >"don't()"
+  expect parse.find(alt(parse.eof, {if >"do()"}))
   let return = 0
 }
 
 fun ~mul = {
-  >"mul(", a: text.num?, >",", b: text.num?, >")"
+  if >"mul(", a: if text.num, if >",", b: if text.num, if >")"
   let return = a * b
 }
 

@@ -2,7 +2,7 @@
 import aoc
 import text
 export def ~test = aoc.summap({
-  return: text.num? is 0..10, text.newline?
+  return: if text.num is 0..10, if text.newline
 })
 
 ====[ text 1 ]====

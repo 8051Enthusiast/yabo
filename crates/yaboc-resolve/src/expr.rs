@@ -52,7 +52,7 @@ pub enum ValBinOp {
     Div,
     Modulo,
     Mul,
-    ParserApply,
+    ParserApply(Option<BtMarkKind>),
     Else,
     Then,
     Range,
@@ -90,14 +90,30 @@ impl TryFrom<expr::ValBinOp> for ValBinOp {
             expr::ValBinOp::Div => Ok(ValBinOp::Div),
             expr::ValBinOp::Modulo => Ok(ValBinOp::Modulo),
             expr::ValBinOp::Mul => Ok(ValBinOp::Mul),
-            expr::ValBinOp::ParserApply => Ok(ValBinOp::ParserApply),
+            expr::ValBinOp::ParserApply(mark) => Ok(ValBinOp::ParserApply(mark)),
             expr::ValBinOp::Else => Ok(ValBinOp::Else),
             expr::ValBinOp::Then => Ok(ValBinOp::Then),
             expr::ValBinOp::Range => Ok(ValBinOp::Range),
             expr::ValBinOp::Index(p) => Err(expr::ValBinOp::Index(p)),
             expr::ValBinOp::Compose => Err(expr::ValBinOp::Compose),
-            expr::ValBinOp::At => Err(expr::ValBinOp::At),
+            expr::ValBinOp::At(mark) => Err(expr::ValBinOp::At(mark)),
             expr::ValBinOp::Array => Err(expr::ValBinOp::Array),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EvalKind {
+    Backtrack(BtMarkKind),
+    Pure,
+    IfInnerBlock,
+}
+
+impl From<Option<BtMarkKind>> for EvalKind {
+    fn from(value: Option<BtMarkKind>) -> Self {
+        match value {
+            Some(mark) => EvalKind::Backtrack(mark),
+            None => EvalKind::Pure,
         }
     }
 }
@@ -109,8 +125,7 @@ pub enum ValUnOp<C> {
     Wiggle(C, WiggleKind),
     Dot(FieldName, Option<BtMarkKind>),
     Size,
-    BtMark(BtMarkKind),
-    EvalFun,
+    EvalFun(EvalKind),
     GetAddr,
 }
 
@@ -125,7 +140,6 @@ impl<C> TryFrom<expr::ValUnOp<C>> for ValUnOp<C> {
             expr::ValUnOp::Wiggle(c, k) => Ok(ValUnOp::Wiggle(c, k)),
             expr::ValUnOp::Dot(f, m) => Ok(ValUnOp::Dot(f, m)),
             expr::ValUnOp::Size => Ok(ValUnOp::Size),
-            expr::ValUnOp::BtMark(k) => Ok(ValUnOp::BtMark(k)),
             expr::ValUnOp::Array => Err(expr::ValUnOp::Array),
             expr::ValUnOp::ArrayFill => Err(expr::ValUnOp::ArrayFill),
             expr::ValUnOp::StartWith => Err(expr::ValUnOp::StartWith),
@@ -144,8 +158,8 @@ impl TryFrom<expr::ValVarOp> for ValVarOp {
 
     fn try_from(value: expr::ValVarOp) -> Result<Self, Self::Error> {
         match value {
-            expr::ValVarOp::PartialApply => Ok(ValVarOp::PartialApply(Origin::User)),
-            expr::ValVarOp::Call => Err(expr::ValVarOp::Call),
+            expr::ValVarOp::PartialApply(_) => Ok(ValVarOp::PartialApply(Origin::User)),
+            expr::ValVarOp::Call(mark) => Err(expr::ValVarOp::Call(mark)),
         }
     }
 }
@@ -409,7 +423,7 @@ pub fn resolve_expr_error(
             (V(_, f), ExprHead::Variadic(op, inner)) => f(id, op, inner),
             (N(..) | M(..) | D(..) | V(..), _) => unreachable!(),
             (Cont(_), ExprHead::Dyadic(expr::ValBinOp::Compose, _)) => ExprHead::Monadic(
-                ValUnOp::EvalFun,
+                ValUnOp::EvalFun(EvalKind::Pure),
                 D(id, |id, _, [lhs, rhs]| {
                     ExprHead::Variadic(
                         ValVarOp::PartialApply(Origin::Compose),
@@ -419,8 +433,8 @@ pub fn resolve_expr_error(
                     )
                 }),
             ),
-            (Cont(_), ExprHead::Dyadic(expr::ValBinOp::At, [lhs, _])) => ExprHead::Dyadic(
-                ValBinOp::ParserApply,
+            (Cont(_), ExprHead::Dyadic(expr::ValBinOp::At(mark), [lhs, _])) => ExprHead::Dyadic(
+                ValBinOp::ParserApply(*mark),
                 [
                     D(id, |_, _, [_, rhs]| {
                         ExprHead::Monadic(ValUnOp::GetAddr, Cont(rhs))
@@ -428,27 +442,19 @@ pub fn resolve_expr_error(
                     Cont(*lhs),
                 ],
             ),
-            (Cont(_), ExprHead::Dyadic(expr::ValBinOp::Index(_), [lhs, _])) => ExprHead::Dyadic(
-                ValBinOp::ParserApply,
+            (Cont(_), ExprHead::Dyadic(expr::ValBinOp::Index(mark), [lhs, _])) => ExprHead::Dyadic(
+                ValBinOp::ParserApply(Some(*mark)),
                 [
                     Cont(*lhs),
-                    D(id, |id, op, _| {
-                        let expr::ValBinOp::Index(bt) = op else {
-                            unreachable!()
-                        };
+                    D(id, |id, _, _| {
                         ExprHead::Monadic(
-                            ValUnOp::BtMark(*bt),
-                            D(id, |id, _, _| {
-                                ExprHead::Monadic(
-                                    ValUnOp::EvalFun,
-                                    D(id, |id, _, [_, rhs]| {
-                                        ExprHead::Variadic(
-                                            ValVarOp::PartialApply(Origin::Index),
-                                            SmallVec::from(
-                                                &[Item(id, hir::CoreItem::Index), Cont(rhs)][..],
-                                            ),
-                                        )
-                                    }),
+                            ValUnOp::EvalFun(EvalKind::Pure),
+                            D(id, |id, _, [_, rhs]| {
+                                ExprHead::Variadic(
+                                    ValVarOp::PartialApply(Origin::Index),
+                                    SmallVec::from(
+                                        &[Item(id, hir::CoreItem::Index), Cont(rhs)][..],
+                                    ),
                                 )
                             }),
                         )
@@ -456,7 +462,7 @@ pub fn resolve_expr_error(
                 ],
             ),
             (Cont(_), ExprHead::Monadic(expr::ValUnOp::Array, _)) => ExprHead::Monadic(
-                ValUnOp::EvalFun,
+                ValUnOp::EvalFun(EvalKind::Pure),
                 M(id, |id, _, inner| {
                     ExprHead::Variadic(
                         ValVarOp::PartialApply(Origin::Array),
@@ -471,7 +477,7 @@ pub fn resolve_expr_error(
                 }),
             ),
             (Cont(_), ExprHead::Dyadic(expr::ValBinOp::Array, _)) => ExprHead::Monadic(
-                ValUnOp::EvalFun,
+                ValUnOp::EvalFun(EvalKind::Pure),
                 D(id, |id, _, [lhs, rhs]| {
                     ExprHead::Variadic(
                         ValVarOp::PartialApply(Origin::Array),
@@ -486,7 +492,7 @@ pub fn resolve_expr_error(
                 }),
             ),
             (Cont(_), ExprHead::Monadic(expr::ValUnOp::ArrayFill, _)) => ExprHead::Monadic(
-                ValUnOp::EvalFun,
+                ValUnOp::EvalFun(EvalKind::Pure),
                 M(id, |id, _, inner| {
                     ExprHead::Variadic(
                         ValVarOp::PartialApply(Origin::ArrayFill),
@@ -500,7 +506,7 @@ pub fn resolve_expr_error(
                 }),
             ),
             (Cont(_), ExprHead::Niladic(ResolvedAtom::ArrayFill)) => ExprHead::Monadic(
-                ValUnOp::EvalFun,
+                ValUnOp::EvalFun(EvalKind::Pure),
                 N(id, |id, _| {
                     ExprHead::Variadic(
                         ValVarOp::PartialApply(Origin::ArrayFill),
@@ -513,8 +519,8 @@ pub fn resolve_expr_error(
                     )
                 }),
             ),
-            (Cont(_), ExprHead::Variadic(expr::ValVarOp::Call, _)) => ExprHead::Monadic(
-                ValUnOp::EvalFun,
+            (Cont(_), ExprHead::Variadic(expr::ValVarOp::Call(mark), _)) => ExprHead::Monadic(
+                ValUnOp::EvalFun((*mark).into()),
                 V(id, |_, _, args| {
                     ExprHead::Variadic(
                         ValVarOp::PartialApply(Origin::User),
@@ -523,21 +529,17 @@ pub fn resolve_expr_error(
                 }),
             ),
             (Cont(id), ExprHead::Niladic(ResolvedAtom::Block(b, hir::BlockKind::Inline))) => {
-                ExprHead::Monadic(ValUnOp::EvalFun, Block(id, *b, hir::BlockKind::Inline))
+                ExprHead::Monadic(
+                    ValUnOp::EvalFun(EvalKind::IfInnerBlock),
+                    Block(id, *b, hir::BlockKind::Inline),
+                )
             }
             (Cont(id), ExprHead::Monadic(expr::ValUnOp::StartWith, _)) => ExprHead::Monadic(
-                ValUnOp::BtMark(BtMarkKind::KeepBt),
-                M(id, |id, _, _| {
-                    ExprHead::Monadic(
-                        ValUnOp::EvalFun,
-                        M(id, |id, _, inner| {
-                            ExprHead::Variadic(
-                                ValVarOp::PartialApply(Origin::StartWith),
-                                SmallVec::from(
-                                    &[Item(id, hir::CoreItem::StartWith), Cont(inner)][..],
-                                ),
-                            )
-                        }),
+                ValUnOp::EvalFun(EvalKind::Pure),
+                M(id, |id, _, inner| {
+                    ExprHead::Variadic(
+                        ValVarOp::PartialApply(Origin::StartWith),
+                        SmallVec::from(&[Item(id, hir::CoreItem::StartWith), Cont(inner)][..]),
                     )
                 }),
             ),

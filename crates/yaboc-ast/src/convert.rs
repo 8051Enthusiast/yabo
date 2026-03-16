@@ -417,6 +417,7 @@ astify! {
         from: expression(type_expression)[?],
         to: expression(val_expression)[!],
         ret_ty: expression(type_expression)[?],
+        bt: bt_parse_mark_kind[?],
     };
 }
 
@@ -456,6 +457,7 @@ astify! {
     struct parse_statement = ParseStatement {
         name: fieldspan[?],
         parser: expression(val_expression)[!],
+        bt: bt_parse_mark_kind[?],
     };
 }
 
@@ -580,10 +582,11 @@ astify! {
         Variadic(fun_application),
         Dyadic(binary_expression),
         Dyadic(index),
+        Dyadic(parsecall),
+        Dyadic(atcall),
         Monadic(unary_expression),
         Monadic(constraint_apply),
         Monadic(val_dot),
-        Monadic(bt_mark),
         Niladic(with_span_data(parser_block)),
         Niladic(with_span_data(block)),
         Niladic(with_span_data(lambda)),
@@ -647,6 +650,7 @@ astify! {
         applicant: expression(val_expression)[!],
         args: expression(val_expression)[*],
         partial: partial_indicator[?],
+        bt: bt_mark_kind[?],
     };
 }
 
@@ -741,32 +745,6 @@ impl From<ValDot> for MonadicExpr<AstValSpanned> {
     }
 }
 
-struct BtMark {
-    left: ValExpression,
-    op: Spanned<BtMarkKind>,
-    #[allow(dead_code)]
-    span: Span,
-}
-
-astify! {
-    struct bt_mark = BtMark {
-        left: expression(val_expression)[!],
-        op: spanned(bt_mark_kind)[!],
-    };
-}
-
-impl From<BtMark> for MonadicExpr<AstValSpanned> {
-    fn from(val: BtMark) -> Self {
-        Monadic {
-            op: OpWithData {
-                data: val.op.span,
-                inner: ValUnOp::BtMark(val.op.inner),
-            },
-            inner: Box::new(val.left),
-        }
-    }
-}
-
 struct Index {
     left: ValExpression,
     op: Option<Spanned<BtMarkKind>>,
@@ -793,6 +771,63 @@ impl From<Index> for DyadicExpr<AstValSpanned> {
         }
     }
 }
+
+
+struct ParseCall {
+    left: ValExpression,
+    op: Option<Spanned<BtMarkKind>>,
+    right: ValExpression,
+    span: Span,
+}
+
+astify! {
+    struct parsecall = ParseCall {
+        left: expression(val_expression)[!],
+        op: spanned(bt_parse_mark_kind)[?],
+        right: expression(val_expression)[!]
+    };
+}
+
+impl From<ParseCall> for DyadicExpr<AstValSpanned> {
+    fn from(value: ParseCall) -> Self {
+        Dyadic {
+            op: OpWithData {
+                data: value.op.as_ref().map(|x| x.span).unwrap_or(value.span),
+                inner: ValBinOp::ParserApply(value.op.map(|x| x.inner)),
+            },
+            inner: [Box::new(value.left), Box::new(value.right)],
+        }
+    }
+}
+
+struct AtCall {
+    left: ValExpression,
+    op: Option<Spanned<BtMarkKind>>,
+    right: ValExpression,
+    span: Span,
+}
+
+astify! {
+    struct atcall = AtCall {
+        left: expression(val_expression)[!],
+        op: spanned(bt_parse_mark_kind)[?],
+        right: expression(val_expression)[!]
+    };
+}
+
+impl From<AtCall> for DyadicExpr<AstValSpanned> {
+    fn from(value: AtCall) -> Self {
+        Dyadic {
+            op: OpWithData {
+                data: value.op.as_ref().map(|x| x.span).unwrap_or(value.span),
+                inner: ValBinOp::At(value.op.map(|x| x.inner)),
+            },
+            inner: [Box::new(value.left), Box::new(value.right)],
+        }
+    }
+}
+
+
 
 fn wiggle_kind(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<WiggleKind> {
     let str = node_to_string(db, fd, c)?;
@@ -859,6 +894,14 @@ fn bt_mark_kind(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<BtMarkK
     }
 }
 
+fn bt_parse_mark_kind(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<BtMarkKind> {
+    let str = node_to_string(db, fd, c)?;
+    match &*str {
+        "expect" => Ok(BtMarkKind::RemoveBt),
+        "if" => Ok(BtMarkKind::KeepBt),
+        _ => panic!("unknown backtrack mark kind: {str}"),
+    }
+}
 fn identifier(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<Identifier> {
     let str = spanned(node_to_string)(db, fd, c)?;
     let id = IdentifierName { name: str.inner };

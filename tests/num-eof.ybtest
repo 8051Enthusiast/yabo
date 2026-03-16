@@ -2,19 +2,19 @@
 import text
 
 def ~constsize_num = {
-  return: /[0-9]{4}/! |> text.num!
-  /, /!
+  return: expect /[0-9]{4}/ |> text.num
+  expect /, /
 }
 
 export
 def ~test = {
-  len: text.num?, /\n/
+  len: if text.num, if /\n/
   nums: constsize_num[len]
 }
 
 ====[ text 1 ]====
 4
-0001, 0002, 0005, 1000, 
+0001, 0002, 0005, 1000,
 #
 ====[ output 1 ]====
 {
@@ -24,7 +24,7 @@ def ~test = {
 
 ====[ text 2 ]====
 3
-0001, 0002, 0005, 1000, 
+0001, 0002, 0005, 1000,
 #
 ====[ output 2 ]====
 {

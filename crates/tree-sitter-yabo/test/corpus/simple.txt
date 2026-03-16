@@ -193,7 +193,7 @@ Comment
 # comment
 def [u8] ~> test = {
    # comment
-  x: u8?
+  x: if u8
  # comment
 }
 
@@ -211,9 +211,8 @@ def [u8] ~> test = {
       (parser_sequence
         (parse_statement
           (identifier)
-          (bt_mark
-            (identifier)
-            (bt_mark_kind))))
+          (bt_parse_mark_kind)
+          (identifier)))
       (comment))))
 
 

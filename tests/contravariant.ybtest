@@ -12,7 +12,7 @@ def ~added(x: int) = {
 
 def ~applied(f: (u16l) -> ~int) = {
   n: u16l
-  return: f?(n)?
+  return: f(n)
 }
 
 export def ~test = {

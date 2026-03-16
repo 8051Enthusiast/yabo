@@ -44,7 +44,7 @@ def ~fat_entry = {
   # if it is in the range 2 to 0x0FFFFFEF, it is a valid cluster
   # and points to the next cluster in the file
   case
-  | next: masked_fat_val is 2..0x0FFFFFEF
+  | next: if masked_fat_val is 2..0x0FFFFFEF
   | other: masked_fat_val
   \
 }
@@ -64,7 +64,7 @@ static blocks = {
   return: [header.bytes_per_cluster][count_of_clusters]
 } at 0
 
-fun parse_block[T](idx: int, data: (int) -> ~T) = blocks.[idx - 2] ~> data(idx)?
+fun parse_block[T](idx: int, data: (int) -> ~T) = if blocks.[idx - 2] ~> data(idx)
 
 # defines a short entry in the directory
 def ~short_entry = {
@@ -88,7 +88,7 @@ def ~short_entry = {
 def ~long_entry = {
   ord: u8
   name1: u16l[5]
-  attr: u8 is 0x0F
+  attr: if u8 is 0x0F
   type: u8
   chksum: u8
   name2: u16l[6]
@@ -99,11 +99,11 @@ def ~long_entry = {
 # a single entry in the directory, either a long or short entry, or empty
 def ~dir_entry = [32] |> {
   case
-  | empty: u8 is 0 or 0xE5
-  | long: long_entry?
+  | empty: if u8 is 0 or 0xE5
+  | long: if long_entry
   | short: short_entry
     case
-    | assert(short.attr & 0x10 != 0)?
+    | if assert(short.attr & 0x10 != 0)
       # we have a subdirectory
       let subdir = parse_block(short.cluster, dir_entries)
     | # otherwise it's a regular file
@@ -119,7 +119,7 @@ def ~file_entry(idx: int) = entry([..], idx)
 
 # takes a data type and returns a linked list of entries using the FAT
 def ~entry[T](data_type: ~T, idx: int) = {
-  data: data_type!
+  data: expect data_type
   case
   | let next_idx = fat.[idx].?next
     let next = parse_block(next_idx, entry(data_type, ..))

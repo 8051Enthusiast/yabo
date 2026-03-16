@@ -11,13 +11,13 @@ fun ~digit(base: int) = {
   | let value = 10 + x if 0x41..0x5a - 0x41
   | let value = 10 + x if 0x61..0x7a - 0x61
   \
-  assert(base > value)?
+  if assert(base > value)
   let return = value
 }
 
 fun ~_number_acc(base: int, n: int): int = {
   case
-  | x: digit?(base) is !eof
+  | x: if digit?(base) is !eof
     return: _number_acc(base, n * base + x)
   | let return = n
   \
@@ -26,35 +26,35 @@ fun ~_number_acc(base: int, n: int): int = {
 # Parses a number in the given base.
 fun ~basenum(base: int) = {
   case
-  | /-/, let sign = -1
+  | if /-/, let sign = -1
   | let sign = 1
   \
   # make sure there is at least one digit
-  val: digit?(base) is !eof
-  n: _number_acc(base, val)?
+  val: if digit?(base) is !eof
+  n: if _number_acc(base, val)
   let return = sign * n
 }
 
 # Parses a decimal number
-fun ~num = basenum(10)?
+fun ~num = if basenum(10)
 
 # Parses a newline
-fun ~newline = /\r\n?|\n/
+fun ~newline = if /\r\n?|\n/
 
 # Parses whitespace
-fun ~whitespace = {/\s+/}
+fun ~whitespace = {if /\s+/}
 
 # Parses a newline or eof
 fun ~line_end = {
   case
-  | newline?
-  | parse.eof?
+  | if newline
+  | if parse.eof
   \
 }
 
 fun ~line = {
   case
-  | return: /[^\n\r]*/, newline?
-  | return: /[^\n\r]+/, parse.eof?
+  | return: if /[^\n\r]*/, if newline
+  | return: if /[^\n\r]+/, if parse.eof
   \
 }
