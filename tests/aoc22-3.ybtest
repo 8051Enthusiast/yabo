@@ -10,7 +10,7 @@ def ~priority = {
 }
 
 fun bitset(xs: list.list[priority], n: int, bits: int): int = n if 0 then bits else (
-  bitset?(xs.?next, n - 1, bits | 1 << xs.?this)
+  bitset?(xs?.next, n - 1, bits | 1 << xs?.this)
 )
 
 fun is_nonzero(n: int) = n if 0 else 1

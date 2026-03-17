@@ -392,11 +392,11 @@ The `[T]` after the `def ~maybe` indicates a generic type parameter.
 
 ### Optional Fields
 
-Optional fields can be accessed either with `block.?field` (which fails) or `block.field` (which errors):
+Optional fields can be accessed either with `block?.field` (which fails) or `block.field` (which errors):
 ```
 def ~small_int = {
   small: maybe(tag)
-  | let return = small.?some
+  | let return = small?.some
   \ return: u16l
 }
 ```
@@ -452,7 +452,7 @@ def ~byte_3_of_c_string = {
   s: list(u8 is 0x01..0xff)
   # zero terminator
   u8
-  let return = s.?tail.?tail.?tail.?head
+  let return = s?.tail?.tail?.tail?.head
 }
 ```
 If we evaluate `list(u8 is 0x01..0xff)` (a C string) applied to `41 62 63 64 00`, we would only get back the thunk as a value, but it would still evaluate the parts needed for the length of the whole, as it still has to find out the end of the string.
@@ -496,7 +496,7 @@ fun maybe_zero(n: int) = {|
   \ let nonzero = n
 |}
 
-fun square(n: int) = maybe_zero(n).?zero else (n * n)
+fun square(n: int) = maybe_zero(n)?.zero else (n * n)
 ```
 
 Note also that the operator `?` to mark something as backtracking needs to be placed before the application, so if use a backtracking function, we need to write `when?(foo)` instead of `when(foo)?` as with parsers:
@@ -758,7 +758,7 @@ Appendix A: Overview of Expressions
 | `!`      | Postfix Unary | Convert into Error |
 | `[..]`   | Postfix Unary | Array until end    |
 | `.sizeof`| Postfix Unary | Length of array or parser |
-| `.field`, `.?field` | Postfix Unary | Access field       |
+| `.field`, `?.field` | Postfix Unary | Access field       |
 | `then`   | Control       | Evaluate lhs and return rhs if lhs succeeds |
 | `else`   | Control       | Evaluate lhs and return lhs if lhs succeeds, otherwise return rhs |
 | `+`, `-` | Integer       | Addition, Subtraction |
@@ -772,7 +772,7 @@ Appendix A: Overview of Expressions
 | `\|>`    | Parser        | Compose parsers    |
 | `at`     | Parser        | Parser at lhs at address on rhs  |
 | `foo[bar]` | Parser      | Array of length `bar` |
-| `foo.[bar]`, `foo.?[bar]` | Array | Index into array |
+| `foo.[bar]`, `foo?.[bar]` | Array | Index into array |
 | `..<`    | Array         | Make range from lhs to rhs - 1 |
 | `foo(bar, baz)` | Function Application | Call function `foo` with arguments `bar` and `baz` |
 | `foo(bar, ..)` | Function Application | Call function `foo` with arguments `bar`, currying the rest |

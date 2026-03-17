@@ -13,7 +13,7 @@ fun ~binary_tree[T](inner: ~T) = {
 export
 fun ~test = {
   tree: binary_tree(test)
-  let return = (tree.?val + tree.?left + tree.?right) else 0
+  let return = (tree?.val + tree?.left + tree?.right) else 0
 }
 
 ====[ binary 1 ]====

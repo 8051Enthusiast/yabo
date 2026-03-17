@@ -485,7 +485,7 @@ mod tests {
             r#"
             def ~backtrack_is(x: int) = x if 0 then [1] else [2]
             def ~backtrack_if(x: int) = when?(x == 0) then [1] else [2]
-            def ~backtrack_field(x: int) = {| let y = x if 0 |}.?y then [1] else [2]
+            def ~backtrack_field(x: int) = {| let y = x if 0 |}?.y then [1] else [2]
             "#,
         );
         for parser_name in ["backtrack_is", "backtrack_if", "backtrack_field"] {

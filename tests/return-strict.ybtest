@@ -7,7 +7,7 @@ def ~list[R](element: ~R) = {
   \
 }
 
-fun first[R](xs: list[R]): R = xs.?this
+fun first[R](xs: list[R]): R = xs?.this
 
 fun ~digit = {
   x: ~
