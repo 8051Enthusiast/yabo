@@ -33,7 +33,7 @@ impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeId<'_> {
                 Ok(())
             }
             InferenceType::Loop(ArrayKind::Each, inner) => {
-                dbwrite!(f, db, "[{}]", inner)
+                dbwrite!(f, db, "[]{}", inner)
             }
             InferenceType::ParserArg { result, arg } => {
                 dbwrite!(f, db, "{} ~> {}", arg, result)

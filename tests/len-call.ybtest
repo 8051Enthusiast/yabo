@@ -4,8 +4,8 @@ fun ~added_u32l(add: int) = {
   let return = x + add
 }
 
-fun ~sized(arr: [u8], n: int) = {
-  let parser: [u8] ~> int = [4]u8 |> added_u32l(n)
+fun ~sized(arr: []u8, n: int) = {
+  let parser: []u8 ~> int = [4]u8 |> added_u32l(n)
   a: parser
   let b = arr ~> parser
 }

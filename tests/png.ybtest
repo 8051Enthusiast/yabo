@@ -15,9 +15,9 @@ fun ~crc32_impl(acc: int): int = {
   \
 }
 
-fun crc32(arr: [u8]) = arr ~> crc32_impl(0xffffffff)
+fun crc32(arr: []u8) = arr ~> crc32_impl(0xffffffff)
 
-def ~chunk[T](ty: ~[u8], data_parser: ~T) = {
+def ~chunk[T](ty: ~[]u8, data_parser: ~T) = {
   length: u32b
   type: if [4] |> ty
   value: expect [length] |> data_parser

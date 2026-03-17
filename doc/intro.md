@@ -95,7 +95,7 @@ When starting to parse, we have our initial position in the array.
 ```
 During parsing, we read `42 6b` in order to construct the `u16l` value `0x6b42` in the field `fst`.
 In order to parse the value in `snd`, we have to know where `fst` ends, and that information can only be provided by the `u16l` implementation.
-This is done by essentially defining a parser to be a function `[u8] -> (type, [u8])` which takes the starting position and returns the parsed value and the new position.
+This is done by essentially defining a parser to be a function `[]u8 -> (type, []u8)` which takes the starting position and returns the parsed value and the new position.
 In this case, the `u16l` parser would return `0x6b42` and the new position
 ```
 64 12 42 6b 82 93 76 9d
@@ -107,8 +107,8 @@ The case for parsing `snd` works similarly, and the whole block combines the par
                   ^
 ```
 
-In yabo, we notate a parser type like `[u8] -> (type, [u8])` as `[u8] ~> type`.
-`~type` is a short form for `[u8] ~> type`, because bytes are what we are parsing most of the time.
+In yabo, we notate a parser type like `[]u8 -> (type, []u8)` as `[]u8 ~> type`.
+`~type` is a short form for `[]u8 ~> type`, because bytes are what we are parsing most of the time.
 
 It is important to recognize that blocks `{...}` are expressions that produce parsers.
 For example, these examples are possible as well:
@@ -256,7 +256,7 @@ Here is an overview of the types:
 | `u8`            | byte in memory (a byte pointer), is a subtype of `int` by dereferencing into the byte value (not the address!) |
 | `[foo]`         | array of `foo`                                                      |
 | `foo ~> bar`    | parser that takes a `foo` and returns an `bar` (advancing `foo`)    |
-| `~foo`          | desugars to `[u8] ~> foo`                                           |
+| `~foo`          | desugars to `[]u8 ~> foo`                                           |
 | `(bar, baz) -> foo` | function that takes `bar` and `baz` and returns an `foo`, see below |
 | identifier      | refers to a parser definition (for example `u16_pair` refers to the value returned by the `u16_pair` parser) |
 
@@ -430,7 +430,7 @@ However, this is precisely what allows yabo to avoid allocations and garbage col
 
 To still make it possible to use this language for recursive binary formats, there is a pointer-like construct that allows indirection, called a thunk.
 When we parse a `u16l`, what is returned is not actually the value itself but is a thunk containing all the arguments to the `u16l` parser.
-The arguments to the `u16l` consist of just the `[u8]` at the current position, which is represented by a pair of pointers most of the time.
+The arguments to the `u16l` consist of just the `[]u8` at the current position, which is represented by a pair of pointers most of the time.
 The type of this thunk is still `int`, but the run-time representation is different.
 The thunk gets evaluated into the `int` value whenever it is needed, which is when an operator uses it or it is passed as a function argument.
 
@@ -444,7 +444,7 @@ def ~list[T](f: ~T) = {
 }
 ```
 If we naively tried to construct the resulting value without using thunks, we would end up with arbitrarily deep nested structures like (leaving `head` out), `{tail: {tail: {tail: {}}}}`.
-However, since `list` is a thunk, the value is not actually recursive and the `tail` field just contains the `[u8]` slice that indicates where the next element starts, and the parser `f`.
+However, since `list` is a thunk, the value is not actually recursive and the `tail` field just contains the `[]u8` slice that indicates where the next element starts, and the parser `f`.
 
 For example let's access the thunk returned by the list.
 ```
@@ -609,7 +609,7 @@ def ~padded_to_1024 = u8[1024] |> const_sized2(u8, u16l)
 
 `|>` actually just desugars to a call to the following combinator:
 ```
-fun [A] ~> compose[A](a: [A] ~> [B], b: [B] ~> C) = {
+fun []A ~> compose[A](a: []A ~> []B, b: []B ~> C) = {
   x: a?, let return = x ~> b?
 }
 ```
@@ -628,7 +628,7 @@ If we want to match a sequence of bytes specified by a regular expression, we ca
 ```
 def ~c_string = /[^\x00]*\x00/
 ```
-Regex parsers are of type `[u8] ~> [u8]` (i.e., they take a byte array and return a byte array, advancing the input until the end of the match).
+Regex parsers are of type `[]u8 ~> []u8` (i.e., they take a byte array and return a byte array, advancing the input until the end of the match).
 Just like with the `is` operator, they may backtrack but do not need a `?` to mark them as such, as regices are fallible in most cases anyway.
 The syntax is the same as the regex crate, documented [here](https://docs.rs/regex/latest/regex/).
 
@@ -669,7 +669,7 @@ The `span` Operator
 -------------------
 
 The `span` operator allows getting an array spanning a range of the input corresponding to a range of fields in the current block.
-For example, say we have a function `crc32: int([u8])` for calculating a CRC32 checksum and want to have the expected checksum for a PNG chunk:
+For example, say we have a function `crc32: int([]u8)` for calculating a CRC32 checksum and want to have the expected checksum for a PNG chunk:
 ```
 def ~png_chunk = {
   length: u32l
@@ -706,7 +706,7 @@ The `foo ..< bar` operator allows creating a range of integers, ranging from `fo
 (Inclusive ranges are not yet implemented).
 It can be parsed and indexed as with other kinds of array:
 ```
-fun [int] ~> sum(acc: int) = {
+fun []int ~> sum(acc: int) = {
   | val: ~ is !eof
     return: sum(acc + val)
   \ let return = acc

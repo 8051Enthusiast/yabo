@@ -298,7 +298,7 @@ mod tests {
     fn return_types() {
         let ctx = Context::<HirTypesTestDatabase>::mock(
             r#"
-def [T] ~> nil[T] = {}
+def []T ~> nil[T] = {}
 def (nil[int]) ~> expr1 = {t: expr1}
 def ~single = ~
             "#,
@@ -334,8 +334,8 @@ def ~u16l = {
     fn test_type_expr() {
         let ctx = Context::<HirTypesTestDatabase>::mock(
             r#"
-def [T] ~> nil[T] = {}
-def [T] ~> expr1[T] = {
+def []T ~> nil[T] = {}
+def []T ~> expr1[T] = {
   a: ~
   b: {
     case
@@ -349,7 +349,7 @@ def ~expr2 = {
   x: expr1
   let y: int = 3 + x.a
 }
-def [[u8]] ~> expr4 = {
+def [][]u8 ~> expr4 = {
   x: ~ |> ~
   let b: ~int = ~
   y: ~ |> b

@@ -2,7 +2,7 @@
 Simple Parser
 =============
 
-def [u8] ~> complex = {
+def []u8 ~> complex = {
   real: f32_el
   imag: f32_el
 }
@@ -28,7 +28,7 @@ def [u8] ~> complex = {
 Choice Parser
 =============
 
-def [u8] ~> choice = {
+def []u8 ~> choice = {
   case
   | ~ is ascii
     return: utf8char
@@ -65,7 +65,7 @@ def [u8] ~> choice = {
 Let Statement
 =============
 
-def [u8] ~> seven = {
+def []u8 ~> seven = {
   val: u8
   let return: u8 = 7
 }
@@ -93,7 +93,7 @@ def [u8] ~> seven = {
 Nested Blocks
 =============
 
-def [u8] ~> nested = {
+def []u8 ~> nested = {
   val: ~
   return: {
     case
@@ -146,7 +146,7 @@ def [u8] ~> nested = {
 Three Choices
 =============
 
-def [u8] ~> three = {
+def []u8 ~> three = {
   case
   | ~ is 0
     return: u8
@@ -191,7 +191,7 @@ Comment
 =======
 
 # comment
-def [u8] ~> test = {
+def []u8 ~> test = {
    # comment
   x: if u8
  # comment
@@ -246,7 +246,7 @@ def ~nonsense(x: int, y: int) = 1 + nonsense(3, 4)
 Array Index
 ===========
 
-fun first_plus_one(arr: [u8]) = 1 + arr.[0]
+fun first_plus_one(arr: []u8) = 1 + arr.[0]
 
 ---
 (source_file

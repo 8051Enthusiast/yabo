@@ -459,7 +459,7 @@ mod tests {
     fn nested_choice() {
         let ctx = Context::<AstTestDatabase>::mock(
             r#"
-def [u8] ~> expr1 = {
+def []u8 ~> expr1 = {
   x: u64
   case
   | let b: u64 = 3

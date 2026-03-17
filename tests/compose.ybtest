@@ -1,6 +1,6 @@
 ====[ source code ]====
 import text
-def ~skip(skipper: ~[u8]) = {
+def ~skip(skipper: ~[]u8) = {
     if skipper, return: if /.*/
 }
 

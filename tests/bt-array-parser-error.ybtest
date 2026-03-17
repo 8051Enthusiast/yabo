@@ -1,5 +1,5 @@
 ====[ source code ]====
-fun [() -> int] ~> why = {
+fun [](() -> int) ~> why = {
   f: ~
   g: ~
   let return = f!() + g?()
