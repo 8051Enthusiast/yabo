@@ -121,7 +121,7 @@ def ~file_entry(idx: int) = entry([..], idx)
 def ~entry[T](data_type: ~T, idx: int) = {
   data: expect data_type
   case
-  | let next_idx = fat.[idx].?next
+  | let next_idx = fat.[idx]?.next
     let next = parse_block(next_idx, entry(data_type, ..))
   | nil
   \

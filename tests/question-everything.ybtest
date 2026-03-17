@@ -10,7 +10,7 @@ export
 def ~test = {
   n: enum
   case
-  | return: if n.?x
+  | return: if n?.x
   | let return = 0
   \
 }

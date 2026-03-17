@@ -8,7 +8,7 @@ fun ~err[T](t: ~T) = expect t
 
 fun ~num(start: int) = {
   pre: [start]
-  str: if when?(pre.?[start - 1] if '0'..'9' then false else true) then /[0-9]+/
+  str: if when?(pre?.[start - 1] if '0'..'9' then false else true) then /[0-9]+/
   let len = list.len(str ~> list.list(~ is !eof))
   let val = str ~> err(text.num)
 }
@@ -26,7 +26,7 @@ fun add_rect(start_x: int, end_x: int, start_y: int, end_y: int, f: (int, int) -
 
 fun is_sym(n: u8) = n if '!'..'-' or '/' or ':'..'@' or '['..'`' or '{'..'~'
 
-fun symbol(map: [[u8]], x: int, y: int) = is_sym?(map.?[y].?[x]) then 1 else 0
+fun symbol(map: [[u8]], x: int, y: int) = is_sym?(map?.[y]?.[x]) then 1 else 0
 
 fun part_number(map: [[u8]], x: int, y: int) = {|
   let n = map.[y] ~> if num(x)
