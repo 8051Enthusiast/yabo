@@ -158,7 +158,7 @@ impl<DB: Hirs + ?Sized> DatabasedDisplay<DB> for W<&DataExpr<HirType, SpanIndex>
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         self.0.expr.try_print(|event| match event {
             yaboc_expr::WriteEvent::Niladic(a) => a.db_fmt(f, db),
-            yaboc_expr::WriteEvent::OpenMonadic(expr::TypeUnOp::ByteParser) => write!(f, "*"),
+            yaboc_expr::WriteEvent::OpenMonadic(expr::TypeUnOp::ByteParser) => write!(f, "~"),
             yaboc_expr::WriteEvent::CloseMonadic(expr::TypeUnOp::Wiggle(right)) => {
                 dbwrite!(f, db, " ~ {}", right)
             }

@@ -414,7 +414,7 @@ mod tests {
     fn poly_size() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            fun [A] ~> compose[A, B, C](a: [A] ~> [B], b: [B] ~> C) = {
+            fun []A ~> compose[A, B, C](a: []A ~> []B, b: []B ~> C) = {
               x: a, let return = x ~> b
             }
         "#,
@@ -501,7 +501,7 @@ mod tests {
     fn val_fun() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            fun uses_vals(x: int): [u8] ~> int = x then {
+            fun uses_vals(x: int): []u8 ~> int = x then {
                 ~
                 let return = x
             }

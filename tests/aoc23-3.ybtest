@@ -26,9 +26,9 @@ fun add_rect(start_x: int, end_x: int, start_y: int, end_y: int, f: (int, int) -
 
 fun is_sym(n: u8) = n if '!'..'-' or '/' or ':'..'@' or '['..'`' or '{'..'~'
 
-fun symbol(map: [[u8]], x: int, y: int) = is_sym?(map?.[y]?.[x]) then 1 else 0
+fun symbol(map: [][]u8, x: int, y: int) = is_sym?(map?.[y]?.[x]) then 1 else 0
 
-fun part_number(map: [[u8]], x: int, y: int) = {|
+fun part_number(map: [][]u8, x: int, y: int) = {|
   let n = map.[y] ~> if num(x)
   let num_syms = add_rect(x - 1, x + n.len + 1, y - 1, y + 2, symbol(map, ..))
   let return = when?(num_syms > 0) then n.val

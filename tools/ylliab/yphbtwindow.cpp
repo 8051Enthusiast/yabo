@@ -40,9 +40,9 @@ static constexpr const char *PNG_SOURCE = R"(import list
 
 # a parser for the rough structure of a png
 
-def ~chunk[T](ty: ~[u8], data_parser: ~T) = {
+def ~chunk[T](ty: ~[]u8, data_parser: ~T) = {
   length: u32b
-  type: [4] |> ty?
+  type: if [4] |> ty
   value: [length] |> data_parser
   crc: u32b
 }
@@ -65,16 +65,16 @@ def ~rgb = {
 
 export
 def ~main = {
-  h/89 50 4e 47 0d 0a 1a 0a/
+  if h/89 50 4e 47 0d 0a 1a 0a/
 
-  header: chunk(/IHDR/, head)!
+  header: expect chunk(/IHDR/, head)
 
   chunks: list.list({
-    | palette: chunk(/PLTE/, rgb[..])?
-    | data: chunk(/IDAT/, [..])?
-    \ optional: chunk(/[a-z].{3}/, [..])?
+    | palette: if chunk(/PLTE/, [..]rgb)
+    | data: if chunk(/IDAT/, [..])
+    \ optional: if chunk(/[a-z].{3}/, [..])
   })
-  end: chunk(/IEND/, nil)!
+  end: expect chunk(/IEND/, nil)
 }
 )";
 

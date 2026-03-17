@@ -53,7 +53,7 @@ fun ~hand_rank = {
   let return = ranks.[0] << 16 | ranks.[1] << 12 | ranks.[2] << 8 | ranks.[3] << 4 | ranks.[4]
 }
 
-fun rank(cards: [u8]) = {|
+fun rank(cards: []u8) = {|
   let card_rank = cards ~> hand_rank
   let diff = cards ~> diff_count
   let same = cards ~> same_count
@@ -77,7 +77,7 @@ fun ~higher_count(score: int) = aoc.summap({
   let return = when?(score >= p.score) then 1 else 0
 })
 
-fun ~total_win(input: [u8]) = aoc.summap({
+fun ~total_win(input: []u8) = aoc.summap({
   p: if play is !eof
   let return = (input ~> higher_count(p.score)) * p.bet
 })

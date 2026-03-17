@@ -1,5 +1,5 @@
 # Backtracks if the argument is false.
-fun [t] ~> assert[t](big: bit) = {
+fun []t ~> assert[t](big: bit) = {
   let _ = big if true
 }
 
@@ -12,13 +12,13 @@ fun [t] ~> assert[t](big: bit) = {
 fun when(cond: bit) = cond if true
 
 # Same as {}
-fun [T] ~> nil[T] = {}
+fun []T ~> nil[T] = {}
 
 # Maps a function f over an array.
-fun [T] ~> map[T, R](f: (T) -> R) = [..]{x: ~, let return = f?(x)}
+fun []T ~> map[T, R](f: (T) -> R) = [..]{x: ~, let return = f?(x)}
 
 # Tries to parse using the first parser, then the second if the first fails.
-fun [T] ~> alt[T, R](a0: [T] ~> R, a1: [T] ~> R) = {
+fun []T ~> alt[T, R](a0: []T ~> R, a1: []T ~> R) = {
   case
   | return: if a0
   | return: if a1
@@ -26,7 +26,7 @@ fun [T] ~> alt[T, R](a0: [T] ~> R, a1: [T] ~> R) = {
 }
 
 # Tries to parse, trying each parser in order
-fun [T] ~> alt3[T, R](a0: [T] ~> R, a1: [T] ~> R, a2: [T] ~> R) = {
+fun []T ~> alt3[T, R](a0: []T ~> R, a1: []T ~> R, a2: []T ~> R) = {
   case
   | return: if a0
   | return: if a1
@@ -35,7 +35,7 @@ fun [T] ~> alt3[T, R](a0: [T] ~> R, a1: [T] ~> R, a2: [T] ~> R) = {
 }
 
 # Tries to parse, trying each parser in order
-fun [T] ~> alt4[T, R](a0: [T] ~> R, a1: [T] ~> R, a2: [T] ~> R, a3: [T] ~> R) = {
+fun []T ~> alt4[T, R](a0: []T ~> R, a1: []T ~> R, a2: []T ~> R, a3: []T ~> R) = {
   case
   | return: if a0
   | return: if a1
@@ -45,14 +45,14 @@ fun [T] ~> alt4[T, R](a0: [T] ~> R, a1: [T] ~> R, a2: [T] ~> R, a3: [T] ~> R) = 
 }
 
 # Parser of zero length that simply returns the input.
-fun [T] ~> pure[T, R](v: R) = {let return = v}
+fun []T ~> pure[T, R](v: R) = {let return = v}
 
 # Returns a range from start to end (end exclusive)
 fun range(start: int, end: int) = start..<end
 
 # Repeatedly parses p until it backtracks, returns unit
 # (for a non-unit version, see the list module)
-fun [T] ~> repeat[T, R](p: [T] ~> R) = {
+fun []T ~> repeat[T, R](p: []T ~> R) = {
   case
   | if p, repeat(p)
   | {}
@@ -60,7 +60,7 @@ fun [T] ~> repeat[T, R](p: [T] ~> R) = {
 }
 
 # Returns whether `p` evaluated on any input element is true
-fun [T] ~> any[T](p: (T) -> bit) = {
+fun []T ~> any[T](p: (T) -> bit) = {
   case
   | x: if ~ is !eof
     case
@@ -72,7 +72,7 @@ fun [T] ~> any[T](p: (T) -> bit) = {
 }
 
 # Returns whether `p` is always true when evaluated on all input elements
-fun [T] ~> all[T](p: (T) -> bit) = {
+fun []T ~> all[T](p: (T) -> bit) = {
   case
   | x: if ~ is !eof
     case
@@ -185,16 +185,16 @@ def ~i64b = {
 
 # =============== desugar ===============
 
-fun [A] ~> compose[A, B, C](a: [A] ~> [B], b: [B] ~> C) = {
+fun []A ~> compose[A, B, C](a: []A ~> []B, b: []B ~> C) = {
   x: if a, let return = x ~> if b
 }
 
-fun [A] ~> index[A](idx: int): A = {
+fun []A ~> index[A](idx: int): A = {
   if [idx if 0..0x7fffffffffffffff] is !eof
   return: if ~ is !eof
 }
 
-fun [int] ~> start_with(rhs: [int]) = {
+fun []int ~> start_with(rhs: []int) = {
   lhs: [rhs.sizeof]
   let is_equal = range(0, rhs.sizeof) ~> all(<i> lhs.[i] == rhs.[i])
   let return = when?(is_equal) then lhs

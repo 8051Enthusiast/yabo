@@ -958,7 +958,7 @@ mod tests {
     fn eval_test() {
         let ctx = <Context<HirTestDatabase> as Import>::mock(
             r#"
-def [u8] ~> expr1 = {
+def []u8 ~> expr1 = {
   case
   | a: u64
     b: u32

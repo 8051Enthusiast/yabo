@@ -60,11 +60,11 @@ def ~b64b_lsb = from_int_lsb(i64b, 64)
 def ~b64l_msb = from_int_msb(i64l, 64)
 def ~b64l_lsb = from_int_lsb(i64l, 64)
 
-fun [bit] ~> flag = ~
+fun []bit ~> flag = ~
 
 fun as_int(b: bit) = b if true then 1 else 0
 
-fun [bit] ~> uint_msb_impl(acc: int) = {
+fun []bit ~> uint_msb_impl(acc: int) = {
   case
   | b: if ~ is !eof
     return: uint_msb_impl(acc * 2 + as_int(b))
@@ -72,7 +72,7 @@ fun [bit] ~> uint_msb_impl(acc: int) = {
   \
 }
 
-fun [bit] ~> uint_lsb_impl(acc: int, shift: int) = {
+fun []bit ~> uint_lsb_impl(acc: int, shift: int) = {
   case
   | b: if ~ is !eof
     return: uint_lsb_impl(acc + (as_int(b) << shift), shift + 1)
@@ -80,15 +80,15 @@ fun [bit] ~> uint_lsb_impl(acc: int, shift: int) = {
   \
 }
 
-def [bit] ~> uint_msb(size: int) = [size] |> uint_msb_impl(0)
-def [bit] ~> uint_lsb(size: int) = [size] |> uint_lsb_impl(0, 0)
+def []bit ~> uint_msb(size: int) = [size] |> uint_msb_impl(0)
+def []bit ~> uint_lsb(size: int) = [size] |> uint_lsb_impl(0, 0)
 
-def [bit] ~> sint_msb(size: int) = {
+def []bit ~> sint_msb(size: int) = {
   sign: ~
   return: [size - 1] |> uint_msb_impl(-as_int(sign))
 }
 
-def [bit] ~> sint_lsb(size: int) = {
+def []bit ~> sint_lsb(size: int) = {
   unsigned_part: [size - 1] |> uint_lsb_impl(0, 0)
   sign: ~
   let signed_part = (-(as_int(sign) << (size - 1)))
