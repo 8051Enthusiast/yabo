@@ -110,15 +110,15 @@ pub enum MonoLayout<Inner> {
     SlicePtr,
     Range,
     Single,
-    Regex(Regex, bool),
-    IfParser(Inner, HirConstraintId, bool),
+    Regex(Regex),
+    IfParser(Inner, HirConstraintId),
     ArrayParser(Option<(Inner, Option<(Inner, FuncLayoutKind)>)>),
     ArrayFillParser(Option<(Inner, FuncLayoutKind)>),
     Nominal(hir::ParserDefId, Option<Inner>, Vec<Inner>),
-    NominalParser(hir::ParserDefId, Vec<Inner>, bool, FuncLayoutKind),
+    NominalParser(hir::ParserDefId, Vec<Inner>, FuncLayoutKind),
     Block(hir::BlockId, BTreeMap<FieldName, Inner>),
-    BlockParser(hir::BlockId, BTreeMap<DefId, Inner>, bool),
-    Lambda(hir::LambdaId, BTreeMap<DefId, Inner>, Vec<Inner>, bool),
+    BlockParser(hir::BlockId, BTreeMap<DefId, Inner>),
+    Lambda(hir::LambdaId, BTreeMap<DefId, Inner>, Vec<Inner>),
     Array { parser: Inner, slice: Inner },
 }
 
@@ -186,15 +186,13 @@ impl<'a> IMonoLayout<'a> {
 
     pub fn arg_num<DB: Layouts + ?Sized>(&self, db: &DB) -> SResult<Option<(usize, usize)>> {
         match self.mono_layout() {
-            MonoLayout::NominalParser(pd, args, _, _) => {
-                Ok(db.argnum(*pd)?.map(|n| (n, args.len())))
-            }
+            MonoLayout::NominalParser(pd, args, _) => Ok(db.argnum(*pd)?.map(|n| (n, args.len()))),
             MonoLayout::ArrayParser(Some((_, Some(_)))) => Ok(Some((2, 2))),
             MonoLayout::ArrayParser(Some((_, None))) => Ok(Some((2, 1))),
             MonoLayout::ArrayParser(None) => Ok(Some((2, 0))),
             MonoLayout::ArrayFillParser(Some(_)) => Ok(Some((1, 1))),
             MonoLayout::ArrayFillParser(None) => Ok(Some((1, 0))),
-            MonoLayout::Lambda(id, _, args, _) => {
+            MonoLayout::Lambda(id, _, args) => {
                 let lambda = id.lookup(db)?;
                 let arg_count = lambda.args.len();
                 Ok(Some((arg_count, args.len())))
@@ -219,7 +217,7 @@ impl<'a> IMonoLayout<'a> {
                 FuncLayoutKind::Parse => HeadDiscriminant::Parser,
             },
             MonoLayout::Block(_, _) => HeadDiscriminant::Block,
-            MonoLayout::Lambda(_, _, _, _) => HeadDiscriminant::FunctionArgs,
+            MonoLayout::Lambda(..) => HeadDiscriminant::FunctionArgs,
             MonoLayout::Array { .. } => HeadDiscriminant::Loop,
             MonoLayout::BlockParser(bid, ..) => match bid.lookup(db).unwrap().kind {
                 yaboc_hir::BlockKind::Parser => HeadDiscriminant::Parser,
@@ -232,59 +230,11 @@ impl<'a> IMonoLayout<'a> {
             MonoLayout::ArrayFillParser(_) | MonoLayout::ArrayParser(_) => {
                 HeadDiscriminant::FunctionArgs
             }
-            MonoLayout::Single | MonoLayout::Regex(_, _) | MonoLayout::IfParser(_, _, _) => {
+            MonoLayout::Single | MonoLayout::Regex(_) | MonoLayout::IfParser(_, _) => {
                 HeadDiscriminant::Parser
             }
             MonoLayout::Nominal(_, _, _) => HeadDiscriminant::Nominal,
         }
-    }
-
-    pub fn set_backtracking(
-        self,
-        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
-        bt: bool,
-    ) -> IMonoLayout<'a> {
-        match self.mono_layout() {
-            MonoLayout::NominalParser(pd, f, status, kind) if *status != bt => {
-                IMonoLayout(ctx.dcx.intern(Layout::Mono(MonoLayout::NominalParser(
-                    *pd,
-                    f.clone(),
-                    bt,
-                    *kind,
-                ))))
-            }
-            MonoLayout::BlockParser(bd, cap, status) if *status != bt => IMonoLayout(
-                ctx.dcx
-                    .intern(Layout::Mono(MonoLayout::BlockParser(*bd, cap.clone(), bt))),
-            ),
-            MonoLayout::Regex(r, status) if *status != bt => {
-                IMonoLayout(ctx.dcx.intern(Layout::Mono(MonoLayout::Regex(*r, true))))
-            }
-            MonoLayout::IfParser(inner, c, status) if *status != bt => IMonoLayout(
-                ctx.dcx
-                    .intern(Layout::Mono(MonoLayout::IfParser(*inner, *c, bt))),
-            ),
-            MonoLayout::Lambda(id, cap, args, status) if *status != bt => {
-                IMonoLayout(ctx.dcx.intern(Layout::Mono(MonoLayout::Lambda(
-                    *id,
-                    cap.clone(),
-                    args.clone(),
-                    bt,
-                ))))
-            }
-            _ => self,
-        }
-    }
-
-    pub fn remove_backtracking(self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> IMonoLayout<'a> {
-        self.set_backtracking(ctx, false)
-    }
-
-    pub fn backtrack_statuses(self, ctx: &mut AbsIntCtx<'a, ILayout<'a>>) -> [IMonoLayout<'a>; 2] {
-        [
-            self.set_backtracking(ctx, true),
-            self.set_backtracking(ctx, false),
-        ]
     }
 
     pub fn unapply_nominal(
@@ -302,7 +252,6 @@ impl<'a> IMonoLayout<'a> {
         let to_layout = ctx.dcx.intern(Layout::Mono(MonoLayout::NominalParser(
             *pd,
             to.clone(),
-            false,
             FuncLayoutKind::Parse,
         )));
         let to_mono = IMonoLayout(to_layout);
@@ -456,7 +405,7 @@ impl<'a> ILayout<'a> {
                     captures
                 }
             }
-            MonoLayout::Nominal(pd, _, args) | MonoLayout::NominalParser(pd, args, _, _) => {
+            MonoLayout::Nominal(pd, _, args) | MonoLayout::NominalParser(pd, args, _) => {
                 return Ok(ctx.db.parserdef_arg_index(*pd, id)?.map(|i| args[i]))
             }
             otherwise => panic!("Attempting to get captured variable inside {:?}", otherwise),
@@ -489,11 +438,11 @@ impl<'a> ILayout<'a> {
         self.evaluate(ctx)?
             .0
             .try_map(ctx, |layout, ctx| match layout.mono_layout() {
-                MonoLayout::NominalParser(pd, args, _, FuncLayoutKind::Parse) => {
+                MonoLayout::NominalParser(pd, args, FuncLayoutKind::Parse) => {
                     let ret = ctx.apply_thunk_arg(*pd, from, args)?;
                     Ok(ret)
                 }
-                MonoLayout::BlockParser(block_id, _, _) => {
+                MonoLayout::BlockParser(block_id, _) => {
                     let res = ctx
                         .eval_block(*block_id, layout.inner(), Some(from))
                         .ok_or_else(|| SilencedError::new().into());
@@ -533,15 +482,15 @@ impl<'a> ILayout<'a> {
     ) -> Result<ILayout<'a>, LayoutError> {
         self.try_map(ctx, |layout, ctx| {
             let (pd, present_args) = match layout.mono_layout() {
-                MonoLayout::NominalParser(pd, present_args, _, FuncLayoutKind::Fun) => {
+                MonoLayout::NominalParser(pd, present_args, FuncLayoutKind::Fun) => {
                     (pd, present_args)
                 }
-                MonoLayout::BlockParser(block_id, _, _) => {
+                MonoLayout::BlockParser(block_id, _) => {
                     return ctx
                         .eval_block(*block_id, layout.inner(), None)
                         .ok_or_else(|| SilencedError::new().into())
                 }
-                MonoLayout::Lambda(lambda_id, _, _, _) => {
+                MonoLayout::Lambda(lambda_id, _, _) => {
                     return ctx
                         .eval_lambda(*lambda_id, layout.inner())
                         .ok_or_else(|| SilencedError::new().into())
@@ -573,7 +522,6 @@ impl<'a> ILayout<'a> {
                 Ok(ctx.dcx.intern(Layout::Mono(MonoLayout::NominalParser(
                     *pd,
                     present_args.clone(),
-                    true,
                     FuncLayoutKind::Parse,
                 ))))
             } else {
@@ -598,29 +546,23 @@ impl<'a> ILayout<'a> {
                 .map(|arg| arg.evaluate(ctx).map(|x| x.0))
                 .collect::<Result<Vec<_>, _>>()?;
             match layout.mono_layout() {
-                MonoLayout::NominalParser(pd, present_args, backtracks, FuncLayoutKind::Fun) => {
+                MonoLayout::NominalParser(pd, present_args, FuncLayoutKind::Fun) => {
                     let present_args = present_args
                         .iter()
                         .chain(evaluated_args.iter())
                         .copied()
                         .collect();
-                    let layout = MonoLayout::NominalParser(
-                        *pd,
-                        present_args,
-                        *backtracks,
-                        FuncLayoutKind::Fun,
-                    );
+                    let layout = MonoLayout::NominalParser(*pd, present_args, FuncLayoutKind::Fun);
                     let res = ctx.dcx.intern(Layout::Mono(layout));
                     Ok(res)
                 }
-                MonoLayout::Lambda(lambda_id, captures, present_args, backtracks) => {
+                MonoLayout::Lambda(lambda_id, captures, present_args) => {
                     let present_args = present_args
                         .iter()
                         .chain(evaluated_args.iter())
                         .copied()
                         .collect();
-                    let layout =
-                        MonoLayout::Lambda(*lambda_id, captures.clone(), present_args, *backtracks);
+                    let layout = MonoLayout::Lambda(*lambda_id, captures.clone(), present_args);
                     let res = ctx.dcx.intern(Layout::Mono(layout));
                     Ok(res)
                 }
@@ -678,7 +620,7 @@ impl<'a> ILayout<'a> {
         self.map(ctx, |layout, _| match layout.mono_layout() {
             MonoLayout::Nominal(_, from, _) => from
                 .expect("Attempting to get 'front' field from non-from field containing nominal"),
-            MonoLayout::IfParser(inner, _, _) => *inner,
+            MonoLayout::IfParser(inner, _) => *inner,
             _ => dbpanic!(
                 ctx.db,
                 "Attempting to get 'front' field from non-nominal or if-parser {}",
@@ -703,11 +645,11 @@ impl<'a> ILayout<'a> {
             Layout::Mono(MonoLayout::BlockParser(_, captures, ..)) => {
                 self.block_parser_manifestation(ctx, captures)?.size
             }
-            Layout::Mono(MonoLayout::Lambda(id, captures, args, _)) => {
+            Layout::Mono(MonoLayout::Lambda(id, captures, args)) => {
                 self.lambda_manifestation(ctx, *id, captures, args)?.size
             }
             Layout::Mono(
-                MonoLayout::IfParser(inner, _, _)
+                MonoLayout::IfParser(inner, _)
                 | MonoLayout::ArrayFillParser(Some((inner, _)))
                 | MonoLayout::ArrayParser(Some((inner, None))),
             ) => SizeAlign::ZST.cat(inner.size_align(ctx)?),
@@ -720,7 +662,7 @@ impl<'a> ILayout<'a> {
             Layout::Mono(MonoLayout::Nominal(id, from, args)) => {
                 self.nominal_manifestation(ctx, *id, *from, args)?.size
             }
-            Layout::Mono(MonoLayout::NominalParser(id, args, _, _)) => {
+            Layout::Mono(MonoLayout::NominalParser(id, args, _)) => {
                 self.nominal_parser_manifestation(ctx, *id, args)?.size
             }
             Layout::Mono(MonoLayout::SlicePtr) => <&Zst>::tsize(data).array(2),
@@ -732,7 +674,7 @@ impl<'a> ILayout<'a> {
             Layout::Mono(MonoLayout::Ptr) => <&Zst>::tsize(data),
             Layout::Mono(
                 MonoLayout::Single
-                | MonoLayout::Regex(_, _)
+                | MonoLayout::Regex(_)
                 | MonoLayout::ArrayParser(None)
                 | MonoLayout::ArrayFillParser(None),
             ) => SizeAlign::ZST,
@@ -884,7 +826,6 @@ pub fn pd_parser<'a, 'b>(
     Ok(ctx.dcx.intern(Layout::Mono(MonoLayout::NominalParser(
         pd,
         Default::default(),
-        true,
         kind,
     ))))
 }
@@ -1078,7 +1019,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                     ctx.active_ambience().expect("Span in non-parser context")
                 }
                 ResolvedAtom::String(_) => make_layout(MonoLayout::SlicePtr),
-                ResolvedAtom::Regex(r) => make_layout(MonoLayout::Regex(r, true)),
+                ResolvedAtom::Regex(r) => make_layout(MonoLayout::Regex(r)),
                 ResolvedAtom::ParserDef(pd) => {
                     let parserdef = pd.lookup(ctx.db)?;
                     let kind = if parserdef.args.is_some() || parserdef.kind == DefKind::Static {
@@ -1086,7 +1027,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                     } else {
                         FuncLayoutKind::Parse
                     };
-                    make_layout(MonoLayout::NominalParser(pd, Vec::new(), true, kind))
+                    make_layout(MonoLayout::NominalParser(pd, Vec::new(), kind))
                 }
                 ResolvedAtom::Global(pd) => ctx.dcx.globals[&pd].1,
                 ResolvedAtom::Block(block_id, _) => {
@@ -1104,9 +1045,9 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                         };
                         captures.insert(*capture, capture_value);
                     }
-                    let res = ctx.dcx.intern(Layout::Mono(MonoLayout::BlockParser(
-                        block_id, captures, true,
-                    )));
+                    let res = ctx
+                        .dcx
+                        .intern(Layout::Mono(MonoLayout::BlockParser(block_id, captures)));
                     res
                 }
                 ResolvedAtom::Lambda(lambda_id) => {
@@ -1125,7 +1066,6 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                         lambda_id,
                         captures,
                         Vec::new(),
-                        true,
                     )))
                 }
                 ResolvedAtom::Captured(capture) => {
@@ -1139,7 +1079,7 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 ValUnOp::Wiggle(cid, WiggleKind::Is) => {
                     let eval_inner = inner.evaluate(ctx)?.0;
                     ctx.dcx
-                        .intern(Layout::Mono(MonoLayout::IfParser(eval_inner, cid, true)))
+                        .intern(Layout::Mono(MonoLayout::IfParser(eval_inner, cid)))
                 }
                 ValUnOp::Wiggle(_, WiggleKind::If | WiggleKind::Expect) => *inner,
                 ValUnOp::Dot(a, ..) => inner.access_field(ctx, a)?,
@@ -1354,7 +1294,7 @@ mod tests {
                     ),
                     &ctx.db
                 ),
-                "block_6c872ebf06064930$1d056945422aed00$parse_9dcf97a184f32623_vb"
+                "block_6c872ebf06064930$ca296cd9ca93c0c5$parse_9dcf97a184f32623_vb"
             );
         }
         let field = |name| FieldName::Ident(ctx.id(name));
@@ -1384,8 +1324,8 @@ mod tests {
                 .unwrap()
         );
         assert!([
-            "nominal-parser?[file[_].second]() | nominal-parser?[file[_].first]()",
-            "nominal-parser?[file[_].first]() | nominal-parser?[file[_].second]()"
+            "nominal-parser[file[_].second]() | nominal-parser[file[_].first]()",
+            "nominal-parser[file[_].first]() | nominal-parser[file[_].second]()"
         ]
         .contains(&out.as_str()));
         let res = dbformat!(

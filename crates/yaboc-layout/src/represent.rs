@@ -39,7 +39,7 @@ impl<DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'_> {
                     }
                     write!(f, ")")
                 }
-                MonoLayout::NominalParser(pd, args, backtracks, kind) => {
+                MonoLayout::NominalParser(pd, args, kind) => {
                     match kind {
                         FuncLayoutKind::Fun => {
                             write!(f, "nominal-func")?;
@@ -47,9 +47,6 @@ impl<DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'_> {
                         FuncLayoutKind::Parse => {
                             write!(f, "nominal-parser")?;
                         }
-                    }
-                    if *backtracks {
-                        write!(f, "?")?;
                     }
                     dbwrite!(f, db, "[{}](", &pd.0)?;
                     for (i, layout) in args.iter().enumerate() {
@@ -70,11 +67,8 @@ impl<DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'_> {
                     }
                     write!(f, "}}")
                 }
-                MonoLayout::BlockParser(bd, captures, bt) => {
+                MonoLayout::BlockParser(bd, captures) => {
                     write!(f, "block-parser")?;
-                    if *bt {
-                        write!(f, "?")?;
-                    }
                     dbwrite!(f, db, "[{}]{{", &bd.0)?;
                     for (i, (capture, layout)) in captures.iter().enumerate() {
                         if i > 0 {
@@ -84,11 +78,8 @@ impl<DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'_> {
                     }
                     write!(f, "}}")
                 }
-                MonoLayout::Lambda(ld, captures, args, bt) => {
+                MonoLayout::Lambda(ld, captures, args) => {
                     write!(f, "lambda")?;
-                    if *bt {
-                        write!(f, "?")?;
-                    }
                     dbwrite!(f, db, "[{}]{{", &ld.0)?;
                     for (i, (capture, layout)) in captures.iter().enumerate() {
                         if i > 0 {
@@ -105,16 +96,9 @@ impl<DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'_> {
                     }
                     write!(f, ")")
                 }
-                MonoLayout::Regex(regex, bt) => {
-                    regex.db_fmt(f, db)?;
-                    if *bt {
-                        write!(f, "?")?;
-                    }
-                    Ok(())
-                }
-                MonoLayout::IfParser(inner, referenced, wiggle) => {
-                    dbwrite!(f, db, "if-parser-{}({}, {})", wiggle, inner, referenced)?;
-                    Ok(())
+                MonoLayout::Regex(regex) => regex.db_fmt(f, db),
+                MonoLayout::IfParser(inner, referenced) => {
+                    dbwrite!(f, db, "if-parser({}, {})", inner, referenced)
                 }
                 MonoLayout::ArrayParser(Some((parser, inner))) => {
                     if let Some((inner, kind)) = inner {
@@ -249,14 +233,13 @@ impl<'a> LayoutHasher<'a> {
                     state.update(self.hash(*layout, db));
                 }
             }
-            MonoLayout::NominalParser(def, args, bt, kind) => {
+            MonoLayout::NominalParser(def, args, kind) => {
                 state.update([4]);
                 def.0.update_hash(state, db);
                 args.len().update_hash(state, db);
                 for layout in args.iter() {
                     state.update(self.hash(*layout, db));
                 }
-                state.update([*bt as u8]);
                 state.update([*kind as u8]);
             }
             MonoLayout::Block(def, map) => {
@@ -282,13 +265,12 @@ impl<'a> LayoutHasher<'a> {
                     state.update(hash);
                 }
             }
-            MonoLayout::BlockParser(def, map, bt) => {
+            MonoLayout::BlockParser(def, map) => {
                 state.update([6]);
                 def.0.update_hash(state, db);
                 self.hash_captures(state, map, db);
-                state.update([*bt as u8]);
             }
-            MonoLayout::Lambda(def, map, args, bt) => {
+            MonoLayout::Lambda(def, map, args) => {
                 state.update([7]);
                 def.0.update_hash(state, db);
                 self.hash_captures(state, map, db);
@@ -296,12 +278,11 @@ impl<'a> LayoutHasher<'a> {
                 for layout in args.iter() {
                     state.update(self.hash(*layout, db));
                 }
-                state.update([*bt as u8]);
             }
             MonoLayout::Range => {
                 state.update([9]);
             }
-            MonoLayout::Regex(regex, bt) => {
+            MonoLayout::Regex(regex) => {
                 state.update([10]);
                 let regex_data = db.lookup_intern_regex(*regex);
                 match regex_data.kind {
@@ -313,15 +294,13 @@ impl<'a> LayoutHasher<'a> {
                     }
                 }
                 regex_data.regex.update_hash(state, db);
-                state.update([*bt as u8]);
             }
-            MonoLayout::IfParser(inner, id, wiggle) => {
+            MonoLayout::IfParser(inner, id) => {
                 state.update([11]);
                 state.update(self.hash(*inner, db));
                 // TODO(8051): ideally, we'd hash the content here in a way that
                 // is reproducible, but for now we just hash the id.
                 id.as_u32().update_hash(state, db);
-                (*wiggle as u8).update_hash(state, db);
             }
             MonoLayout::ArrayParser(Some((parser, inner))) => {
                 state.update([12, 1]);
@@ -459,12 +438,8 @@ pub fn truncated_hex(array: &[u8]) -> String {
 impl<'a> LayoutSymbol<'a> {
     pub fn symbol<DB: Layouts + ?Sized>(&self, hasher: &mut LayoutHasher<'a>, db: &DB) -> String {
         let name_prefix = match self.layout.mono_layout() {
-            MonoLayout::BlockParser(def, _, backtracks) => {
-                if *backtracks {
-                    format!("parse_block_{}_b", &truncated_hex(&db.def_hash(def.0)))
-                } else {
-                    format!("parse_block_{}", &truncated_hex(&db.def_hash(def.0)))
-                }
+            MonoLayout::BlockParser(def, _) => {
+                format!("parse_block_{}", &truncated_hex(&db.def_hash(def.0)))
             }
             MonoLayout::Block(def, _) => {
                 format!("block_{}", &truncated_hex(&db.def_hash(def.0)))
@@ -472,21 +447,13 @@ impl<'a> LayoutSymbol<'a> {
             MonoLayout::Nominal(id, _, _) => {
                 dbformat!(db, "{}", &db.def_name(id.0).unwrap())
             }
-            MonoLayout::NominalParser(id, _, backtracks, _) => {
-                if *backtracks {
-                    dbformat!(db, "parse_{}_b", &db.def_name(id.0).unwrap())
-                } else {
-                    dbformat!(db, "parse_{}", &db.def_name(id.0).unwrap())
-                }
+            MonoLayout::NominalParser(id, _, _) => {
+                dbformat!(db, "parse_{}", &db.def_name(id.0).unwrap())
             }
-            MonoLayout::Lambda(id, .., backtracks) => {
-                if *backtracks {
-                    dbformat!(db, "lambda_{}_b", &truncated_hex(&db.def_hash(id.0)))
-                } else {
-                    dbformat!(db, "lambda_{}", &truncated_hex(&db.def_hash(id.0)))
-                }
+            MonoLayout::Lambda(id, ..) => {
+                dbformat!(db, "lambda_{}", &truncated_hex(&db.def_hash(id.0)))
             }
-            MonoLayout::Regex(re, backtracks) => {
+            MonoLayout::Regex(re) => {
                 let re_str = db.lookup_intern_regex(*re);
                 let prefix = match re_str.kind {
                     RegexKind::Regular => "",
@@ -495,11 +462,7 @@ impl<'a> LayoutSymbol<'a> {
                 let ident_str = re_str
                     .regex
                     .replace(|c: char| !c.is_ascii_alphanumeric(), "_");
-                if *backtracks {
-                    format!("parse_regex_{prefix}{ident_str}_b")
-                } else {
-                    format!("parse_regex_{prefix}{ident_str}")
-                }
+                format!("parse_regex_{prefix}{ident_str}")
             }
             MonoLayout::IfParser(..) => String::from("parser_if"),
             MonoLayout::Array { .. } => String::from("array"),

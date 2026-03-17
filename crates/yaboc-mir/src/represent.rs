@@ -340,8 +340,8 @@ impl<DB: ?Sized + Hirs> DatabasedDisplay<DB> for FunKind {
             FunKind::Block(block_id) => dbwrite!(f, db, "block {}", &block_id.0),
             FunKind::ParserDef(pd) => dbwrite!(f, db, "parserdef {}", &pd.0),
             FunKind::Lambda(lid) => dbwrite!(f, db, "lambda {}", &lid.0),
-            FunKind::If(hir_constraint_id, wiggle_kind) => {
-                dbwrite!(f, db, "{} {}", &wiggle_kind, hir_constraint_id)
+            FunKind::If(hir_constraint_id) => {
+                dbwrite!(f, db, "is {}", hir_constraint_id)
             }
         }
     }

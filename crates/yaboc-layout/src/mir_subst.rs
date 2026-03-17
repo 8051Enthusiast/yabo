@@ -26,8 +26,7 @@ impl<'a> FunctionSubstitute<'a> {
         block: IMonoLayout<'a>,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
-        let (def, captures) = if let MonoLayout::BlockParser(def, captures, _) = block.mono_layout()
-        {
+        let (def, captures) = if let MonoLayout::BlockParser(def, captures) = block.mono_layout() {
             (def, captures)
         } else {
             panic!("non-block-parser as argument")
@@ -151,7 +150,7 @@ impl<'a> FunctionSubstitute<'a> {
         fun: IMonoLayout<'a>,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
-        let MonoLayout::IfParser(inner, _, _) = fun.mono_layout() else {
+        let MonoLayout::IfParser(inner, _) = fun.mono_layout() else {
             panic!("non-if-parser as argument")
         };
         let result = inner.apply_arg(ctx, from)?;
@@ -204,7 +203,7 @@ pub fn function_substitute<'a>(
         FunKind::Lambda(lambda_id) => {
             FunctionSubstitute::new_from_lambda(mir, &strictness, fun, lambda_id, ctx)
         }
-        FunKind::If(_, _) => {
+        FunKind::If(_) => {
             FunctionSubstitute::new_from_if(mir, &strictness, from.unwrap(), fun, ctx)
         }
     }

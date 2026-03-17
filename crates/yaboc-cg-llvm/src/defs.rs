@@ -290,7 +290,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             return value;
         }
         let (arg_defs, args) = match layout.mono_layout() {
-            MonoLayout::NominalParser(pd, args, _, _) => {
+            MonoLayout::NominalParser(pd, args, _) => {
                 let pd = pd.lookup(&self.compiler_database.db).unwrap();
                 let arg_defs = pd.args.unwrap();
                 (arg_defs, args)

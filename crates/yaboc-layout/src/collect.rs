@@ -117,21 +117,17 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     }
 
     fn register_function(&mut self, mono: IMonoLayout<'a>) {
-        for bt_status in mono.backtrack_statuses(self.ctx) {
-            if self.functions.insert(bt_status) {
-                if TRACE_COLLECTION {
-                    dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
-                }
+        if self.functions.insert(mono) {
+            if TRACE_COLLECTION {
+                dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
             }
         }
     }
 
     fn register_parser_or_function(&mut self, mono: IMonoLayout<'a>) {
         if let HeadDiscriminant::Parser = mono.head_kind(self.ctx.db) {
-            for bt_status in mono.backtrack_statuses(self.ctx) {
-                if self.parsers.insert(bt_status) && TRACE_COLLECTION {
-                    dbeprintln!(self.ctx.db, "[collection] registered parser {}", &mono);
-                }
+            if self.parsers.insert(mono) && TRACE_COLLECTION {
+                dbeprintln!(self.ctx.db, "[collection] registered parser {}", &mono);
             }
         } else {
             self.register_function(mono);
@@ -188,23 +184,17 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     self.register_len(*inner_parser);
                 }
                 MonoLayout::Single | MonoLayout::IfParser(..) | MonoLayout::Regex(..) => {
-                    for bt_status in mono.backtrack_statuses(self.ctx) {
-                        if self.parsers.insert(bt_status) && TRACE_COLLECTION {
-                            dbeprintln!(self.ctx.db, "[collection] registered parser {}", &mono);
-                        }
+                    if self.parsers.insert(mono) && TRACE_COLLECTION {
+                        dbeprintln!(self.ctx.db, "[collection] registered parser {}", &mono);
                     }
                 }
                 MonoLayout::Lambda(..) => {
-                    for bt_status in mono.backtrack_statuses(self.ctx) {
-                        self.register_function(bt_status);
-                    }
+                    self.register_function(mono);
                 }
                 MonoLayout::ArrayParser(Some((_, None)) | None)
                 | MonoLayout::ArrayFillParser(None) => {
-                    for bt_status in mono.backtrack_statuses(self.ctx) {
-                        if self.functions.insert(bt_status) && TRACE_COLLECTION {
-                            dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
-                        }
+                    if self.functions.insert(mono) && TRACE_COLLECTION {
+                        dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
                     }
                 }
                 MonoLayout::Primitive(_) | MonoLayout::Ptr => {}
@@ -363,7 +353,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         self.eval_slots.add_call(req, fun);
         for mono in &fun {
             let eval = match mono.mono_layout() {
-                MonoLayout::NominalParser(pd, args, _, FuncLayoutKind::Fun) => {
+                MonoLayout::NominalParser(pd, args, FuncLayoutKind::Fun) => {
                     let parserdef = pd.lookup(self.ctx.db).unwrap();
                     let def_arg_count = parserdef.args.map(|x| x.len()).unwrap_or(0);
                     (args.len() == def_arg_count && parserdef.from.is_none())
@@ -457,7 +447,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         &mut self,
         arg: ILayout<'a>,
         parser: IMonoLayout<'a>,
-        mut info: MirKind,
+        info: MirKind,
     ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
@@ -468,13 +458,8 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 &parser.inner()
             );
         }
-        let MonoLayout::BlockParser(id, _, bt) = parser.mono_layout() else {
+        let MonoLayout::BlockParser(id, _) = parser.mono_layout() else {
             panic!("unexpected non-block-parser layout");
-        };
-        if !*bt {
-            if let MirKind::Call(req) = &mut info {
-                *req &= !NeededBy::Backtrack;
-            }
         };
         parser.inner().apply_arg(self.ctx, arg)?;
         let fsub = function_substitute(
@@ -500,7 +485,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 &parser
             );
         }
-        let MonoLayout::BlockParser(id, _, _) = parser.mono_layout() else {
+        let MonoLayout::BlockParser(id, _) = parser.mono_layout() else {
             panic!("unexpected non-block-parser layout");
         };
         parser.inner().eval_fun(self.ctx)?;
@@ -514,7 +499,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         &mut self,
         arg: ILayout<'a>,
         parser: IMonoLayout<'a>,
-        mut info: MirKind,
+        info: MirKind,
     ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
@@ -525,17 +510,11 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 &parser.inner()
             );
         }
-        let MonoLayout::NominalParser(pd, thunk_args, bt, FuncLayoutKind::Parse) =
-            parser.mono_layout()
+        let MonoLayout::NominalParser(pd, thunk_args, FuncLayoutKind::Parse) = parser.mono_layout()
         else {
             panic!("unexpected non-nominal-parser layout");
         };
 
-        if !*bt {
-            if let MirKind::Call(req) = &mut info {
-                *req &= !NeededBy::Backtrack;
-            }
-        }
         let parserdef = pd.lookup(self.ctx.db).unwrap();
         let mut args = FxHashMap::default();
         args.insert(Arg::From, arg);
@@ -590,7 +569,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 &fun
             );
         }
-        let MonoLayout::NominalParser(pd, _, _, FuncLayoutKind::Fun) = fun.mono_layout() else {
+        let MonoLayout::NominalParser(pd, _, FuncLayoutKind::Fun) = fun.mono_layout() else {
             panic!("unexpected non-nominal-parser layout");
         };
         let fsub = function_substitute(
@@ -672,7 +651,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                             &parser.inner()
                         );
                     }
-                    let MonoLayout::IfParser(inner, c, _) = parser.mono_layout() else {
+                    let MonoLayout::IfParser(inner, c) = parser.mono_layout() else {
                         panic!("unexpected non-if-parser layout");
                     };
                     self.register_layouts(*inner);

@@ -43,7 +43,7 @@ pub struct FullTypeId;
 pub struct PubTypeId;
 
 use returns::{parser_expr_at, parser_returns, parser_type_at, ssc_types, ParserDefType, SscTypes};
-pub use returns::{NOBACKTRACK_BIT, THUNK_BIT, VTABLE_BIT};
+pub use returns::{THUNK_BIT, VTABLE_BIT};
 use signature::{bound_args, fun_arg_count, parser_args, parser_signature};
 
 use crate::returns::ReturnResolver;

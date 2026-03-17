@@ -8,7 +8,6 @@ use super::*;
 
 pub const THUNK_BIT: u8 = 8;
 pub const VTABLE_BIT: u8 = 0;
-pub const NOBACKTRACK_BIT: u8 = 1;
 
 pub fn parser_type_at(db: &dyn TyHirs, id: DefId) -> SResult<TypeId> {
     let parent_pd = db.hir_parent_parserdef(id)?;

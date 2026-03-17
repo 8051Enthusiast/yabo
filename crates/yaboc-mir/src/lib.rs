@@ -44,13 +44,11 @@ fn mir(db: &dyn Mirs, kind: FunKind, mir_kind: MirKind) -> SResult<Function> {
     match (kind, mir_kind) {
         (FunKind::Block(block), MirKind::Call(req)) => mir_block(db, block, req),
         (FunKind::ParserDef(pd), MirKind::Call(req)) => mir_pd(db, pd, req),
-        (FunKind::If(constraint, wiggle), MirKind::Call(req)) => {
-            mir_if(db, constraint, wiggle, req)
-        }
+        (FunKind::If(constraint), MirKind::Call(req)) => mir_if(db, constraint, req),
         (FunKind::Lambda(lambda), MirKind::Call(req)) => mir_lambda(db, lambda, req),
         (FunKind::Block(block), MirKind::Len) => LenMirCtx::new_block(db, block),
         (FunKind::ParserDef(pd), MirKind::Len) => LenMirCtx::new_pd(db, pd),
-        (FunKind::If(_, _), MirKind::Len) => LenMirCtx::new_if(),
+        (FunKind::If(_), MirKind::Len) => LenMirCtx::new_if(),
         (FunKind::Lambda(_), MirKind::Len) => panic!("lambda does not have len"),
     }
 }
@@ -65,7 +63,7 @@ pub enum FunKind {
     Block(BlockId),
     ParserDef(ParserDefId),
     Lambda(LambdaId),
-    If(HirConstraintId, bool),
+    If(HirConstraintId),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -995,10 +993,7 @@ impl FunctionWriter {
     }
 
     pub fn make_place_ref(&mut self, place: Place, eval: bool) -> PlaceRef {
-        let place_info = PlaceInfo {
-            place,
-            eval,
-        };
+        let place_info = PlaceInfo { place, eval };
         self.add_place(place_info)
     }
 
@@ -1006,8 +1001,6 @@ impl FunctionWriter {
         let new_place = Place::Stack(self.new_stack_ref(origin));
         self.make_place_ref(new_place, eval)
     }
-
-
 
     fn span(&mut self, target: PlaceRef, start_place: PlaceRef, end_place: PlaceRef, err: BBRef) {
         let new_block = self.new_bb();
@@ -1072,10 +1065,9 @@ fn mir_pd(db: &dyn Mirs, pd: ParserDefId, requirements: RequirementSet) -> SResu
 fn mir_if(
     db: &dyn Mirs,
     constr: HirConstraintId,
-    bt: bool,
     requirements: RequirementSet,
 ) -> SResult<Function> {
-    let mut ctx = ConvertCtx::new_if_builder(db, requirements, !bt)?;
+    let mut ctx = ConvertCtx::new_if_builder(db, requirements)?;
     ctx.if_parser(constr)?;
     Ok(ctx.finish_fun())
 }
