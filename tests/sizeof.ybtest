@@ -1,7 +1,7 @@
 ====[ source code ]====
 export
 fun ~test = {
-  let parser = [2][3]
+  let parser = [3][2]
   a: parser
   let b = a.sizeof
   let c = parser.sizeof

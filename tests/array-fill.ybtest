@@ -7,7 +7,7 @@ def ~rgb = {
 
 export
 fun ~test = {
-  colors: [3][..] |> (~ |> rgb)[..]
+  colors: [..][3] |> [..](~ |> rgb)
   leftover: [..] |> [..] |> [..] |> [..]
 }
 

@@ -8,7 +8,7 @@ fun ~elem = {
 }
 
 export
-fun ~test = elem[4]
+fun ~test = [4]elem
 
 ====[ text 1 ]====
 abcdefghij

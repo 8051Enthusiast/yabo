@@ -4,7 +4,7 @@ fun ~sized(arr: [u8]) = [arr ~> u32l]
 export
 fun ~test = {
   arr: [4]
-  t: sized(arr)[2]
+  t: [2]sized(arr)
 }
 
 ====[ binary 1 ]====

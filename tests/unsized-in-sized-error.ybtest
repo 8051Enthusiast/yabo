@@ -1,10 +1,10 @@
 ====[ source code ]====
 import text
-def ~a = text.basenum(16)[4]
+def ~a = [4]text.basenum(16)
           #~^ error[601] nonsized parser where sized parser is expected
 
 # with the u flag, regex is unicode aware and therefore not constant size in bytes
-def ~b = /(?u)./[4]
+def ~b = [4]/(?u)./
           #~^ error[601] nonsized parser where sized parser is expected
 
 # .size also requires a constant size

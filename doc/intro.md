@@ -544,7 +544,7 @@ We can also nest arrays:
 def ~matrix = {
   width: u8
   height: u8
-  return: u8[width][height]
+  return: [height][width]u8
 }
 ```
 
