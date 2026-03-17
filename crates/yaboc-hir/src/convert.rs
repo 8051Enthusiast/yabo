@@ -7,7 +7,11 @@ use fxhash::FxHashSet;
 use yaboc_expr::ExprHead;
 
 use super::*;
-use yaboc_ast::{self as ast, expr::WiggleKind, AstValSpanned};
+use yaboc_ast::{
+    self as ast,
+    expr::{Monadic, WiggleKind},
+    AstValSpanned, ValUnOp,
+};
 use yaboc_base::{error::Silencable, error_type, source::Spanned};
 
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -272,7 +276,29 @@ fn val_expression(
                 ExprHead::Dyadic(bin_op.clone(), [&**lhs, &**rhs])
             }
             ExpressionHead::Variadic(v) => {
-                ExprHead::Variadic(v.op.inner.clone(), v.inner.iter().map(|e| &**e).collect())
+                if let (expr::ValVarOp::Call(None), [lhs, rhs]) = (&v.op.inner, v.inner.as_slice())
+                {
+                    // random parser fixups go!!!
+                    // transforms [len](parser) from a function call into a [len]parser
+                    if let ExpressionHead::Monadic(Monadic {
+                        op:
+                            OpWithData {
+                                inner: ValUnOp::Array,
+                                ..
+                            },
+                        inner,
+                    }) = &lhs.0
+                    {
+                        ExprHead::Dyadic(ValBinOp::Array, [&**rhs, &**inner])
+                    } else {
+                        ExprHead::Variadic(
+                            v.op.inner.clone(),
+                            v.inner.iter().map(|e| &**e).collect(),
+                        )
+                    }
+                } else {
+                    ExprHead::Variadic(v.op.inner.clone(), v.inner.iter().map(|e| &**e).collect())
+                }
             }
         };
         (expr_res, add_span(expr.0.root_data()))

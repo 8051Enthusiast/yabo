@@ -41,18 +41,18 @@ def ~partition_entry = {
     let part = partition(last_lba + 1 - first_lba) at (first_lba * 512)
     partition_flags: flags
     # name encoded in utf-16le
-    name: u16l[36]
+    name: [36]u16l
   \
 }
 
-def ~partition_table(size: int, count: int) = ([size] |> partition_entry)[count]
+def ~partition_table(size: int, count: int) = [count]([size] |> partition_entry)
 
 export def ~gpt = {
   # protective mbr
   protective_mbr: if mbr.mbr
   signature: if /EFI PART/
   # should be version 1.0
-  version: u16l[2]
+  version: [2]u16l
   header_size: u32l
   # crc32 of the header with this field set to 0
   checksum: u32l

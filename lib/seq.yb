@@ -1,8 +1,8 @@
 import math
-fun from_fun[T](n: int, f: (int) -> T) = range(0, n) ~> {
+fun from_fun[T](n: int, f: (int) -> T) = range(0, n) ~> [..]{
   i: ~
   let return = f(i)
-}[..]
+}
 
 fun [T] ~> on_array[T, R](f: ([T]) -> R) = {
   input: [..]

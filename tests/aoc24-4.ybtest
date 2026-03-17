@@ -50,7 +50,7 @@ fun all_possible(matrix: [[u8]]) = {|
 export
 fun ~test = {
   let cols = (/[^\n]*\n/ expect at 0).sizeof
-  matrix: [cols][..]
+  matrix: [..][cols]
   let return = all_possible(matrix)
 }
 

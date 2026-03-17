@@ -8,7 +8,7 @@ fun [() -> int] ~> why = {
 fun throw() = 1 if 2
 
 def ~test = {
-  let arr = {~, let return = throw}[..]
+  let arr = [..]{~, let return = throw}
   return: arr |> why
   #~^error[604]
 }

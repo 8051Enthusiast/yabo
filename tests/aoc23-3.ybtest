@@ -39,7 +39,7 @@ fun ~test = {
   input: if /.*/
   let line_len = list.len(input ~> (list.list(~ is ' '..0x7f and !eof)))
   let num_row = list.len(input ~> list.list(line(line_len) is !eof))
-  let map = input ~> line(line_len)[num_row]
+  let map = input ~> [num_row]line(line_len)
   let return = add_rect(0, line_len, 0, num_row, part_number(map, ..))
 }
 

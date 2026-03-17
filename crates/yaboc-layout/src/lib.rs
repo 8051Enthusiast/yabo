@@ -1344,7 +1344,7 @@ mod tests {
         let ctx = Context::<LayoutTestDatabase>::mock(
             r"
 export
-def ~test = [2][3][5]
+def ~test = [5][3][2]
             ",
         );
         let bump = Bump::new();

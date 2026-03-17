@@ -44,16 +44,16 @@ def ~ext2_superblock = {
   prealloc_blocks: u8
   prealloc_dir_blocks: u8
   [2]
-  journal_uuid: u8[16]
+  journal_uuid: [16]u8
   journal_inum: u32l
   journal_dev: u32l
   last_orphan: u32l
-  hash_seed: u32l[4]
+  hash_seed: [4]u32l
   def_hash_version: u8
   [3]
   default_mount_opts: u32l
   first_meta_bg: u32l
-  u32l[190]
+  [190]u32l
 }
 
 static superblock = ext2_superblock at 1024
@@ -70,12 +70,12 @@ def ~ext2_group_desc = {
   free_inodes_count: u16l
   used_dirs_count: u16l
   pad: u16l
-  reserved: u32l[3]
+  reserved: [3]u32l
 }
 
-static group_descs = ext2_group_desc[
+static group_descs = [
     (superblock.blocks_count + superblock.blocks_per_group - 1) / superblock.blocks_per_group
-] at math.max(2048, block_size)
+]ext2_group_desc at math.max(2048, block_size)
 
 fun inode_at(idx: int) = {|
   let group = idx / superblock.inodes_per_group
@@ -100,10 +100,10 @@ def ~block_ptr[T](data: ~T) = {
   \
 }
 
-def ~indirect[T](data: ~T) = block_ptr(data)[..]
+def ~indirect[T](data: ~T) = [..]block_ptr(data)
 
 def ~data_blocks[T](data: ~T) = {
-  direct: block_ptr(data)[12]
+  direct: [12]block_ptr(data)
   indirect1: block_ptr(indirect(data))
   indirect2: block_ptr(indirect(indirect(data)))
   indirect3: block_ptr(indirect(indirect(indirect(data))))
@@ -166,7 +166,7 @@ def ~inode = {
   file_acl: u32l
   dir_acl: u32l
   faddr: u32l
-  osd2: u32l[3]
+  osd2: [3]u32l
 }
 
 export

@@ -15,7 +15,7 @@ fun when(cond: bit) = cond if true
 fun [T] ~> nil[T] = {}
 
 # Maps a function f over an array.
-fun [T] ~> map[T, R](f: (T) -> R) = {x: ~, let return = f?(x)}[..]
+fun [T] ~> map[T, R](f: (T) -> R) = [..]{x: ~, let return = f?(x)}
 
 # Tries to parse using the first parser, then the second if the first fails.
 fun [T] ~> alt[T, R](a0: [T] ~> R, a1: [T] ~> R) = {

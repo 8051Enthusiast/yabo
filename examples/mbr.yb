@@ -32,9 +32,9 @@ def ~partition_entry(base: int) = {
 # extended boot record
 def ~ebr(base: int) = {
   [446]
-  entries: partition_entry(base)[2]
+  entries: [2]partition_entry(base)
   # the last 2 bytes of the EBR are unused
-  unused_entires:  partition_entry(base)[2]
+  unused_entires:  [2]partition_entry(base)
   ibm: expect h/55 aa/
 }
 
@@ -44,6 +44,6 @@ def ~mbr = {
   bootcode: [440]
   disk_signature: u32l
   copy_protected: [2]
-  entries: partition_entry(0)[4]
+  entries: [4]partition_entry(0)
   ibm: if h/55 aa/
 }

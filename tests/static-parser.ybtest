@@ -2,7 +2,7 @@
 static i32l_or_i16l = (u8 at 0) if 0x11..0x20 then i32l else i16l
 
 export
-fun ~test = i32l_or_i16l[2]
+fun ~test = [2]i32l_or_i16l
 
 ====[ binary 1 ]====
 11 00 00 00 12 00 00 00

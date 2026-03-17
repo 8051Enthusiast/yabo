@@ -3,7 +3,7 @@ import bit
 
 def ~fat12(size: int) = [size]
   |> bit.from_bytes_lsb
-  |> bit.uint_lsb(12)[..]
+  |> [..]bit.uint_lsb(12)
 
 export
 def ~test = fat12(16)

@@ -301,12 +301,14 @@ module.exports = grammar({
       return choice(
         regular_ops,
         prec.left(
-          PREC.POSTFIX,
+          PREC.PREFIX,
           seq(
-            field("left", $._expression),
             field("op", "["),
+            // this used to be on the right side.
+            // i'm not changing all code...
             field("right", $._expression),
             "]",
+            field("left", $._expression),
           ),
         ),
       );
@@ -322,8 +324,8 @@ module.exports = grammar({
         ),
         seq(field("op", "("), field("right", $._expression), ")"),
         prec(
-          PREC.POSTFIX,
-          seq(field("right", $._expression), field("op", $.array_fill)),
+          PREC.PREFIX,
+          seq(field("op", $.array_fill), field("right", $._expression)),
         ),
         prec(
           PREC.POSTFIX,

@@ -9,7 +9,7 @@ def ~constsize_num = {
 export
 def ~test = {
   len: if text.num, if /\n/
-  nums: constsize_num[len]
+  nums: [len]constsize_num
 }
 
 ====[ text 1 ]====

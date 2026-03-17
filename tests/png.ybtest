@@ -49,7 +49,7 @@ def ~test = {
 
   chunks: list.list({
     case
-    | palette: if chunk(/PLTE/, rgb[..])
+    | palette: if chunk(/PLTE/, [..]rgb)
     | data: if chunk(/IDAT/, [..])
     | optional: if chunk(/[a-z].{3}/, [..])
     \
