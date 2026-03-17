@@ -17,7 +17,7 @@ fun ~digit(base: int) = {
 
 fun ~_number_acc(base: int, n: int): int = {
   case
-  | x: if digit?(base) is !eof
+  | x: if digit(base) is !eof
     return: _number_acc(base, n * base + x)
   | let return = n
   \
@@ -30,7 +30,7 @@ fun ~basenum(base: int) = {
   | let sign = 1
   \
   # make sure there is at least one digit
-  val: if digit?(base) is !eof
+  val: if digit(base) is !eof
   n: if _number_acc(base, val)
   let return = sign * n
 }
