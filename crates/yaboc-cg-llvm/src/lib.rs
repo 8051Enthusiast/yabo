@@ -832,7 +832,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             FieldName::Return => unreachable!(),
             FieldName::Ident(d) => self.compiler_database.db.lookup_intern_identifier(d).name,
         };
-        let MonoLayout::NominalParser(_, args, _, _) = layout.mono_layout() else {
+        let MonoLayout::NominalParser(_, args, _) = layout.mono_layout() else {
             panic!("attempting to create parser export for non-nominal layout")
         };
         let mut export_fields = if self.options.target.relative_vptrs {
@@ -869,7 +869,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let collected_layouts = self.collected_layouts.clone();
         let from = IMonoLayout::u8_array(self.layouts);
         for (layout, _) in collected_layouts.root.iter() {
-            if let MonoLayout::NominalParser(pd, _, _, _) = layout.mono_layout() {
+            if let MonoLayout::NominalParser(pd, _, _) = layout.mono_layout() {
                 self.create_pd_export(*pd, *layout, from.inner());
             }
         }

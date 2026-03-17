@@ -688,10 +688,7 @@ impl<'a> ConvertCtx<'a> {
                     continue;
                 }
                 let place = Place::Stack(f.new_stack_ref(PlaceOrigin::Ambient(block.id, val.id)));
-                let place_ref = f.add_place(PlaceInfo {
-                    place,
-                    eval: true,
-                });
+                let place_ref = f.add_place(PlaceInfo { place, eval: true });
                 places.insert(val, place_ref);
             } else if matches!(val.kind, SubValueKind::Val) {
                 let place = if returned_vals.contains(&val.id) {
@@ -703,10 +700,7 @@ impl<'a> ConvertCtx<'a> {
                 } else {
                     Place::Stack(f.new_stack_ref(PlaceOrigin::Node(val.id)))
                 };
-                let place_ref = f.add_place(PlaceInfo {
-                    place,
-                    eval: false,
-                });
+                let place_ref = f.add_place(PlaceInfo { place, eval: false });
                 places.insert(val, place_ref);
             }
         }
@@ -857,14 +851,10 @@ impl<'a> ConvertCtx<'a> {
         Self::new_fun_builder(f, requirements, id.0, lambda.expr, db, places)
     }
 
-    pub fn new_if_builder(
-        db: &'a dyn Mirs,
-        requirements: RequirementSet,
-        is_try: bool,
-    ) -> SResult<Self> {
+    pub fn new_if_builder(db: &'a dyn Mirs, requirements: RequirementSet) -> SResult<Self> {
         let mut f = FunctionWriter::new(requirements | NeededBy::Val, true, false);
         let mut top_level_retreat = f.make_top_level_retreat();
-        if !requirements.contains(NeededBy::Backtrack) || is_try {
+        if !requirements.contains(NeededBy::Backtrack) {
             top_level_retreat.backtrack = top_level_retreat.error;
         }
         let retreat = top_level_retreat;

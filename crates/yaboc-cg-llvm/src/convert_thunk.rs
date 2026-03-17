@@ -4,7 +4,7 @@ use inkwell::{
     IntPredicate,
 };
 
-use yaboc_hir_types::{NOBACKTRACK_BIT, THUNK_BIT, VTABLE_BIT};
+use yaboc_hir_types::{THUNK_BIT, VTABLE_BIT};
 use yaboc_layout::{ILayout, IMonoLayout, MonoLayout, TailInfo};
 use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_target::layout::SizeAlign;
@@ -468,31 +468,11 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
             .builder
             .build_conditional_branch(has_vtable, write_vtable_ptr, otherwise)?;
         self.cg.builder.position_at_end(write_vtable_ptr);
-        let vtable_pointer = self.build_vtable_any_ptr()?;
+        let vtable_pointer = self.cg.build_get_vtable_tag(self.target_layout);
         self.cg.build_vtable_store(self.ret.ptr, vtable_pointer)?;
         copy_phi.add_incoming(&[(&self.ret.ptr, write_vtable_ptr)]);
         self.cg.builder.build_unconditional_branch(copy_bb)?;
         Ok(())
-    }
-
-    fn build_vtable_any_ptr(&mut self) -> IResult<PointerValue<'llvm>> {
-        let bt_ptr = self.cg.build_get_vtable_tag(self.target_layout);
-        if !matches!(
-            self.target_layout.mono_layout(),
-            MonoLayout::NominalParser(..)
-        ) {
-            return Ok(bt_ptr);
-        }
-        let nbt_target_layout = self.target_layout.remove_backtracking(self.cg.layouts);
-        let nbt_ptr = self.cg.build_get_vtable_tag(nbt_target_layout);
-        let needs_nbt = self
-            .cg
-            .build_check_i64_bit_set(self.ret.head, NOBACKTRACK_BIT)?;
-        Ok(self
-            .cg
-            .builder
-            .build_select(needs_nbt, nbt_ptr, bt_ptr, "vtable_ptr")?
-            .into_pointer_value())
     }
 
     pub fn build(mut self) -> IResult<FunctionValue<'llvm>> {
