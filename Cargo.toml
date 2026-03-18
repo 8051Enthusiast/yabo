@@ -4,7 +4,7 @@ resolver = "2"
 default-members = ["crates/yaboc"]
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "runtimeless functional language for defining binary parsers"
 license = "MIT"
 [workspace.dependencies]
