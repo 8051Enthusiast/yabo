@@ -290,6 +290,12 @@ fn val_expression(
                     }) = &lhs.0
                     {
                         ExprHead::Dyadic(ValBinOp::Array, [&**rhs, &**inner])
+                    } else if let ExpressionHead::Niladic(OpWithData {
+                        inner: yaboc_ast::ParserAtom::ArrayFill,
+                        ..
+                    }) = &lhs.0
+                    {
+                        ExprHead::Monadic(ValUnOp::Array, &**rhs)
                     } else {
                         ExprHead::Variadic(
                             v.op.inner.clone(),
