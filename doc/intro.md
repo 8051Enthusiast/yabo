@@ -482,19 +482,19 @@ fun square(n: int) = n * n
 fun cube(n: int) = square(n) * n
 ```
 Of course, we also want to use `let` to bind variables, but we cannot use `{` and `}` for this, as those define parsers.
-Instead, we use `{|` and `|}`:
+Instead, we use `(` and `)`:
 ```
-fun cube(n: int) = {|
+fun cube(n: int) = (
   let square = n * n
   let return = square * n
-|}
+)
 ```
 We can also define blocks with fields this way, and use choices:
 ```
-fun maybe_zero(n: int) = {|
+fun maybe_zero(n: int) = (
   | let zero = n is 0
   \ let nonzero = n
-|}
+)
 
 fun square(n: int) = maybe_zero(n)?.zero else (n * n)
 ```
@@ -783,7 +783,7 @@ Appendix A: Overview of Expressions
 | `span foo..bar` | Literal | Create span array of fields from `foo` to `bar` |
 | `~`      | Literal       | Single value parser |
 | `{...}`  | Block         | Create block parser |
-| `{| ... |}`| Inline Block  | Create block that is immediately evaluated |
+| `( ... )`| Inline Block  | Create block that is immediately evaluated |
 
 ### Precedence
 Generally, postfix operators have higher precedence than prefix operators, and prefix operators have higher precedence than binary operators.

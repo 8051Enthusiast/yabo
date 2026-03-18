@@ -77,12 +77,12 @@ static group_descs = [
     (superblock.blocks_count + superblock.blocks_per_group - 1) / superblock.blocks_per_group
 ]ext2_group_desc at math.max(2048, block_size)
 
-fun inode_at(idx: int) = {|
+fun inode_at(idx: int) = (
   let group = idx / superblock.inodes_per_group
   let offset = idx % superblock.inodes_per_group
   let inodes_start = group_descs.[group].inode_table * block_size
   let return = inode at (inodes_start + offset * inode_size)
-|}
+)
 
 def ~inode_ptr = {
   inode_idx: u32l
@@ -109,7 +109,7 @@ def ~data_blocks[T](data: ~T) = {
   indirect3: block_ptr(indirect(indirect(indirect(data))))
 }
 
-fun inode_type(mode: int) = {|
+fun inode_type(mode: int) = (
   let masked = mode & 0xF000
   case
   | let fifo = masked if 0x1000
@@ -121,7 +121,7 @@ fun inode_type(mode: int) = {|
   | let socket = masked if 0xC000
   | let unknown = masked
   \
-|}
+)
 
 def ~byte_block = [..]
 
