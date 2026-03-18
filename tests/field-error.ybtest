@@ -1,8 +1,8 @@
 ====[ source code ]====
 
-fun block() = {|
+fun block() = (
   let a = 0
-|}
+)
 
 def ~access = {
   let b = block().y

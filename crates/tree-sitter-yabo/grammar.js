@@ -83,8 +83,7 @@ module.exports = grammar({
         PREC.PARSERTYPE + 1,
         seq(field("op", "~"), field("right", $._type_expression)),
       ),
-    block: ($) =>
-      seq("{|", optional(field("content", $.parser_sequence)), "|}"),
+    block: ($) => seq("(", optional(field("content", $.parser_sequence)), ")"),
     parser_block: ($) =>
       seq("{", optional(field("content", $.parser_sequence)), "}"),
     parser_sequence: ($) =>
@@ -101,7 +100,11 @@ module.exports = grammar({
     _parser_sequence_element: ($) => choice($._statement, $.parser_choice),
     parser_choice: ($) =>
       seq("case", repeat(seq("|", field("content", $.parser_sequence))), "\\"),
-    type_array: ($) => prec.left(PREC.PARSERTYPE + 1, seq("[", "]", field("expr", $._type_expression))),
+    type_array: ($) =>
+      prec.left(
+        PREC.PARSERTYPE + 1,
+        seq("[", "]", field("expr", $._type_expression)),
+      ),
     constraint_apply: ($) =>
       prec.left(
         PREC.LPOSTFIX,
@@ -180,7 +183,6 @@ module.exports = grammar({
         $.array_fill,
         $._atom,
       ),
-    paren_expression: ($) => seq("(", $._expression, ")"),
     _arg_list: ($) =>
       seq(
         "(",
@@ -322,7 +324,6 @@ module.exports = grammar({
             field("right", $._expression),
           ),
         ),
-        seq(field("op", "("), field("right", $._expression), ")"),
         prec(
           PREC.PREFIX,
           seq(field("op", $.array_fill), field("right", $._expression)),

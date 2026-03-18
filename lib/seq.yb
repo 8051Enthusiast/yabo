@@ -16,10 +16,10 @@ fun []T ~> index_map[T, R](f: (int, T) -> R) = on_array(<input>
 fun []T ~> zip[T, R](other: []R) = on_array(<array>
   from_fun(
     math.min(array.sizeof, other.sizeof),
-    <i> {|
+    <i> (
       let first = array.[i]
       let second = other.[i]
-    |}
+    )
   )
 )
 

@@ -6,12 +6,12 @@ import parse
 fun columns(matrix: [][]u8) = matrix.[0].sizeof
 
 fun mirror(matrix: [][]u8) =
-  range(0, matrix.sizeof) ~> map(<row> {|
+  range(0, matrix.sizeof) ~> map(<row> (
     let cols = matrix.[row].sizeof
     range(0, cols) ~> map(<col>
       matrix.[row].[(cols - 1) - col]
     )
-  |})
+  ))
 
 fun transpose(matrix: [][]u8) =
   range(0, columns(matrix)) ~> map(<col>
@@ -22,18 +22,18 @@ fun transpose(matrix: [][]u8) =
 
 fun rotate(matrix: [][]u8) = mirror(transpose(matrix))
 
-fun diagonals(matrix: [][]u8) = {|
+fun diagonals(matrix: [][]u8) = (
   let rows = matrix.sizeof
   let cols = columns(matrix)
   let diags = rows + cols - 1
-  range(0, diags) ~> map(<diag> {|
+  range(0, diags) ~> map(<diag> (
     let start = math.max(0, diag - (rows - 1))
     let end = math.min(diag, cols - 1)
     range(start, end + 1) ~> map(<i>
       matrix.[diag - i].[i]
     )
-  |})
-|}
+  ))
+)
 
 fun sum_both[T](sum: (T) -> int, f: (T) -> T, in: T) = sum(in) + sum(f(in))
 
@@ -41,11 +41,11 @@ fun score(matrix: [][]u8) = matrix ~> aoc.summap(~ is !eof |> aoc.summap({
   if parse.find(/XMAS/), let return = 1
 }))
 
-fun all_possible(matrix: [][]u8) = {|
+fun all_possible(matrix: [][]u8) = (
   let mirrored = sum_both(score, mirror, ..)
   let diagonaled = sum_both(mirrored, diagonals, ..)
   sum_both(diagonaled, rotate, matrix)
-|}
+)
 
 export
 fun ~test = {

@@ -10,7 +10,6 @@ use super::*;
 use yaboc_ast::{
     self as ast,
     expr::{Monadic, WiggleKind},
-    AstValSpanned, ValUnOp,
 };
 use yaboc_base::{error::Silencable, error_type, source::Spanned};
 
@@ -137,7 +136,7 @@ fn constraint_expression(
 
 fn compare_bin_precedence(
     upper: &OpWithData<ast::ValBinOp, Span>,
-    lower: &ExpressionHead<AstValSpanned, impl Any>,
+    lower: &ExpressionHead<ast::AstValSpanned, impl Any>,
     is_lhs: bool,
 ) -> Result<(), HirConversionError> {
     let ExpressionHead::Dyadic(lower) = lower else {
@@ -228,35 +227,48 @@ fn val_expression(
     };
     let expr = DataExpr::new_from_unfold(expr, |expr| {
         let expr_res = match &expr.0 {
-            ExpressionHead::Niladic(n) => ExprHead::Niladic(match &n.inner {
+            ExpressionHead::Niladic(n) => match &n.inner {
                 ast::ParserAtom::Atom(Atom::Field(FieldName::Return)) => {
                     ctx.add_errors(Some(HirConversionError::ReturnFieldUnsupported {
                         span: n.data,
                     }));
-                    ParserAtom::Atom(Atom::Field(FieldName::Return))
+                    ExprHead::Niladic(ParserAtom::Atom(Atom::Field(FieldName::Return)))
                 }
-                ast::ParserAtom::Atom(atom) => ParserAtom::Atom(atom.clone()),
-                ast::ParserAtom::Single => ParserAtom::Single,
-                ast::ParserAtom::ArrayFill => ParserAtom::ArrayFill,
-                ast::ParserAtom::Span(start, end) => ParserAtom::Span(*start, *end),
-                ast::ParserAtom::Regex(re) => ParserAtom::Regex(*re),
-                ast::ParserAtom::String(str) => ParserAtom::String(str.clone()),
+                ast::ParserAtom::Atom(atom) => ExprHead::Niladic(ParserAtom::Atom(atom.clone())),
+                ast::ParserAtom::Single => ExprHead::Niladic(ParserAtom::Single),
+                ast::ParserAtom::ArrayFill => ExprHead::Niladic(ParserAtom::ArrayFill),
+                ast::ParserAtom::Span(start, end) => {
+                    ExprHead::Niladic(ParserAtom::Span(*start, *end))
+                }
+                ast::ParserAtom::Regex(re) => ExprHead::Niladic(ParserAtom::Regex(*re)),
+                ast::ParserAtom::String(str) => ExprHead::Niladic(ParserAtom::String(str.clone())),
                 ast::ParserAtom::Block(b) => {
-                    let nid = BlockId(new_id());
-                    block(b, ctx, nid, parent_context, id);
-                    let kind = if b.is_parser {
-                        BlockKind::Parser
+                    if !b.is_parser
+                        && let Some(seq) = &b.content
+                        && let [ast::ParserSequenceElement::Statement(stat)] =
+                            seq.content.as_slice()
+                        && let ast::Statement::Parse(parse) = &**stat
+                        && parse.bt.is_none()
+                        && parse.name.is_none()
+                    {
+                        ExprHead::Monadic(ast::ValUnOp::Parens, &parse.parser)
                     } else {
-                        BlockKind::Inline
-                    };
-                    ParserAtom::Block(nid, kind)
+                        let nid = BlockId(new_id());
+                        block(b, ctx, nid, parent_context, id);
+                        let kind = if b.is_parser {
+                            BlockKind::Parser
+                        } else {
+                            BlockKind::Inline
+                        };
+                        ExprHead::Niladic(ParserAtom::Block(nid, kind))
+                    }
                 }
                 ast::ParserAtom::Lambda(l) => {
                     let nid = LambdaId(new_id());
                     lambda(l, ctx, nid, id);
-                    ParserAtom::Lambda(nid)
+                    ExprHead::Niladic(ParserAtom::Lambda(nid))
                 }
-            }),
+            },
             ExpressionHead::Monadic(m) => ExprHead::Monadic(
                 m.op.inner.map_expr(|constr, kind| {
                     constraint_expression(constr, kind, m.op.data, ctx, &add_span)
@@ -283,7 +295,7 @@ fn val_expression(
                     if let ExpressionHead::Monadic(Monadic {
                         op:
                             OpWithData {
-                                inner: ValUnOp::Array,
+                                inner: ast::ValUnOp::Array,
                                 ..
                             },
                         inner,
@@ -295,7 +307,7 @@ fn val_expression(
                         ..
                     }) = &lhs.0
                     {
-                        ExprHead::Monadic(ValUnOp::Array, &**rhs)
+                        ExprHead::Monadic(ast::ValUnOp::Array, &**rhs)
                     } else {
                         ExprHead::Variadic(
                             v.op.inner.clone(),

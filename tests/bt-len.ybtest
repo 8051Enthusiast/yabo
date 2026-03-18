@@ -1,11 +1,11 @@
 ====[ source code ]====
-fun flag() = {|
+fun flag() = (
   let flag = u8 at 0
   case
   | let r = flag if 1
   | let l = flag if 0
   \
-|}
+)
 def ~flag_int = flag!()?.r then u32l else u16l
 export
 def ~test = {~, return: [3]flag_int}
