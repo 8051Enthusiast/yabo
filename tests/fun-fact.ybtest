@@ -1,8 +1,8 @@
 ====[ source code ]====
 fun fact(n: int) = (
   case
-  | let return = n if 0 then 1
-  | let return = fact(n - 1) * n
+  | n if 0 then 1
+  | fact(n - 1) * n
   \
 )
 

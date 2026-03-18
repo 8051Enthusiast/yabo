@@ -1,9 +1,9 @@
 use yaboc_base::error::{
-    diagnostic::{DiagnosticKind, Label},
     Report,
+    diagnostic::{DiagnosticKind, Label},
 };
 
-use super::{convert::HirConversionError, Hirs};
+use super::{Hirs, convert::HirConversionError};
 
 pub fn errors(db: &(impl Hirs + ?Sized)) -> Vec<Report> {
     let mut ret = Vec::new();
@@ -126,6 +126,19 @@ fn conversion_report(error: HirConversionError) -> Option<Report> {
             .with_code(211)
             .with_label(Label::new(span).with_message("error introduced here")),
         ),
+        HirConversionError::LetReturnInInlineBlock { span } => {
+            Some(
+                Report::new(
+                    DiagnosticKind::Error,
+                    span.file,
+                    &format!("`let return` used on inline block"),
+                )
+                .with_code(212)
+                .with_label(Label::new(span).with_message(
+                    "should instead be put at the end of the block/case without a `let`",
+                )),
+            )
+        }
         HirConversionError::Silenced => None,
     }
 }

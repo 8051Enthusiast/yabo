@@ -27,7 +27,7 @@ fun bit_index(n: int) = (
   let bit2 = is_nonzero(n3 & 0xf0)
   let bit1 = is_nonzero(n2 & 0xc)
   let bit0 = is_nonzero(n1 & 0x2)
-  let return = bit5 << 5 | bit4 << 4 | bit3 << 3 | bit2 << 2 | bit1 << 1 | bit0
+  bit5 << 5 | bit4 << 4 | bit3 << 3 | bit2 << 2 | bit1 << 1 | bit0
 )
 
 export def ~test = {

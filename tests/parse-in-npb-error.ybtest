@@ -3,7 +3,7 @@ fun test() = (
   case
   | n: {}
   #~^error[206] Parse in non-parser block
-    let return = 1
-  | let return = 0
+    1
+  | 0
   \
 )

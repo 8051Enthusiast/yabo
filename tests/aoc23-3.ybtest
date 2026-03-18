@@ -31,7 +31,7 @@ fun symbol(map: [][]u8, x: int, y: int) = is_sym?(map?.[y]?.[x]) then 1 else 0
 fun part_number(map: [][]u8, x: int, y: int) = (
   let n = map.[y] ~> if num(x)
   let num_syms = add_rect(x - 1, x + n.len + 1, y - 1, y + 2, symbol(map, ..))
-  let return = when?(num_syms > 0) then n.val
+  when?(num_syms > 0) then n.val
 ) else 0
 
 export

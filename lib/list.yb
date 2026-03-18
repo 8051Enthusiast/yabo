@@ -21,7 +21,7 @@ fun fold[R, T](xs: list[R], init: T, f: (T, R) -> T): T = (
   case
   | let x = xs?.this
     let new_init = f?(init, x)
-    let return = fold(xs.next, new_init, f)
-  | let return = init
+    fold(xs.next, new_init, f)
+  | init
   \
 )
