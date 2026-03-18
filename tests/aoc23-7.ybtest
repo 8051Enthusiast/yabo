@@ -28,7 +28,7 @@ fun popcount(n: int): int = (
   let n4 = n3 + (n3 >> 8)
   let n5 = n4 + (n4 >> 16)
   let n6 = n5 + (n5 >> 32)
-  let return = n6 & 0x7f
+  n6 & 0x7f
 )
 
 fun ~diff_count: int = {
@@ -63,7 +63,7 @@ fun rank(cards: []u8) = (
   | let ty = same if 3 then 3
   | let ty = same expect 2 then (5 - diff)
   \
-  let return = ty << 20 | card_rank
+  ty << 20 | card_rank
 )
 
 fun ~play = {

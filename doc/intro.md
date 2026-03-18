@@ -486,7 +486,7 @@ Instead, we use `(` and `)`:
 ```
 fun cube(n: int) = (
   let square = n * n
-  let return = square * n
+  square * n
 )
 ```
 We can also define blocks with fields this way, and use choices:
@@ -719,7 +719,7 @@ fun range_sum(n: int) = 0..<n
 Together with `[..]`, this can be combined to a sort of loop:
 ```
 fun bits_of(n: int, bit_count: int) = 0..<bit_count
-  ~> { i: ~, let return = (n >> i) & 1 != 0 }[..]
+  ~> [..]{ i: ~, let return = (n >> i) & 1 != 0 }
 ```
 Note what we are doing here:
 `{ i: ~, let return = (n >> i) & 1 != 0 }` is a parser of length 1 that takes an integer `i` and returns whether the `i`-th bit of `n` is set.

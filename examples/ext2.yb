@@ -81,7 +81,7 @@ fun inode_at(idx: int) = (
   let group = idx / superblock.inodes_per_group
   let offset = idx % superblock.inodes_per_group
   let inodes_start = group_descs.[group].inode_table * block_size
-  let return = inode at (inodes_start + offset * inode_size)
+  inode at (inodes_start + offset * inode_size)
 )
 
 def ~inode_ptr = {

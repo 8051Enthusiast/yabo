@@ -53,6 +53,9 @@ pub enum HirConversionError {
         span: Span,
         kind: WiggleKind,
     },
+    LetReturnInInlineBlock {
+        span: Span,
+    },
     Silenced,
 }
 
@@ -713,7 +716,7 @@ fn struct_context(
             ast::ParserSequenceElement::Statement(x) => match x.as_ref() {
                 ast::Statement::Parse(p) => {
                     if kind == BlockKind::Inline {
-                        if p.name.is_some() {
+                        if p.name.is_some() || p.bt.is_some() {
                             ctx.add_errors(Some(HirConversionError::ParseInNonParserBlock {
                                 span: p.span,
                             }));
@@ -738,6 +741,14 @@ fn struct_context(
                 }
                 ast::Statement::Let(l) => {
                     let sub_id = new_id(x.field());
+                    if kind == BlockKind::Inline
+                        && let Some(name) = &l.name
+                        && name.inner == FieldName::Return
+                    {
+                        ctx.add_errors(Some(HirConversionError::LetReturnInInlineBlock {
+                            span: l.span,
+                        }));
+                    }
                     let_statement(l, ctx, LetId(sub_id), id)
                 }
             },
