@@ -1242,9 +1242,9 @@ mod tests {
     fn layouts() {
         let ctx = Context::<LayoutTestDatabase>::mock(
             r"
-    def ~first = ~
+    def first = ~
     fun ~second = ~
-    def ~main = {
+    def main = {
         a: ~
         b: ~
         c: {
@@ -1344,7 +1344,7 @@ mod tests {
         let ctx = Context::<LayoutTestDatabase>::mock(
             r"
 export
-def ~test = [5][3][2]
+def test = [5][3][2]
             ",
         );
         let bump = Bump::new();

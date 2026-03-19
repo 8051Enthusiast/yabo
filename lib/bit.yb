@@ -39,23 +39,23 @@ fun ~from_int_lsb(parser: ~int, num_bits: int) = {
   ))
 }
 
-def ~b8_msb   = from_int_msb(u8, 8)
-def ~b8_lsb   = from_int_lsb(u8, 8)
+def b8_msb   = from_int_msb(u8, 8)
+def b8_lsb   = from_int_lsb(u8, 8)
 
-def ~b16b_msb = from_int_msb(u16b, 16)
-def ~b16b_lsb = from_int_lsb(u16b, 16)
-def ~b16l_msb = from_int_msb(u16l, 16)
-def ~b16l_lsb = from_int_lsb(u16l, 16)
+def b16b_msb = from_int_msb(u16b, 16)
+def b16b_lsb = from_int_lsb(u16b, 16)
+def b16l_msb = from_int_msb(u16l, 16)
+def b16l_lsb = from_int_lsb(u16l, 16)
 
-def ~b32b_msb = from_int_msb(u32b, 32)
-def ~b32b_lsb = from_int_lsb(u32b, 32)
-def ~b32l_msb = from_int_msb(u32l, 32)
-def ~b32l_lsb = from_int_lsb(u32l, 32)
+def b32b_msb = from_int_msb(u32b, 32)
+def b32b_lsb = from_int_lsb(u32b, 32)
+def b32l_msb = from_int_msb(u32l, 32)
+def b32l_lsb = from_int_lsb(u32l, 32)
 
-def ~b64b_msb = from_int_msb(i64b, 64)
-def ~b64b_lsb = from_int_lsb(i64b, 64)
-def ~b64l_msb = from_int_msb(i64l, 64)
-def ~b64l_lsb = from_int_lsb(i64l, 64)
+def b64b_msb = from_int_msb(i64b, 64)
+def b64b_lsb = from_int_lsb(i64b, 64)
+def b64l_msb = from_int_msb(i64l, 64)
+def b64l_lsb = from_int_lsb(i64l, 64)
 
 fun []bit ~> flag = ~
 

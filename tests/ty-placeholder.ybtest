@@ -2,7 +2,7 @@
 fun ~once[T](parser: ~T) = if parser
 
 export
-def ~test = {
+def test = {
   let parser: ~_ = ~
   return: once(parser)
 }

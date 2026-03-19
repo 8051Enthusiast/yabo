@@ -1,5 +1,5 @@
 ====[ source code ]====
-def ~case = {
+def case = {
   x: ~
   let return =  x if 0 then 10 else
                 x if 1 then 9 else
@@ -15,7 +15,7 @@ def ~case = {
 }
 
 export
-def ~test = [11]case
+def test = [11]case
 
 ====[ binary 1 ]====
 02 04 06 08 0a 01 03 05 07 09 00

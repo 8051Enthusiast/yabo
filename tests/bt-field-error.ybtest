@@ -1,20 +1,20 @@
 ===[ source code ]====
-def ~three[T, R, S](a: ~T, b: ~R, c: ~S) = {
+def three[T, R, S](a: ~T, b: ~R, c: ~S) = {
   f1: if a
   f2: if b
   f3: if c
 }
 
-def ~f = {
+def f = {
   let return = u8 is 3
 }
 
-def ~g = {
+def g = {
   let return = u8
 }
 
 export
-def ~test = {
+def test = {
   a: three(g, f, u8)
   let p = {let return: ~int = ~}
   b: three(p, p, ~)

@@ -1,5 +1,5 @@
 ====[ source code ]====
-def ~fib(a: int) = {
+def fib(a: int) = {
   case
   | let return = a if 0 or 1
   | x: fib(a - 2)
@@ -8,7 +8,7 @@ def ~fib(a: int) = {
   \
 }
 
-export def ~test = {
+export def test = {
     n: ~
     return: fib(n)
 }

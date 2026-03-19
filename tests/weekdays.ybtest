@@ -2,9 +2,9 @@
 import text
 import math
 import list
-def ~ws = expect /\s*/
+def ws = expect /\s*/
 
-def ~fixed_num = {
+def fixed_num = {
   whole: if text.num
   case
   | if u8 is '.'

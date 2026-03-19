@@ -60,13 +60,6 @@ fn conversion_report(error: HirConversionError) -> Option<Report> {
                         .with_message("definitions must have function arguments or be a parser"),
                 ),
         ),
-        HirConversionError::NonParserDef { span } => Some(
-            Report::new(DiagnosticKind::Error, span.file, "Non-parser definition")
-                .with_code(205)
-                .with_label(Label::new(span).with_message(
-                    "a definition must either be declared with `fun` or be a parser",
-                )),
-        ),
         HirConversionError::ParseInNonParserBlock { span } => Some(
             Report::new(
                 DiagnosticKind::Error,

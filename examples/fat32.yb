@@ -1,6 +1,6 @@
 # fields of the FAT32 header
 export
-def ~fat32_header = {
+def fat32_header = {
   jmp_boot: [3]
   oem_name: [8]
   byts_per_sec: u16l
@@ -34,13 +34,13 @@ def ~fat32_header = {
 static header = fat32_header at 0
 
 # defines an integer in a FAT entry that has the high 4 bits masked out
-def ~masked_fat_val = {
+def masked_fat_val = {
   val: u32l
   let return = val & 0x0FFFFFFF
 }
 
 # defines a FAT entry
-def ~fat_entry = {
+def fat_entry = {
   # if it is in the range 2 to 0x0FFFFFEF, it is a valid cluster
   # and points to the next cluster in the file
   case
@@ -50,7 +50,7 @@ def ~fat_entry = {
 }
 
 # defines a fat table of a given size
-def ~fat_table = [(header.fat_sz32 * header.byts_per_sec) / u32l.sizeof]fat_entry
+def fat_table = [(header.fat_sz32 * header.byts_per_sec) / u32l.sizeof]fat_entry
 
 static fat = fat_table at (header.byts_per_sec * header.rsvd_sec_cnt)
 
@@ -67,7 +67,7 @@ static blocks = {
 fun parse_block[T](idx: int, data: (int) -> ~T) = if blocks.[idx - 2] ~> data(idx)
 
 # defines a short entry in the directory
-def ~short_entry = {
+def short_entry = {
   name: [8]
   ext: [3]
   attr: u8
@@ -85,7 +85,7 @@ def ~short_entry = {
 }
 
 # defines a long entry in the directory
-def ~long_entry = {
+def long_entry = {
   ord: u8
   name1: [5]u16l
   attr: if u8 is 0x0F
@@ -97,7 +97,7 @@ def ~long_entry = {
 }
 
 # a single entry in the directory, either a long or short entry, or empty
-def ~dir_entry = [32] |> {
+def dir_entry = [32] |> {
   case
   | empty: if u8 is 0 or 0xE5
   | long: if long_entry
@@ -112,13 +112,13 @@ def ~dir_entry = [32] |> {
 }
 
 # a chain of directory entries
-def ~dir_entries(idx: int) = entry([..]dir_entry, idx)
+def dir_entries(idx: int) = entry([..]dir_entry, idx)
 
 # a chain of file entries
-def ~file_entry(idx: int) = entry([..], idx)
+def file_entry(idx: int) = entry([..], idx)
 
 # takes a data type and returns a linked list of entries using the FAT
-def ~entry[T](data_type: ~T, idx: int) = {
+def entry[T](data_type: ~T, idx: int) = {
   data: expect data_type
   case
   | let next_idx = fat.[idx]?.next
@@ -128,4 +128,4 @@ def ~entry[T](data_type: ~T, idx: int) = {
 }
 
 export
-def ~fat32 = {let return = parse_block(header.root_clus, dir_entries)}
+def fat32 = {let return = parse_block(header.root_clus, dir_entries)}

@@ -1,7 +1,7 @@
 ====[ source code ]=====
-def ~wrapped = ~
+def wrapped = ~
 
-export def ~test = {
+export def test = {
   f: wrapped
   case
   | let a = f if 0

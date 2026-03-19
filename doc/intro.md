@@ -75,7 +75,7 @@ Parser Definitions
 
 Let's start with a simple example:
 ```
-def ~u16_pair = {
+def u16_pair = {
   fst: u16l
   snd: u16l
 }
@@ -113,22 +113,22 @@ In yabo, we notate a parser type like `[]u8 -> (type, []u8)` as `[]u8 ~> type`.
 It is important to recognize that blocks `{...}` are expressions that produce parsers.
 For example, these examples are possible as well:
 ```
-def ~nested_block = {
+def nested_block = {
   outer: {
     inner: u16l
   }
 }
 
-def ~no_block = u16l
+def no_block = u16l
 ```
 
 There is a special built-in parser `~`: it returns a single element of the input array and advances the position by one.
-For example, `def ~single = ~` has a length of one and just returns the byte of the input itself.
+For example, `def single = ~` has a length of one and just returns the byte of the input itself.
 
 If we want to use a parser from the command line or playground, we have to add an `export` in front of the definition:
 ```
 export
-def ~u16_pair = {
+def u16_pair = {
   fst: u16l
   snd: u16l
 }
@@ -141,7 +141,7 @@ Let Bindings
 In some situations, we might have fields that need to have their value calculated from other fields.
 For example, say we have two interleaved fields, and we want to access their values as a single field:
 ```
-def ~interleaved = {
+def interleaved = {
   a_lo: u8
   b_lo: u8
   a_hi: u8
@@ -155,7 +155,7 @@ The `let` does not influence the position of the following fields, and we cannot
 On the other hand, we can insert the `let` anywhere we like regardless of its dependencies.
 for example, we can also write
 ```
-def ~interleaved = {
+def interleaved = {
   let a = a_lo | (a_hi << 8)
   a_lo: u8
   b_lo: u8
@@ -169,7 +169,7 @@ The intent of this is to allow the parser to run in the backwards direction, whi
 Remember how blocks are expressions?
 This means we can assign it to a `let` binding and then reuse it:
 ```
-def ~u16_quad = {
+def u16_quad = {
   let block = {
     fst: u16l
     snd: u16l
@@ -185,7 +185,7 @@ Padding
 Oftentimes there's space between fields that is unused.
 In this case we can specify a parser without specifying a field name:
 ```
-def ~padded = {
+def padded = {
   small: u16l
   u8
   u8
@@ -195,7 +195,7 @@ def ~padded = {
 
 Because writing a newline every time we want to add a parser takes unnecessary space, we can also separate parsers with commas:
 ```
-def ~padded = {
+def padded = {
   small: u16l
   u8, u8
   large: u32l
@@ -203,7 +203,7 @@ def ~padded = {
 ```
 or even
 ```
-def ~padded = {small: u16l, u8, u8, large: u32l}
+def padded = {small: u16l, u8, u8, large: u32l}
 ```
 
 When parsing the string `01 02 03 04 05 06 07 08`, the value of `padded` will be `{small: 0x0201, large: 0x08070605}`.
@@ -214,7 +214,7 @@ Returning
 Sometimes we want to return values that are not structs.
 In this case, we can use the `return` keyword, which can be used in positions where normally an identifier would be expected:
 ```
-def ~u16l = {
+def u16l = {
   lo: u8
   hi: u8
   let return = lo | hi << 8
@@ -228,7 +228,7 @@ the difference between `def` and `fun` will be explained later, but they're most
 
 We can also write `return` in place of a field name:
 ```
-def ~skip_four_bytes_u16l = {
+def skip_four_bytes_u16l = {
   ignored_field: u8
   u8, u8, u8
   return: u16l
@@ -240,7 +240,7 @@ Specifying Types
 Sometimes we want to specify the return type of parser definition or the type of a let binding.
 In this case we can write the type after a colon:
 ```
-def ~u16l: int = {
+def u16l: int = {
   lo: u8
   hi: u8
   let return: int = lo | hi << 8
@@ -265,7 +265,7 @@ Failing and Patterns
 An important task of parsing, other than returning the parsed data, is to recognize whether the input matches the expected format.
 The primary way to do this in yabo is the `is` operator:
 ```
-def ~ascii_byte = {
+def ascii_byte = {
   let byte = u8
   let return = byte is 0x20..0x7e or '\n' or '\r' or '\t'
 }
@@ -283,20 +283,20 @@ Patterns can be combined with `and` and `or`, like `foo is a and c or b and d`.
 
 The `is` expression can also be applied directly to parsers, in which case a new parser is created that fails if the original parser does not return a value that matches the pattern:
 ```
-def ~ascii_byte = u8 is 0x20..0x7e or '\n' or '\r' or '\t'
+def ascii_byte = u8 is 0x20..0x7e or '\n' or '\r' or '\t'
 ```
 
 On parser specifically, we can also use the `!eof` pattern:
 ```
-def ~rgb_if_not_eof = {r: u8, g:u8, b: u8} is !eof
+def rgb_if_not_eof = {r: u8, g:u8, b: u8} is !eof
 ```
 Normally, an `eof` is thrown when the parser reaches the end of the input (in the case of `rgb_if_not_eof`, if there are less than 3 bytes left).
 The `!eof` pattern fails if the parser reaches the end of the input prematurely, converting it into a failure condition that can be handled.
 
 If a parser that can fail is called, the `?` operator must be used to mark the call as fallible:
 ```
-def ~tag = u8 is 0x00..0x7f
-def ~structure = {
+def tag = u8 is 0x00..0x7f
+def structure = {
   signature: tag?
   field: u16l
 }
@@ -307,7 +307,7 @@ Besides failing, it is also possible for a parser to error.
 An error is a condition that is not expected to happen, like a division by zero or an out-of-bounds access, and it cannot be handled.
 A fallible parser can be made non-fallible by using the `!` operator:
 ```
-def ~foo = {
+def foo = {
   signature: tag?
   # we already expect the signature to match, so if the following
   # does not match, it is an error
@@ -326,7 +326,7 @@ Function Arguments
 Given that this is a parser combinator language, it is important to be able to define higher order functions.
 Arguments can be specified in parentheses after the name of the parser:
 ```
-def ~biased_int(int_parser: ~int, bias: int) = {
+def biased_int(int_parser: ~int, bias: int) = {
   parsed_int: int_parser
   let return = parsed_int + bias
 }
@@ -335,11 +335,11 @@ def ~biased_int(int_parser: ~int, bias: int) = {
 The parser combinator can then be applied by writing the arguments in parentheses after the name, like `biased_int(u16l, 42)`.
 We can also partially apply function arguments by writing two dots after the last given argument, like in this (a bit nonsensical) example:
 ```
-def ~apply_with_u16l(applied_int: (int) -> ~int) = {
+def apply_with_u16l(applied_int: (int) -> ~int) = {
   val: i16l
   return: applied_int(val)
 }
-def ~runtime_bias_u16l = apply_with_u16l(biased_int(u16l, ..))
+def runtime_bias_u16l = apply_with_u16l(biased_int(u16l, ..))
 ```
 
 Choices
@@ -351,7 +351,7 @@ Say we have an encoding of integers in the range `0x0000`-`0x7FFF` where many ar
 
 This can be implemented as follows:
 ```
-def ~small_int = {
+def small_int = {
   lo: u8
   | let return = lo is 0x00..0x7f
 
@@ -381,20 +381,20 @@ Let's see how this works with some examples:
 
 If a `return` is in a branch, it must be in every branch, however if there is no `return` in a block then the fields inside each branch become optional (except if they are in every branch):
 ```
-def ~maybe[T](f: ~T) = {
+def maybe[T](f: ~T) = {
   | some: f?
   \ {}
 }
 ```
 This returns a structure containing a single `some` field with the output of `f` if it succeeds, or an empty structure if it fails.
 Note that we are using an empty block here to get a zero-length parser, but we could also use the `nil` parser from the prelude which has the same purpose.
-The `[T]` after the `def ~maybe` indicates a generic type parameter.
+The `[T]` after the `def maybe` indicates a generic type parameter.
 
 ### Optional Fields
 
 Optional fields can be accessed either with `block?.field` (which fails) or `block.field` (which errors):
 ```
-def ~small_int = {
+def small_int = {
   small: maybe(tag)
   | let return = small?.some
   \ return: u16l
@@ -403,7 +403,7 @@ def ~small_int = {
 
 Fields can also be checked with `is`:
 ```
-def ~small_int = {
+def small_int = {
   | small: maybe(tag) is some
     # this cannot fail as the existence of the `some` field was checked by the `if`
     let return = small.some
@@ -437,7 +437,7 @@ The thunk gets evaluated into the `int` value whenever it is needed, which is wh
 How does one define recursive structures then?
 As an example, take a contiguous recursive list:
 ```
-def ~list[T](f: ~T) = {
+def list[T](f: ~T) = {
   | head: f?
     tail: list(f)
   \ {}
@@ -448,7 +448,7 @@ However, since `list` is a thunk, the value is not actually recursive and the `t
 
 For example let's access the thunk returned by the list.
 ```
-def ~byte_3_of_c_string = {
+def byte_3_of_c_string = {
   s: list(u8 is 0x01..0xff)
   # zero terminator
   u8
@@ -509,7 +509,7 @@ Arrays
 ------
 if the parser has a constant size it can be used inside an array:
 ```
-def ~pascal_string = {
+def pascal_string = {
   len: u8
   return: u8[len]
 }
@@ -520,7 +520,7 @@ If `parser` is of type `T ~> R`, then `parser[len]` is of type `T ~> [R]`.
 In order for the compiler to infer that two branches are of the same length (which is a requirement for the length to be constant), it has the ability to reason about polynomial equality.
 For example, the following would have a constant size:
 ```
-def ~const_sized(a: int, b: int) = {
+def const_sized(a: int, b: int) = {
   | u8[a * a]
     u8[2 * a * b]
     u8[b * b]
@@ -531,7 +531,7 @@ as a² + 2ab + b² = (a + b)² (binomial formula).
 
 The following also works:
 ```
-def ~const_sized2[T, R](f: ~T, g: ~R) = {
+def const_sized2[T, R](f: ~T, g: ~R) = {
   | f, f, g
   | f, g, f
   \ g, f, f
@@ -541,7 +541,7 @@ def ~const_sized2[T, R](f: ~T, g: ~R) = {
 
 We can also nest arrays:
 ```
-def ~matrix = {
+def matrix = {
   width: u8
   height: u8
   return: [height][width]u8
@@ -550,7 +550,7 @@ def ~matrix = {
 
 If the parser has a constant size, we can get the length of the parser without applying it by using `.sizeof`:
 ```
-def ~padded_to_1024 = {
+def padded_to_1024 = {
   let parser = const_sized2(u8, u16l)
   return: parser
   u8[1024 - parser.sizeof]
@@ -559,7 +559,7 @@ def ~padded_to_1024 = {
 
 In many cases, the parser underlying the array will be of the same type as the parsed array (in most cases, `u8`), so instead of using `~[len]` (which frankly does look a bit silly) we can just write `[len]`:
 ```
-def ~padded_to_1024 = {
+def padded_to_1024 = {
   let parser = const_sized2(u8, u16l)
   return: parser
   [1024 - parser.sizeof]
@@ -568,7 +568,7 @@ def ~padded_to_1024 = {
 
 The `.sizeof` operator can also be applied to arrays and will return the length of the array:
 ```
-def ~padded_to_1024 = {
+def padded_to_1024 = {
   len: u8
   field: [len]
   u8[1024 - (field.sizeof + 1)]
@@ -585,7 +585,7 @@ fun ~rgb = {
   blue: u8
 }
 
-def ~rgb_array = {
+def rgb_array = {
   colors: rgb[..]
   rest: [..]
 }
@@ -597,14 +597,14 @@ If the input is 16 bytes, this would mean that the `colors` field of `rgb_array`
 ### Operators working with arrays
 The `~>` operator allows for the application of a parser to an array:
 ```
-def ~padded_to_1024 = {
+def padded_to_1024 = {
   array: u8[1024]
   let return = array ~> const_sized2(u8, u16l)
 }
 ```
 Similarly, `|>` allows composition of parsers:
 ```
-def ~padded_to_1024 = u8[1024] |> const_sized2(u8, u16l)
+def padded_to_1024 = u8[1024] |> const_sized2(u8, u16l)
 ```
 
 `|>` actually just desugars to a call to the following combinator:
@@ -616,7 +616,7 @@ fun []A ~> compose[A](a: []A ~> []B, b: []B ~> C) = {
 
 We can also index into arrays using the `.[index]` operator:
 ```
-def ~first_byte = {
+def first_byte = {
   array: u8[1024]
   let return = array.[0]
 }
@@ -626,7 +626,7 @@ Regexes
 -------
 If we want to match a sequence of bytes specified by a regular expression, we can use the `/.../` syntax:
 ```
-def ~c_string = /[^\x00]*\x00/
+def c_string = /[^\x00]*\x00/
 ```
 Regex parsers are of type `[]u8 ~> []u8` (i.e., they take a byte array and return a byte array, advancing the input until the end of the match).
 Just like with the `is` operator, they may backtrack but do not need a `?` to mark them as such, as regices are fallible in most cases anyway.
@@ -634,7 +634,7 @@ The syntax is the same as the regex crate, documented [here](https://docs.rs/reg
 
 There is also a regex variant prefixed with `h` that matches hexadecimal strings:
 ```
-def ~elf = {
+def elf = {
   magic: h/7f 45 4c 46/
   other_fields: [..]
 }
@@ -650,7 +650,7 @@ fun ~u8ptr[T](parser: ~T) = {
   let return = parser! at addr
 }
 
-def ~linked_list = {
+def linked_list = {
   | u8 is 0
   \ next: u8ptr(linked_list)?
   val: u8
@@ -671,7 +671,7 @@ The `span` Operator
 The `span` operator allows getting an array spanning a range of the input corresponding to a range of fields in the current block.
 For example, say we have a function `crc32: int([]u8)` for calculating a CRC32 checksum and want to have the expected checksum for a PNG chunk:
 ```
-def ~png_chunk = {
+def png_chunk = {
   length: u32l
   type: u32l
   data: u8[length]
@@ -683,7 +683,7 @@ The result of `span type..data` would be an array containing the bytes from the 
 It can only be used inside blocks and can contain fields of parse statements of the current block that are in the current scope or a parent scope.
 For example, the following is not possible because `bar` is not in the top scope of the block:
 ```
-def ~foo = {
+def foo = {
   | bar: u8 is 1
   \ bar: u8
   baz: u8
@@ -693,7 +693,7 @@ def ~foo = {
 
 `span` can also be useful if you need to pad a structure to a certain alignment:
 ```
-def ~padded_to_1024_align = {
+def padded_to_1024_align = {
   len: u16l
   field: [len]
   [1023 - (span len..field.sizeof - 1) % 1024]
@@ -732,7 +732,7 @@ The `import` keyword allows importing other files.
 It is a top-level statement and takes a single identifier as an argument:
 ```
 import text
-def ~num = {
+def num = {
   | /0x/, return: text.basenum(16)?
   \ return: text.basenum(10)?
 }

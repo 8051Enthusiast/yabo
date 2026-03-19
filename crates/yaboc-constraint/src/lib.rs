@@ -351,9 +351,9 @@ mod tests {
     fn straightline_constant_size() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            def ~one = ~
-            def ~two = { ~,~ }
-            def ~three = { one, two }
+            def one = ~
+            def two = { ~,~ }
+            def three = { one, two }
         "#,
         );
         let one = ctx.parser("one");
@@ -368,8 +368,8 @@ mod tests {
     fn same_const_size_choice() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            def ~one = ~
-            def ~const_size_choice = {
+            def one = ~
+            def const_size_choice = {
                 case
                 | left: one, one, one
                 | right: ~, ~, ~
@@ -388,13 +388,13 @@ mod tests {
     fn const_size_rec() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            def ~rec = {
+            def rec = {
               case
               | if /AAAAA/
               | rec
               \
             }
-            def ~rec2 = {
+            def rec2 = {
               case
               | if /AAAAA/
               | ~, rec
@@ -427,8 +427,8 @@ mod tests {
     fn poly_unify() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            def ~square(n: int) = [n * n]
-            def ~poly_unify(n: int, m: int) = {
+            def square(n: int) = [n * n]
+            def poly_unify(n: int, m: int) = {
                 case
                 | square(n + m)
                   poly_unify(0, 0)
@@ -448,7 +448,7 @@ mod tests {
     fn static_size() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            def ~stat(a: int, b: int) = [1 << a] |> [1 << b]
+            def stat(a: int, b: int) = [1 << a] |> [1 << b]
         "#,
         );
         let stat = ctx.parser("stat");
@@ -483,9 +483,9 @@ mod tests {
     fn backtrack_dep() {
         let ctx = Context::<ConstraintTestDatabase>::mock(
             r#"
-            def ~backtrack_is(x: int) = x if 0 then [1] else [2]
-            def ~backtrack_if(x: int) = when?(x == 0) then [1] else [2]
-            def ~backtrack_field(x: int) = (let y = x if 0)?.y then [1] else [2]
+            def backtrack_is(x: int) = x if 0 then [1] else [2]
+            def backtrack_if(x: int) = when?(x == 0) then [1] else [2]
+            def backtrack_field(x: int) = (let y = x if 0)?.y then [1] else [2]
             "#,
         );
         for parser_name in ["backtrack_is", "backtrack_if", "backtrack_field"] {

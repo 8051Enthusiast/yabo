@@ -4,12 +4,12 @@ fun block() = (
   let a = 0
 )
 
-def ~access = {
+def access = {
   let b = block().y
   #~^ error[502] unknown field y
 }
 
-def ~matching = {
+def matching = {
   let b = block() if y
   #~^ error[502] unknown field y
 }

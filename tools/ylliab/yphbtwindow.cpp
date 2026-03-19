@@ -40,14 +40,14 @@ static constexpr const char *PNG_SOURCE = R"(import list
 
 # a parser for the rough structure of a png
 
-def ~chunk[T](ty: ~[]u8, data_parser: ~T) = {
+def chunk[T](ty: ~[]u8, data_parser: ~T) = {
   length: u32b
   type: if [4] |> ty
   value: [length] |> data_parser
   crc: u32b
 }
 
-def ~head = {
+def head = {
   width: u32b
   height: u32b
   bit_depth: u8
@@ -57,14 +57,14 @@ def ~head = {
   interlace_method: u8
 }
 
-def ~rgb = {
+def rgb = {
   red: u8
   green: u8
   blue: u8
 }
 
 export
-def ~main = {
+def main = {
   if h/89 50 4e 47 0d 0a 1a 0a/
 
   header: expect chunk(/IHDR/, head)

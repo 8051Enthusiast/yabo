@@ -1,5 +1,5 @@
 ====[ source code ]====
-def ~enum = {
+def enum = {
   case
   | if ~ is 0..9, let x: ~int = ~ is 10..19
   | {}
@@ -7,7 +7,7 @@ def ~enum = {
 }
 
 export
-def ~test = {
+def test = {
   n: enum
   case
   | return: if n?.x

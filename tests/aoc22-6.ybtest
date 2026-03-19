@@ -1,5 +1,5 @@
 ====[ source code ]====
-def ~find[R](needle: ~R, distance: int): int = {
+def find[R](needle: ~R, distance: int): int = {
   case
   | if needle
     let return = distance
@@ -7,13 +7,13 @@ def ~find[R](needle: ~R, distance: int): int = {
   \
 }
 
-def ~uniqc(bitset: int) = {
+def uniqc(bitset: int) = {
   char: ~
   let bit = 1 << (char if 0x61..0x7a - 0x61)
   let return = (bit & bitset) if 0 | bit | bitset
 }
 
-def ~repeat_fold[T](f: (T) -> ~T, start: T, n: int): int = {
+def repeat_fold[T](f: (T) -> ~T, start: T, n: int): int = {
   case
   | let return = n if 0
   | next: if f?(start)
@@ -21,9 +21,9 @@ def ~repeat_fold[T](f: (T) -> ~T, start: T, n: int): int = {
   \
 }
 
-def ~marker = if repeat_fold(uniqc, 0, 4)
+def marker = if repeat_fold(uniqc, 0, 4)
 
-export def ~test = find(marker, 4)
+export def test = find(marker, 4)
 
 ====[ binary 1 ]====
 6d6a716a70716d67626c6a737068647a746e766a667177726367736d6c62

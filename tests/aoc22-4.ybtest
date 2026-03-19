@@ -2,11 +2,11 @@
 import text
 import aoc
 
-def ~range = {
+def range = {
   start: if text.num, ~, end: expect text.num
 }
 
-def ~is_subrange = {
+def is_subrange = {
   a: if range, ~, b: expect range, expect text.newline
   case
   | case
@@ -20,7 +20,7 @@ def ~is_subrange = {
   \
 }
 
-export def ~test = aoc.summap(is_subrange)
+export def test = aoc.summap(is_subrange)
 ====[ binary 1 ]====
 322d342c362d380a
 322d332c342d350a

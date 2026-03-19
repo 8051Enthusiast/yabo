@@ -17,7 +17,7 @@ fun ~crc32_impl(acc: int): int = {
 
 fun crc32(arr: []u8) = arr ~> crc32_impl(0xffffffff)
 
-def ~chunk[T](ty: ~[]u8, data_parser: ~T) = {
+def chunk[T](ty: ~[]u8, data_parser: ~T) = {
   length: u32b
   type: if [4] |> ty
   value: expect [length] |> data_parser
@@ -25,7 +25,7 @@ def ~chunk[T](ty: ~[]u8, data_parser: ~T) = {
   let crc_valid = crc32(span type..value) == crc
 }
 
-def ~head = {
+def head = {
   width: u32b
   height: u32b
   bit_depth: u8
@@ -35,14 +35,14 @@ def ~head = {
   interlace_method: u8
 }
 
-def ~rgb = {
+def rgb = {
   red: u8
   green: u8
   blue: u8
 }
 
 export
-def ~test = {
+def test = {
   if h/89 50 4e 47 0d 0a 1a 0a/
 
   header: expect chunk(/IHDR/, head)

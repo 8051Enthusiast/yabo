@@ -1,6 +1,6 @@
 ====[ source code ]====
 import text
-export def ~test = {
+export def test = {
   if /[^0-9]*/
   a: if /[0-9]+./
   let return = a ~> if text.num

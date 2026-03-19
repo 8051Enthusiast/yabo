@@ -2,7 +2,7 @@
 import bit
 
 export
-def ~test = {
+def test = {
   bytes: [..]
   let msb_bytes = bytes ~> bit.from_bytes_msb
   let lsb_bytes = bytes ~> bit.from_bytes_lsb

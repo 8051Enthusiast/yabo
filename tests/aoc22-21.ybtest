@@ -2,13 +2,13 @@
 import text
 import list
 
-def ~op = {
+def op = {
   left: u32l
   ~, op: ~, ~
   right: u32l
 }
 
-def ~line = {
+def line = {
   name: u32l
   ~, ~
   case
@@ -18,7 +18,7 @@ def ~line = {
   if text.newline
 }
 
-def ~calculate_line(start: list.list[line], x: list.list[line], name: int): int = {
+def calculate_line(start: list.list[line], x: list.list[line], name: int): int = {
   case
   | let current = x?.this
     if assert(current.name == name)
@@ -38,7 +38,7 @@ def ~calculate_line(start: list.list[line], x: list.list[line], name: int): int 
 }
 
 export
-def ~test = {
+def test = {
   oplist: list.list(line)
   return: calculate_line(oplist, oplist, 0x746f6f72)
 }

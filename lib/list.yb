@@ -1,5 +1,5 @@
 # Returns a cons-list of the given parser contingent in memory.
-def ~list[R](element: ~R) = {
+def list[R](element: ~R) = {
   case
   | this: if element
     next: list(element)

@@ -1,7 +1,7 @@
 ====[ source code ]====
 import aoc
 
-export def ~test = aoc.summap({
+export def test = aoc.summap({
   opp: ~, ~, own: ~, ~
   let return = ((own + 2 - opp) % 3) * 3 + own - 0x57
 } is !eof)

@@ -1,5 +1,5 @@
 ====[ source code ]====
-def ~block = {
+def block = {
   tag: ~
   case
   | let ignore: int = tag if 1
@@ -7,7 +7,7 @@ def ~block = {
   | more: ~
   \
 }
-export def ~test = {
+export def test = {
   a: block
   b: block
 }

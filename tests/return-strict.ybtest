@@ -1,5 +1,5 @@
 ====[ source code ]====
-def ~list[R](element: ~R) = {
+def list[R](element: ~R) = {
   case
   | this: if element
     next: list(element)

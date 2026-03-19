@@ -5,7 +5,7 @@ import list
 # somewhat incomplete, but it works on my test images
 
 export
-def ~ext2_superblock = {
+def ext2_superblock = {
   inodes_count: u32l
   blocks_count: u32l
   r_blocks_count: u32l
@@ -62,7 +62,7 @@ static block_size = 1024 << superblock.log_block_size
 static inode_size = superblock.rev_level if 0 then 128 else superblock.inode_size
 
 export
-def ~ext2_group_desc = {
+def ext2_group_desc = {
   block_bitmap: u32l
   inode_bitmap: u32l
   inode_table: u32l
@@ -84,7 +84,7 @@ fun inode_at(idx: int) = (
   inode at (inodes_start + offset * inode_size)
 )
 
-def ~inode_ptr = {
+def inode_ptr = {
   inode_idx: u32l
   case
   | inode_idx if 0 then nil
@@ -92,7 +92,7 @@ def ~inode_ptr = {
   \
 }
 
-def ~block_ptr[T](data: ~T) = {
+def block_ptr[T](data: ~T) = {
   block: u32l
   case
   | block if 0 then nil
@@ -100,9 +100,9 @@ def ~block_ptr[T](data: ~T) = {
   \
 }
 
-def ~indirect[T](data: ~T) = [..]block_ptr(data)
+def indirect[T](data: ~T) = [..]block_ptr(data)
 
-def ~data_blocks[T](data: ~T) = {
+def data_blocks[T](data: ~T) = {
   direct: [12]block_ptr(data)
   indirect1: block_ptr(indirect(data))
   indirect2: block_ptr(indirect(indirect(data)))
@@ -123,9 +123,9 @@ fun inode_type(mode: int) = (
   \
 )
 
-def ~byte_block = [..]
+def byte_block = [..]
 
-def ~dir_entry = {
+def dir_entry = {
   inode_idx: if inode_ptr is !eof and pointee
   rec_len: u16l
   name_len: u8
@@ -133,10 +133,10 @@ def ~dir_entry = {
   name: [rec_len - 8] |> [name_len]
 }
 
-def ~dir_entries = [block_size] |> list.list(dir_entry)
+def dir_entries = [block_size] |> list.list(dir_entry)
 
 export
-def ~inode = {
+def inode = {
   mode: u16l
   let mode_type = inode_type(mode)
   uid: u16l

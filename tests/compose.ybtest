@@ -1,16 +1,16 @@
 ====[ source code ]====
 import text
-def ~skip(skipper: ~[]u8) = {
+def skip(skipper: ~[]u8) = {
     if skipper, return: if /.*/
 }
 
-def ~skip_4 = if skip(/..../)
+def skip_4 = if skip(/..../)
 
-def ~after_hello = if skip(/.*?hello/)
+def after_hello = if skip(/.*?hello/)
 
-def ~skip_non_num = if skip(/[^0-9]*/)
+def skip_non_num = if skip(/[^0-9]*/)
 
-export def ~test = if skip_4
+export def test = if skip_4
                 |> after_hello
                 |> skip_non_num
                 |> text.num

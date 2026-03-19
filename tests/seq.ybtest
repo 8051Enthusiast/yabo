@@ -2,7 +2,7 @@
 import seq
 
 export
-def ~test = {
+def test = {
   x: [4]
   y: [5]
   let zip1 = x ~> seq.zip(y)
