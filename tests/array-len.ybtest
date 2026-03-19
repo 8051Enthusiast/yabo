@@ -1,5 +1,5 @@
 ====[ source code ]====
-def ~array(n: int) = [n]
+def array(n: int) = [n]
 
 fun ~lengthed[R](parser: ~R) = {
     len: ~
@@ -8,7 +8,7 @@ fun ~lengthed[R](parser: ~R) = {
 }
 
 export
-def ~test = [24] |> {
+def test = [24] |> {
     a8: lengthed(u8l)
     a16: lengthed(u16l)
     a32: lengthed(u32l)

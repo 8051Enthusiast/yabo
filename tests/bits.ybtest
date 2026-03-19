@@ -1,6 +1,6 @@
 ====[ source code ]====
 export
-def ~test = {
+def test = {
   bytes: [..]
   let return = 0..<(bytes.sizeof * 8) ~> [..]{
     i: ~

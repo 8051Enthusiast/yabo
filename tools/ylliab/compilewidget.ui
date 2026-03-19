@@ -22,7 +22,7 @@
      <widget class="SourceEditor" name="plainTextEdit">
       <property name="plainText">
        <string>export
-def ~main = {
+def main = {
   # Your code here
 }
 </string>

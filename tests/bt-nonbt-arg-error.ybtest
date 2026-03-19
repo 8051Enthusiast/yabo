@@ -1,7 +1,7 @@
 ====[ source code ]====
-def ~f(g: ~int) = g
+def f(g: ~int) = g
 
-def ~h = f(u8 is 1)
+def h = f(u8 is 1)
 #~^error[606] Argument may backtrack, but invoked function does not allow backtracking
 
 fun f2(g: (int) -> int) = <x: int> g(x)

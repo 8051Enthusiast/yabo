@@ -18,7 +18,7 @@ MultiFileView::MultiFileView(std::unique_ptr<MultiFileParser> parser,
   connect(ui->compileWidget, &CompileWidget::compile_success, this,
           &MultiFileView::load_compiled_file);
   ui->compileWidget->set_source(R"(export
-def ~main = {
+def main = {
   # Imagine a world where your code is here
 }
 )");

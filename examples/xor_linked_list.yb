@@ -2,7 +2,7 @@
 # prev_address is the address of the previous node
 # (0 if not existent), and cur_address is the address
 # of this node itself
-def ~xor_linked_list(prev_addr: int, cur_addr: int) = {
+def xor_linked_list(prev_addr: int, cur_addr: int) = {
   # this branch results in no fields is current address is zero
   case
   | if assert(cur_addr == 0)

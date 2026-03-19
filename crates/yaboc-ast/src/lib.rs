@@ -8,7 +8,9 @@ use std::hash::Hash;
 use std::sync::Arc;
 
 use expr::*;
-pub use expr::{ConstraintBinOp, ConstraintUnOp, TypeBinOp, TypeUnOp, ValBinOp, ValUnOp};
+pub use expr::{
+    ConstraintBinOp, ConstraintUnOp, Expression, OpWithData, TypeBinOp, TypeUnOp, ValBinOp, ValUnOp,
+};
 
 use yaboc_base::{
     error::{SResult, Silencable},
@@ -24,7 +26,7 @@ pub trait Asts: Files + Interner {
     fn symbols(&self, fd: FileId) -> SResult<Vec<(Identifier, bool)>>;
     fn imports(&self, fd: FileId) -> SResult<Vec<IdSpan>>;
     fn top_level_statement(&self, fd: FileId, id: Identifier)
-        -> SResult<Option<TopLevelStatement>>;
+    -> SResult<Option<TopLevelStatement>>;
     #[salsa::input]
     fn import_id(&self, fd: FileId, id: Identifier) -> SResult<FileId>;
 }
@@ -443,7 +445,7 @@ pub enum ArrayKind {
 #[cfg(test)]
 mod tests {
     use yaboc_base::{
-        config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase, Context,
+        Context, config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase,
     };
 
     use super::*;

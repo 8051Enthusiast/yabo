@@ -1,5 +1,5 @@
 ====[ source code ]====
-export def ~test = {
+export def test = {
 	fst: ~
 	snd: ~
 }
@@ -18,4 +18,3 @@ export def ~test = {
   "fst": 4,
   "snd": 3
 }
-

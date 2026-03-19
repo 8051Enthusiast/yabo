@@ -1,16 +1,16 @@
 import bit
 
-def ~primary_partition(size: int) = [size * 512]
+def primary_partition(size: int) = [size * 512]
 
 # while we define how CHS is parsed, we mostly
 # ignore it because it is mostly irrelevant nowadays
-def ~chs = [3] |> bit.from_bytes_lsb |> {
+def chs = [3] |> bit.from_bytes_lsb |> {
   head: bit.uint_lsb(8)
   sector: bit.uint_lsb(6)
   cylinder: bit.uint_lsb(10)
 }
 
-def ~partition_entry(base: int) = {
+def partition_entry(base: int) = {
   # 0x80 = bootable, 0x00 = not bootable
   status: u8
   first_sector_chs: chs
@@ -30,7 +30,7 @@ def ~partition_entry(base: int) = {
 }
 
 # extended boot record
-def ~ebr(base: int) = {
+def ebr(base: int) = {
   [446]
   entries: [2]partition_entry(base)
   # the last 2 bytes of the EBR are unused
@@ -40,7 +40,7 @@ def ~ebr(base: int) = {
 
 # master boot record
 export
-def ~mbr = {
+def mbr = {
   bootcode: [440]
   disk_signature: u32l
   copy_protected: [2]

@@ -220,7 +220,7 @@ def []u8 ~> test = {
 Args
 ====
 
-def ~nonsense(x: int, y: int) = 1 + nonsense(3, 4)
+def nonsense(x: int, y: int) = 1 + nonsense(3, 4)
 
 ---
 

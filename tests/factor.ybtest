@@ -1,7 +1,7 @@
 ====[ source code ]====
 import text
 import parse
-def ~factor_impl(n: int, p: int) = (when?(n % p == 0) else when?(p > n)) then {
+def factor_impl(n: int, p: int) = (when?(n % p == 0) else when?(p > n)) then {
   case
   | when?(n < p) then nil
   | let factor = p
@@ -9,10 +9,10 @@ def ~factor_impl(n: int, p: int) = (when?(n % p == 0) else when?(p > n)) then {
   \
 } else factor_impl(n, p + 1)
 
-def ~factor(n: int) = factor_impl(n, 2)
+def factor(n: int) = factor_impl(n, 2)
 
 export
-def ~test = {
+def test = {
   n: if text.num
   return: factor(n)
 }

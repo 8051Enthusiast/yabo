@@ -1,5 +1,5 @@
 # Parses a specific byte or fails
-def ~byteval(x: int) = {{
+def byteval(x: int) = {{
   y: ~
   if assert(x == y)
 }}

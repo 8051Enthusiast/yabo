@@ -5,7 +5,7 @@ fun ~u8ptr[T](t: ~T) = {
 }
 
 export
-def ~test = {
+def test = {
   case
   | if u8 is 0
   | next: if u8ptr(test)

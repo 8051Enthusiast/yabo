@@ -97,7 +97,7 @@ mod tests {
     fn arg_types() {
         let ctx = Context::<HirTypesTestDatabase>::mock(
             r#"
-def ~expr1 = {}
+def expr1 = {}
 def []expr1 ~> expr2 = {}
 def []X ~> expr3[X] = {}
 def []([]expr1 ~> expr2) ~> expr4 = {}

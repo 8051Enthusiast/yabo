@@ -1,7 +1,7 @@
 ====[ source code ]====
 import list
 
-def ~priority = {
+def priority = {
   x: ~
   case
   | let return = x if 0x61..0x7a - 0x60
@@ -30,7 +30,7 @@ fun bit_index(n: int) = (
   bit5 << 5 | bit4 << 4 | bit3 << 3 | bit2 << 2 | bit1 << 1 | bit0
 )
 
-export def ~test = {
+export def test = {
   line: list.list(priority)
   let line_len = list.len(line)
   let second_half = list.skip!(line, line_len / 2)

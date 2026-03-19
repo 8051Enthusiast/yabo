@@ -1,8 +1,8 @@
 ====[ source code ]====
-def ~test(f: ~int) = [3]{f, ~}
+def test(f: ~int) = [3]{f, ~}
                      #~^error[602] sized parser depending on nonsized argument
 
-def ~test2(f: ~int) = {
+def test2(f: ~int) = {
   let parser: ~_ = {f, ~}
   let return = parser.sizeof
                #~^error[602] sized parser depending on nonsized argument

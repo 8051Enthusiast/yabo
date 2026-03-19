@@ -33,9 +33,6 @@ pub enum HirConversionError {
     ClothedStatic {
         span: Span,
     },
-    NonParserDef {
-        span: Span,
-    },
     ParseInNonParserBlock {
         span: Span,
     },
@@ -442,7 +439,7 @@ fn generate_arg_defs(x: &ast::ArgDefList, parent: DefId, ctx: &HirConversionCtx)
 }
 
 fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDefId) {
-    if ast.from.is_none() && ast.argdefs.is_none() && ast.kind != ast::DefKind::Static {
+    if ast.from.is_none() && ast.argdefs.is_none() && ast.kind == ast::DefKind::Fun {
         ctx.add_errors(Some(HirConversionError::NakedDef {
             span: ast.name.span,
         }));
@@ -452,15 +449,23 @@ fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDef
             span: ast.name.span,
         }));
     }
-    if ast.from.is_none() && ast.kind == ast::DefKind::Def {
-        ctx.add_errors(Some(HirConversionError::NonParserDef {
-            span: ast.name.span,
-        }));
-    }
     let from = TExprId(id.child(ctx.db, PathComponent::Unnamed(0)));
     let to = ExprId(id.child(ctx.db, PathComponent::Unnamed(1)));
     if let Some(f) = &ast.from {
         type_expression(f, ctx, from);
+    } else if ast.kind == ast::DefKind::Def {
+        let int = ast::Expression(ExpressionHead::Niladic(ast::OpWithData {
+            data: ast.span,
+            inner: ast::TypeAtom::Primitive(ast::TypePrimitive::Int),
+        }));
+        let array = ast::Expression(ExpressionHead::Niladic(ast::OpWithData {
+            data: ast.span,
+            inner: ast::TypeAtom::Array(Box::new(ast::TypeArray {
+                span: ast.span,
+                expr: int,
+            })),
+        }));
+        type_expression(&array, ctx, from);
     }
     let ret_ty = if let Some(f) = &ast.ret_ty {
         let ret_ty = TExprId(id.child(ctx.db, PathComponent::Unnamed(2)));
@@ -492,7 +497,7 @@ fn parser_def(ast: &ast::ParserDefinition, ctx: &HirConversionCtx, id: ParserDef
         qualifier,
         id,
         kind,
-        from: ast.from.is_some().then_some(from),
+        from: (ast.from.is_some() || ast.kind == ast::DefKind::Def).then_some(from),
         generics,
         args,
         to,

@@ -300,7 +300,7 @@ mod tests {
             r#"
 def []T ~> nil[T] = {}
 def (nil[int]) ~> expr1 = {t: expr1}
-def ~single = ~
+def single = ~
             "#,
         );
         let return_type = |name| {
@@ -319,7 +319,7 @@ def ~single = ~
     fn block_with_return() {
         let ctx = Context::<HirTypesTestDatabase>::mock(
             r#"
-def ~u16l = {
+def u16l = {
     low: ~
     high: ~
     let return: int = low + high * 256
@@ -345,7 +345,7 @@ def []T ~> expr1[T] = {
     \
   }
 }
-def ~expr2 = {
+def expr2 = {
   x: expr1
   let y: int = 3 + x.a
 }
@@ -355,11 +355,11 @@ def [][]u8 ~> expr4 = {
   y: ~ |> b
   let a: int = x + y
 }
-def ~expr5 = {
+def expr5 = {
   x: expr2
   let b: expr2 = x
 }
-def ~expr6 = {
+def expr6 = {
   let expr3: ~expr5 = expr5
   b: expr3
   inner: {

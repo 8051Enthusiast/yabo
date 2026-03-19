@@ -2,7 +2,7 @@
 fun zip[T]() = <x: T> (let t = x)
 
 export
-def ~test = pure(zip()(4))
+def test = pure(zip()(4))
 
 ====[ binary 1 ]====
 00

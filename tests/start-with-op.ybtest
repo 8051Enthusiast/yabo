@@ -1,6 +1,6 @@
 ====[ source code ]====
 export
-def ~test = {
+def test = {
   case
   | start: if /(fun|data)\n/
     inner: if test

@@ -1,3 +1,0 @@
-====[ source code ]====
-def test(n: int) = n + 1
-#~^ error[205] a definition must either be declared with `fun` or be a parser

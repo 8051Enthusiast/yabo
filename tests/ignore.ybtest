@@ -1,6 +1,6 @@
 ====[ source code ]====
 export
-def ~test = {
+def test = {
   _a: u8
   if u8 is 1
   _: if u8 is 2

@@ -1110,7 +1110,7 @@ mod tests {
     fn basic_mir() {
         let ctx = Context::<MirTestDatabase>::mock(
             r"
-def ~main = {
+def main = {
     case
     | a: ~
       b: ~
