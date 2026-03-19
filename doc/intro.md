@@ -270,11 +270,11 @@ An important task of parsing, other than returning the parsed data, is to recogn
 The primary way to do this in yabo is the `if` operator:
 ```
 def ascii_byte = {
-  let byte = u8
+  byte: u8
   let return = byte if 0x20..0x7e or '\n' or '\r' or '\t'
 }
 ```
-The `if` operator takes a parser to the left and a pattern to the right.
+The `if` operator takes a value to the left and a pattern to the right.
 If the value does not match the pattern on the right, the parser fails.
 
 A failure signals that the input does not match the expected format and is forwarded until it is handled or the whole parse fails.
@@ -290,8 +290,8 @@ In this case a new parser is created that fails if the original parser does not 
 ```
 def ascii_byte = if u8 is 0x20..0x7e or '\n' or '\r' or '\t'
 ```
-This time, the `if` is used in prefix form to signify that an application of the parser to a value can fail.
-The principle is that each expression that can fail should include either an `if` or a `?` (see more on that later) to signify that it is fallible.
+This time, the `if` is used before the expression to signify that an application of the parser to a value can fail.
+The principle is that each expression that can fail should include either an `if` or a `?` to signify that it is fallible.
 Ideally, marking the expression's fallibility prevents a scenario where any expression may implicitely fail and it is impossible to know which.
 
 On parser specifically, we can also use the `!eof` pattern:
@@ -303,7 +303,7 @@ The `!eof` pattern fails if the parser reaches the end of the input prematurely,
 
 If a parser that can fail is called, the prefix `if` must also be used to mark the call as fallible:
 ```
-def tag = u8 is 0x00..0x7f
+def tag = if u8 is 0x00..0x7f
 def structure = {
   signature: if tag
   field: u16l
@@ -440,7 +440,7 @@ There are two binary operators, `then` and `else`, that allow handling failing w
 - `a else b` first evaluates `a` and if it succeeds, it returns the value of `a`.
   Otherwise, it evaluates and returns the value of `b`.
 
-`then` has lower precedence compared to `else`, so it can essentially be used to replicate the functionality of `if` statements:
+`then` has higher precedence compared to `else`, so it can essentially be used to replicate the functionality of `if` statements:
 `x if 0 then foo else bar` would evaluate `foo` if `x` is `0`, and to `bar` otherwise.
 
 As a convenience, there's also the `when` function, which fails if the argument is false:
@@ -477,8 +477,8 @@ def uses_multiple_types = {
     case
     | a: if u8 is 0
     | b: u16l
-    } is b
-  )
+    \
+  } is b)
   c: maybe(maybe(u8 is 0) is some)
 }
 ```
@@ -547,9 +547,11 @@ It is meant more for calculations than data definitions.
 For example, the following calculates the sum of all bytes in a list:
 ```
 fun ~sum(f: ~int, acc: int) = {
-  | head: f is !eof
-    return: sum_list(f, acc + head)
-  \ let return = acc
+  case
+  | head: if f is !eof
+    return: sum(f, acc + head)
+  | let return = acc
+  \
 }
 ```
 A `def` would be unnecessary here since a thunk would be returned.
@@ -585,7 +587,7 @@ fun maybe_zero(n: int) = (
 fun square(n: int) = maybe_zero(n)?.zero else (n * n)
 ```
 
-Note also that the operator `?` to mark something as backtracking needs to be placed before the application if the functions would backtrack:
+Note also that the operator `?` to mark something as backtracking needs to be placed before the argument list if the functions would backtrack:
 ```
 fun when(condition: bit) = condition if true
 fun foo() = when?(1 == 2) then 1 else 2
@@ -607,10 +609,12 @@ In order for the compiler to infer that two branches are of the same length (whi
 For example, the following would have a constant size:
 ```
 def const_sized(a: int, b: int) = {
-  | u8[a * a]
-    u8[2 * a * b]
-    u8[b * b]
-  \ u8[(a + b) * (a + b)]
+  case
+  | [a * a]u8
+    [2 * a * b]u8
+    [b * b]u8
+  | [(a + b) * (a + b)]u8
+  \
 }
 ```
 as a² + 2ab + b² = (a + b)² (binomial formula).
@@ -618,9 +622,11 @@ as a² + 2ab + b² = (a + b)² (binomial formula).
 The following also works:
 ```
 def const_sized2[T, R](f: ~T, g: ~R) = {
+  case
   | f, f, g
   | f, g, f
-  \ g, f, f
+  | g, f, f
+  \
 }
 ```
 (Of course, these parsers are useless as they will always take the first branch.)
@@ -754,6 +760,7 @@ However, since `linked_list` is defined via `def` and not `fun`, the `linked_lis
 If the address is out of range, the `at` operator returns an error.
 
 It's also possible to use the `at` operator with fallible parsers by writing `parser if at addr` or `parser expect at addr`.
+You might expect the `if`/`expect` to be before the `parser`, but conceptionally the backtracking happens at the operator itself, hence the placement directly before the `at`.
 
 The `span` Operator
 -------------------
@@ -764,7 +771,7 @@ For example, say we have a function `fun crc32(bytes: []u8): int = ...` for calc
 def png_chunk = {
   length: u32l
   type: u32l
-  data: u8[length]
+  data: [length]u8
   crc: u32l
   let expected_crc = crc32(span type..data)
 }
@@ -775,7 +782,7 @@ For example, the following is not possible because `bar` is not in the top scope
 ```
 def foo = {
   case
-  | bar: u8 is 1
+  | bar: if u8 is 1
   | bar: u8
   \
   baz: u8
@@ -788,7 +795,7 @@ def foo = {
 def padded_to_1024_align = {
   len: u16l
   field: [len]
-  [1023 - (span len..field.sizeof - 1) % 1024]
+  [1023 - ((span len..field).sizeof - 1) % 1024]
 }
 ```
 
@@ -834,8 +841,8 @@ It is a top-level statement and takes a single identifier as an argument:
 import text
 def num = {
   case
-  | if /0x/, return: text.basenum(16)?
-  | return: text.basenum(10)?
+  | if /0x/, return: if text.basenum(16)
+  | return: if text.basenum(10)
   \
 }
 ```
@@ -857,7 +864,7 @@ Appendix A: Overview of Expressions
 | `-`      | Prefix Unary  | Negation           |
 | `!`      | Prefix Unary  | Boolean negation   |
 | `?`      | Postfix Unary | Mark Fallibility   |
-| `!`      | Postfix Unary | Convert into Error |
+| `!`      | Postfix Unary | Make call return error instead of failing |
 | `[..]`   | Postfix Unary | Array until end    |
 | `.sizeof`| Postfix Unary | Length of array or parser |
 | `.field`, `?.field` | Postfix Unary | Access field       |
@@ -896,6 +903,6 @@ In most distributive operator pairs, the multiplicative operation has precedence
 * `+`, `-` has lower precedence than `*`, `/`, `%`
 * `&`, `^`, `|` has lower precedence than `<<`, `>>`
 * `|`, `^` has lower precedence than `&`
-* `else` has lower precedence than `than`
+* `else` has lower precedence than `then`
 
-Additionally, `else` and `than` have lower precedence than everything else on the rhs, and `..<` has higher precedence than `~>` on the lhs so that writing `0..<n ~> foo` does not need parentheses.
+Additionally, `else` and `then` have lower precedence than everything else on the rhs, and `..<` has higher precedence than `~>` on the lhs so that writing `0..<n ~> foo` does not need parentheses.
