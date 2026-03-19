@@ -10,7 +10,7 @@ Yabo has the following goals:
 * Being able to parse large structures such as file systems incrementally
 * Being usable for exploratory parsing and resilient against errors
 * Being able to parse unusual formats
-* Being ergonomic without requiring allocations or a garbage collector
+* Being ergonomic without requiring heap allocations or a garbage collector
 
 On the opposite side, these are some non-goals:
 * Being able to parse streams of data
@@ -33,14 +33,15 @@ Table of Contents
   - [Specifying Types](#specifying-types)
   - [Function Arguments](#function-arguments)
   - [Failing and Patterns](#failing-and-patterns)
-  - [Choices](#choices)
+  - [Cases](#cases)
     - [Optional Fields](#optional-fields)
-    - [Multiple Choices](#multiple-choices)
+    - [Multiple Cases](#multiple-cases)
     - [`then` and `else`](#then-and-else)
+  - [Generics](#generics)
   - [Recursive Structures and Thunks](#recursive-structures-and-thunks)
   - [Functions that are not Parsers](#functions-that-are-not-parsers)
   - [Arrays](#arrays)
-    - [`parser[..]`](#parser)
+    - [`[..]parser`](#parser)
     - [Operators working with arrays](#operators-working-with-arrays)
   - [Regexes](#regexes)
   - [The `at` Operator](#the-at-operator)
@@ -59,12 +60,12 @@ Hex bytes, the scroll bar and the fields of the output are sometimes colored.
 The color indicates a contiguous segment of parsed bytes.
 Currently, a segment of parsed bytes is considered separate if a pointer points outside the current segment to a struct or array.
 
-If you want to compile the compiler locally, you will have to install the LLVM 18 libraries and the Rust toolchain.
+If you want to compile the compiler locally, you will have to install the LLVM 21 libraries with clang and the Rust toolchain.
 To compile, run `cargo build --release` in the root directory.
-Note that the compiler currently only supports x86_64 Linux and WASM as targets.
+Note that the compiler currently only supports x86_64/aarch64 Linux and WASM as targets.
 You will also have to set `YABOC_LIB_PATH` to point to the `lib` directory of this project for the compiler to work.
 The compiler can be invoked with `./target/release/yaboc <input file>.yb <output file>.so` to output a shared library.
-You can use that shared library using the print tool in `tools/print` or the python bindings in `yabo.py` in the project root.
+You can use that shared library using the print tool in `tools/yaboprint` or the python bindings in `yabo.py` in the project root.
 
 Finally, the `ylliab` tool in `tools/ylliab` can be used to interactively explore the output of the parser.
 You'll need Qt6 installed to compile it using `cmake`.
@@ -84,8 +85,8 @@ As you might guess this defines a parser `u16_pair` with two fields, both contai
 The `u16l` stands for <b>u</b>nsigned <b>16</b>-bit integer, <b>l</b>ittle endian.
 We can also use `u16b` for the big endian version, or `i16l` for the signed version.
 
-Now you might ask what the `~` is for.
-For that, an explanation of parser combinators is necessary:
+At a first look, this might look like a definition for a type, but we are actually writing a program!
+To understand what I mean, an explanation of parser combinators is necessary:
 
 Let's say we are parsing an array of bytes with an `u16_pair`.
 When starting to parse, we have our initial position in the array.
@@ -95,8 +96,8 @@ When starting to parse, we have our initial position in the array.
 ```
 During parsing, we read `42 6b` in order to construct the `u16l` value `0x6b42` in the field `fst`.
 In order to parse the value in `snd`, we have to know where `fst` ends, and that information can only be provided by the `u16l` implementation.
-This is done by essentially defining a parser to be a function `[]u8 -> (type, []u8)` which takes the starting position and returns the parsed value and the new position.
-In this case, the `u16l` parser would return `0x6b42` and the new position
+This is done by essentially defining a parser to be a function `[]u8 -> (T, []u8)` which takes the starting position (an area of a byte array) and returns the parsed value and the new position.
+In this case, the `u16l` parser would return `0x6b42` and the new position two bytes ahead:
 ```
 64 12 42 6b 82 93 76 9d
             ^
@@ -107,20 +108,24 @@ The case for parsing `snd` works similarly, and the whole block combines the par
                   ^
 ```
 
-In yabo, we notate a parser type like `[]u8 -> (type, []u8)` as `[]u8 ~> type`.
-`~type` is a short form for `[]u8 ~> type`, because bytes are what we are parsing most of the time.
+In yabo, we notate a parser type like `[]u8 -> (T, []u8)` as `[]u8 ~> T`.
+`~T` is a short form for `[]u8 ~> T`, because bytes are what we are parsing most of the time.
 
 It is important to recognize that blocks `{...}` are expressions that produce parsers.
-For example, these examples are possible as well:
+They essentially produce a new parser by sequencing multiple inner parsers.
+For illustration purposes, these examples are possible as well:
 ```
 def nested_block = {
   outer: {
     inner: u16l
   }
+  other: u16l
 }
 
 def no_block = u16l
 ```
+
+(If you're coming from Haskell, you can see the `{...}` kind of as `do`-Blocks, except the return type is a record with the fields being the variables from the inner context. If you're not, an understanding of monads is not necessary to understand and use this language though.)
 
 There is a special built-in parser `~`: it returns a single element of the input array and advances the position by one.
 For example, `def single = ~` has a length of one and just returns the byte of the input itself.
@@ -166,7 +171,7 @@ def interleaved = {
 ```
 The intent of this is to allow the parser to run in the backwards direction, which will hopefully get implemented sometime in the future.
 
-Remember how blocks are expressions?
+Remember how blocks are expressions that produce a value of parser type?
 This means we can assign it to a `let` binding and then reuse it:
 ```
 def u16_quad = {
@@ -178,7 +183,7 @@ def u16_quad = {
   b: block
 }
 ```
-the value returned from this will be something like `{block: (parser value), a: {fst: (number), snd: (number)}, b: {fst: (number), snd: (number)}}` where `(parser)` and `(number)` are placeholders for the actual values.
+The value returned from this will be something like `{block: (parser value), a: {fst: (number), snd: (number)}, b: {fst: (number), snd: (number)}}` where `(parser)` and `(number)` are placeholders for the actual values.
 
 Padding
 -------
@@ -212,7 +217,7 @@ When parsing the string `01 02 03 04 05 06 07 08`, the value of `padded` will be
 Returning
 ---------
 Sometimes we want to return values that are not structs.
-In this case, we can use the `return` keyword, which can be used in positions where normally an identifier would be expected:
+In this case, we can use the `return` keyword, which can be used in positions where an identifier would normally be expected:
 ```
 def u16l = {
   lo: u8
@@ -226,7 +231,7 @@ Indeed, this is how `u16l` is implemented in the standard library.
 (You might ask how `u8` is implemented and the answer to that is simply `fun ~u8 = ~`.
 the difference between `def` and `fun` will be explained later, but they're mostly the same.)
 
-We can also write `return` in place of a field name:
+We can also write `return` in place of a parsed field name:
 ```
 def skip_four_bytes_u16l = {
   ignored_field: u8
@@ -253,77 +258,80 @@ Here is an overview of the types:
 | --------------- | ------------------------------------------------------------------- |
 | `int`           | signed 64-bit integer                                               |
 | `bit`           | single bit (boolean)                                                |
-| `u8`            | byte in memory (a byte pointer), is a subtype of `int` by dereferencing into the byte value (not the address!) |
-| `[foo]`         | array of `foo`                                                      |
+| `[]foo`         | array of `foo`                                                      |
 | `foo ~> bar`    | parser that takes a `foo` and returns an `bar` (advancing `foo`)    |
 | `~foo`          | desugars to `[]u8 ~> foo`                                           |
-| `(bar, baz) -> foo` | function that takes `bar` and `baz` and returns an `foo`, see below |
-| identifier      | refers to a parser definition (for example `u16_pair` refers to the value returned by the `u16_pair` parser) |
+| `(bar, baz) -> foo` | function that takes two arguments `bar` and `baz` and returns an `foo`, see below |
+| identifier      | refers to the type returned by a parser definition (for example `u16_pair` refers to the value returned by the `u16_pair` parser, an `int`) |
 
 Failing and Patterns
 --------------------
 An important task of parsing, other than returning the parsed data, is to recognize whether the input matches the expected format.
-The primary way to do this in yabo is the `is` operator:
+The primary way to do this in yabo is the `if` operator:
 ```
 def ascii_byte = {
   let byte = u8
-  let return = byte is 0x20..0x7e or '\n' or '\r' or '\t'
+  let return = byte if 0x20..0x7e or '\n' or '\r' or '\t'
 }
 ```
-The `is` operator takes a value to the left and a pattern to the right.
-If the value matches the pattern on the right, the parser fails.
+The `if` operator takes a parser to the left and a pattern to the right.
+If the value does not match the pattern on the right, the parser fails.
 
 A failure signals that the input does not match the expected format and is forwarded until it is handled or the whole parse fails.
-Handling failures will be examined closer in the [Choices](#choices) section.
+Handling failures will be examined closer in the [Cases](#cases) section.
 
-Integers can be specified as ranges, like `0x20..0x7e`, or as single values, like `42` or `0x64`.
+Integers can be specified as ranges, like `0x20..0x7e` (inclusive), or as single values, like `42` or `0x64`.
 Characters can be specified as single characters, like `'a'`, or as escape sequences, like `'\n'`, and match the corresponding byte value as defined by the ASCII.
 Patterns can be combined with `and` and `or`, like `foo is a and c or b and d`.
 (Parentheses are not allowed in order to keep the pattern in disjunctive normal form for easier semantic analysis.)
 
-The `is` expression can also be applied directly to parsers, in which case a new parser is created that fails if the original parser does not return a value that matches the pattern:
+There is also the `is` expression, which can also be applied directly to parsers.
+In this case a new parser is created that fails if the original parser does not return a value that matches the pattern:
 ```
-def ascii_byte = u8 is 0x20..0x7e or '\n' or '\r' or '\t'
+def ascii_byte = if u8 is 0x20..0x7e or '\n' or '\r' or '\t'
 ```
+This time, the `if` is used in prefix form to signify that an application of the parser to a value can fail.
+The principle is that each expression that can fail should include either an `if` or a `?` (see more on that later) to signify that it is fallible.
+Ideally, marking the expression's fallibility prevents a scenario where any expression may implicitely fail and it is impossible to know which.
 
 On parser specifically, we can also use the `!eof` pattern:
 ```
-def rgb_if_not_eof = {r: u8, g:u8, b: u8} is !eof
+def rgb_if_not_eof = if {r: u8, g:u8, b: u8} is !eof
 ```
 Normally, an `eof` is thrown when the parser reaches the end of the input (in the case of `rgb_if_not_eof`, if there are less than 3 bytes left).
 The `!eof` pattern fails if the parser reaches the end of the input prematurely, converting it into a failure condition that can be handled.
 
-If a parser that can fail is called, the `?` operator must be used to mark the call as fallible:
+If a parser that can fail is called, the prefix `if` must also be used to mark the call as fallible:
 ```
 def tag = u8 is 0x00..0x7f
 def structure = {
-  signature: tag?
+  signature: if tag
   field: u16l
 }
 ```
-This is not required if the parser is an `is` operator or it is a block, as the fallibility can already be seen by looking at the current parser definition.
+This is not required if the parser itself is a block that contains fallible expressions, as the fallibility can already be seen by looking inside the block.
 
 Besides failing, it is also possible for a parser to error.
 An error is a condition that is not expected to happen, like a division by zero or an out-of-bounds access, and it cannot be handled.
-A fallible parser can be made non-fallible by using the `!` operator:
+A fallible parser can be called with `expect` instead of `if` to turn any failing into hard errors.
 ```
 def foo = {
-  signature: tag?
+  signature: if tag
   # we already expect the signature to match, so if the following
   # does not match, it is an error
-  some_other_data: tag!
+  some_other_data: expect tag
 }
 ```
 
 To summarize, there are four conditions:
 * A parser can succeed, returning a value.
 * A parser can throw an `eof` if it reaches the end of input, which can be handled with the `!eof` pattern.
-* A parser can fail, which can be converted into an error with the `!` operator.
+* A parser can fail, which can be converted into an error with an `expect` call.
 * A parser can error, which is a condition that is not expected to happen and cannot be handled.
 
 Function Arguments
 ------------------
-Given that this is a parser combinator language, it is important to be able to define higher order functions.
+Given that this is a parser combinator language, it is imperative to be able to define higher order functions.
 Arguments can be specified in parentheses after the name of the parser:
 ```
 def biased_int(int_parser: ~int, bias: int) = {
@@ -335,15 +343,21 @@ def biased_int(int_parser: ~int, bias: int) = {
 The parser combinator can then be applied by writing the arguments in parentheses after the name, like `biased_int(u16l, 42)`.
 We can also partially apply function arguments by writing two dots after the last given argument, like in this (a bit nonsensical) example:
 ```
+def biased_int(int_parser: ~int, bias: int) = {
+  parsed_int: int_parser
+  let return = parsed_int + bias
+}
+
 def apply_with_u16l(applied_int: (int) -> ~int) = {
   val: i16l
   return: applied_int(val)
 }
+
 def runtime_bias_u16l = apply_with_u16l(biased_int(u16l, ..))
 ```
 
-Choices
--------
+Cases
+-----
 Barely any binary format is just a fixed sequence of fields.
 Say we have an encoding of integers in the range `0x0000`-`0x7FFF` where many are small so we want to save space by encoding them in a single byte:
 1. Integers from `0x0000` to `0x007F` are encoded as a single byte of the form `0xxxxxxx`.
@@ -353,98 +367,163 @@ This can be implemented as follows:
 ```
 def small_int = {
   lo: u8
-  | let return = lo is 0x00..0x7f
-
-  \ hi: u8
+  case
+  | let return = lo if 0x00..0x7f
+  | hi: u8
     let return = (lo & 0x7f) | (hi << 7)
+  \
 }
 ```
-The `|` initiates a choice, which means the individual branches are tried in order until one succeeds.
-If all branches fail, the whole choice fails.
-The last branch uses `\` instead of `|` to indicate that the whole choice ends with it.
-Note that this is different to Prolog: `{small_int, u8 is 0}` does not try the other branch in `small_int` if `u8 is 0` fails; it just fails the whole parser.
-
-The extent of one branch is whitespace sensitive and ends at the next dedent, `|`, or end of block.
+The `case` initiates a case, and each `|` initiates a branch.
+The individual branches are tried in order until one succeeds.
+If all branches fail, the whole case fails.
+After the last branch, a `\` is used to indicate that the case ends.
+Note that this is different to Prolog: `{small_int, if u8 is 0}` does not try the other branch in `small_int` if `u8 is 0` fails; it just fails the whole parser.
 
 Let's see how this works with some examples:
 1. When parsing `42 55 10 ..`, the `lo` field is first parsed, evaluating to `0x42`.
-   Next, the choice is entered and the `is` expression is evaluated.
+   Next, the case is entered and the `if` expression is evaluated.
    `lo` is `0x42`, which matches the pattern `0x00..0x7f`, so the value `0x42` is returned.
    The parser after the `small_int` would continue parsing at `55 10 ..`.
 2. When parsing `aa 55 10 ..`, the `lo` field is first parsed, evaluating to `0xaa`.
-   Next, the choice is entered and the `is` expression is evaluated.
+   Next, the case is entered and the `if` expression is evaluated.
    `lo` is `0xaa`, which does not match the pattern `0x00..0x7f`, so the expression fails.
    The whole first branch fails, and the next branch is tried.
    In the second branch, the `hi` field is parsed, evaluating to `0x55`.
-   The `return` expression is evaluated, which returns `0x2aaa`.
+   The `return` expression is evaluated, which sets the return value to `0x2aaa`.
    The parser after the `small_int` would continue parsing at `10 ..`.
 
-If a `return` is in a branch, it must be in every branch, however if there is no `return` in a block then the fields inside each branch become optional (except if they are in every branch):
+If a `return` is in a branch, it must be in every branch of that case.
+However if there is no `return` in a block then the fields inside each branch become optional (except if they are in every branch):
 ```
-def maybe[T](f: ~T) = {
-  | some: f?
-  \ {}
+def maybe(f: ~int) = {
+  case
+  | some: if f
+  | {}
+  \
 }
 ```
 This returns a structure containing a single `some` field with the output of `f` if it succeeds, or an empty structure if it fails.
 Note that we are using an empty block here to get a zero-length parser, but we could also use the `nil` parser from the prelude which has the same purpose.
-The `[T]` after the `def maybe` indicates a generic type parameter.
 
 ### Optional Fields
 
 Optional fields can be accessed either with `block?.field` (which fails) or `block.field` (which errors):
 ```
+def tag = if u8 is 0x00..0x7f
+
 def small_int = {
   small: maybe(tag)
+  case
   | let return = small?.some
-  \ return: u16l
+  | return: u16l
+  \
 }
 ```
 
-Fields can also be checked with `is`:
+Fields can also be checked with `is`/`if`:
 ```
 def small_int = {
-  | small: maybe(tag) is some
+  case
+  | small: if maybe(tag) is some
     # this cannot fail as the existence of the `some` field was checked by the `if`
+    # so we won't get an error
     let return = small.some
-  \ return: u16l
+  | return: u16l
+  \
 }
 ```
 
 ### `then` and `else`
 There are two binary operators, `then` and `else`, that allow handling failing within one expression.
-`a then b` first evaluates `a` and if it succeeds, it then evaluates and returns the value of `b`.
-`a else b` first evaluates `a` and if it succeeds, it returns the value of `a`.
-Otherwise, it evaluates and returns the value of `b`.
-`then` has lower precedence compared to `else`, so it can essentially be used to replicate the functionality of `is` statements:
-`x is 0 then foo else bar` would evaluate `foo` if `x` is `0`, and to `bar` otherwise.
+- `a then b` first evaluates `a` and if it succeeds, it then evaluates and returns the value of `b`.
+- `a else b` first evaluates `a` and if it succeeds, it returns the value of `a`.
+  Otherwise, it evaluates and returns the value of `b`.
+
+`then` has lower precedence compared to `else`, so it can essentially be used to replicate the functionality of `if` statements:
+`x if 0 then foo else bar` would evaluate `foo` if `x` is `0`, and to `bar` otherwise.
 
 As a convenience, there's also the `when` function, which fails if the argument is false:
 `when?(foo > bar) then foo else bar` would evaluate `foo` if `foo` is greater than `bar`, and to `bar` otherwise.
+
+Generics
+--------
+
+In the previous section, we defined
+```
+def maybe(f: ~int) = {
+  case
+  | some: if f
+  | {}
+  \
+}
+```
+which works for parsers that return an integer.
+As soon as we need a parser that returns a record/struct type, we unfortunately cannot reuse that parser combinator.
+
+If we look closer, we see that this function never actually does anything specific with the fact that the returned value is an integer.
+To faciliate reuse, yabo allows definitions with generic type parameters:
+```
+def maybe[T](f: ~T) = {
+  case
+  | some: if f
+  | {}
+  \
+}
+
+def uses_multiple_types = {
+  a: maybe(u8 is 0)
+  b: maybe({
+    case
+    | a: if u8 is 0
+    | b: u16l
+    } is b
+  )
+  c: maybe(maybe(u8 is 0) is some)
+}
+```
+
+We can even be more generic with the definition of `maybe`!
+Remember how by default, parser definitions parse bytes?
+We annotate the parsed array by prefixing the definition name with a type and a `~>` after, like `def S ~> name = {}`.
+This actually works with the `~T` syntax too, so if we want to be explicit that it's a byte parser, we can define it as `def ~name = {}`, but if no annotation is given it defaults to a byte array.
+For the `maybe` parser to be generic, it can be defined like this:
+```
+def []S ~> maybe[T, S](f: []S ~> T) = {
+  case
+  | some: if f
+  | {}
+  \
+}
+```
+
+Notice how we needed to change the argument type of `f` as well to match the fact that it is now used on arrays of type `S`.
 
 Recursive Structures and Thunks
 -------------------------------
 One unusual aspect of yabo is the absence of recursive values.
 This makes yabo Turing incomplete as every type can only contain finitely many values.
-However, this is precisely what allows yabo to avoid allocations and garbage collection.
+However, this is precisely what allows yabo to avoid heap allocations and garbage collection.
 
 To still make it possible to use this language for recursive binary formats, there is a pointer-like construct that allows indirection, called a thunk.
 When we parse a `u16l`, what is returned is not actually the value itself but is a thunk containing all the arguments to the `u16l` parser.
-The arguments to the `u16l` consist of just the `[]u8` at the current position, which is represented by a pair of pointers most of the time.
+The arguments to the `u16l` consist of just the `[]u8` at the current position, which is represented by a pair of pointers (most of the time).
 The type of this thunk is still `int`, but the run-time representation is different.
-The thunk gets evaluated into the `int` value whenever it is needed, which is when an operator uses it or it is passed as a function argument.
+The thunk gets evaluated into the `int` value whenever it is used, which is when an operator like `+` needs it or it is passed as a function argument.
 
 How does one define recursive structures then?
 As an example, take a contiguous recursive list:
 ```
 def list[T](f: ~T) = {
-  | head: f?
+  case
+  | head: if f
     tail: list(f)
-  \ {}
+  | {}
+  \
 }
 ```
 If we naively tried to construct the resulting value without using thunks, we would end up with arbitrarily deep nested structures like (leaving `head` out), `{tail: {tail: {tail: {}}}}`.
-However, since `list` is a thunk, the value is not actually recursive and the `tail` field just contains the `[]u8` slice that indicates where the next element starts, and the parser `f`.
+However, since `list` is a thunk, the value is not actually recursive and the `tail` field just has the `list` thunk containing a `[]u8` slice that indicates where the next element starts, and the parser `f`.
 
 For example let's access the thunk returned by the list.
 ```
@@ -456,9 +535,12 @@ def byte_3_of_c_string = {
 }
 ```
 If we evaluate `list(u8 is 0x01..0xff)` (a C string) applied to `41 62 63 64 00`, we would only get back the thunk as a value, but it would still evaluate the parts needed for the length of the whole, as it still has to find out the end of the string.
-When evaluating the thunk that was returned earlier from the parser, there's no need to recurse.
+When evaluating the thunk that was returned earlier from the `list` parser, there's no need to recurse.
 This is because we do not need the length of the list to get the values of both fields.
-For `head`, `u8 is 0x01..0xff` does get evaluated, but the `tail` field is just a thunk and needs no further evaluation.
+For `head`, `u8 is 0x01..0xff` does get evaluated, but the `tail` field is again just a `list` thunk and needs no further evaluation.
+
+You can think of them kind of like pointers in C: they allow not holding the whole list as a single value inside a variable, just an address.
+The address holds all the necessary information to calculate/load the current values behind the pointer.
 
 If you use the `fun` keyword instead of the `def` keyword, no thunk will be returned.
 It is meant more for calculations than data definitions.
@@ -473,35 +555,39 @@ fun ~sum(f: ~int, acc: int) = {
 A `def` would be unnecessary here since a thunk would be returned.
 If we do not immediately evaluate it but instead evaluate the thunk multiple times later whenever accessing it, that would result in unnecessary work.
 
+Note that we are using the `fun ~foo` syntax with an extra `~` here that we are usually not using with `def`s because they're redundant.
+In the case of `fun`s they're actually not redundant, as we can write functions that are not parsers.
+
 Functions that are not Parsers
 ------------------------------
-Not everything is a parser.
 In order to define a function that is not a parser, we use the `fun` keyword, but leave out the `~`:
 ```
 fun square(n: int) = n * n
 fun cube(n: int) = square(n) * n
 ```
 Of course, we also want to use `let` to bind variables, but we cannot use `{` and `}` for this, as those define parsers.
-Instead, we use `(` and `)`:
+Instead, we use `(` and `)` with `let` bindings inside them:
 ```
 fun cube(n: int) = (
   let square = n * n
   square * n
 )
 ```
-We can also define blocks with fields this way, and use choices:
+We can also define blocks with fields this way, and utilize cases:
 ```
 fun maybe_zero(n: int) = (
-  | let zero = n is 0
-  \ let nonzero = n
+  case
+  | let zero = n if 0
+  | let nonzero = n
+  \
 )
 
 fun square(n: int) = maybe_zero(n)?.zero else (n * n)
 ```
 
-Note also that the operator `?` to mark something as backtracking needs to be placed before the application, so if use a backtracking function, we need to write `when?(foo)` instead of `when(foo)?` as with parsers:
+Note also that the operator `?` to mark something as backtracking needs to be placed before the application if the functions would backtrack:
 ```
-fun when(condition: bool) = condition is true
+fun when(condition: bit) = condition if true
 fun foo() = when?(1 == 2) then 1 else 2
 ```
 
@@ -511,11 +597,11 @@ if the parser has a constant size it can be used inside an array:
 ```
 def pascal_string = {
   len: u8
-  return: u8[len]
+  return: [len]u8
 }
 ```
-`parser[len]` takes a parser (`u8`) and the length of the array (`len`), and returns a parser for an array of that length with elements from the parser.
-If `parser` is of type `T ~> R`, then `parser[len]` is of type `T ~> [R]`.
+`[len]foo` takes a parser (`foo`) and the length of the array (`len`), and returns a parser for an array of that length with individual elements from the parser.
+If `foo` is of type `T ~> R`, then `[len]foo` is of type `T ~> []R`.
 
 In order for the compiler to infer that two branches are of the same length (which is a requirement for the length to be constant), it has the ability to reason about polynomial equality.
 For example, the following would have a constant size:
@@ -553,11 +639,11 @@ If the parser has a constant size, we can get the length of the parser without a
 def padded_to_1024 = {
   let parser = const_sized2(u8, u16l)
   return: parser
-  u8[1024 - parser.sizeof]
+  [1024 - parser.sizeof]u8
 }
 ```
 
-In many cases, the parser underlying the array will be of the same type as the parsed array (in most cases, `u8`), so instead of using `~[len]` (which frankly does look a bit silly) we can just write `[len]`:
+In many cases, the parser underlying the array will be of the same type as the parsed array (in most cases, `u8`), so instead of using `[len]~` (which frankly does look a bit silly) we can just write `[len]`:
 ```
 def padded_to_1024 = {
   let parser = const_sized2(u8, u16l)
@@ -571,13 +657,13 @@ The `.sizeof` operator can also be applied to arrays and will return the length 
 def padded_to_1024 = {
   len: u8
   field: [len]
-  u8[1024 - (field.sizeof + 1)]
+  [1024 - (field.sizeof + 1)]u8
 }
 ```
 
-### `parser[..]`
+### `[..]parser`
 Sometimes we do not have a specific length we want the array to be, but instead parse until the end of the current input.
-In this case, we can use `parser[..]`, and the shortened version of `~[..]` is `[..]`:
+In this case, we can use `[..]parser`, and the shortened version of `[..]~` is `[..]`:
 ```
 fun ~rgb = {
   red: u8
@@ -586,38 +672,38 @@ fun ~rgb = {
 }
 
 def rgb_array = {
-  colors: rgb[..]
+  colors: [..]rgb
   rest: [..]
 }
 ```
 
-Each `rgb` value is 3 bytes, and `rgb[..]` makes the array as long as possible.
+Each `rgb` value is 3 bytes, and `[..]rgb` makes the array as long as possible.
 If the input is 16 bytes, this would mean that the `colors` field of `rgb_array` would contain 5 rgb values (as 5 \* 3 = 15), and the `rest` field would contain just one value, the last byte.
 
 ### Operators working with arrays
 The `~>` operator allows for the application of a parser to an array:
 ```
 def padded_to_1024 = {
-  array: u8[1024]
+  array: [1024]u8
   let return = array ~> const_sized2(u8, u16l)
 }
 ```
 Similarly, `|>` allows composition of parsers:
 ```
-def padded_to_1024 = u8[1024] |> const_sized2(u8, u16l)
+def padded_to_1024 = [1024]u8 |> const_sized2(u8, u16l)
 ```
 
 `|>` actually just desugars to a call to the following combinator:
 ```
 fun []A ~> compose[A](a: []A ~> []B, b: []B ~> C) = {
-  x: a?, let return = x ~> b?
+  x: if a, let return = x ~> if b
 }
 ```
 
 We can also index into arrays using the `.[index]` operator:
 ```
 def first_byte = {
-  array: u8[1024]
+  array: [1024]u8
   let return = array.[0]
 }
 ```
@@ -626,16 +712,16 @@ Regexes
 -------
 If we want to match a sequence of bytes specified by a regular expression, we can use the `/.../` syntax:
 ```
-def c_string = /[^\x00]*\x00/
+def c_string = if /[^\x00]*\x00/
 ```
 Regex parsers are of type `[]u8 ~> []u8` (i.e., they take a byte array and return a byte array, advancing the input until the end of the match).
-Just like with the `is` operator, they may backtrack but do not need a `?` to mark them as such, as regices are fallible in most cases anyway.
+Just like with the `is` operator, they may backtrack so they generally need an `if`/`expect` when called directly.
 The syntax is the same as the regex crate, documented [here](https://docs.rs/regex/latest/regex/).
 
 There is also a regex variant prefixed with `h` that matches hexadecimal strings:
 ```
 def elf = {
-  magic: h/7f 45 4c 46/
+  magic: if h/7f 45 4c 46/
   other_fields: [..]
 }
 ```
@@ -647,12 +733,14 @@ The `at` operator allows parsing at a specific location in the input file, speci
 ```
 fun ~u8ptr[T](parser: ~T) = {
   addr: u8
-  let return = parser! at addr
+  let return = parser at addr
 }
 
 def linked_list = {
-  | u8 is 0
-  \ next: u8ptr(linked_list)?
+  case
+  | if u8 is 0
+  | next: if u8ptr(linked_list)
+  \
   val: u8
 }
 ```
@@ -665,11 +753,13 @@ However, since `linked_list` is defined via `def` and not `fun`, the `linked_lis
 
 If the address is out of range, the `at` operator returns an error.
 
+It's also possible to use the `at` operator with fallible parsers by writing `parser if at addr` or `parser expect at addr`.
+
 The `span` Operator
 -------------------
 
 The `span` operator allows getting an array spanning a range of the input corresponding to a range of fields in the current block.
-For example, say we have a function `crc32: int([]u8)` for calculating a CRC32 checksum and want to have the expected checksum for a PNG chunk:
+For example, say we have a function `fun crc32(bytes: []u8): int = ...` for calculating a CRC32 checksum and want to have the expected checksum for a PNG chunk:
 ```
 def png_chunk = {
   length: u32l
@@ -684,8 +774,10 @@ It can only be used inside blocks and can contain fields of parse statements of 
 For example, the following is not possible because `bar` is not in the top scope of the block:
 ```
 def foo = {
+  case
   | bar: u8 is 1
-  \ bar: u8
+  | bar: u8
+  \
   baz: u8
   let spanned = span bar..baz
 }
@@ -707,9 +799,11 @@ The `foo ..< bar` operator allows creating a range of integers, ranging from `fo
 It can be parsed and indexed as with other kinds of array:
 ```
 fun []int ~> sum(acc: int) = {
-  | val: ~ is !eof
+  case
+  | val: if ~ is !eof
     return: sum(acc + val)
-  \ let return = acc
+  | let return = acc
+  \
 }
 
 fun range_sum(n: int) = 0..<n
@@ -718,13 +812,19 @@ fun range_sum(n: int) = 0..<n
 
 Together with `[..]`, this can be combined to a sort of loop:
 ```
-fun bits_of(n: int, bit_count: int) = 0..<bit_count
-  ~> [..]{ i: ~, let return = (n >> i) & 1 != 0 }
+fun bits_of(n: int, bit_count: int) = (0..<bit_count) ~> [..]{
+  i: ~
+  let return = (n >> i) & 1 != 0
+}
 ```
 Note what we are doing here:
-`{ i: ~, let return = (n >> i) & 1 != 0 }` is a parser of length 1 that takes an integer `i` and returns whether the `i`-th bit of `n` is set.
+The block is a parser of length 1 that takes an integer `i` and returns whether the `i`-th bit of `n` is set.
 The `[..]` then maps this parser over each element of the range `0..<bit_count`, returning array containing a boolean for each bit of `n`.
-(Hopefully, once lambdas are implemented, this can be written less weirdly using a `map` function).
+
+More comfortably, once may use lambdas (which are written as `<arg1, arg2> expr`) and the map function from the core library:
+```
+fun bits_of(n: int, bit_count: int) = (0..<bit_count) ~> map(<i> (n >> i) & 1 != 0)
+```
 
 Imports
 -------
@@ -733,8 +833,10 @@ It is a top-level statement and takes a single identifier as an argument:
 ```
 import text
 def num = {
-  | /0x/, return: text.basenum(16)?
-  \ return: text.basenum(10)?
+  case
+  | if /0x/, return: text.basenum(16)?
+  | return: text.basenum(10)?
+  \
 }
 ```
 The definitions from the imported file can be accessed via `.`, like `text.basenum` in the above example.
@@ -771,7 +873,7 @@ Appendix A: Overview of Expressions
 | `~>`     | Parser        | Apply parser on rhs to array on lhs |
 | `\|>`    | Parser        | Compose parsers    |
 | `at`     | Parser        | Parser at lhs at address on rhs  |
-| `foo[bar]` | Parser      | Array of length `bar` |
+| `[bar]foo` | Parser      | Array of length `bar` |
 | `foo.[bar]`, `foo?.[bar]` | Array | Index into array |
 | `..<`    | Array         | Make range from lhs to rhs - 1 |
 | `foo(bar, baz)` | Function Application | Call function `foo` with arguments `bar` and `baz` |
