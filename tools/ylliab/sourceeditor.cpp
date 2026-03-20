@@ -29,7 +29,7 @@ Lexer::Lexer() {
               HighlightName::Keyword, LexerState::AfterOperator),
       Matcher(R"(\(|\[|\{)", HighlightName::Punctuation,
               LexerState::AfterOperator),
-      Matcher(R"(\)|\]|\}|)", HighlightName::Punctuation,
+      Matcher(R"(\)|\]|\})", HighlightName::Punctuation,
               LexerState::NotAfterOperator),
       Matcher(R"(,)", HighlightName::Punctuation, LexerState::AfterOperator),
       Matcher(R"(h?/([^/]|\\.)*/)", HighlightName::StringRegexp,

@@ -70,9 +70,11 @@ def main = {
   header: expect chunk(/IHDR/, head)
 
   chunks: list.list({
+    case
     | palette: if chunk(/PLTE/, [..]rgb)
     | data: if chunk(/IDAT/, [..])
-    \ optional: if chunk(/[a-z].{3}/, [..])
+    | optional: if chunk(/[a-z].{3}/, [..])
+    \
   })
   end: expect chunk(/IEND/, nil)
 }
