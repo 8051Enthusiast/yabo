@@ -1,0 +1,91 @@
+def ~ident = {
+  sig: [4]
+  case
+  | class32: if u8 is 1
+  | class64: expect u8 is 2
+  \
+  case
+  | data_little: if u8 is 1
+  | data_big: expect u8 is 2
+  \
+  version: u8
+  osabi: u8
+  abiversion: u8
+  pad: [7]
+}
+
+static sig = ident at 0
+
+def ~elf16 = sig if data_little then u16l else u16b
+def ~elf32 = sig if data_little then u32l else u32b
+def ~elf64 = sig if data_little then i64l else i64b
+def ~elfword = sig if class64 then elf64 else elf32
+
+def ~c_string = if /[^\x00]*/
+
+def ~section(size: int) = [size]
+
+def ~section_header = {
+  name: elf32
+  type: elf32
+  flags: elfword
+  addr: elfword
+  offset: elfword
+  size: elfword
+  link: elf32
+  info: elf32
+  addralign: elfword
+  entsize: elfword
+}
+
+def ~section_list(shnum: int, shstrndx: int) = {
+  headers: [shnum]section_header
+  let string_offset = headers.[shstrndx].offset
+  let return = headers ~> map(<header> (
+    let name = c_string expect at (string_offset + header.name)
+    let sect = section(header.size) at header.offset
+  ))
+}
+
+def ~segment(size: int) = [size]
+
+def ~program_header = {
+  type: elf32
+  case
+  | flags64: if sig if class64 then elf32
+  | nil
+  \
+  offset: elfword
+  vaddr: elfword
+  paddr: elfword
+  filesz: elfword
+  memsz: elfword
+  case
+  | flags32: if sig if class32 then elf32
+  | nil
+  \
+  align: elfword
+  let seg = segment(filesz) at offset
+}
+
+def ~program_list(phnum: int, phentsize: int) = [phnum]([phentsize] |> program_header)
+
+export
+def ~main = {
+  identification: ident
+  type: elf16
+  machine: elf16
+  version: elf32
+  entry: elfword
+  phoff: elfword
+  shoff: elfword
+  flags: elf32
+  ehsize: elf16
+  phentsize: elf16
+  phnum: elf16
+  shentsize: elf16
+  shnum: elf16
+  shstrndx: elf16
+  let sections = section_list(shnum, shstrndx) at shoff
+  let programs = program_list(phnum, phentsize) at phoff
+}
