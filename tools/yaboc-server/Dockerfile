@@ -20,7 +20,7 @@ RUN cargo build --release
 
 FROM debian:trixie AS emscripten
 
-ARG EMSCRIPTEN_VERSION=4.0.7
+ARG EMSCRIPTEN_VERSION=4.0.18
 
 ADD https://github.com/emscripten-core/emsdk/archive/refs/tags/${EMSCRIPTEN_VERSION}.tar.gz \
     /src/
@@ -34,7 +34,7 @@ RUN apt-get update && apt-get install -y python3 xz-utils \
 
 FROM debian:trixie AS qt
 
-ARG QT_VERSION=6.10.1
+ARG QT_VERSION=6.11.0-rc1
 
 ADD https://github.com/qt/qtbase/archive/refs/tags/v$QT_VERSION.zip /src/
 RUN apt-get update && apt-get install -y build-essential cmake unzip libgl1-mesa-dev
