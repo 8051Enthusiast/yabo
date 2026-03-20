@@ -1,13 +1,32 @@
+diff --git a/src/corelib/kernel/qeventdispatcher_wasm.cpp b/src/corelib/kernel/qeventdispatcher_wasm.cpp
+index 07d35cf3..27726b57 100644
+--- a/src/corelib/kernel/qeventdispatcher_wasm.cpp
++++ b/src/corelib/kernel/qeventdispatcher_wasm.cpp
+@@ -451,8 +451,12 @@ bool QEventDispatcherWasm::secondaryThreadWait(std::optional<std::chrono::millis
+         return true;
+     }
+ 
+-    auto waitTime = timeout.value_or(std::chrono::milliseconds::max());
+-    bool wakeUpCalled = m_moreEvents.wait_for(lock, waitTime, [this] { return m_wakeUpCalled; });
++    auto waitUntil = std::chrono::steady_clock::time_point::max();
++    if (timeout.has_value()) {
++        waitUntil = std::chrono::steady_clock::now() + *timeout;
++    }
++
++    bool wakeUpCalled = m_moreEvents.wait_until(lock, waitUntil, [this] { return m_wakeUpCalled; });
+     m_wakeUpCalled = false;
+     return wakeUpCalled;
+ #else
 diff --git a/src/corelib/platform/wasm/qstdweb.cpp b/src/corelib/platform/wasm/qstdweb.cpp
-index d1fff5388c6..7233cee3752 100644
+index bbaf2c44..5ffb650b 100644
 --- a/src/corelib/platform/wasm/qstdweb.cpp
 +++ b/src/corelib/platform/wasm/qstdweb.cpp
 @@ -92,7 +92,7 @@ private:
      File file;
  };
-
+ 
 -#if defined(QT_STATIC)
 +#if 0 // defined(QT_STATIC)
-
+ 
  EM_JS(bool, jsHaveAsyncify, (), { return typeof Asyncify !== "undefined"; });
  EM_JS(bool, jsHaveJspi, (),
