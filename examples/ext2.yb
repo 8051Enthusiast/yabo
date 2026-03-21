@@ -170,6 +170,6 @@ def inode = {
 }
 
 export
-fun ~root = {
+fun ~main = {
   let root_inode = inode_at(1)
 }
