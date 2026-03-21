@@ -8,7 +8,7 @@ extern "C" {
 #include <stddef.h>
 
 #define YABO_DISC_MASK (~(int64_t)0xff)
-#define YABO_THUNK_BIT (1 << 8)
+#define YABO_THUNK_BIT (1 << 2)
 
 #ifndef YABO_RELATIVE_VPTR
 #if __EMSCRIPTEN__ || __wasi__

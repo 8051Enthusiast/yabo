@@ -6,7 +6,7 @@ use yaboc_types::{inference::InternedBlockHead, to_type::TypeConvertMemo};
 
 use super::*;
 
-pub const THUNK_BIT: u8 = 8;
+pub const THUNK_BIT: u8 = 2;
 pub const VTABLE_BIT: u8 = 0;
 
 pub fn parser_type_at(db: &dyn TyHirs, id: DefId) -> SResult<TypeId> {
