@@ -1,7 +1,7 @@
 use inkwell::{
+    IntPredicate,
     basic_block::BasicBlock,
     values::{FunctionValue, PhiValue, PointerValue},
-    IntPredicate,
 };
 
 use yaboc_hir_types::{THUNK_BIT, VTABLE_BIT};
@@ -10,9 +10,8 @@ use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_target::layout::SizeAlign;
 
 use crate::{
-    eval_fun_values, get_fun_args, parser_values,
+    IResult, eval_fun_values, get_fun_args, parser_values,
     val::{CgMonoValue, CgReturnValue, CgValue},
-    IResult,
 };
 
 use super::CodeGenCtx;
@@ -366,12 +365,15 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
     fn maybe_deref(&mut self) -> IResult<()> {
         if let MonoLayout::Nominal(..) | MonoLayout::Ptr = self.target_layout.mono_layout() {
             let self_level = self.cg.const_i64(1 << THUNK_BIT);
-            let no_deref = self.cg.builder.build_int_compare(
-                IntPredicate::ULE,
-                self_level,
-                self.ret.head,
-                "no_deref",
-            )?;
+            let zero = self.cg.const_i64(0);
+            let and = self
+                .cg
+                .builder
+                .build_and(self_level, self.ret.head, "mask")?;
+            let no_deref =
+                self.cg
+                    .builder
+                    .build_int_compare(IntPredicate::NE, and, zero, "no_deref")?;
             let tail = self.typecast_tail(false, self.ret.ptr)?;
             let next_bb = self.cg.llvm.append_basic_block(self.fun, "head_match");
             self.cg

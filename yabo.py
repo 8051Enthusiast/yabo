@@ -42,8 +42,8 @@ YABO_BLOCK = 0x700
 YABO_UNIT = 0x800
 YABO_U8 = 0x900
 YABO_THUNK = 0xa00
-YABO_ANY = YABO_DISC_MASK
 YABO_VTABLE = 1
+YABO_THUNK_BIT = 4
 
 YABO_GLOBAL_ADDRESS_NAME = "yabo_global_address"
 YABO_GLOBAL_INIT_NAME = "yabo_global_init"
@@ -413,7 +413,7 @@ class YaboLib(ctypes.CDLL):
         if self._autoderef:
             return YABO_VTABLE
         else:
-            return YABO_ANY | YABO_VTABLE
+            return YABO_THUNK_BIT | YABO_VTABLE
 
     def parser(self, name: str) -> Parser:
         export_info = ParserExport.in_dll(self, name)
@@ -472,7 +472,7 @@ class YaboValue:
         return self._lib.new_val(lambda ret: typecast(ret, self._val.data_ptr(), typ))
 
     def __copy__(self):
-        return self._typecast(YABO_ANY | YABO_VTABLE)
+        return self._typecast(YABO_THUNK_BIT | YABO_VTABLE)
 
     def __eq__(self, other):
         if not isinstance(other, YaboValue):
@@ -633,4 +633,4 @@ def _new_value(val: DynValue, lib: YaboLib):
         return UnitValue(val, lib)
     if masked_head == YABO_U8:
         return U8Value(val, lib)
-    raise Exception("Unknown type")
+    raise Exception(f"Unknown type {masked_head}")
