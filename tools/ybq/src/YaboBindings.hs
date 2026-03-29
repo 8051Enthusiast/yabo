@@ -71,25 +71,25 @@ newtype FieldName = FieldName CString deriving (Eq, Show, Ord)
 fieldNameToString :: FieldName -> IO String
 fieldNameToString (FieldName cstr) = peekCString cstr
 
-foreign import capi "yabo-bindings.h ybq_call_init" ybqCallInit :: Ptr () -> CSize -> Ptr () -> IO Word64
+foreign import capi "yabo-bindings.h ybq_call_init" ybqCallInit :: Ptr () -> CSize -> Ptr () -> Ptr () -> IO Word64
 
 foreign import capi "yabo-bindings.h ybq_type" ybqType :: Ptr () -> IO CInt
 
 foreign import capi "yabo-bindings.h ybq_alloc_size" ybqAllocSize :: Ptr () -> IO CSize
 
-foreign import capi "yabo-bindings.h ybq_parse_bytes_with_args" ybqParseBytesWithArgs :: Ptr () -> Ptr () -> CSize -> Ptr () -> Ptr () -> IO Word64
+foreign import capi "yabo-bindings.h ybq_parse_bytes_with_args" ybqParseBytesWithArgs :: Ptr () -> Ptr () -> CSize -> Ptr () -> Ptr () -> Ptr () -> IO Word64
 
 foreign import capi "yabo-bindings.h ybq_export_arg_count" ybqExportArgCount :: Ptr () -> IO CSize
 
-foreign import capi "yabo-bindings.h ybq_field_access" ybqFieldAccess :: Ptr () -> Ptr () -> CSize -> IO Word64
+foreign import capi "yabo-bindings.h ybq_field_access" ybqFieldAccess :: Ptr () -> Ptr () -> CSize -> Ptr () -> IO Word64
 
 foreign import capi "yabo-bindings.h ybq_field_name_at_index" ybqFieldNameAtIndex :: Ptr () -> CSize -> IO FieldName
 
 foreign import capi "yabo-bindings.h ybq_field_count" ybqFieldCount :: Ptr () -> IO CSize
 
-foreign import capi "yabo-bindings.h ybq_array_size" ybqArraySize :: Ptr () -> IO CSize
+foreign import capi "yabo-bindings.h ybq_array_size" ybqArraySize :: Ptr () -> Ptr () -> IO CSize
 
-foreign import capi "yabo-bindings.h ybq_array_access" ybqArrayAccess :: Ptr () -> Ptr () -> CSize -> IO Word64
+foreign import capi "yabo-bindings.h ybq_array_access" ybqArrayAccess :: Ptr () -> Ptr () -> CSize -> Ptr () -> IO Word64
 
 foreign import capi "yabo-bindings.h ybq_int" ybqGetInt :: Ptr () -> IO Word64
 

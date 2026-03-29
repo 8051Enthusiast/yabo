@@ -1,5 +1,6 @@
 #include "multifilemodel.hpp"
 #include "yabo.hpp"
+#include "yabo/vtable.h"
 #include <QFileDialog>
 #include <QMessageBox>
 #include <algorithm>
@@ -11,14 +12,16 @@ extern "C" {
 
 namespace {
 FileOffsets find_offsets(YaboValCreator &vals, ParseFun parse_fun,
-                         const std::vector<FileInfo> &files) {
+                         std::span<const FileInfo> files,
+                         std::span<const FileIdx> idxs) {
   FileOffsets offsets;
   offsets.offsets.reserve(files.size());
   offsets.is_valid.resize(files.size(), true);
-  for (const auto &file : files) {
+  for (size_t i = 0; i < files.size(); i++) {
+    const auto &file = files[i];
     auto [start, end] = file.file_ref->slice();
     auto span = ByteSpan(start, end);
-    auto parsed = vals.parse(parse_fun, nullptr, span);
+    auto parsed = vals.parse(parse_fun, nullptr, span, idxs[i]);
     if (parsed->is_exceptional()) {
       offsets.is_valid[&file - &files[0]] = false;
       offsets.offsets.push_back(0);
@@ -91,16 +94,29 @@ void MultiFileParser::new_library(QString lib_path) {
     handle = new_handle;
   }
 
-  auto parse_fun = *(ParseFun *)dlsym(handle, parser_name.toStdString().c_str());
-  if (!parse_fun) {
+  auto parser_export =
+      (ParserExport *)dlsym(handle, parser_name.toStdString().c_str());
+  if (!parser_export) {
     emit error(QString("Failed to find parse function in library '%1': %2")
                    .arg(lib_path)
                    .arg(dlerror()));
     return;
   }
-  vals = init_vals_from_lib(handle, {nullptr, nullptr});
+  if (YABO_ACCESS_VPTR(parser_export, args[0])) {
+    emit error(QString("Multifile mode doesn't support parser arguments")
+                   .arg(lib_path)
+                   .arg(dlerror()));
+  }
+  auto parse_fun = YABO_ACCESS_VPTR(parser_export, parser);
+  vals = init_vals_from_lib(handle);
+  fileIdxs.clear();
+  for (const auto &file : *files) {
+    auto globals = create_globals(handle, file.file_ref->slice());
+    auto idx = vals.add_file(std::move(globals));
+    fileIdxs.push_back(idx);
+  }
 
-  auto offsets = find_offsets(vals, parse_fun, *files);
+  auto offsets = find_offsets(vals, parse_fun, *files, fileIdxs);
   auto order = find_order(*files, offsets);
   FileUpdate update{.files = files, .offsets = offsets, .order = order};
   emit files_updated(std::make_shared<FileUpdate>(std::move(update)));

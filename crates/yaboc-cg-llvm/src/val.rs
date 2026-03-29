@@ -1,4 +1,4 @@
-use inkwell::values::{IntValue, PointerValue};
+use inkwell::values::PointerValue;
 use yaboc_layout::{ILayout, IMonoLayout};
 
 #[derive(Clone, Copy)]
@@ -35,12 +35,12 @@ impl<'comp, 'llvm> From<CgMonoValue<'comp, 'llvm>> for CgValue<'comp, 'llvm> {
 
 #[derive(Clone, Copy)]
 pub struct CgReturnValue<'llvm> {
-    pub(crate) head: IntValue<'llvm>,
+    pub(crate) head: PointerValue<'llvm>,
     pub(crate) ptr: PointerValue<'llvm>,
 }
 
 impl<'llvm> CgReturnValue<'llvm> {
-    pub fn new(head: IntValue<'llvm>, ptr: PointerValue<'llvm>) -> Self {
+    pub fn new(head: PointerValue<'llvm>, ptr: PointerValue<'llvm>) -> Self {
         Self { head, ptr }
     }
 

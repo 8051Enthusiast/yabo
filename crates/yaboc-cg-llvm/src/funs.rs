@@ -4,10 +4,10 @@ use yaboc_constraint::Constraints;
 use yaboc_hir::BlockReturnKind;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{
+    FuncLayoutKind, Layout,
     collect::{pd_len_req, pd_val_req},
     mir_subst::function_substitute,
     represent::ParserFunKind,
-    FuncLayoutKind, Layout,
 };
 use yaboc_mir::{FunKind, MirKind};
 use yaboc_req::NeededBy;
@@ -452,7 +452,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         let mir_fun = Rc::new(self.mir_pd_parser(from, layout, req));
         let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
-        let mut translator = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg)?;
+        let mut translator = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg, ret.head)?;
         if req.contains(NeededBy::Val) {
             translator = translator.with_ret_val(ret);
         }
@@ -463,13 +463,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let llvm_fun = self.end_fun_val(layout);
         self.add_entry_block(llvm_fun);
         let [ret, nom, head] = get_fun_args(llvm_fun);
-        let [ret, nom] = [ret, nom].map(|x| x.into_pointer_value());
-        let ret_val = CgReturnValue::new(head.into_int_value(), ret);
+        let [ret, nom, head] = [ret, nom, head].map(|x| x.into_pointer_value());
+        let ret_val = CgReturnValue::new(head, ret);
         let nom = CgMonoValue::new(layout, nom);
         let (from, fun) = self.build_nominal_components(nom)?;
         let from_copy = self.build_alloca_value(from.layout, "from_copy")?;
         self.build_copy_invariant(from_copy, from)?;
-        let no_ret = self.undef_ret();
+        let no_ret = self.undef_ret(head);
         let ret = self.build_parser_call(no_ret, fun.into(), from_copy, pd_len_req())?;
         self.non_zero_early_return(ret)?;
         self.terminate_tail_typecast(from_copy, ret_val)
@@ -479,8 +479,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let fun = self.start_fun_val(layout);
         self.add_entry_block(fun);
         let [to, nom, head] = get_fun_args(fun);
-        let [to, nom] = [to, nom].map(|x| x.into_pointer_value());
-        let head = head.into_int_value();
+        let [to, nom, head] = [to, nom, head].map(|x| x.into_pointer_value());
         let ret = CgReturnValue::new(head, to);
         let nom = CgMonoValue::new(layout, nom);
         let (from, _) = self.build_nominal_components(nom)?;
@@ -545,9 +544,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let fun = self.span_fun_val(layout);
         self.set_always_inline(fun);
         self.add_entry_block(fun);
-        let [ret, start, head, end] = get_fun_args(fun);
-        let [ret, start, end] = [ret, start, end].map(|x| x.into_pointer_value());
-        let ret = CgReturnValue::new(head.into_int_value(), ret);
+        let [ret, start, head, end] = get_fun_args(fun).map(|x| x.into_pointer_value());
+        let ret = CgReturnValue::new(head, ret);
         let buf = self.build_alloca_value(layout.inner(), "buf")?;
         let ty = T::codegen_ty(self);
         let start_val = self.builder.build_load(ty, start, "start")?;
@@ -569,7 +567,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let [return_ptr, from, target_head] = get_fun_args(fun);
         let layout = self.layouts.dcx.intern(Layout::Mono(MonoLayout::Ptr));
         let ret = CgReturnValue::new(
-            target_head.into_int_value(),
+            target_head.into_pointer_value(),
             return_ptr.into_pointer_value(),
         );
         let from = CgValue::new(layout, from.into_pointer_value());
@@ -643,7 +641,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.add_entry_block(fun);
         let [return_ptr, from, target_head] = get_fun_args(fun);
         let ret = CgReturnValue::new(
-            target_head.into_int_value(),
+            target_head.into_pointer_value(),
             return_ptr.into_pointer_value(),
         );
         let i64_layout = self.layouts.dcx.int();
@@ -659,7 +657,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let [return_ptr, from, target_head] = get_fun_args(fun);
         let from = self.build_cast::<*const *const u8, _>(from)?;
         let ret = CgReturnValue::new(
-            target_head.into_int_value(),
+            target_head.into_pointer_value(),
             return_ptr.into_pointer_value(),
         );
         let int_ptr = self.build_ptr_load(from, "load_ptr")?;
@@ -676,9 +674,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         array: CgMonoValue<'comp, 'llvm>,
         int_buf: CgMonoValue<'comp, 'llvm>,
+        globals: PointerValue<'llvm>,
     ) -> IResult<IntValue<'llvm>> {
         let parser = self.build_array_parser_get(array)?;
-        let status = self.call_len_fun(int_buf.ptr, parser)?;
+        let status = self.call_len_fun(int_buf.ptr, parser, globals)?;
         self.non_zero_early_return(status)?;
         self.build_i64_load(int_buf.ptr, "item_len")
     }
@@ -686,12 +685,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_array_single_forward(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
         let fun = self.single_forward_fun_val(layout);
         self.add_entry_block(fun);
-        let [arg] = get_fun_args(fun).map(|x| x.into_pointer_value());
+        let [arg, globals] = get_fun_args(fun).map(|x| x.into_pointer_value());
         let array = CgMonoValue::new(layout, arg);
         let int_buf = self.build_alloca_int("item_len_buf")?;
-        let len = self.build_array_item_len_get(array, int_buf)?;
+        let len = self.build_array_item_len_get(array, int_buf, globals)?;
         let slice = self.build_array_slice_get(array)?;
-        let ret = self.call_skip_fun(slice, len)?;
+        let ret = self.call_skip_fun(slice, len, globals)?;
         self.builder.build_return(Some(&ret))?;
         Ok(())
     }
@@ -701,7 +700,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.add_entry_block(fun);
         let [return_ptr, from, target_head] = get_fun_args(fun);
         let ret = CgReturnValue::new(
-            target_head.into_int_value(),
+            target_head.into_pointer_value(),
             return_ptr.into_pointer_value(),
         );
         let array = CgMonoValue::new(layout, from.into_pointer_value());
@@ -722,12 +721,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_array_len(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
         let fun = self.array_len_fun_val(layout);
         self.add_entry_block(fun);
-        let [arg] = get_fun_args(fun).map(|x| x.into_pointer_value());
+        let [arg, globals] = get_fun_args(fun).map(|x| x.into_pointer_value());
         let array = CgMonoValue::new(layout, arg);
         let int_buf = self.build_alloca_int("item_len_buf")?;
-        let len = self.build_array_item_len_get(array, int_buf)?;
+        let len = self.build_array_item_len_get(array, int_buf, globals)?;
         let slice = self.build_array_slice_get(array)?;
-        let slice_len = self.call_array_len_fun(slice)?;
+        let slice_len = self.call_array_len_fun(slice, globals)?;
         let ret = self.builder.build_int_signed_div(slice_len, len, "ret")?;
         self.builder.build_return(Some(&ret))?;
         Ok(())
@@ -736,15 +735,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_array_skip(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
         let fun = self.skip_fun_val(layout);
         self.add_entry_block(fun);
-        let [arg, len] = get_fun_args(fun);
+        let [arg, len, globals] = get_fun_args(fun);
         let len = len.into_int_value();
         let arg = arg.into_pointer_value();
+        let globals = globals.into_pointer_value();
         let array = CgMonoValue::new(layout, arg);
         let int_buf = self.build_alloca_int("item_len_buf")?;
-        let item_len = self.build_array_item_len_get(array, int_buf)?;
+        let item_len = self.build_array_item_len_get(array, int_buf, globals)?;
         let slice = self.build_array_slice_get(array)?;
         let skip_len = self.builder.build_int_mul(item_len, len, "skip_len")?;
-        let ret = self.call_skip_fun(slice, skip_len)?;
+        let ret = self.call_skip_fun(slice, skip_len, globals)?;
         self.builder.build_return(Some(&ret))?;
         Ok(())
     }
@@ -753,10 +753,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let fun = self.span_fun_val(layout);
         self.set_always_inline(fun);
         self.add_entry_block(fun);
-        let [ret, start, head, end] = get_fun_args(fun);
-        let [ret, start, end] = [ret, start, end].map(|x| x.into_pointer_value());
+        let [ret, start, head, end] = get_fun_args(fun).map(|x| x.into_pointer_value());
         let bufsl = self.build_alloca_mono_value(layout, "bufsl")?;
-        let ret = CgReturnValue::new(head.into_int_value(), ret);
+        let ret = CgReturnValue::new(head, ret);
         let start = CgMonoValue::new(layout, start);
         let end = CgMonoValue::new(layout, end);
         let buf_parser = self.build_array_parser_get(bufsl)?;
@@ -766,7 +765,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let end_slice = self.build_array_slice_get(end)?;
         let buf_slice = self.build_array_slice_get(bufsl)?;
         let thunky = self.const_i64(0);
-        let buf_slice_ret = self.build_return_value(buf_slice, thunky)?;
+        let globals = self.build_high_bit_mask(head)?;
+        let buf_slice_ret = self.build_return_value(buf_slice, thunky, globals)?;
         self.call_span_fun(buf_slice_ret, start_slice, end_slice)?;
         self.terminate_tail_typecast(bufsl.into(), ret)?;
         Ok(())
@@ -776,7 +776,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let fun = self.inner_array_fun_val(layout);
         self.add_entry_block(fun);
         let [ret, from, head] = get_fun_args(fun);
-        let ret = CgReturnValue::new(head.into_int_value(), ret.into_pointer_value());
+        let ret = CgReturnValue::new(head.into_pointer_value(), ret.into_pointer_value());
         let array = CgMonoValue::new(layout, from.into_pointer_value());
         let slice = self.build_array_slice_get(array)?;
         let ret = self.call_typecast_fun(ret, slice)?;
@@ -799,7 +799,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let impl_fun = self.parser_impl_fun_val(layout, from, req);
 
         let (ret, fun, arg) = parser_values(impl_fun, layout, from);
-        let mut translator = MirTranslator::new(self, mir_fun, impl_fun, fun, arg)?;
+        let mut translator = MirTranslator::new(self, mir_fun, impl_fun, fun, arg, ret.head)?;
         if req.contains(NeededBy::Val) {
             translator = translator.with_ret_val(ret)
         }
@@ -840,7 +840,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let llvm_fun = self.parser_fun_val_tail(layout, from, req);
         let mir_fun = Rc::new(self.mir_if_fun(from, layout, req));
         let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
-        let mut trans = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg)?;
+        let mut trans = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg, ret.head)?;
         if req.contains(NeededBy::Val) {
             trans = trans.with_ret_val(ret)
         }
@@ -858,7 +858,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.set_always_inline(llvm_fun);
         self.add_entry_block(llvm_fun);
         let (ret, _, arg) = parser_values(llvm_fun, layout, from);
-        let ptr_diff = self.call_array_len_fun(arg)?;
+        let globals = self.build_high_bit_mask(ret.head)?;
+        let ptr_diff = self.call_array_len_fun(arg, globals)?;
         let is_zero = self.builder.build_int_compare(
             IntPredicate::EQ,
             ptr_diff,
@@ -877,7 +878,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     this.non_zero_early_return(ret)?;
                 }
                 if req.contains(NeededBy::Len) {
-                    let ret = this.call_single_forward_fun(arg)?;
+                    let ret = this.call_single_forward_fun(arg, globals)?;
                     this.builder.build_return(Some(&ret))
                 } else {
                     this.builder.build_return(Some(&this.const_i64(0)))
@@ -916,8 +917,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.add_entry_block(llvm_fun);
         let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
         let ret_copy = if !req.contains(NeededBy::Val) {
-            let buf_ptr = self.build_layout_alloca(from, "ret_copy")?;
-            self.undef_ret().with_ptr(buf_ptr)
+            let buf_ptr = self.build_alloca_value(from, "ret_copy")?;
+            let globals = self.build_high_bit_mask(ret.head)?;
+            self.build_return_value(buf_ptr, self.const_i64(0), globals)?
         } else {
             ret
         };
@@ -1009,6 +1011,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let arg_copy = self.build_alloca_value(from, "arg_copy")?;
         let ret_buf = self.build_alloca_mono_value(result_layout, "ret_buf")?;
         let int_buf = self.build_alloca_int("inner_parser_len")?;
+        let globals = self.build_high_bit_mask(ret_val.head)?;
         // make sure we don't modify the original arg if the length is not required
         if !req.contains(NeededBy::Len) {
             let arg_second_copy = self.build_alloca_value(from, "arg_second_copy")?;
@@ -1017,10 +1020,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         self.build_copy_invariant(arg_copy, arg)?;
 
-        let slice_len = self.call_array_len_fun(arg)?;
+        let slice_len = self.call_array_len_fun(arg, globals)?;
         let (full_len, inner_parser_layout) = match layout.mono_layout() {
             MonoLayout::ArrayParser(Some((inner_parser, _))) => {
-                let status = self.call_len_fun(int_buf.ptr, parser.into())?;
+                let status = self.call_len_fun(int_buf.ptr, parser.into(), globals)?;
                 self.non_zero_early_return(status)?;
                 let full_len = self.build_i64_load(int_buf.ptr, "parser_len")?;
                 let is_out_of_bounds = self.builder.build_int_compare(
@@ -1041,7 +1044,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             }
             MonoLayout::ArrayFillParser(Some(_)) => {
                 let inner_parser = self.build_array_parser_get(parser)?;
-                let status = self.call_len_fun(int_buf.ptr, inner_parser)?;
+                let status = self.call_len_fun(int_buf.ptr, inner_parser, globals)?;
                 self.non_zero_early_return(status)?;
                 let len = self.build_i64_load(int_buf.ptr, "len")?;
                 let is_nonzero = self.builder.build_int_compare(
@@ -1068,7 +1071,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             }
             _ => panic!("called create_array_parse on non-array parser"),
         };
-        let ret = self.call_skip_fun(arg, full_len)?;
+        let ret = self.call_skip_fun(arg, full_len, globals)?;
         self.non_zero_early_return(ret)?;
         if req.contains(NeededBy::Val) {
             let inner_slice = if let Layout::Mono(MonoLayout::Single) = inner_parser_layout.layout.1
@@ -1081,7 +1084,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 self.build_array_slice_get(ret_buf)?
             };
             let deref_level = self.const_i64(0);
-            let inner_slice_ret = self.build_return_value(inner_slice, deref_level)?;
+            let globals = self.build_high_bit_mask(ret_val.head)?;
+            let inner_slice_ret = self.build_return_value(inner_slice, deref_level, globals)?;
             let ret = self.call_span_fun(inner_slice_ret, arg_copy, arg)?;
             self.non_zero_early_return(ret)?;
             self.terminate_tail_typecast(ret_buf.into(), ret_val)?;
@@ -1103,7 +1107,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let [return_ptr, block, target_head] = get_fun_args(fun);
         let block = CgMonoValue::new(layout, block.into_pointer_value());
         let return_val = CgReturnValue::new(
-            target_head.into_int_value(),
+            target_head.into_pointer_value(),
             return_ptr.into_pointer_value(),
         );
         let (id, inner_layout) = if let MonoLayout::Block(id, fields) = &layout.mono_layout() {
@@ -1155,7 +1159,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_array_parser_len_fun(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
         let fun = self.parser_len_fun_val(layout);
         self.add_entry_block(fun);
-        let [return_ptr, fun_ptr] = get_fun_args(fun).map(|v| v.into_pointer_value());
+        let [return_ptr, fun_ptr, globals] = get_fun_args(fun).map(|v| v.into_pointer_value());
         let parser = CgMonoValue::new(layout, fun_ptr);
         let int_buf = self.build_alloca_int("int_buf")?;
         let (_, len_offset) = self.arg_level_and_offset(layout, 0);
@@ -1164,7 +1168,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let len = self.build_i64_load(len_ptr, "len")?;
 
         let inner_parser = self.build_array_parser_get(parser)?;
-        let status = self.call_len_fun(int_buf.ptr, inner_parser)?;
+        let status = self.call_len_fun(int_buf.ptr, inner_parser, globals)?;
         self.non_zero_early_return(status)?;
         let parser_len = self.build_i64_load(int_buf.ptr, "parser_len")?;
 
@@ -1178,11 +1182,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn create_mir_len_fun(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
         let fun = self.parser_len_fun_val(layout);
-        let [return_ptr, fun_ptr] = get_fun_args(fun).map(|v| v.into_pointer_value());
+        let [return_ptr, fun_ptr, head] = get_fun_args(fun).map(|v| v.into_pointer_value());
         let int_layout = self.layouts.dcx.int();
         let int_value = CgValue::new(int_layout, self.any_ptr().const_null());
         let fun_value = CgMonoValue::new(layout, fun_ptr);
-        let head = self.const_i64(0);
         let ret_value = CgReturnValue::new(head, return_ptr);
         let fun_kind = match layout.mono_layout() {
             MonoLayout::NominalParser(pd, ..) => FunKind::ParserDef(*pd),
@@ -1202,7 +1205,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.layouts,
         )
         .unwrap();
-        MirTranslator::new(self, Rc::new(mir), fun, fun_value, int_value)?
+        MirTranslator::new(self, Rc::new(mir), fun, fun_value, int_value, head)?
             .with_ret_val(ret_value)
             .build()?;
         Ok(())
@@ -1246,7 +1249,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
         let (ret, fun) = eval_fun_values(impl_fun, layout);
         let undef = self.undef_val();
-        let mut translator = MirTranslator::new(self, mir_fun, impl_fun, fun, undef)?;
+        let mut translator = MirTranslator::new(self, mir_fun, impl_fun, fun, undef, ret.head)?;
         translator = translator.with_ret_val(ret);
         translator.build()?;
 
@@ -1284,7 +1287,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let arg = self.undef_val();
         let mir_fun = Rc::new(self.mir_pd_fun(layout, req)?);
         let (ret, fun) = eval_fun_values(llvm_fun, layout);
-        let mut translator = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg)?;
+        let mut translator = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg, ret.head)?;
         translator = translator.with_ret_val(ret);
         translator.build()
     }
@@ -1320,7 +1323,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let arg = self.undef_val();
         let mir_fun = Rc::new(self.mir_lambda_fun(layout, req)?);
         let (ret, fun) = eval_fun_values(llvm_fun, layout);
-        let mut translator = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg)?;
+        let mut translator = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg, ret.head)?;
         translator = translator.with_ret_val(ret);
         translator.build()
     }
@@ -1332,7 +1335,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> IResult<()> {
         let impl_fun = match layout.mono_layout() {
             MonoLayout::ArrayParser(_) | MonoLayout::ArrayFillParser(_) => {
-                return self.create_eval_fun_fun_copy(layout, req)
+                return self.create_eval_fun_fun_copy(layout, req);
             }
             MonoLayout::NominalParser(pd, ..) => {
                 let pd = pd.lookup(&self.compiler_database.db).unwrap();
@@ -1536,12 +1539,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_init_fun(&mut self) -> IResult<()> {
         let llvm_fun = self.global_constant_init_fun_val();
         self.add_entry_block(llvm_fun);
-        let [start, end] = get_fun_args(llvm_fun);
-        let global_address = self.yabo_global_address();
+        let [start, end, globals] = get_fun_args(llvm_fun);
+        let global_address = globals.into_pointer_value();
         let zero = self.const_i64(0);
-        let start_ptr = self.build_byte_gep(global_address.ptr, zero, "start_ptr")?;
+        let start_ptr = self.build_byte_gep(global_address, zero, "start_ptr")?;
         let word = self.const_i64(self.word_size() as i64);
-        let end_ptr = self.build_byte_gep(global_address.ptr, word, "end_ptr")?;
+        let end_ptr = self.build_byte_gep(global_address, word, "end_ptr")?;
         self.builder
             .build_store(start_ptr, start.into_pointer_value())?;
         self.builder
@@ -1552,10 +1555,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             let Some(&(fun, layout)) = self.collected_layouts.globals.get(pd) else {
                 continue;
             };
-            let global = self.global_constant(*pd);
+            let offset = self.collected_layouts.global_offsets.field_offsets[&pd.0];
+            let global =
+                self.build_byte_gep(global_address, self.const_i64(offset as i64), "global")?;
             let mut head = 0;
             head |= (layout.is_multi() as i64) << VTABLE_BIT;
-            let ret_val = CgReturnValue::new(self.const_i64(head), global);
+            let head = self.const_i64(head);
+            let ptr = self.build_byte_gep(globals.into_pointer_value(), head, "tagged")?;
+            let ret_val = CgReturnValue::new(ptr, global);
             let fun_val = CgValue::new(fun.inner(), self.any_ptr().const_null());
             let status = self.call_eval_fun_fun(
                 ret_val,

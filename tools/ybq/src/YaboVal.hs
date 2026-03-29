@@ -9,8 +9,7 @@ import Data.List (intercalate)
 import Data.Map (Map, fromList, toList)
 import Data.Maybe (catMaybes)
 import Data.Sequence (Seq, fromFunction)
-import Foreign (FunPtr, Ptr, allocaBytes, castFunPtrToPtr, castPtr, nullFunPtr, nullPtr, plusForeignPtr, plusPtr, touchForeignPtr, withForeignPtr)
-import Foreign qualified
+import Foreign (FunPtr, Ptr, allocaBytes, castFunPtrToPtr, castPtr, nullFunPtr, plusForeignPtr, touchForeignPtr, withForeignPtr)
 import Foreign.Storable (Storable(..), peek, sizeOf)
 import Foreign.Marshal.Array (pokeArray)
 import Foreign.C (CChar, CSize)
@@ -47,6 +46,7 @@ import YaboBindings
     ybqType,
     ybqTypeFromCInt,
   )
+import GHC.ForeignPtr (mallocPlainForeignPtrAlignedBytes)
 
 data YaboVal
   = YaboNull
@@ -62,43 +62,50 @@ data YaboVal
   | YaboBlock (Map String YaboVal)
   deriving (Eq, Ord)
 
-withReturnBuf :: (Functor f) => Int -> (Ptr () -> IO (f a)) -> IO (f ShortByteString)
-withReturnBuf maxBuf f = allocaBytes maxBuf $ \buf -> do
-  functored <- f buf
+
+type Globals = ()
+withLib :: Library -> (Ptr Globals -> IO a) -> IO a
+withLib lib callback = do
+  result <- withForeignPtr (globals lib) callback
+  touchForeignPtr $ globals lib
+  touchForeignPtr $ pointer $ origFile lib
+  return result
+
+withReturnBuf :: (Functor f) => Library -> (Ptr Globals -> Ptr () -> IO (f a)) -> IO (f ShortByteString)
+withReturnBuf lib f = withLib lib $ \globals -> allocaBytes (maxBuf lib) $ \buf -> do
+  functored <- f globals buf
   actualSize <- ybqAllocSize buf
   res <- packCStringLen (castPtr buf, fromIntegral actualSize)
   return $ res <$ functored
 
 arrayIndex :: Library -> ShortByteString -> CSize -> IO YaboVal
 arrayIndex lib val idx = do
-  let accessElement retBuf = do
+  let accessElement globals retBuf = do
         _ <- useAsCStringLen val $ \(charptr, _) -> do
           let ptr = castPtr charptr
-          ybqArrayAccess retBuf ptr idx
+          ybqArrayAccess retBuf ptr idx globals
         return $ Identity ()
 
-  res <- withReturnBuf (maxBuf lib) accessElement
-  touchForeignPtr $ pointer $ origFile lib
+  res <- withReturnBuf lib accessElement
   intoYaboVal lib $ runIdentity res
 
 blockIndex :: Library -> ShortByteString -> CSize -> IO (Maybe (String, YaboVal))
 blockIndex lib val idx = useAsCStringLen val $ \(charptr, _) -> runMaybeT $ do
   let ptr = castPtr charptr
-  let accessField retBuf = do
-        status <- ybqFieldAccess retBuf ptr idx
+  let accessField globals retBuf = do
+        status <- ybqFieldAccess retBuf ptr idx globals
         if ybqStatusFromWord64 status == YbqStatusBacktrack
           then return Nothing
           else return $ Just ()
 
-  ret <- MaybeT $ withReturnBuf (maxBuf lib) accessField
+  ret <- MaybeT $ withReturnBuf lib accessField
   fieldName <- liftIO $ ybqFieldNameAtIndex ptr idx >>= fieldNameToString
-  liftIO $ touchForeignPtr $ pointer $ origFile lib
   retVal <- liftIO $ intoYaboVal lib ret
   return (fieldName, retVal)
 
 intoYaboArray :: Library -> ShortByteString -> Ptr () -> IO YaboVal
 intoYaboArray lib val ptr = do
-  valsize <- ybqArraySize ptr
+  valsize <- withLib lib $ ybqArraySize ptr
   let access idx = unsafePerformIO $ arrayIndex lib val (fromIntegral idx)
   return $ YaboArray $ fromFunction (fromIntegral valsize) access
 
@@ -154,8 +161,8 @@ parseWithArgs (Parser lib (ParserExport parserExport)) offset args = do
       then error $ "Expected " ++ show expectedCount ++ " arguments, got " ++ show (length args)
       else do
         withPackedArgs args $ \argsPtr -> do
-          ret <- withReturnBuf (maxBuf lib) $ \retBuf -> do
-            _ <- ybqParseBytesWithArgs retBuf filePtr (fromIntegral len) parserExport argsPtr
+          ret <- withReturnBuf lib $ \globals retBuf -> do
+            _ <- ybqParseBytesWithArgs retBuf filePtr (fromIntegral len) parserExport argsPtr globals
             return $ Identity ()
 
           intoYaboVal lib $ runIdentity ret
@@ -187,8 +194,11 @@ asPtrLen (ByteFile ptr len) f = withForeignPtr ptr $ \p -> f (p, len)
 data Library = Library
   { dl :: DL.DL,
     origFile :: ByteFile,
-    maxBuf :: Int
+    maxBuf :: Int,
+    globals :: ForeignPtr Globals
   }
+
+
 
 openLibrary :: String -> (ForeignPtr CChar, Int) -> IO (Maybe Library)
 openLibrary name file = runMaybeT $ do
@@ -197,16 +207,24 @@ openLibrary name file = runMaybeT $ do
   bufSizeFunPtr <- liftIO $ DL.dlsym dl "yabo_max_buf_size"
   bufSizePtr <- getPtr bufSizeFunPtr
   maxBuf <- liftIO $ peek (bufSizePtr :: Ptr CSize)
+  globalsSizeFunPtr <- liftIO $ DL.dlsym dl "yabo_global_size"
+  globalsSizePtr <- getPtr globalsSizeFunPtr
+  globalsSize <- liftIO $ peek (globalsSizePtr :: Ptr CSize)
+  globals <- liftIO $ mallocPlainForeignPtrAlignedBytes (fromIntegral globalsSize) 8
   initFunPtr <- liftIO $ DL.dlsym dl "yabo_global_init"
   initPtr <- getPtr initFunPtr
-  status <- liftIO $ asPtrLen file' $ \(charptr, len) -> do
+
+  status <- liftIO $ withForeignPtr globals $ \globalsPtr -> asPtrLen file' $ \(charptr, len) -> do
     let filePtr = castPtr charptr
-    ybqCallInit filePtr (fromIntegral len) initPtr
+    ybqCallInit filePtr (fromIntegral len) initPtr globalsPtr
+  liftIO $ touchForeignPtr globals
+  liftIO $ touchForeignPtr $ pointer file'
+
   MaybeT $
     if ybqStatusFromWord64 status /= YbqStatusOk
       then return Nothing
       else return $ Just ()
-  return $ Library dl file' (fromIntegral maxBuf)
+  return $ Library dl file' (fromIntegral maxBuf) globals
 
 instance Show YaboVal where
   show = toString

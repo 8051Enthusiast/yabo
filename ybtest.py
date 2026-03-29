@@ -121,12 +121,13 @@ def run_compiler_unit_tests():
 
 
 class CompiledSource:
+    name: str
     dir: str
     compiled: str
     source: str
     stderr: str
 
-    def __init__(self, source: str | os.PathLike, wasm: bool):
+    def __init__(self, source: str | os.PathLike, name: str, wasm: bool):
         tmp_dir = tempfile.mkdtemp()
         if isinstance(source, os.PathLike):
             with open(source, 'r', encoding='utf-8') as sourcefile:
@@ -134,6 +135,7 @@ class CompiledSource:
         else:
             self.source = source
         self.dir = tmp_dir
+        self.name = name
         try:
             if wasm:
                 self.compiled = os.path.join(tmp_dir, 'target.o')
@@ -143,7 +145,7 @@ class CompiledSource:
             if isinstance(source, os.PathLike):
                 source_path = str(source)
             else:
-                source_path = os.path.join(tmp_dir, 'source.yb')
+                source_path = os.path.join(tmp_dir, name + '.yb')
                 with open(source_path, 'w', encoding='utf-8') as sourcefile:
                     sourcefile.write(source)
             if wasm:
@@ -522,7 +524,7 @@ class TestFile:
     def run(self) -> int:
         output: str = f'Running test {self.name}\n'
         failed_tests = 0
-        with CompiledSource(self.source, False) as compiled_source:
+        with CompiledSource(self.source, self.name, False) as compiled_source:
             if compiled_source.has_errors():
                 return self.check_errors(compiled_source, output)
             compiled = compiled_source.compiled
@@ -548,7 +550,7 @@ class TestFile:
         if not wasm_factory:
             print(output, end='')
             return failed_tests
-        with CompiledSource(self.source, True) as compiled_source:
+        with CompiledSource(self.source, self.name, True) as compiled_source:
             if compiled_source.has_errors():
                 return self.check_errors(compiled_source, output)
             compiled = compiled_source.compiled
@@ -636,7 +638,8 @@ def run_tests(files: list[str], collect: bool = True) -> int:
 def compile_example(file: os.PathLike):
     output: str = f'Compiling example {file}\n'
     failed: int = 0
-    with CompiledSource(file, False) as compiled:
+    name = os.path.basename(file)
+    with CompiledSource(file, name, False) as compiled:
         if compiled.has_errors():
             output += f'{RED} Native compilation failed{CLEAR}\n'
             output += compiled.stderr
@@ -644,7 +647,7 @@ def compile_example(file: os.PathLike):
         else:
             output += f'{GREEN} Native compilation passed{CLEAR}\n'
     if wasm_factory:
-        with CompiledSource(file, True) as compiled:
+        with CompiledSource(file, name, True) as compiled:
             if compiled.has_errors():
                 output += f'{RED} Wasm compilation failed{CLEAR}\n'
                 output += compiled.stderr

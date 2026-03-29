@@ -8,6 +8,7 @@
 #include <yabo/vtable.h>
 
 typedef struct {
+  struct Globals *globals;
   DynValue *current;
   char *limit;
 } Stack;
@@ -15,7 +16,7 @@ typedef struct {
 // 16 MB stack
 #define STACK_SIZE 1024 * 1024 * 16
 
-Stack init_stack(size_t max_dyn_size) {
+Stack init_stack(size_t max_dyn_size, size_t globals_size) {
   Stack stack;
   if (max_dyn_size > STACK_SIZE) {
     fprintf(stderr, "Max dyn size too large\n");
@@ -28,10 +29,14 @@ Stack init_stack(size_t max_dyn_size) {
   }
   stack.limit = (char *)stack.current + STACK_SIZE;
   stack.limit -= max_dyn_size;
+  stack.globals = malloc(globals_size);
   return stack;
 }
 
-void free_stack(Stack stack) { free(stack.current); }
+void free_stack(Stack stack) {
+  free(stack.current);
+  free(stack.globals);
+}
 
 Stack bump(Stack stack) {
   size_t size = dyn_val_size(stack.current);
@@ -101,7 +106,8 @@ int print_bit(DynValue *val, int indent, Stack stack, FILE *out) {
 int print_parser(DynValue *val, int indent, Stack stack, FILE *out) {
   struct ParserVTable *vtable = (struct ParserVTable *)val->vtable;
   int64_t len;
-  int64_t ret = YABO_ACCESS_VPTR(vtable, len_impl)(&len, val->data);
+  int64_t ret = YABO_ACCESS_VPTR(vtable, len_impl)(&len, val->data,
+                                                   (const char *)stack.globals);
   if (ret != YABO_STATUS_OK) {
     return fputs("\"parser\"", out);
   } else {
@@ -122,7 +128,8 @@ int print_block(DynValue *val, int indent, Stack stack, FILE *out) {
   int first = 1;
   for (size_t i = 0; i < count; i++) {
     DynValue *sub_value = (DynValue *)stack.current;
-    int64_t return_val = dyn_access_field_index(sub_value, val, i);
+    int64_t return_val =
+        dyn_access_field_index(sub_value, val, i, stack.globals);
     if (return_val == 3) {
       continue;
     }
@@ -157,12 +164,12 @@ int print_block(DynValue *val, int indent, Stack stack, FILE *out) {
 }
 
 int print_array(DynValue *val, int indent, Stack stack, FILE *out) {
-  int64_t len = dyn_array_len(val);
+  int64_t len = dyn_array_len(val, stack.globals);
   if (fputs("[\n", out) == EOF)
     return EOF;
   for (int64_t i = 0; i < len; i++) {
     DynValue *sub_value = stack.current;
-    dyn_array_current_element(sub_value, val);
+    dyn_array_current_element(sub_value, val, stack.globals);
     if (i) {
       if (fputs(",\n", out) == EOF) {
         return EOF;
@@ -172,7 +179,7 @@ int print_array(DynValue *val, int indent, Stack stack, FILE *out) {
       return EOF;
     if (print_recursive(indent + 2, stack, out) < 0)
       return EOF;
-    dyn_array_single_forward(val);
+    dyn_array_single_forward(val, stack.globals);
   }
   if (fputs("\n", out) == EOF) {
     return EOF;
@@ -185,7 +192,7 @@ int print_array(DynValue *val, int indent, Stack stack, FILE *out) {
 
 int print_indirect(DynValue *val, int indent, Stack stack, FILE *out) {
   DynValue *deref = stack.current;
-  dyn_deref(deref, val);
+  dyn_deref(deref, val, stack.globals);
   return print_recursive(indent, stack, out);
 }
 
@@ -275,6 +282,7 @@ struct Slice map_file(char *filename) {
 
 struct LibInfo {
   size_t max_dyn_size;
+  size_t global_size;
   InitFun *global_init;
   const struct ParserExport *parser;
   const void *args;
@@ -319,10 +327,12 @@ const void *export_args(const struct ParserExport *export_info,
 struct LibInfo static_lib() {
   struct LibInfo ret;
   extern size_t yabo_max_buf_size;
+  extern size_t yabo_global_size;
   __attribute__((weak)) extern struct Slice yabo_global_address;
-  extern int64_t yabo_global_init(const uint8_t *, const uint8_t *);
+  extern InitFun yabo_global_init;
   extern struct ParserExport STATIC_PARSER;
   ret.max_dyn_size = yabo_max_buf_size;
+  ret.global_size = yabo_global_size;
   ret.global_init = yabo_global_init;
   ret.parser = &STATIC_PARSER;
   ret.args = NULL;
@@ -452,6 +462,8 @@ struct LibInfo exec_lib() {
   lib.parser = lookup_gnu_hash(&info, "main", offset);
   size_t *yabo_max_buf_size =
       lookup_gnu_hash(&info, "yabo_max_buf_size", offset);
+  size_t *yabo_global_size =
+      lookup_gnu_hash(&info, "yabo_global_size", offset);
   if (!lib.parser) {
     fprintf(stderr, "could not find main function\n");
     exit(1);
@@ -461,7 +473,13 @@ struct LibInfo exec_lib() {
             "could not find yabo_max_buf_size (is this a yabo library?)\n");
     exit(1);
   }
+  if (!yabo_global_size) {
+    fprintf(stderr,
+            "could not find yabo_global_size\n");
+    exit(1);
+  }
   lib.max_dyn_size = *yabo_max_buf_size;
+  lib.global_size = *yabo_global_size;
   lib.args = NULL;
   return lib;
 }
@@ -480,7 +498,13 @@ struct LibInfo dynamic_lib(char *filename, char *parser_name) {
     perror("could not find yabo_max_buf_size (is this a yabo library?)");
     exit(1);
   }
+  size_t *global_size = (size_t *)dlsym(lib, "yabo_global_size");
+  if (!global_size) {
+    perror("could not find yabo_global_size");
+    exit(1);
+  }
   ret.max_dyn_size = *max_dyn_size_ptr;
+  ret.global_size = *global_size;
   ret.global_init = dlsym(lib, "yabo_global_init");
   ret.parser = get_export(lib, parser_name);
   if (ret.parser) {
@@ -528,8 +552,10 @@ int main(int argc, char *argv[argc]) {
     exit(1);
   }
 
+  Stack stack = init_stack(lib.max_dyn_size, lib.global_size);
   if (lib.global_init) {
-    int64_t status = lib.global_init(file.start, file.end);
+    int64_t status =
+        lib.global_init(file.start, file.end, (char *)stack.globals);
     if (status != 0) {
       fprintf(stderr,
               "failed to initialize yabo library with status %" PRId64 "\n",
@@ -537,10 +563,9 @@ int main(int argc, char *argv[argc]) {
       exit(1);
     }
   }
-  Stack stack = init_stack(lib.max_dyn_size);
 
   ParseFun *parse = YABO_ACCESS_VPTR(lib.parser, parser);
-  dyn_parse_bytes(stack.current, file, lib.args, parse);
+  dyn_parse_bytes(stack.current, file, lib.args, parse, stack.globals);
   print_recursive(0, stack, stdout);
   free_stack(stack);
   putchar('\n');

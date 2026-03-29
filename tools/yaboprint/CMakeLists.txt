@@ -1,4 +1,10 @@
 cmake_minimum_required(VERSION 3.10)
 project(yaboprint C)
 add_executable(yaboprint yaboprint.c)
+# Note: the ld-yabo target needs musl or another impl without elf interpreter
+add_executable(ld-yabo yaboprint.c)
 target_include_directories(yaboprint PRIVATE ../../include)
+target_include_directories(ld-yabo PRIVATE ../../include)
+target_compile_definitions(ld-yabo PRIVATE ELF_INTERP)
+target_link_libraries(ld-yabo PRIVATE -static)
+set_target_properties(ld-yabo PROPERTIES EXCLUDE_FROM_ALL 1)

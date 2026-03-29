@@ -2,8 +2,9 @@
 #include <yabo/dynamic.h>
 #include <yabo/vtable.h>
 
-int64_t ybq_call_init(const uint8_t *begin, size_t len, void *init_fun) {
-  return ((InitFun *)init_fun)(begin, begin + len);
+int64_t ybq_call_init(const uint8_t *begin, size_t len, void *init_fun,
+                      void *globals) {
+  return ((InitFun *)init_fun)(begin, begin + len, (char *)globals);
 }
 
 int ybq_type(const struct DynValue *val) {
@@ -41,12 +42,12 @@ size_t ybq_alloc_size(const struct DynValue *val) {
 
 int64_t ybq_parse_bytes_with_args(struct DynValue *ret, const uint8_t *begin,
                                   size_t len, void *parser_export,
-                                  const void *args) {
+                                  const void *args, const void *globals) {
   const struct ParserExport *exported =
       (const struct ParserExport *)parser_export;
   struct Slice bytes = {begin, begin + len};
-  int64_t status =
-      YABO_ACCESS_VPTR(exported, parser)(ret->data, args, YABO_VTABLE, &bytes);
+  int64_t status = YABO_ACCESS_VPTR(exported, parser)(
+      ret->data, args, (const char *)globals + YABO_VTABLE, &bytes);
   if (status) {
     return dyn_invalidate(ret, status);
   }
@@ -70,10 +71,10 @@ size_t ybq_field_name_index(const struct DynValue *block, const char *name) {
 }
 
 int64_t ybq_field_access(struct DynValue *ret, const struct DynValue *block,
-                         size_t index) {
+                         size_t index, const void *globals) {
   const struct BlockVTable *vtable = (const struct BlockVTable *)block->vtable;
   int64_t status = YABO_ACCESS_VPTR(vtable, access_impl[index])(
-      ret->data, block->data, YABO_VTABLE);
+      ret->data, block->data, (const char *)globals + YABO_VTABLE);
   if (status) {
     return dyn_invalidate(ret, status);
   }
@@ -88,19 +89,19 @@ char *ybq_field_name_at_index(const struct DynValue *block, size_t index) {
   return (char *)dyn_block_field_name_at_index(block, index);
 }
 
-size_t ybq_array_size(const struct DynValue *array) {
-  return dyn_array_len(array);
+size_t ybq_array_size(const struct DynValue *array, const void *globals) {
+  return dyn_array_len(array, globals);
 }
 
 int64_t ybq_array_access(struct DynValue *ret, struct DynValue *array,
-                         size_t idx) {
-  uint64_t status = dyn_array_skip(array, idx);
+                         size_t idx, const void *globals) {
+  uint64_t status = dyn_array_skip(array, idx, globals);
   if (status) {
     return dyn_invalidate(ret, status);
   }
   const struct ArrayVTable *vtable = (const struct ArrayVTable *)array->vtable;
   status = YABO_ACCESS_VPTR(vtable, current_element_impl)(
-      ret->data, array->data, YABO_VTABLE);
+      ret->data, array->data, (const char *)globals + YABO_VTABLE);
   if (status) {
     return dyn_invalidate(ret, status);
   }

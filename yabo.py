@@ -42,11 +42,11 @@ YABO_BLOCK = 0x700
 YABO_UNIT = 0x800
 YABO_U8 = 0x900
 YABO_THUNK = 0xa00
-YABO_VTABLE = 1
+YABO_VTABLE_BIT = 1
 YABO_THUNK_BIT = 4
 
-YABO_GLOBAL_ADDRESS_NAME = "yabo_global_address"
 YABO_GLOBAL_INIT_NAME = "yabo_global_init"
+YABO_GLOBAL_SIZE_NAME = "yabo_global_size"
 
 OK = 0
 ERROR = 1
@@ -54,6 +54,7 @@ EOS = 2
 BACKTRACK = 3
 
 _voidptr = c_void_p
+globals_p = POINTER(c_char)
 
 MASK_TEST_MODE: bool = False
 
@@ -110,7 +111,7 @@ class VTableHeader(VTable):
     ]
     _fields_ = [
         ("head", c_int64),
-        ("typecast_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64))),
+        ("typecast_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p))),
         ("mask_impl", vptr(CFUNCTYPE(c_size_t, _voidptr))),
         ("size", c_size_t),
         ("align", c_size_t),
@@ -151,7 +152,7 @@ class BlockVTable(VTable):
     _fields_ = [
         ("head", VTableHeader),
         ("fields", vptr(POINTER(BlockFields))),
-        ("access_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64)) * 0),
+        ("access_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p)) * 0),
     ]
 
     def __len__(self) -> int:
@@ -160,7 +161,7 @@ class BlockVTable(VTable):
     def __getitem__(self, index):
         if index > len(self):
             raise IndexError(index)
-        ty = vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64))
+        ty = vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p))
         offset = BlockVTable.access_impl.offset + index * ctypes.sizeof(ty)
         vtable_ptr = addressof(self)
         addr = vtable_ptr + offset
@@ -177,15 +178,13 @@ class NominalVTable(VTable):
     _fields_ = [
         ("head", VTableHeader),
         ("name", vptr(c_char_p)),
-        ("start_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64))),
-        ("end_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64))),
+        ("start_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p))),
+        ("end_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p))),
     ]
 
 
-PARSER_TY = CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64, _voidptr)
-LEN_FUN_TY = CFUNCTYPE(c_int64, POINTER(c_int64), POINTER(c_ubyte))
-INIT_TY = CFUNCTYPE(c_int64)
-
+PARSER_TY = CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p, _voidptr)
+LEN_FUN_TY = CFUNCTYPE(c_int64, POINTER(c_int64), POINTER(c_ubyte), globals_p)
 
 class ParserVTable(VTable):
     __slots__ = [
@@ -212,12 +211,12 @@ class ArrayVTable(VTable):
     ]
     _fields_ = [
         ("head", VTableHeader),
-        ("single_forward_impl", vptr(CFUNCTYPE(c_int64, _voidptr))),
-        ("current_element_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64))),
-        ("array_len_impl", vptr(CFUNCTYPE(c_int64, _voidptr))),
-        ("skip_impl", vptr(CFUNCTYPE(c_int64, _voidptr, c_uint64))),
-        ("span_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, c_uint64, _voidptr))),
-        ("inner_array_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, c_int64))),
+        ("single_forward_impl", vptr(CFUNCTYPE(c_int64, _voidptr, globals_p))),
+        ("current_element_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p))),
+        ("array_len_impl", vptr(CFUNCTYPE(c_int64, _voidptr, globals_p))),
+        ("skip_impl", vptr(CFUNCTYPE(c_int64, _voidptr, c_uint64, globals_p))),
+        ("span_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p, _voidptr))),
+        ("inner_array_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p))),
     ]
 
 
@@ -389,31 +388,32 @@ class Parser:
         )
 
 
+def tag_pointer(ptr, tag):
+    return ctypes.cast(ctypes.addressof(ptr) | tag, c_char_p)
+
 class YaboLib(ctypes.CDLL):
     _loc: threading.local
     _autoderef: bool
+    _globals: ctypes.Array
 
     def __init__(self, path: str, global_address: bytearray, autoderef: bool = True):
+        super().__init__(path)
         self._autoderef = autoderef
-        # we need to copy the library to a temporary path because
-        # loading the same library twice will deduplicates globals
-        # and cause a mess if it is overwritten
-        with tempfile.NamedTemporaryFile() as tmp_file:
-            with open(path, "rb") as f:
-                copyfileobj(f, tmp_file)
-            tmp_file.flush()
-            super().__init__(tmp_file.name)
         slice_addr = Slice(global_address)
-        status = self[YABO_GLOBAL_INIT_NAME](slice_addr.start, slice_addr.end)
+        size = c_size_t.in_dll(self, YABO_GLOBAL_SIZE_NAME).value
+        self._globals = (c_char * size)()
+        status = self[YABO_GLOBAL_INIT_NAME](slice_addr.start, slice_addr.end, self._globals)
         _check_status(status)
 
         self._loc = threading.local()
 
-    def discriminant(self) -> int:
+    def discriminant(self):
         if self._autoderef:
-            return YABO_VTABLE
+            val = tag_pointer(self._globals, YABO_VTABLE_BIT)
+            return val
         else:
-            return YABO_THUNK_BIT | YABO_VTABLE
+            val = tag_pointer(self._globals, YABO_THUNK_BIT | YABO_VTABLE_BIT)
+            return val
 
     def parser(self, name: str) -> Parser:
         export_info = ParserExport.in_dll(self, name)
@@ -469,10 +469,10 @@ class YaboValue:
 
     def _typecast(self, typ: int):
         typecast = self._val.get_vtable().typecast_impl
-        return self._lib.new_val(lambda ret: typecast(ret, self._val.data_ptr(), typ))
+        return self._lib.new_val(lambda ret: typecast(ret, self._val.data_ptr(), tag_pointer(self._lib._globals, typ)))
 
     def __copy__(self):
-        return self._typecast(YABO_THUNK_BIT | YABO_VTABLE)
+        return self._typecast(YABO_THUNK_BIT | YABO_VTABLE_BIT)
 
     def __eq__(self, other):
         if not isinstance(other, YaboValue):
@@ -485,7 +485,7 @@ class YaboValue:
 
 class NominalValue(YaboValue):
     def deref(self):
-        return self._typecast(YABO_VTABLE)
+        return self._typecast(YABO_VTABLE_BIT)
 
 
 class BlockValue(YaboValue):
@@ -539,14 +539,14 @@ class ArrayValue(YaboValue):
             pointer(self._val.get_vtable()), POINTER(ArrayVTable)
         )
         array_len_impl = array_vtable.contents.array_len_impl
-        return array_len_impl(self._val.data_ptr())
+        return array_len_impl(self._val.data_ptr(), self._lib._globals)
 
     def skip(self, n: int):
         array_vtable = ctypes.cast(
             pointer(self._val.get_vtable()), POINTER(ArrayVTable)
         )
         skip_impl = array_vtable.contents.skip_impl
-        status = skip_impl(self._val.data_ptr(), n)
+        status = skip_impl(self._val.data_ptr(), n, self._lib._globals)
         _check_status(status)
 
     def current_element(self):
@@ -593,7 +593,7 @@ class ParserValue(YaboValue):
         )
         casted_data = ctypes.cast(self._val.data_ptr(), POINTER(c_ubyte))
         len_int = c_int64(0)
-        ret = casted_vtable.contents.len_impl(POINTER(c_int64)(len_int), casted_data)
+        ret = casted_vtable.contents.len_impl(POINTER(c_int64)(len_int), casted_data, self._lib._globals)
         _check_status(ret)
         return len_int.value
 
@@ -601,11 +601,9 @@ class ParserValue(YaboValue):
 class UnitValue(YaboValue):
     pass
 
-
 class U8Value(YaboValue):
     def deref(self):
-        return self._typecast(0 | YABO_VTABLE)
-
+        return self._typecast(YABO_VTABLE_BIT)
 
 def _new_value(val: DynValue, lib: YaboLib):
     val.mask()

@@ -46,10 +46,12 @@ impl UnfinishedManifestation {
     pub fn new() -> Self {
         UnfinishedManifestation(Default::default())
     }
-    pub fn add_field(&mut self, id: DefId, field_size: SizeAlign) {
+    pub fn add_field(&mut self, id: Option<DefId>, field_size: SizeAlign) {
         self.0.size = self.0.size.cat(field_size);
         let offset = self.0.size.after - field_size.after;
-        self.0.field_offsets.insert(id, offset);
+        if let Some(id) = id {
+            self.0.field_offsets.insert(id, offset);
+        }
         self.0.padding_mask.resize(self.0.size.after as usize, 0);
         // note that this is only the padding we need to care about,
         // the padding in the individual fields is taken care of by calls
@@ -406,7 +408,7 @@ impl<'a> ILayout<'a> {
                 }
             }
             MonoLayout::Nominal(pd, _, args) | MonoLayout::NominalParser(pd, args, _) => {
-                return Ok(ctx.db.parserdef_arg_index(*pd, id)?.map(|i| args[i]))
+                return Ok(ctx.db.parserdef_arg_index(*pd, id)?.map(|i| args[i]));
             }
             otherwise => panic!("Attempting to get captured variable inside {:?}", otherwise),
         }
@@ -481,42 +483,40 @@ impl<'a> ILayout<'a> {
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<ILayout<'a>, LayoutError> {
         self.try_map(ctx, |layout, ctx| {
-            let (pd, present_args) = match layout.mono_layout() {
-                MonoLayout::NominalParser(pd, present_args, FuncLayoutKind::Fun) => {
-                    (pd, present_args)
-                }
-                MonoLayout::BlockParser(block_id, _) => {
-                    return ctx
-                        .eval_block(*block_id, layout.inner(), None)
-                        .ok_or_else(|| SilencedError::new().into())
-                }
-                MonoLayout::Lambda(lambda_id, _, _) => {
-                    return ctx
-                        .eval_lambda(*lambda_id, layout.inner())
-                        .ok_or_else(|| SilencedError::new().into())
-                }
-                MonoLayout::ArrayParser(Some((parser, Some((int, FuncLayoutKind::Fun))))) => {
-                    return Ok(ctx.dcx.intern(Layout::Mono(MonoLayout::ArrayParser(Some((
-                        *parser,
-                        Some((*int, FuncLayoutKind::Parse)),
-                    ))))))
-                }
-                MonoLayout::ArrayFillParser(Some((parser, FuncLayoutKind::Fun))) => {
-                    return Ok(ctx
-                        .dcx
-                        .intern(Layout::Mono(MonoLayout::ArrayFillParser(Some((
+            let (pd, present_args) =
+                match layout.mono_layout() {
+                    MonoLayout::NominalParser(pd, present_args, FuncLayoutKind::Fun) => {
+                        (pd, present_args)
+                    }
+                    MonoLayout::BlockParser(block_id, _) => {
+                        return ctx
+                            .eval_block(*block_id, layout.inner(), None)
+                            .ok_or_else(|| SilencedError::new().into());
+                    }
+                    MonoLayout::Lambda(lambda_id, _, _) => {
+                        return ctx
+                            .eval_lambda(*lambda_id, layout.inner())
+                            .ok_or_else(|| SilencedError::new().into());
+                    }
+                    MonoLayout::ArrayParser(Some((parser, Some((int, FuncLayoutKind::Fun))))) => {
+                        return Ok(ctx.dcx.intern(Layout::Mono(MonoLayout::ArrayParser(Some((
                             *parser,
-                            FuncLayoutKind::Parse,
-                        ))))))
-                }
-                _ => {
-                    dbpanic!(
-                        ctx.db,
-                        "Attempting to apply function to non-function layout {}",
-                        &layout
-                    );
-                }
-            };
+                            Some((*int, FuncLayoutKind::Parse)),
+                        ))))));
+                    }
+                    MonoLayout::ArrayFillParser(Some((parser, FuncLayoutKind::Fun))) => {
+                        return Ok(ctx.dcx.intern(Layout::Mono(MonoLayout::ArrayFillParser(
+                            Some((*parser, FuncLayoutKind::Parse)),
+                        ))));
+                    }
+                    _ => {
+                        dbpanic!(
+                            ctx.db,
+                            "Attempting to apply function to non-function layout {}",
+                            &layout
+                        );
+                    }
+                };
             let parserdef = pd.lookup(ctx.db)?;
             if parserdef.from.is_some() {
                 Ok(ctx.dcx.intern(Layout::Mono(MonoLayout::NominalParser(
@@ -714,7 +714,7 @@ impl<'a> ILayout<'a> {
                 .map(|x| *x.inner())
                 .expect("Could not find field during layout calculation");
             let field_size = layout.size_align(ctx)?;
-            manifest.add_field(field_id, field_size);
+            manifest.add_field(Some(field_id), field_size);
         }
         let discriminant_mapping = ctx.db.discriminant_mapping(id)?;
         let manifest = Arc::new(manifest.finalize(discriminant_mapping));
@@ -733,7 +733,7 @@ impl<'a> ILayout<'a> {
         let mut manifest = UnfinishedManifestation::new();
         for (capture, layout) in captures.iter() {
             let sa = layout.size_align(ctx)?;
-            manifest.add_field(*capture, sa);
+            manifest.add_field(Some(*capture), sa);
         }
         let manifest = Arc::new(manifest.finalize(Default::default()));
         ctx.dcx.manifestations.insert(self, manifest.clone());
@@ -753,12 +753,12 @@ impl<'a> ILayout<'a> {
         let mut manifest = UnfinishedManifestation::new();
         for (capture, layout) in captures.iter() {
             let sa = layout.size_align(ctx)?;
-            manifest.add_field(*capture, sa);
+            manifest.add_field(Some(*capture), sa);
         }
         let arg_ids = id.lookup(ctx.db)?.args;
         for (arg, id) in args.iter().zip(arg_ids.iter()) {
             let sa = arg.size_align(ctx)?;
-            manifest.add_field(id.0, sa);
+            manifest.add_field(Some(id.0), sa);
         }
         let manifest = Arc::new(manifest.finalize(Default::default()));
         ctx.dcx.manifestations.insert(self, manifest.clone());
@@ -778,7 +778,7 @@ impl<'a> ILayout<'a> {
         let arg_ids = id.lookup(ctx.db)?.args.unwrap_or_default();
         for (arg, id) in args.iter().zip(arg_ids.iter()) {
             let sa = arg.size_align(ctx)?;
-            manifest.add_field(id.0, sa);
+            manifest.add_field(Some(id.0), sa);
         }
         let manifest = Arc::new(manifest.finalize(Default::default()));
         ctx.dcx.manifestations.insert(self, manifest.clone());
@@ -799,12 +799,12 @@ impl<'a> ILayout<'a> {
         let parserdef = id.lookup(ctx.db)?;
         if let Some(from) = from {
             let sa = from.size_align(ctx)?;
-            manifest.add_field(parserdef.from.unwrap().0, sa);
+            manifest.add_field(Some(parserdef.from.unwrap().0), sa);
         }
         let arg_ids = id.lookup(ctx.db)?.args.unwrap_or_default();
         for (arg, id) in args.iter().zip(arg_ids.iter()) {
             let sa = arg.size_align(ctx)?;
-            manifest.add_field(id.0, sa);
+            manifest.add_field(Some(id.0), sa);
         }
         let manifest = Arc::new(manifest.finalize(Default::default()));
         ctx.dcx.manifestations.insert(self, manifest.clone());
@@ -1198,10 +1198,10 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
 mod tests {
     use bumpalo::Bump;
     use yaboc_absint::AbsIntDatabase;
-    use yaboc_ast::{import::Import, AstDatabase};
+    use yaboc_ast::{AstDatabase, import::Import};
     use yaboc_base::dbeprintln;
     use yaboc_base::{
-        config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase, Context,
+        Context, config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase,
     };
     use yaboc_constraint::ConstraintDatabase;
     use yaboc_dependents::DependentsDatabase;
@@ -1323,21 +1323,25 @@ mod tests {
                 .access_field(&mut outlayer, field("c"))
                 .unwrap()
         );
-        assert!([
-            "nominal-parser[file[_].second]() | nominal-parser[file[_].first]()",
-            "nominal-parser[file[_].first]() | nominal-parser[file[_].second]()"
-        ]
-        .contains(&out.as_str()));
+        assert!(
+            [
+                "nominal-parser[file[_].second]() | nominal-parser[file[_].first]()",
+                "nominal-parser[file[_].first]() | nominal-parser[file[_].second]()"
+            ]
+            .contains(&out.as_str())
+        );
         let res = dbformat!(
             &ctx.db,
             "{}",
             &main_block.access_field(&mut outlayer, field("d")).unwrap(),
         );
-        assert!([
-            "ptr | nominal[file[_].first](from: sliceptr)",
-            "nominal[file[_].first](from: sliceptr) | ptr"
-        ]
-        .contains(&res.as_str()));
+        assert!(
+            [
+                "ptr | nominal[file[_].first](from: sliceptr)",
+                "nominal[file[_].first](from: sliceptr) | ptr"
+            ]
+            .contains(&res.as_str())
+        );
     }
     #[test]
     fn tailsize() {

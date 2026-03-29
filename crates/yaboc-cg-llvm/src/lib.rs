@@ -13,6 +13,7 @@ use fxhash::FxHashMap;
 use getset::Callable;
 pub use inkwell;
 use inkwell::{
+    AddressSpace, GlobalVisibility, IntPredicate, OptimizationLevel,
     attributes::{Attribute, AttributeLoc},
     basic_block::BasicBlock,
     builder::{Builder, BuilderError},
@@ -32,8 +33,8 @@ use inkwell::{
         ArrayValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue, GlobalValue,
         IntValue, PointerValue, StructValue, UnnamedAddress,
     },
-    AddressSpace, GlobalVisibility, IntPredicate, OptimizationLevel,
 };
+use std::fmt::Write;
 
 use val::{CgMonoValue, CgReturnValue, CgValue};
 use yaboc_absint::{AbstractDomain, Arg};
@@ -42,21 +43,25 @@ use yaboc_base::dbpanic;
 use yaboc_base::interner::{DefId, FieldName, Identifier, Interner};
 use yaboc_database::YabocDatabase;
 use yaboc_hir::{BlockId, HirIdWrapper, Hirs, ParserDefId};
-use yaboc_hir_types::THUNK_BIT;
 use yaboc_layout::{
-    collect::{root_req, LayoutCollection},
+    AbsLayoutCtx, ILayout, IMonoLayout, MonoLayout,
+    collect::{LayoutCollection, root_req},
     mir_subst::FunctionSubstitute,
-    represent::{truncated_hex, LayoutPart},
+    represent::{LayoutPart, truncated_hex},
     vtable::{
         self, ArrayVTableFields, BlockVTableFields, FunctionVTableFields, ParserFun,
         ParserVTableFields, VTableHeaderFields,
     },
-    AbsLayoutCtx, ILayout, IMonoLayout, MonoLayout,
 };
 use yaboc_mir::{CallMeta, Mirs, ReturnStatus};
 use yaboc_req::RequirementSet;
 use yaboc_target::layout::{
     AbsPtr, CodegenTypeContext, PSize, RelPtr, RelativeVPtr, SizeAlign, TargetSized,
+};
+
+use crate::{
+    defs::{YABO_GLOBAL_SIZE, YABO_MAX_BUF_SIZE},
+    getset::FunctionTy,
 };
 
 use self::{convert_mir::MirTranslator, convert_thunk::ThunkContext};
@@ -87,6 +92,7 @@ pub struct CodeGenCtx<'llvm, 'comp> {
     compiler_database: &'comp yaboc_base::Context<YabocDatabase>,
     layouts: &'comp mut AbsLayoutCtx<'comp>,
     collected_layouts: Rc<LayoutCollection<'comp>>,
+    intrinsics: FxHashMap<(std::any::TypeId, &'static str), FunctionValue<'llvm>>,
 }
 
 #[derive(Clone)]
@@ -150,6 +156,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             layouts,
             collected_layouts,
             target_data,
+            intrinsics: Default::default(),
         })
     }
 
@@ -287,9 +294,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.llvm.i8_type().array_type(sa.allocation_size() as u32)
     }
 
-    fn undef_ret(&self) -> CgReturnValue<'llvm> {
+    fn undef_ret(&self, head: PointerValue<'llvm>) -> CgReturnValue<'llvm> {
         let undef_ptr = self.invalid_ptr();
-        let head = self.const_i64(1 << THUNK_BIT);
         CgReturnValue::new(head, undef_ptr)
     }
 
@@ -400,7 +406,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         };
         Ok(call
             .basic()
-            .expect("function shuold not return void")
+            .expect("function should not return void")
             .into_int_value())
     }
 
@@ -414,7 +420,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         Ok(call
             .try_as_basic_value()
             .basic()
-            .expect("function shuold not return void")
+            .expect("function should not return void")
             .into_int_value())
     }
 
@@ -749,16 +755,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         byte_gep(&self.builder, self.llvm, ptr, int, name)
     }
 
-    fn const_byte_gep(&mut self, ptr: PointerValue<'llvm>, int: i64) -> PointerValue<'llvm> {
-        assert!(ptr.get_type() == self.any_ptr());
-        if int == 0 {
-            return ptr;
-        }
-        let ty = self.llvm.i8_type();
-        let int = self.llvm.i32_type().const_int(int as u64, false);
-        unsafe { ptr.const_gep(ty, &[int]) }
-    }
-
     fn build_field_gep(
         &mut self,
         field: DefId,
@@ -822,6 +818,61 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         Ok(())
     }
 
+    fn mangled_instrinsic_type_name(ty: BasicMetadataTypeEnum<'llvm>) -> String {
+        let mut mangled_name = String::new();
+        let _ = match ty {
+            BasicMetadataTypeEnum::IntType(int_type) => {
+                write!(&mut mangled_name, "i{}", int_type.get_bit_width())
+            }
+            BasicMetadataTypeEnum::PointerType(_) => {
+                write!(&mut mangled_name, "p0")
+            }
+            _ => unimplemented!(),
+        };
+        mangled_name
+    }
+
+    fn intrinsic_template(name: &str, arg_name: &[BasicMetadataTypeEnum<'llvm>]) -> String {
+        let mut ret = String::with_capacity(name.len() + 5);
+        let mut prev_percent = false;
+        for c in name.chars() {
+            if prev_percent {
+                if let Some(digit) = c.to_digit(10) {
+                    ret.push_str(&Self::mangled_instrinsic_type_name(
+                        arg_name[digit as usize],
+                    ));
+                } else {
+                    ret.push('%');
+                    if c != '%' {
+                        ret.push(c);
+                    }
+                }
+                prev_percent = false;
+            } else if c == '%' {
+                prev_percent = true;
+            } else {
+                ret.push(c)
+            }
+        }
+        ret
+    }
+
+    fn get_intrinsic<F>(&mut self, name: &'static str) -> FunctionValue<'llvm>
+    where
+        F: FunctionTy + 'static,
+    {
+        let id = std::any::TypeId::of::<F>();
+        if let Some(fun) = self.intrinsics.get(&(id, name)) {
+            return *fun;
+        }
+        let ty = <F>::fun_ty(self);
+        let params = ty.get_param_types();
+        let mangled_name = Self::intrinsic_template(name, &params);
+        let fun = self.module.add_function(&mangled_name, ty, None);
+        self.intrinsics.insert((id, name), fun);
+        fun
+    }
+
     fn create_pd_export(
         &mut self,
         pd: ParserDefId,
@@ -862,7 +913,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         global.set_initializer(&struct_init);
         global.set_linkage(Linkage::External);
         global.set_constant(true);
-        global.set_visibility(GlobalVisibility::Default);
+        global.set_visibility(GlobalVisibility::Protected);
     }
 
     pub fn create_pd_exports(&mut self) -> IResult<()> {
@@ -880,10 +931,22 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let size = self.const_size_t(self.collected_layouts.max_sa.total_size() as i64);
         let buf_size = self
             .module
-            .add_global(size.get_type(), None, "yabo_max_buf_size");
+            .add_global(size.get_type(), None, YABO_MAX_BUF_SIZE);
         buf_size.set_initializer(&size);
         buf_size.set_linkage(Linkage::External);
         buf_size.set_constant(true);
+        buf_size.set_visibility(GlobalVisibility::Protected);
+    }
+
+    pub fn create_global_size(&mut self) {
+        let size = self.const_size_t(self.collected_layouts.global_offsets.size.allocation_size() as i64);
+        let buf_size = self
+            .module
+            .add_global(size.get_type(), None, YABO_GLOBAL_SIZE);
+        buf_size.set_initializer(&size);
+        buf_size.set_linkage(Linkage::External);
+        buf_size.set_constant(true);
+        buf_size.set_visibility(GlobalVisibility::Protected);
     }
 
     pub fn add_interpreter(&mut self, name: &str) {
@@ -897,10 +960,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub fn run_codegen(&mut self) {
         self.create_all_vtables();
-        self.create_all_statics().expect("Codegen failed");
         self.create_all_funs().expect("Codegen failed");
         self.create_pd_exports().expect("Codegen failed");
         self.create_max_buf_size();
+        self.create_global_size();
         if let Some(interp) = self.options.dynamic_linker.clone() {
             self.add_interpreter(&interp);
         } else if let Ok(interp) = std::env::var("YABO_ELF_INTERPRETER_PATH") {
@@ -937,12 +1000,12 @@ fn get_fun_args<const N: usize>(fun: FunctionValue) -> [BasicValueEnum; N] {
     std::array::from_fn(|i| fun.get_nth_param(i as u32).unwrap())
 }
 
-fn parser_args(fun: FunctionValue) -> (PointerValue, PointerValue, IntValue, PointerValue) {
+fn parser_args(fun: FunctionValue) -> (PointerValue, PointerValue, PointerValue, PointerValue) {
     let [ret, fun, head, from] = get_fun_args(fun);
     (
         ret.into_pointer_value(),
         fun.into_pointer_value(),
-        head.into_int_value(),
+        head.into_pointer_value(),
         from.into_pointer_value(),
     )
 }
@@ -963,12 +1026,12 @@ fn parser_values<'comp, 'llvm>(
     (ret, fun, arg)
 }
 
-fn eval_fun_args(fun: FunctionValue) -> (PointerValue, PointerValue, IntValue) {
+fn eval_fun_args(fun: FunctionValue) -> (PointerValue, PointerValue, PointerValue) {
     let [ret, fun, head] = get_fun_args(fun);
     (
         ret.into_pointer_value(),
         fun.into_pointer_value(),
-        head.into_int_value(),
+        head.into_pointer_value(),
     )
 }
 

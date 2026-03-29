@@ -10,7 +10,8 @@
 #include <vector>
 
 #include <yabo/dynamic.h>
-#define YABO_GLOBAL_INIT "yabo_global_init"
+constexpr const char *YABO_GLOBAL_INIT = "yabo_global_init";
+constexpr const char *YABO_GLOBAL_SIZE = "yabo_global_size";
 
 enum class YaboValKind : int64_t {
   YABOINTEGER = 0x100,
@@ -36,11 +37,33 @@ static bool span_contains(ByteSpan outer, ByteSpan inner) noexcept {
          outer.data() + outer.size() >= inner.data() + inner.size();
 }
 
+struct FileIdx {
+  FileIdx() : index(0xAAAAAAAA) {}
+  explicit FileIdx(size_t idx) : index(idx) {}
+  size_t index{};
+};
+
+class GlobalStorage {
+  std::unique_ptr<uint8_t[]> storage;
+
+public:
+  explicit GlobalStorage(size_t size)
+      : storage(std::make_unique<uint8_t[]>(size)) {}
+
+  const char *get(uint8_t tag) const {
+    const char *b = reinterpret_cast<const char *>(storage.get());
+    return b + (tag & 0x7);
+  };
+
+  char *mut() { return reinterpret_cast<char *>(storage.get()); };
+};
+
 // interned yabo value, can be compared by pointer comparison
 struct YaboVal {
   // is not null
   const DynValue *val;
-  explicit YaboVal(const DynValue *v) : val(v) {}
+  FileIdx file;
+  explicit YaboVal(const DynValue *v, FileIdx idx) : val(v), file(idx) {}
   bool operator==(const YaboVal &other) const noexcept {
     return std::bit_cast<uintptr_t>(val) == std::bit_cast<uintptr_t>(other.val);
   }
@@ -75,7 +98,8 @@ struct SpannedVal : public YaboVal {
   SpannedVal(YaboVal val, ByteSpan span, bool active) noexcept
       : YaboVal(val), span(span), active(active) {}
   explicit SpannedVal() noexcept
-      : YaboVal(nullptr), span(ByteSpan()), active(false) {}
+      : YaboVal(nullptr, FileIdx{0xffffffff}), span(ByteSpan()), active(false) {
+  }
   ByteSpan span;
   bool active;
 };
@@ -113,11 +137,11 @@ class YaboValStorage {
 public:
   YaboValStorage(size_t max_s);
   YaboValStorage() = default;
-  YaboVal with_return_buf(std::function<uint64_t(uint8_t *ret)>);
+  YaboVal with_return_buf(FileIdx idx, std::function<uint64_t(uint8_t *ret)>);
   YaboVal with_address_and_return_buf(
       YaboVal addr, std::function<uint64_t(DynValue *addr, uint8_t *ret)>);
   SpannedVal
-  with_span_and_return_buf(ByteSpan span,
+  with_span_and_return_buf(ByteSpan span, FileIdx idx,
                            std::function<uint64_t(void *addr, uint8_t *ret)>);
   // all functions take at most 3 value arguments, so this should be enough for
   // most cases
@@ -178,6 +202,7 @@ class YaboValCreator {
 public:
   YaboValCreator(YaboValStorage &&store) : storage(std::move(store)) {}
   YaboValCreator() = default;
+  FileIdx add_file(GlobalStorage &&storage);
   std::optional<YaboVal> access_field(YaboVal val, const char *name,
                                       bool eval = false);
   std::optional<YaboVal> deref(YaboVal val);
@@ -185,12 +210,15 @@ public:
   std::optional<YaboVal> index(YaboVal val, size_t idx);
   std::optional<YaboVal> skip(YaboVal val, size_t offset);
   std::optional<SpannedVal> parse(ParseFun parser, const void *args,
-                                  ByteSpan buf);
+                                  ByteSpan buf, FileIdx file);
   std::optional<ByteSpan> extent(YaboVal val);
 
 private:
+  const char *get_context(FileIdx idx, uint8_t tag);
   YaboValStorage storage;
+  std::vector<GlobalStorage> file_slots;
 };
 
-YaboValCreator
-init_vals_from_lib(void *lib, std::pair<const uint8_t *, const uint8_t *> span);
+GlobalStorage create_globals(void *lib,
+                             std::pair<const uint8_t *, const uint8_t *> span);
+YaboValCreator init_vals_from_lib(void *lib);
