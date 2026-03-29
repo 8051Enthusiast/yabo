@@ -73,6 +73,7 @@ private:
   std::unordered_map<YaboVal, DerefInfo> deref_cache;
   DerefInfo deref(YaboVal val);
   YaboValCreator vals;
+  FileIdx fileIndex{};
   void *lib;
   std::unique_ptr<char[]> altstack = nullptr;
   std::filesystem::path tmp_file;

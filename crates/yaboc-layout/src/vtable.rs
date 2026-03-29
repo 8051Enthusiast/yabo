@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use yaboc_target::{layout::VtablePointer, target_struct};
 
-pub type TypecastFun = fn(ret: *mut u8, from: *const u8, target_head: i64) -> i64;
+pub type TypecastFun = fn(ret: *mut u8, from: *const u8, context: *const u8) -> i64;
 pub type MaskFun = fn(ret: *mut u8) -> usize;
 
 target_struct! {
@@ -24,7 +24,7 @@ target_struct! {
     }
 }
 
-pub type BlockFieldFun = fn(ret: *mut u8, from: *const u8, target_head: i64) -> i64;
+pub type BlockFieldFun = fn(ret: *mut u8, from: *const u8, context: *const u8) -> i64;
 
 target_struct! {
     pub struct BlockVTable<T: VtablePointer> {
@@ -34,8 +34,8 @@ target_struct! {
     }
 }
 
-pub type StartFun = fn(ret: *mut u8, nom: *const u8, target_head: i64) -> i64;
-pub type EndFun = fn(ret: *mut u8, nom: *const u8, target_head: i64) -> i64;
+pub type StartFun = fn(ret: *mut u8, nom: *const u8, context: *const u8) -> i64;
+pub type EndFun = fn(ret: *mut u8, nom: *const u8, context: *const u8) -> i64;
 
 target_struct! {
     pub struct NominalVTable<T: VtablePointer> {
@@ -53,8 +53,8 @@ target_struct! {
     }
 }
 
-pub type ParserFun = fn(ret: *mut u8, fun: *const u8, target_head: i64, from: *const u8) -> i64;
-pub type LenFun = fn(ret: *mut u8, from: *const u8) -> i64;
+pub type ParserFun = fn(ret: *mut u8, fun: *const u8, context: *const u8, from: *const u8) -> i64;
+pub type LenFun = fn(ret: *mut u8, from: *const u8, globals: *const u8) -> i64;
 
 target_struct! {
     pub struct ParserVTable<T: VtablePointer> {
@@ -65,8 +65,8 @@ target_struct! {
     }
 }
 
-pub type CreateArgFun = fn(ret: *mut u8, from: *const u8, target_head: i64) -> i64;
-pub type EvalFunFun = fn(ret: *mut u8, fun: *const u8, target_head: i64) -> i64;
+pub type CreateArgFun = fn(ret: *mut u8, from: *const u8, context: *const u8) -> i64;
+pub type EvalFunFun = fn(ret: *mut u8, fun: *const u8, context: *const u8) -> i64;
 
 target_struct! {
     pub struct FunctionVTable<T: VtablePointer> {
@@ -77,12 +77,12 @@ target_struct! {
     }
 }
 
-pub type SingleForwardFun = fn(from: *mut u8) -> i64;
-pub type CurrentElementFun = fn(ret: *mut u8, from: *const u8, target_head: i64) -> i64;
-pub type ArrayLenFun = fn(from: *const u8) -> i64;
-pub type SkipFun = fn(ret: *mut u8, offset: u64) -> i64;
-pub type SpanFun = fn(ret: *mut u8, from: *const u8, target_head: i64, to: *const u8) -> i64;
-pub type InnerArrayFun = fn(ret: *mut u8, from: *const u8, target_head: i64) -> i64;
+pub type SingleForwardFun = fn(from: *mut u8, globals: *const u8) -> i64;
+pub type CurrentElementFun = fn(ret: *mut u8, from: *const u8, globals: *const u8) -> i64;
+pub type ArrayLenFun = fn(from: *const u8, globals: *const u8) -> i64;
+pub type SkipFun = fn(ret: *mut u8, offset: u64, context: *const u8) -> i64;
+pub type SpanFun = fn(ret: *mut u8, from: *const u8, context: *const u8, to: *const u8) -> i64;
+pub type InnerArrayFun = fn(ret: *mut u8, from: *const u8, context: *const u8) -> i64;
 
 target_struct! {
     pub struct ArrayVTable<T: VtablePointer> {
@@ -104,7 +104,7 @@ target_struct! {
     }
 }
 
-pub type InitFun = fn(start: *const u8, end: *const u8) -> i64;
+pub type InitFun = fn(start: *const u8, end: *const u8, context: *const u8) -> i64;
 
 #[cfg(test)]
 mod tests {

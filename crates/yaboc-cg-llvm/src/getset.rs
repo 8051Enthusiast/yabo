@@ -15,7 +15,7 @@ impl<'llvm> From<FunctionValue<'llvm>> for Callable<'llvm> {
     }
 }
 
-trait FunctionTy: TargetSized {
+pub(crate) trait FunctionTy: TargetSized {
     fn fun_ty<'llvm>(ctx: &mut CodeGenCtx<'llvm, '_>) -> FunctionType<'llvm>;
 }
 
@@ -60,12 +60,29 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn llvm_load_relative(&mut self) -> FunctionValue<'llvm> {
-        const LOAD_RELATIVE: &str = "llvm.load.relative.i32";
-        if let Some(fun) = self.module.get_function(LOAD_RELATIVE) {
-            return fun;
-        }
-        let ty = <fn(ptr: *const u8, offset: RelativeVPtr<()>) -> *const u8>::fun_ty(self);
-        self.module.add_function(LOAD_RELATIVE, ty, None)
+        self.get_intrinsic::<fn(ptr: *const u8, offset: RelativeVPtr<()>) -> *const u8>(
+            "llvm.load.relative.%1",
+        )
+    }
+
+    fn llvm_ptr_mask(&mut self) -> FunctionValue<'llvm> {
+        self.get_intrinsic::<fn(ptr: *const u8, mask: usize) -> *const u8>("llvm.ptrmask.%0.%1")
+    }
+
+    pub(crate) fn build_high_bit_mask(
+        &mut self,
+        ptr: PointerValue<'llvm>,
+    ) -> IResult<PointerValue<'llvm>> {
+        let ptr_mask = self.llvm_ptr_mask();
+        let ptrint = <usize>::codegen_ty(self).into_int_type();
+        let mask = ptrint.const_int(!7, true);
+        let masked = self
+            .builder
+            .build_call(ptr_mask, &[ptr.into(), mask.into()], "masked")?;
+        Ok(masked
+            .try_as_basic_value()
+            .unwrap_basic()
+            .into_pointer_value())
     }
 
     fn vtable_get_val_at_offset<Target: TargetSized>(
@@ -356,6 +373,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub(super) fn call_single_forward_fun(
         &mut self,
         arg: CgValue<'comp, 'llvm>,
+        globals: PointerValue<'llvm>,
     ) -> IResult<IntValue<'llvm>> {
         let single_forward = match arg.layout.maybe_mono() {
             Some(mono) => self.sym_callable(mono, LayoutPart::SingleForward).into(),
@@ -364,12 +382,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 &[ArrayVTableFields::single_forward_impl as i64],
             )?,
         };
-        self.build_call_with_int_ret(single_forward, &[arg.ptr.into()])
+        self.build_call_with_int_ret(single_forward, &[arg.ptr.into(), globals.into()])
     }
 
     pub(super) fn call_array_len_fun(
         &mut self,
         arg: CgValue<'comp, 'llvm>,
+        globals: PointerValue<'llvm>,
     ) -> IResult<IntValue<'llvm>> {
         let len = match arg.layout.maybe_mono() {
             Some(mono) => self.sym_callable(mono, LayoutPart::ArrayLen).into(),
@@ -378,7 +397,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 &[ArrayVTableFields::len_impl as i64],
             )?,
         };
-        self.build_call_with_int_ret(len, &[arg.ptr.into()])
+        self.build_call_with_int_ret(len, &[arg.ptr.into(), globals.into()])
     }
 
     pub(super) fn call_eval_fun_fun(
@@ -466,6 +485,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         arg: CgValue<'comp, 'llvm>,
         count: IntValue<'llvm>,
+        globals: PointerValue<'llvm>,
     ) -> IResult<IntValue<'llvm>> {
         let skip = match arg.layout.maybe_mono() {
             Some(mono) => self.sym_callable(mono, LayoutPart::Skip).into(),
@@ -474,7 +494,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 &[ArrayVTableFields::skip_impl as i64],
             )?,
         };
-        self.build_call_with_int_ret(skip, &[arg.ptr.into(), count.into()])
+        self.build_call_with_int_ret(skip, &[arg.ptr.into(), count.into(), globals.into()])
     }
 
     pub(super) fn call_span_fun(
@@ -505,24 +525,29 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         val: CgValue<'comp, 'llvm>,
         mut deref_level: IntValue<'llvm>,
+        globals: PointerValue<'llvm>,
     ) -> IResult<CgReturnValue<'llvm>> {
         if val.layout.is_multi() {
             let tag = self.const_i64(1 << VTABLE_BIT);
             deref_level = self.builder.build_or(deref_level, tag, "vtable_tag")?;
         }
-        Ok(CgReturnValue::new(deref_level, val.ptr))
+        let ptr = self.build_byte_gep(globals, deref_level, "tagged")?;
+        Ok(CgReturnValue::new(ptr, val.ptr))
     }
 
-    pub(super) fn build_check_i64_bit_set(
+    pub(super) fn build_check_ptr_bit_set(
         &mut self,
-        val: IntValue<'llvm>,
+        val: PointerValue<'llvm>,
         bit: u8,
     ) -> IResult<IntValue<'llvm>> {
+        let masked = self.build_high_bit_mask(val)?;
+        let u8 = u8::codegen_ty(self).into_int_type();
+        let diff = self.builder.build_ptr_diff(u8, val, masked, "ptrdiff")?;
         let set_bit = self.const_i64(1 << bit);
-        let and = self.builder.build_and(set_bit, val, "")?;
-        let comp = self
-            .builder
-            .build_int_compare(IntPredicate::NE, and, self.const_i64(0), "")?;
+        let and = self.builder.build_and(set_bit, diff, "and")?;
+        let comp =
+            self.builder
+                .build_int_compare(IntPredicate::NE, and, self.const_i64(0), "comp")?;
         Ok(comp)
     }
 
@@ -582,6 +607,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         argnum: PSize,
+        globals: PointerValue<'llvm>,
     ) -> IResult<IntValue<'llvm>> {
         let (head, offset) = match fun.layout.maybe_mono() {
             Some(mono) => {
@@ -592,7 +618,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         };
         let fun_any_ptr = self.build_cast::<*mut u8, _>(fun.ptr)?;
         let fun_arg_ptr = self.build_byte_gep(fun_any_ptr, offset, "")?;
-        let fun_arg = CgReturnValue::new(head, fun_arg_ptr);
+        let ptr = self.build_byte_gep(globals, head, "tagged")?;
+        let fun_arg = CgReturnValue::new(ptr, fun_arg_ptr);
         self.call_typecast_fun(fun_arg, arg)
     }
 
@@ -600,6 +627,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         ret: PointerValue<'llvm>,
         fun: CgValue<'comp, 'llvm>,
+        globals: PointerValue<'llvm>,
     ) -> IResult<IntValue<'llvm>> {
         let create = match fun.layout.maybe_mono() {
             Some(mono) => self.sym_callable(mono, LayoutPart::Len).into(),
@@ -608,7 +636,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 &[ParserVTableFields::len_impl as i64],
             )?,
         };
-        self.build_call_with_int_ret(create, &[ret.into(), fun.ptr.into()])
+        self.build_call_with_int_ret(create, &[ret.into(), fun.ptr.into(), globals.into()])
     }
 
     pub(super) fn build_array_parser_get(

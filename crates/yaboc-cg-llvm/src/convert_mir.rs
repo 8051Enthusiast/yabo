@@ -2,18 +2,18 @@ use std::rc::Rc;
 use yaboc_absint::AbstractDomain;
 
 use inkwell::{
+    AddressSpace, IntPredicate,
     basic_block::BasicBlock,
     values::{FunctionValue, IntValue, PointerValue},
-    AddressSpace, IntPredicate,
 };
 
 use mir::{CallMeta, ControlFlow, Place, Strictness};
-use yaboc_ast::expr::Atom;
 use yaboc_ast::ConstraintAtom;
+use yaboc_ast::expr::Atom;
 use yaboc_base::{dbpanic, interner::FieldName};
 use yaboc_hir::BlockId;
 use yaboc_hir_types::{THUNK_BIT, VTABLE_BIT};
-use yaboc_layout::{mir_subst::FunctionSubstitute, ILayout, Layout, MonoLayout};
+use yaboc_layout::{ILayout, IMonoLayout, Layout, MonoLayout, mir_subst::FunctionSubstitute};
 use yaboc_mir::{
     self as mir, BBRef, Comp, IntBinOp, IntUnOp, MirInstr, PlaceRef, ReturnStatus, Val,
 };
@@ -21,8 +21,8 @@ use yaboc_req::RequirementSet;
 use yaboc_target::layout::TargetSized;
 
 use crate::{
-    val::{CgMonoValue, CgReturnValue, CgValue},
     IResult,
+    val::{CgMonoValue, CgReturnValue, CgValue},
 };
 
 use super::CodeGenCtx;
@@ -37,6 +37,7 @@ pub struct MirTranslator<'llvm, 'comp, 'r> {
     arg: CgValue<'comp, 'llvm>,
     ret: Option<CgReturnValue<'llvm>>,
     undefined: BasicBlock<'llvm>,
+    globals: PointerValue<'llvm>,
 }
 
 impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
@@ -46,12 +47,14 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         llvm_fun: FunctionValue<'llvm>,
         fun: CgMonoValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
+        head: PointerValue<'llvm>,
     ) -> IResult<Self> {
         cg.add_entry_block(llvm_fun);
         let mut stack = Vec::new();
         for (idx, layout) in mir_fun.stack_layouts.iter().enumerate() {
             stack.push(cg.build_layout_alloca(*layout, &format!("stack_{idx}"))?);
         }
+        let globals = cg.build_high_bit_mask(head)?;
         let mut blocks = Vec::new();
         for (bbref, _) in mir_fun.f.iter_bb() {
             let block = cg
@@ -77,6 +80,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             arg,
             ret: None,
             undefined,
+            globals,
         })
     }
 
@@ -127,7 +131,11 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 };
                 self.place_ptr(front)?
             }
-            mir::Place::Global(pd) => self.cg.global_constant(pd),
+            mir::Place::Global(pd) => {
+                let offset = self.cg.collected_layouts.global_offsets.field_offsets[&pd.0];
+                self.cg
+                    .build_byte_gep(self.globals, self.cg.const_i64(offset as i64), "global")?
+            }
             mir::Place::Undefined => self.cg.invalid_ptr(),
         })
     }
@@ -138,10 +146,10 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         Ok(CgValue::new(layout, ptr))
     }
 
-    fn deref_level(&mut self, place: PlaceRef) -> IntValue<'llvm> {
+    fn deref_level(&mut self, place: PlaceRef) -> IResult<PointerValue<'llvm>> {
         let place_layout = self.mir_fun.place(place);
         if self.mir_fun.f.place(place).place == mir::Place::Return {
-            return self.ret.unwrap().head;
+            return Ok(self.ret.unwrap().head);
         }
         let place_strictness = self.mir_fun.place_strictness(place);
         let mut level = match place_strictness {
@@ -149,12 +157,13 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             Strictness::Lazy => 1 << THUNK_BIT,
         };
         level |= (place_layout.is_multi() as u64) << VTABLE_BIT;
-        self.cg.const_i64(level as i64)
+        let c = self.cg.const_i64(level as i64);
+        self.cg.build_byte_gep(self.globals, c, "tagged")
     }
 
     fn return_val(&mut self, place: PlaceRef) -> IResult<CgReturnValue<'llvm>> {
         let ptr = self.place_ptr(place)?;
-        let head = self.deref_level(place);
+        let head = self.deref_level(place)?;
         Ok(CgReturnValue::new(head, ptr))
     }
 
@@ -387,14 +396,14 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     fn len_call(&mut self, ret: PlaceRef, fun: PlaceRef, ctrl: ControlFlow) -> IResult<()> {
         let len_val = self.place_val(fun)?;
         let ret_val = self.return_val(ret)?.ptr;
-        let ret = self.cg.call_len_fun(ret_val, len_val)?;
+        let ret = self.cg.call_len_fun(ret_val, len_val, self.globals)?;
         self.controlflow_case(ret, ctrl)
     }
 
     fn array_len_call(&mut self, ret: PlaceRef, fun: PlaceRef, ctrl: ControlFlow) -> IResult<()> {
         let len_val = self.place_val(fun)?;
         let ret_ptr = self.place_ptr(ret)?;
-        let ret_int = self.cg.call_array_len_fun(len_val)?;
+        let ret_int = self.cg.call_array_len_fun(len_val, self.globals)?;
         self.cg.builder.build_store(ret_ptr, ret_int)?;
         // we don't have any errors to handle here
         self.cg
@@ -415,7 +424,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let arg_val = self.place_val(arg)?;
         let ret_val = ret
             .map(|r| self.return_val(r))
-            .unwrap_or_else(|| Ok(self.cg.undef_ret()))?;
+            .unwrap_or_else(|| Ok(self.cg.undef_ret(self.globals)))?;
         if let Some(ctrl) = ctrl {
             let ret = self
                 .cg
@@ -560,7 +569,9 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     ) -> IResult<()> {
         let fun_val = self.place_val(fun)?;
         let arg_val = self.place_val(arg)?;
-        let ret = self.cg.build_arg_set(fun_val, arg_val, argnum)?;
+        let ret = self
+            .cg
+            .build_arg_set(fun_val, arg_val, argnum, self.globals)?;
         let ret_is_err = self.cg.builder.build_int_compare(
             IntPredicate::EQ,
             ret,
@@ -687,11 +698,12 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
 
     fn get_addr(&mut self, ret: PlaceRef, addr: PlaceRef, ctrl: ControlFlow) -> IResult<()> {
         let ret_val = self.place_val(ret)?;
-        let global_array = self.cg.yabo_global_address();
+        let layout = IMonoLayout::u8_array(self.cg.layouts);
+        let global_array = CgMonoValue::new(layout, self.globals);
         self.cg.build_copy_invariant(ret_val, global_array.into())?;
         let addr_ptr = self.place_ptr(addr)?;
         let addr_val = self.cg.build_i64_load(addr_ptr, "get_addr")?;
-        let len = self.cg.call_array_len_fun(ret_val)?;
+        let len = self.cg.call_array_len_fun(ret_val, self.globals)?;
         // this is unsigned compare because negative numbers also need to error
         let cmp =
             self.cg
@@ -704,7 +716,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let err = self.bb(ctrl.error.unwrap());
         self.cg.builder.build_conditional_branch(cmp, next, err)?;
         self.cg.builder.position_at_end(next);
-        let status = self.cg.call_skip_fun(ret_val, addr_val)?;
+        let status = self.cg.call_skip_fun(ret_val, addr_val, self.globals)?;
         self.controlflow_case(status, ctrl)
     }
 

@@ -54,7 +54,7 @@ enum ReturnStatus {
   YABO_STATUS_BACKTRACK = 3,
 };
 
-typedef int64_t TypecastFun(void *, const void *, uint64_t);
+typedef int64_t TypecastFun(void *, const void *, const char *);
 typedef size_t MaskFun(void *);
 
 struct VTableHeader {
@@ -70,7 +70,7 @@ struct BlockFields {
   YABO_VPTR(const char) fields[];
 };
 
-typedef int64_t AccessFun(void *, const void *, uint64_t);
+typedef int64_t AccessFun(void *, const void *, const char *);
 
 struct BlockVTable {
   struct VTableHeader head;
@@ -78,7 +78,7 @@ struct BlockVTable {
   YABO_VPTR(AccessFun) access_impl[];
 };
 
-typedef int64_t PositionFun(void *, const void *, uint64_t);
+typedef int64_t PositionFun(void *, const void *, const char *);
 
 struct NominalVTable {
   struct VTableHeader head;
@@ -87,8 +87,8 @@ struct NominalVTable {
   YABO_VPTR(PositionFun) end_impl;
 };
 
-typedef int64_t ParseFun(void *, const void *, uint64_t, void *);
-typedef int64_t LenFun(int64_t *, const void *);
+typedef int64_t ParseFun(void *, const void *, const char *, void *);
+typedef int64_t LenFun(int64_t *, const void *, const char *);
 
 struct ParserVTable {
   struct VTableHeader head;
@@ -96,12 +96,12 @@ struct ParserVTable {
   YABO_VPTR(ParseFun) apply_table[];
 };
 
-typedef int64_t SingleForwardFun(void *);
-typedef int64_t CurrentElementFun(void *, const void *, uint64_t);
-typedef int64_t ArrayLenFun(const void *);
-typedef int64_t SkipFun(void *, uint64_t);
-typedef int64_t SpanFun(void *, const void *, uint64_t, const void *);
-typedef int64_t InnerArrayFun(void *, const void *, uint64_t);
+typedef int64_t SingleForwardFun(void *, const char *);
+typedef int64_t CurrentElementFun(void *, const void *, const char *);
+typedef int64_t ArrayLenFun(const void *, const char *);
+typedef int64_t SkipFun(void *, uint64_t, const char *);
+typedef int64_t SpanFun(void *, const void *, const char *, const void *);
+typedef int64_t InnerArrayFun(void *, const void *, const char *);
 
 struct ArrayVTable {
   struct VTableHeader head;
@@ -118,7 +118,7 @@ struct ParserExport {
   YABO_VPTR(const struct VTableHeader) args[];
 };
 
-typedef int64_t InitFun(const uint8_t *, const uint8_t *);
+typedef int64_t InitFun(const uint8_t *, const uint8_t *, char *);
 
 #undef YABO_VPTR
 

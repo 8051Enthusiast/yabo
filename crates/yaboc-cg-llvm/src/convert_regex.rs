@@ -3,17 +3,16 @@ use inkwell::{
     basic_block::BasicBlock,
     values::{FunctionValue, IntValue, PointerValue},
 };
-use regex_automata::{dfa::dense::DFA, util::primitives::StateID};
 use regex_automata::{dfa::Automaton, util::start::Config};
+use regex_automata::{dfa::dense::DFA, util::primitives::StateID};
 use yaboc_layout::{ILayout, IMonoLayout, MonoLayout};
 use yaboc_mir::{CallMeta, ReturnStatus};
 use yaboc_req::RequirementSet;
 use yaboc_types::PrimitiveType;
 
 use crate::{
-    parser_args,
+    CodeGenCtx, IResult, parser_args,
     val::{CgReturnValue, CgValue},
-    CodeGenCtx, IResult,
 };
 
 pub struct RegexTranslator<'llvm, 'comp, 'r> {
@@ -33,6 +32,7 @@ pub struct RegexTranslator<'llvm, 'comp, 'r> {
     parser_fun: FunctionValue<'llvm>,
     active_pos: CgValue<'comp, 'llvm>,
     retlen: CgValue<'comp, 'llvm>,
+    globals: PointerValue<'llvm>,
 }
 
 impl<'llvm, 'comp, 'r> RegexTranslator<'llvm, 'comp, 'r> {
@@ -64,11 +64,12 @@ impl<'llvm, 'comp, 'r> RegexTranslator<'llvm, 'comp, 'r> {
             .build_alloca(cg.llvm.bool_type(), "has_no_match")?;
         cg.builder
             .build_store(has_no_match, cg.llvm.bool_type().const_int(1, false))?;
+        let (ret, _, head, arg) = parser_args(llvm_fun);
+        let globals = cg.build_high_bit_mask(head)?;
         let eof_fail = cg.llvm.append_basic_block(llvm_fun, "eof_fail");
         let succ = cg.llvm.append_basic_block(llvm_fun, "succ");
         let stateblock = FxHashMap::default();
         let new_states = Vec::new();
-        let (ret, _, head, arg) = parser_args(llvm_fun);
         let retlen = CgValue::new(retlen, arg);
         let ret = CgReturnValue::new(head, ret);
         Ok(Self {
@@ -88,6 +89,7 @@ impl<'llvm, 'comp, 'r> RegexTranslator<'llvm, 'comp, 'r> {
             parser_fun,
             active_pos: from,
             retlen,
+            globals,
         })
     }
 
@@ -127,7 +129,7 @@ impl<'llvm, 'comp, 'r> RegexTranslator<'llvm, 'comp, 'r> {
                 self.next_byte.ptr.into(),
                 // the single parser is a zero-sized type
                 undef.into(),
-                self.cg.const_i64(0i64).into(),
+                self.globals.into(),
                 self.next_byte_pos.ptr.into(),
             ],
             "next_ret",

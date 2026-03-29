@@ -22,30 +22,32 @@ enum YbqType {
   YBQ_FUNCTION,
 };
 
-int64_t ybq_call_init(const uint8_t *begin, size_t len, void *init_fun);
+int64_t ybq_call_init(const uint8_t *begin, size_t len, void *init_fun,
+                      void *globals);
 
 int ybq_type(const struct DynValue *val);
 
 size_t ybq_alloc_size(const struct DynValue *val);
 
-int64_t ybq_parse_bytes_with_args(struct DynValue *ret, const uint8_t *begin, size_t len,
-                                  void *parser_export, const void *args);
+int64_t ybq_parse_bytes_with_args(struct DynValue *ret, const uint8_t *begin,
+                                  size_t len, void *parser_export,
+                                  const void *args, const void *globals);
 
 size_t ybq_export_arg_count(void *export_info);
 
 size_t ybq_field_name_index(const struct DynValue *block, const char *name);
 
 int64_t ybq_field_access(struct DynValue *ret, const struct DynValue *block,
-                         size_t index);
+                         size_t index, const void *globals);
 
 size_t ybq_field_count(const struct DynValue *block);
 
 char *ybq_field_name_at_index(const struct DynValue *block, size_t index);
 
-size_t ybq_array_size(const struct DynValue *array);
+size_t ybq_array_size(const struct DynValue *array, const void *globals);
 
 int64_t ybq_array_access(struct DynValue *ret, struct DynValue *array,
-                         size_t idx);
+                         size_t idx, const void *globals);
 
 int64_t ybq_int(const struct DynValue *integer);
 

@@ -153,7 +153,8 @@ void YaboValStorage::expand_storage() {
 }
 
 YaboVal
-YaboValStorage::with_return_buf(std::function<uint64_t(uint8_t *ret)> f) {
+YaboValStorage::with_return_buf(FileIdx idx,
+                                std::function<uint64_t(uint8_t *ret)> f) {
   auto ptr = next_val_ptr();
   auto status = f(reinterpret_cast<uint8_t *>(ptr->data));
   if (status) {
@@ -170,7 +171,7 @@ YaboValStorage::with_return_buf(std::function<uint64_t(uint8_t *ret)> f) {
   } else {
     // this is already interned now since there is no other matching value
     // hence it is allowed to be put inside an YaboVal
-    auto interned = YaboVal(ptr);
+    auto interned = YaboVal(ptr, idx);
     interner.insert({bytes, interned});
     // we commit the memory as we now know it is necessary and not a duplicate
     // we don't need a bounds check as we keep a max_size area free at the end
@@ -183,18 +184,27 @@ YaboVal YaboValStorage::with_address_and_return_buf(
     YaboVal addr, std::function<uint64_t(DynValue *addr, uint8_t *ret)> f) {
   auto tmp_val = tmp();
   dyn_copy(tmp_val, addr.val);
-  return with_return_buf([=](uint8_t *ret) { return f(tmp_val, ret); });
+  return with_return_buf(addr.file,
+                         [=](uint8_t *ret) { return f(tmp_val, ret); });
 }
 
 SpannedVal YaboValStorage::with_span_and_return_buf(
-    ByteSpan span, std::function<uint64_t(void *addr, uint8_t *ret)> f) {
+    ByteSpan span, FileIdx idx,
+    std::function<uint64_t(void *addr, uint8_t *ret)> f) {
   auto tmp_val = tmp_storage.get();
   Slice slice{span.data(), span.data() + span.size()};
   std::memcpy(tmp_val, &slice, sizeof(Slice));
-  auto val = with_return_buf([=](uint8_t *ret) { return f(tmp_val, ret); });
+  auto val =
+      with_return_buf(idx, [=](uint8_t *ret) { return f(tmp_val, ret); });
   std::memcpy(&slice, tmp_val, sizeof(Slice));
   auto size = slice.start - span.data();
   return SpannedVal(val, ByteSpan(span.data(), size), true);
+}
+
+FileIdx YaboValCreator::add_file(GlobalStorage &&storage) {
+  auto idx = FileIdx{file_slots.size()};
+  file_slots.emplace_back(std::move(storage));
+  return idx;
 }
 
 std::optional<YaboVal>
@@ -204,6 +214,7 @@ YaboValCreator::access_field(YaboVal val, const char *name, bool eval) {
   }
 
   uint64_t level = (eval ? EVAL_LEVEL : DEFAULT_LEVEL) | YABO_VTABLE;
+  auto context = get_context(val.file, level);
 
   auto maybe_offset = val.field_offset(name);
   if (!maybe_offset) {
@@ -212,9 +223,9 @@ YaboValCreator::access_field(YaboVal val, const char *name, bool eval) {
   auto offset = *maybe_offset;
   auto vtable = reinterpret_cast<BlockVTable *>(val->vtable);
   auto impl = YABO_ACCESS_VPTR(vtable, access_impl[offset]);
-  auto ret = storage.with_return_buf([=](uint8_t *buf) {
+  auto ret = storage.with_return_buf(val.file, [=](uint8_t *buf) {
     return catch_segfault(impl, segfault_err_code, (void *)buf,
-                          (const void *)val->data, level);
+                          (const void *)val->data, context);
   });
   if (ret.is_backtrack()) {
     return {};
@@ -228,9 +239,10 @@ std::optional<YaboVal> YaboValCreator::deref(YaboVal val) {
   }
 
   auto impl = YABO_ACCESS_VPTR(val->vtable, typecast_impl);
-  return storage.with_return_buf([=](uint8_t *buf) {
+  auto context = get_context(val.file, EVAL_LEVEL | YABO_VTABLE);
+  return storage.with_return_buf(val.file, [=](uint8_t *buf) {
     return catch_segfault(impl, segfault_err_code, (void *)buf,
-                          (const void *)val->data, EVAL_LEVEL | YABO_VTABLE);
+                          (const void *)val->data, context);
   });
 }
 
@@ -239,8 +251,9 @@ int64_t YaboValCreator::array_len(YaboVal val) {
     return 0;
   }
 
+  auto globals = get_context(val.file, 0);
   auto vtable = reinterpret_cast<ArrayVTable *>(val->vtable);
-  return YABO_ACCESS_VPTR(vtable, array_len_impl)(val->data);
+  return YABO_ACCESS_VPTR(vtable, array_len_impl)(val->data, globals);
 }
 
 std::optional<YaboVal> YaboValCreator::index(YaboVal val, size_t idx) {
@@ -248,19 +261,21 @@ std::optional<YaboVal> YaboValCreator::index(YaboVal val, size_t idx) {
     return {};
   }
 
-  return storage.with_address_and_return_buf(val, [=](DynValue *val,
-                                                      uint8_t *buf) {
-    auto vtable = reinterpret_cast<ArrayVTable *>(val->vtable);
-    auto skip = YABO_ACCESS_VPTR(vtable, skip_impl);
-    auto status = catch_segfault(skip, segfault_err_code, (void *)val->data,
-                                 (uint64_t)idx);
-    if (status)
-      return status;
+  auto context = get_context(val.file, DEFAULT_LEVEL | YABO_VTABLE);
+  auto globals = get_context(val.file, 0);
+  return storage.with_address_and_return_buf(
+      val, [=](DynValue *val, uint8_t *buf) {
+        auto vtable = reinterpret_cast<ArrayVTable *>(val->vtable);
+        auto skip = YABO_ACCESS_VPTR(vtable, skip_impl);
+        auto status = catch_segfault(skip, segfault_err_code, (void *)val->data,
+                                     (uint64_t)idx, globals);
+        if (status)
+          return status;
 
-    auto current_element = YABO_ACCESS_VPTR(vtable, current_element_impl);
-    return catch_segfault(current_element, segfault_err_code, (void *)buf,
-                          (const void *)val->data, DEFAULT_LEVEL | YABO_VTABLE);
-  });
+        auto current_element = YABO_ACCESS_VPTR(vtable, current_element_impl);
+        return catch_segfault(current_element, segfault_err_code, (void *)buf,
+                              (const void *)val->data, context);
+      });
 }
 
 std::optional<YaboVal> YaboValCreator::skip(YaboVal val, size_t offset) {
@@ -268,29 +283,32 @@ std::optional<YaboVal> YaboValCreator::skip(YaboVal val, size_t offset) {
     return {};
   }
 
-  return storage.with_address_and_return_buf(val, [=](DynValue *val,
-                                                      uint8_t *buf) {
-    auto vtable = reinterpret_cast<ArrayVTable *>(val->vtable);
-    auto skip = YABO_ACCESS_VPTR(vtable, skip_impl);
-    auto status = catch_segfault(skip, segfault_err_code, (void *)val->data,
-                                 (uint64_t)offset);
-    if (status)
-      return status;
+  auto context = get_context(val.file, EVAL_LEVEL | YABO_VTABLE);
+  auto globals = get_context(val.file, 0);
+  return storage.with_address_and_return_buf(
+      val, [=](DynValue *val, uint8_t *buf) {
+        auto vtable = reinterpret_cast<ArrayVTable *>(val->vtable);
+        auto skip = YABO_ACCESS_VPTR(vtable, skip_impl);
+        auto status = catch_segfault(skip, segfault_err_code, (void *)val->data,
+                                     (uint64_t)offset, globals);
+        if (status)
+          return status;
 
-    auto typecast = YABO_ACCESS_VPTR(&vtable->head, typecast_impl);
-    return catch_segfault(typecast, segfault_err_code, (void *)buf,
-                          (const void *)val->data, EVAL_LEVEL | YABO_VTABLE);
-  });
+        auto typecast = YABO_ACCESS_VPTR(&vtable->head, typecast_impl);
+        return catch_segfault(typecast, segfault_err_code, (void *)buf,
+                              (const void *)val->data, context);
+      });
 }
 
-static std::optional<ByteSpan> primary_slice(DynValue *array, DynValue *buf) {
+static std::optional<ByteSpan> primary_slice(DynValue *array, DynValue *buf,
+                                             const char *context) {
   auto cur = array, next = buf;
   while (cur->vtable->head != YABO_SLICEPTR) {
     auto vtable = reinterpret_cast<const ArrayVTable *>(cur->vtable);
     auto inner_array = YABO_ACCESS_VPTR(vtable, inner_array_impl);
     auto status =
         catch_segfault(inner_array, segfault_err_code, (void *)next->data,
-                       (const void *)cur->data, EVAL_LEVEL | YABO_VTABLE);
+                       (const void *)cur->data, context);
     if (status != YABO_STATUS_OK) {
       return {};
     }
@@ -306,69 +324,91 @@ std::optional<ByteSpan> YaboValCreator::extent(YaboVal val) {
     auto start = val.access_u8();
     return ByteSpan(start, 1);
   }
+  auto context = get_context(val.file, 0 | YABO_VTABLE);
+  auto eval_context = get_context(val.file, EVAL_LEVEL | YABO_VTABLE);
   if (val.kind() == YaboValKind::YABOARRAY) {
     return storage.tmp_buf_o_plenty<std::optional<ByteSpan>>(
         [=](DynValue *t1, DynValue *t2) -> std::optional<ByteSpan> {
-          // this cannot fail as we are already at deref level 0
           YABO_ACCESS_VPTR(val->vtable, typecast_impl)
-          (t1->data, val->data, 0 | YABO_VTABLE);
-          return primary_slice(t1, t2);
+          (t1->data, val->data, context);
+          return primary_slice(t1, t2, eval_context);
         });
   }
   if (val.kind() != YaboValKind::YABOTHUNK) {
     return {};
   }
+  auto without_vtable = get_context(val.file, 0);
   auto vtable = reinterpret_cast<const NominalVTable *>(val->vtable);
   return storage.tmp_buf_o_plenty<std::optional<ByteSpan>>(
       [=](DynValue *t1, DynValue *t2, DynValue *t3) -> std::optional<ByteSpan> {
         auto start = t1;
         if (catch_segfault(YABO_ACCESS_VPTR(vtable, start_impl),
                            segfault_err_code, (void *)start->data,
-                           (const void *)val->data, EVAL_LEVEL | YABO_VTABLE)) {
+                           (const void *)val->data, eval_context)) {
           return {};
         }
         auto end = t2;
         if (catch_segfault(YABO_ACCESS_VPTR(vtable, end_impl),
                            segfault_err_code, (void *)end->data,
-                           (const void *)val->data, (uint64_t)0)) {
+                           (const void *)val->data, without_vtable)) {
           return {};
         }
         auto array_vtable =
             reinterpret_cast<const ArrayVTable *>(start->vtable);
         auto extent = t3;
-        auto status = catch_segfault(
-            YABO_ACCESS_VPTR(array_vtable, span_impl), segfault_err_code,
-            (void *)extent->data, (const void *)start->data,
-            EVAL_LEVEL | YABO_VTABLE, (const void *)end->data);
+        auto status = catch_segfault(YABO_ACCESS_VPTR(array_vtable, span_impl),
+                                     segfault_err_code, (void *)extent->data,
+                                     (const void *)start->data, eval_context,
+                                     (const void *)end->data);
         if (status != YABO_STATUS_OK) {
           return {};
         }
-        return primary_slice(extent, t2);
+        return primary_slice(extent, t2, eval_context);
       });
 }
 
-std::optional<SpannedVal>
-YaboValCreator::parse(ParseFun parser, const void *args, ByteSpan buf) {
-  return storage.with_span_and_return_buf(buf, [=](void *addr, uint8_t *ret) {
-    return catch_segfault(parser, segfault_err_code, (void *)ret, args,
-                          DEFAULT_LEVEL | YABO_VTABLE, addr);
-  });
+std::optional<SpannedVal> YaboValCreator::parse(ParseFun parser,
+                                                const void *args, ByteSpan buf,
+                                                FileIdx file) {
+  auto context = get_context(file, DEFAULT_LEVEL | YABO_VTABLE);
+  return storage.with_span_and_return_buf(
+      buf, file, [=](void *addr, uint8_t *ret) {
+        return catch_segfault(parser, segfault_err_code, (void *)ret, args,
+                              context, addr);
+      });
 }
 
-YaboValCreator
-init_vals_from_lib(void *lib,
-                   std::pair<const uint8_t *, const uint8_t *> span) {
+GlobalStorage create_globals(void *lib,
+                             std::pair<const uint8_t *, const uint8_t *> span) {
+  auto global_size = reinterpret_cast<size_t *>(dlsym(lib, YABO_GLOBAL_SIZE));
+  if (!global_size) {
+    throw std::runtime_error("Failed to get yabo_global_size from library");
+  }
+
+  auto global_storage = GlobalStorage(*global_size);
+
+  auto [start, end] = span;
+  auto global_init = reinterpret_cast<InitFun *>(dlsym(lib, YABO_GLOBAL_INIT));
+  if (!global_init) {
+    throw std::runtime_error("Failed to get yabo_global_init from library");
+  }
+  int64_t status = global_init(start, end, global_storage.mut());
+  if (status) {
+    throw std::runtime_error("Failed to initialize global state");
+  }
+
+  return global_storage;
+}
+
+YaboValCreator init_vals_from_lib(void *lib) {
   auto size = reinterpret_cast<size_t *>(dlsym(lib, "yabo_max_buf_size"));
   if (!size) {
     throw std::runtime_error("Failed to get yabo_max_buf_size from library");
   }
 
-  auto [start, end] = span;
-
-  auto global_init = reinterpret_cast<InitFun *>(dlsym(lib, YABO_GLOBAL_INIT));
-  int64_t status = global_init(start, end);
-  if (status) {
-    throw std::runtime_error("Failed to initialize global state");
-  }
   return YaboValCreator(YaboValStorage(*size));
+}
+
+const char *YaboValCreator::get_context(FileIdx idx, uint8_t tag) {
+  return file_slots[idx.index].get(tag);
 }

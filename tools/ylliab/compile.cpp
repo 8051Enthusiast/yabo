@@ -15,6 +15,7 @@ void LocalCompilerRunner::run() {
   auto temp_output_path =
       QString::fromStdString(tmp_file_name("yabo_", ".so").string());
   QTemporaryFile input_file;
+  input_file.setAutoRemove(false);
   QString path;
   if (kind == SourceKind::Content) {
     if (!input_file.open()) {

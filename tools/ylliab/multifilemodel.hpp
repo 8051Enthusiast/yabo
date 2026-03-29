@@ -45,9 +45,10 @@ signals:
   void error(QString error_message);
 
 private:
-  std::shared_ptr<std::vector<FileInfo>> files;
+  std::shared_ptr<std::vector<FileInfo>> files{};
+  std::vector<FileIdx> fileIdxs{};
   YaboValCreator vals{};
-  QString parser_name;
+  QString parser_name{};
   void *handle{};
 };
 

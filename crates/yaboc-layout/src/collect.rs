@@ -15,14 +15,15 @@ use yaboc_target::layout::{PSize, SizeAlign};
 use yaboc_types::PrimitiveType;
 
 use crate::{
-    mir_subst::{function_substitute, FunctionSubstitute},
-    pd_parser, FuncLayoutKind, LayoutSlice,
+    FuncLayoutKind, LayoutSlice, StructManifestation, UnfinishedManifestation,
+    mir_subst::{FunctionSubstitute, function_substitute},
+    pd_parser,
 };
 
 pub use self::tailsize::TailInfo;
 use self::tailsize::{CallSite, TailCollector};
 
-use super::{canon_layout, AbsLayoutCtx, ILayout, IMonoLayout, Layout, LayoutError, MonoLayout};
+use super::{AbsLayoutCtx, ILayout, IMonoLayout, Layout, LayoutError, MonoLayout, canon_layout};
 
 const TRACE_COLLECTION: bool = false;
 
@@ -57,6 +58,7 @@ pub struct LayoutCollection<'a> {
     pub eval_slots: call_info::CallSlotResult<'a, RequirementSet>,
     pub tail_sa: FxHashMap<(ILayout<'a>, IMonoLayout<'a>), TailInfo>,
     pub max_sa: SizeAlign,
+    pub global_offsets: StructManifestation,
 }
 
 pub struct LayoutCollector<'a, 'b> {
@@ -779,6 +781,17 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             }
         }
 
+        let mut manifestation = UnfinishedManifestation::new();
+        let slice = self.ctx.dcx.intern(Layout::Mono(MonoLayout::SlicePtr));
+        manifestation.add_field(None, slice.size_align(self.ctx)?);
+        for pd in self.ctx.db.global_sequence()?.iter() {
+            let Some((_, layout)) = self.globals.get(pd) else {
+                continue;
+            };
+            manifestation.add_field(Some(pd.0), layout.size_align(self.ctx)?);
+        }
+        let global_offsets = manifestation.finalize(Default::default());
+
         Ok(LayoutCollection {
             root,
             arrays: self.arrays,
@@ -794,6 +807,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             funcall_slots,
             eval_slots,
             tail_sa,
+            global_offsets,
         })
     }
 }

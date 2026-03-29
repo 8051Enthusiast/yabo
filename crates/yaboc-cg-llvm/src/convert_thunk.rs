@@ -1,5 +1,4 @@
 use inkwell::{
-    IntPredicate,
     basic_block::BasicBlock,
     values::{FunctionValue, PhiValue, PointerValue},
 };
@@ -111,7 +110,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TypecastThunk<'comp, 'llvm> {
 
         let [return_ptr, thunk_ptr, target_level] = get_fun_args(fun);
         let [ret_ptr, thunk_ptr] = [return_ptr, thunk_ptr].map(|x| x.into_pointer_value());
-        let target_level = target_level.into_int_value();
+        let target_level = target_level.into_pointer_value();
         let thunk = CgMonoValue::new(self.layout, thunk_ptr);
         let ret = CgReturnValue::new(target_level, ret_ptr);
 
@@ -350,7 +349,7 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
     pub fn new(cg: &'r mut CodeGenCtx<'llvm, 'comp>, kind: Info) -> Self {
         let fun = kind.function(cg);
         let return_ptr = fun.get_nth_param(0).unwrap().into_pointer_value();
-        let target_level = fun.get_nth_param(2).unwrap().into_int_value();
+        let target_level = fun.get_nth_param(2).unwrap().into_pointer_value();
         let target_layout = kind.target_layout();
         let ret = CgReturnValue::new(target_level, return_ptr);
         ThunkContext {
@@ -364,16 +363,7 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
 
     fn maybe_deref(&mut self) -> IResult<()> {
         if let MonoLayout::Nominal(..) | MonoLayout::Ptr = self.target_layout.mono_layout() {
-            let self_level = self.cg.const_i64(1 << THUNK_BIT);
-            let zero = self.cg.const_i64(0);
-            let and = self
-                .cg
-                .builder
-                .build_and(self_level, self.ret.head, "mask")?;
-            let no_deref =
-                self.cg
-                    .builder
-                    .build_int_compare(IntPredicate::NE, and, zero, "no_deref")?;
+            let no_deref = self.cg.build_check_ptr_bit_set(self.ret.head, THUNK_BIT)?;
             let tail = self.typecast_tail(false, self.ret.ptr)?;
             let next_bb = self.cg.llvm.append_basic_block(self.fun, "head_match");
             self.cg
@@ -461,7 +451,7 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
         copy_phi: PhiValue<'llvm>,
         otherwise: BasicBlock<'llvm>,
     ) -> IResult<()> {
-        let has_vtable = self.cg.build_check_i64_bit_set(self.ret.head, VTABLE_BIT)?;
+        let has_vtable = self.cg.build_check_ptr_bit_set(self.ret.head, VTABLE_BIT)?;
         let write_vtable_ptr = self
             .cg
             .llvm

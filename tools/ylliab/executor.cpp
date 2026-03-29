@@ -5,11 +5,6 @@
 #include "yabo/parse_export_call.h"
 #include "yabo/vtable.h"
 
-#include <dlfcn.h>
-#ifdef __linux__
-#include <csignal>
-#endif
-
 Executor::Executor(std::filesystem::path path, FileRef file_content)
     : file(file_content), lib(nullptr) {
   // we need to create a tmpfile copy of the library pointed to by
@@ -33,6 +28,11 @@ Executor::Executor(std::filesystem::path path, FileRef file_content)
   }
 }
 
+#include <dlfcn.h>
+#ifdef __linux__
+#include <csignal>
+#endif
+
 int64_t Executor::thread_init() {
   if (lib) {
     return 0;
@@ -53,7 +53,9 @@ int64_t Executor::thread_init() {
   }
 
   try {
-    vals = init_vals_from_lib(lib, file->slice());
+    auto globals = create_globals(lib, file->slice());
+    vals = init_vals_from_lib(lib);
+    fileIndex = vals.add_file(std::move(globals));
   } catch (std::runtime_error &) {
     dlclose(lib);
     lib = nullptr;
@@ -224,7 +226,7 @@ Executor::execute_parser(Meta meta, char const *func_name, size_t pos) {
   if (!args) {
     return {};
   }
-  auto ret = vals.parse(parser, args->data(), span);
+  auto ret = vals.parse(parser, args->data(), span, fileIndex);
   if (ret.has_value()) {
     auto normalized = normalize(ret.value(), ret->span);
     auto handle = SpannedHandle(normalized, file);
@@ -290,7 +292,7 @@ SpannedHandle Executor::normalize(YaboVal val, FileSpan parent_span) {
 }
 
 YaboVal Executor::from_handle(ValHandle handle) const noexcept {
-  return YaboVal(reinterpret_cast<DynValue *>(handle.handle));
+  return YaboVal(reinterpret_cast<DynValue *>(handle.handle), fileIndex);
 }
 
 SpannedVal Executor::from_spanned_handle(SpannedHandle handle) const noexcept {
