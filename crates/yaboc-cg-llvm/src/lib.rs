@@ -35,6 +35,7 @@ use inkwell::{
     },
 };
 use std::fmt::Write;
+use yaboc_hir_types::VTABLE_BIT;
 
 use val::{CgMonoValue, CgReturnValue, CgValue};
 use yaboc_absint::{AbstractDomain, Arg};
@@ -246,6 +247,30 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let vtable_ty_name = self.sym(layout, LayoutPart::VTableTy);
         let vtable_ty = self.llvm.get_struct_type(&vtable_ty_name).unwrap();
         self.const_vtable_tag(vtable, vtable_ty)
+    }
+
+    fn write_vtable_if_tagged(
+        &mut self,
+        ret: CgReturnValue<'llvm>,
+        layout: IMonoLayout<'comp>,
+    ) -> IResult<()> {
+        let fun = self
+            .builder
+            .get_insert_block()
+            .unwrap()
+            .get_parent()
+            .unwrap();
+        let write_vtable_ptr = self.llvm.append_basic_block(fun, "write_vtable_ptr");
+        let after = self.llvm.append_basic_block(fun, "after");
+        let has_vtable = self.build_check_ptr_bit_set(ret.head, VTABLE_BIT)?;
+        self.builder
+            .build_conditional_branch(has_vtable, write_vtable_ptr, after)?;
+        self.builder.position_at_end(write_vtable_ptr);
+        let vtable_pointer = self.build_get_vtable_tag(layout);
+        self.build_vtable_store(ret.ptr, vtable_pointer)?;
+        self.builder.build_unconditional_branch(after)?;
+        self.builder.position_at_end(after);
+        Ok(())
     }
 
     fn sym_callable(
@@ -939,7 +964,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     pub fn create_global_size(&mut self) {
-        let size = self.const_size_t(self.collected_layouts.global_offsets.size.allocation_size() as i64);
+        let size =
+            self.const_size_t(self.collected_layouts.global_offsets.size.allocation_size() as i64);
         let buf_size = self
             .module
             .add_global(size.get_type(), None, YABO_GLOBAL_SIZE);
