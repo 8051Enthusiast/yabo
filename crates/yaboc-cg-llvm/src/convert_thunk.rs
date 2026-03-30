@@ -1,9 +1,9 @@
 use inkwell::{
     basic_block::BasicBlock,
-    values::{FunctionValue, PhiValue, PointerValue},
+    values::{FunctionValue, PointerValue},
 };
 
-use yaboc_hir_types::{THUNK_BIT, VTABLE_BIT};
+use yaboc_hir_types::THUNK_BIT;
 use yaboc_layout::{ILayout, IMonoLayout, MonoLayout, TailInfo};
 use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_target::layout::SizeAlign;
@@ -393,24 +393,8 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
     }
 
     fn copy_to_target(&mut self) -> IResult<()> {
-        let copy_bb = self.cg.llvm.append_basic_block(self.fun, "copy");
-        let old_bb = self.cg.builder.get_insert_block().unwrap();
+        self.check_vtable()?;
 
-        self.cg.builder.position_at_end(copy_bb);
-        let copy_phi = self.cg.builder.build_phi(self.cg.any_ptr(), "copy_phi")?;
-        let check_vtable_bb = self.cg.llvm.append_basic_block(self.fun, "check_vtable");
-
-        self.cg.builder.position_at_end(check_vtable_bb);
-        self.check_vtable(copy_bb, copy_phi, copy_bb)?;
-        copy_phi.add_incoming(&[(&self.ret.ptr, check_vtable_bb)]);
-
-        self.cg.builder.position_at_end(old_bb);
-        self.cg
-            .builder
-            .build_unconditional_branch(check_vtable_bb)?;
-
-        self.cg.builder.position_at_end(copy_bb);
-        let target_ptr = copy_phi.as_basic_value().into_pointer_value();
         let mut i = 0u8;
         let mut offset = 0u64;
         while let Some((ptr, sa)) = self.kind.build_copy_region_ptr(self.cg, i)? {
@@ -419,7 +403,7 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
                 let llvm_start_offset = self.cg.const_i64((offset - sa.before) as i64);
                 let real_target =
                     self.cg
-                        .build_byte_gep(target_ptr, llvm_start_offset, "real_target")?;
+                        .build_byte_gep(self.ret.ptr, llvm_start_offset, "real_target")?;
                 let real_source = self.cg.build_byte_gep(
                     ptr,
                     self.cg.const_i64(-(sa.before as i64)),
@@ -440,31 +424,13 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
             offset += sa.after;
             i += 1;
         }
-        let after = self.typecast_tail(true, target_ptr)?;
+        let after = self.typecast_tail(true, self.ret.ptr)?;
         self.cg.builder.build_unconditional_branch(after)?;
         Ok(())
     }
 
-    fn check_vtable(
-        &mut self,
-        copy_bb: BasicBlock<'llvm>,
-        copy_phi: PhiValue<'llvm>,
-        otherwise: BasicBlock<'llvm>,
-    ) -> IResult<()> {
-        let has_vtable = self.cg.build_check_ptr_bit_set(self.ret.head, VTABLE_BIT)?;
-        let write_vtable_ptr = self
-            .cg
-            .llvm
-            .append_basic_block(self.fun, "write_vtable_ptr");
-        self.cg
-            .builder
-            .build_conditional_branch(has_vtable, write_vtable_ptr, otherwise)?;
-        self.cg.builder.position_at_end(write_vtable_ptr);
-        let vtable_pointer = self.cg.build_get_vtable_tag(self.target_layout);
-        self.cg.build_vtable_store(self.ret.ptr, vtable_pointer)?;
-        copy_phi.add_incoming(&[(&self.ret.ptr, write_vtable_ptr)]);
-        self.cg.builder.build_unconditional_branch(copy_bb)?;
-        Ok(())
+    fn check_vtable(&mut self) -> IResult<()> {
+        self.cg.write_vtable_if_tagged(self.ret, self.target_layout)
     }
 
     pub fn build(mut self) -> IResult<FunctionValue<'llvm>> {
