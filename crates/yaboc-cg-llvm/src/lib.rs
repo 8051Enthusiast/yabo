@@ -7,7 +7,7 @@ mod getset;
 mod val;
 mod vtables;
 
-use std::{ffi::OsStr, fmt::Debug, path::Path, rc::Rc};
+use std::{ffi::OsStr, fmt::Debug, num::NonZeroU32, path::Path, rc::Rc};
 
 use fxhash::FxHashMap;
 use getset::Callable;
@@ -1076,7 +1076,10 @@ impl<'llvm> CodegenTypeContext for CodeGenCtx<'llvm, '_> {
     type Type = BasicTypeEnum<'llvm>;
 
     fn int(&mut self, bits: u8, _signed: bool) -> Self::Type {
-        self.llvm.custom_width_int_type(bits as u32).into()
+        self.llvm
+            .custom_width_int_type(NonZeroU32::try_from(bits as u32).unwrap())
+            .unwrap()
+            .into()
     }
 
     fn size(&mut self, _signed: bool) -> Self::Type {

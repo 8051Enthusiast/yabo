@@ -52,7 +52,7 @@ def segment(size: int) = [size]
 def program_header = {
   type: elf32
   case
-  | flags64: if sig if class64 then elf32
+  | flags64: sig if class64 then elf32
   | nil
   \
   offset: elfword
@@ -61,7 +61,7 @@ def program_header = {
   filesz: elfword
   memsz: elfword
   case
-  | flags32: if sig if class32 then elf32
+  | flags32: sig if class32 then elf32
   | nil
   \
   align: elfword

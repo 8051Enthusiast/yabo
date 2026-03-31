@@ -9,12 +9,16 @@ description = "runtimeless functional language for defining binary parsers"
 license = "MIT"
 [workspace.dependencies]
 smallvec = { version = "1.13.2", features = ["union", "const_generics"] }
-inkwell = { version = "0.8.0", features = ["llvm21-1-prefer-dynamic"] }
 petgraph = "0.8.3"
 
 [workspace.dependencies.salsa]
 git = "https://github.com/salsa-rs/salsa"
 rev = "05b4e3ebdcdc47730cdd359e7e97fb2470527279"
+
+[workspace.dependencies.inkwell]
+git = "https://github.com/TheDan64/inkwell"
+features = ["llvm22-1-prefer-dynamic"]
+rev = "07fa9f2435a9ee0521b88008324f229ff51a5b3e"
 
 [profile.dist]
 inherits = "release"
