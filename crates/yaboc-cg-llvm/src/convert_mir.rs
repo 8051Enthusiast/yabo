@@ -193,7 +193,6 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     }
 
     fn copy(&mut self, to: PlaceRef, from: PlaceRef, ctrl: ControlFlow) -> IResult<()> {
-        //dbeprintln!(&(&self.mir_fun.f, &self.cg.compiler_database.db), "{} {}", &to, &from);
         if self.is_ret_place(to) && self.is_ret_place(from) {
             let block = self.bb(ctrl.next);
             self.cg.builder.build_unconditional_branch(block)?;
@@ -377,14 +376,38 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             FieldName::Ident(ident) => ident,
         };
         let place_val = self.place_val(place)?;
+        let intermediate_layout = place_val
+            .layout
+            .access_field(self.cg.layouts, FieldName::Ident(field))
+            .unwrap();
+        let intermediate_val = self
+            .cg
+            .build_alloca_value(intermediate_layout, "intermediate")?;
+        let intermediate_ret =
+            self.cg
+                .build_return_value(intermediate_val, self.cg.const_i64(0), self.globals)?;
         let ret_val = self.return_val(ret)?;
         if let Some(x) = place_val.layout.into_iter().next() {
             let MonoLayout::Block(block, _) = x.mono_layout() else {
                 dbpanic!(&self.cg.compiler_database.db, "{} is not a block", &x);
             };
+            let tmp_bb = self.cg.llvm.append_basic_block(self.llvm_fun, "intermed");
             let ret = self
                 .cg
-                .call_field_access_fun(ret_val, place_val, *block, field)?;
+                .call_field_access_fun(intermediate_ret, place_val, *block, field)?;
+            let is_bt = self.cg.builder.build_int_compare(
+                IntPredicate::EQ,
+                ret,
+                self.cg.const_i64(ReturnStatus::Backtrack as i64),
+                "is_bt",
+            )?;
+            self.cg.builder.build_conditional_branch(
+                is_bt,
+                self.bb(ctrl.backtrack.unwrap()),
+                tmp_bb,
+            )?;
+            self.cg.builder.position_at_end(tmp_bb);
+            let ret = self.cg.call_typecast_fun(ret_val, intermediate_val)?;
             self.controlflow_case(ret, ctrl)
         } else {
             let next = self.bb(ctrl.next);

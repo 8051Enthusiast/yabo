@@ -213,8 +213,7 @@ YaboValCreator::access_field(YaboVal val, const char *name, bool eval) {
     return {};
   }
 
-  uint64_t level = (eval ? EVAL_LEVEL : DEFAULT_LEVEL) | YABO_VTABLE;
-  auto context = get_context(val.file, level);
+  auto context = get_context(val.file, YABO_VTABLE);
 
   auto maybe_offset = val.field_offset(name);
   if (!maybe_offset) {
@@ -229,6 +228,12 @@ YaboValCreator::access_field(YaboVal val, const char *name, bool eval) {
   });
   if (ret.is_backtrack()) {
     return {};
+  }
+  if (eval) {
+    auto derefee = deref(ret);
+    if (derefee.has_value()) {
+      return derefee;
+    }
   }
   return ret;
 }

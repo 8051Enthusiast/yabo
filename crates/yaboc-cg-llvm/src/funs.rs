@@ -1133,7 +1133,22 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             )?;
         }
         let field = self.build_field_gep(field, block.into(), inner_layout)?;
-        self.terminate_tail_typecast(field, return_val)
+        let sa = field
+            .layout
+            .size_align_without_vtable(self.layouts)
+            .unwrap();
+        let size = self.const_size_t(sa.total_size() as i64);
+        self.builder.build_memcpy(
+            return_val.ptr,
+            sa.align() as u32,
+            field.ptr,
+            sa.align() as u32,
+            size,
+        )?;
+        self.write_vtable_if_tagged(return_val, field)?;
+        let zero = self.const_i64(0);
+        self.builder.build_return(Some(&zero))?;
+        Ok(())
     }
 
     fn create_const_len_fun(&mut self, layout: IMonoLayout<'comp>, len: i64) -> IResult<()> {

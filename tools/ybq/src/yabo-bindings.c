@@ -72,13 +72,12 @@ size_t ybq_field_name_index(const struct DynValue *block, const char *name) {
 
 int64_t ybq_field_access(struct DynValue *ret, const struct DynValue *block,
                          size_t index, const void *globals) {
-  const struct BlockVTable *vtable = (const struct BlockVTable *)block->vtable;
-  int64_t status = YABO_ACCESS_VPTR(vtable, access_impl[index])(
-      ret->data, block->data, (const char *)globals + YABO_VTABLE);
-  if (status) {
-    return dyn_invalidate(ret, status);
-  }
-  return status;
+  return dyn_access_field_index(ret, block, index, globals);
+}
+
+int64_t ybq_deref(struct DynValue *ret, const struct DynValue *val,
+                  const void *globals) {
+  return dyn_deref(ret, val, globals);
 }
 
 size_t ybq_field_count(const struct DynValue *block) {

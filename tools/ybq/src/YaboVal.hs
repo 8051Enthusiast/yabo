@@ -45,6 +45,7 @@ import YaboBindings
     ybqStatusFromWord64,
     ybqType,
     ybqTypeFromCInt,
+    ybqDeref,
   )
 import GHC.ForeignPtr (mallocPlainForeignPtrAlignedBytes)
 
@@ -89,6 +90,16 @@ arrayIndex lib val idx = do
   res <- withReturnBuf lib accessElement
   intoYaboVal lib $ runIdentity res
 
+deref :: Library -> ShortByteString -> IO YaboVal
+deref lib val = useAsCStringLen val $ \(charptr, _) -> do
+  let ptr = castPtr charptr
+  let derefVal globals retBuf = do
+        _ <- ybqDeref retBuf ptr globals
+        return $ Identity ()
+  ret <- withReturnBuf lib derefVal
+  intoYaboVal lib $ runIdentity ret
+
+
 blockIndex :: Library -> ShortByteString -> CSize -> IO (Maybe (String, YaboVal))
 blockIndex lib val idx = useAsCStringLen val $ \(charptr, _) -> runMaybeT $ do
   let ptr = castPtr charptr
@@ -100,8 +111,8 @@ blockIndex lib val idx = useAsCStringLen val $ \(charptr, _) -> runMaybeT $ do
 
   ret <- MaybeT $ withReturnBuf lib accessField
   fieldName <- liftIO $ ybqFieldNameAtIndex ptr idx >>= fieldNameToString
-  retVal <- liftIO $ intoYaboVal lib ret
-  return (fieldName, retVal)
+  dereffed <- liftIO $ deref lib ret
+  return (fieldName, dereffed)
 
 intoYaboArray :: Library -> ShortByteString -> Ptr () -> IO YaboVal
 intoYaboArray lib val ptr = do
