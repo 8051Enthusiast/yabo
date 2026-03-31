@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{refs, RegexError};
+use crate::{RegexError, refs};
 use hir::{ExprId, HirConstraintId};
 use yaboc_ast::expr::{self, Atom, BtMarkKind, WiggleKind};
 use yaboc_base::error::{SResult, SilencedError};
@@ -52,6 +52,7 @@ pub enum ValBinOp {
     Div,
     Modulo,
     Mul,
+    ClMul,
     ParserApply(Option<BtMarkKind>),
     Else,
     Then,
@@ -90,6 +91,7 @@ impl TryFrom<expr::ValBinOp> for ValBinOp {
             expr::ValBinOp::Div => Ok(ValBinOp::Div),
             expr::ValBinOp::Modulo => Ok(ValBinOp::Modulo),
             expr::ValBinOp::Mul => Ok(ValBinOp::Mul),
+            expr::ValBinOp::ClMul => Ok(ValBinOp::ClMul),
             expr::ValBinOp::ParserApply(mark) => Ok(ValBinOp::ParserApply(mark)),
             expr::ValBinOp::Else => Ok(ValBinOp::Else),
             expr::ValBinOp::Then => Ok(ValBinOp::Then),
@@ -122,6 +124,8 @@ impl From<Option<BtMarkKind>> for EvalKind {
 pub enum ValUnOp<C> {
     Not,
     Neg,
+    Reverse,
+    Popcount,
     Wiggle(C, WiggleKind),
     Dot(FieldName, Option<BtMarkKind>),
     Size,
@@ -137,6 +141,8 @@ impl<C> TryFrom<expr::ValUnOp<C>> for ValUnOp<C> {
         match value {
             expr::ValUnOp::Not => Ok(ValUnOp::Not),
             expr::ValUnOp::Neg => Ok(ValUnOp::Neg),
+            expr::ValUnOp::Reverse => Ok(ValUnOp::Reverse),
+            expr::ValUnOp::Popcount => Ok(ValUnOp::Popcount),
             expr::ValUnOp::Wiggle(c, k) => Ok(ValUnOp::Wiggle(c, k)),
             expr::ValUnOp::Dot(f, m) => Ok(ValUnOp::Dot(f, m)),
             expr::ValUnOp::Size => Ok(ValUnOp::Size),
@@ -303,7 +309,7 @@ fn resolve_expr_modules(
             refs::Resolved::Value(id, kind) => (id, kind),
             refs::Resolved::Module(m) => return Ok(PartialEval::Eval(m)),
             refs::Resolved::Unresolved => {
-                return Err(ResolveError::Unresolved(expr_id, span, name))
+                return Err(ResolveError::Unresolved(expr_id, span, name));
             }
         };
         Ok(PartialEval::Uneval(match kind {
@@ -341,10 +347,10 @@ fn resolve_expr_modules(
                     hir::ParserAtom::Regex(r) => {
                         match db.resolve_regex(r) {
                             Err(RegexError::Syntax(e)) => {
-                                return Err(convert_regex_error(&e, expr_id, *span))
+                                return Err(convert_regex_error(&e, expr_id, *span));
                             }
                             Err(RegexError::Opaque(e)) => {
-                                return Err(ResolveError::OtherRegexError(e, expr_id, *span))
+                                return Err(ResolveError::OtherRegexError(e, expr_id, *span));
                             }
                             _ => (),
                         }

@@ -339,9 +339,12 @@ impl<'a> ExpressionBuildCtx<'a> {
                         *ty,
                         orig,
                     ),
-                    ValUnOp::Not | ValUnOp::Neg | ValUnOp::Size | ValUnOp::GetAddr => {
-                        self.push(Instruction::None, *ty, orig)
-                    }
+                    ValUnOp::Not
+                    | ValUnOp::Neg
+                    | ValUnOp::Size
+                    | ValUnOp::GetAddr
+                    | ValUnOp::Popcount
+                    | ValUnOp::Reverse => self.push(Instruction::None, *ty, orig),
                 },
                 ExprHead::Dyadic(op, [(_, lhs), (rbt, rhs)]) => match op {
                     ValBinOp::ParserApply(kind) => self.push(
@@ -375,7 +378,8 @@ impl<'a> ExpressionBuildCtx<'a> {
                     | ValBinOp::Plus
                     | ValBinOp::Div
                     | ValBinOp::Modulo
-                    | ValBinOp::Mul => self.push(Instruction::None, *ty, orig),
+                    | ValBinOp::Mul
+                    | ValBinOp::ClMul => self.push(Instruction::None, *ty, orig),
                 },
                 ExprHead::Variadic(ValVarOp::PartialApply(_), args) => {
                     let ((_, fun), args) = args.split_first().unwrap();

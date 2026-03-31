@@ -22,6 +22,7 @@ use yaboc_target::layout::TargetSized;
 
 use crate::{
     IResult,
+    getset::Callable,
     val::{CgMonoValue, CgReturnValue, CgValue},
 };
 
@@ -675,11 +676,27 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         Ok(())
     }
 
+    fn reverse(&mut self, val: IntValue<'llvm>) -> IResult<IntValue<'llvm>> {
+        let clmul_intrinsic = self
+            .cg
+            .get_intrinsic::<fn(i64) -> i64>("llvm.bitreverse.%0");
+        self.cg
+            .build_call_with_int_ret(Callable::Function(clmul_intrinsic), &[val.into()])
+    }
+
+    fn popcount(&mut self, val: IntValue<'llvm>) -> IResult<IntValue<'llvm>> {
+        let clmul_intrinsic = self.cg.get_intrinsic::<fn(i64) -> i64>("llvm.ctpop.%0");
+        self.cg
+            .build_call_with_int_ret(Callable::Function(clmul_intrinsic), &[val.into()])
+    }
+
     fn int_un(&mut self, ret: PlaceRef, op: IntUnOp, right: PlaceRef) -> IResult<()> {
         let rhs = self.build_int_load(right)?;
         let value = match op {
             IntUnOp::Not => self.cg.builder.build_not(rhs, "not")?,
             IntUnOp::Neg => self.cg.builder.build_int_neg(rhs, "neg")?,
+            IntUnOp::Popcount => self.popcount(rhs)?,
+            IntUnOp::Reverse => self.reverse(rhs)?,
         };
         self.store_val_into(
             ret,
@@ -687,6 +704,16 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             value,
         )?;
         Ok(())
+    }
+
+    fn clmul(&mut self, lhs: IntValue<'llvm>, rhs: IntValue<'llvm>) -> IResult<IntValue<'llvm>> {
+        let clmul_intrinsic = self
+            .cg
+            .get_intrinsic::<fn(i64, i64) -> i64>("llvm.clmul.%0");
+        self.cg.build_call_with_int_ret(
+            Callable::Function(clmul_intrinsic),
+            &[lhs.into(), rhs.into()],
+        )
     }
 
     fn int_bin(
@@ -710,6 +737,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             IntBinOp::Div => b.build_int_signed_div(lhs, rhs, "div"),
             IntBinOp::Modulo => b.build_int_signed_rem(lhs, rhs, "mod"),
             IntBinOp::Mul => b.build_int_mul(lhs, rhs, "mul"),
+            IntBinOp::ClMul => self.clmul(lhs, rhs),
         }?;
         self.store_val_into(
             ret,

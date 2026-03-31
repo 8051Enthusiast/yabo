@@ -41,16 +41,15 @@ pub fn expr_reqs(
                         // we need to know its value to know whether to backtrack
                         inner_mat |= bt_to_val
                     }
-                    EvalFun(EvalKind::Backtrack(BtMarkKind::KeepBt)) => {
-                        inner_mat |= bt_to_val
-                    }
+                    EvalFun(EvalKind::Backtrack(BtMarkKind::KeepBt)) => inner_mat |= bt_to_val,
                     Wiggle(_, WiggleKind::If | WiggleKind::Is)
                     | Dot(_, Some(BtMarkKind::KeepBt)) => {
                         // this checks the inner value, which means we need to know
                         // the value to know whether to backtrack
                         inner_mat |= bt_to_val
                     }
-                    Wiggle(..) | Dot(..) | Size | GetAddr | Not | Neg | EvalFun(_) => (),
+                    Wiggle(..) | Dot(..) | Size | GetAddr | Not | Neg | Reverse | Popcount
+                    | EvalFun(_) => (),
                 }
                 ret[inner].reqs = inner_mat * current;
             }
@@ -88,6 +87,7 @@ pub fn expr_reqs(
                     | Div
                     | Modulo
                     | Mul
+                    | ClMul
                     | ParserApply(None | Some(BtMarkKind::RemoveBt))
                     | Range => {}
                 }

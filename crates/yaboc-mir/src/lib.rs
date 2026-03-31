@@ -87,6 +87,7 @@ pub enum IntBinOp {
     Div,
     Modulo,
     Mul,
+    ClMul,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -103,6 +104,8 @@ pub enum Comp {
 pub enum IntUnOp {
     Not,
     Neg,
+    Reverse,
+    Popcount,
 }
 
 impl<C> TryFrom<&ValUnOp<C>> for IntUnOp {
@@ -111,6 +114,8 @@ impl<C> TryFrom<&ValUnOp<C>> for IntUnOp {
         Ok(match value {
             ValUnOp::Not => IntUnOp::Not,
             ValUnOp::Neg => IntUnOp::Neg,
+            ValUnOp::Reverse => IntUnOp::Reverse,
+            ValUnOp::Popcount => IntUnOp::Popcount,
             _ => return Err(()),
         })
     }
@@ -130,6 +135,7 @@ impl TryFrom<&ValBinOp> for IntBinOp {
             ValBinOp::Div => IntBinOp::Div,
             ValBinOp::Modulo => IntBinOp::Modulo,
             ValBinOp::Mul => IntBinOp::Mul,
+            ValBinOp::ClMul => IntBinOp::ClMul,
             ValBinOp::LesserEq
             | ValBinOp::Lesser
             | ValBinOp::GreaterEq
@@ -165,6 +171,7 @@ impl TryFrom<&ValBinOp> for Comp {
             | ValBinOp::Div
             | ValBinOp::Modulo
             | ValBinOp::Mul
+            | ValBinOp::ClMul
             | ValBinOp::ParserApply(_)
             | ValBinOp::Else
             | ValBinOp::Then
@@ -1075,9 +1082,9 @@ fn mir_if(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use yaboc_ast::{import::Import, AstDatabase};
+    use yaboc_ast::{AstDatabase, import::Import};
     use yaboc_base::{
-        config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase, Context,
+        Context, config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase,
     };
     use yaboc_constraint::ConstraintDatabase;
     use yaboc_dependents::DependentsDatabase;
