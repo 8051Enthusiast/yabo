@@ -639,6 +639,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.build_call_with_int_ret(create, &[ret.into(), fun.ptr.into(), globals.into()])
     }
 
+    pub(super) fn build_vtable_get(
+        &mut self,
+        val: CgValue<'comp, 'llvm>,
+    ) -> IResult<PointerValue<'llvm>> {
+        match val.layout.maybe_mono() {
+            Some(mono) => Ok(self.build_get_vtable_tag(mono)),
+            None => self.read_vtable_pointer::<u8>(val.ptr),
+        }
+    }
+
     pub(super) fn build_array_parser_get(
         &mut self,
         array: CgMonoValue<'comp, 'llvm>,

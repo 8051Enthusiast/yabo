@@ -252,7 +252,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn write_vtable_if_tagged(
         &mut self,
         ret: CgReturnValue<'llvm>,
-        layout: IMonoLayout<'comp>,
+        layout: CgValue<'comp, 'llvm>,
     ) -> IResult<()> {
         let fun = self
             .builder
@@ -266,7 +266,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.builder
             .build_conditional_branch(has_vtable, write_vtable_ptr, after)?;
         self.builder.position_at_end(write_vtable_ptr);
-        let vtable_pointer = self.build_get_vtable_tag(layout);
+        let vtable_pointer = self.build_vtable_get(layout)?;
         self.build_vtable_store(ret.ptr, vtable_pointer)?;
         self.builder.build_unconditional_branch(after)?;
         self.builder.position_at_end(after);
@@ -982,6 +982,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         global_value.set_constant(true);
         global_value.set_section(Some(".interp"));
         global_value.set_alignment(16);
+        global_value.set_visibility(GlobalVisibility::Protected);
     }
 
     pub fn run_codegen(&mut self) {

@@ -602,7 +602,7 @@ impl<'a> ILayout<'a> {
         })
     }
 
-    fn access_field(
+    pub fn access_field(
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
         field: FieldName,

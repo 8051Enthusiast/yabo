@@ -56,7 +56,7 @@ static inline int64_t dyn_parse_bytes(DynValue *ret, struct Slice bytes,
   return status;
 }
 
-// dereferences val for one level, and stores the result in ret
+// evaluates the thunk given in `val`
 static inline int64_t dyn_deref(DynValue *ret, const DynValue *val,
                                 const struct Globals *globals) {
   const struct NominalVTable *vtable =
@@ -117,8 +117,7 @@ static inline int64_t dyn_access_field_index(DynValue *ret,
 
   AccessFun *access_impl = YABO_ACCESS_VPTR(vtable, access_impl[index]);
   int64_t status =
-      access_impl(ret->data, block->data,
-                  (const char *)globals + YABO_THUNK_BIT + YABO_VTABLE);
+      access_impl(ret->data, block->data, (const char *)globals + YABO_VTABLE);
   if (status) {
     return dyn_invalidate(ret, status);
   }

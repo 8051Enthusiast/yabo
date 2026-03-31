@@ -430,7 +430,13 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
     }
 
     fn check_vtable(&mut self) -> IResult<()> {
-        self.cg.write_vtable_if_tagged(self.ret, self.target_layout)
+        self.cg.write_vtable_if_tagged(
+            self.ret,
+            CgValue {
+                layout: self.target_layout.inner(),
+                ptr: self.cg.invalid_ptr(),
+            },
+        )
     }
 
     pub fn build(mut self) -> IResult<FunctionValue<'llvm>> {

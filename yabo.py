@@ -514,11 +514,16 @@ class BlockValue(YaboValue):
         except KeyError:
             raise AttributeError(f"{name} is not a valid field")
         try:
-            return self._lib.new_val(
+            result = self._lib.new_val(
                 lambda ret: access(ret, self._val.data_ptr(), self._lib.discriminant())
             )
+
         except BacktrackError:
             return None
+
+        if self._lib._autoderef and isinstance(result, NominalValue):
+            result = result.deref()
+        return result
 
     def __getitem__(self, field: str):
         res = self.__getattr__(field)

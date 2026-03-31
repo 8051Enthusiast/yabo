@@ -40,6 +40,9 @@ size_t ybq_field_name_index(const struct DynValue *block, const char *name);
 int64_t ybq_field_access(struct DynValue *ret, const struct DynValue *block,
                          size_t index, const void *globals);
 
+int64_t ybq_deref(struct DynValue *ret, const struct DynValue *val,
+                  const void *globals);
+
 size_t ybq_field_count(const struct DynValue *block);
 
 char *ybq_field_name_at_index(const struct DynValue *block, size_t index);

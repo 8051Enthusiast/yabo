@@ -21,6 +21,7 @@ module YaboBindings
     ybqGetChar,
     ybqGetBit,
     ybqGetError,
+    ybqDeref,
   )
 where
 
@@ -82,6 +83,8 @@ foreign import capi "yabo-bindings.h ybq_parse_bytes_with_args" ybqParseBytesWit
 foreign import capi "yabo-bindings.h ybq_export_arg_count" ybqExportArgCount :: Ptr () -> IO CSize
 
 foreign import capi "yabo-bindings.h ybq_field_access" ybqFieldAccess :: Ptr () -> Ptr () -> CSize -> Ptr () -> IO Word64
+
+foreign import capi "yabo-bindings.h ybq_deref" ybqDeref :: Ptr () -> Ptr () -> Ptr () -> IO Word64
 
 foreign import capi "yabo-bindings.h ybq_field_name_at_index" ybqFieldNameAtIndex :: Ptr () -> CSize -> IO FieldName
 
