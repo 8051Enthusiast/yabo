@@ -1073,9 +1073,11 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 }
             },
             ExprHead::Monadic(op, inner) => match op {
-                ValUnOp::Not | ValUnOp::Neg | ValUnOp::Size => {
-                    make_layout(MonoLayout::Primitive(PrimitiveType::Int))
-                }
+                ValUnOp::Not
+                | ValUnOp::Neg
+                | ValUnOp::Size
+                | ValUnOp::Popcount
+                | ValUnOp::Reverse => make_layout(MonoLayout::Primitive(PrimitiveType::Int)),
                 ValUnOp::Wiggle(cid, WiggleKind::Is) => {
                     let eval_inner = inner.evaluate(ctx)?.0;
                     ctx.dcx
@@ -1109,7 +1111,8 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                 | ValBinOp::Plus
                 | ValBinOp::Div
                 | ValBinOp::Modulo
-                | ValBinOp::Mul => make_layout(MonoLayout::Primitive(PrimitiveType::Int)),
+                | ValBinOp::Mul
+                | ValBinOp::ClMul => make_layout(MonoLayout::Primitive(PrimitiveType::Int)),
             },
             ExprHead::Variadic(ValVarOp::PartialApply(_), inner) => {
                 inner[0].apply_fun(ctx, inner[1..].iter().copied().copied())?

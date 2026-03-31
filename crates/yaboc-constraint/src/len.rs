@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{arg_ranks, lambda_arg_ranks, Origin};
+use crate::{Origin, arg_ranks, lambda_arg_ranks};
 
 use super::Constraints;
 use fxhash::FxHashMap;
@@ -11,12 +11,12 @@ use yaboc_base::{
     interner::FieldName,
 };
 use yaboc_dependents::{
-    requirements::ExprDepData, BacktrackStatus, BlockSerialization, SubValue, SubValueKind,
+    BacktrackStatus, BlockSerialization, SubValue, SubValueKind, requirements::ExprDepData,
 };
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, ShapedData, SmallVec, TakeRef};
 use yaboc_hir::{self as hir, BlockReturnKind};
 use yaboc_hir_types::FullTypeId;
-use yaboc_len::{depvec::SmallBitVec, ArgRank, ScopeInfo, ScopeInfoIdx, ScopeKind, SizeExpr, Term};
+use yaboc_len::{ArgRank, ScopeInfo, ScopeInfoIdx, ScopeKind, SizeExpr, Term, depvec::SmallBitVec};
 use yaboc_req::NeededBy;
 use yaboc_resolve::expr::{EvalKind, Resolved, ResolvedAtom};
 use yaboc_resolve::expr::{ValBinOp, ValUnOp, ValVarOp};
@@ -277,9 +277,11 @@ impl<'a> SizeTermBuilder<'a> {
                             let res = self.push_term(Term::OpaqueUn(inner), src);
                             self.push_term(Term::Backtracking(res), src)
                         }
-                        ValUnOp::Dot(..) => self.push_term(Term::OpaqueUn(inner), src),
-                        ValUnOp::Not => self.push_term(Term::OpaqueUn(inner), src),
-                        ValUnOp::GetAddr => self.push_term(Term::OpaqueUn(inner), src),
+                        ValUnOp::Dot(..)
+                        | ValUnOp::Not
+                        | ValUnOp::GetAddr
+                        | ValUnOp::Popcount
+                        | ValUnOp::Reverse => self.push_term(Term::OpaqueUn(inner), src),
                     },
                     ExprHead::Dyadic(d, [&(lhs, _, _), &(rhs, _, _)]) => match d {
                         ValBinOp::Mul => self.push_term(Term::Mul([lhs, rhs]), src),
@@ -307,6 +309,7 @@ impl<'a> SizeTermBuilder<'a> {
                         | ValBinOp::ShiftL
                         | ValBinOp::Div
                         | ValBinOp::Modulo
+                        | ValBinOp::ClMul
                         | ValBinOp::Range
                         | ValBinOp::ParserApply(_) => {
                             self.push_term(Term::OpaqueBin([lhs, rhs]), src)

@@ -12,7 +12,7 @@ use yaboc_base::{
     error::SResult,
     interner::{DefId, FieldName},
 };
-use yaboc_dependents::{requirements::ExprDepData, SubValue, SubValueKind};
+use yaboc_dependents::{SubValue, SubValueKind, requirements::ExprDepData};
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchKindData, IdxExpression, IndexExpr, ZipExpr};
 use yaboc_hir::{
     BlockId, ExprId, HirConstraint, HirConstraintId, HirIdWrapper, HirNode, LambdaId,
@@ -568,7 +568,9 @@ impl<'a> ConvertExpr<'a> {
             | ValUnOp::Size
             | ValUnOp::GetAddr
             | ValUnOp::Not
-            | ValUnOp::Neg => {
+            | ValUnOp::Neg
+            | ValUnOp::Reverse
+            | ValUnOp::Popcount => {
                 recurse(self, None)?;
                 Ok(self.load_undef(loc))
             }
@@ -586,7 +588,7 @@ impl<'a> ConvertExpr<'a> {
         recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
     ) -> SResult<PlaceRef> {
         Ok(match &op {
-            ValUnOp::Not | ValUnOp::Neg => {
+            ValUnOp::Not | ValUnOp::Neg | ValUnOp::Reverse | ValUnOp::Popcount => {
                 let op: IntUnOp = op.try_into().unwrap();
                 let inner = self.copy_if_deref(inner_loc, recurse)?;
                 let place_ref = self.unwrap_or_stack(loc);
@@ -675,7 +677,8 @@ impl<'a> ConvertExpr<'a> {
             | ValBinOp::Plus
             | ValBinOp::Div
             | ValBinOp::Modulo
-            | ValBinOp::Mul => {
+            | ValBinOp::Mul
+            | ValBinOp::ClMul => {
                 lrecurse(self, None)?;
                 rrecurse(self, None)?;
                 Ok(self.load_undef(loc))
@@ -704,7 +707,8 @@ impl<'a> ConvertExpr<'a> {
             | ValBinOp::Plus
             | ValBinOp::Div
             | ValBinOp::Modulo
-            | ValBinOp::Mul => {
+            | ValBinOp::Mul
+            | ValBinOp::ClMul => {
                 let op: IntBinOp = op.try_into().unwrap();
                 let left = self.copy_if_deref(lloc, lrecurse)?;
                 let right = self.copy_if_deref(rloc, rrecurse)?;
@@ -798,7 +802,7 @@ impl<'a> ConvertExpr<'a> {
         idx: ExprIdx<Resolved>,
         place: Option<PlaceRef>,
     ) -> SResult<PlaceRef> {
-        let idx = expr.content.data.index_expr(idx).0 .0;
+        let idx = expr.content.data.index_expr(idx).0.0;
         let req = expr.req(idx);
         let origin = PlaceOrigin::Expr(expr.id, idx);
         let loc = ExpressionLoc {

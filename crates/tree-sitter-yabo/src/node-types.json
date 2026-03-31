@@ -574,6 +574,10 @@
           {
             "type": "|>",
             "named": false
+          },
+          {
+            "type": "⊙",
+            "named": false
           }
         ]
       },
@@ -2823,6 +2827,14 @@
           {
             "type": "sizeof",
             "named": false
+          },
+          {
+            "type": "∑",
+            "named": false
+          },
+          {
+            "type": "⌽",
+            "named": false
           }
         ]
       },
@@ -3387,6 +3399,18 @@
   },
   {
     "type": "~>",
+    "named": false
+  },
+  {
+    "type": "∑",
+    "named": false
+  },
+  {
+    "type": "⊙",
+    "named": false
+  },
+  {
+    "type": "⌽",
     "named": false
   }
 ]

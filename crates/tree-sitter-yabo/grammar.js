@@ -275,6 +275,7 @@ module.exports = grammar({
         ["*", PREC.MULTIPLY],
         ["/", PREC.MULTIPLY],
         ["%", PREC.MULTIPLY],
+        ["⊙", PREC.MULTIPLY],
         ["<<", PREC.SHIFT],
         [">>", PREC.SHIFT],
         ["==", PREC.COMPARE],
@@ -320,7 +321,7 @@ module.exports = grammar({
         prec(
           PREC.PREFIX,
           seq(
-            field("op", choice("-", "!", ">")),
+            field("op", choice("-", "!", ">", "∑", "⌽")),
             field("right", $._expression),
           ),
         ),

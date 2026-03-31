@@ -151,7 +151,7 @@ fn compare_bin_precedence(
     }
     macro_rules! IntegerOp {
         () => {
-            Plus | Minus | Mul | Div | Modulo | ShiftL | ShiftR | And | Or | Xor
+            Plus | Minus | Mul | Div | Modulo | ShiftL | ShiftR | And | Or | Xor | ClMul
         };
     }
     macro_rules! Control {
@@ -181,6 +181,7 @@ fn compare_bin_precedence(
         // associativity
         (Plus, Plus) => Ok(()),
         (Mul, Mul) => Ok(()),
+        (ClMul, ClMul) => Ok(()),
         (Or, Or) => Ok(()),
         (Xor, Xor) => Ok(()),
         (And, And) => Ok(()),
@@ -194,6 +195,7 @@ fn compare_bin_precedence(
         (Plus | Minus, Mul | Div | Modulo) => Ok(()),
         (Or | Xor, And) => Ok(()),
         (Or | Xor | And, ShiftL | ShiftR) => Ok(()),
+        (Xor, ClMul) => Ok(()),
         // common pattern
         (ParserApply(_), Range) if is_lhs => Ok(()),
         (up, lo) => {

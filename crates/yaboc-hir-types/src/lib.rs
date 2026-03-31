@@ -13,8 +13,8 @@ use fxhash::FxHashMap;
 use hir::{BlockKind, HirConstraint};
 use resolve::expr::Resolved;
 use resolve::parserdef_ssc::FunctionSscId;
-use yaboc_ast::expr::{self, Atom, TypeBinOp, TypeUnOp};
 use yaboc_ast::ConstraintAtom;
+use yaboc_ast::expr::{self, Atom, TypeBinOp, TypeUnOp};
 use yaboc_base::interner::Identifier;
 use yaboc_base::{
     error::{IsSilenced, SResult, Silencable, SilencedError},
@@ -25,24 +25,24 @@ use yaboc_expr::{
     DataRefExpr, ExprHead, ExprIdx, Expression as NewExpression, FetchExpr as _, IdxExpression,
     IndexExpr, ShapedData, TakeRef,
 };
-use yaboc_hir::{self as hir, walk::ChildIter, ExprId, HirIdWrapper, ParseStatement, ParserDefRef};
+use yaboc_hir::{self as hir, ExprId, HirIdWrapper, ParseStatement, ParserDefRef, walk::ChildIter};
 use yaboc_resolve::{
     self as resolve,
     expr::{ResolvedAtom, ValBinOp, ValUnOp, ValVarOp},
 };
 use yaboc_types::inference::Application;
-use yaboc_types::{
-    inference::{InfTypeId, InfTypeInterner, InferenceContext, InferenceType, TypeResolver},
-    EitherType, PrimitiveType, Signature, Type, TypeError, TypeId,
-};
 use yaboc_types::{BlockTypeHead, TypeConvError, TypeVarRef};
+use yaboc_types::{
+    EitherType, PrimitiveType, Signature, Type, TypeError, TypeId,
+    inference::{InfTypeId, InfTypeInterner, InferenceContext, InferenceType, TypeResolver},
+};
 
 use yaboc_hir::{self, BlockReturnKind, Hirs};
 
 pub struct FullTypeId;
 pub struct PubTypeId;
 
-use returns::{parser_expr_at, parser_returns, parser_type_at, ssc_types, ParserDefType, SscTypes};
+use returns::{ParserDefType, SscTypes, parser_expr_at, parser_returns, parser_type_at, ssc_types};
 pub use returns::{THUNK_BIT, VTABLE_BIT};
 use signature::{bound_args, fun_arg_count, parser_args, parser_signature};
 
@@ -325,7 +325,8 @@ impl<'a, 'intern> TypingContext<'a, 'intern> {
             let mut constrain = |lower, upper| self.infctx.unify(lower, upper).map_err(spanned);
             Ok(match expr {
                 ExprHead::Dyadic(op, [&left, &right]) => match op {
-                    And | Xor | Or | ShiftR | ShiftL | Minus | Plus | Div | Modulo | Mul => {
+                    And | Xor | Or | ShiftR | ShiftL | Minus | Plus | Div | Modulo | Mul
+                    | ClMul => {
                         constrain(left, int)?;
                         constrain(right, int)?;
                         int
@@ -345,7 +346,7 @@ impl<'a, 'intern> TypingContext<'a, 'intern> {
                     ParserApply(_) => self.infctx.parser_apply(right, left).map_err(spanned)?,
                 },
                 ExprHead::Monadic(op, &inner) => match &op {
-                    ValUnOp::Neg | ValUnOp::Not => {
+                    ValUnOp::Neg | ValUnOp::Not | ValUnOp::Popcount | ValUnOp::Reverse => {
                         constrain(inner, int)?;
                         int
                     }

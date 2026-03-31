@@ -9,7 +9,7 @@ use yaboc_base::{
 use yaboc_hir::{HirIdWrapper, HirNode, Hirs, Module, ParserDefId};
 use yaboc_req::{NeededBy, RequirementSet};
 
-use crate::{strictness::Strictness, CallMeta, ControlFlow, FunKind, InsRef, MirKind, UninitVal};
+use crate::{CallMeta, ControlFlow, FunKind, InsRef, MirKind, UninitVal, strictness::Strictness};
 
 use super::{
     BBRef, Comp, ExceptionRetreat, Function, IntBinOp, IntUnOp, MirInstr, Mirs, Place, PlaceOrigin,
@@ -73,6 +73,7 @@ impl Display for IntBinOp {
             IntBinOp::Div => "div",
             IntBinOp::Modulo => "mod",
             IntBinOp::Mul => "mul",
+            IntBinOp::ClMul => "clmul",
         };
         write!(f, "{s}")
     }
@@ -83,6 +84,8 @@ impl Display for IntUnOp {
         let s = match self {
             IntUnOp::Not => "not",
             IntUnOp::Neg => "neg",
+            IntUnOp::Reverse => "rev",
+            IntUnOp::Popcount => "popcnt",
         };
         write!(f, "{s}")
     }
