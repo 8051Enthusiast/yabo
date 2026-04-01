@@ -9,7 +9,7 @@ FROM rust:1-trixie AS compiler
 
 RUN apt-get update && apt-get install -y cmake lsb-release gnupg
 ADD https://apt.llvm.org/llvm.sh /llvm.sh
-RUN bash /llvm.sh 21
+RUN bash /llvm.sh 22
 
 COPY Cargo.toml Cargo.lock /src/yabo/
 ADD crates /src/yabo/crates/
@@ -77,7 +77,7 @@ FROM debian:trixie-slim
 
 RUN apt-get update && apt-get install -y python3 lsb-release wget gnupg
 ADD https://apt.llvm.org/llvm.sh /llvm.sh
-RUN bash /llvm.sh 21
+RUN bash /llvm.sh 22
 
 COPY tools/yaboc-server/build.sh /opt/bin/build.sh
 ADD ./lib /opt/lib
