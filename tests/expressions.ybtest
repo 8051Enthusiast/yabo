@@ -28,8 +28,11 @@ export def test = {
     let bit_and = a & b
     let bit_or = a | b
     let bit_xor = a ^ b
+    let clmul = a ⊙ b
     let bit_not = !a
     let neg = -a
+    let rev = ⌽a
+    let popcnt = ∑a
 }
 
 ====[ binary 1 ]====
@@ -47,8 +50,11 @@ export def test = {
     "bit_and": 0,
     "bit_or": 3,
     "bit_xor": 3,
+    "clmul": 2,
     "bit_not": -2,
-    "neg": -1
+    "neg": -1,
+    "rev": -9223372036854775808,
+    "popcnt": 1
 }
 ====[ binary 2 ]====
 00 01 00 01
@@ -65,8 +71,11 @@ export def test = {
     "bit_and": 256,
     "bit_or": 256,
     "bit_xor": 0,
+    "clmul": 65536,
     "bit_not": -257,
-    "neg": -256
+    "neg": -256,
+    "rev": 36028797018963968,
+    "popcnt": 1
 }
 ====[ binary 3 ]====
 f0 ff 00 01
@@ -83,8 +92,11 @@ f0 ff 00 01
     "bit_and": 256,
     "bit_or": -16,
     "bit_xor": -272,
+    "clmul": -4096,
     "bit_not": 15,
-    "neg": 16
+    "neg": 16,
+    "rev": 1152921504606846975,
+    "popcnt": 60
 }
 ====[ binary 4 ]====
 00 00 00 00
@@ -101,6 +113,9 @@ f0 ff 00 01
     "bit_and": 0,
     "bit_or": 0,
     "bit_xor": 0,
+    "clmul": 0,
     "bit_not": -1,
-    "neg": 0
+    "neg": 0,
+    "rev": 0,
+    "popcnt": 0
 }

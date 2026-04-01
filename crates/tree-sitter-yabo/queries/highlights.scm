@@ -86,6 +86,9 @@
     "?"
     "!"
     "~"
+    "∑"
+    "⊙"
+    "⌽"
 ] @operator
 
 (char_literal) @constant.character
