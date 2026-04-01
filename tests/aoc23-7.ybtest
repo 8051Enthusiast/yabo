@@ -21,19 +21,9 @@ fun ~charbit = {
   c: ~, let return = 1 << (c - '0')
 }
 
-fun popcount(n: int): int = (
-  let n1 = n - ((n >> 1) & 0x5555555555555555)
-  let n2 = (n1 & 0x3333333333333333) + ((n1 >> 2) & 0x3333333333333333)
-  let n3 = (n2 + (n2 >> 4)) & 0x0f0f0f0f0f0f0f0f
-  let n4 = n3 + (n3 >> 8)
-  let n5 = n4 + (n4 >> 16)
-  let n6 = n5 + (n5 >> 32)
-  n6 & 0x7f
-)
-
 fun ~diff_count: int = {
   a: charbit, b: charbit, c: charbit, d: charbit, e: charbit
-  let return = popcount(a | b | c | d | e)
+  let return = ∑(a | b | c | d | e)
 }
 
 fun ~card_rank = {

@@ -11,7 +11,7 @@
 Lexer::Matcher::Matcher(const char *re, HighlightName highlight,
                         LexerState next_state, LexerState cond_state)
     : expr(std::make_unique<QRegularExpression>(re)), highlight(highlight),
-      next_state(next_state), cond_state(cond_state){};
+      next_state(next_state), cond_state(cond_state) {};
 
 Lexer::Lexer() {
   Matcher matcher_list[] = {
@@ -41,7 +41,7 @@ Lexer::Lexer() {
       Matcher(R"('([^']|\\.)')", HighlightName::StringQuotedSingle,
               LexerState::NotAfterOperator),
       Matcher(
-          R"(==|<=|>=|!=|>>|<<|[&]>|~>|->|<|>|~|!|\?|:|\.\.|[.]|[|]|=|[+]|-|[*]|/|%|\^|\&|\\)",
+          R"(==|<=|>=|!=|>>|<<|[&]>|~>|->|<|>|~|!|\?|:|\.\.|[.]|[|]|=|[+]|-|[*]|/|%|\^|\&|\\|⌽|∑|⊙)",
           HighlightName::Operator, LexerState::AfterOperator)};
   std::vector<Matcher> match{std::make_move_iterator(std::begin(matcher_list)),
                              std::make_move_iterator(std::end(matcher_list))};
