@@ -60,7 +60,7 @@ Hex bytes, the scroll bar and the fields of the output are sometimes colored.
 The color indicates a contiguous segment of parsed bytes.
 Currently, a segment of parsed bytes is considered separate if a pointer points outside the current segment to a struct or array.
 
-If you want to compile the compiler locally, you will have to install the LLVM 21 libraries with clang and the Rust toolchain.
+If you want to compile the compiler locally, you will have to install the LLVM 22 libraries with clang and the Rust toolchain.
 To compile, run `cargo build --release` in the root directory.
 Note that the compiler currently only supports x86_64/aarch64 Linux and WASM as targets.
 You will also have to set `YABOC_LIB_PATH` to point to the `lib` directory of this project for the compiler to work.
