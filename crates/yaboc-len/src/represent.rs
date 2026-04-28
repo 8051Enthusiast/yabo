@@ -1,9 +1,18 @@
-use std::fmt::Write;
+use std::fmt::{Display, Write};
 
 use crate::{
+    ConstPromotable, PolyOp, SizeExpr, Term, Val,
     depvec::{self, DepVec, IndexDepVec},
-    PolyOp, SizeExpr, Term, Val,
 };
+
+impl Display for ConstPromotable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConstPromotable::Promotable => write!(f, "det"),
+            ConstPromotable::Norway => write!(f, "nondet"),
+        }
+    }
+}
 
 impl<T: std::fmt::Debug> std::fmt::Display for Term<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -66,23 +75,23 @@ impl<P: std::fmt::Debug> std::fmt::Display for Val<P> {
                 write_deps(f, deps, *a)?;
                 write!(f, " → {c}")
             }
-            Val::Arg(0, idx) => write!(f, "arg {}", idx),
-            Val::Arg(a, i) => {
+            Val::Arg(0, idx, p) => write!(f, "arg {} {}", idx, p),
+            Val::Arg(a, i, p) => {
                 write_deps(f, &IndexDepVec::default(), *a)?;
-                write!(f, " → arg {i}")
+                write!(f, " → arg {i} {p}")
             }
-            Val::PolyOp(PolyOp::Add([lhs, rhs])) => write!(f, "[{}] + [{}]", lhs, rhs),
-            Val::PolyOp(PolyOp::Mul([lhs, rhs])) => write!(f, "[{}] * [{}]", lhs, rhs),
-            Val::PolyOp(PolyOp::Neg(inner)) => write!(f, "-[{}]", inner),
-            Val::Poly(0, _, _) => write!(f, "poly"),
-            Val::Poly(a, _, b) => {
+            Val::PolyOp(PolyOp::Add([lhs, rhs]), p) => write!(f, "[{}] + [{}] {p}", lhs, rhs),
+            Val::PolyOp(PolyOp::Mul([lhs, rhs]), p) => write!(f, "[{}] * [{}] {p}", lhs, rhs),
+            Val::PolyOp(PolyOp::Neg(inner), p) => write!(f, "-[{}] {p}", inner),
+            Val::Poly(0, _, p, _) => write!(f, "poly {p}"),
+            Val::Poly(a, _, p, b) => {
                 write_deps(f, b, *a)?;
-                write!(f, " → poly")
+                write!(f, " → poly {p}")
             }
-            Val::PartialPolyApply(0, [lhs, rhs], _, _) => write!(f, "[{}] [{}]", lhs, rhs),
-            Val::PartialPolyApply(a, [lhs, rhs], _, b) => {
+            Val::PartialPolyApply(0, [lhs, rhs], _, p, _) => write!(f, "[{}] [{}] {p}", lhs, rhs),
+            Val::PartialPolyApply(a, [lhs, rhs], _, p, b) => {
                 write_deps(f, b, *a)?;
-                write!(f, " → [{}] [{}]", lhs, rhs)
+                write!(f, " → [{}] [{}] {p}", lhs, rhs)
             }
             Val::Static(0, _) => write!(f, "static"),
             Val::Static(a, b) => {
