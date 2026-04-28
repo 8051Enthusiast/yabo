@@ -14,11 +14,7 @@ impl Index<usize> for SmallBitVec {
         let Some(w) = self.0.get(word) else {
             return &false;
         };
-        if (w >> bit) & 1 != 0 {
-            &true
-        } else {
-            &false
-        }
+        if (w >> bit) & 1 != 0 { &true } else { &false }
     }
 }
 
@@ -55,6 +51,10 @@ impl SmallBitVec {
 
     pub fn is_zero_below(&self, idx: usize) -> bool {
         (0..idx).all(|i| !self[i])
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.iter().all(|x| *x == 0)
     }
 
     pub fn set(&mut self, idx: usize) {
@@ -126,6 +126,10 @@ impl<const REVERSED: bool> DepVec<REVERSED> {
         self.0.is_zero_below(idx << 1)
     }
 
+    pub fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+
     pub fn array_deps() -> Self {
         let mut ret = DepVec::default();
         ret.set_val(0);
@@ -190,6 +194,9 @@ impl ArgDeps {
     }
     pub fn backtrack(&mut self) -> &mut LevelDepVec {
         &mut self.0[2]
+    }
+    pub fn is_empty(&self) -> bool {
+        self.0.iter().all(|x| x.is_zero())
     }
 }
 

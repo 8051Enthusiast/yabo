@@ -17,12 +17,12 @@ use yaboc_dependents::Dependents;
 use yaboc_expr::{ExprIdx, SmallVec};
 use yaboc_hir as hir;
 use yaboc_hir_types::TyHirs;
-use yaboc_len::{depvec::ArgDeps, ArgRank, Env, PolyCircuit, SizeCalcCtx, Term, Val};
+use yaboc_len::{ArgRank, Env, PolyCircuit, SizeCalcCtx, Term, Val, depvec::ArgDeps};
 use yaboc_resolve::{expr::Resolved, parserdef_ssc::FunctionSscId};
 
-use backtrack::{bt_term, ssc_bt_vals, BtResult, BtTerm, BtVals};
-use len::len_term;
+use backtrack::{BtResult, BtTerm, BtVals, bt_term, ssc_bt_vals};
 pub use len::PdLenTerm;
+use len::len_term;
 use yaboc_types::{DefId, Type, TypeId};
 
 #[salsa::query_group(ConstraintDatabase)]
@@ -315,14 +315,14 @@ pub fn len_errors(db: &dyn Constraints, pd: hir::ParserDefId) -> SResult<Vec<Len
 #[cfg(test)]
 mod tests {
     use hir::Parser;
-    use yaboc_ast::{import::Import, AstDatabase};
+    use yaboc_ast::{AstDatabase, import::Import};
     use yaboc_base::{
-        config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase, Context,
+        Context, config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase,
     };
     use yaboc_dependents::DependentsDatabase;
     use yaboc_hir::HirDatabase;
     use yaboc_hir_types::HirTypesDatabase;
-    use yaboc_len::depvec::DepVec;
+    use yaboc_len::{ConstPromotable, depvec::DepVec};
     use yaboc_resolve::ResolveDatabase;
     use yaboc_types::TypeInternerDatabase;
 
@@ -513,10 +513,47 @@ mod tests {
         );
         let test = ctx.parser("test");
         let len = ctx.db.fun_len(test);
-        let Val::Poly(2, _, deps) = len else {
+        let Val::Poly(2, _, _, deps) = len else {
             panic!("got unexpected {:?}", len)
         };
         assert!(deps.has_val(1));
         assert!(deps.has_val(0));
+    }
+    #[test]
+    fn const_size_arr() {
+        let ctx = Context::<ConstraintTestDatabase>::mock(
+            r"
+            fun ~test = [3][4]
+            ",
+        );
+        let test = ctx.parser("test");
+        let len = ctx.db.fun_len(test);
+        let Val::Const(0, 12, _) = len else {
+            panic!("got unexpected {:?}", len)
+        };
+    }
+    #[test]
+    fn non_const_size_arr() {
+        let ctx = Context::<ConstraintTestDatabase>::mock(
+            r"
+            fun ~nondet(a: int) = {
+              case
+              | a if 0..4 then [a][4]
+              | [4][a]
+              \
+            }
+            fun ~test = {
+              case
+              | [12]
+              | nondet(3)
+              \
+            }
+            ",
+        );
+        let test = ctx.parser("test");
+        let len = ctx.db.fun_len(test);
+        let Val::Poly(0, _, ConstPromotable::Norway, _) = len else {
+            panic!("got unexpected {:?}", len)
+        };
     }
 }

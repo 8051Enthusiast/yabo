@@ -8,7 +8,7 @@ pub use represent::len_graph;
 
 use prob_array::{RandomArray, UNINIT};
 use smallvec::SmallVec;
-use std::{cmp::Ordering, hash::Hash, slice, sync::Arc};
+use std::{cmp::Ordering, hash::Hash, ops::BitAnd, slice, sync::Arc};
 use yaboc_req::{NeededBy, RequirementMatrix, RequirementSet};
 
 pub mod depvec;
@@ -48,6 +48,29 @@ pub enum PolyGate {
 pub struct PolyCircuit {
     pub gates: Vec<PolyGate>,
     pub arg_deps: IndexDepVec,
+    pub promotable: ConstPromotable,
+}
+
+impl PolyCircuit {
+    fn eval_const(&self, params: &[i128]) -> Option<i128> {
+        let mut poly_vals = vec![0i128; self.gates.len()];
+        for (idx, gate) in self.gates.iter().enumerate() {
+            let res = match gate {
+                PolyGate::Const(c) => *c,
+                PolyGate::Arg(a) => params[*a as usize],
+                PolyGate::CapturedArg(_) => {
+                    panic!("Cannot use captured args in const eval context")
+                }
+                PolyGate::Op(op) => match op {
+                    PolyOp::Add([lhs, rhs]) => poly_vals[*lhs].checked_add(poly_vals[*rhs])?,
+                    PolyOp::Mul([lhs, rhs]) => poly_vals[*lhs].checked_mul(poly_vals[*rhs])?,
+                    PolyOp::Neg(dep) => poly_vals[*dep].checked_neg()?,
+                },
+            };
+            poly_vals[idx] = res;
+        }
+        poly_vals.last().copied()
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -275,14 +298,28 @@ pub enum Fun<ParserRef> {
     Static(depvec::SmallBitVec),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ConstPromotable {
+    Norway,
+    Promotable,
+}
+
+impl BitAnd for ConstPromotable {
+    type Output = Self;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+        self.min(rhs)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Val<PolyCircuitId> {
     Undefined,
     Const(u32, i128, IndexDepVec),
-    Arg(u32, u32),
-    PolyOp(PolyOp),
-    Poly(u32, PolyCircuitId, IndexDepVec),
-    PartialPolyApply(u32, [usize; 2], PolyCircuitId, IndexDepVec),
+    Arg(u32, u32, ConstPromotable),
+    PolyOp(PolyOp, ConstPromotable),
+    Poly(u32, PolyCircuitId, ConstPromotable, IndexDepVec),
+    PartialPolyApply(u32, [usize; 2], PolyCircuitId, ConstPromotable, IndexDepVec),
     Static(u32, IndexDepVec),
     Unsized,
 }
@@ -297,7 +334,7 @@ impl<PolyCircuitId: Clone + std::fmt::Debug> Val<PolyCircuitId> {
             self,
             Val::Poly(..)
                 | Val::Const(..)
-                | Val::Arg(_, _)
+                | Val::Arg(..)
                 | Val::PolyOp(..)
                 | Val::PartialPolyApply(..)
         )
@@ -342,30 +379,30 @@ impl<PolyCircuitId: Clone + std::fmt::Debug> Val<PolyCircuitId> {
 
     pub fn next_arg_uses(&self) -> RequirementSet {
         match self {
-            Val::Undefined | Val::Arg(_, _) | Val::PolyOp(_) => RequirementSet::empty(),
+            Val::Undefined | Val::Arg(..) | Val::PolyOp(..) => RequirementSet::empty(),
             Val::Unsized => NeededBy::Val | NeededBy::Len,
             Val::Const(rank, _, deps)
-            | Val::Poly(rank, _, deps)
-            | Val::PartialPolyApply(rank, _, _, deps)
+            | Val::Poly(rank, _, _, deps)
+            | Val::PartialPolyApply(rank, .., deps)
             | Val::Static(rank, deps) => deps.req(*rank as usize - 1),
         }
     }
 
     fn deps(&self) -> depvec::IndexDepVec {
         match self {
-            Val::Arg(_, _) => DepVec::default(),
+            Val::Arg(..) => DepVec::default(),
             Val::Const(_, _, x)
             | Val::Poly(.., x)
             | Val::PartialPolyApply(.., x)
             | Val::Static(_, x) => x.clone(),
-            Val::PolyOp(_) | Val::Undefined | Val::Unsized => DepVec::default(),
+            Val::PolyOp(..) | Val::Undefined | Val::Unsized => DepVec::default(),
         }
     }
 
     pub fn ref_indices(&self) -> &[usize] {
         match self {
-            Val::PolyOp(PolyOp::Mul(x) | PolyOp::Add(x)) | Val::PartialPolyApply(_, x, ..) => x,
-            Val::PolyOp(PolyOp::Neg(x)) => slice::from_ref(x),
+            Val::PolyOp(PolyOp::Mul(x) | PolyOp::Add(x), _) | Val::PartialPolyApply(_, x, ..) => x,
+            Val::PolyOp(PolyOp::Neg(x), _) => slice::from_ref(x),
             _ => &[],
         }
     }
@@ -388,6 +425,18 @@ impl<PolyCircuitId: Clone + std::fmt::Debug> Val<PolyCircuitId> {
             Ordering::Less => panic!("cannot shrink during absint: {:?} < {:?}", self, other),
             Ordering::Equal => false,
             Ordering::Greater => true,
+        }
+    }
+
+    fn set_nondet(&mut self) {
+        match self {
+            Val::Undefined | Val::Unsized | Val::Const(_, _, _) | Val::Static(_, _) => {}
+            Val::Arg(_, _, const_promotable)
+            | Val::PolyOp(_, const_promotable)
+            | Val::Poly(_, _, const_promotable, _)
+            | Val::PartialPolyApply(_, _, _, const_promotable, _) => {
+                *const_promotable = ConstPromotable::Norway
+            }
         }
     }
 }
@@ -428,6 +477,7 @@ pub trait Env: Sized {
                 PolyGate::Arg(1),
                 PolyGate::Op(PolyOp::Mul([0, 1])),
             ],
+            promotable: ConstPromotable::Promotable,
         };
         self.intern_circuit(Arc::new(arr_circuit))
     }
@@ -501,6 +551,41 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         args
     }
 
+    fn const_promotable(&self, val: &Val<Γ::PolyCircuitId>) -> ConstPromotable {
+        match val {
+            Val::Const(_, _, _) => ConstPromotable::Promotable,
+            Val::Poly(_, _, const_promotable, _)
+            | Val::PartialPolyApply(.., const_promotable, _)
+            | Val::Arg(_, _, const_promotable)
+            | Val::PolyOp(_, const_promotable) => *const_promotable,
+            Val::Static(..) | Val::Unsized | Val::Undefined => ConstPromotable::Norway,
+        }
+    }
+
+    fn const_args(&mut self, val: Val<Γ::PolyCircuitId>, deps: ArgDeps) -> Option<Vec<i128>> {
+        match val {
+            Val::PartialPolyApply(_, [fun, arg], ..) => {
+                let mut args = self.const_args(self.vals[fun].clone(), self.deps[fun].clone())?;
+                if !self.vals[fun].next_arg_uses().is_empty() {
+                    let Val::Const(_, v, ..) = self.vals[arg] else {
+                        return None;
+                    };
+                    args.push(v);
+                } else {
+                    args.push(0i128);
+                }
+                Some(args)
+            }
+            Val::Poly(rank, _, _, ..) => {
+                if !deps.is_empty() {
+                    return None;
+                }
+                Some(Vec::with_capacity(rank as usize))
+            }
+            _ => None,
+        }
+    }
+
     fn get_polyval_arg(&mut self, arg: usize) -> &RandomArray {
         if arg < self.arg_poly_vals.len() {
             return &self.arg_poly_vals[arg];
@@ -560,10 +645,10 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         }
         match self.vals[idx].clone() {
             Val::Const(_, c, _) => self.poly_vals[idx].array_from_const(c),
-            Val::Arg(_, a) => {
+            Val::Arg(_, a, _) => {
                 self.poly_vals[idx] = *self.get_polyval_arg(a as usize);
             }
-            Val::PolyOp(op) => {
+            Val::PolyOp(op, _) => {
                 let deps = match &op {
                     PolyOp::Add(deps) | PolyOp::Mul(deps) => &deps[..],
                     PolyOp::Neg(dep) => slice::from_ref(dep),
@@ -586,7 +671,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                     }
                 }
             }
-            Val::Poly(.., circ, _) | Val::PartialPolyApply(.., circ, _) => {
+            Val::Poly(.., circ, _, _) | Val::PartialPolyApply(.., circ, _, _) => {
                 let args = self.poly_args(idx);
                 let circ = self.env.lookup_circuit(circ);
                 self.poly_vals[idx] = self.eval_circuit(&circ, &args);
@@ -624,7 +709,12 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             })
             .collect::<Option<SmallVec<[i128; N]>>>()
         else {
-            return Val::PolyOp(poly_op);
+            let promotable = deps
+                .iter()
+                .map(|x| self.const_promotable(&self.vals[*x]))
+                .max()
+                .unwrap();
+            return Val::PolyOp(poly_op, promotable);
         };
         let (res, overflow) = exec_op(consts.as_slice().try_into().unwrap());
         if overflow {
@@ -639,9 +729,10 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         let next_arg_uses = self.vals[fun].next_arg_uses();
         let uses_len = next_arg_uses.contains(NeededBy::Len);
         let uses_val = next_arg_uses.contains(NeededBy::Val);
-        match (&self.vals[fun], &argv, (uses_len, uses_val)) {
+        let fun_val = &self.vals[fun];
+        match (fun_val, &argv, (uses_len, uses_val)) {
             (Val::Undefined, ..) | (_, Val::Undefined, (true, _)) => Val::Undefined,
-            (Val::Arg(rank @ 1.., a), ..) => Val::Arg(*rank - 1, *a),
+            (Val::Arg(rank @ 1.., a, prom), ..) => Val::Arg(*rank - 1, *a, *prom),
             (Val::Const(rank @ 1.., c, deps), ..) => Val::Const(*rank - 1, *c, deps.clone()),
             (Val::Static(1.., ..), Val::Unsized, (true, _)) => Val::Unsized,
             // because of the previous branch, either the argument is sized
@@ -654,37 +745,39 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 }
             }
             (
-                Val::PartialPolyApply(rank @ 1.., _, circ, deps)
-                | Val::Poly(rank @ 1.., circ, deps),
+                Val::PartialPolyApply(rank @ 1.., _, circ, _, deps)
+                | Val::Poly(rank @ 1.., circ, _, deps),
                 argv,
                 (true, _),
             ) => {
                 if argv.is_unsized() {
                     Val::Unsized
                 } else if argv.is_poly() {
-                    Val::PartialPolyApply(*rank - 1, [fun, arg], *circ, deps.clone())
+                    let prom = self.const_promotable(fun_val) & self.const_promotable(argv);
+                    Val::PartialPolyApply(*rank - 1, [fun, arg], *circ, prom, deps.clone())
                 } else {
                     Val::Static(*rank - 1, deps.clone())
                 }
             }
             (
-                Val::PartialPolyApply(rank @ 1.., _, circ, deps)
-                | Val::Poly(rank @ 1.., circ, deps),
+                Val::PartialPolyApply(rank @ 1.., _, circ, _, deps)
+                | Val::Poly(rank @ 1.., circ, _, deps),
                 argv,
                 (false, true),
             ) => {
                 if argv.is_unsized() {
                     Val::Static(*rank - 1, deps.clone())
                 } else {
-                    Val::PartialPolyApply(*rank - 1, [fun, arg], *circ, deps.clone())
+                    let prom = self.const_promotable(fun_val) & self.const_promotable(argv);
+                    Val::PartialPolyApply(*rank - 1, [fun, arg], *circ, prom, deps.clone())
                 }
             }
             (
-                Val::PartialPolyApply(rank @ 1.., _, circ, deps)
-                | Val::Poly(rank @ 1.., circ, deps),
+                Val::PartialPolyApply(rank @ 1.., _, circ, const_prom, deps)
+                | Val::Poly(rank @ 1.., circ, const_prom, deps),
                 _,
                 (false, false),
-            ) => Val::PartialPolyApply(*rank - 1, [fun, arg], *circ, deps.clone()),
+            ) => Val::PartialPolyApply(*rank - 1, [fun, arg], *circ, *const_prom, deps.clone()),
 
             _ => Val::Unsized,
         }
@@ -711,14 +804,26 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 mark_dyn(self);
                 Val::Static(rank, deps)
             }
-            [Val::Static(rank, ldeps), Val::Poly(.., x) | Val::PartialPolyApply(.., x)]
-            | [Val::Poly(.., x) | Val::PartialPolyApply(.., x), Val::Static(rank, ldeps)] => {
+            [
+                Val::Static(rank, ldeps),
+                Val::Poly(.., x) | Val::PartialPolyApply(.., x),
+            ]
+            | [
+                Val::Poly(.., x) | Val::PartialPolyApply(.., x),
+                Val::Static(rank, ldeps),
+            ] => {
                 let deps = ldeps.or(&x);
                 mark_dyn(self);
                 Val::Static(rank, deps)
             }
-            [Val::Static(rank, deps), Val::Arg(..) | Val::Const(..) | Val::PolyOp(..)]
-            | [Val::PolyOp(..) | Val::Arg(..) | Val::Const(..), Val::Static(rank, deps)] => {
+            [
+                Val::Static(rank, deps),
+                Val::Arg(..) | Val::Const(..) | Val::PolyOp(..),
+            ]
+            | [
+                Val::PolyOp(..) | Val::Arg(..) | Val::Const(..),
+                Val::Static(rank, deps),
+            ] => {
                 mark_dyn(self);
                 Val::Static(rank, deps)
             }
@@ -731,26 +836,35 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                     Val::Static(rank, deps)
                 }
             }
-            [Val::Arg(rank, a), Val::Arg(_, b)] => {
+            [Val::Arg(rank, a, lprom), Val::Arg(_, b, rprom)] => {
                 if a == b {
-                    Val::Arg(rank, a)
+                    Val::Arg(rank, a, lprom & rprom)
                 } else {
                     mark_dyn(self);
                     Val::Static(rank, Default::default())
                 }
             }
-            [lhs @ (Val::PolyOp(..)
-            | Val::Poly(..)
-            | Val::PartialPolyApply(..)
-            | Val::Arg(..)
-            | Val::Const(..)), Val::PolyOp(..)
-            | Val::Poly(..)
-            | Val::PartialPolyApply(..)
-            | Val::Arg(..)
-            | Val::Const(..)] => {
+            [
+                mut lhs @ (Val::PolyOp(..)
+                | Val::Poly(..)
+                | Val::PartialPolyApply(..)
+                | Val::Arg(..)
+                | Val::Const(..)),
+                mut rhs @ (Val::PolyOp(..)
+                | Val::Poly(..)
+                | Val::PartialPolyApply(..)
+                | Val::Arg(..)
+                | Val::Const(..)),
+            ] => {
                 _ = ops.map(|x| self.eval_poly(x));
                 if self.poly_vals[lidx] == self.poly_vals[ridx] {
-                    lhs
+                    if matches!(lhs, Val::Const(..)) {
+                        rhs.set_nondet();
+                        rhs
+                    } else {
+                        lhs.set_nondet();
+                        lhs
+                    }
                 } else {
                     let rank = lhs.rank().unwrap();
                     let deps = lhs.deps();
@@ -786,16 +900,21 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 val_deps.set_val(i);
             }
         }
-        match &self.vals[ret_idx] {
+        let ret_val = &self.vals[ret_idx];
+        match ret_val {
             Val::Undefined => Val::Undefined,
             Val::Const(0, c, _) => Val::Const(arg_count, *c, val_deps),
-            Val::Arg(0, _) | Val::PolyOp(_) | Val::Poly(0, ..) | Val::PartialPolyApply(0, ..) => {
+            Val::Arg(0, _, _)
+            | Val::PolyOp(_, _)
+            | Val::Poly(0, ..)
+            | Val::PartialPolyApply(0, ..) => {
+                let const_promotable = self.const_promotable(ret_val);
                 let circuit = self
-                    .create_polycircuit(ret_idx, arg_count, arg_depth)
+                    .create_polycircuit(ret_idx, arg_count, arg_depth, const_promotable)
                     .unwrap();
                 let deps = circuit.arg_deps.or(&val_deps);
                 let circuit_id = self.env.intern_circuit(Arc::new(circuit));
-                Val::Poly(arg_count, circuit_id, deps)
+                Val::Poly(arg_count, circuit_id, const_promotable, deps)
             }
             Val::Static(0, _) => {
                 let (_, arg_deps) = self.deps[ret_idx]
@@ -810,7 +929,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         }
     }
 
-    fn update_deps(&mut self, pos: usize) {
+    fn update_deps(&mut self, pos: usize) -> ArgDeps {
         let term = &self.size_expr.terms[pos];
         let mut cur = self.deps[pos].clone();
         self.for_each_dep(pos, |this, dep, req| {
@@ -835,14 +954,15 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             }
             _ => (),
         }
+        self.deps[pos].clone()
     }
 
     fn eval(&mut self) {
         for term_idx in 0..self.size_expr.terms.len() {
             let term = self.size_expr.terms[term_idx];
-            let val = match &term {
+            let mut val = match &term {
                 Term::Pd(pd) => self.env.size_info(pd),
-                Term::Arg(a) => Val::Arg(self.args[*a as usize].0, *a),
+                Term::Arg(a) => Val::Arg(self.args[*a as usize].0, *a, ConstPromotable::Promotable),
                 Term::Apply([fun, arg]) => self.apply_fun(*fun, *arg),
                 Term::Const(c) => Val::Const(0, *c, Default::default()),
                 Term::OpaqueBin(..)
@@ -863,7 +983,12 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 Term::Neg(arg) => {
                     self.poly_op([*arg], |[x]| x.overflowing_neg(), PolyOp::Neg(*arg))
                 }
-                Term::Arr => Val::Poly(2, self.arr_circuit, DepVec::array_deps()),
+                Term::Arr => Val::Poly(
+                    2,
+                    self.arr_circuit,
+                    ConstPromotable::Promotable,
+                    DepVec::array_deps(),
+                ),
                 Term::Unify(ops) => self.unify(*ops, false, term_idx),
                 Term::UnifyDyn(ops) => self.unify(*ops, true, term_idx),
                 Term::Size(_, inner) => match self.vals[*inner].clone() {
@@ -895,8 +1020,17 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                     self.vals[*val].clone()
                 }
             };
+            let deps = self.update_deps(term_idx);
+            if let Val::PartialPolyApply(0, _, circuit, ConstPromotable::Promotable, _)
+            | Val::Poly(0, circuit, ConstPromotable::Promotable, _) = &val
+                && let Some(params) = self.const_args(val.clone(), deps)
+            {
+                let circuit = self.env.lookup_circuit(*circuit);
+                if let Some(res) = circuit.eval_const(&params) {
+                    val = Val::Const(0, res, DepVec::default());
+                }
+            }
             self.vals.push(val);
-            self.update_deps(term_idx);
         }
     }
 
@@ -950,6 +1084,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
         root: usize,
         rank: u32,
         arg_depth: u32,
+        promotable: ConstPromotable,
     ) -> Option<PolyCircuit> {
         if !self.vals.get(root).is_some_and(|x| x.is_poly()) {
             return None;
@@ -986,7 +1121,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             }
             let val = self.vals[i].clone();
             match val {
-                Val::Arg(0, arg) => {
+                Val::Arg(0, arg, _) => {
                     gates_index.push(gates.len());
                     match arg.checked_sub(arg_depth) {
                         Some(a) => gates.push(PolyGate::Arg(a)),
@@ -997,12 +1132,12 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                     gates_index.push(gates.len());
                     gates.push(PolyGate::Const(c))
                 }
-                Val::PolyOp(op) => {
+                Val::PolyOp(op, _) => {
                     gates_index.push(gates.len());
                     let op = op.remap_indices(&gates_index);
                     gates.push(PolyGate::Op(op))
                 }
-                Val::Poly(0, circuit, _) | Val::PartialPolyApply(0, _, circuit, _) => {
+                Val::Poly(0, circuit, _, _) | Val::PartialPolyApply(0, _, circuit, _, _) => {
                     let parameters = self.poly_args(i);
                     let circuit = self.env.lookup_circuit(circuit);
                     let last = self.include_circuit(
@@ -1021,7 +1156,11 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
             }
         }
         let (_, arg_deps) = self.deps[root].len().split_at(rank as usize, rank as usize);
-        Some(PolyCircuit { gates, arg_deps })
+        Some(PolyCircuit {
+            gates,
+            arg_deps,
+            promotable,
+        })
     }
 
     pub fn vals(self) -> Vals<Γ::PolyCircuitId> {
@@ -1032,12 +1171,14 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
     }
 
     pub fn quoted_val(&mut self, root: usize) -> Val<Γ::PolyCircuitId> {
-        match &self.vals[root] {
-            Val::Arg(_, _) | Val::PolyOp(_) | Val::PartialPolyApply(0, ..) => {
-                let arg_count = self.vals[root].rank().unwrap();
-                let circuit = self.create_polycircuit(root, arg_count, 0).unwrap();
+        let root_val = &self.vals[root];
+        match root_val {
+            Val::Arg(_, _, prom) | Val::PolyOp(_, prom) | Val::PartialPolyApply(0, .., prom, _) => {
+                let arg_count = root_val.rank().unwrap();
+                let prom = *prom;
+                let circuit = self.create_polycircuit(root, arg_count, 0, prom).unwrap();
                 let circuit_id = self.env.intern_circuit(Arc::new(circuit));
-                Val::Poly(arg_count, circuit_id, self.vals[root].deps())
+                Val::Poly(arg_count, circuit_id, prom, self.vals[root].deps())
             }
             otherwise => otherwise.clone(),
         }
