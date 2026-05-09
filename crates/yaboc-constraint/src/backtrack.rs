@@ -47,6 +47,8 @@ pub struct BtTerm {
     pub expr: Vec<ExprNode>,
     pub origin: Vec<Origin>,
     pub field_idx: FxHashMap<DefId, u32>,
+    pub blocks: FxHashMap<BlockId, u32>,
+    pub lambdas: FxHashMap<LambdaId, u32>,
 }
 
 impl BtTerm {
@@ -92,6 +94,8 @@ struct ExpressionBuildCtx<'a> {
     pd: ParserDefId,
     defs: FxHashMap<DefId, u32>,
     fields: FxHashMap<DefId, u32>,
+    blocks: FxHashMap<BlockId, u32>,
+    lambdas: FxHashMap<LambdaId, u32>,
     current_arg_idx: u32,
 }
 
@@ -105,6 +109,8 @@ impl<'a> ExpressionBuildCtx<'a> {
             origin: Vec::new(),
             defs: FxHashMap::default(),
             fields: FxHashMap::default(),
+            blocks: FxHashMap::default(),
+            lambdas: FxHashMap::default(),
             current_arg_idx: 0,
         }
     }
@@ -242,7 +248,9 @@ impl<'a> ExpressionBuildCtx<'a> {
         if kind == BlockKind::Parser {
             self.current_arg_idx -= 1;
         }
-        self.push(Instruction::LeaveScope(ret), ty, block_origin)
+        let res = self.push(Instruction::LeaveScope(ret), ty, block_origin)?;
+        self.blocks.insert(block_id, res);
+        Ok(res)
     }
 
     fn build_lambda(&mut self, lambda_id: LambdaId, ty: TypeId) -> SResult<u32> {
@@ -260,7 +268,9 @@ impl<'a> ExpressionBuildCtx<'a> {
             self.defs.insert(arg.0, arg_idx);
         }
         let (_, expr) = self.build_expr(lambda.expr, false)?;
-        self.push(Instruction::LeaveScope(expr), ty, lambda_origin)
+        let res = self.push(Instruction::LeaveScope(expr), ty, lambda_origin)?;
+        self.lambdas.insert(lambda_id, res);
+        Ok(res)
     }
 
     fn build_expr(&mut self, expr_id: ExprId, silent: bool) -> SResult<(bool, u32)> {
@@ -467,6 +477,8 @@ impl<'a> ExpressionBuildCtx<'a> {
             lookup_idx,
             return_idx,
             field_idx: self.fields,
+            blocks: self.blocks,
+            lambdas: self.lambdas,
             origin: self.origin,
         })
     }

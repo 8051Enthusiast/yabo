@@ -1,4 +1,5 @@
 mod call_info;
+mod layout_info;
 mod tailsize;
 
 use std::collections::hash_map::Entry;
@@ -16,6 +17,7 @@ use yaboc_types::PrimitiveType;
 
 use crate::{
     FuncLayoutKind, LayoutSlice, StructManifestation, UnfinishedManifestation,
+    collect::layout_info::{LayoutInfoCollection, LayoutInfoCollector},
     mir_subst::{FunctionSubstitute, function_substitute},
     pd_parser,
 };
@@ -59,6 +61,7 @@ pub struct LayoutCollection<'a> {
     pub tail_sa: FxHashMap<(ILayout<'a>, IMonoLayout<'a>), TailInfo>,
     pub max_sa: SizeAlign,
     pub global_offsets: StructManifestation,
+    pub layout_info: LayoutInfoCollection<'a>,
 }
 
 pub struct LayoutCollector<'a, 'b> {
@@ -79,6 +82,7 @@ pub struct LayoutCollector<'a, 'b> {
     processed_calls: FxHashSet<(ILayout<'a>, IMonoLayout<'a>, CallMeta)>,
     processed_evals: FxHashSet<(IMonoLayout<'a>, RequirementSet)>,
     unprocessed: Vec<UnprocessedCall<'a>>,
+    layout_info: LayoutInfoCollector<'a>,
 }
 
 #[derive(Debug)]
@@ -97,6 +101,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         // even if no layout of ours has a vtable pointer, the caller may still request
         // one
         let max_sa = SizeAlign::default().tac(ctx.dcx.target_data.pointer_sa);
+        let db = ctx.db;
         LayoutCollector {
             ctx,
             int,
@@ -115,14 +120,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             processed_evals: Default::default(),
             unprocessed: Default::default(),
             root: Default::default(),
-        }
-    }
-
-    fn register_function(&mut self, mono: IMonoLayout<'a>) {
-        if self.functions.insert(mono) {
-            if TRACE_COLLECTION {
-                dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
-            }
+            layout_info: LayoutInfoCollector::new(db),
         }
     }
 
@@ -131,8 +129,10 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             if self.parsers.insert(mono) && TRACE_COLLECTION {
                 dbeprintln!(self.ctx.db, "[collection] registered parser {}", &mono);
             }
-        } else {
-            self.register_function(mono);
+        } else if self.functions.insert(mono) {
+            if TRACE_COLLECTION {
+                dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
+            }
         }
     }
 
@@ -191,7 +191,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     }
                 }
                 MonoLayout::Lambda(..) => {
-                    self.register_function(mono);
+                    self.register_parser_or_function(mono);
                 }
                 MonoLayout::ArrayParser(Some((_, None)) | None)
                 | MonoLayout::ArrayFillParser(None) => {
@@ -204,12 +204,19 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         }
     }
 
-    fn register_parse(&mut self, arg: ILayout<'a>, parser: ILayout<'a>, info: CallMeta) {
+    fn register_parse(&mut self, arg: ILayout<'a>, parser: ILayout<'a>, mut info: CallMeta) {
+        self.parses.add_call((arg, info), parser);
         if info.req.is_empty() {
             return;
         }
         let parser = parser.evaluate(self.ctx).unwrap().0;
         for mono in &parser {
+            let layout_info = self.layout_info.get_info(parser);
+            let req = layout_info.modify_reqs(info.req);
+            if req.is_empty() {
+                continue;
+            }
+            info.req = req;
             match mono.mono_layout() {
                 MonoLayout::BlockParser(..) => {
                     if self.processed_calls.insert((arg, mono, info)) {
@@ -225,7 +232,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         self.unprocessed.push(UnprocessedCall::BlockParser(
                             arg,
                             mono,
-                            MirKind::Call(info.req),
+                            MirKind::Call(req),
                         ));
                     }
                 }
@@ -243,16 +250,17 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         self.unprocessed.push(UnprocessedCall::NominalParser(
                             arg,
                             mono,
-                            MirKind::Call(info.req),
+                            MirKind::Call(req),
                         ));
                     }
                 }
                 MonoLayout::Regex(..) => {
                     let single = IMonoLayout::u8_single(self.ctx);
                     self.register_layouts(single.inner());
-                    self.parses.add_call(
-                        (arg, CallMeta::new(RequirementSet::all(), false)),
+                    self.register_parse(
+                        arg,
                         single.inner(),
+                        CallMeta::new(RequirementSet::all(), false),
                     );
                 }
                 MonoLayout::IfParser(..) => {
@@ -269,7 +277,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         self.unprocessed.push(UnprocessedCall::IfParser(
                             arg,
                             mono,
-                            MirKind::Call(info.req),
+                            MirKind::Call(req),
                         ));
                     }
                 }
@@ -280,7 +288,6 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 _ => {}
             }
         }
-        self.parses.add_call((arg, info), parser)
     }
 
     fn register_funcall(
@@ -340,6 +347,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     }
 
     fn register_eval(&mut self, fun: ILayout<'a>, req: RequirementSet) {
+        self.eval_slots.add_call(req, fun);
         if req.is_empty() {
             return;
         }
@@ -352,8 +360,12 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             );
         }
         let fun = fun.evaluate(self.ctx).unwrap().0;
-        self.eval_slots.add_call(req, fun);
         for mono in &fun {
+            let layout_info = self.layout_info.get_mono_info(mono);
+            let req = layout_info.modify_reqs(req);
+            if req.is_empty() {
+                continue;
+            }
             let eval = match mono.mono_layout() {
                 MonoLayout::NominalParser(pd, args, FuncLayoutKind::Fun) => {
                     let parserdef = pd.lookup(self.ctx.db).unwrap();
@@ -808,6 +820,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             eval_slots,
             tail_sa,
             global_offsets,
+            layout_info: self.layout_info.collect(),
         })
     }
 }

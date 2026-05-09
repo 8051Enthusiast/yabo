@@ -17,6 +17,7 @@ use yaboc_base::error::{IsSilenced, SResult, SilencedError};
 use yaboc_base::interner::{DefId, FieldName, Regex};
 use yaboc_base::low_effort_interner::{Interner, Uniq};
 use yaboc_base::{dbformat, dbpanic};
+use yaboc_constraint::Constraints;
 use yaboc_expr::ExprHead;
 use yaboc_hir::{self as hir, DefKind, HirIdWrapper, ParserDefId};
 use yaboc_hir_types::HeadDiscriminant;
@@ -38,7 +39,7 @@ pub struct StructManifestation {
 }
 
 #[salsa::query_group(LayoutDatabase)]
-pub trait Layouts: AbsInt + Mirs {}
+pub trait Layouts: AbsInt + Mirs + Constraints {}
 
 struct UnfinishedManifestation(StructManifestation);
 
