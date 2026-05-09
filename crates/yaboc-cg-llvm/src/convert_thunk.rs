@@ -114,8 +114,9 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TypecastThunk<'comp, 'llvm> {
         let thunk = CgMonoValue::new(self.layout, thunk_ptr);
         let ret = CgReturnValue::new(target_level, ret_ptr);
 
-        let ret = if let MonoLayout::Ptr = thunk.layout.mono_layout() {
-            cg.call_current_element_fun(ret, thunk.into())?
+        if let MonoLayout::Ptr = thunk.layout.mono_layout() {
+            let ret = cg.call_current_element_fun(ret, thunk.into())?;
+            cg.builder.build_return(Some(&ret))?;
         } else {
             let arg_copy = self.arg_copy.unwrap();
             let (from, fun) = cg.build_nominal_components(thunk)?;
@@ -130,7 +131,6 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TypecastThunk<'comp, 'llvm> {
             cg.call_parser_fun_impl(ret, fun, arg_copy, NeededBy::Val.into(), false)?
         };
 
-        cg.builder.build_return(Some(&ret))?;
         if let Some(bb) = previous_bb {
             cg.builder.position_at_end(bb);
         }
@@ -258,14 +258,13 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for ValThunk<'comp> {
         let fun = cg.current_function();
         let current_bb = cg.llvm.append_basic_block(fun, "tail");
         cg.builder.position_at_end(current_bb);
-        let ret = if let Some(from) = self.from {
+        if let Some(from) = self.from {
             let (ret, fun, arg) = parser_values(fun, self.fun, from);
             cg.call_parser_fun_impl(ret, fun, arg, req, true)?
         } else {
             let (ret, fun) = eval_fun_values(fun, self.fun);
             cg.call_eval_fun_fun_impl(ret, fun.into(), req)?
         };
-        cg.builder.build_return(Some(&ret))?;
         if let Some(bb) = previous_bb {
             cg.builder.position_at_end(bb);
         }
@@ -316,7 +315,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for BlockThunk<'comp> {
         let fun = cg.current_function();
         let current_bb = cg.llvm.append_basic_block(fun, "tail");
         cg.builder.position_at_end(current_bb);
-        let ret = if let Some(from) = self.from {
+        if let Some(from) = self.from {
             let (ret_val, fun_val, arg_val) = parser_values(fun, self.fun, from);
             let ret_val = ret_val.with_ptr(return_ptr);
             cg.call_parser_fun_impl(ret_val, fun_val, arg_val, self.req, true)?
@@ -325,7 +324,6 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for BlockThunk<'comp> {
             let ret_val = ret_val.with_ptr(return_ptr);
             cg.call_eval_fun_fun_impl(ret_val, fun_val.into(), self.req)?
         };
-        cg.builder.build_return(Some(&ret))?;
         if let Some(bb) = previous_bb {
             cg.builder.position_at_end(bb);
         }

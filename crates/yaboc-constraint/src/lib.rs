@@ -20,7 +20,8 @@ use yaboc_hir_types::TyHirs;
 use yaboc_len::{ArgRank, Env, PolyCircuit, SizeCalcCtx, Term, Val, depvec::ArgDeps};
 use yaboc_resolve::{expr::Resolved, parserdef_ssc::FunctionSscId};
 
-use backtrack::{BtResult, BtTerm, BtVals, bt_term, ssc_bt_vals};
+pub use backtrack::{BtResult, BtTerm, BtVals};
+use backtrack::{bt_term, ssc_bt_vals};
 pub use len::PdLenTerm;
 use len::len_term;
 use yaboc_types::{DefId, Type, TypeId};

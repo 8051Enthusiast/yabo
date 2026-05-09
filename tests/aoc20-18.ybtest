@@ -31,7 +31,7 @@ fun ~expr_cont(lhs: int): int = {
   \
 }
 
-fun ~expr: int = expect reduce(atom, expr_cont)
+fun ~expr: int = if reduce(atom, expr_cont)
 
 export
 fun ~test = aoc.summap({

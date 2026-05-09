@@ -437,26 +437,23 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         req: RequirementSet,
     ) -> IResult<FunctionValue<'llvm>> {
-        let part = self.parser_layout_part(from, req, ParserFunKind::Worker);
-        let sym = self.sym(layout, part);
-        let llvm_fun = match self.module.get_function(&sym) {
-            Some(f) => return Ok(f),
-            None => self.parser_impl_fun_val(layout, from, req),
-        };
-        if from.is_int() {
-            self.add_entry_block(llvm_fun);
-            self.set_always_inline(llvm_fun);
-            self.builder
-                .build_return(Some(&self.const_i64(ReturnStatus::Error as i64)))?;
-            return Ok(llvm_fun);
-        }
-        let mir_fun = Rc::new(self.mir_pd_parser(from, layout, req));
-        let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
-        let mut translator = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg, ret.head)?;
-        if req.contains(NeededBy::Val) {
-            translator = translator.with_ret_val(ret);
-        }
-        translator.build()
+        self.create_parser_worker(layout, from, req, |this, llvm_fun, req| {
+            if from.is_int() {
+                this.add_entry_block(llvm_fun);
+                this.set_always_inline(llvm_fun);
+                this.builder
+                    .build_return(Some(&this.const_i64(ReturnStatus::Error as i64)))?;
+                return Ok(());
+            }
+            let mir_fun = Rc::new(this.mir_pd_parser(from, layout, req));
+            let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
+            let mut translator = MirTranslator::new(this, mir_fun, llvm_fun, fun, arg, ret.head)?;
+            if req.contains(NeededBy::Val) {
+                translator = translator.with_ret_val(ret);
+            }
+            translator.build()?;
+            Ok(())
+        })
     }
 
     fn create_pd_end(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
@@ -795,15 +792,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         };
         let block = block.lookup(&self.compiler_database.db).unwrap();
         let llvm_fun = self.parser_fun_val_tail(layout, from, req);
-        let mir_fun = Rc::new(self.mir_block(Some(from), layout, req));
-        let impl_fun = self.parser_impl_fun_val(layout, from, req);
 
-        let (ret, fun, arg) = parser_values(impl_fun, layout, from);
-        let mut translator = MirTranslator::new(self, mir_fun, impl_fun, fun, arg, ret.head)?;
-        if req.contains(NeededBy::Val) {
-            translator = translator.with_ret_val(ret)
-        }
-        translator.build()?;
+        let impl_fun = self.create_parser_worker(layout, from, req, |this, impl_fun, req| {
+            let mir_fun = Rc::new(this.mir_block(Some(from), layout, req));
+            let (ret, fun, arg) = parser_values(impl_fun, layout, from);
+            let mut translator = MirTranslator::new(this, mir_fun, impl_fun, fun, arg, ret.head)?;
+            if req.contains(NeededBy::Val) {
+                translator = translator.with_ret_val(ret)
+            }
+            translator.build()?;
+            Ok(())
+        })?;
 
         // if we have no return value, we do not need the thunk which is just for
         // making sure the vtable pointer for the block return is properly returned
@@ -854,38 +853,41 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         req: RequirementSet,
     ) -> IResult<FunctionValue<'llvm>> {
-        let llvm_fun = self.parser_fun_val_tail(layout, from, req);
-        self.set_always_inline(llvm_fun);
-        self.add_entry_block(llvm_fun);
-        let (ret, _, arg) = parser_values(llvm_fun, layout, from);
-        let globals = self.build_high_bit_mask(ret.head)?;
-        let ptr_diff = self.call_array_len_fun(arg, globals)?;
-        let is_zero = self.builder.build_int_compare(
-            IntPredicate::EQ,
-            ptr_diff,
-            self.const_i64(0),
-            "is_zero",
-        )?;
-        self.branch(
-            is_zero,
-            |this| {
-                let ret = this.const_i64(ReturnStatus::Eof as i64);
-                this.builder.build_return(Some(&ret))
-            },
-            |this| {
-                if req.contains(NeededBy::Val) {
-                    let ret = this.call_current_element_fun(ret, arg)?;
-                    this.non_zero_early_return(ret)?;
-                }
-                if req.contains(NeededBy::Len) {
-                    let ret = this.call_single_forward_fun(arg, globals)?;
+        let outer_fun = self.parser_fun_val_tail(layout, from, req);
+        let inner_fun = self.create_parser_worker(layout, from, req, |this, llvm_fun, req| {
+            this.set_always_inline(llvm_fun);
+            this.add_entry_block(llvm_fun);
+            let (ret, _, arg) = parser_values(llvm_fun, layout, from);
+            let globals = this.build_high_bit_mask(ret.head)?;
+            let ptr_diff = this.call_array_len_fun(arg, globals)?;
+            let is_zero = this.builder.build_int_compare(
+                IntPredicate::EQ,
+                ptr_diff,
+                this.const_i64(0),
+                "is_zero",
+            )?;
+            this.branch(
+                is_zero,
+                |this| {
+                    let ret = this.const_i64(ReturnStatus::Eof as i64);
                     this.builder.build_return(Some(&ret))
-                } else {
-                    this.builder.build_return(Some(&this.const_i64(0)))
-                }
-            },
-        )?;
-        Ok(llvm_fun)
+                },
+                |this| {
+                    if req.contains(NeededBy::Val) {
+                        let ret = this.call_current_element_fun(ret, arg)?;
+                        this.non_zero_early_return(ret)?;
+                    }
+                    if req.contains(NeededBy::Len) {
+                        let ret = this.call_single_forward_fun(arg, globals)?;
+                        this.builder.build_return(Some(&ret))
+                    } else {
+                        this.builder.build_return(Some(&this.const_i64(0)))
+                    }
+                },
+            )?;
+            Ok(())
+        })?;
+        self.wrap_direct_call(inner_fun, outer_fun, true)
     }
 
     fn create_error_parse(
@@ -900,6 +902,59 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.builder
             .build_return(Some(&self.const_i64(ReturnStatus::Error as i64)))?;
         Ok(llvm_fun)
+    }
+
+    fn always_success(&mut self, llvm_fun: FunctionValue<'llvm>) -> IResult<()> {
+        self.add_entry_block(llvm_fun);
+        self.set_always_inline(llvm_fun);
+        self.builder
+            .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)))?;
+        Ok(())
+    }
+
+    fn create_parser_worker(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+        from: ILayout<'comp>,
+        req: RequirementSet,
+        mut f: impl FnMut(&mut Self, FunctionValue<'llvm>, RequirementSet) -> IResult<()>,
+    ) -> IResult<FunctionValue<'llvm>> {
+        let info = &self.collected_layouts.layout_info.info[&layout.inner()];
+        let req = info.modify_reqs(req);
+        let part = self.parser_layout_part(from, req, ParserFunKind::Worker);
+        let sym = self.sym(layout, part);
+        if let Some(f) = self.module.get_function(&sym) {
+            return Ok(f);
+        }
+        let fun = self.parser_impl_fun_val(layout, from, req);
+        if req.is_empty() {
+            self.always_success(fun)?;
+            return Ok(fun);
+        }
+        f(self, fun, req)?;
+        Ok(fun)
+    }
+
+    fn create_eval_worker(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+        req: RequirementSet,
+        mut f: impl FnMut(&mut Self, FunctionValue<'llvm>, RequirementSet) -> IResult<()>,
+    ) -> IResult<FunctionValue<'llvm>> {
+        let info = &self.collected_layouts.layout_info.info[&layout.inner()];
+        let req = info.modify_reqs(req);
+        let part = LayoutPart::EvalFun(req, ParserFunKind::Worker);
+        let sym = self.sym(layout, part);
+        if let Some(f) = self.module.get_function(&sym) {
+            return Ok(f);
+        }
+        let fun = self.eval_fun_fun_val(layout, req);
+        if req.is_empty() {
+            self.always_success(fun)?;
+            return Ok(fun);
+        }
+        f(self, fun, req)?;
+        Ok(fun)
     }
 
     fn create_regex_parse(
@@ -968,29 +1023,25 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         regex: &RegexData,
         req: RequirementSet,
     ) -> IResult<FunctionValue<'llvm>> {
-        let part = self.parser_layout_part(from, req, ParserFunKind::Worker);
-        let sym = self.sym(layout, part);
-        let llvm_fun = match self.module.get_function(&sym) {
-            Some(f) => return Ok(f),
-            None => self.parser_impl_fun_val(layout, from, req),
-        };
-        let re_str = match regex.kind {
-            RegexKind::Regular => regex.regex.to_owned(),
-            RegexKind::Hexagex => hexagex::hexagex(&regex.regex).unwrap().to_string(),
-        };
-        let dfa_conf = regex_automata::dfa::dense::Config::new().minimize(true);
-        let syntax = regex_automata::util::syntax::Config::new()
-            .dot_matches_new_line(true)
-            .utf8(false)
-            .unicode(false);
-        let dfa = regex_automata::dfa::dense::Builder::new()
-            .configure(dfa_conf)
-            .syntax(syntax)
-            .build(&re_str)
-            .expect("invalid regex");
-        let mut trans = RegexTranslator::new(self, llvm_fun, &dfa, from)?;
-        trans.build()?;
-        Ok(llvm_fun)
+        self.create_parser_worker(layout, from, req, |this, fun, _| {
+            let re_str = match regex.kind {
+                RegexKind::Regular => regex.regex.to_owned(),
+                RegexKind::Hexagex => hexagex::hexagex(&regex.regex).unwrap().to_string(),
+            };
+            let dfa_conf = regex_automata::dfa::dense::Config::new().minimize(true);
+            let syntax = regex_automata::util::syntax::Config::new()
+                .dot_matches_new_line(true)
+                .utf8(false)
+                .unicode(false);
+            let dfa = regex_automata::dfa::dense::Builder::new()
+                .configure(dfa_conf)
+                .syntax(syntax)
+                .build(&re_str)
+                .expect("invalid regex");
+            let mut trans = RegexTranslator::new(this, fun, &dfa, from)?;
+            trans.build()?;
+            Ok(())
+        })
     }
 
     fn create_array_parse(
@@ -1259,14 +1310,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             panic!("Expected block parser layout")
         };
         let block = block.lookup(&self.compiler_database.db).unwrap();
-        let mir_fun = Rc::new(self.mir_block(None, layout, req));
-        let impl_fun = self.eval_fun_fun_val(layout, req);
 
-        let (ret, fun) = eval_fun_values(impl_fun, layout);
-        let undef = self.undef_val();
-        let mut translator = MirTranslator::new(self, mir_fun, impl_fun, fun, undef, ret.head)?;
-        translator = translator.with_ret_val(ret);
-        translator.build()?;
+        let impl_fun = self.create_eval_worker(layout, req, |this, impl_fun, req| {
+            let mir_fun = Rc::new(this.mir_block(None, layout, req));
+            let (ret, fun) = eval_fun_values(impl_fun, layout);
+            let undef = this.undef_val();
+            let mut translator = MirTranslator::new(this, mir_fun, impl_fun, fun, undef, ret.head)?;
+            translator = translator.with_ret_val(ret);
+            translator.build()?;
+            Ok(())
+        })?;
 
         // if the block function does not return itself, we do not need to write the block vtable
         if matches!(block.returns, BlockReturnKind::Returns) {
@@ -1298,13 +1351,15 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         req: RequirementSet,
     ) -> IResult<FunctionValue<'llvm>> {
-        let llvm_fun = self.eval_fun_fun_val(layout, req);
-        let arg = self.undef_val();
-        let mir_fun = Rc::new(self.mir_pd_fun(layout, req)?);
-        let (ret, fun) = eval_fun_values(llvm_fun, layout);
-        let mut translator = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg, ret.head)?;
-        translator = translator.with_ret_val(ret);
-        translator.build()
+        self.create_eval_worker(layout, req, |this, llvm_fun, req| {
+            let arg = this.undef_val();
+            let mir_fun = Rc::new(this.mir_pd_fun(layout, req)?);
+            let (ret, fun) = eval_fun_values(llvm_fun, layout);
+            let mut translator = MirTranslator::new(this, mir_fun, llvm_fun, fun, arg, ret.head)?;
+            translator = translator.with_ret_val(ret);
+            translator.build()?;
+            Ok(())
+        })
     }
 
     fn create_eval_fun_fun_copy(
@@ -1334,13 +1389,15 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         req: RequirementSet,
     ) -> IResult<FunctionValue<'llvm>> {
-        let llvm_fun = self.eval_fun_fun_val(layout, req);
-        let arg = self.undef_val();
-        let mir_fun = Rc::new(self.mir_lambda_fun(layout, req)?);
-        let (ret, fun) = eval_fun_values(llvm_fun, layout);
-        let mut translator = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg, ret.head)?;
-        translator = translator.with_ret_val(ret);
-        translator.build()
+        self.create_eval_worker(layout, req, |this, llvm_fun, req| {
+            let arg = this.undef_val();
+            let mir_fun = Rc::new(this.mir_lambda_fun(layout, req)?);
+            let (ret, fun) = eval_fun_values(llvm_fun, layout);
+            let mut translator = MirTranslator::new(this, mir_fun, llvm_fun, fun, arg, ret.head)?;
+            translator = translator.with_ret_val(ret);
+            translator.build()?;
+            Ok(())
+        })
     }
 
     fn create_eval_fun_fun(

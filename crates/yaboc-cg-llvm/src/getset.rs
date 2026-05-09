@@ -243,7 +243,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         arg: CgValue<'comp, 'llvm>,
         call_kind: RequirementSet,
         tail: bool,
-    ) -> IResult<IntValue<'llvm>> {
+    ) -> IResult<()> {
+        let info = &self.collected_layouts.layout_info.info[&fun.layout.inner()];
+        let call_kind = info.modify_reqs(call_kind);
         let part = self.parser_layout_part(arg.layout, call_kind, ParserFunKind::Worker);
         let parser = self.sym_callable(fun.layout, part);
         let call_ret = self.builder.build_call(
@@ -262,7 +264,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .basic()
             .unwrap()
             .into_int_value();
-        Ok(ret)
+        self.builder.build_return(Some(&ret))?;
+        Ok(())
     }
 
     pub(super) fn call_parser_fun_wrapper(
@@ -451,8 +454,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret: CgReturnValue<'llvm>,
         arg: CgValue<'comp, 'llvm>,
         req: RequirementSet,
-    ) -> IResult<IntValue<'llvm>> {
-        self.call_eval_fun_fun(ret, arg, ParserFunKind::Worker, req)
+    ) -> IResult<()> {
+        let info = &self.collected_layouts.layout_info.info[&arg.layout];
+        let req = info.modify_reqs(req);
+        let ret = self.call_eval_fun_fun(ret, arg, ParserFunKind::Worker, req)?;
+        self.builder.build_return(Some(&ret))?;
+        Ok(())
     }
 
     pub(super) fn call_mask_fun(&mut self, arg: CgValue<'comp, 'llvm>) -> IResult<()> {
