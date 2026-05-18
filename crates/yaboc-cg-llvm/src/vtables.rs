@@ -282,8 +282,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         };
         let vtable_header = self.vtable_header(layout, false, vtable);
         let vtable_array =
-            self.gather_slots::<CreateArgFun, _>(&slots, vtable, len, |this, _, slot| {
-                this.function_create_args_fun_val(layout, slot)
+            self.gather_slots::<CreateArgFun, _>(&slots, vtable, len, |this, from, _| {
+                this.function_create_args_fun_val(layout, from)
                     .as_global_value()
                     .as_pointer_value()
             });

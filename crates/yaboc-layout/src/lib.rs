@@ -919,6 +919,10 @@ impl<'a> LayoutContext<'a> {
     pub fn layout_hash(&mut self, db: &(impl Layouts + ?Sized), layout: ILayout<'a>) -> [u8; 8] {
         self.hashes.hash(layout, db)[..8].try_into().unwrap()
     }
+
+    pub fn layout_slice_hash(&mut self, db: &(impl Layouts + ?Sized), layout: &[ILayout<'a>]) -> [u8; 8] {
+        self.hashes.hash_multiple(layout, db)[..8].try_into().unwrap()
+    }
 }
 
 impl<'a> AbstractDomain<'a> for ILayout<'a> {

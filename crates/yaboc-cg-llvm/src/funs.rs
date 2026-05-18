@@ -1433,12 +1433,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         args: &[ILayout<'comp>],
-        slot: u64,
     ) -> IResult<()> {
         let new_args = args.iter().copied();
         let result = layout.inner().apply_fun(self.layouts, new_args).unwrap();
         let return_layout = result.maybe_mono().unwrap();
-        let f = self.function_create_args_fun_val(layout, slot);
+        let f = self.function_create_args_fun_val(layout, args);
         self.add_entry_block(f);
         ThunkContext::new(
             self,
@@ -1520,7 +1519,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.create_eval_fun_fun(layout, *req)?;
         }
         let collected_layouts = self.collected_layouts.clone();
-        for (slot, args) in collected_layouts
+        for (_, args) in collected_layouts
             .funcall_slots
             .occupied_entries
             .get(&layout)
@@ -1528,7 +1527,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .unwrap_or_default()
             .iter()
         {
-            self.create_create_fun_args_fun(layout, args, *slot)?;
+            self.create_create_fun_args_fun(layout, args)?;
         }
         Ok(())
     }
