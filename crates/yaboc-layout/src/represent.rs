@@ -149,6 +149,19 @@ impl<'a> LayoutHasher<'a> {
         Default::default()
     }
 
+    pub fn hash_multiple<DB: Layouts + ?Sized>(
+        &mut self,
+        layouts: &[ILayout<'a>],
+        db: &DB,
+    ) -> [u8; 32] {
+        let mut hasher: sha2::Sha256 = Default::default();
+        for layout in layouts {
+            hasher.update(self.hash(*layout, db));
+        }
+        let res = hasher.finalize().into();
+        res
+    }
+
     pub fn hash<DB: Layouts + ?Sized>(&mut self, layout: ILayout<'a>, db: &DB) -> [u8; 32] {
         if let Some(x) = self.map.get(&layout) {
             return *x;
@@ -356,7 +369,7 @@ pub enum LayoutPart {
     Skip,
     Span,
     InnerArray,
-    CreateArgs(PSize),
+    CreateArgs([u8; TRUNCATION_LENGTH]),
     SetArg(PSize),
     Len,
     Mask,
@@ -396,7 +409,7 @@ impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
             LayoutPart::Skip => write!(f, "skip"),
             LayoutPart::Span => write!(f, "span"),
             LayoutPart::InnerArray => write!(f, "inner_array"),
-            LayoutPart::CreateArgs(p) => write!(f, "create_args_{p}"),
+            LayoutPart::CreateArgs(p) => write!(f, "create_args_{}", truncated_hex(&p[..])),
             LayoutPart::SetArg(idx) => write!(f, "set_arg_{idx}"),
             LayoutPart::Len => write!(f, "len"),
             LayoutPart::Mask => write!(f, "mask"),

@@ -138,6 +138,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         LayoutPart::Parse(req, kind, hash)
     }
 
+    pub(super) fn create_args_part(&mut self, from: &[ILayout<'comp>]) -> LayoutPart {
+        let hash = self.layouts.dcx.layout_slice_hash(self.layouts.db, from);
+        LayoutPart::CreateArgs(hash)
+    }
+
     pub(super) fn parser_fun_val_wrapper(
         &mut self,
         layout: IMonoLayout<'comp>,
@@ -292,9 +297,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub(super) fn function_create_args_fun_val(
         &mut self,
         layout: IMonoLayout<'comp>,
-        slot: PSize,
+        from: &[ILayout<'comp>],
     ) -> FunctionValue<'llvm> {
-        let f = self.fun_val::<vtable::CreateArgFun>(layout, LayoutPart::CreateArgs(slot));
+        let part = self.create_args_part(from);
+        let f = self.fun_val::<vtable::CreateArgFun>(layout, part);
         self.set_always_inline(f);
         f
     }

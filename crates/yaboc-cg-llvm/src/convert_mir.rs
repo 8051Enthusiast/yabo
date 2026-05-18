@@ -633,23 +633,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             .unwrap();
         let arg_layout_tuple = self.cg.layouts.dcx.intern_slice.intern_slice(&arg_layout);
         let fun = self.place_val(fun)?;
-        let Some(slot) = self
-            .cg
-            .collected_layouts
-            .funcall_slots
-            .layout_vtable_offsets
-            .get(&(arg_layout_tuple, fun.layout))
-            .copied()
-        else {
-            dbpanic!(
-                &self.cg.compiler_database.db,
-                "cannot find funcall slot for {} with args {}",
-                &fun.layout,
-                &arg_layout_tuple.1
-            );
-        };
         let ret_val = self.return_val(ret)?;
-        self.cg.call_fun_create(ret_val, fun, slot)?;
+        self.cg.call_fun_create(ret_val, fun, &arg_layout_tuple)?;
         let mut first_index = None;
         for layout in &fun.layout {
             let (available, used) = layout

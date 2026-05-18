@@ -1,4 +1,5 @@
 use inkwell::types::FunctionType;
+use yaboc_base::low_effort_interner::Uniq;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::represent::ParserFunKind;
 
@@ -346,14 +347,33 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         ret: CgReturnValue<'llvm>,
         fun: CgValue<'comp, 'llvm>,
-        slot: u64,
+        args: &Uniq<[ILayout<'comp>]>,
     ) -> IResult<IntValue<'llvm>> {
         let create = match fun.layout.maybe_mono() {
-            Some(mono) => self.sym_callable(mono, LayoutPart::CreateArgs(slot)).into(),
-            None => self.vtable_callable::<vtable::FunctionVTable<AbsPtr>, vtable::FunctionVTable<RelPtr>, vtable::CreateArgFun>(
-                fun.ptr,
-                &[FunctionVTableFields::apply_table as i64, slot as i64],
-            )?,
+            Some(mono) => {
+                let part = self.create_args_part(args);
+                self.sym_callable(mono, part).into()
+            }
+            None => {
+                let Some(slot) = self
+                    .collected_layouts
+                    .funcall_slots
+                    .layout_vtable_offsets
+                    .get(&(args, fun.layout))
+                    .copied()
+                else {
+                    dbpanic!(
+                        &self.compiler_database.db,
+                        "cannot find funcall slot for {} with args {}",
+                        &fun.layout,
+                        &args.1
+                    );
+                };
+                self.vtable_callable::<vtable::FunctionVTable<AbsPtr>, vtable::FunctionVTable<RelPtr>, vtable::CreateArgFun>(
+                    fun.ptr,
+                    &[FunctionVTableFields::apply_table as i64, slot as i64],
+                )?
+            }
         };
         self.build_call_with_int_ret(create, &[ret.ptr.into(), fun.ptr.into(), ret.head.into()])
     }
