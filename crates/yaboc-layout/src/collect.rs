@@ -12,7 +12,7 @@ use yaboc_hir::{HirIdWrapper, ParserDefId};
 use yaboc_hir_types::HeadDiscriminant;
 use yaboc_mir::{CallMeta, MirInstr, MirKind, Place};
 use yaboc_req::{NeededBy, RequirementSet};
-use yaboc_target::layout::{PSize, SizeAlign};
+use yaboc_target::layout::SizeAlign;
 use yaboc_types::PrimitiveType;
 
 use crate::{
@@ -46,7 +46,7 @@ pub fn root_req() -> CallMeta {
 
 #[derive(Debug)]
 pub struct LayoutCollection<'a> {
-    pub root: Vec<(IMonoLayout<'a>, PSize)>,
+    pub root: Vec<IMonoLayout<'a>>,
     pub arrays: LayoutSet<'a>,
     pub blocks: LayoutSet<'a>,
     pub nominals: LayoutSet<'a>,
@@ -774,20 +774,12 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         let ptr = self.ctx.dcx.intern(Layout::Mono(MonoLayout::Ptr));
         primitives.insert(IMonoLayout(ptr));
 
-        let root = self
-            .root
-            .into_iter()
-            .map(|(from, mono)| {
-                let key = ((from, root_req()), mono.0);
-                let slot = parser_slots.layout_vtable_offsets[&key];
-                (mono, slot)
-            })
-            .collect();
+        let root = self.root.into_iter().map(|(_, mono)| mono).collect();
 
         let mut tail_sa = FxHashMap::default();
         let mut tail_collector = TailCollector::new(self.ctx);
-        for (parser, froms) in parser_slots.occupied_entries.iter() {
-            for (_, (from, _)) in froms.iter() {
+        for (parser, froms) in parser_slots.call_args.iter() {
+            for (from, _) in froms.keys() {
                 let sa = tail_collector.size(CallSite(*from, *parser))?;
                 tail_sa.insert((*from, *parser), sa);
             }

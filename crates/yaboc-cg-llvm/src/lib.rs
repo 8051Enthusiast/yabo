@@ -944,7 +944,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub fn create_pd_exports(&mut self) -> IResult<()> {
         let collected_layouts = self.collected_layouts.clone();
         let from = IMonoLayout::u8_array(self.layouts);
-        for (layout, _) in collected_layouts.root.iter() {
+        for layout in collected_layouts.root.iter() {
             if let MonoLayout::NominalParser(pd, _, _) = layout.mono_layout() {
                 self.create_pd_export(*pd, *layout, from.inner());
             }
