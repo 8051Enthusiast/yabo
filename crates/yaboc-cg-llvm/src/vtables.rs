@@ -221,28 +221,39 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn gather_slots<F: TargetSized, M: Copy>(
         &mut self,
-        slots: &FxHashMap<u64, M>,
+        slots: &FxHashMap<M, Option<PSize>>,
         vtable: GlobalValue<'llvm>,
         size: PSize,
-        f: impl Fn(&mut Self, M, u64) -> PointerValue<'llvm>,
+        f: impl Fn(&mut Self, M) -> PointerValue<'llvm>,
     ) -> ArrayValue<'llvm> {
-        let impls = (0..size)
-            .map(|slot| {
-                let val = if let Some(arg) = slots.get(&slot).copied() {
-                    f(self, arg, slot)
-                } else {
-                    F::codegen_ty(self).into_pointer_type().const_null()
-                };
-                self.vtable_ptr_from_ptr(vtable, val)
-            })
+        let null = F::codegen_ty(self).into_pointer_type().const_null();
+        let mut impls = vec![null; size as usize];
+        for (arg, slot) in slots.iter() {
+            let s = f(self, *arg);
+            if let Some(slot) = slot {
+                impls[*slot as usize] = s;
+            }
+        }
+        let vtable_ptrs = impls
+            .into_iter()
+            .map(|x| self.vtable_ptr_from_ptr(vtable, x))
             .collect::<Vec<_>>();
-        self.vtable_ptr_const_array(&impls)
+        self.vtable_ptr_const_array(&vtable_ptrs)
     }
 
     fn create_parser_vtable(&mut self, layout: IMonoLayout<'comp>) {
         // it may be that a parser is not used at all, in which case we are already finished
-        let slots = self.collected_layouts.parser_slots.occupied_slots(layout);
-        let max = slots.keys().copied().max().map(|x| x + 1).unwrap_or(0);
+        let slots = self
+            .collected_layouts
+            .parser_slots
+            .calls_from_layout(layout);
+        let max = slots
+            .values()
+            .copied()
+            .max()
+            .flatten()
+            .map(|x| x + 1)
+            .unwrap_or(0);
         let arg_impl_array = self.create_set_arg_array(layout);
         let vtable = if self.options.target.relative_vptrs {
             self.create_resized_vtable::<vtable::ParserVTable<RelPtr>>(layout, max as u32)
@@ -251,7 +262,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         };
         let vtable_header = self.vtable_header(layout, false, vtable);
         let vtable_array =
-            self.gather_slots::<ParserFun, _>(&slots, vtable, max, |this, (from, req), _| {
+            self.gather_slots::<ParserFun, _>(&slots, vtable, max, |this, (from, req)| {
                 this.parser_impl_struct_val(layout, from, req)
             });
         let len_impl = if self.collected_layouts.lens.contains(&layout) {
@@ -272,8 +283,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_function_vtable(&mut self, layout: IMonoLayout<'comp>) {
-        let slots = self.collected_layouts.funcall_slots.occupied_slots(layout);
-        let len = slots.keys().copied().max().map(|x| x + 1).unwrap_or(0);
+        let slots = self
+            .collected_layouts
+            .funcall_slots
+            .calls_from_layout(layout);
+        let len = slots
+            .values()
+            .copied()
+            .max()
+            .flatten()
+            .map(|x| x + 1)
+            .unwrap_or(0);
         let arg_impl_array = self.create_set_arg_array(layout);
         let vtable = if self.options.target.relative_vptrs {
             self.create_resized_vtable::<vtable::FunctionVTable<RelPtr>>(layout, len as u32)
@@ -282,19 +302,18 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         };
         let vtable_header = self.vtable_header(layout, false, vtable);
         let vtable_array =
-            self.gather_slots::<CreateArgFun, _>(&slots, vtable, len, |this, from, _| {
+            self.gather_slots::<CreateArgFun, _>(&slots, vtable, len, |this, from| {
                 this.function_create_args_fun_val(layout, from)
                     .as_global_value()
                     .as_pointer_value()
             });
 
-        let eval_slots = self.collected_layouts.eval_slots.occupied_slots(layout);
-        let eval_funcs =
-            self.gather_slots::<EvalFunFun, _>(&eval_slots, vtable, 3, |this, req, _| {
-                this.eval_fun_fun_val_wrapper(layout, req)
-                    .as_global_value()
-                    .as_pointer_value()
-            });
+        let eval_slots = self.collected_layouts.eval_slots.calls_from_layout(layout);
+        let eval_funcs = self.gather_slots::<EvalFunFun, _>(&eval_slots, vtable, 3, |this, req| {
+            this.eval_fun_fun_val_wrapper(layout, req)
+                .as_global_value()
+                .as_pointer_value()
+        });
 
         let vtable_ty = self.vtable_ty(layout);
         let vtable_val = vtable_ty.const_named_struct(&[

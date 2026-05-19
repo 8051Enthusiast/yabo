@@ -1475,11 +1475,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let mut visited = FxHashSet::default();
         for &(from, meta) in collected_layouts
             .parser_slots
-            .occupied_entries
+            .call_args
             .get(&layout)
             .cloned()
             .unwrap_or_default()
-            .values()
+            .keys()
         {
             if !visited.insert((from, meta.req)) {
                 continue;
@@ -1513,19 +1513,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         for req in self
             .collected_layouts
             .eval_slots
-            .occupied_slots(layout)
-            .values()
+            .calls_from_layout(layout)
+            .keys()
         {
             self.create_eval_fun_fun(layout, *req)?;
         }
         let collected_layouts = self.collected_layouts.clone();
-        for (_, args) in collected_layouts
+        for args in collected_layouts
             .funcall_slots
-            .occupied_entries
+            .call_args
             .get(&layout)
             .cloned()
             .unwrap_or_default()
-            .iter()
+            .keys()
         {
             self.create_create_fun_args_fun(layout, args)?;
         }

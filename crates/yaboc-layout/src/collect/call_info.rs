@@ -23,25 +23,33 @@ impl<Arg: std::hash::Hash + Eq + Copy> Default for CallInfo<'_, Arg> {
 #[derive(Debug)]
 pub struct CallSlotResult<'a, Arg> {
     pub layout_vtable_offsets: FxHashMap<(Arg, ILayout<'a>), PSize>,
-    pub occupied_entries: FxHashMap<IMonoLayout<'a>, Rc<FxHashMap<PSize, Arg>>>,
+    pub call_args: FxHashMap<IMonoLayout<'a>, Rc<FxHashMap<Arg, Option<PSize>>>>,
 }
 
 impl<'a, Arg: std::hash::Hash + Eq + Copy> CallSlotResult<'a, Arg> {
-    pub fn occupied_slots(&self, layout: IMonoLayout<'a>) -> Rc<FxHashMap<PSize, Arg>> {
-        self.occupied_entries
-            .get(&layout)
-            .cloned()
-            .unwrap_or_default()
+    pub fn calls_from_layout(&self, layout: IMonoLayout<'a>) -> Rc<FxHashMap<Arg, Option<PSize>>> {
+        self.call_args.get(&layout).cloned().unwrap_or_default()
     }
 }
 
-impl<'a, Arg: std::hash::Hash + Eq + Copy> CallInfo<'a, Arg> {
+impl<'a, Arg: std::hash::Hash + Eq + Copy + std::fmt::Debug> CallInfo<'a, Arg> {
     pub fn add_call(&mut self, arg: Arg, parser: ILayout<'a>) {
         self.map.entry(arg).or_default().insert(parser);
+    }
+    fn get_unslotted_call_args(&self) -> FxHashMap<IMonoLayout<'a>, FxHashMap<Arg, Option<PSize>>> {
+        let mut ret: FxHashMap<IMonoLayout<'a>, FxHashMap<Arg, Option<PSize>>> =
+            FxHashMap::default();
+        for (arg, layouts) in self.map.iter() {
+            for layout in layouts.iter().flatten() {
+                ret.entry(layout).or_default().insert(*arg, None);
+            }
+        }
+        ret
     }
     pub fn into_layout_vtable_offsets(mut self) -> CallSlotResult<'a, Arg> {
         let mut vecs = Vec::new();
         let mut id_info = FxHashMap::default();
+        let mut call_args = self.get_unslotted_call_args();
         for (arg_layout, parser_set) in self.map.drain() {
             let mut pog = ParserOffsetGroups::new(parser_set);
             let mut layout_map = pog.layout_map();
@@ -75,23 +83,21 @@ impl<'a, Arg: std::hash::Hash + Eq + Copy> CallInfo<'a, Arg> {
                 }
             }
         }
-        let mut parser_occupied_entries: FxHashMap<IMonoLayout, FxHashMap<PSize, Arg>> =
-            FxHashMap::default();
         for ((from, parsers), &slot) in layout_vtable_offsets.iter() {
             for parser in parsers {
-                parser_occupied_entries
+                call_args
                     .entry(parser)
                     .or_default()
-                    .insert(slot, *from);
+                    .insert(*from, Some(slot));
             }
         }
-        let arc_parser_occupied_entries = parser_occupied_entries
+        let arc_call_args = call_args
             .into_iter()
             .map(|(k, v)| (k, Rc::new(v)))
             .collect();
         CallSlotResult {
             layout_vtable_offsets,
-            occupied_entries: arc_parser_occupied_entries,
+            call_args: arc_call_args,
         }
     }
 }
@@ -143,12 +149,17 @@ impl<'a> ParserOffsetGroups<'a> {
     pub fn new(parser_set: FxHashSet<ILayout<'a>>) -> Self {
         let mut mono_parsers = FxHashMap::default();
         let mut current_index: u32 = 0;
-        for mono_parser_layout in parser_set.iter().flatten() {
-            if let Entry::Vacant(entry) = mono_parsers.entry(mono_parser_layout) {
-                entry.insert(current_index);
-                current_index = current_index
-                    .checked_add(1)
-                    .expect("overflowed number of mono layouts");
+        for layout in parser_set.iter() {
+            if !layout.is_multi() {
+                continue;
+            }
+            for mono_parser_layout in layout {
+                if let Entry::Vacant(entry) = mono_parsers.entry(mono_parser_layout) {
+                    entry.insert(current_index);
+                    current_index = current_index
+                        .checked_add(1)
+                        .expect("overflowed number of mono layouts");
+                }
             }
         }
         let union_find = UnionFind::new(current_index as usize);
@@ -171,7 +182,9 @@ impl<'a> ParserOffsetGroups<'a> {
     pub fn layout_map(&mut self) -> FxHashMap<u32, Vec<ILayout<'a>>> {
         let mut res: FxHashMap<u32, Vec<_>> = FxHashMap::default();
         for &layout in self.parser_set.iter() {
-            if let Some(x) = layout.into_iter().next() {
+            if layout.is_multi()
+                && let Some(x) = layout.into_iter().next()
+            {
                 let layout_index = self.union_find.find_mut(self.mono_parsers[&x]);
                 res.entry(layout_index).or_default().push(layout);
             }
