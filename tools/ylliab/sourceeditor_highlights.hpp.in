@@ -1,0 +1,5 @@
+#pragma once
+
+inline constexpr const char *YABO_HIGHLIGHTS_QUERY = R"yabo_query(
+@YABO_HIGHLIGHTS_QUERY@
+)yabo_query";

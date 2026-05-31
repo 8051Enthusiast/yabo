@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.19)
 
-project(ylliab VERSION 0.1 LANGUAGES CXX)
+project(ylliab VERSION 0.1 LANGUAGES C CXX)
 
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
@@ -14,6 +14,41 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(DARK_STYLE_QRC_PATH CACHE FILEPATH "Path to darkstyle.qrc.")
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Core OpenGL OpenGLWidgets Network Test)
+
+add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../crates/tree-sitter-yabo
+    ${CMAKE_CURRENT_BINARY_DIR}/tree-sitter-yabo
+)
+set_target_properties(tree-sitter-yabo PROPERTIES
+    AUTOMOC OFF
+    AUTOUIC OFF
+    AUTORCC OFF
+)
+
+find_path(TREE_SITTER_INCLUDE_DIR
+    NAMES tree_sitter/api.h
+    REQUIRED
+)
+
+find_library(TREE_SITTER_LIBRARY
+    NAMES tree-sitter libtree-sitter.a libtree-sitter.so.0 libtree-sitter.so.0.25
+    REQUIRED
+)
+
+add_library(tree-sitter::tree-sitter UNKNOWN IMPORTED)
+set_target_properties(tree-sitter::tree-sitter PROPERTIES
+    IMPORTED_LOCATION "${TREE_SITTER_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${TREE_SITTER_INCLUDE_DIR}"
+)
+
+set(YABO_HIGHLIGHTS_QUERY_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../crates/tree-sitter-yabo/queries/highlights.scm")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${YABO_HIGHLIGHTS_QUERY_PATH}")
+file(READ "${YABO_HIGHLIGHTS_QUERY_PATH}" YABO_HIGHLIGHTS_QUERY)
+configure_file(
+    sourceeditor_highlights.hpp.in
+    sourceeditor_highlights.hpp
+    @ONLY
+)
 
 qt_add_library(ylliab_core STATIC
     request.hpp request.cpp
@@ -58,7 +93,6 @@ qt_add_executable(yphbt
     yphbt.cpp
 )
 
-# Optional dependency for tests only
 find_package(yaml-cpp)
 
 if(yaml-cpp_FOUND)
@@ -72,8 +106,10 @@ endif()
 include_directories("../../include")
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
+target_include_directories(ylliab_core PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+
 target_link_libraries(ylliab_core PRIVATE
-    Qt6::Core Qt6::Widgets Qt6::Network
+    Qt6::Core Qt6::Widgets Qt6::Network tree-sitter-yabo tree-sitter::tree-sitter
 )
 
 target_link_libraries(ylliab PRIVATE
@@ -117,7 +153,6 @@ install(TARGETS ylliab yphbt
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-# Enable testing
 enable_testing()
 if(yaml-cpp_FOUND)
     add_test(NAME yaml_model_test COMMAND test_yaml_model)
