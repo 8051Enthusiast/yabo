@@ -127,4 +127,4 @@ WORKDIR /tmp
 EXPOSE 8000
 ENV YABOCSERV_ROOT=/opt/yphbt
 
-CMD bash -c '. /opt/emsdk/emsdk_env.sh && "/opt/bin/yaboc-server" "/opt/bin/build.sh"'
+CMD ["bash", "-c", ". /opt/emsdk/emsdk_env.sh && \"/opt/bin/yaboc-server\" \"/opt/bin/build.sh\""]

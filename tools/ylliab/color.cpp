@@ -167,6 +167,7 @@ static QColor style_color_light(HighlightName name) {
     return QColor("#dc322f"); // red
   case HighlightName::Keyword:
   case HighlightName::KeywordControl:
+  case HighlightName::KeywordControlImport:
   case HighlightName::KeywordOperator:
   case HighlightName::Operator:
     return QColor("#859900"); // green
@@ -196,9 +197,10 @@ static QColor style_color_dark(HighlightName name) {
     return QColor("#ebdbb2"); // fg1
   case HighlightName::Invalid:
     return QColor("#fb4934"); // red1
-  case HighlightName::KeywordControl:
+  case HighlightName::KeywordControlImport:
   case HighlightName::ConstantLanguage:
     return QColor("#8ec07c"); // aqua1
+  case HighlightName::KeywordControl:
   case HighlightName::KeywordOperator:
   case HighlightName::Keyword:
     return QColor("#fb4934"); // red1

@@ -43,6 +43,9 @@ HighlightName highlight_for_capture(std::string_view name) {
   if (name.starts_with("string.regexp")) {
     return HighlightName::StringRegexp;
   }
+  if (name.starts_with("keyword.control.import")) {
+    return HighlightName::KeywordControlImport;
+  }
   if (name.starts_with("keyword.operator")) {
     return HighlightName::KeywordOperator;
   }

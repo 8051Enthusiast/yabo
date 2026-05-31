@@ -19,6 +19,7 @@ enum class HighlightName {
   Entity,
   Invalid,
   Keyword,
+  KeywordControlImport,
   KeywordControl,
   KeywordOperator,
   Operator,
