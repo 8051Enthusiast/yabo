@@ -61,15 +61,35 @@ RUN --mount=type=tmpfs,target=/build,size=6G bash -c "\
 ADD https://github.com/ColinDuquesnoy/QDarkStyleSheet/archive/refs/tags/v3.2.2.tar.gz /src/
 RUN tar -xf /src/v3.2.2.tar.gz -C /src
 
+ARG TREE_SITTER_VERSION=0.25.10
+ADD https://github.com/tree-sitter/tree-sitter/archive/refs/tags/v${TREE_SITTER_VERSION}.tar.gz /src/
+
+RUN --mount=type=tmpfs,target=/build,size=1G bash -c "\
+    . /opt/emsdk/emsdk_env.sh \
+ && tar -xf /src/v${TREE_SITTER_VERSION}.tar.gz -C /src \
+ && mkdir -p /opt/tree-sitter/include /opt/tree-sitter/lib \
+ && cp -r /src/tree-sitter-${TREE_SITTER_VERSION}/lib/include/tree_sitter /opt/tree-sitter/include/ \
+ && emcc -O3 -DNDEBUG -fPIC -pthread \
+        -I/src/tree-sitter-${TREE_SITTER_VERSION}/lib/include \
+        -I/src/tree-sitter-${TREE_SITTER_VERSION}/lib/src \
+        -c /src/tree-sitter-${TREE_SITTER_VERSION}/lib/src/lib.c \
+        -o /build/libtree-sitter.o \
+ && emar rcs /opt/tree-sitter/lib/libtree-sitter.a /build/libtree-sitter.o"
+
 COPY tools/ylliab/* /src/tools/ylliab/
+COPY crates/tree-sitter-yabo /src/crates/tree-sitter-yabo/
 COPY include/yabo/* /src/include/yabo/
 
 RUN --mount=type=tmpfs,target=/build,size=6G bash -c '\
     . /opt/emsdk/emsdk_env.sh \
  && export EMCC_FORCE_STDLIBS=1 \
  && cd /build \
- && /opt/qt6-wasm/bin/qt-cmake -DCMAKE_BUILD_TYPE=Release /src/tools/ylliab \
- && /opt/qt6-wasm/bin/qt-cmake -DDARK_STYLE_QRC_PATH=/src/QDarkStyleSheet-3.2.2/qdarkstyle/dark/darkstyle.qrc /src/tools/yphbt . \
+ && /opt/qt6-wasm/bin/qt-cmake \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DTREE_SITTER_INCLUDE_DIR=/opt/tree-sitter/include \
+        -DTREE_SITTER_LIBRARY=/opt/tree-sitter/lib/libtree-sitter.a \
+        -DDARK_STYLE_QRC_PATH=/src/QDarkStyleSheet-3.2.2/qdarkstyle/dark/darkstyle.qrc \
+        /src/tools/ylliab \
  && make -j $(nproc) yphbt && mkdir -p /opt/yphbt \
  && cp yphbt.js yphbt.html yphbt.wasm qtlogo.svg qtloader.js /opt/yphbt'
 

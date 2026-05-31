@@ -1,50 +1,39 @@
 #pragma once
 
-#include "color.hpp"
+#include <memory>
 #include <QObject>
 #include <QPlainTextEdit>
 #include <QRegularExpression>
 #include <QSyntaxHighlighter>
 #include <QWidget>
+#include <vector>
 
 class SourceEditor;
 
-enum class LexerState : int {
-  None = -1,
-  AfterOperator = 0,
-  NotAfterOperator = 1,
-};
-
-class Lexer {
+class Highlighter : public QSyntaxHighlighter {
 public:
-  Lexer();
-  HighlightName match_next(const QString &str, size_t &offset,
-                           LexerState &state);
-
-private:
-  struct Matcher {
-    Matcher(const char *re, HighlightName highlight, LexerState next_state,
-            LexerState cond_state = LexerState::None);
-    Matcher(Matcher &&other) = default;
-    std::unique_ptr<QRegularExpression> expr;
-    HighlightName highlight;
-    LexerState next_state;
-    LexerState cond_state;
-  };
-
-  std::vector<Matcher> matchers;
-};
-
-class Highlighter : QSyntaxHighlighter {
-public:
-  Highlighter(QTextDocument *parent)
-      : QSyntaxHighlighter(parent), lexer(Lexer()) {}
+  explicit Highlighter(QTextDocument *parent);
+  ~Highlighter() override;
 
 protected:
   void highlightBlock(const QString &text) override;
 
+
 private:
-  Lexer lexer;
+  struct HighlightRange;
+  class TreeSitterSyntax;
+  enum class RehighlightStatus {
+    None,
+    InProgress,
+  };
+
+  void refresh_highlights();
+  void schedule_rehighlight(int position, int chars_removed, int chars_added);
+
+  std::unique_ptr<TreeSitterSyntax> syntax;
+  std::vector<HighlightRange> highlights;
+  RehighlightStatus rehighlight_status = RehighlightStatus::None;
+  std::set<int> dirty{};
 };
 
 class LineNumberArea : public QWidget {
