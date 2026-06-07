@@ -11,6 +11,9 @@ fun []t ~> assert[t](big: bit) = {
 # ```
 fun when(cond: bit) = cond if true
 
+# Applies a function `f` `n` times to an initial `value`
+fun apply_n[T](n: int, f: (T) -> T, value: T) = n if 0 then value else apply_n(n - 1, f, f(value))
+
 # Same as {}
 fun []T ~> nil[T] = {}
 

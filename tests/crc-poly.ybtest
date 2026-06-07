@@ -1,0 +1,64 @@
+====[ source code ]====
+import text
+
+fun mask() = (1 << 32) - 1
+
+fun mod_inv(m: int) = (
+  let inv4 = (m & 0xd) ^ -(m & 2)
+  let double = <x> x ⊙ x ⊙ m
+  apply_n(5 - 2, double, inv4)
+)
+
+fun is_primitive_deg31(p: int) = when?(p & 0x80000001 != 0x80000001) then false else (
+  let power = p >> 1
+  let barret = mod_inv(p)
+  let square = <x> (
+    let s = x ⊙ x
+    let quotient = (s ⊙ barret) & mask()
+    (s ^ quotient ⊙ p) >> 31
+  )
+  apply_n(31 - 5, square, power) == 1 << 30
+)
+
+# checks whether 32-deg polynomial (with leading coeff omitted)
+# is (x + 1) * q where q is primitive
+fun is_good_crc_poly(p: int) = (
+  let div = (p ⊙ mask()) & mask()
+  is_primitive_deg31(div)
+)
+
+export
+def test = {
+  t: expect text.basenum(16)
+  let return = is_good_crc_poly(t)
+}
+
+====[ text 1 ]====
+1edc6f41
+
+====[ output 1 ]====
+true
+
+====[ text 2 ]====
+8000001b
+
+====[ output 2 ]====
+true
+
+====[ text 3 ]====
+71c37f3a
+
+====[ output 3 ]====
+false
+
+====[ text 4 ]====
+71c37f3b
+
+====[ output 4 ]====
+false
+
+====[ text 5 ]====
+e4ba8afb
+
+====[ output 5 ]====
+true
