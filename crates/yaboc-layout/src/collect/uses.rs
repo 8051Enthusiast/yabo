@@ -222,7 +222,7 @@ impl<'comp> UseCollections<'comp> {
                 self.collect(ctx, publicity.internal_only(), *slice)?;
                 self.collect(ctx, publicity.internal_only(), *parser)?;
                 let result = parser.apply_arg(ctx, *slice)?;
-                let result_ty = if let Publicity::Public(Some(pub_ty)) = publicity {
+                if let Publicity::Public(Some(pub_ty)) = publicity {
                     let Type::Loop(_, result_ty) = ctx.db.lookup_intern_type(pub_ty.ty) else {
                         dbpanic!(
                             ctx.db,
@@ -231,12 +231,11 @@ impl<'comp> UseCollections<'comp> {
                             &pub_ty.ty
                         );
                     };
-                    Publicity::Public(Some(PublicType::new_thunk(result_ty)))
-                } else {
-                    Publicity::InsidePublic
+                    let publicity = Publicity::Public(Some(PublicType::new_thunk(result_ty)));
+                    self.collect(ctx, publicity, result)?;
+                } else if let Publicity::Public(None) = publicity {
+                    self.collect(ctx, publicity, result)?;
                 };
-
-                self.collect(ctx, result_ty, result)?;
             }
         }
 
