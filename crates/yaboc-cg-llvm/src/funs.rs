@@ -948,7 +948,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         if let Some(f) = self.module.get_function(&sym) {
             return Ok(f);
         }
-        let fun = self.eval_fun_fun_val(layout, req);
+        let fun = self.eval_fun_fun_val_worker(layout, req);
         if req.is_empty() {
             self.always_success(fun)?;
             return Ok(fun);

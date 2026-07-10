@@ -337,22 +337,34 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub fn create_all_vtables(&mut self) {
         let collected_layouts = self.collected_layouts.clone();
         for layout in collected_layouts.arrays.iter() {
-            self.create_array_vtable(*layout);
+            if collected_layouts.publics.needs_vtable(*layout) {
+                self.create_array_vtable(*layout);
+            }
         }
         for layout in collected_layouts.blocks.iter() {
-            self.create_block_vtable(*layout);
+            if collected_layouts.publics.needs_vtable(*layout) {
+                self.create_block_vtable(*layout);
+            }
         }
         for layout in collected_layouts.nominals.iter() {
-            self.create_nominal_vtable(*layout);
+            if collected_layouts.publics.needs_vtable(*layout) {
+                self.create_nominal_vtable(*layout);
+            }
         }
         for layout in collected_layouts.parsers.iter() {
-            self.create_parser_vtable(*layout);
+            if collected_layouts.publics.needs_vtable(*layout) {
+                self.create_parser_vtable(*layout);
+            }
         }
         for layout in collected_layouts.primitives.iter() {
-            self.create_primitive_vtable(*layout);
+            if collected_layouts.publics.needs_vtable(*layout) {
+                self.create_primitive_vtable(*layout);
+            }
         }
         for layout in collected_layouts.functions.iter() {
-            self.create_function_vtable(*layout);
+            if collected_layouts.publics.needs_vtable(*layout) {
+                self.create_function_vtable(*layout);
+            }
         }
     }
 }

@@ -143,15 +143,28 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         LayoutPart::CreateArgs(hash)
     }
 
+    pub(super) fn parser_fun_val(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+        from: ILayout<'comp>,
+        req: RequirementSet,
+        kind: ParserFunKind,
+    ) -> FunctionValue<'llvm> {
+        let part = self.parser_layout_part(from, req, kind);
+        let ret = self.fun_val::<vtable::ParserFun>(layout, part);
+        if kind != ParserFunKind::Wrapper {
+            ret.set_call_conventions(self.tailcc());
+        }
+        ret
+    }
+
     pub(super) fn parser_fun_val_wrapper(
         &mut self,
         layout: IMonoLayout<'comp>,
         from: ILayout<'comp>,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        let part = self.parser_layout_part(from, req, ParserFunKind::Wrapper);
-        let ret = self.fun_val::<vtable::ParserFun>(layout, part);
-        ret
+        self.parser_fun_val(layout, from, req, ParserFunKind::Wrapper)
     }
 
     pub(super) fn parser_fun_val_tail(
@@ -160,10 +173,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         from: ILayout<'comp>,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        let part = self.parser_layout_part(from, req, ParserFunKind::TailWrapper);
-        let ret = self.fun_val::<vtable::ParserFun>(layout, part);
-        ret.set_call_conventions(self.tailcc());
-        ret
+        self.parser_fun_val(layout, from, req, ParserFunKind::TailWrapper)
     }
 
     pub(super) fn parser_impl_fun_val(
@@ -172,9 +182,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         from: ILayout<'comp>,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        let part = self.parser_layout_part(from, req, ParserFunKind::Worker);
-        let ret = self.fun_val::<vtable::ParserFun>(layout, part);
-        ret.set_call_conventions(self.tailcc());
+        self.parser_fun_val(layout, from, req, ParserFunKind::Worker)
+    }
+
+    pub(super) fn eval_fun_fun_val(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+        req: RequirementSet,
+        kind: ParserFunKind,
+    ) -> FunctionValue<'llvm> {
+        let ret = self.fun_val::<vtable::EvalFunFun>(layout, LayoutPart::EvalFun(req, kind));
+        if kind != ParserFunKind::Wrapper {
+            ret.set_call_conventions(self.tailcc());
+        }
         ret
     }
 
@@ -183,22 +203,15 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        let ret = self.fun_val::<vtable::EvalFunFun>(
-            layout,
-            LayoutPart::EvalFun(req, ParserFunKind::Wrapper),
-        );
-        ret
+        self.eval_fun_fun_val(layout, req, ParserFunKind::Wrapper)
     }
 
-    pub(super) fn eval_fun_fun_val(
+    pub(super) fn eval_fun_fun_val_worker(
         &mut self,
         layout: IMonoLayout<'comp>,
         req: RequirementSet,
     ) -> FunctionValue<'llvm> {
-        let ret = self
-            .fun_val::<vtable::EvalFunFun>(layout, LayoutPart::EvalFun(req, ParserFunKind::Worker));
-        ret.set_call_conventions(self.tailcc());
-        ret
+        self.eval_fun_fun_val(layout, req, ParserFunKind::Worker)
     }
 
     fn array_arg_level_and_offset(

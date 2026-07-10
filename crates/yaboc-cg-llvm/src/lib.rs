@@ -266,27 +266,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.builder
             .build_conditional_branch(has_vtable, write_vtable_ptr, after)?;
         self.builder.position_at_end(write_vtable_ptr);
-        let vtable_pointer = self.build_vtable_get(layout)?;
-        self.build_vtable_store(ret.ptr, vtable_pointer)?;
-        self.builder.build_unconditional_branch(after)?;
+        if let Some(mono) = layout.layout.maybe_mono()
+            && !self.collected_layouts.publics.needs_vtable(mono)
+        {
+            self.builder.build_unreachable()?;
+        } else {
+            let vtable_pointer = self.build_vtable_get(layout)?;
+            self.build_vtable_store(ret.ptr, vtable_pointer)?;
+            self.builder.build_unconditional_branch(after)?;
+        }
         self.builder.position_at_end(after);
         Ok(())
-    }
-
-    fn sym_callable(
-        &mut self,
-        layout: IMonoLayout<'comp>,
-        part: LayoutPart,
-    ) -> FunctionValue<'llvm> {
-        let sym = self.sym(layout, part);
-        let Some(fun) = self.module.get_function(&sym) else {
-            dbpanic!(
-                &self.compiler_database.db,
-                "could not find symbol {sym} of layout {}",
-                &layout
-            );
-        };
-        fun
     }
 
     fn const_size_t(&self, val: i64) -> IntValue<'llvm> {
