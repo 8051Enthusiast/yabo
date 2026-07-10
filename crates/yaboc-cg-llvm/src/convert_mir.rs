@@ -67,9 +67,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         cg.builder.build_unconditional_branch(mir_entry)?;
         let undefined = cg.llvm.append_basic_block(llvm_fun, "undefined");
         cg.builder.position_at_end(undefined);
-        // cg.builder.build_unreachable();
-        // is easier to use with disassemblers for now
-        cg.builder.build_return(Some(&cg.const_i64(4)))?;
+        cg.builder.build_unreachable()?;
         cg.builder.position_at_end(mir_entry);
         Ok(Self {
             cg,
