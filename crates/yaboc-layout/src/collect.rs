@@ -1,6 +1,7 @@
 mod call_info;
 mod layout_info;
 mod tailsize;
+mod uses;
 
 use std::collections::hash_map::Entry;
 
@@ -17,7 +18,10 @@ use yaboc_types::PrimitiveType;
 
 use crate::{
     FuncLayoutKind, LayoutSlice, StructManifestation, UnfinishedManifestation,
-    collect::layout_info::{LayoutInfoCollection, LayoutInfoCollector},
+    collect::{
+        layout_info::{LayoutInfoCollection, LayoutInfoCollector},
+        uses::{PublicType, Publicity, UseCollections},
+    },
     mir_subst::{FunctionSubstitute, function_substitute},
     pd_parser,
 };
@@ -62,6 +66,7 @@ pub struct LayoutCollection<'a> {
     pub max_sa: SizeAlign,
     pub global_offsets: StructManifestation,
     pub layout_info: LayoutInfoCollection<'a>,
+    pub publics: UseCollections<'a>,
 }
 
 pub struct LayoutCollector<'a, 'b> {
@@ -83,6 +88,7 @@ pub struct LayoutCollector<'a, 'b> {
     processed_evals: FxHashSet<(IMonoLayout<'a>, RequirementSet)>,
     unprocessed: Vec<UnprocessedCall<'a>>,
     layout_info: LayoutInfoCollector<'a>,
+    publics: UseCollections<'a>,
 }
 
 #[derive(Debug)]
@@ -121,6 +127,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             unprocessed: Default::default(),
             root: Default::default(),
             layout_info: LayoutInfoCollector::new(db),
+            publics: Default::default(),
         }
     }
 
@@ -138,6 +145,9 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
 
     fn register_layouts(&mut self, layout: ILayout<'a>) {
         for mono in &layout {
+            if layout.is_multi() {
+                self.publics.used_polymorphically.insert(mono);
+            }
             if let Ok(sa) = mono.inner().size_align_without_vtable(self.ctx) {
                 self.max_sa = self.max_sa.union(sa);
             }
@@ -168,7 +178,9 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         // the corresponding non-backtracking parser as well
                         self.register_layouts(parser);
                         self.register_parse(arg, parser, pd_val_req());
-                        self.register_parse(arg, parser, pd_len_req());
+                        if self.publics.is_api_visible(mono) {
+                            self.register_parse(arg, parser, pd_len_req());
+                        }
                     }
                 }
                 MonoLayout::Block(_, _) => {
@@ -734,6 +746,13 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     self.root.push((from_layout, mono));
                 }
                 self.register_parse(from_layout, parser_layout, root_req());
+                let result_ty = self.ctx.db.parser_returns(*pd)?.deref;
+                let result = parser_layout.apply_arg(self.ctx, from_layout)?;
+                self.publics.collect(
+                    self.ctx,
+                    Publicity::Public(Some(PublicType::new_thunk(result_ty))),
+                    result,
+                )?;
             }
         }
         if TRACE_COLLECTION {
@@ -813,6 +832,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             tail_sa,
             global_offsets,
             layout_info: self.layout_info.collect(),
+            publics: self.publics,
         })
     }
 }

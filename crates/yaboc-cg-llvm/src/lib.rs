@@ -584,6 +584,21 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.vtable_ptr_from_global(vtable, ptr.as_global_value())
     }
 
+    fn vtable_ptr_maybe_from_function(
+        &self,
+        vtable: GlobalValue<'llvm>,
+        ptr: Option<FunctionValue<'llvm>>,
+    ) -> BasicValueEnum<'llvm> {
+        if let Some(ptr) = ptr {
+            self.vtable_ptr_from_function(vtable, ptr)
+        } else {
+            self.vtable_ptr(
+                vtable.as_pointer_value(),
+                self.llvm.ptr_type(AddressSpace::default()).const_null(),
+            )
+        }
+    }
+
     fn const_array(
         &self,
         ty: BasicTypeEnum<'llvm>,

@@ -16,7 +16,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let head_disc = layout.head_kind(&self.compiler_database.db);
         let head_disc_val = self.const_i64(head_disc as i64);
         let typecast = self.typecast_fun_val(layout);
-        let mask = self.mask_fun_val(layout);
+        let mask;
+        if self.collected_layouts.publics.needs_mask_method(layout) {
+            mask = Some(self.mask_fun_val(layout));
+        } else {
+            mask = None;
+        }
         let size = self.const_size_t(size_align.after as i64);
         let align = self.const_size_t(size_align.align() as i64);
         let zst = self.const_zst();
@@ -25,7 +30,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             vtable_ty.const_named_struct(&[
                 head_disc_val.into(),
                 self.vtable_ptr_from_function(vtable_global, typecast),
-                self.vtable_ptr_from_function(vtable_global, mask),
+                self.vtable_ptr_maybe_from_function(vtable_global, mask),
                 size.into(),
                 align.into(),
                 zst.into(),
@@ -35,7 +40,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 &[
                     head_disc_val.into(),
                     self.vtable_ptr_from_function(vtable_global, typecast),
-                    self.vtable_ptr_from_function(vtable_global, mask),
+                    self.vtable_ptr_maybe_from_function(vtable_global, mask),
                     size.into(),
                     align.into(),
                     zst.into(),
@@ -147,14 +152,18 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .lookup_intern_identifier(ident)
             .name;
         let llvm_name = self.module_string(&name);
-        let start = self.start_fun_val(layout);
-        let end = self.end_fun_val(layout);
+        let mut start = None;
+        let mut end = None;
+        if self.collected_layouts.publics.is_api_visible(layout) {
+            start = Some(self.start_fun_val(layout));
+            end = Some(self.end_fun_val(layout));
+        }
         let vtable_ty = self.vtable_ty(layout);
         let vtable_val = vtable_ty.const_named_struct(&[
             vtable_header.into(),
             self.vtable_ptr_from_ptr(vtable, llvm_name),
-            self.vtable_ptr_from_function(vtable, start),
-            self.vtable_ptr_from_function(vtable, end),
+            self.vtable_ptr_maybe_from_function(vtable, start),
+            self.vtable_ptr_maybe_from_function(vtable, end),
         ]);
         vtable.set_initializer(&vtable_val);
     }

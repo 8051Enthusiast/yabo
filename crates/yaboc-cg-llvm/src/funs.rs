@@ -1465,7 +1465,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         .flatten()
         {
             self.create_typecast(*layout)?;
-            self.create_mask_funs(*layout)?;
+            if self.collected_layouts.publics.needs_mask_method(*layout) {
+                self.create_mask_funs(*layout)?;
+            }
         }
         Ok(())
     }
@@ -1602,8 +1604,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_nominal_funs(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
-        self.create_pd_end(layout)?;
-        self.create_pd_start(layout)?;
+        if self.collected_layouts.publics.is_api_visible(layout) {
+            self.create_pd_end(layout)?;
+            self.create_pd_start(layout)?;
+        }
         Ok(())
     }
 
