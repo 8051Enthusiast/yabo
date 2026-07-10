@@ -304,7 +304,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn invalid_ptr(&self) -> PointerValue<'llvm> {
-        self.any_ptr().const_null()
+        self.any_ptr().get_poison()
     }
 
     fn null_ptr(&self) -> PointerValue<'llvm> {
@@ -319,7 +319,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.llvm.i8_type().array_type(sa.allocation_size() as u32)
     }
 
-    fn undef_ret(&self, head: PointerValue<'llvm>) -> CgReturnValue<'llvm> {
+    fn poison_ret(&self, head: PointerValue<'llvm>) -> CgReturnValue<'llvm> {
         let undef_ptr = self.invalid_ptr();
         CgReturnValue::new(head, undef_ptr)
     }

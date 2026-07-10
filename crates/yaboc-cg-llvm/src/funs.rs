@@ -466,7 +466,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let (from, fun) = self.build_nominal_components(nom)?;
         let from_copy = self.build_alloca_value(from.layout, "from_copy")?;
         self.build_copy_invariant(from_copy, from)?;
-        let no_ret = self.undef_ret(head);
+        let no_ret = self.poison_ret(head);
         let ret = self.build_parser_call(no_ret, fun.into(), from_copy, pd_len_req())?;
         self.non_zero_early_return(ret)?;
         self.terminate_tail_typecast(from_copy, ret_val)

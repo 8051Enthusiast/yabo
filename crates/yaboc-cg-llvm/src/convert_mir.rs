@@ -446,7 +446,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let arg_val = self.place_val(arg)?;
         let ret_val = ret
             .map(|r| self.return_val(r))
-            .unwrap_or_else(|| Ok(self.cg.undef_ret(self.globals)))?;
+            .unwrap_or_else(|| Ok(self.cg.poison_ret(self.globals)))?;
         if let Some(ctrl) = ctrl {
             let ret = self
                 .cg
