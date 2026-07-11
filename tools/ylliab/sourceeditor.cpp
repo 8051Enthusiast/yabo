@@ -1,6 +1,5 @@
 #include "sourceeditor.hpp"
 #include "color.hpp"
-#include "sourceeditor_highlights.hpp"
 #include <QFontMetrics>
 #include <QKeyEvent>
 #include <QPainter>
@@ -23,6 +22,10 @@
 #include <unistd.h>
 
 namespace {
+
+constexpr const char YABO_HIGHLIGHTS_QUERY[] = {
+#embed "../../crates/tree-sitter-yabo/queries/highlights.scm" suffix(, 0)
+};
 
 HighlightName highlight_for_capture(std::string_view name) {
   if (name.starts_with("comment")) {

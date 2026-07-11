@@ -6,7 +6,7 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -39,15 +39,6 @@ add_library(tree-sitter::tree-sitter UNKNOWN IMPORTED)
 set_target_properties(tree-sitter::tree-sitter PROPERTIES
     IMPORTED_LOCATION "${TREE_SITTER_LIBRARY}"
     INTERFACE_INCLUDE_DIRECTORIES "${TREE_SITTER_INCLUDE_DIR}"
-)
-
-set(YABO_HIGHLIGHTS_QUERY_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../crates/tree-sitter-yabo/queries/highlights.scm")
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${YABO_HIGHLIGHTS_QUERY_PATH}")
-file(READ "${YABO_HIGHLIGHTS_QUERY_PATH}" YABO_HIGHLIGHTS_QUERY)
-configure_file(
-    sourceeditor_highlights.hpp.in
-    sourceeditor_highlights.hpp
-    @ONLY
 )
 
 qt_add_library(ylliab_core STATIC
