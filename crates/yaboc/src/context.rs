@@ -3,16 +3,16 @@ use std::{ffi::OsStr, io::Write, sync::Arc};
 use bumpalo::Bump;
 use tempfile::NamedTempFile;
 use yaboc_base::{
+    Context,
     config::{Config, Configs},
     error::Report,
     source::{AriadneCache, FileId},
-    Context,
 };
 use yaboc_cg_llvm::{
-    inkwell::{self, support::LLVMString},
     CodeGenCtx, CodeGenOptions,
+    inkwell::{self, support::LLVMString},
 };
-use yaboc_database::{YabocDatabase, ERROR_FNS};
+use yaboc_database::{ERROR_FNS, YabocDatabase};
 use yaboc_hir::represent::HirGraph;
 use yaboc_layout::LayoutContext;
 use yaboc_mir::{print_all_mir, print_all_mir_graphs};

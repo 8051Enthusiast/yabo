@@ -50,6 +50,9 @@ struct Args {
     /// sanitize (memory or address), mostly for debugging the compiler itself
     sanitize: Option<Sanitizer>,
     #[clap(long)]
+    /// Compatibility mode for the llvm llubi interpreter
+    llubi: bool,
+    #[clap(long)]
     /// The C compiler to use as linker
     cc: Option<String>,
     #[clap(long)]
@@ -100,6 +103,7 @@ fn main() {
         asan: args.sanitize == Some(Sanitizer::Address),
         msan: args.sanitize == Some(Sanitizer::Memory),
         dynamic_linker: args.dynamic_linker,
+        llubi: args.llubi,
     }) {
         Ok(ctx) => ctx,
         Err(e) => exit_with_message(&format!("Could not create context: {e}")),

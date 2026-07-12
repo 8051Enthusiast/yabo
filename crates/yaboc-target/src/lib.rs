@@ -123,5 +123,8 @@ pub fn target(config: &Config, rt_path: &Path) -> Option<Target> {
     if let Some(cpu) = config.target_cpu.as_ref() {
         conf.cpu = Cow::Owned(cpu.to_string());
     }
+    if config.llubi {
+        conf.relative_vptrs = false;
+    }
     Some(conf)
 }

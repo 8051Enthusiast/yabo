@@ -11,6 +11,7 @@ pub struct Config {
     pub output_json: bool,
     pub asan: bool,
     pub msan: bool,
+    pub llubi: bool,
 }
 
 #[salsa::query_group(ConfigDatabase)]

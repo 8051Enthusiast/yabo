@@ -1,8 +1,18 @@
-#include <dlfcn.h>
 #include <inttypes.h>
 #include <stdio.h>
+
+#if LLUBI_COMPATIBLE
+#if !defined(STATIC_FILE) || !defined(STATIC_PARSER)
+#error "LLUBI_COMPATIBLE requires STATIC_FILE and STATIC_PARSER to be set"
+#endif
+#define eprintf(...) printf(__VA_ARGS__)
+#define YABO_RELATIVE_VPTR 0
+#else
+#include <dlfcn.h>
 #include <sys/mman.h>
-#include <unistd.h>
+
+#define eprintf(...) fprintf(stderr, __VA_ARGS__)
+#endif
 #include <yabo/dynamic.h>
 #include <yabo/parse_export_call.h>
 #include <yabo/vtable.h>
@@ -16,15 +26,16 @@ typedef struct {
 // 16 MB stack
 #define STACK_SIZE 1024 * 1024 * 16
 
+
 Stack init_stack(size_t max_dyn_size, size_t globals_size) {
   Stack stack;
   if (max_dyn_size > STACK_SIZE) {
-    fprintf(stderr, "Max dyn size too large\n");
+    eprintf("Max dyn size too large\n");
     exit(1);
   }
   stack.current = malloc(STACK_SIZE);
   if (!stack.current) {
-    fprintf(stderr, "Could not allocate stack\n");
+    eprintf("Could not allocate stack\n");
     exit(1);
   }
   stack.limit = (char *)stack.current + STACK_SIZE;
@@ -43,56 +54,56 @@ Stack bump(Stack stack) {
   size_t aligned_size =
       (size + alignof(DynValue) - 1) & ~(alignof(DynValue) - 1);
   if ((size_t)(stack.limit - (char *)stack.current) < aligned_size) {
-    fprintf(stderr, "Value stack overflow\n");
+    eprintf("Value stack overflow\n");
     exit(1);
   }
   stack.current = (DynValue *)((char *)stack.current + aligned_size);
   return stack;
 }
 
-#define fputc_ret(chr, file)                                                   \
+#define fputc_ret(chr)                                                   \
   {                                                                            \
-    if (fputc(chr, file) == EOF)                                               \
+    if (printf("%c", chr) == EOF)                                               \
       return EOF;                                                              \
   }
 
-static inline int print_indent(int indent, FILE *out) {
+static inline int print_indent(int indent) {
   for (int i = 0; i < indent; i++) {
-    fputc_ret(' ', out);
+    fputc_ret(' ');
   }
   return 0;
 }
 
-int print_recursive(int indent, Stack stack, FILE *out);
+int print_recursive(int indent, Stack stack);
 
-int print_char(DynValue *val, int indent, Stack stack, FILE *out) {
+int print_char(DynValue *val, int indent, Stack stack) {
   int32_t char_value = dyn_char(val);
-  fputc_ret('"', out);
+  fputc_ret('"');
   if (char_value < 0x80) {
-    fputc_ret(char_value, out);
+    fputc_ret(char_value);
   } else if (char_value < 0x800) {
-    fputc_ret(0xc0 | char_value >> 6, out);
-    fputc_ret(0x80 | (0x3f & char_value), out);
+    fputc_ret(0xc0 | char_value >> 6);
+    fputc_ret(0x80 | (0x3f & char_value));
   } else if (char_value < 0x10000) {
-    fputc_ret(0xe0 | char_value >> 12, out);
-    fputc_ret(0x80 | (0x3f & (char_value >> 6)), out);
-    fputc_ret(0x80 | (0x3f & char_value), out);
+    fputc_ret(0xe0 | char_value >> 12);
+    fputc_ret(0x80 | (0x3f & (char_value >> 6)));
+    fputc_ret(0x80 | (0x3f & char_value));
   } else {
-    fputc_ret(0xf0 | char_value >> 18, out);
-    fputc_ret(0x80 | (0x3f & (char_value >> 12)), out);
-    fputc_ret(0x80 | (0x3f & (char_value >> 6)), out);
-    fputc_ret(0x80 | (0x3f & char_value), out);
+    fputc_ret(0xf0 | char_value >> 18);
+    fputc_ret(0x80 | (0x3f & (char_value >> 12)));
+    fputc_ret(0x80 | (0x3f & (char_value >> 6)));
+    fputc_ret(0x80 | (0x3f & char_value));
   }
-  fputc_ret('"', out);
+  fputc_ret('"');
   return 0;
 }
 
-int print_int(DynValue *val, int indent, Stack stack, FILE *out) {
+int print_int(DynValue *val, int indent, Stack stack) {
   int64_t int_value = dyn_int(val);
-  return fprintf(out, "%" PRId64, int_value);
+  return printf("%" PRId64, int_value);
 }
 
-int print_bit(DynValue *val, int indent, Stack stack, FILE *out) {
+int print_bit(DynValue *val, int indent, Stack stack) {
   int8_t bit = dyn_bit(val);
   const char *text;
   if (bit) {
@@ -100,29 +111,29 @@ int print_bit(DynValue *val, int indent, Stack stack, FILE *out) {
   } else {
     text = "false";
   }
-  return fputs(text, out);
+  return printf("%s", text);
 }
 
-int print_parser(DynValue *val, int indent, Stack stack, FILE *out) {
+int print_parser(DynValue *val, int indent, Stack stack) {
   struct ParserVTable *vtable = (struct ParserVTable *)val->vtable;
   int64_t len;
   int64_t ret = YABO_ACCESS_VPTR(vtable, len_impl)(&len, val->data,
                                                    (const char *)stack.globals);
   if (ret != YABO_STATUS_OK) {
-    return fputs("\"parser\"", out);
+    return printf("\"parser\"");
   } else {
-    return fprintf(out, "\"parser(%" PRId64 ")\"", len);
+    return printf("\"parser(%" PRId64 ")\"", len);
   }
 }
 
-int print_fun_args(DynValue *val, int indent, Stack stack, FILE *out) {
+int print_fun_args(DynValue *val, int indent, Stack stack) {
   // not really much we can print
-  return fputs("\"fun_args\"", out);
+  return printf("\"fun_args\"");
 }
 
-int print_block(DynValue *val, int indent, Stack stack, FILE *out) {
+int print_block(DynValue *val, int indent, Stack stack) {
   size_t count = dyn_block_field_count(val);
-  if (fputs("{\n", out) == EOF)
+  if (puts("{") == EOF)
     return EOF;
 
   int first = 1;
@@ -140,118 +151,130 @@ int print_block(DynValue *val, int indent, Stack stack, FILE *out) {
     const char *field_desc = dyn_block_field_name_at_index(val, i);
 
     if (!first) {
-      if (fputs(",\n", out) == EOF) {
+      if (puts(",") == EOF) {
         return EOF;
       }
     }
 
-    if (print_indent(indent + 2, out) == EOF)
+    if (print_indent(indent + 2) == EOF)
       return EOF;
-    if (fprintf(out, "\"%s\": ", field_desc) < 0)
+    if (printf("\"%s\": ", field_desc) < 0)
       return EOF;
-    if (print_recursive(indent + 2, stack, out) < 0)
+    if (print_recursive(indent + 2, stack) < 0)
       return EOF;
 
     first = 0;
   }
-  if (fputs("\n", out) == EOF) {
+  if (puts("") == EOF) {
     return EOF;
   }
-  if (print_indent(indent, out) == EOF)
+  if (print_indent(indent) == EOF)
     return EOF;
-  fputc_ret('}', out);
+  fputc_ret('}');
   return 0;
 }
 
-int print_array(DynValue *val, int indent, Stack stack, FILE *out) {
+int print_array(DynValue *val, int indent, Stack stack) {
   int64_t len = dyn_array_len(val, stack.globals);
-  if (fputs("[\n", out) == EOF)
+  if (puts("[") == EOF)
     return EOF;
   for (int64_t i = 0; i < len; i++) {
     DynValue *sub_value = stack.current;
     dyn_array_current_element(sub_value, val, stack.globals);
     if (i) {
-      if (fputs(",\n", out) == EOF) {
+      if (puts(",") == EOF) {
         return EOF;
       }
     }
-    if (print_indent(indent + 2, out) == EOF)
+    if (print_indent(indent + 2) == EOF)
       return EOF;
-    if (print_recursive(indent + 2, stack, out) < 0)
+    if (print_recursive(indent + 2, stack) < 0)
       return EOF;
     dyn_array_single_forward(val, stack.globals);
   }
-  if (fputs("\n", out) == EOF) {
+  if (puts("") == EOF) {
     return EOF;
   }
-  if (print_indent(indent, out) == EOF)
+  if (print_indent(indent) == EOF)
     return EOF;
-  fputc_ret(']', out);
+  fputc_ret(']');
   return 0;
 }
 
-int print_indirect(DynValue *val, int indent, Stack stack, FILE *out) {
+int print_indirect(DynValue *val, int indent, Stack stack) {
   DynValue *deref = stack.current;
   dyn_deref(deref, val, stack.globals);
-  return print_recursive(indent, stack, out);
+  return print_recursive(indent, stack);
 }
 
-int print_error(DynValue *val, int indent, Stack stack, FILE *out) {
+int print_error(DynValue *val, int indent, Stack stack) {
   switch (dyn_error(val)) {
   case YABO_STATUS_ERROR:
-    return fputs("\"ERROR\"", out);
+    return printf("\"ERROR\"");
   case YABO_STATUS_EOS:
-    return fputs("\"EOS\"", out);
+    return printf("\"EOS\"");
   case YABO_STATUS_BACKTRACK:
-    return fputs("null", out);
+    return printf("null");
   default:
     return 0;
   }
 }
 
-int print_recursive(int indent, Stack stack, FILE *out) {
+int print_recursive(int indent, Stack stack) {
   int status;
   DynValue *val = stack.current;
   if (!val->vtable) {
-    return print_error(val, indent, stack, out);
+    return print_error(val, indent, stack);
   }
   struct VTableHeader *vtable = val->vtable;
   dyn_mask(val);
   int64_t head = vtable->head & YABO_DISC_MASK;
   Stack substack = bump(stack);
   if (head == YABO_THUNK || head == YABO_U8) {
-    status = print_indirect(val, indent, substack, out);
+    status = print_indirect(val, indent, substack);
   } else {
     switch (head) {
     case YABO_INTEGER:
-      status = print_int(val, indent, substack, out);
+      status = print_int(val, indent, substack);
       break;
     case YABO_BIT:
-      status = print_bit(val, indent, substack, out);
+      status = print_bit(val, indent, substack);
       break;
     case YABO_CHAR:
-      status = print_char(val, indent, substack, out);
+      status = print_char(val, indent, substack);
       break;
     case YABO_LOOP:
-      status = print_array(val, indent, substack, out);
+      status = print_array(val, indent, substack);
       break;
     case YABO_PARSER:
-      status = print_parser(val, indent, substack, out);
+      status = print_parser(val, indent, substack);
       break;
     case YABO_FUN_ARGS:
-      status = print_fun_args(val, indent, substack, out);
+      status = print_fun_args(val, indent, substack);
       break;
     case YABO_BLOCK:
-      status = print_block(val, indent, substack, out);
+      status = print_block(val, indent, substack);
       break;
     case YABO_UNIT:
-      status = fputs("\"unit\"", out);
+      status = printf("\"unit\"");
       break;
     }
   }
   return status;
 }
 
+#if defined(STATIC_FILE)
+
+const uint8_t static_file_content[] = {
+#embed STATIC_FILE
+};
+// filename is ignored for static files
+struct Slice map_file(char *_) {
+  return (struct Slice){static_file_content,
+                        static_file_content + sizeof(static_file_content)};
+}
+
+#else
 struct Slice map_file(char *filename) {
   FILE *f = fopen(filename, "r");
   if (!f) {
@@ -280,6 +303,8 @@ struct Slice map_file(char *filename) {
   return (struct Slice){(const uint8_t *)file, (const uint8_t *)file + length};
 }
 
+#endif
+
 struct LibInfo {
   size_t max_dyn_size;
   size_t global_size;
@@ -287,40 +312,6 @@ struct LibInfo {
   const struct ParserExport *parser;
   const void *args;
 };
-
-const struct ParserExport *get_export(void *lib, char *parser_desc) {
-  size_t end = yabo_export_identifier_end(parser_desc);
-  char old = parser_desc[end];
-  parser_desc[end] = '\0';
-  const struct ParserExport *export_info = dlsym(lib, parser_desc);
-  parser_desc[end] = old;
-  return export_info;
-}
-
-const void *export_args(const struct ParserExport *export_info,
-                        char *parser_desc) {
-  size_t size = yabo_export_args_size(export_info);
-  if (size == -1) {
-    fprintf(stderr, "unsupported export argument\n");
-    exit(1);
-  }
-
-  void *args = malloc(size);
-  if (!args) {
-    fprintf(stderr, "Could not allocate args");
-    exit(1);
-  }
-
-  void *parser_args = parser_desc + yabo_export_identifier_end(parser_desc);
-  enum YaboArgParseError err =
-      yabo_export_parse_arg(parser_args, export_info, args);
-  if (err) {
-    fprintf(stderr, "Could not parse args: %s\n",
-            yabo_export_parse_error_message(err));
-    exit(1);
-  }
-  return args;
-}
 
 #if defined(STATIC_PARSER)
 
@@ -440,12 +431,12 @@ struct LibInfo exec_lib() {
   }
 
   if (!phdr_phdr) {
-    fprintf(stderr, "could not find phdr for phdr\n");
+    eprintf("could not find phdr for phdr\n");
     exit(1);
   }
 
   if (!dynamic_phdr) {
-    fprintf(stderr, "could not find the dynamic segment\n");
+    eprintf("could not find the dynamic segment\n");
     exit(1);
   }
 
@@ -453,7 +444,7 @@ struct LibInfo exec_lib() {
 
   struct DynInfo info;
   if (!find_dyn_info(&info, dynamic_phdr, offset)) {
-    fprintf(stderr, "could not find dynamic info\n");
+    eprintf("could not find dynamic info\n");
     exit(1);
   }
 
@@ -465,17 +456,15 @@ struct LibInfo exec_lib() {
   size_t *yabo_global_size =
       lookup_gnu_hash(&info, "yabo_global_size", offset);
   if (!lib.parser) {
-    fprintf(stderr, "could not find main function\n");
+    eprintf("could not find main function\n");
     exit(1);
   }
   if (!yabo_max_buf_size) {
-    fprintf(stderr,
-            "could not find yabo_max_buf_size (is this a yabo library?)\n");
+    eprintf("could not find yabo_max_buf_size (is this a yabo library?)\n");
     exit(1);
   }
   if (!yabo_global_size) {
-    fprintf(stderr,
-            "could not find yabo_global_size\n");
+    eprintf("could not find yabo_global_size\n");
     exit(1);
   }
   lib.max_dyn_size = *yabo_max_buf_size;
@@ -486,11 +475,45 @@ struct LibInfo exec_lib() {
 
 #else
 
+const struct ParserExport *get_export(void *lib, char *parser_desc) {
+  size_t end = yabo_export_identifier_end(parser_desc);
+  char old = parser_desc[end];
+  parser_desc[end] = '\0';
+  const struct ParserExport *export_info = dlsym(lib, parser_desc);
+  parser_desc[end] = old;
+  return export_info;
+}
+
+const void *export_args(const struct ParserExport *export_info,
+                        char *parser_desc) {
+  size_t size = yabo_export_args_size(export_info);
+  if (size == -1) {
+    eprintf("unsupported export argument\n");
+    exit(1);
+  }
+
+  void *args = malloc(size);
+  if (!args) {
+    eprintf("Could not allocate args");
+    exit(1);
+  }
+
+  void *parser_args = parser_desc + yabo_export_identifier_end(parser_desc);
+  enum YaboArgParseError err =
+      yabo_export_parse_arg(parser_args, export_info, args);
+  if (err) {
+    eprintf("Could not parse args: %s\n",
+            yabo_export_parse_error_message(err));
+    exit(1);
+  }
+  return args;
+}
+
 struct LibInfo dynamic_lib(char *filename, char *parser_name) {
   struct LibInfo ret;
   void *lib = dlopen(filename, RTLD_NOW);
   if (!lib) {
-    fprintf(stderr, "could not open library: %s", dlerror());
+    eprintf("could not open library: %s", dlerror());
     exit(1);
   }
   size_t *max_dyn_size_ptr = (size_t *)dlsym(lib, "yabo_max_buf_size");
@@ -519,10 +542,16 @@ struct LibInfo dynamic_lib(char *filename, char *parser_name) {
 
 int main(int argc, char *argv[argc]) {
 
-#if defined(STATIC_PARSER) || defined(ELF_INTERP)
+#if LLUBI_COMPATIBLE
+  if (argc != 1) {
+    eprintf("usage: %s\n", argv[0]);
+    exit(1);
+  }
 
+  struct LibInfo lib = static_lib();
+#elif defined(STATIC_PARSER) || defined(ELF_INTERP)
   if (argc != 2) {
-    fprintf(stderr, "usage: %s FILE\n", argv[0]);
+    eprintf("usage: %s FILE\n", argv[0]);
     exit(1);
   }
 
@@ -535,13 +564,13 @@ int main(int argc, char *argv[argc]) {
 #else
 
   if (argc != 4) {
-    fprintf(stderr, "usage: %s SOFILE PARSERNAME FILE\n", argv[0]);
+    eprintf("usage: %s SOFILE PARSERNAME FILE\n", argv[0]);
     exit(1);
   }
   struct LibInfo lib = dynamic_lib(argv[1], argv[2]);
 
   if (!lib.parser) {
-    fprintf(stderr, "could not find parser: %s\n", dlerror());
+    eprintf("could not find parser: %s\n", dlerror());
     exit(1);
   }
 
@@ -557,8 +586,7 @@ int main(int argc, char *argv[argc]) {
     int64_t status =
         lib.global_init(file.start, file.end, (char *)stack.globals);
     if (status != 0) {
-      fprintf(stderr,
-              "failed to initialize yabo library with status %" PRId64 "\n",
+      eprintf("failed to initialize yabo library with status %" PRId64 "\n",
               status);
       exit(1);
     }
@@ -566,7 +594,7 @@ int main(int argc, char *argv[argc]) {
 
   ParseFun *parse = YABO_ACCESS_VPTR(lib.parser, parser);
   dyn_parse_bytes(stack.current, file, lib.args, parse, stack.globals);
-  print_recursive(0, stack, stdout);
+  print_recursive(0, stack);
   free_stack(stack);
-  putchar('\n');
+  puts("");
 }
