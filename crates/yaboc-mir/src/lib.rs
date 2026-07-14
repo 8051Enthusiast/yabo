@@ -280,7 +280,7 @@ pub enum MirInstr {
     SetDiscriminant(PlaceRef, FieldName, bool),
     Range(PlaceRef, PlaceRef, PlaceRef, ControlFlow),
     GetAddr(PlaceRef, PlaceRef, ControlFlow),
-    ApplyArgs(PlaceRef, PlaceRef, Vec<(PlaceRef, bool)>, ControlFlow),
+    ApplyArgs(PlaceRef, PlaceRef, Box<[(PlaceRef, bool)]>, ControlFlow),
     Copy(PlaceRef, PlaceRef, ControlFlow),
     EvalFun(PlaceRef, PlaceRef, RequirementSet, ControlFlow),
     ParseCall(
@@ -923,7 +923,7 @@ impl FunctionWriter {
     pub fn apply_args(
         &mut self,
         fun: PlaceRef,
-        args: Vec<(PlaceRef, bool)>,
+        args: Box<[(PlaceRef, bool)]>,
         target: PlaceRef,
         error: BBRef,
     ) {

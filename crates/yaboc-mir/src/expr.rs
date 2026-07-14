@@ -781,7 +781,7 @@ impl<'a> ConvertExpr<'a> {
                     inner_locs[n].place.is_none(),
                 ))
             })
-            .collect::<SResult<Vec<_>>>()?;
+            .collect::<SResult<Box<[_]>>>()?;
         if inner_results.is_empty() {
             // no arguments given, so the input type must be the same
             // as the output type (remember that evaluation is done separately,
