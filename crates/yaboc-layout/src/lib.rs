@@ -920,8 +920,14 @@ impl<'a> LayoutContext<'a> {
         self.hashes.hash(layout, db)[..8].try_into().unwrap()
     }
 
-    pub fn layout_slice_hash(&mut self, db: &(impl Layouts + ?Sized), layout: &[ILayout<'a>]) -> [u8; 8] {
-        self.hashes.hash_multiple(layout, db)[..8].try_into().unwrap()
+    pub fn layout_slice_hash(
+        &mut self,
+        db: &(impl Layouts + ?Sized),
+        layout: &[ILayout<'a>],
+    ) -> [u8; 8] {
+        self.hashes.hash_multiple(layout, db)[..8]
+            .try_into()
+            .unwrap()
     }
 }
 
@@ -1368,7 +1374,11 @@ def test = [5][3][2]
         let slice = outlayer.dcx.intern(Layout::Mono(MonoLayout::SlicePtr));
         dbeprintln!(&ctx.db, "layout: {} -> {}", &slice, &canon);
         for ((from, to), sa) in layouts.tail_sa {
-            dbeprintln!(&ctx.db, "tail: {} -> {}", &from, &to);
+            if let Some(from) = from {
+                dbeprintln!(&ctx.db, "tail: {} -> {}", &from, &to);
+            } else {
+                dbeprintln!(&ctx.db, "tail: {}()", &to);
+            }
             eprintln!("{:?}", sa);
         }
     }

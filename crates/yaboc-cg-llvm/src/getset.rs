@@ -1,4 +1,4 @@
-use inkwell::types::FunctionType;
+use inkwell::{types::FunctionType, values::CallSiteValue};
 use yaboc_base::low_effort_interner::Uniq;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::represent::ParserFunKind;
@@ -31,6 +31,13 @@ macro_rules! function_ty_impl {
             }
         }
     };
+}
+
+fn return_status(call: CallSiteValue) -> IntValue {
+    call.try_as_basic_value()
+        .basic()
+        .expect("function should not return void")
+        .into_int_value()
 }
 
 function_ty_impl!(fn(a: A) -> R);
@@ -256,11 +263,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             "impl_tail_call",
         )?;
         self.set_tail_call(call_ret, tail);
-        let ret = call_ret
-            .try_as_basic_value()
-            .basic()
-            .unwrap()
-            .into_int_value();
+        let ret = return_status(call_ret);
         self.builder.build_return(Some(&ret))?;
         Ok(())
     }
@@ -327,11 +330,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             Callable::Function(func_val) => self.builder.build_call(func_val, args, "tail_call"),
         }?;
         self.set_tail_call(call_ret, true);
-        let ret = call_ret
-            .try_as_basic_value()
-            .basic()
-            .unwrap()
-            .into_int_value();
+        let ret = return_status(call_ret);
         Ok(ret)
     }
 
@@ -418,12 +417,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         arg: CgValue<'comp, 'llvm>,
         kind: ParserFunKind,
         req: RequirementSet,
-    ) -> IResult<IntValue<'llvm>> {
+    ) -> IResult<CallSiteValue<'llvm>> {
         let eval_fun = match arg.layout.maybe_mono() {
             Some(mono) => self.eval_fun_fun_val(mono, req, kind).into(),
             None => {
+                let meta = CallMeta {
+                    tail: kind == ParserFunKind::TailWrapper,
+                    req,
+                };
                 let slot =
-                    self.collected_layouts.eval_slots.layout_vtable_offsets[&(req, arg.layout)];
+                    self.collected_layouts.eval_slots.layout_vtable_offsets[&(meta, arg.layout)];
                 self.vtable_callable::<vtable::FunctionVTable<AbsPtr>, vtable::FunctionVTable<RelPtr>, vtable::EvalFunFun>(
                 arg.ptr,
                 &[FunctionVTableFields::eval_fun_impl as i64, slot as i64],
@@ -440,11 +443,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         if let ParserFunKind::TailWrapper | ParserFunKind::Worker = kind {
             self.set_tail_call(call, false);
         }
-        Ok(call
-            .try_as_basic_value()
-            .basic()
-            .expect("function shuold not return void")
-            .into_int_value())
+        Ok(call)
     }
 
     pub(super) fn call_eval_fun_fun_wrapper(
@@ -454,6 +453,35 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         req: RequirementSet,
     ) -> IResult<IntValue<'llvm>> {
         self.call_eval_fun_fun(ret, arg, ParserFunKind::Wrapper, req)
+            .map(return_status)
+    }
+
+    pub(super) fn call_eval_fun_fun_tail(
+        &mut self,
+        ret: CgReturnValue<'llvm>,
+        fun: CgValue<'comp, 'llvm>,
+        req: RequirementSet,
+        parent_fun: Option<CgMonoValue<'comp, 'llvm>>,
+    ) -> IResult<IntValue<'llvm>> {
+        let sa = fun.layout.size_align_without_vtable(self.layouts).unwrap();
+        let size = self.const_i64(sa.after as i64);
+        let fun = if let Some(parent_fun) = parent_fun {
+            self.builder
+                .build_memcpy(
+                    parent_fun.ptr,
+                    sa.align() as u32,
+                    fun.ptr,
+                    sa.align() as u32,
+                    size,
+                )
+                .unwrap();
+            parent_fun.into()
+        } else {
+            fun
+        };
+        let result = self.call_eval_fun_fun(ret, fun, ParserFunKind::TailWrapper, req)?;
+        result.set_tail_call(true);
+        Ok(return_status(result))
     }
 
     pub(super) fn call_eval_fun_fun_impl(
@@ -464,7 +492,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> IResult<()> {
         let info = &self.collected_layouts.layout_info.info[&arg.layout];
         let req = info.modify_reqs(req);
-        let ret = self.call_eval_fun_fun(ret, arg, ParserFunKind::Worker, req)?;
+        let ret = return_status(self.call_eval_fun_fun(ret, arg, ParserFunKind::Worker, req)?);
         self.builder.build_return(Some(&ret))?;
         Ok(())
     }

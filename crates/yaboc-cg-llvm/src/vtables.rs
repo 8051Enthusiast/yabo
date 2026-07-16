@@ -318,11 +318,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             });
 
         let eval_slots = self.collected_layouts.eval_slots.calls_from_layout(layout);
-        let eval_funcs = self.gather_slots::<EvalFunFun, _>(&eval_slots, vtable, 3, |this, req| {
-            this.eval_fun_fun_val_wrapper(layout, req)
+        let eval_funcs =
+            self.gather_slots::<EvalFunFun, _>(&eval_slots, vtable, 3, |this, meta| {
+                if meta.tail {
+                    this.eval_fun_fun_val_tail(layout, meta.req)
+                } else {
+                    this.eval_fun_fun_val_wrapper(layout, meta.req)
+                }
                 .as_global_value()
                 .as_pointer_value()
-        });
+            });
 
         let vtable_ty = self.vtable_ty(layout);
         let vtable_val = vtable_ty.const_named_struct(&[

@@ -48,7 +48,7 @@ impl<'comp, 'llvm> TypecastThunk<'comp, 'llvm> {
             let fun_copy = if let TailInfo {
                 has_tailsites: true,
                 sa,
-            } = cg.collected_layouts.tail_sa[&(from, layout)]
+            } = cg.collected_layouts.tail_sa[&(Some(from), layout)]
             {
                 let sa_alloc = cg.build_sa_alloca(sa, "tail_storage")?;
                 Some(CgMonoValue::new(layout, sa_alloc))
@@ -288,7 +288,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for BlockThunk<'comp> {
         let f = if let Some(from) = self.from {
             cg.parser_fun_val_tail(self.fun, from, self.req)
         } else {
-            cg.eval_fun_fun_val_wrapper(self.fun, self.req)
+            cg.eval_fun_fun_val_tail(self.fun, self.req)
         };
         cg.add_entry_block(f);
         f

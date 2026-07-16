@@ -4,7 +4,7 @@ use yaboc_absint::{AbsIntCtx, AbstractDomain, PdEvaluated};
 use yaboc_base::{error::SilencedError, interner::DefId};
 use yaboc_expr::{IndexExpr, ShapedData};
 use yaboc_hir::{
-    walk::ChildIter, ExprId, HirIdWrapper, HirNode, HirNodeKind, LambdaId, ParserDefId,
+    ExprId, HirIdWrapper, HirNode, HirNodeKind, LambdaId, ParserDefId, walk::ChildIter,
 };
 use yaboc_mir::{FunKind, Function, MirKind, Place, PlaceOrigin, PlaceRef, StackRef, Strictness};
 use yaboc_resolve::expr::Resolved;

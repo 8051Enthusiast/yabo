@@ -209,8 +209,11 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
             MirInstr::Copy(target, origin, cont) => {
                 dbwrite!(f, db, "{} = copy {}, {}", target, origin, cont)
             }
-            MirInstr::EvalFun(target, fun, req, cont) => {
+            MirInstr::EvalFun(target, fun, req, Some(cont)) => {
                 dbwrite!(f, db, "{} = eval_fun {}, {}, {}", target, fun, req, cont)
+            }
+            MirInstr::EvalFun(target, fun, req, None) => {
+                dbwrite!(f, db, "{} = tail eval_fun {}, {}", target, fun, req)
             }
             MirInstr::GetAddr(target, addr, cont) => {
                 dbwrite!(f, db, "{} = get_addr {}, {}", target, addr, cont)

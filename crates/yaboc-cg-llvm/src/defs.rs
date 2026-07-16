@@ -206,6 +206,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.eval_fun_fun_val(layout, req, ParserFunKind::Wrapper)
     }
 
+    pub(super) fn eval_fun_fun_val_tail(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+        req: RequirementSet,
+    ) -> FunctionValue<'llvm> {
+        self.eval_fun_fun_val(layout, req, ParserFunKind::TailWrapper)
+    }
+
     pub(super) fn eval_fun_fun_val_worker(
         &mut self,
         layout: IMonoLayout<'comp>,

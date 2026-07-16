@@ -265,6 +265,12 @@ impl CallMeta {
             tail: self.tail,
         }
     }
+    pub fn req(self, req: RequirementSet) -> Self {
+        Self {
+            req,
+            tail: self.tail,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -282,7 +288,7 @@ pub enum MirInstr {
     GetAddr(PlaceRef, PlaceRef, ControlFlow),
     ApplyArgs(PlaceRef, PlaceRef, Box<[(PlaceRef, bool)]>, ControlFlow),
     Copy(PlaceRef, PlaceRef, ControlFlow),
-    EvalFun(PlaceRef, PlaceRef, RequirementSet, ControlFlow),
+    EvalFun(PlaceRef, PlaceRef, CallMeta, Option<ControlFlow>),
     ParseCall(
         Option<PlaceRef>,
         Option<PlaceRef>,
@@ -335,7 +341,7 @@ impl MirInstr {
             | MirInstr::GetAddr(_, _, control_flow)
             | MirInstr::ApplyArgs(.., control_flow)
             | MirInstr::Copy(_, _, control_flow)
-            | MirInstr::EvalFun(_, _, _, control_flow)
+            | MirInstr::EvalFun(_, _, _, Some(control_flow))
             | MirInstr::Span(.., control_flow)
             | MirInstr::Range(.., control_flow) => Some(*control_flow),
             MirInstr::IntBin(_, _, _, _)
@@ -345,6 +351,7 @@ impl MirInstr {
             | MirInstr::StoreBytes(_, _)
             | MirInstr::SetDiscriminant(_, _, _)
             | MirInstr::ParseCall(.., None)
+            | MirInstr::EvalFun(.., None)
             | MirInstr::Return(_) => None,
         }
     }
@@ -382,8 +389,8 @@ impl MirInstr {
             MirInstr::Copy(ret, val, control_flow) => {
                 MirInstr::Copy(*ret, *val, control_flow.map_bb(f))
             }
-            MirInstr::EvalFun(ret, val, req, control_flow) => {
-                MirInstr::EvalFun(*ret, *val, *req, control_flow.map_bb(f))
+            MirInstr::EvalFun(ret, val, req, Some(control_flow)) => {
+                MirInstr::EvalFun(*ret, *val, *req, Some(control_flow.map_bb(f)))
             }
             MirInstr::Span(ret, start, end, control_flow) => {
                 MirInstr::Span(*ret, *start, *end, control_flow.map_bb(f))
@@ -398,6 +405,7 @@ impl MirInstr {
             | MirInstr::StoreBytes(_, _)
             | MirInstr::SetDiscriminant(_, _, _)
             | MirInstr::Return(_)
+            | MirInstr::EvalFun(.., None)
             | MirInstr::ParseCall(.., None) => {
                 assert!(self.control_flow().is_none());
                 self.clone()
@@ -952,10 +960,21 @@ impl FunctionWriter {
             .append_ins(MirInstr::EvalFun(
                 ret,
                 fun,
-                req,
-                ControlFlow::new_with_exc(new_block, exc),
+                CallMeta { req, tail: false },
+                Some(ControlFlow::new_with_exc(new_block, exc)),
             ));
         self.set_bb(new_block);
+    }
+
+    pub fn tail_eval_fun(&mut self, fun: PlaceRef, ret: PlaceRef, req: RequirementSet) {
+        self.fun
+            .bb_mut(self.current_bb)
+            .append_ins(MirInstr::EvalFun(
+                ret,
+                fun,
+                CallMeta { req, tail: false },
+                None,
+            ));
     }
 
     pub fn assert_val(&mut self, val: PlaceRef, constrinat: ConstraintAtom, backtrack: BBRef) {

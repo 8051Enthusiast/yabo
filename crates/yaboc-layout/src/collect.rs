@@ -61,8 +61,8 @@ pub struct LayoutCollection<'a> {
     pub globals: FxHashMap<ParserDefId, (IMonoLayout<'a>, ILayout<'a>)>,
     pub parser_slots: call_info::CallSlotResult<'a, (ILayout<'a>, CallMeta)>,
     pub funcall_slots: call_info::CallSlotResult<'a, LayoutSlice<'a>>,
-    pub eval_slots: call_info::CallSlotResult<'a, RequirementSet>,
-    pub tail_sa: FxHashMap<(ILayout<'a>, IMonoLayout<'a>), TailInfo>,
+    pub eval_slots: call_info::CallSlotResult<'a, CallMeta>,
+    pub tail_sa: FxHashMap<(Option<ILayout<'a>>, IMonoLayout<'a>), TailInfo>,
     pub max_sa: SizeAlign,
     pub global_offsets: StructManifestation,
     pub layout_info: LayoutInfoCollection<'a>,
@@ -74,7 +74,7 @@ pub struct LayoutCollector<'a, 'b> {
     int: ILayout<'a>,
     parses: call_info::CallInfo<'a, (ILayout<'a>, CallMeta)>,
     funcalls: call_info::CallInfo<'a, LayoutSlice<'a>>,
-    eval_slots: call_info::CallInfo<'a, RequirementSet>,
+    eval_slots: call_info::CallInfo<'a, CallMeta>,
     arrays: LayoutSet<'a>,
     blocks: LayoutSet<'a>,
     nominals: LayoutSet<'a>,
@@ -85,7 +85,7 @@ pub struct LayoutCollector<'a, 'b> {
     root: Vec<(ILayout<'a>, IMonoLayout<'a>)>,
     max_sa: SizeAlign,
     processed_calls: FxHashSet<(ILayout<'a>, IMonoLayout<'a>, CallMeta)>,
-    processed_evals: FxHashSet<(IMonoLayout<'a>, RequirementSet)>,
+    processed_evals: FxHashSet<(IMonoLayout<'a>, CallMeta)>,
     unprocessed: Vec<UnprocessedCall<'a>>,
     layout_info: LayoutInfoCollector<'a>,
     publics: UseCollections<'a>,
@@ -358,9 +358,9 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         }
     }
 
-    fn register_eval(&mut self, fun: ILayout<'a>, req: RequirementSet) {
-        self.eval_slots.add_call(req, fun);
-        if req.is_empty() {
+    fn register_eval(&mut self, fun: ILayout<'a>, meta: CallMeta) {
+        self.eval_slots.add_call(meta, fun);
+        if meta.req.is_empty() {
             return;
         }
         if TRACE_COLLECTION {
@@ -368,13 +368,13 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 self.ctx.db,
                 "[collection] registered eval {}({})",
                 &fun,
-                &req
+                &meta
             );
         }
         let fun = fun.evaluate(self.ctx).unwrap().0;
         for mono in &fun {
             let layout_info = self.layout_info.get_mono_info(mono);
-            let req = layout_info.modify_reqs(req);
+            let req = layout_info.modify_reqs(meta.req);
             if req.is_empty() {
                 continue;
             }
@@ -395,7 +395,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 _ => None,
             };
             if let Some(eval) = eval {
-                if self.processed_evals.insert((mono, req)) {
+                if self.processed_evals.insert((mono, meta.req(req))) {
                     self.unprocessed.push(eval(mono, MirKind::Call(req)));
                 }
             }
@@ -440,9 +440,9 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 self.register_len(fun_layout);
                 Ok(())
             }
-            MirInstr::EvalFun(_, fun, req, _) => {
+            MirInstr::EvalFun(_, fun, meta, _) => {
                 let fun_layout = mir.place(fun);
-                self.register_eval(fun_layout, req);
+                self.register_eval(fun_layout, meta);
                 Ok(())
             }
             _ => Ok(()),
@@ -703,7 +703,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         let pds = self.ctx.db.global_sequence()?;
         for pd in pds.iter() {
             let fun_layout = pd_parser(self.ctx, *pd)?;
-            self.register_eval(fun_layout, static_val_req().req);
+            self.register_eval(fun_layout, static_val_req());
             let return_layout = fun_layout.eval_fun(self.ctx)?.evaluate(self.ctx)?.0;
             self.ctx
                 .dcx
@@ -799,9 +799,19 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         let mut tail_collector = TailCollector::new(self.ctx);
         for (parser, froms) in parser_slots.call_args.iter() {
             for (from, _) in froms.keys() {
-                let sa = tail_collector.size(CallSite(*from, *parser))?;
-                tail_sa.insert((*from, *parser), sa);
+                let sa = tail_collector.size(CallSite {
+                    from: Some(*from),
+                    func: *parser,
+                })?;
+                tail_sa.insert((Some(*from), *parser), sa);
             }
+        }
+        for (fun, _) in eval_slots.call_args.iter() {
+            let sa = tail_collector.size(CallSite {
+                from: None,
+                func: *fun,
+            })?;
+            tail_sa.insert((None, *fun), sa);
         }
 
         let mut manifestation = UnfinishedManifestation::new();

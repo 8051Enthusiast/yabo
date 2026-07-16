@@ -68,10 +68,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn setup_tail_fun_copy(
         &mut self,
-        from: ILayout<'comp>,
+        from: Option<ILayout<'comp>>,
         fun: CgMonoValue<'comp, 'llvm>,
     ) -> IResult<Option<CgMonoValue<'comp, 'llvm>>> {
-        let tail_info = self.collected_layouts.tail_sa[&(from, fun.layout)];
+        let Some(tail_info) = self.collected_layouts.tail_sa.get(&(from, fun.layout)) else {
+            return Ok(None);
+        };
         if !tail_info.has_tailsites {
             return Ok(None);
         }
@@ -91,7 +93,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let wrapper = self.parser_fun_val_wrapper(layout, from, req);
         let (ret, fun_arg, from) = parser_values(wrapper, layout, from);
         self.add_entry_block(wrapper);
-        let Some(val) = self.setup_tail_fun_copy(from.layout, fun_arg)? else {
+        let Some(val) = self.setup_tail_fun_copy(Some(from.layout), fun_arg)? else {
             // cannot be a tail call because of different calling conventions
             return self.wrap_direct_call(inner, wrapper, false);
         };
@@ -103,6 +105,27 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 ret.head.into(),
                 from.ptr.into(),
             ],
+        )?;
+        self.builder.build_return(Some(&ret))?;
+        Ok(wrapper)
+    }
+
+    fn create_wrapper_eval_fun(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+        req: RequirementSet,
+        inner: FunctionValue<'llvm>,
+    ) -> IResult<FunctionValue<'llvm>> {
+        let wrapper = self.eval_fun_fun_val_wrapper(layout, req);
+        let (ret, fun_arg) = eval_fun_values(wrapper, layout);
+        self.add_entry_block(wrapper);
+        let Some(val) = self.setup_tail_fun_copy(None, fun_arg)? else {
+            // cannot be a tail call because of different calling conventions
+            return self.wrap_direct_call(inner, wrapper, false);
+        };
+        let ret = self.build_tailcc_call_with_int_ret(
+            inner,
+            &[ret.ptr.into(), val.ptr.into(), ret.head.into()],
         )?;
         self.builder.build_return(Some(&ret))?;
         Ok(wrapper)
@@ -1305,7 +1328,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         req: RequirementSet,
-    ) -> IResult<()> {
+    ) -> IResult<FunctionValue<'llvm>> {
         let MonoLayout::BlockParser(block, _) = layout.mono_layout() else {
             panic!("Expected block parser layout")
         };
@@ -1323,9 +1346,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
         // if the block function does not return itself, we do not need to write the block vtable
         if matches!(block.returns, BlockReturnKind::Returns) {
-            let llvm_fun = self.eval_fun_fun_val_wrapper(layout, req);
+            let llvm_fun = self.eval_fun_fun_val_tail(layout, req);
             self.wrap_direct_call(impl_fun, llvm_fun, false)?;
-            return Ok(());
+            return Ok(llvm_fun);
         }
 
         let return_layout = self
@@ -1342,8 +1365,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             req,
         };
 
-        ThunkContext::new(self, block_data).build()?;
-        Ok(())
+        ThunkContext::new(self, block_data).build()
     }
 
     fn create_eval_pd_fun_fun_impl(
@@ -1366,14 +1388,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         req: RequirementSet,
-    ) -> IResult<()> {
+    ) -> IResult<FunctionValue<'llvm>> {
         let target_layout = layout
             .inner()
             .eval_fun(self.layouts)
             .unwrap()
             .maybe_mono()
             .unwrap();
-        let f = self.eval_fun_fun_val_wrapper(layout, req);
+        let f = self.eval_fun_fun_val_tail(layout, req);
         self.add_entry_block(f);
         let create_args_thunk = TransmuteCopyThunk {
             from: layout,
@@ -1381,7 +1403,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             f,
         };
         ThunkContext::new(self, create_args_thunk).build()?;
-        Ok(())
+        Ok(f)
     }
 
     fn create_eval_lambda_fun(
@@ -1404,7 +1426,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         req: RequirementSet,
-    ) -> IResult<()> {
+    ) -> IResult<FunctionValue<'llvm>> {
         let impl_fun = match layout.mono_layout() {
             MonoLayout::ArrayParser(_) | MonoLayout::ArrayFillParser(_) => {
                 return self.create_eval_fun_fun_copy(layout, req);
@@ -1424,9 +1446,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 &layout.inner()
             ),
         };
-        let llvm_fun = self.eval_fun_fun_val_wrapper(layout, req);
+        let llvm_fun = self.eval_fun_fun_val_tail(layout, req);
         self.wrap_direct_call(impl_fun, llvm_fun, false)?;
-        Ok(())
+        Ok(llvm_fun)
     }
 
     fn create_create_fun_args_fun(
@@ -1518,7 +1540,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .calls_from_layout(layout)
             .keys()
         {
-            self.create_eval_fun_fun(layout, *req)?;
+            let inner = self.create_eval_fun_fun(layout, req.req)?;
+            self.create_wrapper_eval_fun(layout, req.req, inner)?;
         }
         let collected_layouts = self.collected_layouts.clone();
         for args in collected_layouts
@@ -1645,7 +1668,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 ParserFunKind::Wrapper,
                 NeededBy::Val.into(),
             )?;
-            self.non_zero_early_return(status)?;
+            self.non_zero_early_return(
+                status
+                    .try_as_basic_value()
+                    .expect_basic("ret int")
+                    .into_int_value(),
+            )?;
         }
         let zero = self.const_i64(0);
         self.builder.build_return(Some(&zero))?;

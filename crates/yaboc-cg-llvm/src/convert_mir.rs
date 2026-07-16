@@ -17,7 +17,6 @@ use yaboc_layout::{ILayout, IMonoLayout, Layout, MonoLayout, mir_subst::Function
 use yaboc_mir::{
     self as mir, BBRef, Comp, IntBinOp, IntUnOp, MirInstr, PlaceRef, ReturnStatus, Val,
 };
-use yaboc_req::RequirementSet;
 use yaboc_target::layout::TargetSized;
 
 use crate::{
@@ -221,17 +220,32 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         &mut self,
         to: PlaceRef,
         from: PlaceRef,
-        req: RequirementSet,
-        ctrl: ControlFlow,
+        meta: CallMeta,
+        ctrl: Option<ControlFlow>,
     ) -> IResult<()> {
         let to = self.return_val(to)?;
-        let from = self.place_val(from)?;
-        if let Layout::None = from.layout.layout.1 {
+        let from_val = self.place_val(from)?;
+        if let Layout::None = from_val.layout.layout.1 {
             self.cg.builder.build_unreachable()?;
             return Ok(());
         }
-        let ret = self.cg.call_eval_fun_fun_wrapper(to, from, req)?;
-        self.controlflow_case(ret, ctrl)
+        if let Some(ctrl) = ctrl {
+            let ret = self.cg.call_eval_fun_fun_wrapper(to, from_val, meta.req)?;
+            self.controlflow_case(ret, ctrl)?;
+        } else {
+            let parent_fun = if self.mir_fun.f.place(from).place == Place::Captures {
+                // don't copy in case it is already the arg since that would
+                // result in issues with memcpy
+                None
+            } else {
+                Some(self.fun)
+            };
+            let ret = self
+                .cg
+                .call_eval_fun_fun_tail(to, from_val, meta.req, parent_fun)?;
+            self.cg.builder.build_return(Some(&ret))?;
+        }
+        Ok(())
     }
 
     fn unwrap_block_id(&mut self, layout: ILayout<'comp>) -> BlockId {
