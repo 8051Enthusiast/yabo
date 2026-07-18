@@ -453,12 +453,12 @@ impl<'a> ConvertExpr<'a> {
     fn convert_eval_fun(
         &mut self,
         inner_loc: ExpressionLoc,
-        loc: ExpressionLoc,
+        loc: Option<ExpressionLoc>,
         recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
         req: RequirementSet,
-    ) -> SResult<PlaceRef> {
+    ) -> SResult<Option<PlaceRef>> {
         let fun_ref = self.copy_if_deref(inner_loc, recurse)?;
-        let place_ref = self.unwrap_or_stack(loc);
+        let place_ref = loc.map(|l| self.unwrap_or_stack(l));
         self.f
             .eval_fun(fun_ref, place_ref, req & !NeededBy::Len, self.retreat);
         Ok(place_ref)
@@ -557,12 +557,15 @@ impl<'a> ConvertExpr<'a> {
             ValUnOp::Dot(field, Some(BtMarkKind::KeepBt)) => {
                 self.convert_dot(inner_loc, loc, BtMarkKind::KeepBt, *field, recurse)
             }
-            ValUnOp::EvalFun(eval_kind) => self.convert_eval_fun(
-                inner_loc,
-                loc,
-                recurse,
-                modify_reqs(req, inner_can_bt, *eval_kind),
-            ),
+            ValUnOp::EvalFun(eval_kind) => {
+                self.convert_eval_fun(
+                    inner_loc,
+                    None,
+                    recurse,
+                    modify_reqs(req, inner_can_bt, *eval_kind),
+                )?;
+                Ok(self.load_undef(loc))
+            }
             ValUnOp::Wiggle(_, WiggleKind::Expect)
             | ValUnOp::Dot(_, None | Some(BtMarkKind::RemoveBt))
             | ValUnOp::Size
@@ -615,12 +618,14 @@ impl<'a> ConvertExpr<'a> {
                 *field,
                 recurse,
             )?,
-            ValUnOp::EvalFun(eval_kind) => self.convert_eval_fun(
-                inner_loc,
-                loc,
-                recurse,
-                modify_reqs(req, inner_can_bt, *eval_kind),
-            )?,
+            ValUnOp::EvalFun(eval_kind) => self
+                .convert_eval_fun(
+                    inner_loc,
+                    Some(loc),
+                    recurse,
+                    modify_reqs(req, inner_can_bt, *eval_kind),
+                )?
+                .unwrap(),
             ValUnOp::GetAddr => {
                 let inner = self.copy_if_deref(inner_loc, recurse)?;
                 let place_ref = self.unwrap_or_stack(loc);

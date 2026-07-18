@@ -218,12 +218,16 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
 
     fn eval_fun(
         &mut self,
-        to: PlaceRef,
+        to: Option<PlaceRef>,
         from: PlaceRef,
         meta: CallMeta,
         ctrl: Option<ControlFlow>,
     ) -> IResult<()> {
-        let to = self.return_val(to)?;
+        let to = if let Some(to) = to {
+            self.return_val(to)?
+        } else {
+            self.cg.poison_ret(self.globals)
+        };
         let from_val = self.place_val(from)?;
         if let Layout::None = from_val.layout.layout.1 {
             self.cg.builder.build_unreachable()?;

@@ -288,7 +288,7 @@ pub enum MirInstr {
     GetAddr(PlaceRef, PlaceRef, ControlFlow),
     ApplyArgs(PlaceRef, PlaceRef, Box<[(PlaceRef, bool)]>, ControlFlow),
     Copy(PlaceRef, PlaceRef, ControlFlow),
-    EvalFun(PlaceRef, PlaceRef, CallMeta, Option<ControlFlow>),
+    EvalFun(Option<PlaceRef>, PlaceRef, CallMeta, Option<ControlFlow>),
     ParseCall(
         Option<PlaceRef>,
         Option<PlaceRef>,
@@ -950,7 +950,7 @@ impl FunctionWriter {
     pub fn eval_fun(
         &mut self,
         fun: PlaceRef,
-        ret: PlaceRef,
+        ret: Option<PlaceRef>,
         req: RequirementSet,
         exc: ExceptionRetreat,
     ) {
@@ -966,7 +966,7 @@ impl FunctionWriter {
         self.set_bb(new_block);
     }
 
-    pub fn tail_eval_fun(&mut self, fun: PlaceRef, ret: PlaceRef, req: RequirementSet) {
+    pub fn tail_eval_fun(&mut self, fun: PlaceRef, ret: Option<PlaceRef>, req: RequirementSet) {
         self.fun
             .bb_mut(self.current_bb)
             .append_ins(MirInstr::EvalFun(

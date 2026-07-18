@@ -180,11 +180,11 @@ impl<'a> StrictnessCtx<'a> {
             | MirInstr::Copy(ret, _, _)
             | MirInstr::LenCall(ret, _, _)
             | MirInstr::ArrayLenCall(ret, _, _)
-            | MirInstr::EvalFun(ret, _, _, _)
             | MirInstr::Field(ret, _, _, _)
             | MirInstr::Span(ret, ..)
             | MirInstr::Range(ret, ..) => (Some(*ret), None),
             MirInstr::ParseCall(ret, retlen, ..) => (*ret, *retlen),
+            MirInstr::EvalFun(ret, _, _, _) => (*ret, None),
             MirInstr::AssertVal(_, _, _)
             | MirInstr::Branch(_)
             | MirInstr::Return(_)
