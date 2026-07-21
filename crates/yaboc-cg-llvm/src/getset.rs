@@ -433,7 +433,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             )?
             }
         };
-        let args = &[ret.ptr.into(), arg.ptr.into(), ret.head.into()];
+        let args = if self.options.target.use_tailcc || kind == ParserFunKind::Wrapper {
+            &[ret.ptr.into(), arg.ptr.into(), ret.head.into()][..]
+        } else {
+            &[
+                ret.ptr.into(),
+                arg.ptr.into(),
+                ret.head.into(),
+                self.llvm.ptr_type(Default::default()).get_poison().into(),
+            ][..]
+        };
         let call = match eval_fun {
             Callable::Pointer(ptr, ty) => {
                 self.builder.build_indirect_call(ty, ptr, args, "call")?
@@ -460,11 +469,27 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         ret: CgReturnValue<'llvm>,
         fun: CgValue<'comp, 'llvm>,
-        req: RequirementSet,
+        call_kind: RequirementSet,
         parent_fun: Option<CgMonoValue<'comp, 'llvm>>,
     ) -> IResult<IntValue<'llvm>> {
         let sa = fun.layout.size_align_without_vtable(self.layouts).unwrap();
         let size = self.const_i64(sa.after as i64);
+        let tailcc = self.options.target.use_tailcc;
+        let parser = match fun.layout.maybe_mono() {
+            Some(mono) => self.eval_fun_fun_val_tail(mono, call_kind).into(),
+            None => {
+                let meta = CallMeta {
+                    req: call_kind,
+                    tail: true,
+                };
+                let slot =
+                    self.collected_layouts.eval_slots.layout_vtable_offsets[&(meta, fun.layout)];
+                self.vtable_callable::<vtable::FunctionVTable<AbsPtr>, vtable::FunctionVTable<RelPtr>, vtable::EvalFunFun>(
+                    fun.ptr,
+                    &[FunctionVTableFields::eval_fun_impl as i64, slot as i64],
+                )?
+            }
+        };
         let fun = if let Some(parent_fun) = parent_fun {
             self.builder
                 .build_memcpy(
@@ -479,9 +504,28 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         } else {
             fun
         };
-        let result = self.call_eval_fun_fun(ret, fun, ParserFunKind::TailWrapper, req)?;
-        result.set_tail_call(true);
-        Ok(return_status(result))
+        let args = if tailcc {
+            &[ret.ptr.into(), fun.ptr.into(), ret.head.into()][..]
+        } else {
+            &[
+                ret.ptr.into(),
+                fun.ptr.into(),
+                ret.head.into(),
+                self.llvm.ptr_type(Default::default()).get_poison().into(),
+            ][..]
+        };
+        let call_ret = match parser {
+            Callable::Pointer(ptr, mut ty) => {
+                if !tailcc {
+                    ty = ParserFun::fun_ty(self);
+                }
+                self.builder.build_indirect_call(ty, ptr, args, "tail_call")
+            }
+            Callable::Function(func_val) => self.builder.build_call(func_val, args, "tail_call"),
+        }?;
+        self.set_tail_call(call_ret, true);
+        let ret = return_status(call_ret);
+        Ok(ret)
     }
 
     pub(super) fn call_eval_fun_fun_impl(

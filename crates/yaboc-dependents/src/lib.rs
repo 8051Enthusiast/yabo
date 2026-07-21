@@ -19,11 +19,14 @@ use yaboc_base::{
 use yaboc_expr::{ExprHead, ExprIdx, Expression, FetchExpr, ShapedData, TakeRef};
 use yaboc_hir::{self as hir, BlockReturnKind, HirIdWrapper, HirNode, ParserPredecessor};
 use yaboc_req::{NeededBy, RequirementMatrix, RequirementSet};
-use yaboc_resolve::{Resolves, expr::{Resolved, ResolvedAtom}};
+use yaboc_resolve::{
+    Resolves,
+    expr::{Resolved, ResolvedAtom},
+};
 
-use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
+use petgraph::{Direction, Graph, graph::NodeIndex, visit::EdgeRef};
 
-use backtrack::{can_backtrack, expr_backtrack_status, ExprBacktrackData};
+use backtrack::{ExprBacktrackData, can_backtrack, expr_backtrack_status};
 use fxhash::{FxHashMap, FxHashSet};
 
 pub use backtrack::BacktrackStatus;
@@ -584,6 +587,7 @@ impl DependencyGraph {
         } else {
             root_ctx.vars.set.values().map(|x| *x.inner()).collect()
         };
+        let mut ret_exprs = FxHashSet::default();
         while let Some(id) = return_id_stack.pop() {
             if !self.id_is_tail(id, &ret)? {
                 continue;
@@ -591,7 +595,12 @@ impl DependencyGraph {
 
             ret.insert(id);
 
-            let hir::HirNode::ChoiceIndirection(chind) = db.hir_node(id)? else {
+            let node = db.hir_node(id)?;
+            if let hir::HirNode::Let(l) = &node {
+                ret_exprs.insert(l.expr.0);
+            }
+
+            let hir::HirNode::ChoiceIndirection(chind) = node else {
                 continue;
             };
             let choice = chind.target_choice.lookup(db)?;
@@ -606,6 +615,7 @@ impl DependencyGraph {
 
             return_id_stack.extend(chind.choices.iter().map(|x| x.1));
         }
+        ret.extend(ret_exprs);
         Ok(ret)
     }
 
@@ -807,14 +817,14 @@ pub fn block_serialization(
 #[cfg(test)]
 mod tests {
     use hir::{BlockId, HirDatabase};
-    use yaboc_ast::{import::Import, AstDatabase};
+    use yaboc_ast::{AstDatabase, import::Import};
     use yaboc_base::{
+        Context,
         config::ConfigDatabase,
         interner::InternerDatabase,
         source::{FileDatabase, FileId},
-        Context,
     };
-    use yaboc_hir_types::{id_cursor::IdCursor, HirTypesDatabase};
+    use yaboc_hir_types::{HirTypesDatabase, id_cursor::IdCursor};
     use yaboc_resolve::ResolveDatabase;
     use yaboc_types::TypeInternerDatabase;
 

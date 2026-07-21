@@ -120,13 +120,38 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let (ret, fun_arg) = eval_fun_values(wrapper, layout);
         self.add_entry_block(wrapper);
         let Some(val) = self.setup_tail_fun_copy(None, fun_arg)? else {
-            // cannot be a tail call because of different calling conventions
-            return self.wrap_direct_call(inner, wrapper, false);
+            if self.options.target.use_tailcc {
+                return self.wrap_direct_call(inner, wrapper, false);
+            } else {
+                let res = self.build_call_with_int_ret(
+                    inner.into(),
+                    &[
+                        ret.ptr.into(),
+                        fun_arg.ptr.into(),
+                        ret.head.into(),
+                        self.llvm.ptr_type(Default::default()).get_poison().into(),
+                    ],
+                )?;
+                self.builder.build_return(Some(&res))?;
+                return Ok(wrapper);
+            }
         };
-        let ret = self.build_tailcc_call_with_int_ret(
-            inner,
-            &[ret.ptr.into(), val.ptr.into(), ret.head.into()],
-        )?;
+        let ret = if self.options.target.use_tailcc {
+            self.build_tailcc_call_with_int_ret(
+                inner,
+                &[ret.ptr.into(), val.ptr.into(), ret.head.into()],
+            )?
+        } else {
+            self.build_tailcc_call_with_int_ret(
+                inner,
+                &[
+                    ret.ptr.into(),
+                    val.ptr.into(),
+                    ret.head.into(),
+                    self.llvm.ptr_type(Default::default()).get_poison().into(),
+                ],
+            )?
+        };
         self.builder.build_return(Some(&ret))?;
         Ok(wrapper)
     }
@@ -1534,12 +1559,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_funcalls(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
+        let mut visited = FxHashSet::default();
         for req in self
             .collected_layouts
             .eval_slots
             .calls_from_layout(layout)
             .keys()
         {
+            if !visited.insert(req.req) {
+                continue;
+            }
             let inner = self.create_eval_fun_fun(layout, req.req)?;
             self.create_wrapper_eval_fun(layout, req.req, inner)?;
         }

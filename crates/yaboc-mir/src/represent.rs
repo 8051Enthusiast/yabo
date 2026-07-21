@@ -215,7 +215,10 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
                 } else {
                     write!(f, "_ = ")?;
                 };
-                dbwrite!(f, db, " eval_fun {}, {}", fun, req)?;
+                if req.tail {
+                    write!(f, "tail ")?;
+                }
+                dbwrite!(f, db, "eval_fun {}, {}", fun, &req.req)?;
                 if let Some(c) = cont {
                     dbwrite!(f, db, ", {}", c)?;
                 };

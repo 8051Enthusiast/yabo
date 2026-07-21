@@ -1,5 +1,5 @@
 use std::{
-    collections::{hash_map::Entry, BTreeMap, BTreeSet},
+    collections::{BTreeMap, hash_map::Entry},
     sync::Arc,
 };
 
@@ -10,19 +10,19 @@ use yaboc_base::{
     error::SResult,
     interner::{DefId, FieldName, PathComponent},
 };
-use yaboc_dependents::{requirements::ExprDepData, BlockSerialization, SubValue, SubValueKind};
+use yaboc_dependents::{BlockSerialization, SubValue, SubValueKind, requirements::ExprDepData};
 use yaboc_expr::{ExprIdx, Expression, FetchExpr, TakeRef};
 use yaboc_hir::{
-    self as hir, variable_set::VarStatus, BlockId, BlockKind, BlockReturnKind, ChoiceId, ContextId,
-    ExprId, HirIdWrapper, LambdaId, ParserDefId, ParserPredecessor,
+    self as hir, BlockId, BlockKind, BlockReturnKind, ChoiceId, ContextId, ExprId, HirIdWrapper,
+    LambdaId, ParserDefId, ParserPredecessor, variable_set::VarStatus,
 };
 use yaboc_hir_types::FullTypeId;
 use yaboc_req::{NeededBy, RequirementMatrix, RequirementSet};
 use yaboc_resolve::expr::Resolved;
 
 use crate::{
-    expr::{ConvertExpr, ExpressionLoc},
     CallMeta,
+    expr::{ConvertExpr, ExpressionLoc, Tailcallability},
 };
 
 use super::{
@@ -41,7 +41,7 @@ pub struct ConvertCtx<'a> {
     processed_parse_sites: FxHashSet<DefId>,
     req: RequirementSet,
     req_transformer: Arc<BTreeMap<DefId, RequirementMatrix>>,
-    tails: Arc<BTreeSet<DefId>>,
+    tails: FxHashMap<DefId, Tailcallability>,
     returns_self: bool,
 }
 
@@ -208,7 +208,9 @@ impl<'a> ConvertCtx<'a> {
             .context_data
             .remove(&context)
             .expect("context not initialized or removed multiple times");
-        if let Some(MirInstr::ParseCall(.., None)) = self.w.f.fun.bb(end_bb).ins.last() {
+        if let Some(MirInstr::ParseCall(.., None) | MirInstr::EvalFun(.., None)) =
+            self.w.f.fun.bb(end_bb).ins.last()
+        {
             // we have a tail call, we cannot copy anything or set discriminants
             return;
         }
@@ -264,6 +266,10 @@ impl<'a> ConvertCtx<'a> {
     }
 
     fn let_statement(&mut self, statement: &hir::LetStatement) {
+        if self.w.is_current_bb_terminated() {
+            // expr always tail calls, nothing left to do
+            return;
+        }
         let target = self
             .w
             .val_place_at_def(statement.id.0)
@@ -354,7 +360,10 @@ impl<'a> ConvertCtx<'a> {
             place: None,
             origin: PlaceOrigin::Expr(expr, root),
         };
-        let ldt_parser_fun = self.w.copy_if_deref(loc, |_, _| Ok(parser_fun))?;
+        let ldt_parser_fun = self
+            .w
+            .copy_if_deref(loc, |_, _| Ok(Some(parser_fun)))?
+            .unwrap();
         let addr = self.w.front_place_at_def(call_loc).unwrap();
         let ret = self.tail_place(call_info, call_loc)?;
         if call_info.tail && self.returns_self {
@@ -388,10 +397,17 @@ impl<'a> ConvertCtx<'a> {
         Ok(())
     }
 
+    fn req_at_id(&self, id: DefId) -> RequirementSet {
+        self.req_transformer[&id] * self.req
+    }
+
     fn call_info_at_id(&self, id: DefId) -> CallMeta {
         CallMeta {
             req: self.req_transformer[&id] * self.req,
-            tail: self.tails.contains(&id),
+            tail: matches!(
+                self.tails.get(&id),
+                Some(Tailcallability::Always | Tailcallability::IfNoBt)
+            ),
         }
     }
 
@@ -410,8 +426,8 @@ impl<'a> ConvertCtx<'a> {
         if !self.processed_parse_sites.insert(pd.id.0) {
             return Ok(());
         }
-        let info = self.call_info_at_id(pd.id.0);
-        if info.req.is_empty() {
+        let req = self.req_at_id(pd.id.0);
+        if req.is_empty() {
             return Ok(());
         }
         let call_loc = pd.id.0;
@@ -423,31 +439,36 @@ impl<'a> ConvertCtx<'a> {
             place: None,
             origin: PlaceOrigin::Expr(expr, root),
         };
-        let ldt_parser_fun = self.w.copy_if_deref(loc, |_, _| Ok(parser_fun))?;
+        let ldt_parser_fun = self
+            .w
+            .copy_if_deref(loc, |_, _| Ok(Some(parser_fun)))?
+            .unwrap();
         let addr = self.w.front_place_at_def(call_loc).unwrap();
-        let ret = info
-            .req
+        let ret = req
             .contains(NeededBy::Val)
             .then(|| self.w.val_place_at_def(call_loc).unwrap());
-        let retlen = info
-            .req
+        let retlen = req
             .contains(NeededBy::Len)
             .then(|| self.w.back_place_at_def(call_loc).unwrap());
-        self.w
-            .f
-            .tail_parse_call(info, addr, ldt_parser_fun, ret, retlen);
+        self.w.f.tail_parse_call(
+            CallMeta { req, tail: true },
+            addr,
+            ldt_parser_fun,
+            ret,
+            retlen,
+        );
         Ok(())
     }
 
     pub fn lambda_eval_fun(&mut self, lambda: &hir::Lambda) -> SResult<()> {
         let expr = self.w.val_place_at_def(lambda.expr.0).unwrap();
-        let info = self.call_info_at_id(lambda.id.0);
+        let req = self.req_at_id(lambda.id.0);
 
-        if info.req.is_empty() {
+        if req.is_empty() || self.w.is_current_bb_terminated() {
             return Ok(());
         }
 
-        if info.req.contains(NeededBy::Val) {
+        if req.contains(NeededBy::Val) {
             let ret = self.w.val_place_at_def(lambda.id.0).unwrap();
             self.w.copy(expr, ret);
         }
@@ -456,13 +477,13 @@ impl<'a> ConvertCtx<'a> {
 
     pub fn parserdef_eval_fun(&mut self, pd: &hir::ParserDef) -> SResult<()> {
         let expr = self.w.val_place_at_def(pd.to.0).unwrap();
-        let info = self.call_info_at_id(pd.id.0);
+        let req = self.req_at_id(pd.id.0);
 
-        if info.req.is_empty() {
+        if req.is_empty() || self.w.is_current_bb_terminated() {
             return Ok(());
         }
 
-        if info.req.contains(NeededBy::Val) {
+        if req.contains(NeededBy::Val) {
             let ret = self.w.val_place_at_def(pd.id.0).unwrap();
             self.w.copy(expr, ret);
         }
@@ -536,6 +557,7 @@ impl<'a> ConvertCtx<'a> {
         if sub_value.kind != SubValueKind::Val {
             return Ok(());
         }
+        let tail = self.tails.get(&e.id.0).copied().unwrap_or_default();
         if let Some(ctx) = e.parent_context {
             self.change_context(ctx)
         }
@@ -544,14 +566,14 @@ impl<'a> ConvertCtx<'a> {
             ExprDepData,
         )>(self.db, e.id)?;
         let place = self.w.val_place_at_def(e.id.0).unwrap();
-        let info = self.call_info_at_id(e.id.0);
+        let req = self.req_at_id(e.id.0);
         let reqs: Vec<RequirementSet> = resolved_expr
             .take_ref()
-            .map(|(_, req_info)| req_info.reqs * info.req)
+            .map(|(_, req_info)| req_info.reqs * req)
             .data
             .collect();
         self.w
-            .convert_expr(e.id, &resolved_expr, Some(place), &reqs)?;
+            .convert_expr(e.id, &resolved_expr, Some(place), &reqs, tail)?;
         Ok(())
     }
 
@@ -730,7 +752,11 @@ impl<'a> ConvertCtx<'a> {
             && !matches!(block.returns, BlockReturnKind::Returns);
         let processed_parse_sites = FxHashSet::default();
         let req_transformer = order.parse_requirements.clone();
-        let tails = order.tails.clone();
+        let tails = order
+            .tails
+            .iter()
+            .map(|id| (*id, Tailcallability::IfNoBt))
+            .collect();
         f.set_bb(f.fun.entry());
         let w = ConvertExpr::new(db, f, retreat, places);
         Ok(ConvertCtx {
@@ -782,6 +808,7 @@ impl<'a> ConvertCtx<'a> {
         expr: ExprId,
         db: &'a dyn Mirs,
         places: FxHashMap<SubValue, PlaceRef>,
+        parser: bool,
     ) -> SResult<ConvertCtx<'a>> {
         let mut top_level_retreat = f.make_top_level_retreat();
         if !requirements.contains(NeededBy::Backtrack) {
@@ -800,9 +827,11 @@ impl<'a> ConvertCtx<'a> {
                 ),
         );
         let req_transformer = Arc::new(req_transformer);
-        let mut tails = BTreeSet::default();
-        tails.insert(id);
-        let tails = Arc::new(tails);
+        let mut tails = FxHashMap::default();
+        tails.insert(id, Tailcallability::Always);
+        if !parser {
+            tails.insert(expr.0, Tailcallability::Always);
+        }
         f.set_bb(f.fun.entry());
         let w = ConvertExpr::new(db, f, retreat, places);
         let (
@@ -837,7 +866,15 @@ impl<'a> ConvertCtx<'a> {
         let mut f = FunctionWriter::new_pd(db, id, requirements)?;
         let parserdef = id.lookup(db)?;
         let places = Self::fun_places(db, id.0, parserdef.to, &mut f)?;
-        Self::new_fun_builder(f, requirements, id.0, parserdef.to, db, places)
+        Self::new_fun_builder(
+            f,
+            requirements,
+            id.0,
+            parserdef.to,
+            db,
+            places,
+            parserdef.from.is_some(),
+        )
     }
 
     pub fn new_lambda_builder(
@@ -848,7 +885,7 @@ impl<'a> ConvertCtx<'a> {
         let lambda = id.lookup(db)?;
         let mut f = FunctionWriter::new_lambda(requirements)?;
         let places = Self::fun_places(db, id.0, lambda.expr, &mut f)?;
-        Self::new_fun_builder(f, requirements, id.0, lambda.expr, db, places)
+        Self::new_fun_builder(f, requirements, id.0, lambda.expr, db, places, false)
     }
 
     pub fn new_if_builder(db: &'a dyn Mirs, requirements: RequirementSet) -> SResult<Self> {
@@ -879,7 +916,7 @@ impl<'a> ConvertCtx<'a> {
     pub fn finish_fun(mut self) -> Function {
         let bb = self.w.f.fun.bb(self.w.f.current_bb);
         // don't add a return statement if we have a tail call
-        if let Some(MirInstr::ParseCall(.., None)) = bb.ins.last() {
+        if bb.is_terminated() {
             return self.w.f.fun;
         }
         self.w.f.ret(ReturnStatus::Ok);

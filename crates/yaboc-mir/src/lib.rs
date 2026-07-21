@@ -474,6 +474,9 @@ impl BasicBlock {
     pub fn terminator(&self) -> MirInstr {
         self.ins.last().unwrap().clone()
     }
+    pub fn is_terminated(&self) -> bool {
+        self.ins.last().map(|x| x.is_terminator()).unwrap_or(false)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -718,6 +721,10 @@ impl FunctionWriter {
             builder.fun.retlen = Some(retlen);
         }
         builder
+    }
+
+    pub fn is_current_bb_terminated(&self) -> bool {
+        self.fun.bb(self.current_bb).is_terminated()
     }
 
     pub fn new_block(req: RequirementSet, has_from: bool) -> SResult<Self> {
@@ -972,9 +979,10 @@ impl FunctionWriter {
             .append_ins(MirInstr::EvalFun(
                 ret,
                 fun,
-                CallMeta { req, tail: false },
+                CallMeta { req, tail: true },
                 None,
             ));
+        self.fun.success_returns.push(self.current_bb);
     }
 
     pub fn assert_val(&mut self, val: PlaceRef, constrinat: ConstraintAtom, backtrack: BBRef) {

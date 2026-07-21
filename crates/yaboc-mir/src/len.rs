@@ -7,7 +7,7 @@ use yaboc_base::{
 };
 use yaboc_constraint::PdLenTerm;
 use yaboc_constraint::{LenVal, LenVals};
-use yaboc_dependents::{requirements::ExprDepData, BlockSerialization, SubValue, SubValueKind};
+use yaboc_dependents::{BlockSerialization, SubValue, SubValueKind, requirements::ExprDepData};
 use yaboc_expr::{ExprIdx, Expression, FetchExpr, ShapedData, TakeRef};
 use yaboc_hir::{
     BlockId, BlockKind, ContextId, ExprId, HirIdWrapper, HirNode, LetStatement, ParseStatement,
@@ -19,8 +19,8 @@ use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_resolve::expr::Resolved;
 
 use crate::{
-    expr::ConvertExpr, ExceptionRetreat, Function, FunctionWriter, IntBinOp, Mirs, Place,
-    PlaceInfo, PlaceOrigin, PlaceRef, ReturnStatus,
+    ExceptionRetreat, Function, FunctionWriter, IntBinOp, Mirs, Place, PlaceInfo, PlaceOrigin,
+    PlaceRef, ReturnStatus, expr::ConvertExpr,
 };
 
 pub struct LenMirCtx<'a> {
@@ -179,7 +179,16 @@ impl<'a> LenMirCtx<'a> {
             self.db, expr_id,
         )?;
         let reqs = self.expr_reqs(expr_id)?;
-        self.w.convert_expr(expr_id, &expr, None, &reqs)
+        Ok(self
+            .w
+            .convert_expr(
+                expr_id,
+                &expr,
+                None,
+                &reqs,
+                crate::expr::Tailcallability::None,
+            )?
+            .unwrap())
     }
 
     fn build_let(&mut self, subval: SubValue, let_statement: &LetStatement) -> SResult<()> {

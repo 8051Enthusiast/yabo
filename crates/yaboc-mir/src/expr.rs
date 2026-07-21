@@ -28,6 +28,32 @@ use crate::{
     PlaceOrigin, PlaceRef, UninitVal,
 };
 
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub enum Tailcallability {
+    #[default]
+    None,
+    IfNoBt,
+    Always,
+}
+
+impl Tailcallability {
+    pub fn no_bt(self) -> Self {
+        match self {
+            Tailcallability::Always => Tailcallability::IfNoBt,
+            otherwise => otherwise,
+        }
+    }
+}
+
+macro_rules! ok_some {
+    ($e:expr) => {{
+        let Some(t) = $e? else { return Ok(None) };
+        t
+    }};
+}
+
+pub type EResult<T> = SResult<Option<T>>;
+
 // anyone wanna play some type tetris?
 type IndexTypeExpr =
     ZipExpr<
@@ -109,6 +135,19 @@ impl<'a> ConvertExpr<'a> {
         }
     }
 
+    fn recursion<S, R>(
+        tail: Tailcallability,
+        f: impl FnOnce(&mut Self, S, Tailcallability) -> R,
+    ) -> impl FnOnce(&mut Self, S) -> R {
+        move |t, s: S| f(t, s, tail)
+    }
+
+    fn no_tail<S, R>(
+        f: impl FnOnce(&mut Self, S, Tailcallability) -> R,
+    ) -> impl FnOnce(&mut Self, S) -> R {
+        Self::recursion(Tailcallability::None, f)
+    }
+
     pub fn register_place(&mut self, sub: SubValue, place: PlaceRef) {
         assert!(self.places.insert(sub, place).is_none());
     }
@@ -173,26 +212,26 @@ impl<'a> ConvertExpr<'a> {
         &mut self,
         target_eval: bool,
         loc: ExpressionLoc,
-        cont: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
-    ) -> SResult<PlaceRef> {
+        cont: impl FnOnce(&mut Self, Option<PlaceRef>) -> EResult<PlaceRef>,
+    ) -> EResult<PlaceRef> {
         if loc.eval || !target_eval {
             return cont(self, loc.place);
         }
-        let inner = cont(self, None)?;
+        let inner = ok_some!(cont(self, None));
         let loc = ExpressionLoc {
             eval: target_eval,
             ..loc
         };
         let target = self.unwrap_or_stack(loc);
         self.copy(inner, target);
-        Ok(target)
+        Ok(Some(target))
     }
 
     pub fn copy_if_deref(
         &mut self,
         loc: ExpressionLoc,
-        cont: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
-    ) -> SResult<PlaceRef> {
+        cont: impl FnOnce(&mut Self, Option<PlaceRef>) -> EResult<PlaceRef>,
+    ) -> EResult<PlaceRef> {
         self.copy_if_eval(true, loc, cont)
     }
 
@@ -391,8 +430,8 @@ impl<'a> ConvertExpr<'a> {
         mut inner_loc: ExpressionLoc,
         kind: WiggleKind,
         constr: HirConstraintId,
-        recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
-    ) -> SResult<PlaceRef> {
+        recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> EResult<PlaceRef>,
+    ) -> EResult<PlaceRef> {
         let res = if kind == WiggleKind::Is {
             let place_ref = self.unwrap_or_stack(loc);
             let inner_place = self.f.add_place(PlaceInfo {
@@ -403,14 +442,14 @@ impl<'a> ConvertExpr<'a> {
             self.copy_if_eval(loc.eval, inner_loc, recurse)?;
             place_ref
         } else {
-            let place_ref = self.copy_if_eval(
+            let place_ref = ok_some!(self.copy_if_eval(
                 loc.eval,
                 ExpressionLoc {
                     eval: inner_loc.eval,
                     ..loc
                 },
                 recurse,
-            )?;
+            ));
             let ldt_ref = self.f.new_stack_place(loc.origin, true);
             self.copy(place_ref, ldt_ref);
             let old_backtrack = self.retreat.backtrack;
@@ -427,7 +466,7 @@ impl<'a> ConvertExpr<'a> {
             self.retreat.backtrack = old_backtrack;
             place_ref
         };
-        Ok(res)
+        Ok(Some(res))
     }
 
     fn convert_dot(
@@ -436,9 +475,9 @@ impl<'a> ConvertExpr<'a> {
         loc: ExpressionLoc,
         acc: BtMarkKind,
         field: FieldName,
-        recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
-    ) -> SResult<PlaceRef> {
-        let block_ref = self.copy_if_deref(inner_loc, recurse)?;
+        recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> EResult<PlaceRef>,
+    ) -> EResult<PlaceRef> {
+        let block_ref = ok_some!(self.copy_if_deref(inner_loc, recurse));
         let place_ref = self.unwrap_or_stack(loc);
         let backtrack = if acc.can_backtrack() {
             self.retreat.backtrack
@@ -447,34 +486,43 @@ impl<'a> ConvertExpr<'a> {
         };
         self.f
             .field(block_ref, field, place_ref, self.retreat.error, backtrack);
-        Ok(place_ref)
+        Ok(Some(place_ref))
     }
 
     fn convert_eval_fun(
         &mut self,
         inner_loc: ExpressionLoc,
         loc: Option<ExpressionLoc>,
-        recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
+        recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> EResult<PlaceRef>,
         req: RequirementSet,
-    ) -> SResult<Option<PlaceRef>> {
-        let fun_ref = self.copy_if_deref(inner_loc, recurse)?;
-        let place_ref = loc.map(|l| self.unwrap_or_stack(l));
-        self.f
-            .eval_fun(fun_ref, place_ref, req & !NeededBy::Len, self.retreat);
-        Ok(place_ref)
+        tail: Tailcallability,
+    ) -> EResult<Option<PlaceRef>> {
+        let fun_ref = ok_some!(self.copy_if_deref(inner_loc, recurse));
+        if tail == Tailcallability::Always
+            || tail == Tailcallability::IfNoBt && !req.contains(NeededBy::Backtrack)
+        {
+            let ret = self.f.fun.ret();
+            self.f.tail_eval_fun(fun_ref, ret, req & !NeededBy::Len);
+            Ok(None)
+        } else {
+            let place_ref = loc.map(|l| self.unwrap_or_stack(l));
+            self.f
+                .eval_fun(fun_ref, place_ref, req & !NeededBy::Len, self.retreat);
+            Ok(Some(place_ref))
+        }
     }
 
     fn convert_parser_apply(
         &mut self,
         loc: ExpressionLoc,
         [lloc, rloc]: [ExpressionLoc; 2],
-        lrecurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
-        rrecurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
+        lrecurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> EResult<PlaceRef>,
+        rrecurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> EResult<PlaceRef>,
         req: RequirementSet,
-    ) -> SResult<PlaceRef> {
+    ) -> EResult<PlaceRef> {
         let left_plc = self.new_stack_place(lloc.origin, true);
-        let left_plc = lrecurse(self, Some(left_plc))?;
-        let right = self.copy_if_deref(rloc, rrecurse)?;
+        let left_plc = ok_some!(lrecurse(self, Some(left_plc)));
+        let right = ok_some!(self.copy_if_deref(rloc, rrecurse));
         let place_ref = self.unwrap_or_stack(loc);
         self.f.parse_call(
             CallMeta { req, tail: false },
@@ -484,7 +532,7 @@ impl<'a> ConvertExpr<'a> {
             None,
             self.retreat,
         );
-        Ok(place_ref)
+        Ok(Some(place_ref))
     }
 
     fn convert_span(&mut self, loc: ExpressionLoc, start: DefId, end: DefId) -> SResult<PlaceRef> {
@@ -544,12 +592,13 @@ impl<'a> ConvertExpr<'a> {
         inner_loc: ExpressionLoc,
         inner_can_bt: bool,
         req: RequirementSet,
-        recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
-    ) -> SResult<PlaceRef> {
+        tail: Tailcallability,
+        recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> EResult<PlaceRef>,
+    ) -> EResult<PlaceRef> {
         match &op {
             ValUnOp::Wiggle(_, WiggleKind::Is) => {
-                recurse(self, None)?;
-                Ok(self.load_undef(loc))
+                ok_some!(recurse(self, None));
+                Ok(Some(self.load_undef(loc)))
             }
             ValUnOp::Wiggle(constr, WiggleKind::If) => {
                 self.convert_wiggle(loc, inner_loc, WiggleKind::If, *constr, recurse)
@@ -558,13 +607,14 @@ impl<'a> ConvertExpr<'a> {
                 self.convert_dot(inner_loc, loc, BtMarkKind::KeepBt, *field, recurse)
             }
             ValUnOp::EvalFun(eval_kind) => {
-                self.convert_eval_fun(
+                ok_some!(self.convert_eval_fun(
                     inner_loc,
                     None,
                     recurse,
                     modify_reqs(req, inner_can_bt, *eval_kind),
-                )?;
-                Ok(self.load_undef(loc))
+                    tail,
+                ));
+                Ok(Some(self.load_undef(loc)))
             }
             ValUnOp::Wiggle(_, WiggleKind::Expect)
             | ValUnOp::Dot(_, None | Some(BtMarkKind::RemoveBt))
@@ -574,8 +624,8 @@ impl<'a> ConvertExpr<'a> {
             | ValUnOp::Neg
             | ValUnOp::Reverse
             | ValUnOp::Popcount => {
-                recurse(self, None)?;
-                Ok(self.load_undef(loc))
+                ok_some!(recurse(self, None));
+                Ok(Some(self.load_undef(loc)))
             }
         }
     }
@@ -588,18 +638,19 @@ impl<'a> ConvertExpr<'a> {
         inner_can_bt: bool,
         inner_ty: TypeId,
         req: RequirementSet,
-        recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
-    ) -> SResult<PlaceRef> {
-        Ok(match &op {
+        tail: Tailcallability,
+        recurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> EResult<PlaceRef>,
+    ) -> EResult<PlaceRef> {
+        Ok(Some(match &op {
             ValUnOp::Not | ValUnOp::Neg | ValUnOp::Reverse | ValUnOp::Popcount => {
                 let op: IntUnOp = op.try_into().unwrap();
-                let inner = self.copy_if_deref(inner_loc, recurse)?;
+                let inner = ok_some!(self.copy_if_deref(inner_loc, recurse));
                 let place_ref = self.unwrap_or_stack(loc);
                 self.f.int_un_op(place_ref, op, inner);
                 place_ref
             }
             ValUnOp::Size => {
-                let inner = self.copy_if_deref(inner_loc, recurse)?;
+                let inner = ok_some!(self.copy_if_deref(inner_loc, recurse));
                 let place_ref = self.unwrap_or_stack(loc);
                 if let Type::Loop(..) = self.db.lookup_intern_type(inner_ty) {
                     self.f.array_len_call(inner, place_ref, self.retreat);
@@ -609,30 +660,27 @@ impl<'a> ConvertExpr<'a> {
                 place_ref
             }
             ValUnOp::Wiggle(constr, kind) => {
-                self.convert_wiggle(loc, inner_loc, *kind, *constr, recurse)?
+                ok_some!(self.convert_wiggle(loc, inner_loc, *kind, *constr, recurse))
             }
-            ValUnOp::Dot(field, acc) => self.convert_dot(
+            ValUnOp::Dot(field, acc) => ok_some!(self.convert_dot(
                 inner_loc,
                 loc,
                 acc.unwrap_or(BtMarkKind::RemoveBt),
                 *field,
                 recurse,
-            )?,
-            ValUnOp::EvalFun(eval_kind) => self
-                .convert_eval_fun(
-                    inner_loc,
-                    Some(loc),
-                    recurse,
-                    modify_reqs(req, inner_can_bt, *eval_kind),
-                )?
-                .unwrap(),
+            )),
+            ValUnOp::EvalFun(eval_kind) => {
+                let actual_req = modify_reqs(req, inner_can_bt, *eval_kind);
+                ok_some!(self.convert_eval_fun(inner_loc, Some(loc), recurse, actual_req, tail))
+            }
+            .unwrap(),
             ValUnOp::GetAddr => {
-                let inner = self.copy_if_deref(inner_loc, recurse)?;
+                let inner = ok_some!(self.copy_if_deref(inner_loc, recurse));
                 let place_ref = self.unwrap_or_stack(loc);
                 self.f.get_addr(inner, place_ref, self.retreat);
                 place_ref
             }
-        })
+        }))
     }
 
     fn convert_dyadic_no_value(
@@ -641,31 +689,48 @@ impl<'a> ConvertExpr<'a> {
         loc: ExpressionLoc,
         [lloc, rloc]: [ExpressionLoc; 2],
         (lrecurse, rrecurse): (
-            impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
-            impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
+            impl FnOnce(&mut Self, Option<PlaceRef>, Tailcallability) -> EResult<PlaceRef>,
+            impl FnOnce(&mut Self, Option<PlaceRef>, Tailcallability) -> EResult<PlaceRef>,
         ),
         req: RequirementSet,
-    ) -> SResult<PlaceRef> {
-        match op {
+        tail: Tailcallability,
+    ) -> EResult<PlaceRef> {
+        Ok(Some(match op {
             ValBinOp::ParserApply(Some(BtMarkKind::KeepBt)) => {
-                self.convert_parser_apply(loc, [lloc, rloc], lrecurse, rrecurse, req)
+                ok_some!(self.convert_parser_apply(
+                    loc,
+                    [lloc, rloc],
+                    Self::no_tail(lrecurse),
+                    Self::no_tail(rrecurse),
+                    req
+                ))
             }
             ValBinOp::Else => {
                 let right_bb = self.f.new_bb();
-                let continue_bb = self.f.new_bb();
+                let mut continue_bb = None;
                 let old_backtrack = self.retreat.backtrack;
                 self.retreat.backtrack = right_bb;
-                lrecurse(self, None)?;
-                self.f.branch(continue_bb);
+                if Self::recursion(tail.no_bt(), lrecurse)(self, None)?.is_some() {
+                    let cont = *continue_bb.get_or_insert_with(|| self.new_bb());
+                    self.f.branch(cont);
+                }
                 self.f.set_bb(right_bb);
                 self.retreat.backtrack = old_backtrack;
-                rrecurse(self, None)?;
-                self.f.branch(continue_bb);
-                self.f.set_bb(continue_bb);
-                Ok(self.load_undef(loc))
+                if Self::recursion(tail, rrecurse)(self, None)?.is_some() {
+                    let cont = *continue_bb.get_or_insert_with(|| self.new_bb());
+                    self.f.branch(cont);
+                }
+                if let Some(cont) = continue_bb {
+                    self.f.set_bb(cont);
+                }
+                self.load_undef(loc)
             }
-            ValBinOp::Then
-            | ValBinOp::ParserApply(None | Some(BtMarkKind::RemoveBt))
+            ValBinOp::Then => {
+                ok_some!(Self::no_tail(lrecurse)(self, None));
+                ok_some!(Self::recursion(tail, rrecurse)(self, None));
+                self.load_undef(loc)
+            }
+            ValBinOp::ParserApply(None | Some(BtMarkKind::RemoveBt))
             | ValBinOp::Range
             | ValBinOp::And
             | ValBinOp::Xor
@@ -684,11 +749,11 @@ impl<'a> ConvertExpr<'a> {
             | ValBinOp::Modulo
             | ValBinOp::Mul
             | ValBinOp::ClMul => {
-                lrecurse(self, None)?;
-                rrecurse(self, None)?;
-                Ok(self.load_undef(loc))
+                ok_some!(Self::no_tail(lrecurse)(self, None));
+                ok_some!(Self::no_tail(rrecurse)(self, None));
+                self.load_undef(loc)
             }
-        }
+        }))
     }
 
     fn convert_dyadic(
@@ -697,12 +762,13 @@ impl<'a> ConvertExpr<'a> {
         loc: ExpressionLoc,
         [mut lloc, mut rloc]: [ExpressionLoc; 2],
         (lrecurse, rrecurse): (
-            impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
-            impl FnOnce(&mut Self, Option<PlaceRef>) -> SResult<PlaceRef>,
+            impl FnOnce(&mut Self, Option<PlaceRef>, Tailcallability) -> EResult<PlaceRef>,
+            impl FnOnce(&mut Self, Option<PlaceRef>, Tailcallability) -> EResult<PlaceRef>,
         ),
         req: RequirementSet,
-    ) -> SResult<PlaceRef> {
-        Ok(match op {
+        tail: Tailcallability,
+    ) -> EResult<PlaceRef> {
+        Ok(Some(match op {
             ValBinOp::And
             | ValBinOp::Xor
             | ValBinOp::Or
@@ -715,8 +781,8 @@ impl<'a> ConvertExpr<'a> {
             | ValBinOp::Mul
             | ValBinOp::ClMul => {
                 let op: IntBinOp = op.try_into().unwrap();
-                let left = self.copy_if_deref(lloc, lrecurse)?;
-                let right = self.copy_if_deref(rloc, rrecurse)?;
+                let left = ok_some!(self.copy_if_deref(lloc, Self::no_tail(lrecurse)));
+                let right = ok_some!(self.copy_if_deref(rloc, Self::no_tail(rrecurse)));
                 let place_ref = self.unwrap_or_stack(loc);
                 self.f.int_bin_op(place_ref, op, left, right);
                 place_ref
@@ -728,45 +794,63 @@ impl<'a> ConvertExpr<'a> {
             | ValBinOp::Uneq
             | ValBinOp::Equals => {
                 let op: Comp = op.try_into().unwrap();
-                let left = self.copy_if_deref(lloc, lrecurse)?;
-                let right = self.copy_if_deref(rloc, rrecurse)?;
+                let left = ok_some!(self.copy_if_deref(lloc, Self::no_tail(lrecurse)));
+                let right = ok_some!(self.copy_if_deref(rloc, Self::no_tail(rrecurse)));
                 let place_ref = self.unwrap_or_stack(loc);
                 self.f.comp(place_ref, op, left, right);
                 place_ref
             }
             ValBinOp::ParserApply(_) => {
-                self.convert_parser_apply(loc, [lloc, rloc], lrecurse, rrecurse, req)?
+                ok_some!(self.convert_parser_apply(
+                    loc,
+                    [lloc, rloc],
+                    Self::no_tail(lrecurse),
+                    Self::no_tail(rrecurse),
+                    req
+                ))
             }
             ValBinOp::Else => {
                 let place_ref = self.unwrap_or_stack(loc);
                 lloc.place = Some(place_ref);
                 rloc.place = Some(place_ref);
                 let right_bb = self.f.new_bb();
-                let continue_bb = self.f.new_bb();
+                let mut continue_bb = None;
                 let old_backtrack = self.retreat.backtrack;
                 self.retreat.backtrack = right_bb;
-                self.copy_if_eval(loc.eval, lloc, lrecurse)?;
-                self.f.branch(continue_bb);
+                if self
+                    .copy_if_eval(loc.eval, lloc, Self::recursion(tail.no_bt(), lrecurse))?
+                    .is_some()
+                {
+                    let cont = *continue_bb.get_or_insert_with(|| self.new_bb());
+                    self.f.branch(cont);
+                }
                 self.f.set_bb(right_bb);
                 self.retreat.backtrack = old_backtrack;
-                self.copy_if_eval(loc.eval, rloc, rrecurse)?;
-                self.f.branch(continue_bb);
-                self.f.set_bb(continue_bb);
+                if self
+                    .copy_if_eval(loc.eval, rloc, Self::recursion(tail, rrecurse))?
+                    .is_some()
+                {
+                    let cont = *continue_bb.get_or_insert_with(|| self.new_bb());
+                    self.f.branch(cont);
+                }
+                if let Some(cont) = continue_bb {
+                    self.f.set_bb(cont);
+                }
                 place_ref
             }
             ValBinOp::Then => {
-                let _ = lrecurse(self, None)?;
+                ok_some!(Self::no_tail(lrecurse)(self, None));
                 let place_ref = self.unwrap_or_stack(loc);
-                rrecurse(self, Some(place_ref))?
+                ok_some!(Self::recursion(tail, rrecurse)(self, Some(place_ref)))
             }
             ValBinOp::Range => {
-                let left = self.copy_if_deref(lloc, lrecurse)?;
-                let right = self.copy_if_deref(rloc, rrecurse)?;
+                let left = ok_some!(self.copy_if_deref(lloc, Self::no_tail(lrecurse)));
+                let right = ok_some!(self.copy_if_deref(rloc, Self::no_tail(rrecurse)));
                 let place_ref = self.unwrap_or_stack(loc);
                 self.f.range(place_ref, left, right, self.retreat.error);
                 place_ref
             }
-        })
+        }))
     }
 
     fn convert_variadic(
@@ -774,19 +858,19 @@ impl<'a> ConvertExpr<'a> {
         arg_count: usize,
         loc: ExpressionLoc,
         inner_locs: &[ExpressionLoc],
-        mut recurse: impl FnMut(&mut Self, Option<PlaceRef>, usize) -> SResult<PlaceRef>,
-    ) -> SResult<PlaceRef> {
-        let fun_place = self.copy_if_deref(inner_locs[0], |ctx, plc| recurse(ctx, plc, 0))?;
+        mut recurse: impl FnMut(&mut Self, Option<PlaceRef>, usize) -> EResult<PlaceRef>,
+    ) -> EResult<PlaceRef> {
+        let fun_place =
+            ok_some!(self.copy_if_deref(inner_locs[0], |ctx, plc| recurse(ctx, plc, 0)));
         let place_ref = self.unwrap_or_stack(loc);
         // if the place is already there, it means that argument is not used
-        let inner_results = (1..=arg_count)
-            .map(|n| {
-                Ok((
-                    recurse(self, inner_locs[n].place, n)?,
-                    inner_locs[n].place.is_none(),
-                ))
-            })
-            .collect::<SResult<Box<[_]>>>()?;
+        let mut inner_results = Vec::with_capacity(arg_count);
+        for n in 1..=arg_count {
+            let place = inner_locs[n].place;
+            let res = ok_some!(recurse(self, place, n));
+            let state = place.is_none();
+            inner_results.push((res, state));
+        }
         if inner_results.is_empty() {
             // no arguments given, so the input type must be the same
             // as the output type (remember that evaluation is done separately,
@@ -795,10 +879,14 @@ impl<'a> ConvertExpr<'a> {
             // the `first_arg_index` below would end up negative which is not valid
             self.copy(fun_place, place_ref);
         } else {
-            self.f
-                .apply_args(fun_place, inner_results, place_ref, self.retreat.error);
+            self.f.apply_args(
+                fun_place,
+                inner_results.into_boxed_slice(),
+                place_ref,
+                self.retreat.error,
+            );
         }
-        Ok(place_ref)
+        Ok(Some(place_ref))
     }
 
     fn convert_expr_impl(
@@ -806,7 +894,8 @@ impl<'a> ConvertExpr<'a> {
         expr: ExprInfo,
         idx: ExprIdx<Resolved>,
         place: Option<PlaceRef>,
-    ) -> SResult<PlaceRef> {
+        tail: Tailcallability,
+    ) -> SResult<Option<PlaceRef>> {
         let idx = expr.content.data.index_expr(idx).0.0;
         let req = expr.req(idx);
         let origin = PlaceOrigin::Expr(expr.id, idx);
@@ -816,18 +905,18 @@ impl<'a> ConvertExpr<'a> {
             origin,
         };
         if req.is_empty() {
-            return Ok(self.load_undef(loc));
+            return Ok(Some(self.load_undef(loc)));
         }
         Ok(match expr.content.expr.index_expr(idx) {
-            ExprHead::Niladic(n) => {
-                if req.contains(NeededBy::Val) {
-                    self.convert_niladic(n, loc)?
-                } else {
-                    self.convert_niladic_no_val(loc)?
-                }
-            }
+            ExprHead::Niladic(n) => Some(if req.contains(NeededBy::Val) {
+                self.convert_niladic(n, loc)?
+            } else {
+                self.convert_niladic_no_val(loc)?
+            }),
             ExprHead::Monadic(op, inner) => {
-                let recurse = |ctx: &mut Self, plc| ctx.convert_expr_impl(expr, *inner, plc);
+                let recurse = |ctx: &mut Self, plc| {
+                    ctx.convert_expr_impl(expr, *inner, plc, Tailcallability::None)
+                };
                 let ((inner_idx, inner_ty), inner_bt) = expr.content.data.index_expr(*inner);
                 let inner_origin = PlaceOrigin::Expr(expr.id, inner_idx);
                 let inner_loc = ExpressionLoc {
@@ -843,6 +932,7 @@ impl<'a> ConvertExpr<'a> {
                         inner_bt.bt.can_backtrack(),
                         *inner_ty,
                         req,
+                        tail,
                         recurse,
                     )?
                 } else {
@@ -852,13 +942,16 @@ impl<'a> ConvertExpr<'a> {
                         inner_loc,
                         inner_bt.bt.can_backtrack(),
                         req,
+                        tail,
                         recurse,
                     )?
                 }
             }
             ExprHead::Dyadic(op, [left, right]) => {
-                let lrecurse = |ctx: &mut Self, plc| ctx.convert_expr_impl(expr, *left, plc);
-                let rrecurse = |ctx: &mut Self, plc| ctx.convert_expr_impl(expr, *right, plc);
+                let lrecurse =
+                    |ctx: &mut Self, plc, tail| ctx.convert_expr_impl(expr, *left, plc, tail);
+                let rrecurse =
+                    |ctx: &mut Self, plc, tail| ctx.convert_expr_impl(expr, *right, plc, tail);
                 let ((left_idx, _), _) = expr.content.data.index_expr(*left);
                 let ((right_idx, _), _) = expr.content.data.index_expr(*right);
                 let lorigin = PlaceOrigin::Expr(expr.id, left_idx);
@@ -874,13 +967,22 @@ impl<'a> ConvertExpr<'a> {
                     origin: rorigin,
                 };
                 if req.contains(NeededBy::Val) {
-                    self.convert_dyadic(op, loc, [lloc, rloc], (lrecurse, rrecurse), req)?
+                    self.convert_dyadic(op, loc, [lloc, rloc], (lrecurse, rrecurse), req, tail)?
                 } else {
-                    self.convert_dyadic_no_value(op, loc, [lloc, rloc], (lrecurse, rrecurse), req)?
+                    self.convert_dyadic_no_value(
+                        op,
+                        loc,
+                        [lloc, rloc],
+                        (lrecurse, rrecurse),
+                        req,
+                        tail,
+                    )?
                 }
             }
             ExprHead::Variadic(ValVarOp::PartialApply(_), inner) => {
-                let recurse = |ctx: &mut Self, plc, n| ctx.convert_expr_impl(expr, inner[n], plc);
+                let recurse = |ctx: &mut Self, plc, n| {
+                    ctx.convert_expr_impl(expr, inner[n], plc, Tailcallability::None)
+                };
                 let mut inner_locs = Vec::with_capacity(inner.len());
                 for idx in inner.iter() {
                     let ((idx, _), _) = expr.content.data.index_expr(*idx);
@@ -907,7 +1009,7 @@ impl<'a> ConvertExpr<'a> {
                     for i in 0..inner.len() {
                         recurse(self, None, i)?;
                     }
-                    self.unwrap_or_undef(loc)
+                    Some(self.unwrap_or_undef(loc))
                 }
             }
         })
@@ -919,12 +1021,13 @@ impl<'a> ConvertExpr<'a> {
         expr: &IndexTypeExpr,
         place: Option<PlaceRef>,
         reqs: &[RequirementSet],
-    ) -> SResult<PlaceRef> {
+        tail: Tailcallability,
+    ) -> SResult<Option<PlaceRef>> {
         let info = ExprInfo {
             id: expr_id,
             content: expr,
             reqs,
         };
-        self.convert_expr_impl(info, expr.expr.root(), place)
+        self.convert_expr_impl(info, expr.expr.root(), place, tail)
     }
 }
