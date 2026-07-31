@@ -5,7 +5,7 @@ use yaboc_req::{NeededBy, RequirementSet};
 
 use yaboc_base::{
     databased_display::DatabasedDisplay,
-    dbformat, dbwrite,
+    dbwrite,
     hash::StableHash,
     interner::{DefId, FieldName, Identifier, RegexKind},
 };
@@ -432,12 +432,6 @@ impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct LayoutSymbol<'a> {
-    pub layout: IMonoLayout<'a>,
-    pub part: LayoutPart,
-}
-
 const TRUNCATION_LENGTH: usize = 8;
 
 pub fn truncated_hex(array: &[u8]) -> String {
@@ -446,52 +440,4 @@ pub fn truncated_hex(array: &[u8]) -> String {
         write!(ret, "{i:02x}").unwrap();
     }
     ret
-}
-
-impl<'a> LayoutSymbol<'a> {
-    pub fn symbol<DB: Layouts + ?Sized>(&self, hasher: &mut LayoutHasher<'a>, db: &DB) -> String {
-        let name_prefix = match self.layout.mono_layout() {
-            MonoLayout::BlockParser(def, _) => {
-                format!("parse_block_{}", &truncated_hex(&db.def_hash(def.0)))
-            }
-            MonoLayout::Block(def, _) => {
-                format!("block_{}", &truncated_hex(&db.def_hash(def.0)))
-            }
-            MonoLayout::Nominal(id, _, _) => {
-                dbformat!(db, "{}", &db.def_name(id.0).unwrap())
-            }
-            MonoLayout::NominalParser(id, _, _) => {
-                dbformat!(db, "parse_{}", &db.def_name(id.0).unwrap())
-            }
-            MonoLayout::Lambda(id, ..) => {
-                dbformat!(db, "lambda_{}", &truncated_hex(&db.def_hash(id.0)))
-            }
-            MonoLayout::Regex(re) => {
-                let re_str = db.lookup_intern_regex(*re);
-                let prefix = match re_str.kind {
-                    RegexKind::Regular => "",
-                    RegexKind::Hexagex => "h_",
-                };
-                let ident_str = re_str
-                    .regex
-                    .replace(|c: char| !c.is_ascii_alphanumeric(), "_");
-                format!("parse_regex_{prefix}{ident_str}")
-            }
-            MonoLayout::IfParser(..) => String::from("parser_if"),
-            MonoLayout::Array { .. } => String::from("array"),
-            MonoLayout::ArrayParser(Some((_, Some(_)))) => String::from("parse_array"),
-            MonoLayout::ArrayParser(Some((_, None)) | None) => String::from("fun_parse_array"),
-            MonoLayout::ArrayFillParser(Some(_)) => String::from("parse_array_fill"),
-            MonoLayout::ArrayFillParser(None) => String::from("fun_parse_array_fill"),
-            MonoLayout::Primitive(_)
-            | MonoLayout::SlicePtr
-            | MonoLayout::Ptr
-            | MonoLayout::Range
-            | MonoLayout::Single => {
-                dbformat!(db, "{}", &self.layout.0)
-            }
-        };
-        let layout_hex = truncated_hex(&hasher.hash(self.layout.0, db));
-        dbformat!(db, "{}${}${}", &name_prefix, &layout_hex, &self.part)
-    }
 }

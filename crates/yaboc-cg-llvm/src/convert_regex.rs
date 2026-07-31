@@ -41,10 +41,12 @@ impl<'llvm, 'comp, 'r> RegexTranslator<'llvm, 'comp, 'r> {
         llvm_fun: FunctionValue<'llvm>,
         dfa: &'r DFA<Vec<u32>>,
         retlen: ILayout<'comp>,
+        layout: IMonoLayout<'comp>,
     ) -> IResult<Self> {
         let single = IMonoLayout::u8_single(cg.layouts);
         let info = CallMeta::new(RequirementSet::all(), false);
         let parser_fun = cg.parser_fun_val_tail(single, retlen, info.req);
+        let debug_loc = cg.layout_debug_location(layout);
 
         let int_layout = cg
             .layouts
@@ -53,12 +55,12 @@ impl<'llvm, 'comp, 'r> RegexTranslator<'llvm, 'comp, 'r> {
                 PrimitiveType::Int,
             )));
 
-        cg.add_entry_block(llvm_fun);
-        let next_byte = cg.build_alloca_value(int_layout, "next_byte")?;
-        let input_start = cg.build_alloca_value(retlen, "input_start")?;
-        let next_byte_pos = cg.build_alloca_value(retlen, "next_byte_pos")?;
-        let last_match = cg.build_alloca_value(retlen, "last_match")?;
-        let from = cg.build_alloca_value(retlen, "from")?;
+        cg.add_entry_block(llvm_fun, layout);
+        let next_byte = cg.build_alloca_value(int_layout, "next_byte", debug_loc)?;
+        let input_start = cg.build_alloca_value(retlen, "input_start", debug_loc)?;
+        let next_byte_pos = cg.build_alloca_value(retlen, "next_byte_pos", debug_loc)?;
+        let last_match = cg.build_alloca_value(retlen, "last_match", debug_loc)?;
+        let from = cg.build_alloca_value(retlen, "from", debug_loc)?;
         let has_no_match = cg
             .builder
             .build_alloca(cg.llvm.bool_type(), "has_no_match")?;

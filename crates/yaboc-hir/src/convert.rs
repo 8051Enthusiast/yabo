@@ -97,6 +97,7 @@ fn constraint_expression(
     ast: &ast::ConstraintExpression,
     kind: WiggleKind,
     span: Span,
+    id: DefId,
     ctx: &HirConversionCtx,
     add_span: &impl Fn(&Span) -> SpanIndex,
 ) -> HirConstraintId {
@@ -131,6 +132,7 @@ fn constraint_expression(
         expr: ret.expr,
         data: ret.data,
         has_no_eof: !ignores_eof,
+        span: IndirectSpan(id, Some(add_span(&span))),
     })
 }
 
@@ -273,7 +275,7 @@ fn val_expression(
             },
             ExpressionHead::Monadic(m) => ExprHead::Monadic(
                 m.op.inner.map_expr(|constr, kind| {
-                    constraint_expression(constr, kind, m.op.data, ctx, &add_span)
+                    constraint_expression(constr, kind, m.op.data, id.0, ctx, &add_span)
                 }),
                 &*m.inner,
             ),
@@ -340,6 +342,7 @@ fn val_expression(
 fn convert_type_expression(
     expr: &ast::TypeExpression,
     ctx: &HirConversionCtx,
+    id: TExprId,
     add_span: &impl Fn(&Span) -> SpanIndex,
 ) -> DataExpr<HirType, SpanIndex> {
     DataExpr::new_from_unfold(expr, |expr| {
@@ -350,7 +353,7 @@ fn convert_type_expression(
                     let args = pd
                         .args
                         .iter()
-                        .map(|x| convert_type_expression(x, ctx, add_span))
+                        .map(|x| convert_type_expression(x, ctx, id, add_span))
                         .collect();
                     let name = pd
                         .name
@@ -367,7 +370,7 @@ fn convert_type_expression(
                 }
                 ast::TypeAtom::Primitive(a) => ExprHead::Niladic(TypeAtom::Primitive((*a).into())),
                 ast::TypeAtom::Array(arr) => {
-                    let new_expr = convert_type_expression(&arr.expr, ctx, add_span);
+                    let new_expr = convert_type_expression(&arr.expr, ctx, id, add_span);
                     ExprHead::Niladic(TypeAtom::Array(Box::new(TypeArray {
                         direction: ArrayKind::Each,
                         expr: new_expr,
@@ -377,7 +380,7 @@ fn convert_type_expression(
             },
             ExpressionHead::Monadic(monadic) => {
                 let new_op = monadic.op.inner.map_expr(|constr| {
-                    constraint_expression(constr, WiggleKind::If, span, ctx, add_span)
+                    constraint_expression(constr, WiggleKind::If, span, id.0, ctx, add_span)
                 });
                 ExprHead::Monadic(new_op, &*monadic.inner)
             }
@@ -397,7 +400,7 @@ fn convert_type_expression(
 fn type_expression(ast: &ast::TypeExpression, ctx: &HirConversionCtx, id: TExprId) {
     let spans = RefCell::new(Vec::new());
     let add_span = SpanIndex::add_span(&spans);
-    let texpr = convert_type_expression(ast, ctx, &add_span);
+    let texpr = convert_type_expression(ast, ctx, id, &add_span);
     let texpr = TypeExpression { id, expr: texpr };
     drop(add_span);
     ctx.insert(id.0, HirNode::TExpr(texpr), spans.into_inner())

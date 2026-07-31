@@ -1,6 +1,7 @@
 mod convert_mir;
 mod convert_regex;
 mod convert_thunk;
+mod debug;
 mod defs;
 mod funs;
 mod getset;
@@ -18,6 +19,8 @@ use inkwell::{
     basic_block::BasicBlock,
     builder::{Builder, BuilderError},
     context::Context,
+    debug_info::{AsDIScope, DIExpression, DILocalVariable, DILocation, DIType},
+    llvm_sys::debuginfo::LLVMDIBuilderInsertDeclareRecordAtEnd,
     module::{Linkage, Module},
     passes::PassBuilderOptions,
     support::LLVMString,
@@ -30,10 +33,11 @@ use inkwell::{
         StructType,
     },
     values::{
-        ArrayValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue, GlobalValue,
-        IntValue, PointerValue, StructValue, UnnamedAddress,
+        ArrayValue, AsValueRef, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue,
+        GlobalValue, IntValue, PointerValue, StructValue, UnnamedAddress,
     },
 };
+use smallvec::SmallVec;
 use std::fmt::Write;
 use yaboc_hir_types::VTABLE_BIT;
 
@@ -61,6 +65,7 @@ use yaboc_target::layout::{
 };
 
 use crate::{
+    debug::{DebugBuilder, DebugLocation},
     defs::{YABO_GLOBAL_SIZE, YABO_MAX_BUF_SIZE},
     getset::FunctionTy,
 };
@@ -88,12 +93,13 @@ pub struct CodeGenCtx<'llvm, 'comp> {
     target_data: TargetData,
     options: CodeGenOptions,
     builder: Builder<'llvm>,
-    pass_options: PassBuilderOptions,
     module: Module<'llvm>,
     compiler_database: &'comp yaboc_base::Context<YabocDatabase>,
     layouts: &'comp mut AbsLayoutCtx<'comp>,
     collected_layouts: Rc<LayoutCollection<'comp>>,
+    debug: DebugBuilder<'llvm, 'comp>,
     intrinsics: FxHashMap<(std::any::TypeId, &'static str), FunctionValue<'llvm>>,
+    fundefs: FxHashMap<FunctionValue<'llvm>, SmallVec<[Option<ILayout<'comp>>; 4]>>,
 }
 
 #[derive(Clone)]
@@ -101,6 +107,7 @@ pub struct CodeGenOptions {
     pub target: yaboc_target::Target,
     pub asan: bool,
     pub msan: bool,
+    pub debug: bool,
     pub dynamic_linker: Option<String>,
 }
 
@@ -123,7 +130,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             machine_code: true,
         });
         let builder = llvm_context.create_builder();
-        let module = llvm_context.create_module("yabo");
+        let mut module = llvm_context.create_module("yabo");
         let cfg = compiler_database.db.config();
         let triple = TargetTriple::create(&cfg.target_triple);
         let target = Target::from_triple(&triple)
@@ -140,24 +147,21 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let target_data = target.get_target_data();
         module.set_data_layout(&target.get_target_data().get_data_layout());
         module.set_triple(&triple);
-        let pbo = PassBuilderOptions::create();
-        pbo.set_loop_interleaving(true);
-        pbo.set_loop_unrolling(true);
-        pbo.set_merge_functions(true);
-        pbo.set_loop_vectorization(true);
-        pbo.set_loop_slp_vectorization(true);
+        let debug =
+            DebugBuilder::new(&mut module, &compiler_database.db).map_err(|x| x.to_string())?;
         Ok(CodeGenCtx {
             llvm: llvm_context,
             target,
             options,
             builder,
-            pass_options: pbo,
+            debug,
             module,
             compiler_database,
             layouts,
             collected_layouts,
             target_data,
             intrinsics: Default::default(),
+            fundefs: Default::default(),
         })
     }
 
@@ -200,12 +204,60 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         panic!("could not find symbol {sym}");
     }
 
-    fn add_entry_block(&mut self, fun: FunctionValue<'llvm>) -> BasicBlock<'llvm> {
+    fn add_entry_block(
+        &mut self,
+        fun: FunctionValue<'llvm>,
+        layout: IMonoLayout<'comp>,
+    ) -> BasicBlock<'llvm> {
         if fun.count_basic_blocks() > 0 {
             panic!("function {:?} already has basic blocks", fun.get_name())
         }
         let entry = self.llvm.append_basic_block(fun, "entry");
         self.builder.position_at_end(entry);
+        if self.options.debug
+            && let Some(subprogram) = fun.get_subprogram()
+        {
+            let loc_data =
+                self.debug
+                    .location_data_or_default(layout, &self.compiler_database.db, self.llvm);
+            let loc = self
+                .debug
+                .location(
+                    layout,
+                    &self.compiler_database.db,
+                    self.llvm,
+                    subprogram.as_debug_info_scope(),
+                )
+                .unwrap();
+            self.builder.set_current_debug_location(loc);
+            for (i, arg_layout) in self.fundefs[&fun].clone().iter().enumerate() {
+                let Some(arg_layout) = arg_layout else {
+                    continue;
+                };
+                let arg_ty = self
+                    .debug
+                    .debug_type(
+                        *arg_layout,
+                        &self.compiler_database.db,
+                        self.llvm,
+                        self.layouts,
+                    )
+                    .unwrap();
+                let var = self.debug.builder.create_parameter_variable(
+                    subprogram.as_debug_info_scope(),
+                    &format!("arg{i}"),
+                    i as u32 + 1,
+                    loc_data.file,
+                    loc_data.line,
+                    arg_ty,
+                    false,
+                    0,
+                );
+                let arg = fun.get_nth_param(i as u32).unwrap().into_pointer_value();
+                let expr = self.debug.builder.create_expression(vec![]);
+                self.insert_declare_record_at_end(entry, arg, loc, var, expr);
+            }
+        }
         entry
     }
 
@@ -333,14 +385,32 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.build_byte_gep(outer_ptr, self.const_i64(offset as i64), "alloc_center")
     }
 
-    fn build_sa_alloca(&mut self, sa: SizeAlign, name: &str) -> IResult<PointerValue<'llvm>> {
+    fn layout_debug_location(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+    ) -> Option<DebugLocation<'llvm>> {
+        if self.options.debug {
+            self.debug
+                .location_data(layout, &self.compiler_database.db, self.llvm)
+        } else {
+            None
+        }
+    }
+
+    fn build_sa_alloca(
+        &mut self,
+        sa: SizeAlign,
+        name: &str,
+        debug_info: Option<(DebugLocation<'llvm>, DIType<'llvm>)>,
+    ) -> IResult<PointerValue<'llvm>> {
         let ty = self.sa_type(sa);
-        let entry_block = self
+        let current_fun = self
             .builder
             .get_insert_block()
             .expect("Builder does not have block")
             .get_parent()
-            .expect("Insert block does not have parent function")
+            .expect("Insert block does not have parent function");
+        let entry_block = current_fun
             .get_first_basic_block()
             .expect("Function has no blocks");
 
@@ -351,41 +421,98 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             builder.position_at_end(entry_block);
         }
 
-        let ptr = builder.build_alloca(ty, name)?;
+        let mut ptr = builder.build_alloca(ty, name)?;
         let instr = entry_block.get_first_instruction().unwrap();
         instr.set_alignment(sa.align() as u32).unwrap();
         let offset = sa.allocation_center_offset();
 
-        if offset == 0 {
-            return Ok(ptr);
+        if offset != 0 {
+            ptr = byte_gep(
+                &builder,
+                self.llvm,
+                ptr,
+                self.const_i64(offset as i64),
+                name,
+            )?;
         }
 
-        byte_gep(
-            &builder,
-            self.llvm,
-            ptr,
-            self.const_i64(offset as i64),
-            name,
-        )
+        if let Some((debug_loc, debug_ty)) = debug_info
+            && let Some(subroutine) = current_fun.get_subprogram()
+            && self.options.debug
+        {
+            let loc = self.debug.builder.create_debug_location(
+                self.llvm,
+                debug_loc.line,
+                debug_loc.col,
+                subroutine.as_debug_info_scope(),
+                None,
+            );
+            let var = self.debug.builder.create_auto_variable(
+                subroutine.as_debug_info_scope(),
+                name,
+                debug_loc.file,
+                debug_loc.line,
+                debug_ty,
+                false,
+                0,
+                sa.align_bits(),
+            );
+            let expr = self.debug.builder.create_expression(vec![]);
+            self.insert_declare_record_at_end(entry_block, ptr, loc, var, expr);
+        }
+
+        Ok(ptr)
+    }
+
+    fn insert_declare_record_at_end(
+        &mut self,
+        entry_block: BasicBlock<'llvm>,
+        ptr: PointerValue<'llvm>,
+        loc: DILocation<'llvm>,
+        var: DILocalVariable<'llvm>,
+        expr: DIExpression<'llvm>,
+    ) {
+        unsafe {
+            LLVMDIBuilderInsertDeclareRecordAtEnd(
+                self.debug.builder.as_mut_ptr(),
+                ptr.as_value_ref(),
+                var.as_mut_ptr(),
+                expr.as_mut_ptr(),
+                loc.as_mut_ptr(),
+                entry_block.as_mut_ptr(),
+            )
+        };
     }
 
     fn build_layout_alloca(
         &mut self,
         layout: ILayout<'comp>,
         name: &str,
+        debug_loc: Option<DebugLocation<'llvm>>,
     ) -> IResult<PointerValue<'llvm>> {
         let sa = layout
             .size_align(self.layouts)
             .expect("Could not get size/alignment of layout");
-        self.build_sa_alloca(sa, name)
+        let debug_info = if let Some(loc) = debug_loc {
+            let ty = self
+                .debug
+                .debug_type(layout, &self.compiler_database.db, self.llvm, self.layouts)
+                .unwrap();
+            Some((loc, ty))
+        } else {
+            None
+        };
+        let ptr = self.build_sa_alloca(sa, name, debug_info)?;
+        Ok(ptr)
     }
 
     fn build_alloca_value(
         &mut self,
         layout: ILayout<'comp>,
         name: &str,
+        debug_loc: Option<DebugLocation<'llvm>>,
     ) -> IResult<CgValue<'comp, 'llvm>> {
-        let ptr = self.build_layout_alloca(layout, name)?;
+        let ptr = self.build_layout_alloca(layout, name, debug_loc)?;
         Ok(CgValue::new(layout, ptr))
     }
 
@@ -394,13 +521,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         name: &str,
     ) -> IResult<CgMonoValue<'comp, 'llvm>> {
-        let ptr = self.build_layout_alloca(layout.inner(), name)?;
+        let ptr = self.build_layout_alloca(layout.inner(), name, None)?;
         Ok(CgMonoValue::new(layout, ptr))
     }
 
     fn build_alloca_int(&mut self, name: &str) -> IResult<CgMonoValue<'comp, 'llvm>> {
         let int_layout = self.layouts.dcx.int();
-        let ptr = self.build_layout_alloca(int_layout, name)?;
+        let ptr = self.build_layout_alloca(int_layout, name, None)?;
         Ok(CgMonoValue::new(int_layout.maybe_mono().unwrap(), ptr))
     }
 
@@ -1020,8 +1147,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         if self.options.msan {
             passes.push_str(",msan");
         }
-        self.module
-            .run_passes(&passes, &self.target, self.pass_options)?;
+        let pbo = PassBuilderOptions::create();
+        pbo.set_loop_interleaving(true);
+        pbo.set_loop_unrolling(true);
+        pbo.set_merge_functions(true);
+        pbo.set_loop_vectorization(true);
+        pbo.set_loop_slp_vectorization(true);
+        self.module.run_passes(&passes, &self.target, pbo)?;
         self.target
             .write_to_file(&self.module, FileType::Object, Path::new(outfile))?;
         Ok(())

@@ -16,7 +16,7 @@ impl<'llvm> From<FunctionValue<'llvm>> for Callable<'llvm> {
     }
 }
 
-pub(crate) trait FunctionTy: TargetSized {
+pub(crate) trait FunctionTy {
     fn fun_ty<'llvm>(ctx: &mut CodeGenCtx<'llvm, '_>) -> FunctionType<'llvm>;
 }
 

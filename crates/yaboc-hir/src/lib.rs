@@ -15,24 +15,23 @@ use std::{
 };
 
 use salsa::InternId;
+use yaboc_ast::{ArrayKind, TopLevelStatement};
 use yaboc_ast::{
+    ConstraintAtom,
     expr::{
         self, Atom, BtMarkKind, ConstraintBinOp, ConstraintUnOp, Expression, ExpressionHead, Unused,
     },
-    ConstraintAtom,
 };
-use yaboc_ast::{ArrayKind, TopLevelStatement};
 use yaboc_base::{
-    dbpanic,
+    Context, dbpanic,
     error::{SResult, SilencedError},
     interner::{
         DefId, DefinitionPath, FieldName, Identifier, IdentifierName, PathComponent, Regex,
     },
     source::{FileId, IndexSpanned, IndirectSpan, Span, SpanIndex},
-    Context,
 };
 
-use enumflags2::{bitflags, BitFlags};
+use enumflags2::{BitFlags, bitflags};
 use fxhash::FxHashMap;
 use variable_set::VariableSet;
 
@@ -57,7 +56,7 @@ pub trait Hirs: yaboc_ast::Asts {
     fn all_parserdef_blocks(&self, pd: ParserDefId) -> Arc<Vec<BlockId>>;
     fn all_parserdef_lambdas(&self, pd: ParserDefId) -> Arc<Vec<LambdaId>>;
     fn sorted_block_fields(&self, bd: BlockId, discriminants: bool)
-        -> SResult<Arc<Vec<FieldName>>>;
+    -> SResult<Arc<Vec<FieldName>>>;
     fn sorted_field_index(
         &self,
         block: BlockId,
@@ -600,6 +599,7 @@ pub struct HirConstraintExpressionRoot {
     pub expr: IdxExpression<HirConstraint>,
     pub data: ShapedData<Vec<SpanIndex>, HirConstraint>,
     pub has_no_eof: bool,
+    pub span: IndirectSpan,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -939,7 +939,7 @@ impl<DB: Hirs + Default> Parser for Context<DB> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use yaboc_ast::{import::Import, AstDatabase};
+    use yaboc_ast::{AstDatabase, import::Import};
     use yaboc_base::{config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase};
     #[salsa::database(
         InternerDatabase,

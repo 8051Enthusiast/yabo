@@ -41,16 +41,16 @@ pub struct TypecastThunk<'comp, 'llvm> {
 impl<'comp, 'llvm> TypecastThunk<'comp, 'llvm> {
     pub fn new(cg: &mut CodeGenCtx<'llvm, 'comp>, layout: IMonoLayout<'comp>) -> IResult<Self> {
         let f = cg.typecast_fun_val(layout);
-        cg.add_entry_block(f);
+        cg.add_entry_block(f, layout);
         let (arg_copy, fun_copy) = if let MonoLayout::Nominal(..) = layout.mono_layout() {
             let (from, layout) = layout.unapply_nominal(cg.layouts);
-            let arg_copy = cg.build_alloca_value(from, "arg_copy")?;
+            let arg_copy = cg.build_alloca_value(from, "arg_copy", None)?;
             let fun_copy = if let TailInfo {
                 has_tailsites: true,
                 sa,
             } = cg.collected_layouts.tail_sa[&(Some(from), layout)]
             {
-                let sa_alloc = cg.build_sa_alloca(sa, "tail_storage")?;
+                let sa_alloc = cg.build_sa_alloca(sa, "tail_storage", None)?;
                 Some(CgMonoValue::new(layout, sa_alloc))
             } else {
                 None
@@ -208,7 +208,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for ValThunk<'comp> {
         } else {
             cg.eval_fun_fun_val_wrapper(self.fun, self.req)
         };
-        cg.add_entry_block(f);
+        cg.add_entry_block(f, self.fun);
         f
     }
 
@@ -290,7 +290,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for BlockThunk<'comp> {
         } else {
             cg.eval_fun_fun_val_tail(self.fun, self.req)
         };
-        cg.add_entry_block(f);
+        cg.add_entry_block(f, self.fun);
         f
     }
 

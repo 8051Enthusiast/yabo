@@ -14,7 +14,7 @@ use hir::HirConstraintId;
 use yaboc_absint::{AbsInt, AbsIntCtx, AbstractDomain, Arg};
 use yaboc_ast::expr::WiggleKind;
 use yaboc_base::error::{IsSilenced, SResult, SilencedError};
-use yaboc_base::interner::{DefId, FieldName, Regex};
+use yaboc_base::interner::{DefId, FieldName, Regex, RegexKind};
 use yaboc_base::low_effort_interner::{Interner, Uniq};
 use yaboc_base::{dbformat, dbpanic};
 use yaboc_constraint::Constraints;
@@ -26,8 +26,10 @@ use yaboc_resolve::expr::{Resolved, ResolvedAtom, ValBinOp, ValUnOp, ValVarOp};
 use yaboc_target::layout::{PSize, SizeAlign, TargetLayoutData, TargetSized, Zst};
 use yaboc_types::{PrimitiveType, Type, TypeId};
 
+use crate::represent::truncated_hex;
+
 pub use self::collect::TailInfo;
-use self::represent::{LayoutHasher, LayoutPart, LayoutSymbol};
+use self::represent::{LayoutHasher, LayoutPart};
 
 #[derive(Clone, PartialEq, Eq, Default, Debug)]
 pub struct StructManifestation {
@@ -164,15 +166,66 @@ impl<'a> IMonoLayout<'a> {
         array.maybe_mono().unwrap()
     }
 
+    pub fn mangled_name<DB: Layouts + ?Sized>(
+        self,
+        ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
+        db: &DB,
+    ) -> String {
+        let name_prefix = match self.mono_layout() {
+            MonoLayout::BlockParser(def, _) => {
+                format!("parse_block_{}", &truncated_hex(&db.def_hash(def.0)))
+            }
+            MonoLayout::Block(def, _) => {
+                format!("block_{}", &truncated_hex(&db.def_hash(def.0)))
+            }
+            MonoLayout::Nominal(id, _, _) => {
+                dbformat!(db, "{}", &db.def_name(id.0).unwrap())
+            }
+            MonoLayout::NominalParser(id, _, _) => {
+                dbformat!(db, "parse_{}", &db.def_name(id.0).unwrap())
+            }
+            MonoLayout::Lambda(id, ..) => {
+                dbformat!(db, "lambda_{}", &truncated_hex(&db.def_hash(id.0)))
+            }
+            MonoLayout::Regex(re) => {
+                let re_str = db.lookup_intern_regex(*re);
+                let prefix = match re_str.kind {
+                    RegexKind::Regular => "",
+                    RegexKind::Hexagex => "h_",
+                };
+                let ident_str = re_str
+                    .regex
+                    .replace(|c: char| !c.is_ascii_alphanumeric(), "_");
+                format!("parse_regex_{prefix}{ident_str}")
+            }
+            MonoLayout::IfParser(..) => String::from("parser_if"),
+            MonoLayout::Array { .. } => String::from("array"),
+            MonoLayout::ArrayParser(Some((_, Some(_)))) => String::from("parse_array"),
+            MonoLayout::ArrayParser(Some((_, None)) | None) => String::from("fun_parse_array"),
+            MonoLayout::ArrayFillParser(Some(_)) => String::from("parse_array_fill"),
+            MonoLayout::ArrayFillParser(None) => String::from("fun_parse_array_fill"),
+            MonoLayout::Primitive(_)
+            | MonoLayout::SlicePtr
+            | MonoLayout::Ptr
+            | MonoLayout::Range
+            | MonoLayout::Single => {
+                dbformat!(db, "{}", &self.0)
+            }
+        };
+        let layout_hex = truncated_hex(&ctx.dcx.hashes.hash(self.0, db));
+        format!("{}${}", name_prefix, layout_hex)
+    }
+
     pub fn symbol<DB: Layouts + ?Sized>(
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
         part: LayoutPart,
         db: &DB,
     ) -> String {
-        let sym = LayoutSymbol { layout: self, part };
-        sym.symbol(&mut ctx.dcx.hashes, db)
+        let prefix = self.mangled_name(ctx, db);
+        dbformat!(db, "{}${}", &prefix, &part)
     }
+
     pub fn deref(
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
@@ -898,6 +951,9 @@ impl<'a> LayoutContext<'a> {
             globals: Default::default(),
             target_data,
         }
+    }
+    pub fn target_data(&self) -> &TargetLayoutData {
+        &self.target_data
     }
     pub fn intern(&mut self, layout: InternedLayout<'a>) -> ILayout<'a> {
         ILayout {

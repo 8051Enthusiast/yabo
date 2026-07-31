@@ -53,6 +53,7 @@ impl Driver {
             target,
             asan: config.asan,
             msan: config.msan,
+            debug: false,
             dynamic_linker: config.dynamic_linker.clone(),
         };
         let config = Arc::new(config);

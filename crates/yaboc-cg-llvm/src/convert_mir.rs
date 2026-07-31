@@ -21,6 +21,7 @@ use yaboc_target::layout::TargetSized;
 
 use crate::{
     IResult,
+    debug::DebugLocation,
     getset::Callable,
     val::{CgMonoValue, CgReturnValue, CgValue},
 };
@@ -38,6 +39,7 @@ pub struct MirTranslator<'llvm, 'comp, 'r> {
     ret: Option<CgReturnValue<'llvm>>,
     undefined: BasicBlock<'llvm>,
     globals: PointerValue<'llvm>,
+    debug_loc: Option<DebugLocation<'llvm>>,
 }
 
 impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
@@ -49,10 +51,11 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         arg: CgValue<'comp, 'llvm>,
         head: PointerValue<'llvm>,
     ) -> IResult<Self> {
-        cg.add_entry_block(llvm_fun);
+        cg.add_entry_block(llvm_fun, fun.layout);
         let mut stack = Vec::new();
+        let debug_loc = cg.layout_debug_location(fun.layout);
         for (idx, layout) in mir_fun.stack_layouts.iter().enumerate() {
-            stack.push(cg.build_layout_alloca(*layout, &format!("stack_{idx}"))?);
+            stack.push(cg.build_layout_alloca(*layout, &format!("stack_{idx}"), debug_loc)?);
         }
         let globals = cg.build_high_bit_mask(head)?;
         let mut blocks = Vec::new();
@@ -79,6 +82,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             ret: None,
             undefined,
             globals,
+            debug_loc,
         })
     }
 
@@ -397,9 +401,9 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             .layout
             .access_field(self.cg.layouts, FieldName::Ident(field))
             .unwrap();
-        let intermediate_val = self
-            .cg
-            .build_alloca_value(intermediate_layout, "intermediate")?;
+        let intermediate_val =
+            self.cg
+                .build_alloca_value(intermediate_layout, "intermediate", self.debug_loc)?;
         let intermediate_ret =
             self.cg
                 .build_return_value(intermediate_val, self.cg.const_i64(0), self.globals)?;
@@ -500,7 +504,9 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let int_layout = self.cg.layouts.dcx.intern(Layout::Mono(mlayout));
         let do_indirection = int_layout != layout || self.is_ret_place(ret);
         if do_indirection {
-            let alloc = self.cg.build_alloca_value(layout, "primitive")?;
+            let alloc = self
+                .cg
+                .build_alloca_value(layout, "temp_buf", self.debug_loc)?;
             self.cg.builder.build_store(alloc.ptr, value)?;
             let ret_val = self.return_val(ret)?;
             self.cg.call_typecast_fun(ret_val, alloc)?;
@@ -525,7 +531,9 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             Val::Parser(_) => self.mir_fun.place(ret),
             Val::Undefined => self.cg.layouts.dcx.intern(Layout::None),
         };
-        let alloc = self.cg.build_alloca_value(layout, "primitive")?;
+        let alloc = self
+            .cg
+            .build_alloca_value(layout, "temp_buf", self.debug_loc)?;
         let llvm_val = match val {
             Val::Char(c) => self.cg.llvm.i32_type().const_int(c as u64, false),
             Val::Int(i) => self.cg.const_i64(i),
@@ -544,7 +552,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             .layouts
             .dcx
             .intern(Layout::Mono(MonoLayout::SlicePtr));
-        let alloc = self.cg.build_alloca_value(slice, "slice")?;
+        let alloc = self.cg.build_alloca_value(slice, "slice", self.debug_loc)?;
         let bytes_start = self.cg.module_bytes(val);
         let count = self.cg.const_i64(val.len() as i64);
         let u8 = u8::codegen_ty(self.cg);

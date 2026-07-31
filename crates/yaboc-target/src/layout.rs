@@ -42,11 +42,7 @@ impl VtablePointer for AbsPtr {
 pub struct Zst([u8; 0]);
 
 pub(crate) const fn max(a: PSize, b: PSize) -> PSize {
-    if a > b {
-        a
-    } else {
-        b
-    }
+    if a > b { a } else { b }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug, Hash)]
@@ -150,6 +146,21 @@ impl SizeAlign {
             current = current.cat(sa);
             offset
         })
+    }
+    pub fn offsets_bits<const N: usize>(layouts: [SizeAlign; N]) -> [PSize; N] {
+        Self::offsets(layouts).map(|x| x * 8)
+    }
+
+    pub fn after_bits(&self) -> u64 {
+        self.after * 8
+    }
+
+    pub fn align_bits(&self) -> u32 {
+        (self.align() as u32) * 8
+    }
+
+    pub fn allocation_center_bits(&self) -> u64 {
+        self.allocation_center_offset() * 8
     }
 }
 

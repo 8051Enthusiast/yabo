@@ -26,3 +26,4 @@ bumpalo = "3.16.0"
 inkwell = { workspace = true }
 regex-automata = "0.4.8"
 hexagex = "0.2.3"
+smallvec = { workspace = true }

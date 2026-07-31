@@ -1460,6 +1460,7 @@ dependencies = [
  "inkwell",
  "regex-automata",
  "salsa",
+ "smallvec",
  "yaboc-absint",
  "yaboc-ast",
  "yaboc-base",
