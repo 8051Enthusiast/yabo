@@ -73,7 +73,7 @@ impl SizeAlign {
     }
     pub const fn cat(self, other: Self) -> Self {
         let other_center = (other.align_mask + self.after + other.before) & !other.align_mask;
-        let align_mask = max(self.align_mask, other.align_mask);
+        let align_mask = self.align_mask | other.align_mask;
         SizeAlign {
             before: self.before,
             after: other_center + other.after,
@@ -82,7 +82,7 @@ impl SizeAlign {
     }
     pub const fn tac(self, other: Self) -> Self {
         let other_center = (other.align_mask + self.before + other.after) & !other.align_mask;
-        let align_mask = max(self.align_mask, other.align_mask);
+        let align_mask = self.align_mask | other.align_mask;
         SizeAlign {
             before: other_center + other.before,
             after: self.after,
@@ -108,7 +108,7 @@ impl SizeAlign {
     pub const fn union(self, other: Self) -> Self {
         let after = max(self.after, other.after);
         let before = max(self.before, other.before);
-        let align_mask = max(self.align_mask, other.align_mask);
+        let align_mask = self.align_mask | other.align_mask;
         SizeAlign {
             before,
             after,
