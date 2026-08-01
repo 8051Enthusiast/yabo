@@ -45,7 +45,7 @@ impl<'llvm, 'comp, 'r> RegexTranslator<'llvm, 'comp, 'r> {
     ) -> IResult<Self> {
         let single = IMonoLayout::u8_single(cg.layouts);
         let info = CallMeta::new(RequirementSet::all(), false);
-        let parser_fun = cg.parser_fun_val_tail(single, retlen, info.req);
+        let parser_fun = cg.parser_fun_val_wrapper(single, retlen, info.req);
         let debug_loc = cg.layout_debug_location(layout);
 
         let int_layout = cg
