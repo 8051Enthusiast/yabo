@@ -4,7 +4,7 @@ use inkwell::{
 };
 
 use yaboc_hir_types::THUNK_BIT;
-use yaboc_layout::{ILayout, IMonoLayout, MonoLayout, TailInfo};
+use yaboc_layout::{ILayout, IMonoLayout, MonoLayout, TailCallSite, TailInfo, collect::pd_val_req};
 use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_target::layout::SizeAlign;
 
@@ -45,10 +45,15 @@ impl<'comp, 'llvm> TypecastThunk<'comp, 'llvm> {
         let (arg_copy, fun_copy) = if let MonoLayout::Nominal(..) = layout.mono_layout() {
             let (from, layout) = layout.unapply_nominal(cg.layouts);
             let arg_copy = cg.build_alloca_value(from, "arg_copy", None)?;
+            let call_site = TailCallSite {
+                from: Some(from),
+                func: layout,
+                req: pd_val_req().req,
+            };
             let fun_copy = if let TailInfo {
                 has_tailsites: true,
                 sa,
-            } = cg.collected_layouts.tail_sa[&(Some(from), layout)]
+            } = cg.collected_layouts.tail_sa[&call_site]
             {
                 let sa_alloc = cg.build_sa_alloca(sa, "tail_storage", None)?;
                 Some(CgMonoValue::new(layout, sa_alloc))

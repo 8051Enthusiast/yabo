@@ -1,11 +1,12 @@
 use fxhash::{FxHashMap, FxHashSet};
 use yaboc_hir::HirIdWrapper;
 use yaboc_mir::{CallMeta, FunKind, MirInstr, MirKind};
-use yaboc_req::{NeededBy, RequirementSet};
+use yaboc_req::RequirementSet;
 use yaboc_target::layout::SizeAlign;
 
 use crate::{
-    AbsLayoutCtx, ILayout, IMonoLayout, LayoutError, MonoLayout, mir_subst::function_substitute,
+    AbsLayoutCtx, ILayout, IMonoLayout, LayoutError, MonoLayout,
+    collect::layout_info::LayoutInfoCollector, mir_subst::function_substitute,
 };
 
 #[derive(Default, Clone, Copy)]
@@ -27,9 +28,10 @@ impl CallSiteVertex {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct CallSite<'comp> {
+pub struct TailCallSite<'comp> {
     pub from: Option<ILayout<'comp>>,
     pub func: IMonoLayout<'comp>,
+    pub req: RequirementSet,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -40,18 +42,20 @@ pub struct TailInfo {
 
 pub struct TailCollector<'comp, 'r> {
     ctx: &'r mut AbsLayoutCtx<'comp>,
-    vertices: FxHashMap<CallSite<'comp>, CallSiteVertex>,
-    stack: Vec<CallSite<'comp>>,
+    info: &'r mut LayoutInfoCollector<'comp>,
+    vertices: FxHashMap<TailCallSite<'comp>, CallSiteVertex>,
+    stack: Vec<TailCallSite<'comp>>,
     index: usize,
 }
 
 impl<'comp, 'r> TailCollector<'comp, 'r> {
-    pub fn new(ctx: &'r mut AbsLayoutCtx<'comp>) -> Self {
+    pub fn new(ctx: &'r mut AbsLayoutCtx<'comp>, info: &'r mut LayoutInfoCollector<'comp>) -> Self {
         Self {
             ctx,
             vertices: Default::default(),
             stack: Default::default(),
             index: 0,
+            info,
         }
     }
 
@@ -59,8 +63,8 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
     // and call f on it
     fn for_each_tail_callsite(
         &mut self,
-        site: CallSite<'comp>,
-        mut f: impl FnMut(&mut Self, CallSite<'comp>) -> Result<(), LayoutError>,
+        site: TailCallSite<'comp>,
+        mut f: impl FnMut(&mut Self, TailCallSite<'comp>) -> Result<(), LayoutError>,
     ) -> Result<(), LayoutError> {
         let fun_kind = match site.func.mono_layout() {
             MonoLayout::NominalParser(pd, _, _) => {
@@ -76,26 +80,38 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
             MonoLayout::Lambda(lid, ..) => FunKind::Lambda(*lid),
             _ => return Ok(()),
         };
-        let mut req = RequirementSet::all();
-        if site.from.is_none() {
-            req &= !NeededBy::Len;
-        }
+        let layout_info = self.info.get_info(site.func.inner());
+        let req = layout_info.modify_reqs(site.req);
         let fsub =
             function_substitute(fun_kind, MirKind::Call(req), site.from, site.func, self.ctx)?;
         let mut already_called = FxHashSet::default();
         for instr in fsub.f.iter_bb().flat_map(|(_, bb)| bb.ins()) {
-            let (arg, fun) = match instr {
-                MirInstr::ParseCall(.., CallMeta { tail: true, .. }, arg, fun, _) => {
-                    (Some(arg), fun)
-                }
-                MirInstr::EvalFun(.., fun, CallMeta { tail: true, .. }, _) => (None, fun),
+            let (arg, fun, req) = match instr {
+                MirInstr::ParseCall(
+                    ..,
+                    CallMeta {
+                        tail: true, req, ..
+                    },
+                    arg,
+                    fun,
+                    _,
+                ) => (Some(arg), fun, req),
+                MirInstr::EvalFun(
+                    ..,
+                    fun,
+                    CallMeta {
+                        tail: true, req, ..
+                    },
+                    _,
+                ) => (None, fun, req),
                 _ => continue,
             };
             let fun = fsub.place(fun);
             for inner_fun in &fun {
-                let inner_site = CallSite {
+                let inner_site = TailCallSite {
                     from: arg.map(|a| fsub.place(a)),
                     func: inner_fun,
+                    req,
                 };
                 if already_called.insert(inner_site) {
                     f(self, inner_site)?;
@@ -107,7 +123,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
 
     fn calculate_tail_size(
         &mut self,
-        site: CallSite<'comp>,
+        site: TailCallSite<'comp>,
     ) -> Result<CallSiteVertex, LayoutError> {
         let sa = site.func.inner().size_align_without_vtable(self.ctx)?;
         let mut current_vertex = CallSiteVertex {
@@ -154,7 +170,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
         Ok(current_vertex)
     }
 
-    pub fn size(&mut self, site: CallSite<'comp>) -> Result<TailInfo, LayoutError> {
+    pub fn size(&mut self, site: TailCallSite<'comp>) -> Result<TailInfo, LayoutError> {
         if let Some(&vertex) = self.vertices.get(&site) {
             return Ok(vertex.tail_info());
         }

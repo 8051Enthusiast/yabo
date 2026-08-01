@@ -1,0 +1,27 @@
+====[ source code ]====
+fun [][]int ~> summap: int = {
+  case
+  | if ~ is !eof
+    return: summap
+  | let return = 43
+  \
+}
+
+fun []T ~> wert[T, R](f: (T) -> R) = [..]{x: ~, let return = f?(x)}
+
+fun mirror(matrix: [][]int) = (0..<1) ~> wert(<row> (
+    let cols = matrix.[row].sizeof
+    (0..<1) ~> wert(<_> cols)
+  ))
+
+export
+fun ~test = {
+  matrix: [2][2]
+  let return = mirror(matrix) ~> summap
+}
+
+====[ text 1 ]====
+whatever
+
+====[ output 1 ]====
+43

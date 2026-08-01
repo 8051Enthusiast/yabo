@@ -28,7 +28,7 @@ use yaboc_types::{PrimitiveType, Type, TypeId};
 
 use crate::represent::truncated_hex;
 
-pub use self::collect::TailInfo;
+pub use self::collect::{TailCallSite, TailInfo};
 use self::represent::{LayoutHasher, LayoutPart};
 
 #[derive(Clone, PartialEq, Eq, Default, Debug)]
@@ -1429,11 +1429,11 @@ def test = [5][3][2]
         let canon = pd_parser(&mut outlayer, test).unwrap();
         let slice = outlayer.dcx.intern(Layout::Mono(MonoLayout::SlicePtr));
         dbeprintln!(&ctx.db, "layout: {} -> {}", &slice, &canon);
-        for ((from, to), sa) in layouts.tail_sa {
+        for (TailCallSite { from, func, req }, sa) in layouts.tail_sa {
             if let Some(from) = from {
-                dbeprintln!(&ctx.db, "tail: {} -> {}", &from, &to);
+                dbeprintln!(&ctx.db, "tail: {} -> {} ({})", &from, &func, &req);
             } else {
-                dbeprintln!(&ctx.db, "tail: {}()", &to);
+                dbeprintln!(&ctx.db, "tail: {}() ({})", &func, &req);
             }
             eprintln!("{:?}", sa);
         }

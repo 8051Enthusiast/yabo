@@ -4,7 +4,7 @@ use yaboc_constraint::Constraints;
 use yaboc_hir::BlockReturnKind;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{
-    FuncLayoutKind, Layout,
+    FuncLayoutKind, Layout, TailCallSite,
     collect::{pd_len_req, pd_val_req},
     mir_subst::function_substitute,
     represent::ParserFunKind,
@@ -71,8 +71,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: Option<ILayout<'comp>>,
         fun: CgMonoValue<'comp, 'llvm>,
+        req: RequirementSet,
     ) -> IResult<Option<CgMonoValue<'comp, 'llvm>>> {
-        let Some(tail_info) = self.collected_layouts.tail_sa.get(&(from, fun.layout)) else {
+        let call_site = TailCallSite {
+            from,
+            func: fun.layout,
+            req,
+        };
+        let Some(tail_info) = self.collected_layouts.tail_sa.get(&call_site) else {
             return Ok(None);
         };
         if !tail_info.has_tailsites {
@@ -94,7 +100,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let wrapper = self.parser_fun_val_wrapper(layout, from, req);
         let (ret, fun_arg, from) = parser_values(wrapper, layout, from);
         self.add_entry_block(wrapper, layout);
-        let Some(val) = self.setup_tail_fun_copy(Some(from.layout), fun_arg)? else {
+        let Some(val) = self.setup_tail_fun_copy(Some(from.layout), fun_arg, req)? else {
             // cannot be a tail call because of different calling conventions
             return self.wrap_direct_call(inner, wrapper, false, layout);
         };
@@ -120,7 +126,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let wrapper = self.eval_fun_fun_val_wrapper(layout, req);
         let (ret, fun_arg) = eval_fun_values(wrapper, layout);
         self.add_entry_block(wrapper, layout);
-        let Some(val) = self.setup_tail_fun_copy(None, fun_arg)? else {
+        let Some(val) = self.setup_tail_fun_copy(None, fun_arg, req)? else {
             if self.options.target.use_tailcc {
                 return self.wrap_direct_call(inner, wrapper, false, layout);
             } else {
