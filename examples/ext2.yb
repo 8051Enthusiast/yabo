@@ -150,7 +150,7 @@ def inode = {
   blocks: u32l
   flags: u32l
   osd1: u32l
-  block_bytes: [u32l.sizeof * 15]
+  block_bytes: [data_blocks(byte_block).sizeof]
   case
   | let file = mode_type if file then (block_bytes ~> data_blocks(byte_block))
   | let dir = mode_type if dir then (block_bytes ~> data_blocks(dir_entries))
