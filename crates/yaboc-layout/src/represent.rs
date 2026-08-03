@@ -347,7 +347,7 @@ impl<'a> LayoutHasher<'a> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ParserFunKind {
     Wrapper,
     TailWrapper,

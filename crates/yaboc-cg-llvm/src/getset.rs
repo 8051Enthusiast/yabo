@@ -247,7 +247,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         fun: CgMonoValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         call_kind: RequirementSet,
-        tail: bool,
     ) -> IResult<()> {
         let info = &self.collected_layouts.layout_info.info[&fun.layout.inner()];
         let call_kind = info.modify_reqs(call_kind);
@@ -262,7 +261,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             ],
             "impl_tail_call",
         )?;
-        self.set_tail_call(call_ret, tail);
+        self.set_tail_call(call_ret, true);
         let ret = return_status(call_ret);
         self.builder.build_return(Some(&ret))?;
         Ok(())
@@ -414,11 +413,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub(super) fn call_eval_fun_fun(
         &mut self,
         ret: CgReturnValue<'llvm>,
-        arg: CgValue<'comp, 'llvm>,
+        fun: CgValue<'comp, 'llvm>,
+        arg: Option<CgValue<'comp, 'llvm>>,
         kind: ParserFunKind,
         req: RequirementSet,
     ) -> IResult<CallSiteValue<'llvm>> {
-        let eval_fun = match arg.layout.maybe_mono() {
+        let eval_fun = match fun.layout.maybe_mono() {
             Some(mono) => self.eval_fun_fun_val(mono, req, kind).into(),
             None => {
                 let meta = CallMeta {
@@ -426,22 +426,23 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     req,
                 };
                 let slot =
-                    self.collected_layouts.eval_slots.layout_vtable_offsets[&(meta, arg.layout)];
+                    self.collected_layouts.eval_slots.layout_vtable_offsets[&(meta, fun.layout)];
                 self.vtable_callable::<vtable::FunctionVTable<AbsPtr>, vtable::FunctionVTable<RelPtr>, vtable::EvalFunFun>(
-                arg.ptr,
+                fun.ptr,
                 &[FunctionVTableFields::eval_fun_impl as i64, slot as i64],
             )?
             }
         };
-        let args = if self.options.target.use_tailcc || kind == ParserFunKind::Wrapper {
-            &[ret.ptr.into(), arg.ptr.into(), ret.head.into()][..]
-        } else {
+        let args = if let Some(arg) = arg {
+            assert_ne!(kind, ParserFunKind::Wrapper);
             &[
                 ret.ptr.into(),
-                arg.ptr.into(),
+                fun.ptr.into(),
                 ret.head.into(),
-                self.llvm.ptr_type(Default::default()).get_poison().into(),
+                arg.ptr.into(),
             ][..]
+        } else {
+            &[ret.ptr.into(), fun.ptr.into(), ret.head.into()][..]
         };
         let call = match eval_fun {
             Callable::Pointer(ptr, ty) => {
@@ -458,10 +459,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub(super) fn call_eval_fun_fun_wrapper(
         &mut self,
         ret: CgReturnValue<'llvm>,
-        arg: CgValue<'comp, 'llvm>,
+        fun: CgValue<'comp, 'llvm>,
         req: RequirementSet,
     ) -> IResult<IntValue<'llvm>> {
-        self.call_eval_fun_fun(ret, arg, ParserFunKind::Wrapper, req)
+        self.call_eval_fun_fun(ret, fun, None, ParserFunKind::Wrapper, req)
             .map(return_status)
     }
 
@@ -469,12 +470,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         ret: CgReturnValue<'llvm>,
         fun: CgValue<'comp, 'llvm>,
+        arg: CgValue<'comp, 'llvm>,
         call_kind: RequirementSet,
         parent_fun: Option<CgMonoValue<'comp, 'llvm>>,
     ) -> IResult<IntValue<'llvm>> {
         let sa = fun.layout.size_align_without_vtable(self.layouts).unwrap();
         let size = self.const_i64(sa.after as i64);
-        let tailcc = self.options.target.use_tailcc;
         let parser = match fun.layout.maybe_mono() {
             Some(mono) => self.eval_fun_fun_val_tail(mono, call_kind).into(),
             None => {
@@ -484,7 +485,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 };
                 let slot =
                     self.collected_layouts.eval_slots.layout_vtable_offsets[&(meta, fun.layout)];
-                self.vtable_callable::<vtable::FunctionVTable<AbsPtr>, vtable::FunctionVTable<RelPtr>, vtable::EvalFunFun>(
+                self.vtable_callable::<vtable::FunctionVTable<AbsPtr>, vtable::FunctionVTable<RelPtr>, vtable::EvalFunFunInternal>(
                     fun.ptr,
                     &[FunctionVTableFields::eval_fun_impl as i64, slot as i64],
                 )?
@@ -504,21 +505,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         } else {
             fun
         };
-        let args = if tailcc {
-            &[ret.ptr.into(), fun.ptr.into(), ret.head.into()][..]
-        } else {
-            &[
-                ret.ptr.into(),
-                fun.ptr.into(),
-                ret.head.into(),
-                self.llvm.ptr_type(Default::default()).get_poison().into(),
-            ][..]
-        };
+        let args = &[
+            ret.ptr.into(),
+            fun.ptr.into(),
+            ret.head.into(),
+            arg.ptr.into(),
+        ];
         let call_ret = match parser {
-            Callable::Pointer(ptr, mut ty) => {
-                if !tailcc {
-                    ty = ParserFun::fun_ty(self);
-                }
+            Callable::Pointer(ptr, ty) => {
                 self.builder.build_indirect_call(ty, ptr, args, "tail_call")
             }
             Callable::Function(func_val) => self.builder.build_call(func_val, args, "tail_call"),
@@ -531,12 +525,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub(super) fn call_eval_fun_fun_impl(
         &mut self,
         ret: CgReturnValue<'llvm>,
+        fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         req: RequirementSet,
     ) -> IResult<()> {
-        let info = &self.collected_layouts.layout_info.info[&arg.layout];
+        let info = &self.collected_layouts.layout_info.info[&fun.layout];
         let req = info.modify_reqs(req);
-        let ret = return_status(self.call_eval_fun_fun(ret, arg, ParserFunKind::Worker, req)?);
+        let ret = return_status(self.call_eval_fun_fun(
+            ret,
+            fun,
+            Some(arg),
+            ParserFunKind::Worker,
+            req,
+        )?);
         self.builder.build_return(Some(&ret))?;
         Ok(())
     }

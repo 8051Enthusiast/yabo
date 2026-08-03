@@ -67,6 +67,8 @@ target_struct! {
 
 pub type CreateArgFun = fn(ret: *mut u8, from: *const u8, context: *const u8) -> i64;
 pub type EvalFunFun = fn(ret: *mut u8, fun: *const u8, context: *const u8) -> i64;
+pub type EvalFunFunInternal =
+    fn(ret: *mut u8, fun: *const u8, context: *const u8, *const u8) -> i64;
 
 target_struct! {
     pub struct FunctionVTable<T: VtablePointer> {

@@ -17,6 +17,7 @@ use yaboc_layout::{ILayout, IMonoLayout, Layout, MonoLayout, mir_subst::Function
 use yaboc_mir::{
     self as mir, BBRef, Comp, IntBinOp, IntUnOp, MirInstr, PlaceRef, ReturnStatus, Val,
 };
+use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_target::layout::TargetSized;
 
 use crate::{
@@ -40,6 +41,7 @@ pub struct MirTranslator<'llvm, 'comp, 'r> {
     undefined: BasicBlock<'llvm>,
     globals: PointerValue<'llvm>,
     debug_loc: Option<DebugLocation<'llvm>>,
+    req: RequirementSet,
 }
 
 impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
@@ -50,6 +52,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         fun: CgMonoValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         head: PointerValue<'llvm>,
+        req: RequirementSet,
     ) -> IResult<Self> {
         cg.add_entry_block(llvm_fun, fun.layout);
         let mut stack = Vec::new();
@@ -83,6 +86,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             undefined,
             globals,
             debug_loc,
+            req,
         })
     }
 
@@ -220,6 +224,36 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         self.controlflow_case(ret, ctrl)
     }
 
+    fn get_tail_arg_pointer(&mut self, layout: ILayout<'comp>) -> IResult<CgValue<'comp, 'llvm>> {
+        let storage_ptr = if self.req.contains(NeededBy::Len) {
+            self.fun.ptr
+        } else {
+            let arg_ptr = self.arg.ptr;
+            let end_offset = self
+                .arg
+                .layout
+                .size_align(self.cg.layouts)
+                .unwrap()
+                .after_aligned()
+                .after;
+            // this pointer should have the same address as self.fun.ptr, but because of the noalias
+            // annotations, it does have a different provenance and we cannot just use the fun.ptr
+            // as storage, as we have could have written to the same region through the arg ptr before
+            self.cg
+                .build_const_offset_byte_gep(arg_ptr, end_offset as i64, "storage_ptr")?
+        };
+
+        let start_offset = layout
+            .size_align(self.cg.layouts)
+            .unwrap()
+            .after_aligned()
+            .after;
+        let arg_ptr =
+            self.cg
+                .build_const_offset_byte_gep(storage_ptr, -(start_offset as i64), "arg_ptr")?;
+        Ok(CgValue::new(layout, arg_ptr))
+    }
+
     fn eval_fun(
         &mut self,
         to: Option<PlaceRef>,
@@ -248,9 +282,15 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             } else {
                 Some(self.fun)
             };
+            let zst = self
+                .cg
+                .layouts
+                .dcx
+                .primitive(yaboc_types::PrimitiveType::Unit);
+            let arg = self.get_tail_arg_pointer(zst)?;
             let ret = self
                 .cg
-                .call_eval_fun_fun_tail(to, from_val, meta.req, parent_fun)?;
+                .call_eval_fun_fun_tail(to, from_val, arg, meta.req, parent_fun)?;
             self.cg.builder.build_return(Some(&ret))?;
         }
         Ok(())
@@ -481,6 +521,13 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 None
             } else {
                 Some(self.fun)
+            };
+            let arg_val = if Some(arg) != self.mir_fun.f.arg() {
+                let arg_tail = self.get_tail_arg_pointer(arg_val.layout)?;
+                self.cg.build_copy_invariant(arg_tail, arg_val)?;
+                arg_tail
+            } else {
+                arg_val
             };
             let ret = self.cg.call_parser_fun_tail(
                 ret_val,

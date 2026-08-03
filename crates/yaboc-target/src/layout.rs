@@ -115,6 +115,13 @@ impl SizeAlign {
             align_mask,
         }
     }
+    pub const fn after_aligned(self) -> Self {
+        Self {
+            before: self.before,
+            after: (self.after + self.align_mask) & !self.align_mask,
+            align_mask: self.align_mask,
+        }
+    }
     pub const fn array(self, len: PSize) -> Self {
         if len == 0 {
             return SizeAlign {

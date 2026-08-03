@@ -366,12 +366,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         CgReturnValue::new(head, undef_ptr)
     }
 
-    fn undef_val(&mut self) -> CgValue<'comp, 'llvm> {
-        let undef_ptr = self.invalid_ptr();
-        let layout = ILayout::bottom(&mut self.layouts.dcx);
-        CgValue::new(layout, undef_ptr)
-    }
-
     fn build_center_gep(
         &mut self,
         outer_ptr: PointerValue<'llvm>,
@@ -912,6 +906,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         byte_gep(&self.builder, self.llvm, ptr, int, name)
     }
 
+    fn build_const_offset_byte_gep(
+        &mut self,
+        ptr: PointerValue<'llvm>,
+        offset: i64,
+        name: &str,
+    ) -> IResult<PointerValue<'llvm>> {
+        let offset = self.const_size_t(offset);
+        byte_gep(&self.builder, self.llvm, ptr, offset, name)
+    }
+
     fn build_field_gep(
         &mut self,
         field: DefId,
@@ -1199,6 +1203,18 @@ fn eval_fun_args(fun: FunctionValue) -> (PointerValue, PointerValue, PointerValu
     )
 }
 
+fn tail_eval_fun_args(
+    fun: FunctionValue,
+) -> (PointerValue, PointerValue, PointerValue, PointerValue) {
+    let [ret, fun, head, arg] = get_fun_args(fun);
+    (
+        ret.into_pointer_value(),
+        fun.into_pointer_value(),
+        head.into_pointer_value(),
+        arg.into_pointer_value(),
+    )
+}
+
 fn eval_fun_values<'comp, 'llvm>(
     fun: FunctionValue<'llvm>,
     fun_layout: IMonoLayout<'comp>,
@@ -1207,6 +1223,20 @@ fn eval_fun_values<'comp, 'llvm>(
     let ret = CgReturnValue::new(head, ret);
     let fun = CgMonoValue::new(fun_layout, fun);
     (ret, fun)
+}
+
+fn tail_eval_fun_values<'comp, 'llvm>(
+    fun: FunctionValue<'llvm>,
+    fun_layout: IMonoLayout<'comp>,
+) -> (
+    CgReturnValue<'llvm>,
+    CgMonoValue<'comp, 'llvm>,
+    PointerValue<'llvm>,
+) {
+    let (ret, fun, head, arg) = tail_eval_fun_args(fun);
+    let ret = CgReturnValue::new(head, ret);
+    let fun = CgMonoValue::new(fun_layout, fun);
+    (ret, fun, arg)
 }
 
 impl<'llvm> CodegenTypeContext for CodeGenCtx<'llvm, '_> {

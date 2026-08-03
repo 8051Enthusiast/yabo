@@ -281,10 +281,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         req: RequirementSet,
         kind: ParserFunKind,
     ) -> FunctionValue<'llvm> {
-        let is_tailable = kind != ParserFunKind::Wrapper;
-        let prototype = if is_tailable && !self.options.target.use_tailcc {
-            // tail calls without tailcc require the callee to have the same signature as the caller
-            self.fun_val::<_, vtable::ParserFun>(
+        let is_tail = kind != ParserFunKind::Wrapper;
+        let prototype = if is_tail {
+            self.fun_val::<_, vtable::EvalFunFunInternal>(
                 layout,
                 LayoutPart::EvalFun(req, kind),
                 [None, Some(layout.inner()), None, None],

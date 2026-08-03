@@ -1,7 +1,7 @@
 use fxhash::{FxHashMap, FxHashSet};
 use yaboc_hir::HirIdWrapper;
 use yaboc_mir::{CallMeta, FunKind, MirInstr, MirKind};
-use yaboc_req::RequirementSet;
+use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_target::layout::SizeAlign;
 
 use crate::{
@@ -15,6 +15,7 @@ struct CallSiteVertex {
     lowlink: usize,
     on_stack: bool,
     sa: SizeAlign,
+    from: Option<SizeAlign>,
     has_tailsites: bool,
 }
 
@@ -23,6 +24,7 @@ impl CallSiteVertex {
         TailInfo {
             has_tailsites: self.has_tailsites,
             sa: self.sa,
+            from: self.from,
         }
     }
 }
@@ -38,6 +40,16 @@ pub struct TailCallSite<'comp> {
 pub struct TailInfo {
     pub has_tailsites: bool,
     pub sa: SizeAlign,
+    pub from: Option<SizeAlign>,
+}
+
+impl TailInfo {
+    pub fn tail_storage(&self) -> SizeAlign {
+        let Some(from) = self.from else {
+            return self.sa;
+        };
+        self.sa.tac(from.after_aligned())
+    }
 }
 
 pub struct TailCollector<'comp, 'r> {
@@ -46,6 +58,14 @@ pub struct TailCollector<'comp, 'r> {
     vertices: FxHashMap<TailCallSite<'comp>, CallSiteVertex>,
     stack: Vec<TailCallSite<'comp>>,
     index: usize,
+}
+
+fn maybe_union(lhs: Option<SizeAlign>, rhs: Option<SizeAlign>) -> Option<SizeAlign> {
+    match (lhs, rhs) {
+        (None, None) => None,
+        (None, Some(other)) | (Some(other), None) => Some(other),
+        (Some(lhs), Some(rhs)) => Some(lhs.union(rhs)),
+    }
 }
 
 impl<'comp, 'r> TailCollector<'comp, 'r> {
@@ -126,10 +146,16 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
         site: TailCallSite<'comp>,
     ) -> Result<CallSiteVertex, LayoutError> {
         let sa = site.func.inner().size_align_without_vtable(self.ctx)?;
+        let from = if site.req.contains(NeededBy::Len) {
+            None
+        } else {
+            site.from.map(|x| x.size_align(self.ctx)).transpose()?
+        };
         let mut current_vertex = CallSiteVertex {
             index: self.index,
             lowlink: self.index,
             sa,
+            from,
             has_tailsites: false,
             on_stack: true,
         };
@@ -141,17 +167,18 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
         // get the maximum size of the tail call storage
         self.for_each_tail_callsite(site, |this, subsite| {
             current_vertex.has_tailsites = true;
-            let subsize = if let Some(&subsite_vertex) = this.vertices.get(&subsite) {
+            let (subsize, from) = if let Some(&subsite_vertex) = this.vertices.get(&subsite) {
                 if subsite_vertex.on_stack {
                     current_vertex.lowlink = current_vertex.lowlink.min(subsite_vertex.index);
                 }
-                subsite_vertex.sa
+                (subsite_vertex.sa, subsite_vertex.from)
             } else {
                 let subsite_vertex = this.calculate_tail_size(subsite)?;
                 current_vertex.lowlink = current_vertex.lowlink.min(subsite_vertex.lowlink);
-                subsite_vertex.sa
+                (subsite_vertex.sa, subsite_vertex.from)
             };
             current_vertex.sa = current_vertex.sa.union(subsize);
+            current_vertex.from = maybe_union(current_vertex.from, from);
             this.vertices.insert(site, current_vertex);
             Ok(())
         })?;
@@ -161,6 +188,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
                 let top_vertex = self.vertices.get_mut(&top).unwrap();
                 top_vertex.on_stack = false;
                 top_vertex.sa = current_vertex.sa;
+                top_vertex.from = current_vertex.from;
                 if top == site {
                     break;
                 }

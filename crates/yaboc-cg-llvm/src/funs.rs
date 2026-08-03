@@ -69,12 +69,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn setup_tail_fun_copy(
         &mut self,
-        from: Option<ILayout<'comp>>,
+        from: Option<CgValue<'comp, 'llvm>>,
         fun: CgMonoValue<'comp, 'llvm>,
         req: RequirementSet,
-    ) -> IResult<Option<CgMonoValue<'comp, 'llvm>>> {
+    ) -> IResult<Option<(CgMonoValue<'comp, 'llvm>, Option<CgValue<'comp, 'llvm>>)>> {
         let call_site = TailCallSite {
-            from,
+            from: from.map(|x| x.layout),
             func: fun.layout,
             req,
         };
@@ -84,10 +84,34 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         if !tail_info.has_tailsites {
             return Ok(None);
         }
-        let fun_copy_ptr = self.build_sa_alloca(tail_info.sa, "fun_copy", None)?;
-        let fun_buf = CgMonoValue::new(fun.layout, fun_copy_ptr);
+        let has_arg_tail_storage = tail_info.from.is_some();
+        let tail_storage = tail_info.tail_storage();
+        let tail_storage_ptr = self.build_sa_alloca(tail_storage, "tail_storage", None)?;
+        let from_tail = if let Some(from) = from
+            && !req.contains(NeededBy::Len)
+        {
+            let size = from
+                .layout
+                .size_align(self.layouts)
+                .unwrap()
+                .after_aligned()
+                .after;
+            let from_tail = from.with_ptr(self.build_const_offset_byte_gep(
+                tail_storage_ptr,
+                -(size as i64),
+                "from_tail",
+            )?);
+            self.build_copy_invariant(from_tail, from)?;
+            Some(from_tail)
+        } else if has_arg_tail_storage && !req.contains(NeededBy::Len) {
+            let zst = self.layouts.dcx.primitive(yaboc_types::PrimitiveType::Unit);
+            Some(CgValue::new(zst, tail_storage_ptr))
+        } else {
+            from
+        };
+        let fun_buf = CgMonoValue::new(fun.layout, tail_storage_ptr);
         self.build_copy_invariant(fun_buf.into(), fun.into())?;
-        Ok(Some(fun_buf))
+        Ok(Some((fun_buf, from_tail)))
     }
 
     fn create_wrapper_parse(
@@ -100,7 +124,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let wrapper = self.parser_fun_val_wrapper(layout, from, req);
         let (ret, fun_arg, from) = parser_values(wrapper, layout, from);
         self.add_entry_block(wrapper, layout);
-        let Some(val) = self.setup_tail_fun_copy(Some(from.layout), fun_arg, req)? else {
+        let Some((val, from)) = self.setup_tail_fun_copy(Some(from), fun_arg, req)? else {
             // cannot be a tail call because of different calling conventions
             return self.wrap_direct_call(inner, wrapper, false, layout);
         };
@@ -110,7 +134,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 ret.ptr.into(),
                 val.ptr.into(),
                 ret.head.into(),
-                from.ptr.into(),
+                from.unwrap().ptr.into(),
             ],
         )?;
         self.builder.build_return(Some(&ret))?;
@@ -126,39 +150,32 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let wrapper = self.eval_fun_fun_val_wrapper(layout, req);
         let (ret, fun_arg) = eval_fun_values(wrapper, layout);
         self.add_entry_block(wrapper, layout);
-        let Some(val) = self.setup_tail_fun_copy(None, fun_arg, req)? else {
-            if self.options.target.use_tailcc {
-                return self.wrap_direct_call(inner, wrapper, false, layout);
-            } else {
-                let res = self.build_call_with_int_ret(
-                    inner.into(),
-                    &[
-                        ret.ptr.into(),
-                        fun_arg.ptr.into(),
-                        ret.head.into(),
-                        self.llvm.ptr_type(Default::default()).get_poison().into(),
-                    ],
-                )?;
-                self.builder.build_return(Some(&res))?;
-                return Ok(wrapper);
-            }
-        };
-        let ret = if self.options.target.use_tailcc {
-            self.build_tailcc_call_with_int_ret(
-                inner,
-                &[ret.ptr.into(), val.ptr.into(), ret.head.into()],
-            )?
-        } else {
-            self.build_tailcc_call_with_int_ret(
-                inner,
+        let Some((val, arg)) = self.setup_tail_fun_copy(None, fun_arg, req)? else {
+            let res = self.build_tailcc_call_with_int_ret(
+                inner.into(),
                 &[
                     ret.ptr.into(),
-                    val.ptr.into(),
+                    fun_arg.ptr.into(),
                     ret.head.into(),
                     self.llvm.ptr_type(Default::default()).get_poison().into(),
                 ],
-            )?
+            )?;
+            self.builder.build_return(Some(&res))?;
+            return Ok(wrapper);
         };
+        let arg = if let Some(arg) = arg {
+            // note that while arg and val are the same pointer to the same allocation,
+            // the noalias does not cause problems here because we only access
+            // disjoint memory regions (before the pointer vs after the pointer)
+            // through them
+            arg.ptr
+        } else {
+            self.llvm.ptr_type(Default::default()).get_poison()
+        };
+        let ret = self.build_tailcc_call_with_int_ret(
+            inner,
+            &[ret.ptr.into(), val.ptr.into(), ret.head.into(), arg.into()],
+        )?;
         self.builder.build_return(Some(&ret))?;
         Ok(wrapper)
     }
@@ -502,7 +519,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             }
             let mir_fun = Rc::new(this.mir_pd_parser(from, layout, req));
             let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
-            let mut translator = MirTranslator::new(this, mir_fun, llvm_fun, fun, arg, ret.head)?;
+            let mut translator =
+                MirTranslator::new(this, mir_fun, llvm_fun, fun, arg, ret.head, req)?;
             if req.contains(NeededBy::Val) {
                 translator = translator.with_ret_val(ret);
             }
@@ -854,7 +872,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let impl_fun = self.create_parser_worker(layout, from, req, |this, impl_fun, req| {
             let mir_fun = Rc::new(this.mir_block(Some(from), layout, req));
             let (ret, fun, arg) = parser_values(impl_fun, layout, from);
-            let mut translator = MirTranslator::new(this, mir_fun, impl_fun, fun, arg, ret.head)?;
+            let mut translator =
+                MirTranslator::new(this, mir_fun, impl_fun, fun, arg, ret.head, req)?;
             if req.contains(NeededBy::Val) {
                 translator = translator.with_ret_val(ret)
             }
@@ -897,7 +916,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let llvm_fun = self.parser_fun_val_tail(layout, from, req);
         let mir_fun = Rc::new(self.mir_if_fun(from, layout, req));
         let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
-        let mut trans = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg, ret.head)?;
+        let mut trans = MirTranslator::new(self, mir_fun, llvm_fun, fun, arg, ret.head, req)?;
         if req.contains(NeededBy::Val) {
             trans = trans.with_ret_val(ret)
         }
@@ -1337,9 +1356,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.layouts,
         )
         .unwrap();
-        MirTranslator::new(self, Rc::new(mir), fun, fun_value, int_value, head)?
-            .with_ret_val(ret_value)
-            .build()?;
+        MirTranslator::new(
+            self,
+            Rc::new(mir),
+            fun,
+            fun_value,
+            int_value,
+            head,
+            !!NeededBy::Len,
+        )?
+        .with_ret_val(ret_value)
+        .build()?;
         Ok(())
     }
 
@@ -1377,11 +1404,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         };
         let block = block.lookup(&self.compiler_database.db).unwrap();
 
+        let zst = self.layouts.dcx.primitive(yaboc_types::PrimitiveType::Unit);
         let impl_fun = self.create_eval_worker(layout, req, |this, impl_fun, req| {
             let mir_fun = Rc::new(this.mir_block(None, layout, req));
-            let (ret, fun) = eval_fun_values(impl_fun, layout);
-            let undef = this.undef_val();
-            let mut translator = MirTranslator::new(this, mir_fun, impl_fun, fun, undef, ret.head)?;
+            let (ret, fun, arg) = tail_eval_fun_values(impl_fun, layout);
+            let arg = CgValue::new(zst, arg);
+            let mut translator =
+                MirTranslator::new(this, mir_fun, impl_fun, fun, arg, ret.head, req)?;
             translator = translator.with_ret_val(ret);
             translator.build()?;
             Ok(())
@@ -1416,11 +1445,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         req: RequirementSet,
     ) -> IResult<FunctionValue<'llvm>> {
+        let zst = self.layouts.dcx.primitive(yaboc_types::PrimitiveType::Unit);
         self.create_eval_worker(layout, req, |this, llvm_fun, req| {
-            let arg = this.undef_val();
             let mir_fun = Rc::new(this.mir_pd_fun(layout, req)?);
-            let (ret, fun) = eval_fun_values(llvm_fun, layout);
-            let mut translator = MirTranslator::new(this, mir_fun, llvm_fun, fun, arg, ret.head)?;
+            let (ret, fun, arg) = tail_eval_fun_values(llvm_fun, layout);
+            let arg = CgValue::new(zst, arg);
+            let mut translator =
+                MirTranslator::new(this, mir_fun, llvm_fun, fun, arg, ret.head, req)?;
             translator = translator.with_ret_val(ret);
             translator.build()?;
             Ok(())
@@ -1454,11 +1485,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         req: RequirementSet,
     ) -> IResult<FunctionValue<'llvm>> {
+        let zst = self.layouts.dcx.primitive(yaboc_types::PrimitiveType::Unit);
         self.create_eval_worker(layout, req, |this, llvm_fun, req| {
-            let arg = this.undef_val();
             let mir_fun = Rc::new(this.mir_lambda_fun(layout, req)?);
-            let (ret, fun) = eval_fun_values(llvm_fun, layout);
-            let mut translator = MirTranslator::new(this, mir_fun, llvm_fun, fun, arg, ret.head)?;
+            let (ret, fun, arg) = tail_eval_fun_values(llvm_fun, layout);
+            let arg = CgValue::new(zst, arg);
+            let mut translator =
+                MirTranslator::new(this, mir_fun, llvm_fun, fun, arg, ret.head, req)?;
             translator = translator.with_ret_val(ret);
             translator.build()?;
             Ok(())
@@ -1490,7 +1523,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             ),
         };
         let llvm_fun = self.eval_fun_fun_val_tail(layout, req);
-        self.wrap_direct_call(impl_fun, llvm_fun, false, layout)?;
+        self.wrap_direct_call(impl_fun, llvm_fun, true, layout)?;
         Ok(llvm_fun)
     }
 
@@ -1714,6 +1747,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             let status = self.call_eval_fun_fun(
                 ret_val,
                 fun_val,
+                None,
                 ParserFunKind::Wrapper,
                 NeededBy::Val.into(),
             )?;

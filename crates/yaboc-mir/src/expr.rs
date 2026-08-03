@@ -519,20 +519,30 @@ impl<'a> ConvertExpr<'a> {
         lrecurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> EResult<PlaceRef>,
         rrecurse: impl FnOnce(&mut Self, Option<PlaceRef>) -> EResult<PlaceRef>,
         req: RequirementSet,
+        tail: Tailcallability,
     ) -> EResult<PlaceRef> {
         let left_plc = self.new_stack_place(lloc.origin, true);
         let left_plc = ok_some!(lrecurse(self, Some(left_plc)));
         let right = ok_some!(self.copy_if_deref(rloc, rrecurse));
-        let place_ref = self.unwrap_or_stack(loc);
-        self.f.parse_call(
-            CallMeta { req, tail: false },
-            left_plc,
-            right,
-            Some(place_ref),
-            None,
-            self.retreat,
-        );
-        Ok(Some(place_ref))
+        if tail == Tailcallability::Always
+            || tail == Tailcallability::IfNoBt && !req.contains(NeededBy::Backtrack)
+        {
+            let ret = self.f.fun.ret();
+            self.f
+                .tail_parse_call(CallMeta { req, tail: true }, left_plc, right, ret, None);
+            Ok(None)
+        } else {
+            let place_ref = self.unwrap_or_stack(loc);
+            self.f.parse_call(
+                CallMeta { req, tail: false },
+                left_plc,
+                right,
+                Some(place_ref),
+                None,
+                self.retreat,
+            );
+            Ok(Some(place_ref))
+        }
     }
 
     fn convert_span(&mut self, loc: ExpressionLoc, start: DefId, end: DefId) -> SResult<PlaceRef> {
@@ -702,7 +712,8 @@ impl<'a> ConvertExpr<'a> {
                     [lloc, rloc],
                     Self::no_tail(lrecurse),
                     Self::no_tail(rrecurse),
-                    req
+                    req,
+                    tail,
                 ))
             }
             ValBinOp::Else => {
@@ -806,7 +817,8 @@ impl<'a> ConvertExpr<'a> {
                     [lloc, rloc],
                     Self::no_tail(lrecurse),
                     Self::no_tail(rrecurse),
-                    req
+                    req,
+                    tail,
                 ))
             }
             ValBinOp::Else => {

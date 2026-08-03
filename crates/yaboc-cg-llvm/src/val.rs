@@ -11,6 +11,13 @@ impl<'comp, 'llvm> CgValue<'comp, 'llvm> {
     pub fn new(layout: ILayout<'comp>, ptr: PointerValue<'llvm>) -> Self {
         Self { layout, ptr }
     }
+
+    pub fn with_ptr(&self, ptr: PointerValue<'llvm>) -> Self {
+        CgValue {
+            layout: self.layout,
+            ptr,
+        }
+    }
 }
 #[derive(Clone, Copy)]
 pub struct CgMonoValue<'comp, 'llvm> {

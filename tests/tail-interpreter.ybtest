@@ -1,0 +1,73 @@
+====[ source code ]====
+fun ~operand(a: int, b: int) = {
+  case
+  | if u8 is 0xff, let return = a
+  | if u8 is 0xfe, let return = b
+  | if u8 is 0xfd, return: i64l
+  | return: i8l
+  \
+}
+
+fun inst(pc: int, a: int, b: int) = {
+  let k = <ispan, ra, rb> inst(pc + ispan.sizeof, ra, rb)
+  case
+  | add: if u8 is 0
+    op1: operand(a, b)
+    op2: operand(a, b)
+    let return = k(span add..op2, op1 + op2, b)
+  | mul: if u8 is 1
+    op1: operand(a, b)
+    op2: operand(a, b)
+    let return = k(span mul..op2, op1 * op2, b)
+  | div: if u8 is 2
+    op1: operand(a, b)
+    op2: operand(a, b)
+    let return = k(span div..op2, op1 / op2, b)
+  | sub: if u8 is 3
+    op1: operand(a, b)
+    op2: operand(a, b)
+    let return = k(span sub..op2, op1 - op2, b)
+  | swap: if u8 is 4
+    let return = k(span swap, b, a)
+  | jump: if u8 is 5
+    cond: operand(a, b)
+    offset: operand(a, b)
+    let next_pc = pc + (span jump..offset).sizeof
+    let return = cond if 0 then inst(next_pc + offset, a, b) else inst(next_pc, a, b)
+  | clear: if u8 is 6
+    let return = k(span clear, 0, b)
+  | mov: if u8 is 7
+    op: operand(a, b)
+    let return = k(span mov..op, op, b)
+  | ret: expect u8 is 0x22
+    return: operand(a, b)
+  \
+} at pc
+
+export
+fun ~test = {
+  let return = inst(0, 0, 0)
+}
+
+====[ binary 1 ]====
+07 04
+04
+07 05
+00 ff fe
+22 ff
+
+====[ output 1 ]====
+9
+
+====[ binary 2 ]====
+07 fd 03 00 10 00 00 00 00 00
+05 ff 0b
+03 ff 01
+04
+00 ff 01
+04
+05 00 f2
+22 fe
+
+====[ output 2 ]====
+1048579

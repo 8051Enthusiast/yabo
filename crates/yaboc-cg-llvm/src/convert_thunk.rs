@@ -4,12 +4,12 @@ use inkwell::{
 };
 
 use yaboc_hir_types::THUNK_BIT;
-use yaboc_layout::{ILayout, IMonoLayout, MonoLayout, TailCallSite, TailInfo, collect::pd_val_req};
+use yaboc_layout::{ILayout, IMonoLayout, MonoLayout};
 use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_target::layout::SizeAlign;
 
 use crate::{
-    IResult, eval_fun_values, get_fun_args, parser_values,
+    IResult, get_fun_args, parser_values, tail_eval_fun_values,
     val::{CgMonoValue, CgReturnValue, CgValue},
 };
 
@@ -34,7 +34,6 @@ pub trait ThunkInfo<'comp, 'llvm> {
 pub struct TypecastThunk<'comp, 'llvm> {
     layout: IMonoLayout<'comp>,
     arg_copy: Option<CgValue<'comp, 'llvm>>,
-    fun_copy: Option<CgMonoValue<'comp, 'llvm>>,
     f: FunctionValue<'llvm>,
 }
 
@@ -42,32 +41,16 @@ impl<'comp, 'llvm> TypecastThunk<'comp, 'llvm> {
     pub fn new(cg: &mut CodeGenCtx<'llvm, 'comp>, layout: IMonoLayout<'comp>) -> IResult<Self> {
         let f = cg.typecast_fun_val(layout);
         cg.add_entry_block(f, layout);
-        let (arg_copy, fun_copy) = if let MonoLayout::Nominal(..) = layout.mono_layout() {
-            let (from, layout) = layout.unapply_nominal(cg.layouts);
+        let arg_copy = if let MonoLayout::Nominal(..) = layout.mono_layout() {
+            let (from, _) = layout.unapply_nominal(cg.layouts);
             let arg_copy = cg.build_alloca_value(from, "arg_copy", None)?;
-            let call_site = TailCallSite {
-                from: Some(from),
-                func: layout,
-                req: pd_val_req().req,
-            };
-            let fun_copy = if let TailInfo {
-                has_tailsites: true,
-                sa,
-            } = cg.collected_layouts.tail_sa[&call_site]
-            {
-                let sa_alloc = cg.build_sa_alloca(sa, "tail_storage", None)?;
-                Some(CgMonoValue::new(layout, sa_alloc))
-            } else {
-                None
-            };
-            (Some(arg_copy), fun_copy)
+            Some(arg_copy)
         } else {
-            (None, None)
+            None
         };
         Ok(Self {
             layout,
             arg_copy,
-            fun_copy,
             f,
         })
     }
@@ -125,15 +108,10 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TypecastThunk<'comp, 'llvm> {
         } else {
             let arg_copy = self.arg_copy.unwrap();
             let (from, fun) = cg.build_nominal_components(thunk)?;
-            let fun = if let Some(fun_cpy) = self.fun_copy {
-                cg.build_copy_invariant(fun_cpy.into(), fun.into())?;
-                fun_cpy
-            } else {
-                fun
-            };
             cg.build_copy_invariant(arg_copy, from)?;
-
-            cg.call_parser_fun_impl(ret, fun, arg_copy, NeededBy::Val.into(), false)?
+            let res =
+                cg.call_parser_fun_wrapper(ret, fun.into(), arg_copy, NeededBy::Val.into())?;
+            cg.builder.build_return(Some(&res))?;
         };
 
         if let Some(bb) = previous_bb {
@@ -265,10 +243,12 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for ValThunk<'comp> {
         cg.builder.position_at_end(current_bb);
         if let Some(from) = self.from {
             let (ret, fun, arg) = parser_values(fun, self.fun, from);
-            cg.call_parser_fun_impl(ret, fun, arg, req, true)?
+            cg.call_parser_fun_impl(ret, fun, arg, req)?
         } else {
-            let (ret, fun) = eval_fun_values(fun, self.fun);
-            cg.call_eval_fun_fun_impl(ret, fun.into(), req)?
+            let (ret, fun, arg) = tail_eval_fun_values(fun, self.fun);
+            let zst = cg.layouts.dcx.primitive(yaboc_types::PrimitiveType::Unit);
+            let arg = CgValue::new(zst, arg);
+            cg.call_eval_fun_fun_impl(ret, fun.into(), arg, req)?
         };
         if let Some(bb) = previous_bb {
             cg.builder.position_at_end(bb);
@@ -323,11 +303,13 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for BlockThunk<'comp> {
         if let Some(from) = self.from {
             let (ret_val, fun_val, arg_val) = parser_values(fun, self.fun, from);
             let ret_val = ret_val.with_ptr(return_ptr);
-            cg.call_parser_fun_impl(ret_val, fun_val, arg_val, self.req, true)?
+            cg.call_parser_fun_impl(ret_val, fun_val, arg_val, self.req)?
         } else {
-            let (ret_val, fun_val) = eval_fun_values(fun, self.fun);
+            let (ret_val, fun_val, arg_ptr) = tail_eval_fun_values(fun, self.fun);
+            let zst = cg.layouts.dcx.primitive(yaboc_types::PrimitiveType::Unit);
+            let arg_val = CgValue::new(zst, arg_ptr);
             let ret_val = ret_val.with_ptr(return_ptr);
-            cg.call_eval_fun_fun_impl(ret_val, fun_val.into(), self.req)?
+            cg.call_eval_fun_fun_impl(ret_val, fun_val.into(), arg_val, self.req)?
         };
         if let Some(bb) = previous_bb {
             cg.builder.position_at_end(bb);
