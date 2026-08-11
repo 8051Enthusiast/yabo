@@ -241,6 +241,77 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         )
     }
 
+    pub(super) fn consume_const_length(
+        &mut self,
+        arg: CgValue<'comp, 'llvm>,
+        fun: CgMonoValue<'comp, 'llvm>,
+        globals: PointerValue<'llvm>,
+        length: u64,
+    ) -> IResult<CgValue<'comp, 'llvm>> {
+        let llvm_fun = self
+            .builder
+            .get_insert_block()
+            .unwrap()
+            .get_parent()
+            .unwrap();
+        let fail_bb = self.llvm.append_basic_block(llvm_fun, "eof");
+        let succ_bb = self.llvm.append_basic_block(llvm_fun, "succ");
+
+        let arg_size = arg
+            .layout
+            .size_align_without_vtable(self.layouts)
+            .unwrap()
+            .after_aligned()
+            .total_size();
+        let old_copy = self.build_const_offset_byte_gep(fun.ptr, -(arg_size as i64), "old_copy")?;
+        let old_copy = CgValue::new(arg.layout, old_copy);
+        self.build_copy_invariant(old_copy, arg)?;
+
+        let ptr_diff = self.call_array_len_fun(arg, globals)?;
+        let limit = self.const_i64(length as i64);
+        let eof_check =
+            self.builder
+                .build_int_compare(IntPredicate::UGE, ptr_diff, limit, "eof_check")?;
+        self.builder
+            .build_conditional_branch(eof_check, succ_bb, fail_bb)?;
+        self.builder.position_at_end(fail_bb);
+        let eof = self.const_i64(ReturnStatus::Eof as i64);
+        self.builder.build_return(Some(&eof))?;
+        self.builder.position_at_end(succ_bb);
+        self.call_skip_fun(arg, limit, globals)?;
+        Ok(old_copy)
+    }
+
+    pub(super) fn call_parser_fun_impl_without_ret(
+        &mut self,
+        ret: CgReturnValue<'llvm>,
+        fun: CgMonoValue<'comp, 'llvm>,
+        arg: CgValue<'comp, 'llvm>,
+        call_kind: RequirementSet,
+    ) -> IResult<CallSiteValue<'llvm>> {
+        let info = &self.collected_layouts.layout_info.info[&fun.layout.inner()];
+        let (call_kind, precheck) = info.modify_reqs(call_kind);
+        let parser = self.parser_impl_fun_val(fun.layout, arg.layout, call_kind);
+        let passed_arg = if let Some(len) = precheck {
+            let globals = self.build_high_bit_mask(ret.head)?;
+            self.consume_const_length(arg, fun, globals, len)?
+        } else {
+            arg
+        };
+        let call = self.builder.build_call(
+            parser,
+            &[
+                ret.ptr.into(),
+                fun.ptr.into(),
+                ret.head.into(),
+                passed_arg.ptr.into(),
+            ],
+            "impl_tail_call",
+        )?;
+        call.set_call_convention(self.tailcc());
+        Ok(call)
+    }
+
     pub(super) fn call_parser_fun_impl(
         &mut self,
         ret: CgReturnValue<'llvm>,
@@ -248,19 +319,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         arg: CgValue<'comp, 'llvm>,
         call_kind: RequirementSet,
     ) -> IResult<()> {
-        let info = &self.collected_layouts.layout_info.info[&fun.layout.inner()];
-        let call_kind = info.modify_reqs(call_kind);
-        let parser = self.parser_impl_fun_val(fun.layout, arg.layout, call_kind);
-        let call_ret = self.builder.build_call(
-            parser,
-            &[
-                ret.ptr.into(),
-                fun.ptr.into(),
-                ret.head.into(),
-                arg.ptr.into(),
-            ],
-            "impl_tail_call",
-        )?;
+        let call_ret = self.call_parser_fun_impl_without_ret(ret, fun, arg, call_kind)?;
         self.set_tail_call(call_ret, true);
         let ret = return_status(call_ret);
         self.builder.build_return(Some(&ret))?;
@@ -530,7 +589,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         req: RequirementSet,
     ) -> IResult<()> {
         let info = &self.collected_layouts.layout_info.info[&fun.layout];
-        let req = info.modify_reqs(req);
+        let (req, _) = info.modify_reqs(req);
         let ret = return_status(self.call_eval_fun_fun(
             ret,
             fun,

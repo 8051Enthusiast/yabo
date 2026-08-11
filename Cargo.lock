@@ -1596,6 +1596,7 @@ dependencies = [
  "yaboc-expr",
  "yaboc-hir",
  "yaboc-hir-types",
+ "yaboc-len",
  "yaboc-mir",
  "yaboc-req",
  "yaboc-resolve",

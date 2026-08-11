@@ -19,6 +19,7 @@ yaboc-dependents = { path = "../yaboc-dependents" }
 yaboc-constraint = { path = "../yaboc-constraint" }
 yaboc-absint = { path = "../yaboc-absint" }
 yaboc-mir = { path = "../yaboc-mir" }
+yaboc-len = { path = "../yaboc-len" }
 yaboc-req = { path = "../yaboc-req" }
 fxhash = "0.2.1"
 petgraph = { workspace = true }

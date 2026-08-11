@@ -6,22 +6,63 @@ use yaboc_req::{NeededBy, RequirementSet};
 
 use crate::{FuncLayoutKind, ILayout, IMonoLayout, Layouts, MonoLayout};
 
+#[derive(Hash, Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub enum Length {
+    #[default]
+    None,
+    Const(u64),
+    Unsized,
+}
+
+impl Length {
+    fn from_val<T>(val: &yaboc_len::Val<T>) -> Self {
+        match val {
+            yaboc_len::Val::Undefined => Length::None,
+            &yaboc_len::Val::Const(_, c, _) if let Ok(c) = c.try_into() => Length::Const(c),
+            _ => Length::Unsized,
+        }
+    }
+}
+
 #[derive(Hash, PartialEq, Eq, Default, Debug)]
 pub struct LayoutInfo {
     can_backtrack: bool,
+    len: Length,
 }
 
 impl LayoutInfo {
     fn merge(&mut self, other: &Self) {
         self.can_backtrack |= other.can_backtrack;
+        self.len = match (self.len, other.len) {
+            (a, Length::None) | (Length::None, a) => a,
+            (Length::Const(a), Length::Const(b)) => {
+                if a == b {
+                    Length::Const(a)
+                } else {
+                    Length::Unsized
+                }
+            }
+            (_, Length::Unsized) | (Length::Unsized, _) => Length::Unsized,
+        };
     }
 
-    pub fn modify_reqs(&self, req: RequirementSet) -> RequirementSet {
-        if !self.can_backtrack {
+    pub fn modify_reqs(&self, req: RequirementSet) -> (RequirementSet, Option<u64>) {
+        let req_no_bt = if !self.can_backtrack {
             req & !NeededBy::Backtrack
         } else {
             req
-        }
+        };
+        let mut needs_length_precheck = None;
+        let req_no_len = if let Length::Const(len) = self.len
+            && (req_no_bt & NeededBy::Backtrack).is_empty()
+            && !(req_no_bt & NeededBy::Len).is_empty()
+        {
+            needs_length_precheck = Some(len);
+            req_no_bt & !NeededBy::Len
+        } else {
+            req_no_bt
+        };
+        (req_no_len, needs_length_precheck)
     }
 }
 
@@ -60,10 +101,14 @@ impl<'a> LayoutInfoCollector<'a> {
         let parserdef = pd.lookup(self.db).unwrap();
         if parserdef.kind != DefKind::Static {
             let can_backtrack = self.get_bt_status(pd, |terms| terms.lookup_idx, 0);
-            LayoutInfo { can_backtrack }
+            LayoutInfo {
+                can_backtrack,
+                len: Length::None,
+            }
         } else {
             LayoutInfo {
                 can_backtrack: false,
+                len: Length::None,
             }
         }
     }
@@ -72,36 +117,64 @@ impl<'a> LayoutInfoCollector<'a> {
         let parserdef = pd.lookup(self.db).unwrap();
         let index = if parserdef.args.is_some() { 1 } else { 0 };
         let can_backtrack = self.get_bt_status(pd, |terms| terms.lookup_idx, index);
-        LayoutInfo { can_backtrack }
+        let len_terms = self.db.len_vals(pd);
+        let root_val = &len_terms.fun_val;
+        LayoutInfo {
+            can_backtrack,
+            len: Length::from_val(&root_val),
+        }
     }
 
     fn block_info(&mut self, block: BlockId) -> LayoutInfo {
         let pd = self.db.hir_parent_parserdef(block.0).unwrap();
+        let kind = block.lookup(self.db).unwrap().kind;
         let can_backtrack = self.get_bt_status(pd, |terms| terms.blocks[&block], 0);
-        LayoutInfo { can_backtrack }
+        let len = match kind {
+            yaboc_hir::BlockKind::Parser => {
+                let len_vals = self.db.len_vals(pd);
+                let len_terms = self.db.len_term(pd).unwrap();
+                let v = &len_vals.vals[len_terms.block_locs[&block]];
+                Length::from_val(&v)
+            }
+            yaboc_hir::BlockKind::Inline => Length::None,
+        };
+        LayoutInfo { can_backtrack, len }
     }
 
     fn lambda_info(&mut self, lambda: LambdaId) -> LayoutInfo {
         let pd = self.db.hir_parent_parserdef(lambda.0).unwrap();
         let can_backtrack = self.get_bt_status(pd, |terms| terms.lambdas[&lambda], 0);
-        LayoutInfo { can_backtrack }
+        LayoutInfo {
+            can_backtrack,
+            len: Length::None,
+        }
     }
 
     fn single_info(&mut self) -> LayoutInfo {
         LayoutInfo {
             can_backtrack: false,
+            len: Length::Const(1),
         }
     }
 
-    fn regex_info(&mut self, _: Regex) -> LayoutInfo {
+    fn regex_info(&mut self, regex: Regex) -> LayoutInfo {
+        let len = if let Ok(Some(reg_len)) = self.db.regex_len(regex)
+            && let Ok(len) = reg_len.try_into()
+        {
+            Length::Const(len)
+        } else {
+            Length::Unsized
+        };
         LayoutInfo {
             can_backtrack: true,
+            len,
         }
     }
 
     fn if_parser_info(&mut self, inner: ILayout<'a>, _: HirConstraintId) -> LayoutInfo {
         let mut info = LayoutInfo {
             can_backtrack: true,
+            len: Length::None,
         };
         info.merge(self.get_info(inner));
         info
@@ -110,6 +183,7 @@ impl<'a> LayoutInfoCollector<'a> {
     fn array_parser(&mut self) -> LayoutInfo {
         LayoutInfo {
             can_backtrack: false,
+            len: Length::Unsized,
         }
     }
 
@@ -144,6 +218,7 @@ impl<'a> LayoutInfoCollector<'a> {
         if !self.info.contains_key(&layout) {
             let mut res = LayoutInfo {
                 can_backtrack: false,
+                len: Length::None,
             };
             for mono in &layout {
                 let mono_info = self.get_mono_info(mono);

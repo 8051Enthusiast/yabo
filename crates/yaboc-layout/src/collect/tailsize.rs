@@ -100,10 +100,13 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
             MonoLayout::Lambda(lid, ..) => FunKind::Lambda(*lid),
             _ => return Ok(()),
         };
-        let layout_info = self.info.get_info(site.func.inner());
-        let req = layout_info.modify_reqs(site.req);
-        let fsub =
-            function_substitute(fun_kind, MirKind::Call(req), site.from, site.func, self.ctx)?;
+        let fsub = function_substitute(
+            fun_kind,
+            MirKind::Call(site.req),
+            site.from,
+            site.func,
+            self.ctx,
+        )?;
         let mut already_called = FxHashSet::default();
         for instr in fsub.f.iter_bb().flat_map(|(_, bb)| bb.ins()) {
             let (arg, fun, req) = match instr {
@@ -143,9 +146,12 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
 
     fn calculate_tail_size(
         &mut self,
-        site: TailCallSite<'comp>,
+        mut site: TailCallSite<'comp>,
     ) -> Result<CallSiteVertex, LayoutError> {
         let sa = site.func.inner().size_align_without_vtable(self.ctx)?;
+        let layout_info = self.info.get_info(site.func.inner());
+        let (req, needs_lencheck) = layout_info.modify_reqs(site.req);
+        site.req = req;
         let from = if site.req.contains(NeededBy::Len) {
             None
         } else {
@@ -156,7 +162,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
             lowlink: self.index,
             sa,
             from,
-            has_tailsites: false,
+            has_tailsites: needs_lencheck.is_some(),
             on_stack: true,
         };
         self.vertices.insert(site, current_vertex);

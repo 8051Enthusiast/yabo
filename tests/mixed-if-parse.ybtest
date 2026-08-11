@@ -1,0 +1,25 @@
+====[ source code ]====
+export
+fun ~test = {
+  case
+  | a: if ~ is 3
+  | b: expect ~ is 4
+  \
+  c: ~
+}
+
+====[ binary 1 ]====
+03 04
+====[ output 1 ]====
+{
+  "a": 3,
+  "c": 4
+}
+
+====[ binary 2 ]====
+04 03
+====[ output 2 ]====
+{
+  "b": 4,
+  "c": 3
+}

@@ -224,7 +224,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         let parser = parser.evaluate(self.ctx).unwrap().0;
         for mono in &parser {
             let layout_info = self.layout_info.get_info(parser);
-            let req = layout_info.modify_reqs(info.req);
+            let (req, _) = layout_info.modify_reqs(info.req);
             if req.is_empty() {
                 continue;
             }
@@ -374,7 +374,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         let fun = fun.evaluate(self.ctx).unwrap().0;
         for mono in &fun {
             let layout_info = self.layout_info.get_mono_info(mono);
-            let req = layout_info.modify_reqs(meta.req);
+            let (req, _) = layout_info.modify_reqs(meta.req);
             if req.is_empty() {
                 continue;
             }
