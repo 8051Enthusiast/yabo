@@ -14,6 +14,7 @@ import json
 import time
 from typing import Optional, Tuple
 from concurrent import futures
+import multiprocessing
 import yabo
 
 TARGET_RELEASE = 'debug'
@@ -614,7 +615,7 @@ def run_test_with_path_returned(file: str) -> tuple[str, int, float]:
 # goes through all files in the target directory ending in .ybtest
 def run_tests(files: list[str], collect: bool = True) -> int:
     try:
-        with futures.ProcessPoolExecutor() as executor:
+        with futures.ThreadPoolExecutor() as executor:
             results = executor.map(run_test_with_path_returned, files)
             sum = 0
             times = dict()
@@ -662,7 +663,7 @@ def compile_examples():
     total_failed = 0
     files = [example_path /
              x for x in os.listdir(example_path) if x.endswith('.yb')]
-    with futures.ProcessPoolExecutor() as executor:
+    with futures.ThreadPoolExecutor() as executor:
         results = executor.map(compile_example, files)
         total_failed = sum(results)
     return total_failed
@@ -683,7 +684,7 @@ def main(args):
         target_dir = current_script_dir / 'tests'
         files = [str(target_dir / x) for x in os.listdir(target_dir)]
         files = get_test_order_list(files)
-        with futures.ProcessPoolExecutor() as executor:
+        with futures.ThreadPoolExecutor() as executor:
             tests = executor.submit(run_tests, files)
             compile = executor.submit(compile_examples)
             total_failed = tests.result() + compile.result()
