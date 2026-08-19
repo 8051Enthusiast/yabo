@@ -4,8 +4,10 @@ use inkwell::{
 };
 
 use yaboc_hir_types::THUNK_BIT;
-use yaboc_layout::{ILayout, IMonoLayout, MonoLayout};
-use yaboc_req::{NeededBy, RequirementSet};
+use yaboc_layout::{
+    ILayout, IMonoLayout, MonoLayout,
+    collect::{LCallReq, pd_val_req},
+};
 use yaboc_target::layout::SizeAlign;
 
 use crate::{
@@ -109,8 +111,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TypecastThunk<'comp, 'llvm> {
             let arg_copy = self.arg_copy.unwrap();
             let (from, fun) = cg.build_nominal_components(thunk)?;
             cg.build_copy_invariant(arg_copy, from)?;
-            let res =
-                cg.call_parser_fun_wrapper(ret, fun.into(), arg_copy, NeededBy::Val.into())?;
+            let res = cg.call_parser_fun_wrapper(ret, fun.into(), arg_copy, pd_val_req().req)?;
             cg.builder.build_return(Some(&res))?;
         };
 
@@ -165,7 +166,7 @@ pub struct ValThunk<'comp> {
     from: Option<ILayout<'comp>>,
     fun: IMonoLayout<'comp>,
     thunk: IMonoLayout<'comp>,
-    req: RequirementSet,
+    req: LCallReq,
 }
 
 impl<'comp> ValThunk<'comp> {
@@ -173,7 +174,7 @@ impl<'comp> ValThunk<'comp> {
         from: Option<ILayout<'comp>>,
         fun: IMonoLayout<'comp>,
         thunk: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> Self {
         Self {
             from,
@@ -230,7 +231,7 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for ValThunk<'comp> {
         _return_ptr: PointerValue<'llvm>,
     ) -> IResult<Option<BasicBlock<'llvm>>> {
         let req = if after_copy {
-            self.req & !NeededBy::Val
+            self.req.remove_val()
         } else {
             self.req
         };
@@ -265,7 +266,7 @@ pub struct BlockThunk<'comp> {
     pub from: Option<ILayout<'comp>>,
     pub fun: IMonoLayout<'comp>,
     pub result: IMonoLayout<'comp>,
-    pub req: RequirementSet,
+    pub req: LCallReq,
 }
 
 impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for BlockThunk<'comp> {

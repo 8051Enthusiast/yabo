@@ -1,12 +1,12 @@
 use fxhash::{FxHashMap, FxHashSet};
 use yaboc_hir::HirIdWrapper;
-use yaboc_mir::{CallMeta, FunKind, MirInstr, MirKind};
-use yaboc_req::{NeededBy, RequirementSet};
+use yaboc_mir::{CallMeta, FunKind, MirInstr};
 use yaboc_target::layout::SizeAlign;
 
 use crate::{
     AbsLayoutCtx, ILayout, IMonoLayout, LayoutError, MonoLayout,
-    collect::layout_info::LayoutInfoCollector, mir_subst::function_substitute,
+    collect::layout_info::{LCallReq, LayoutInfoCollector},
+    mir_subst::function_substitute,
 };
 
 #[derive(Default, Clone, Copy)]
@@ -33,7 +33,7 @@ impl CallSiteVertex {
 pub struct TailCallSite<'comp> {
     pub from: Option<ILayout<'comp>>,
     pub func: IMonoLayout<'comp>,
-    pub req: RequirementSet,
+    pub req: LCallReq,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -102,7 +102,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
         };
         let fsub = function_substitute(
             fun_kind,
-            MirKind::Call(site.req),
+            site.req.as_mir_call(),
             site.from,
             site.func,
             self.ctx,
@@ -134,7 +134,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
                 let inner_site = TailCallSite {
                     from: arg.map(|a| fsub.place(a)),
                     func: inner_fun,
-                    req,
+                    req: LCallReq::from_reqset(req),
                 };
                 if already_called.insert(inner_site) {
                     f(self, inner_site)?;
@@ -152,7 +152,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
         let layout_info = self.info.get_info(site.func.inner());
         let (req, needs_lencheck) = layout_info.modify_reqs(site.req);
         site.req = req;
-        let from = if site.req.contains(NeededBy::Len) {
+        let from = if site.req.len {
             None
         } else {
             site.from.map(|x| x.size_align(self.ctx)).transpose()?

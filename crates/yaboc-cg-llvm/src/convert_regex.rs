@@ -5,9 +5,8 @@ use inkwell::{
 };
 use regex_automata::{dfa::Automaton, util::start::Config};
 use regex_automata::{dfa::dense::DFA, util::primitives::StateID};
-use yaboc_layout::{ILayout, IMonoLayout, MonoLayout};
-use yaboc_mir::{CallMeta, ReturnStatus};
-use yaboc_req::RequirementSet;
+use yaboc_layout::{ILayout, IMonoLayout, MonoLayout, collect::regex_single_req};
+use yaboc_mir::ReturnStatus;
 use yaboc_types::PrimitiveType;
 
 use crate::{
@@ -44,7 +43,7 @@ impl<'llvm, 'comp, 'r> RegexTranslator<'llvm, 'comp, 'r> {
         layout: IMonoLayout<'comp>,
     ) -> IResult<Self> {
         let single = IMonoLayout::u8_single(cg.layouts);
-        let info = CallMeta::new(RequirementSet::all(), false);
+        let info = regex_single_req();
         let parser_fun = cg.parser_fun_val_wrapper(single, retlen, info.req);
         let debug_loc = cg.layout_debug_location(layout);
 

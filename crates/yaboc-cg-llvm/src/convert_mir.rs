@@ -7,17 +7,19 @@ use inkwell::{
     values::{FunctionValue, IntValue, PointerValue},
 };
 
-use mir::{CallMeta, ControlFlow, Place, Strictness};
+use mir::{ControlFlow, Place, Strictness};
 use yaboc_ast::ConstraintAtom;
 use yaboc_ast::expr::Atom;
 use yaboc_base::{dbpanic, interner::FieldName};
 use yaboc_hir::BlockId;
 use yaboc_hir_types::{THUNK_BIT, VTABLE_BIT};
-use yaboc_layout::{ILayout, IMonoLayout, Layout, MonoLayout, mir_subst::FunctionSubstitute};
-use yaboc_mir::{
-    self as mir, BBRef, Comp, IntBinOp, IntUnOp, MirInstr, PlaceRef, ReturnStatus, Val,
+use yaboc_layout::{
+    ILayout, IMonoLayout, Layout, MonoLayout, collect::LCallMeta, mir_subst::FunctionSubstitute,
 };
-use yaboc_req::{NeededBy, RequirementSet};
+use yaboc_mir::{
+    self as mir, BBRef, Comp, IntBinOp, IntUnOp, MirInstr, MirKind, PlaceRef, ReturnStatus, Val,
+};
+use yaboc_req::NeededBy;
 use yaboc_target::layout::TargetSized;
 
 use crate::{
@@ -41,7 +43,7 @@ pub struct MirTranslator<'llvm, 'comp, 'r> {
     undefined: BasicBlock<'llvm>,
     globals: PointerValue<'llvm>,
     debug_loc: Option<DebugLocation<'llvm>>,
-    req: RequirementSet,
+    req: MirKind,
 }
 
 impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
@@ -52,7 +54,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         fun: CgMonoValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         head: PointerValue<'llvm>,
-        req: RequirementSet,
+        req: MirKind,
     ) -> IResult<Self> {
         cg.add_entry_block(llvm_fun, fun.layout);
         let mut stack = Vec::new();
@@ -225,7 +227,10 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     }
 
     fn get_tail_arg_pointer(&mut self, layout: ILayout<'comp>) -> IResult<CgValue<'comp, 'llvm>> {
-        let storage_ptr = if self.req.contains(NeededBy::Len) {
+        let storage_ptr = if match self.req {
+            MirKind::Call(bit_flags) => bit_flags.contains(NeededBy::Len),
+            MirKind::Len => true,
+        } {
             self.fun.ptr
         } else {
             let arg_ptr = self.arg.ptr;
@@ -258,7 +263,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         &mut self,
         to: Option<PlaceRef>,
         from: PlaceRef,
-        meta: CallMeta,
+        meta: LCallMeta,
         ctrl: Option<ControlFlow>,
     ) -> IResult<()> {
         let to = if let Some(to) = to {
@@ -499,7 +504,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     fn parse_call(
         &mut self,
         ret: Option<PlaceRef>,
-        call_kind: CallMeta,
+        call_kind: LCallMeta,
         fun: PlaceRef,
         arg: PlaceRef,
         ctrl: Option<ControlFlow>,
@@ -885,7 +890,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::StoreVal(ret, val) => self.store_val(ret, val),
             MirInstr::StoreBytes(ret, str) => self.store_bytes(ret, &str),
             MirInstr::ParseCall(ret, _, call_kind, arg, fun, ctrl) => {
-                self.parse_call(ret, call_kind, fun, arg, ctrl)
+                self.parse_call(ret, LCallMeta::from_reqset(call_kind), fun, arg, ctrl)
             }
             MirInstr::LenCall(ret, fun, ctrl) => self.len_call(ret, fun, ctrl),
             MirInstr::ArrayLenCall(ret, fun, ctrl) => self.array_len_call(ret, fun, ctrl),
@@ -894,7 +899,9 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::SetDiscriminant(block, field, val) => {
                 self.set_discriminant(block, field, val)
             }
-            MirInstr::EvalFun(to, from, req, ctrl) => self.eval_fun(to, from, req, ctrl),
+            MirInstr::EvalFun(to, from, req, ctrl) => {
+                self.eval_fun(to, from, LCallMeta::from_reqset(req), ctrl)
+            }
             MirInstr::Copy(to, from, ctrl) => self.copy(to, from, ctrl),
             MirInstr::GetAddr(ret, place, ctrl) => self.get_addr(ret, place, ctrl),
             MirInstr::Span(ret, start, end, ctrl) => self.span(ret, start, end, ctrl),

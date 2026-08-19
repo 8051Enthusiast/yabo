@@ -2,6 +2,7 @@ use fxhash::FxHashMap;
 use yaboc_base::interner::Regex;
 use yaboc_constraint::BtTerm;
 use yaboc_hir::{BlockId, DefKind, HirConstraintId, HirIdWrapper, LambdaId, ParserDefId};
+use yaboc_mir::{CallMeta, MirKind};
 use yaboc_req::{NeededBy, RequirementSet};
 
 use crate::{FuncLayoutKind, ILayout, IMonoLayout, Layouts, MonoLayout};
@@ -20,6 +21,119 @@ impl Length {
             yaboc_len::Val::Undefined => Length::None,
             &yaboc_len::Val::Const(_, c, _) if let Ok(c) = c.try_into() => Length::Const(c),
             _ => Length::Unsized,
+        }
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum EvalType {
+    NoValue,
+    Value,
+}
+
+impl EvalType {
+    pub fn is_val(self) -> bool {
+        match self {
+            EvalType::NoValue => false,
+            EvalType::Value => true,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct LCallReq {
+    pub val: EvalType,
+    pub len: bool,
+    pub bt: bool,
+}
+
+impl std::fmt::Display for LCallReq {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let val = match self.val {
+            EvalType::NoValue => "_",
+            EvalType::Value => "v",
+        };
+        let len = match self.len {
+            false => "_",
+            true => "l",
+        };
+        let bt = match self.bt {
+            false => "_",
+            true => "b",
+        };
+        write!(f, "{}{}{}", val, len, bt)
+    }
+}
+
+impl LCallReq {
+    pub fn remove_bt(self) -> Self {
+        LCallReq { bt: false, ..self }
+    }
+
+    pub fn remove_len(self) -> Self {
+        LCallReq { len: false, ..self }
+    }
+
+    pub fn remove_val(self) -> Self {
+        LCallReq {
+            val: EvalType::NoValue,
+            ..self
+        }
+    }
+
+    pub fn is_empty(self) -> bool {
+        !self.len && !self.bt && matches!(self.val, EvalType::NoValue)
+    }
+
+    fn as_reqset(self) -> RequirementSet {
+        let mut req = RequirementSet::default();
+        if self.len {
+            req |= NeededBy::Len
+        }
+        if self.bt {
+            req |= NeededBy::Backtrack
+        }
+        if !matches!(self.val, EvalType::NoValue) {
+            req |= NeededBy::Val
+        }
+        req
+    }
+
+    pub fn as_mir_call(self) -> MirKind {
+        MirKind::Call(self.as_reqset())
+    }
+
+    pub fn from_reqset(req: RequirementSet) -> Self {
+        let val = if req.contains(NeededBy::Val) {
+            EvalType::Value
+        } else {
+            EvalType::NoValue
+        };
+        LCallReq {
+            val,
+            len: req.contains(NeededBy::Len),
+            bt: req.contains(NeededBy::Backtrack),
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct LCallMeta {
+    pub req: LCallReq,
+    pub tail: bool,
+}
+
+impl std::fmt::Display for LCallMeta {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let prefix = self.tail.then_some("tail ").unwrap_or_default();
+        write!(f, "{}{}", prefix, self.req)
+    }
+}
+
+impl LCallMeta {
+    pub fn from_reqset(meta: CallMeta) -> Self {
+        Self {
+            req: LCallReq::from_reqset(meta.req),
+            tail: meta.tail,
         }
     }
 }
@@ -46,19 +160,19 @@ impl LayoutInfo {
         };
     }
 
-    pub fn modify_reqs(&self, req: RequirementSet) -> (RequirementSet, Option<u64>) {
+    pub fn modify_reqs(&self, req: LCallReq) -> (LCallReq, Option<u64>) {
         let req_no_bt = if !self.can_backtrack {
-            req & !NeededBy::Backtrack
+            req.remove_bt()
         } else {
             req
         };
         let mut needs_length_precheck = None;
         let req_no_len = if let Length::Const(len) = self.len
-            && (req_no_bt & NeededBy::Backtrack).is_empty()
-            && !(req_no_bt & NeededBy::Len).is_empty()
+            && !req_no_bt.bt
+            && req_no_bt.len
         {
             needs_length_precheck = Some(len);
-            req_no_bt & !NeededBy::Len
+            req_no_bt.remove_len()
         } else {
             req_no_bt
         };

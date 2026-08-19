@@ -1,9 +1,6 @@
-
 ====[ source code ]====
 import text
 import aoc
-import math
-import parse
 
 def sublistsum = aoc.summap(text.line |> text.num)
 

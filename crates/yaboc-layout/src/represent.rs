@@ -1,7 +1,6 @@
 use fxhash::FxHashMap;
 use sha2::Digest;
 use std::{collections::BTreeMap, fmt::Write};
-use yaboc_req::{NeededBy, RequirementSet};
 
 use yaboc_base::{
     databased_display::DatabasedDisplay,
@@ -11,7 +10,10 @@ use yaboc_base::{
 };
 use yaboc_target::layout::PSize;
 
-use crate::{FuncLayoutKind, ILayout};
+use crate::{
+    FuncLayoutKind, ILayout,
+    collect::{EvalType, LCallReq},
+};
 
 use super::{IMonoLayout, Layout, Layouts, MonoLayout};
 use yaboc_absint::AbsInt;
@@ -356,7 +358,7 @@ pub enum ParserFunKind {
 
 #[derive(Clone, Copy)]
 pub enum LayoutPart {
-    Parse(RequirementSet, ParserFunKind, [u8; TRUNCATION_LENGTH]),
+    Parse(LCallReq, ParserFunKind, [u8; TRUNCATION_LENGTH]),
     Field(Identifier),
     VTable,
     VTableTy,
@@ -373,7 +375,7 @@ pub enum LayoutPart {
     SetArg(PSize),
     Len,
     Mask,
-    EvalFun(RequirementSet, ParserFunKind),
+    EvalFun(LCallReq, ParserFunKind),
 }
 
 impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
@@ -381,13 +383,15 @@ impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
         match self {
             LayoutPart::Parse(reqs, kind, from) => {
                 write!(f, "parse_{}_", &truncated_hex(&from[..]))?;
-                if reqs.contains(NeededBy::Val) {
-                    write!(f, "v")?;
-                }
-                if reqs.contains(NeededBy::Len) {
+                let v = match reqs.val {
+                    EvalType::NoValue => "",
+                    EvalType::Value => "v",
+                };
+                write!(f, "{}", v)?;
+                if reqs.len {
                     write!(f, "l")?;
                 }
-                if reqs.contains(NeededBy::Backtrack) {
+                if reqs.bt {
                     write!(f, "b")?;
                 }
                 match kind {
@@ -415,10 +419,12 @@ impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
             LayoutPart::Mask => write!(f, "mask"),
             LayoutPart::EvalFun(reqs, kind) => {
                 write!(f, "eval_fun_")?;
-                if reqs.contains(NeededBy::Val) {
-                    write!(f, "v")?;
-                }
-                if reqs.contains(NeededBy::Backtrack) {
+                let v = match reqs.val {
+                    EvalType::NoValue => "",
+                    EvalType::Value => "v",
+                };
+                write!(f, "{}", v)?;
+                if reqs.bt {
                     write!(f, "b")?;
                 }
                 match kind {

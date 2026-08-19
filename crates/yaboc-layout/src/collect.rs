@@ -11,8 +11,8 @@ use yaboc_absint::{AbstractDomain, Arg};
 use yaboc_base::dbeprintln;
 use yaboc_hir::{HirIdWrapper, ParserDefId};
 use yaboc_hir_types::HeadDiscriminant;
-use yaboc_mir::{CallMeta, MirInstr, MirKind, Place};
-use yaboc_req::{NeededBy, RequirementSet};
+use yaboc_mir::{MirInstr, MirKind, Place};
+use yaboc_req::NeededBy;
 use yaboc_target::layout::SizeAlign;
 use yaboc_types::PrimitiveType;
 
@@ -28,6 +28,7 @@ use crate::{
 
 use self::tailsize::TailCollector;
 pub use self::tailsize::{TailCallSite, TailInfo};
+pub use layout_info::{EvalType, LCallMeta, LCallReq};
 
 use super::{AbsLayoutCtx, ILayout, IMonoLayout, Layout, LayoutError, MonoLayout, canon_layout};
 
@@ -35,17 +36,66 @@ const TRACE_COLLECTION: bool = false;
 
 type LayoutSet<'a> = FxHashSet<IMonoLayout<'a>>;
 
-pub fn pd_len_req() -> CallMeta {
-    CallMeta::new(NeededBy::Len.into(), false)
+pub fn pd_len_req() -> LCallMeta {
+    //CallMeta::new(NeededBy::Len.into(), false)
+    LCallMeta {
+        req: LCallReq {
+            val: EvalType::NoValue,
+            len: true,
+            bt: false,
+        },
+        tail: false,
+    }
 }
-pub fn pd_val_req() -> CallMeta {
-    CallMeta::new(NeededBy::Val.into(), false)
+pub fn pd_val_req() -> LCallMeta {
+    LCallMeta {
+        req: LCallReq {
+            val: EvalType::Value,
+            len: false,
+            bt: false,
+        },
+        tail: false,
+    }
 }
-pub fn static_val_req() -> CallMeta {
-    CallMeta::new(NeededBy::Val.into(), false)
+pub fn array_val_req() -> LCallMeta {
+    LCallMeta {
+        req: LCallReq {
+            val: EvalType::Value,
+            len: false,
+            bt: false,
+        },
+        tail: false,
+    }
 }
-pub fn root_req() -> CallMeta {
-    CallMeta::new(NeededBy::Val | NeededBy::Len | NeededBy::Backtrack, false)
+pub fn static_val_req() -> LCallMeta {
+    LCallMeta {
+        req: LCallReq {
+            val: EvalType::Value,
+            len: false,
+            bt: false,
+        },
+        tail: false,
+    }
+}
+pub fn root_req() -> LCallMeta {
+    LCallMeta {
+        req: LCallReq {
+            val: EvalType::Value,
+            len: true,
+            bt: true,
+        },
+        tail: false,
+    }
+}
+pub fn regex_single_req() -> LCallMeta {
+    LCallMeta {
+        req: LCallReq {
+            val: EvalType::Value,
+            len: true,
+            bt: true,
+        },
+        tail: false,
+    }
 }
 
 #[derive(Debug)]
@@ -59,9 +109,9 @@ pub struct LayoutCollection<'a> {
     pub primitives: LayoutSet<'a>,
     pub lens: LayoutSet<'a>,
     pub globals: FxHashMap<ParserDefId, (IMonoLayout<'a>, ILayout<'a>)>,
-    pub parser_slots: call_info::CallSlotResult<'a, (ILayout<'a>, CallMeta)>,
+    pub parser_slots: call_info::CallSlotResult<'a, (ILayout<'a>, LCallMeta)>,
     pub funcall_slots: call_info::CallSlotResult<'a, LayoutSlice<'a>>,
-    pub eval_slots: call_info::CallSlotResult<'a, CallMeta>,
+    pub eval_slots: call_info::CallSlotResult<'a, LCallMeta>,
     pub tail_sa: FxHashMap<TailCallSite<'a>, TailInfo>,
     pub max_sa: SizeAlign,
     pub global_offsets: StructManifestation,
@@ -72,9 +122,9 @@ pub struct LayoutCollection<'a> {
 pub struct LayoutCollector<'a, 'b> {
     ctx: &'b mut AbsLayoutCtx<'a>,
     int: ILayout<'a>,
-    parses: call_info::CallInfo<'a, (ILayout<'a>, CallMeta)>,
+    parses: call_info::CallInfo<'a, (ILayout<'a>, LCallMeta)>,
     funcalls: call_info::CallInfo<'a, LayoutSlice<'a>>,
-    eval_slots: call_info::CallInfo<'a, CallMeta>,
+    eval_slots: call_info::CallInfo<'a, LCallMeta>,
     arrays: LayoutSet<'a>,
     blocks: LayoutSet<'a>,
     nominals: LayoutSet<'a>,
@@ -84,8 +134,8 @@ pub struct LayoutCollector<'a, 'b> {
     globals: FxHashMap<ParserDefId, (IMonoLayout<'a>, ILayout<'a>)>,
     root: Vec<(ILayout<'a>, IMonoLayout<'a>)>,
     max_sa: SizeAlign,
-    processed_calls: FxHashSet<(ILayout<'a>, IMonoLayout<'a>, CallMeta)>,
-    processed_evals: FxHashSet<(IMonoLayout<'a>, CallMeta)>,
+    processed_calls: FxHashSet<(ILayout<'a>, IMonoLayout<'a>, LCallMeta)>,
+    processed_evals: FxHashSet<(IMonoLayout<'a>, LCallMeta)>,
     unprocessed: Vec<UnprocessedCall<'a>>,
     layout_info: LayoutInfoCollector<'a>,
     publics: UseCollections<'a>,
@@ -163,7 +213,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     }
                     self.register_layouts(*slice);
                     self.register_layouts(*parser);
-                    self.register_parse(*slice, *parser, pd_val_req());
+                    self.register_parse(*slice, *parser, array_val_req());
                     self.register_len(*parser);
                 }
                 MonoLayout::Nominal(pd, _, _) => {
@@ -216,7 +266,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         }
     }
 
-    fn register_parse(&mut self, arg: ILayout<'a>, parser: ILayout<'a>, mut info: CallMeta) {
+    fn register_parse(&mut self, arg: ILayout<'a>, parser: ILayout<'a>, mut info: LCallMeta) {
         self.parses.add_call((arg, info), parser);
         if info.req.is_empty() {
             return;
@@ -244,7 +294,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         self.unprocessed.push(UnprocessedCall::BlockParser(
                             arg,
                             mono,
-                            MirKind::Call(req),
+                            req.as_mir_call(),
                         ));
                     }
                 }
@@ -262,18 +312,14 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         self.unprocessed.push(UnprocessedCall::NominalParser(
                             arg,
                             mono,
-                            MirKind::Call(req),
+                            req.as_mir_call(),
                         ));
                     }
                 }
                 MonoLayout::Regex(..) => {
                     let single = IMonoLayout::u8_single(self.ctx);
                     self.register_layouts(single.inner());
-                    self.register_parse(
-                        arg,
-                        single.inner(),
-                        CallMeta::new(RequirementSet::all(), false),
-                    );
+                    self.register_parse(arg, single.inner(), regex_single_req());
                 }
                 MonoLayout::IfParser(..) => {
                     if self.processed_calls.insert((arg, mono, info)) {
@@ -289,7 +335,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         self.unprocessed.push(UnprocessedCall::IfParser(
                             arg,
                             mono,
-                            MirKind::Call(req),
+                            req.as_mir_call(),
                         ));
                     }
                 }
@@ -358,7 +404,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         }
     }
 
-    fn register_eval(&mut self, fun: ILayout<'a>, meta: CallMeta) {
+    fn register_eval(&mut self, fun: ILayout<'a>, meta: LCallMeta) {
         self.eval_slots.add_call(meta, fun);
         if meta.req.is_empty() {
             return;
@@ -395,8 +441,11 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 _ => None,
             };
             if let Some(eval) = eval {
-                if self.processed_evals.insert((mono, meta.req(req))) {
-                    self.unprocessed.push(eval(mono, MirKind::Call(req)));
+                if self
+                    .processed_evals
+                    .insert((mono, LCallMeta { req, ..meta }))
+                {
+                    self.unprocessed.push(eval(mono, req.as_mir_call()));
                 }
             }
         }
@@ -432,7 +481,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             MirInstr::ParseCall(_, _, meta, arg, fun, _) => {
                 let fun_layout = mir.place(fun);
                 let arg_layout = mir.place(arg);
-                self.register_parse(arg_layout, fun_layout, meta);
+                self.register_parse(arg_layout, fun_layout, LCallMeta::from_reqset(meta));
                 Ok(())
             }
             MirInstr::LenCall(_, fun, _) => {
@@ -442,7 +491,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             }
             MirInstr::EvalFun(_, fun, meta, _) => {
                 let fun_layout = mir.place(fun);
-                self.register_eval(fun_layout, meta);
+                self.register_eval(fun_layout, LCallMeta::from_reqset(meta));
                 Ok(())
             }
             _ => Ok(()),
@@ -686,11 +735,21 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         if self.ctx.db.lookup_intern_hir_constraint(*c).has_no_eof {
                             first_req |= NeededBy::Len
                         }
-                        self.register_parse(from, *inner, CallMeta::new(first_req, false));
                         self.register_parse(
                             from,
                             *inner,
-                            CallMeta::new(info & NeededBy::Val, false),
+                            LCallMeta {
+                                tail: false,
+                                req: LCallReq::from_reqset(first_req),
+                            },
+                        );
+                        self.register_parse(
+                            from,
+                            *inner,
+                            LCallMeta {
+                                tail: false,
+                                req: LCallReq::from_reqset(info & NeededBy::Val),
+                            },
                         );
                     }
                 }

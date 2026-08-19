@@ -5,12 +5,11 @@ use yaboc_hir::BlockReturnKind;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{
     FuncLayoutKind, Layout, TailCallSite,
-    collect::{pd_len_req, pd_val_req},
+    collect::{EvalType, LCallReq, array_val_req, pd_len_req, pd_val_req, static_val_req},
     mir_subst::function_substitute,
     represent::ParserFunKind,
 };
 use yaboc_mir::{FunKind, MirKind};
-use yaboc_req::NeededBy;
 use yaboc_resolve::Resolves;
 
 use crate::{
@@ -71,7 +70,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: Option<CgValue<'comp, 'llvm>>,
         fun: CgMonoValue<'comp, 'llvm>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> IResult<Option<(CgMonoValue<'comp, 'llvm>, Option<CgValue<'comp, 'llvm>>)>> {
         let call_site = TailCallSite {
             from: from.map(|x| x.layout),
@@ -88,7 +87,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let tail_storage = tail_info.tail_storage();
         let tail_storage_ptr = self.build_sa_alloca(tail_storage, "tail_storage", None)?;
         let from_tail = if let Some(from) = from
-            && !req.contains(NeededBy::Len)
+            && !req.len
         {
             let size = from
                 .layout
@@ -103,7 +102,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             )?);
             self.build_copy_invariant(from_tail, from)?;
             Some(from_tail)
-        } else if has_arg_tail_storage && !req.contains(NeededBy::Len) {
+        } else if has_arg_tail_storage && !req.len {
             let zst = self.layouts.dcx.primitive(yaboc_types::PrimitiveType::Unit);
             Some(CgValue::new(zst, tail_storage_ptr))
         } else {
@@ -118,7 +117,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
         inner: FunctionValue<'llvm>,
     ) -> IResult<FunctionValue<'llvm>> {
         let wrapper = self.parser_fun_val_wrapper(layout, from, req);
@@ -144,7 +143,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_wrapper_eval_fun(
         &mut self,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
         inner: FunctionValue<'llvm>,
     ) -> IResult<FunctionValue<'llvm>> {
         let wrapper = self.eval_fun_fun_val_wrapper(layout, req);
@@ -183,13 +182,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn mir_pd_fun(
         &mut self,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> IResult<FunctionSubstitute<'comp>> {
         let MonoLayout::NominalParser(pd, _, FuncLayoutKind::Fun) = layout.mono_layout() else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
         let kind = FunKind::ParserDef(*pd);
-        let req = MirKind::Call(req);
+        let req = req.as_mir_call();
         let mir = self.compiler_database.db.mir(kind, req).unwrap();
         let strictness = self.compiler_database.db.strictness(kind, req).unwrap();
         Ok(
@@ -201,13 +200,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn mir_lambda_fun(
         &mut self,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> IResult<FunctionSubstitute<'comp>> {
         let MonoLayout::Lambda(ld, _, _) = layout.mono_layout() else {
             panic!("mir_pd_len_fun has to be called with a lambda layout");
         };
         let kind = FunKind::Lambda(*ld);
-        let req = MirKind::Call(req);
+        let req = req.as_mir_call();
         let mir = self.compiler_database.db.mir(kind, req).unwrap();
         let strictness = self.compiler_database.db.strictness(kind, req).unwrap();
         Ok(
@@ -220,13 +219,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> FunctionSubstitute<'comp> {
         let MonoLayout::NominalParser(pd, _, FuncLayoutKind::Parse) = layout.mono_layout() else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
         let kind = FunKind::ParserDef(*pd);
-        let req = MirKind::Call(req);
+        let req = req.as_mir_call();
         let mir = self.compiler_database.db.mir(kind, req).unwrap();
         let strictness = self.compiler_database.db.strictness(kind, req).unwrap();
         FunctionSubstitute::new_from_pd(mir, &strictness, Some(from), layout, *pd, self.layouts)
@@ -237,12 +236,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: Option<ILayout<'comp>>,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> FunctionSubstitute<'comp> {
         let MonoLayout::BlockParser(bd, _) = layout.mono_layout() else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
-        let req = MirKind::Call(req);
+        let req = req.as_mir_call();
         let kind = FunKind::Block(*bd);
         let mir = self.compiler_database.db.mir(kind, req).unwrap();
         let strictness = self.compiler_database.db.strictness(kind, req).unwrap();
@@ -253,13 +252,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> FunctionSubstitute<'comp> {
         let MonoLayout::IfParser(_, cid) = layout.mono_layout() else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
         let kind = FunKind::If(*cid);
-        let req = MirKind::Call(req);
+        let req = req.as_mir_call();
         let mir = self.compiler_database.db.mir(kind, req).unwrap();
         let strictness = self.compiler_database.db.strictness(kind, req).unwrap();
         FunctionSubstitute::new_from_if(mir, &strictness, from, layout, self.layouts).unwrap()
@@ -464,7 +463,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> IResult<FunctionValue<'llvm>> {
         self.create_pd_parse_impl(from, layout, req)?;
 
@@ -475,7 +474,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
         let thunky = pd.lookup(&self.compiler_database.db).unwrap().kind.thunky();
 
-        if !req.contains(NeededBy::Val) || !thunky {
+        if !req.val.is_val() || !thunky {
             // just call impl_fun and return
             let llvm_fun = self.parser_fun_val_tail(layout, from, req);
             let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
@@ -484,8 +483,15 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             return Ok(llvm_fun);
         }
 
-        if !(req & !NeededBy::Val).is_empty() {
-            self.create_pd_parse_impl(from, layout, req & !NeededBy::Val)?;
+        if req.bt || req.len {
+            self.create_pd_parse_impl(
+                from,
+                layout,
+                LCallReq {
+                    val: EvalType::NoValue,
+                    ..req
+                },
+            )?;
         }
 
         let mut map = FxHashMap::default();
@@ -510,7 +516,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> IResult<(FunctionValue<'llvm>, Option<u64>)> {
         self.create_parser_worker(layout, from, req, |this, llvm_fun, req| {
             if from.is_int() {
@@ -522,9 +528,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             }
             let mir_fun = Rc::new(this.mir_pd_parser(from, layout, req));
             let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
-            let mut translator =
-                MirTranslator::new(this, mir_fun, llvm_fun, fun, arg, ret.head, req)?;
-            if req.contains(NeededBy::Val) {
+            let mut translator = MirTranslator::new(
+                this,
+                mir_fun,
+                llvm_fun,
+                fun,
+                arg,
+                ret.head,
+                req.as_mir_call(),
+            )?;
+            if req.val.is_val() {
                 translator = translator.with_ret_val(ret);
             }
             translator.build()?;
@@ -784,12 +797,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let debug_loc = self.layout_debug_location(layout);
         let slice_copy = self.build_alloca_value(slice.layout, "arg_copy", debug_loc)?;
         self.build_copy_invariant(slice_copy, slice)?;
-        let ret = self.build_parser_call(
-            ret,
-            parser,
-            slice_copy,
-            CallMeta::new(NeededBy::Val.into(), false),
-        )?;
+        let ret = self.build_parser_call(ret, parser, slice_copy, array_val_req())?;
         self.builder.build_return(Some(&ret))?;
         Ok(())
     }
@@ -864,7 +872,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> IResult<FunctionValue<'llvm>> {
         let MonoLayout::BlockParser(block, _) = layout.mono_layout() else {
             panic!("Expected block parser layout")
@@ -875,9 +883,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.create_parser_worker(layout, from, req, |this, impl_fun, req| {
             let mir_fun = Rc::new(this.mir_block(Some(from), layout, req));
             let (ret, fun, arg) = parser_values(impl_fun, layout, from);
-            let mut translator =
-                MirTranslator::new(this, mir_fun, impl_fun, fun, arg, ret.head, req)?;
-            if req.contains(NeededBy::Val) {
+            let mut translator = MirTranslator::new(
+                this,
+                mir_fun,
+                impl_fun,
+                fun,
+                arg,
+                ret.head,
+                req.as_mir_call(),
+            )?;
+            if req.val.is_val() {
                 translator = translator.with_ret_val(ret)
             }
             translator.build()?;
@@ -887,7 +902,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         // making sure the vtable pointer for the block return is properly returned
         // which is actually counterproductive since we may not even have collected
         // the block layout during collection
-        if matches!(block.returns, BlockReturnKind::Returns) || !req.contains(NeededBy::Val) {
+        if matches!(block.returns, BlockReturnKind::Returns) || !req.val.is_val() {
             self.add_entry_block(llvm_fun, layout);
             let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
             self.call_parser_fun_impl(ret, fun, arg, req)?;
@@ -915,16 +930,23 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> IResult<FunctionValue<'llvm>> {
         let outer_fun = self.parser_fun_val_tail(layout, from, req);
         let (inner_fun, needs_lencheck) =
             self.create_parser_worker(layout, from, req, |this, llvm_fun, req| {
                 let mir_fun = Rc::new(this.mir_if_fun(from, layout, req));
                 let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
-                let mut trans =
-                    MirTranslator::new(this, mir_fun, llvm_fun, fun, arg, ret.head, req)?;
-                if req.contains(NeededBy::Val) {
+                let mut trans = MirTranslator::new(
+                    this,
+                    mir_fun,
+                    llvm_fun,
+                    fun,
+                    arg,
+                    ret.head,
+                    req.as_mir_call(),
+                )?;
+                if req.val.is_val() {
                     trans = trans.with_ret_val(ret)
                 }
                 trans.build()?;
@@ -944,7 +966,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> IResult<FunctionValue<'llvm>> {
         let outer_fun = self.parser_fun_val_tail(layout, from, req);
         let (inner_fun, needs_lencheck) =
@@ -967,11 +989,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                         this.builder.build_return(Some(&ret))
                     },
                     |this| {
-                        if req.contains(NeededBy::Val) {
+                        if req.val.is_val() {
                             let ret = this.call_current_element_fun(ret, arg)?;
                             this.non_zero_early_return(ret)?;
                         }
-                        if req.contains(NeededBy::Len) {
+                        if req.len {
                             let ret = this.call_single_forward_fun(arg, globals)?;
                             this.builder.build_return(Some(&ret))
                         } else {
@@ -995,7 +1017,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> IResult<FunctionValue<'llvm>> {
         let llvm_fun = self.parser_fun_val_tail(layout, from, req);
         self.add_entry_block(llvm_fun, layout);
@@ -1021,8 +1043,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         from: ILayout<'comp>,
-        req: RequirementSet,
-        mut f: impl FnMut(&mut Self, FunctionValue<'llvm>, RequirementSet) -> IResult<()>,
+        req: LCallReq,
+        mut f: impl FnMut(&mut Self, FunctionValue<'llvm>, LCallReq) -> IResult<()>,
     ) -> IResult<(FunctionValue<'llvm>, Option<u64>)> {
         let info = &self.collected_layouts.layout_info.info[&layout.inner()];
         let (req, needs_len_precheck) = info.modify_reqs(req);
@@ -1043,8 +1065,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_eval_worker(
         &mut self,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
-        mut f: impl FnMut(&mut Self, FunctionValue<'llvm>, RequirementSet) -> IResult<()>,
+        req: LCallReq,
+        mut f: impl FnMut(&mut Self, FunctionValue<'llvm>, LCallReq) -> IResult<()>,
     ) -> IResult<FunctionValue<'llvm>> {
         let info = &self.collected_layouts.layout_info.info[&layout.inner()];
         let (req, _) = info.modify_reqs(req);
@@ -1066,7 +1088,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> IResult<FunctionValue<'llvm>> {
         let MonoLayout::Regex(regex) = layout.mono_layout() else {
             panic!("called build_regex_parse on non-regex")
@@ -1076,7 +1098,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let llvm_fun = self.parser_fun_val_tail(layout, from, req);
         self.add_entry_block(llvm_fun, layout);
         let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
-        let ret_copy = if !req.contains(NeededBy::Val) {
+        let ret_copy = if !req.val.is_val() {
             let debug = self.layout_debug_location(layout);
             let buf_ptr = self.build_alloca_value(from, "ret_copy", debug)?;
             let globals = self.build_high_bit_mask(ret.head)?;
@@ -1084,7 +1106,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         } else {
             ret
         };
-        let arg_copy = if !req.contains(NeededBy::Len) {
+        let arg_copy = if !req.len {
             let debug = self.layout_debug_location(layout);
             let a = self.build_alloca_value(from, "arg_copy", debug)?;
             self.build_copy_invariant(a, arg)?;
@@ -1094,7 +1116,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         };
         let ret = self.call_parser_fun_impl_without_ret(ret_copy, fun, arg_copy, req)?;
         let ret = ret.try_as_basic_value().basic().unwrap().into_int_value();
-        let ret = if !req.contains(NeededBy::Backtrack) {
+        let ret = if !req.bt {
             let is_bt = self.builder.build_int_compare(
                 IntPredicate::EQ,
                 ret,
@@ -1121,7 +1143,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
         regex: &RegexData,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> IResult<(FunctionValue<'llvm>, Option<u64>)> {
         self.create_parser_worker(layout, from, req, |this, fun, _| {
             let re_str = match regex.kind {
@@ -1148,7 +1170,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         from: ILayout<'comp>,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> IResult<FunctionValue<'llvm>> {
         let result_layout = layout
             .inner()
@@ -1165,7 +1187,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let int_buf = self.build_alloca_int("inner_parser_len")?;
         let globals = self.build_high_bit_mask(ret_val.head)?;
         // make sure we don't modify the original arg if the length is not required
-        if !req.contains(NeededBy::Len) {
+        if !req.len {
             let debug = self.layout_debug_location(layout);
             let arg_second_copy = self.build_alloca_value(from, "arg_second_copy", debug)?;
             self.build_copy_invariant(arg_second_copy, arg)?;
@@ -1226,7 +1248,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         };
         let ret = self.call_skip_fun(arg, full_len, globals)?;
         self.non_zero_early_return(ret)?;
-        if req.contains(NeededBy::Val) {
+        if req.val.is_val() {
             let inner_slice = if let Layout::Mono(MonoLayout::Single) = inner_parser_layout.layout.1
             {
                 CgValue::new(result_layout.inner(), ret_buf.ptr)
@@ -1380,7 +1402,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             fun_value,
             int_value,
             head,
-            !!NeededBy::Len,
+            MirKind::Len,
         )?
         .with_ret_val(ret_value)
         .build()?;
@@ -1414,7 +1436,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_eval_block(
         &mut self,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> IResult<FunctionValue<'llvm>> {
         let MonoLayout::BlockParser(block, _) = layout.mono_layout() else {
             panic!("Expected block parser layout")
@@ -1426,8 +1448,15 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             let mir_fun = Rc::new(this.mir_block(None, layout, req));
             let (ret, fun, arg) = tail_eval_fun_values(impl_fun, layout);
             let arg = CgValue::new(zst, arg);
-            let mut translator =
-                MirTranslator::new(this, mir_fun, impl_fun, fun, arg, ret.head, req)?;
+            let mut translator = MirTranslator::new(
+                this,
+                mir_fun,
+                impl_fun,
+                fun,
+                arg,
+                ret.head,
+                req.as_mir_call(),
+            )?;
             translator = translator.with_ret_val(ret);
             translator.build()?;
             Ok(())
@@ -1460,15 +1489,22 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_eval_pd_fun_fun_impl(
         &mut self,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> IResult<FunctionValue<'llvm>> {
         let zst = self.layouts.dcx.primitive(yaboc_types::PrimitiveType::Unit);
         self.create_eval_worker(layout, req, |this, llvm_fun, req| {
             let mir_fun = Rc::new(this.mir_pd_fun(layout, req)?);
             let (ret, fun, arg) = tail_eval_fun_values(llvm_fun, layout);
             let arg = CgValue::new(zst, arg);
-            let mut translator =
-                MirTranslator::new(this, mir_fun, llvm_fun, fun, arg, ret.head, req)?;
+            let mut translator = MirTranslator::new(
+                this,
+                mir_fun,
+                llvm_fun,
+                fun,
+                arg,
+                ret.head,
+                req.as_mir_call(),
+            )?;
             translator = translator.with_ret_val(ret);
             translator.build()?;
             Ok(())
@@ -1478,7 +1514,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_eval_fun_fun_copy(
         &mut self,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> IResult<FunctionValue<'llvm>> {
         let target_layout = layout
             .inner()
@@ -1500,15 +1536,22 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_eval_lambda_fun(
         &mut self,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> IResult<FunctionValue<'llvm>> {
         let zst = self.layouts.dcx.primitive(yaboc_types::PrimitiveType::Unit);
         self.create_eval_worker(layout, req, |this, llvm_fun, req| {
             let mir_fun = Rc::new(this.mir_lambda_fun(layout, req)?);
             let (ret, fun, arg) = tail_eval_fun_values(llvm_fun, layout);
             let arg = CgValue::new(zst, arg);
-            let mut translator =
-                MirTranslator::new(this, mir_fun, llvm_fun, fun, arg, ret.head, req)?;
+            let mut translator = MirTranslator::new(
+                this,
+                mir_fun,
+                llvm_fun,
+                fun,
+                arg,
+                ret.head,
+                req.as_mir_call(),
+            )?;
             translator = translator.with_ret_val(ret);
             translator.build()?;
             Ok(())
@@ -1518,7 +1561,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_eval_fun_fun(
         &mut self,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> IResult<FunctionValue<'llvm>> {
         let impl_fun = match layout.mono_layout() {
             MonoLayout::ArrayParser(_) | MonoLayout::ArrayFillParser(_) => {
@@ -1766,7 +1809,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 fun_val,
                 None,
                 ParserFunKind::Wrapper,
-                NeededBy::Val.into(),
+                static_val_req().req,
             )?;
             self.non_zero_early_return(
                 status

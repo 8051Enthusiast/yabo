@@ -50,7 +50,7 @@ use yaboc_database::YabocDatabase;
 use yaboc_hir::{BlockId, HirIdWrapper, Hirs, ParserDefId};
 use yaboc_layout::{
     AbsLayoutCtx, ILayout, IMonoLayout, MonoLayout,
-    collect::{LayoutCollection, root_req},
+    collect::{LCallMeta, LayoutCollection, root_req},
     mir_subst::FunctionSubstitute,
     represent::{LayoutPart, truncated_hex},
     vtable::{
@@ -58,8 +58,7 @@ use yaboc_layout::{
         ParserVTableFields, VTableHeaderFields,
     },
 };
-use yaboc_mir::{CallMeta, Mirs, ReturnStatus};
-use yaboc_req::RequirementSet;
+use yaboc_mir::{Mirs, ReturnStatus};
 use yaboc_target::layout::{
     AbsPtr, CodegenTypeContext, PSize, RelPtr, RelativeVPtr, SizeAlign, TargetSized,
 };
@@ -565,7 +564,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret: CgReturnValue<'llvm>,
         fun: CgValue<'comp, 'llvm>,
         from: CgValue<'comp, 'llvm>,
-        call_kind: CallMeta,
+        call_kind: LCallMeta,
     ) -> IResult<IntValue<'llvm>> {
         self.call_parser_fun_wrapper(ret, fun, from, call_kind.req)
     }

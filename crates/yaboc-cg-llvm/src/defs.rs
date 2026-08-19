@@ -2,6 +2,7 @@ use inkwell::debug_info::AsDIScope;
 use inkwell::values::{CallSiteValue, LLVMTailCallKind};
 use yaboc_base::dbformat;
 use yaboc_hir_types::VTABLE_BIT;
+use yaboc_layout::collect::{LCallMeta, LCallReq};
 use yaboc_layout::represent::ParserFunKind;
 use yaboc_layout::vtable;
 
@@ -217,7 +218,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub(super) fn parser_layout_part(
         &mut self,
         from: ILayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
         kind: ParserFunKind,
     ) -> LayoutPart {
         let hash = self.layouts.dcx.layout_hash(self.layouts.db, from);
@@ -233,7 +234,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         from: ILayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
         kind: ParserFunKind,
     ) -> FunctionValue<'llvm> {
         let part = self.parser_layout_part(from, req, kind);
@@ -252,7 +253,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         from: ILayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> FunctionValue<'llvm> {
         self.parser_fun_val(layout, from, req, ParserFunKind::Wrapper)
     }
@@ -261,7 +262,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         from: ILayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> FunctionValue<'llvm> {
         self.parser_fun_val(layout, from, req, ParserFunKind::TailWrapper)
     }
@@ -270,7 +271,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         from: ILayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> FunctionValue<'llvm> {
         self.parser_fun_val(layout, from, req, ParserFunKind::Worker)
     }
@@ -278,7 +279,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub(super) fn eval_fun_fun_val(
         &mut self,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
         kind: ParserFunKind,
     ) -> FunctionValue<'llvm> {
         let is_tail = kind != ParserFunKind::Wrapper;
@@ -304,7 +305,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub(super) fn eval_fun_fun_val_wrapper(
         &mut self,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> FunctionValue<'llvm> {
         self.eval_fun_fun_val(layout, req, ParserFunKind::Wrapper)
     }
@@ -312,7 +313,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub(super) fn eval_fun_fun_val_tail(
         &mut self,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> FunctionValue<'llvm> {
         self.eval_fun_fun_val(layout, req, ParserFunKind::TailWrapper)
     }
@@ -320,7 +321,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub(super) fn eval_fun_fun_val_worker(
         &mut self,
         layout: IMonoLayout<'comp>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> FunctionValue<'llvm> {
         self.eval_fun_fun_val(layout, req, ParserFunKind::Worker)
     }
@@ -405,7 +406,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         from: ILayout<'comp>,
-        info: CallMeta,
+        info: LCallMeta,
     ) -> PointerValue<'llvm> {
         if info.tail {
             self.parser_fun_val_tail(layout, from, info.req)

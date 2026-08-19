@@ -1,7 +1,10 @@
 use inkwell::{types::FunctionType, values::CallSiteValue};
 use yaboc_base::low_effort_interner::Uniq;
 use yaboc_hir_types::VTABLE_BIT;
-use yaboc_layout::represent::ParserFunKind;
+use yaboc_layout::{
+    collect::{LCallMeta, LCallReq},
+    represent::ParserFunKind,
+};
 
 use super::*;
 
@@ -209,7 +212,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret: CgReturnValue<'llvm>,
         fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
-        req: RequirementSet,
+        req: LCallReq,
         fun_kind: ParserFunKind,
     ) -> IResult<IntValue<'llvm>> {
         let parser = match fun.layout.maybe_mono() {
@@ -218,7 +221,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 if ParserFunKind::Worker == fun_kind {
                     panic!("worker function must be monomorphized")
                 }
-                let meta = CallMeta {
+                let meta = LCallMeta {
                     req,
                     tail: fun_kind == ParserFunKind::TailWrapper,
                 };
@@ -287,7 +290,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret: CgReturnValue<'llvm>,
         fun: CgMonoValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
-        call_kind: RequirementSet,
+        call_kind: LCallReq,
     ) -> IResult<CallSiteValue<'llvm>> {
         let info = &self.collected_layouts.layout_info.info[&fun.layout.inner()];
         let (call_kind, precheck) = info.modify_reqs(call_kind);
@@ -317,7 +320,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret: CgReturnValue<'llvm>,
         fun: CgMonoValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
-        call_kind: RequirementSet,
+        call_kind: LCallReq,
     ) -> IResult<()> {
         let call_ret = self.call_parser_fun_impl_without_ret(ret, fun, arg, call_kind)?;
         self.set_tail_call(call_ret, true);
@@ -331,7 +334,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret: CgReturnValue<'llvm>,
         fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
-        call_kind: RequirementSet,
+        call_kind: LCallReq,
     ) -> IResult<IntValue<'llvm>> {
         self.call_parser_fun(ret, fun, arg, call_kind, ParserFunKind::Wrapper)
     }
@@ -341,7 +344,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret: CgReturnValue<'llvm>,
         fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
-        call_kind: RequirementSet,
+        call_kind: LCallReq,
         parent_fun: Option<CgMonoValue<'comp, 'llvm>>,
     ) -> IResult<IntValue<'llvm>> {
         let sa = fun.layout.size_align_without_vtable(self.layouts).unwrap();
@@ -349,7 +352,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let parser = match fun.layout.maybe_mono() {
             Some(mono) => self.parser_fun_val_tail(mono, arg.layout, call_kind).into(),
             None => {
-                let meta = CallMeta {
+                let meta = LCallMeta {
                     req: call_kind,
                     tail: true,
                 };
@@ -475,12 +478,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         fun: CgValue<'comp, 'llvm>,
         arg: Option<CgValue<'comp, 'llvm>>,
         kind: ParserFunKind,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> IResult<CallSiteValue<'llvm>> {
         let eval_fun = match fun.layout.maybe_mono() {
             Some(mono) => self.eval_fun_fun_val(mono, req, kind).into(),
             None => {
-                let meta = CallMeta {
+                let meta = LCallMeta {
                     tail: kind == ParserFunKind::TailWrapper,
                     req,
                 };
@@ -519,7 +522,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         ret: CgReturnValue<'llvm>,
         fun: CgValue<'comp, 'llvm>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> IResult<IntValue<'llvm>> {
         self.call_eval_fun_fun(ret, fun, None, ParserFunKind::Wrapper, req)
             .map(return_status)
@@ -530,7 +533,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret: CgReturnValue<'llvm>,
         fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
-        call_kind: RequirementSet,
+        call_kind: LCallReq,
         parent_fun: Option<CgMonoValue<'comp, 'llvm>>,
     ) -> IResult<IntValue<'llvm>> {
         let sa = fun.layout.size_align_without_vtable(self.layouts).unwrap();
@@ -538,7 +541,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let parser = match fun.layout.maybe_mono() {
             Some(mono) => self.eval_fun_fun_val_tail(mono, call_kind).into(),
             None => {
-                let meta = CallMeta {
+                let meta = LCallMeta {
                     req: call_kind,
                     tail: true,
                 };
@@ -586,7 +589,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret: CgReturnValue<'llvm>,
         fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
-        req: RequirementSet,
+        req: LCallReq,
     ) -> IResult<()> {
         let info = &self.collected_layouts.layout_info.info[&fun.layout];
         let (req, _) = info.modify_reqs(req);

@@ -1278,7 +1278,6 @@ mod tests {
     use yaboc_hir::{HirDatabase, Parser};
     use yaboc_hir_types::HirTypesDatabase;
     use yaboc_mir::MirDatabase;
-    use yaboc_req::NeededBy;
     use yaboc_resolve::ResolveDatabase;
     use yaboc_types::TypeInternerDatabase;
 
@@ -1304,7 +1303,7 @@ mod tests {
 
     impl salsa::Database for LayoutTestDatabase {}
 
-    use crate::collect::collected_layouts;
+    use crate::collect::{EvalType, LCallReq, collected_layouts};
 
     use super::*;
 
@@ -1343,7 +1342,11 @@ mod tests {
                 lay.symbol(
                     &mut outlayer,
                     LayoutPart::Parse(
-                        NeededBy::Len | NeededBy::Backtrack,
+                        LCallReq {
+                            val: EvalType::NoValue,
+                            len: true,
+                            bt: true
+                        },
                         represent::ParserFunKind::Worker,
                         hash
                     ),
@@ -1358,7 +1361,11 @@ mod tests {
                 lay.symbol(
                     &mut outlayer,
                     LayoutPart::Parse(
-                        NeededBy::Val | NeededBy::Backtrack,
+                        LCallReq {
+                            val: EvalType::Value,
+                            len: false,
+                            bt: true
+                        },
                         represent::ParserFunKind::Wrapper,
                         hash
                     ),
