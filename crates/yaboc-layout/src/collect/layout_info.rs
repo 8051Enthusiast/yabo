@@ -2,7 +2,7 @@ use fxhash::FxHashMap;
 use yaboc_base::interner::Regex;
 use yaboc_constraint::BtTerm;
 use yaboc_hir::{BlockId, DefKind, HirConstraintId, HirIdWrapper, LambdaId, ParserDefId};
-use yaboc_mir::{CallMeta, MirKind};
+use yaboc_mir::MirKind;
 use yaboc_req::{NeededBy, RequirementSet};
 
 use crate::{FuncLayoutKind, ILayout, IMonoLayout, Layouts, MonoLayout};
@@ -101,19 +101,6 @@ impl LCallReq {
     pub fn as_mir_call(self) -> MirKind {
         MirKind::Call(self.as_reqset())
     }
-
-    pub fn from_reqset(req: RequirementSet) -> Self {
-        let val = if req.contains(NeededBy::Val) {
-            EvalType::Value
-        } else {
-            EvalType::NoValue
-        };
-        LCallReq {
-            val,
-            len: req.contains(NeededBy::Len),
-            bt: req.contains(NeededBy::Backtrack),
-        }
-    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -126,15 +113,6 @@ impl std::fmt::Display for LCallMeta {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let prefix = self.tail.then_some("tail ").unwrap_or_default();
         write!(f, "{}{}", prefix, self.req)
-    }
-}
-
-impl LCallMeta {
-    pub fn from_reqset(meta: CallMeta) -> Self {
-        Self {
-            req: LCallReq::from_reqset(meta.req),
-            tail: meta.tail,
-        }
     }
 }
 

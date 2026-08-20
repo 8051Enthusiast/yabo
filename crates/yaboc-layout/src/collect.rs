@@ -37,7 +37,6 @@ const TRACE_COLLECTION: bool = false;
 type LayoutSet<'a> = FxHashSet<IMonoLayout<'a>>;
 
 pub fn pd_len_req() -> LCallMeta {
-    //CallMeta::new(NeededBy::Len.into(), false)
     LCallMeta {
         req: LCallReq {
             val: EvalType::NoValue,
@@ -247,9 +246,17 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     self.register_parser_or_function(mono);
                     self.register_len(*inner_parser);
                 }
-                MonoLayout::Single | MonoLayout::IfParser(..) | MonoLayout::Regex(..) => {
+                MonoLayout::Single | MonoLayout::Regex(..) => {
                     if self.parsers.insert(mono) && TRACE_COLLECTION {
                         dbeprintln!(self.ctx.db, "[collection] registered parser {}", &mono);
+                    }
+                }
+                MonoLayout::IfParser(inner, ..) => {
+                    if self.parsers.insert(mono) {
+                        if TRACE_COLLECTION {
+                            dbeprintln!(self.ctx.db, "[collection] registered parser {}", &mono);
+                        }
+                        self.register_layouts(*inner);
                     }
                 }
                 MonoLayout::Lambda(..) => {
@@ -478,10 +485,10 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 self.register_funcall(fun_layout, args)?;
                 Ok(())
             }
-            MirInstr::ParseCall(_, _, meta, arg, fun, _) => {
+            MirInstr::ParseCall(_, _, _, arg, fun, _) => {
                 let fun_layout = mir.place(fun);
                 let arg_layout = mir.place(arg);
-                self.register_parse(arg_layout, fun_layout, LCallMeta::from_reqset(meta));
+                self.register_parse(arg_layout, fun_layout, mir.get_call_meta(&ins));
                 Ok(())
             }
             MirInstr::LenCall(_, fun, _) => {
@@ -489,9 +496,9 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 self.register_len(fun_layout);
                 Ok(())
             }
-            MirInstr::EvalFun(_, fun, meta, _) => {
+            MirInstr::EvalFun(_, fun, _, _) => {
                 let fun_layout = mir.place(fun);
-                self.register_eval(fun_layout, LCallMeta::from_reqset(meta));
+                self.register_eval(fun_layout, mir.get_call_meta(&ins));
                 Ok(())
             }
             _ => Ok(()),
@@ -685,6 +692,37 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         Ok(())
     }
 
+    fn collect_if_parse(
+        &mut self,
+        arg: ILayout<'a>,
+        parser: IMonoLayout<'a>,
+        info: MirKind,
+    ) -> Result<(), LayoutError> {
+        if TRACE_COLLECTION {
+            dbeprintln!(
+                self.ctx.db,
+                "[collection] processing if-parser({}) {} ~> {}",
+                &info,
+                &arg,
+                &parser.inner()
+            );
+        }
+        let MonoLayout::IfParser(_, constr) = parser.mono_layout() else {
+            panic!("unexpected non-if-parser layout");
+        };
+
+        parser.inner().apply_arg(self.ctx, arg)?;
+        let fsub = function_substitute(
+            yaboc_mir::FunKind::If(*constr),
+            info,
+            Some(arg),
+            parser,
+            self.ctx,
+        )?;
+        self.collect_mir(&fsub)?;
+        Ok(())
+    }
+
     // if we apply an int to a parser, this actually stems from a len call
     // whose return value gets ignored anyway
     fn skip_call(&self, call: &UnprocessedCall) -> bool {
@@ -717,41 +755,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     self.collect_lambda_eval_fun(fun, info)?
                 }
                 UnprocessedCall::IfParser(from, parser, info) => {
-                    if TRACE_COLLECTION {
-                        dbeprintln!(
-                            self.ctx.db,
-                            "[collection] processing if-parser({}) {} ~> {}",
-                            &info,
-                            &from,
-                            &parser.inner()
-                        );
-                    }
-                    let MonoLayout::IfParser(inner, c) = parser.mono_layout() else {
-                        panic!("unexpected non-if-parser layout");
-                    };
-                    self.register_layouts(*inner);
-                    if let MirKind::Call(info) = info {
-                        let mut first_req = info | NeededBy::Val;
-                        if self.ctx.db.lookup_intern_hir_constraint(*c).has_no_eof {
-                            first_req |= NeededBy::Len
-                        }
-                        self.register_parse(
-                            from,
-                            *inner,
-                            LCallMeta {
-                                tail: false,
-                                req: LCallReq::from_reqset(first_req),
-                            },
-                        );
-                        self.register_parse(
-                            from,
-                            *inner,
-                            LCallMeta {
-                                tail: false,
-                                req: LCallReq::from_reqset(info & NeededBy::Val),
-                            },
-                        );
-                    }
+                    self.collect_if_parse(from, parser, info)?
                 }
             }
         }

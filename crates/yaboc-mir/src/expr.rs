@@ -24,7 +24,7 @@ use yaboc_resolve::expr::{EvalKind, Resolved, ResolvedAtom, ValBinOp, ValUnOp, V
 use yaboc_types::{Type, TypeId};
 
 use crate::{
-    BBRef, CallMeta, Comp, ExceptionRetreat, FunctionWriter, IntBinOp, IntUnOp, Place, PlaceInfo,
+    BBRef, Comp, ExceptionRetreat, FunctionWriter, IntBinOp, IntUnOp, Place, PlaceInfo,
     PlaceOrigin, PlaceRef, UninitVal,
 };
 
@@ -501,13 +501,21 @@ impl<'a> ConvertExpr<'a> {
         if tail == Tailcallability::Always
             || tail == Tailcallability::IfNoBt && !req.contains(NeededBy::Backtrack)
         {
-            let ret = self.f.fun.ret();
-            self.f.tail_eval_fun(fun_ref, ret, req & !NeededBy::Len);
+            let ret = if req.contains(NeededBy::Val) {
+                self.f.fun.ret()
+            } else {
+                None
+            };
+            self.f.tail_eval_fun(fun_ref, ret, bt_from_req(req));
             Ok(None)
         } else {
-            let place_ref = loc.map(|l| self.unwrap_or_stack(l));
+            let place_ref = if req.contains(NeededBy::Val) {
+                Some(self.unwrap_or_stack(loc.unwrap()))
+            } else {
+                None
+            };
             self.f
-                .eval_fun(fun_ref, place_ref, req & !NeededBy::Len, self.retreat);
+                .eval_fun(fun_ref, place_ref, bt_from_req(req), self.retreat);
             Ok(Some(place_ref))
         }
     }
@@ -524,24 +532,26 @@ impl<'a> ConvertExpr<'a> {
         let left_plc = self.new_stack_place(lloc.origin, true);
         let left_plc = ok_some!(lrecurse(self, Some(left_plc)));
         let right = ok_some!(self.copy_if_deref(rloc, rrecurse));
+        let bt = bt_from_req(req);
         if tail == Tailcallability::Always
             || tail == Tailcallability::IfNoBt && !req.contains(NeededBy::Backtrack)
         {
-            let ret = self.f.fun.ret();
-            self.f
-                .tail_parse_call(CallMeta { req, tail: true }, left_plc, right, ret, None);
+            let ret = if req.contains(NeededBy::Val) {
+                self.f.fun.ret()
+            } else {
+                None
+            };
+            self.f.tail_parse_call(bt, left_plc, right, ret, None);
             Ok(None)
         } else {
-            let place_ref = self.unwrap_or_stack(loc);
-            self.f.parse_call(
-                CallMeta { req, tail: false },
-                left_plc,
-                right,
-                Some(place_ref),
-                None,
-                self.retreat,
-            );
-            Ok(Some(place_ref))
+            let place_ref = if req.contains(NeededBy::Val) {
+                Some(self.unwrap_or_stack(loc))
+            } else {
+                None
+            };
+            self.f
+                .parse_call(bt, left_plc, right, place_ref, None, self.retreat);
+            Ok(place_ref)
         }
     }
 
@@ -1042,4 +1052,13 @@ impl<'a> ConvertExpr<'a> {
         };
         self.convert_expr_impl(info, expr.expr.root(), place, tail)
     }
+}
+
+pub(crate) fn bt_from_req(req: enumflags2::BitFlags<NeededBy, u8>) -> BtMarkKind {
+    let bt = if req.contains(NeededBy::Backtrack) {
+        BtMarkKind::KeepBt
+    } else {
+        BtMarkKind::RemoveBt
+    };
+    bt
 }

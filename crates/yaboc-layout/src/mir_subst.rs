@@ -6,9 +6,13 @@ use yaboc_expr::{IndexExpr, ShapedData};
 use yaboc_hir::{
     ExprId, HirIdWrapper, HirNode, HirNodeKind, LambdaId, ParserDefId, walk::ChildIter,
 };
-use yaboc_mir::{FunKind, Function, MirKind, Place, PlaceOrigin, PlaceRef, StackRef, Strictness};
+use yaboc_mir::{
+    FunKind, Function, MirInstr, MirKind, Place, PlaceOrigin, PlaceRef, StackRef, Strictness,
+};
 use yaboc_resolve::expr::Resolved;
 use yaboc_types::PrimitiveType;
+
+use crate::collect::{EvalType, LCallMeta, LCallReq};
 
 use super::{ILayout, IMonoLayout, Layout, LayoutError, MonoLayout};
 
@@ -183,6 +187,32 @@ impl<'a> FunctionSubstitute<'a> {
 
     pub fn stack(&self, stack: StackRef) -> ILayout<'a> {
         self.stack_layouts[stack.as_index()]
+    }
+
+    pub fn get_call_meta(&self, instr: &MirInstr) -> LCallMeta {
+        let (tail, ret, len, bt) = match instr {
+            MirInstr::EvalFun(ret, _, bt_mark_kind, control_flow) => {
+                (control_flow.is_none(), ret, false, bt_mark_kind)
+            }
+            MirInstr::ParseCall(ret, retlen, bt_mark_kind, _, _, control_flow) => {
+                (control_flow.is_none(), ret, retlen.is_some(), bt_mark_kind)
+            }
+            _ => {
+                panic!("Invalid instruction {:?}", instr)
+            }
+        };
+        let val = match ret {
+            Some(_) => EvalType::Value,
+            None => EvalType::NoValue,
+        };
+        LCallMeta {
+            req: LCallReq {
+                val,
+                len,
+                bt: bt.can_backtrack(),
+            },
+            tail,
+        }
     }
 }
 

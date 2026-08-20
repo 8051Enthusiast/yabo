@@ -889,8 +889,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::Comp(ret, op, left, right) => self.comp(ret, op, left, right),
             MirInstr::StoreVal(ret, val) => self.store_val(ret, val),
             MirInstr::StoreBytes(ret, str) => self.store_bytes(ret, &str),
-            MirInstr::ParseCall(ret, _, call_kind, arg, fun, ctrl) => {
-                self.parse_call(ret, LCallMeta::from_reqset(call_kind), fun, arg, ctrl)
+            MirInstr::ParseCall(ret, _, _, arg, fun, ctrl) => {
+                self.parse_call(ret, self.mir_fun.get_call_meta(&ins), fun, arg, ctrl)
             }
             MirInstr::LenCall(ret, fun, ctrl) => self.len_call(ret, fun, ctrl),
             MirInstr::ArrayLenCall(ret, fun, ctrl) => self.array_len_call(ret, fun, ctrl),
@@ -899,8 +899,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::SetDiscriminant(block, field, val) => {
                 self.set_discriminant(block, field, val)
             }
-            MirInstr::EvalFun(to, from, req, ctrl) => {
-                self.eval_fun(to, from, LCallMeta::from_reqset(req), ctrl)
+            MirInstr::EvalFun(to, from, _, ctrl) => {
+                self.eval_fun(to, from, self.mir_fun.get_call_meta(&ins), ctrl)
             }
             MirInstr::Copy(to, from, ctrl) => self.copy(to, from, ctrl),
             MirInstr::GetAddr(ret, place, ctrl) => self.get_addr(ret, place, ctrl),

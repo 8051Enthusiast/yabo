@@ -22,7 +22,7 @@ use yaboc_resolve::expr::Resolved;
 
 use crate::{
     CallMeta,
-    expr::{ConvertExpr, ExpressionLoc, Tailcallability},
+    expr::{ConvertExpr, ExpressionLoc, Tailcallability, bt_from_req},
 };
 
 use super::{
@@ -378,21 +378,18 @@ impl<'a> ConvertCtx<'a> {
         } else {
             None
         };
+        let bt = bt_from_req(call_info.req);
         if call_info.tail {
             if addr != arg_place {
                 self.w.copy(addr, arg_place);
             }
-            self.w.f.tail_parse_call(
-                call_info,
-                arg_place,
-                ldt_parser_fun,
-                ret,
-                self.w.f.fun.retlen(),
-            );
+            self.w
+                .f
+                .tail_parse_call(bt, arg_place, ldt_parser_fun, ret, retlen);
         } else {
             self.w
                 .f
-                .parse_call(call_info, addr, ldt_parser_fun, ret, retlen, self.w.retreat);
+                .parse_call(bt, addr, ldt_parser_fun, ret, retlen, self.w.retreat);
         }
         Ok(())
     }
@@ -450,13 +447,10 @@ impl<'a> ConvertCtx<'a> {
         let retlen = req
             .contains(NeededBy::Len)
             .then(|| self.w.back_place_at_def(call_loc).unwrap());
-        self.w.f.tail_parse_call(
-            CallMeta { req, tail: true },
-            addr,
-            ldt_parser_fun,
-            ret,
-            retlen,
-        );
+        let bt = bt_from_req(req);
+        self.w
+            .f
+            .tail_parse_call(bt, addr, ldt_parser_fun, ret, retlen);
         Ok(())
     }
 
@@ -512,11 +506,10 @@ impl<'a> ConvertCtx<'a> {
             retreat.eof = retreat.backtrack;
         }
 
+        let bt = bt_from_req(first_call_req);
+
         self.w.f.parse_call(
-            CallMeta {
-                req: first_call_req,
-                tail: false,
-            },
+            bt,
             arg_place,
             inner_fun_place,
             Some(tmp_place),
@@ -536,10 +529,7 @@ impl<'a> ConvertCtx<'a> {
             return Ok(());
         }
         self.w.f.parse_call(
-            CallMeta {
-                req: self.req & NeededBy::Val,
-                tail: false,
-            },
+            yaboc_ast::expr::BtMarkKind::RemoveBt,
             arg_tmp_place,
             inner_fun_place,
             ret_if_needed,

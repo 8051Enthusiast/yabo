@@ -1,6 +1,6 @@
 use fxhash::{FxHashMap, FxHashSet};
 use yaboc_hir::HirIdWrapper;
-use yaboc_mir::{CallMeta, FunKind, MirInstr};
+use yaboc_mir::{FunKind, MirInstr};
 use yaboc_target::layout::SizeAlign;
 
 use crate::{
@@ -110,23 +110,10 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
         let mut already_called = FxHashSet::default();
         for instr in fsub.f.iter_bb().flat_map(|(_, bb)| bb.ins()) {
             let (arg, fun, req) = match instr {
-                MirInstr::ParseCall(
-                    ..,
-                    CallMeta {
-                        tail: true, req, ..
-                    },
-                    arg,
-                    fun,
-                    _,
-                ) => (Some(arg), fun, req),
-                MirInstr::EvalFun(
-                    ..,
-                    fun,
-                    CallMeta {
-                        tail: true, req, ..
-                    },
-                    _,
-                ) => (None, fun, req),
+                MirInstr::ParseCall(.., _, arg, fun, None) => {
+                    (Some(arg), fun, fsub.get_call_meta(&instr).req)
+                }
+                MirInstr::EvalFun(.., fun, _, None) => (None, fun, fsub.get_call_meta(&instr).req),
                 _ => continue,
             };
             let fun = fsub.place(fun);
@@ -134,7 +121,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
                 let inner_site = TailCallSite {
                     from: arg.map(|a| fsub.place(a)),
                     func: inner_fun,
-                    req: LCallReq::from_reqset(req),
+                    req: req,
                 };
                 if already_called.insert(inner_site) {
                     f(self, inner_site)?;

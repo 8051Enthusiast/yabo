@@ -11,6 +11,7 @@ use fxhash::FxHashMap;
 use len::LenMirCtx;
 pub use strictness::Strictness;
 use yaboc_ast::ConstraintAtom;
+use yaboc_ast::expr::BtMarkKind;
 use yaboc_base::interner::Regex;
 use yaboc_base::{
     error::{SResult, Silencable},
@@ -288,11 +289,11 @@ pub enum MirInstr {
     GetAddr(PlaceRef, PlaceRef, ControlFlow),
     ApplyArgs(PlaceRef, PlaceRef, Box<[(PlaceRef, bool)]>, ControlFlow),
     Copy(PlaceRef, PlaceRef, ControlFlow),
-    EvalFun(Option<PlaceRef>, PlaceRef, CallMeta, Option<ControlFlow>),
+    EvalFun(Option<PlaceRef>, PlaceRef, BtMarkKind, Option<ControlFlow>),
     ParseCall(
         Option<PlaceRef>,
         Option<PlaceRef>,
-        CallMeta,
+        BtMarkKind,
         PlaceRef,
         PlaceRef,
         Option<ControlFlow>,
@@ -840,7 +841,7 @@ impl FunctionWriter {
 
     pub fn parse_call(
         &mut self,
-        call_info: CallMeta,
+        bt: BtMarkKind,
         arg: PlaceRef,
         fun: PlaceRef,
         ret: Option<PlaceRef>,
@@ -853,7 +854,7 @@ impl FunctionWriter {
             .append_ins(MirInstr::ParseCall(
                 ret,
                 retlen,
-                call_info,
+                bt,
                 arg,
                 fun,
                 Some(ControlFlow::new_with_exc(new_block, exc)),
@@ -863,7 +864,7 @@ impl FunctionWriter {
 
     pub fn tail_parse_call(
         &mut self,
-        call_info: CallMeta,
+        bt: BtMarkKind,
         arg: PlaceRef,
         fun: PlaceRef,
         ret: Option<PlaceRef>,
@@ -871,7 +872,7 @@ impl FunctionWriter {
     ) {
         self.fun
             .bb_mut(self.current_bb)
-            .append_ins(MirInstr::ParseCall(ret, retlen, call_info, arg, fun, None));
+            .append_ins(MirInstr::ParseCall(ret, retlen, bt, arg, fun, None));
         self.fun.success_returns.push(self.current_bb);
     }
 
@@ -958,7 +959,7 @@ impl FunctionWriter {
         &mut self,
         fun: PlaceRef,
         ret: Option<PlaceRef>,
-        req: RequirementSet,
+        bt: BtMarkKind,
         exc: ExceptionRetreat,
     ) {
         let new_block = self.new_bb();
@@ -967,21 +968,16 @@ impl FunctionWriter {
             .append_ins(MirInstr::EvalFun(
                 ret,
                 fun,
-                CallMeta { req, tail: false },
+                bt,
                 Some(ControlFlow::new_with_exc(new_block, exc)),
             ));
         self.set_bb(new_block);
     }
 
-    pub fn tail_eval_fun(&mut self, fun: PlaceRef, ret: Option<PlaceRef>, req: RequirementSet) {
+    pub fn tail_eval_fun(&mut self, fun: PlaceRef, ret: Option<PlaceRef>, bt: BtMarkKind) {
         self.fun
             .bb_mut(self.current_bb)
-            .append_ins(MirInstr::EvalFun(
-                ret,
-                fun,
-                CallMeta { req, tail: true },
-                None,
-            ));
+            .append_ins(MirInstr::EvalFun(ret, fun, bt, None));
         self.fun.success_returns.push(self.current_bb);
     }
 

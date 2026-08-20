@@ -178,10 +178,10 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
                 } else {
                     write!(f, "_ = ")?;
                 }
-                if kind.tail {
+                if retreat.is_none() {
                     write!(f, "tail ")?;
                 }
-                dbwrite!(f, db, "parse {}({}), {}", fun, arg, &kind.req)?;
+                dbwrite!(f, db, "parse{} {}({})", &kind, fun, arg)?;
                 if let Some(retreat) = retreat {
                     dbwrite!(f, db.1, ", {}", retreat)
                 } else {
@@ -215,10 +215,10 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
                 } else {
                     write!(f, "_ = ")?;
                 };
-                if req.tail {
+                if cont.is_none() {
                     write!(f, "tail ")?;
                 }
-                dbwrite!(f, db, "eval_fun {}, {}", fun, &req.req)?;
+                dbwrite!(f, db, "eval_fun{} {}", req, fun)?;
                 if let Some(c) = cont {
                     dbwrite!(f, db, ", {}", c)?;
                 };
