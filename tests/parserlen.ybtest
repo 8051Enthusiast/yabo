@@ -23,18 +23,21 @@ def static_len(a: int) = {
   \
   [a & 43]
 }
-def dynamic = {
-  x: ~, [x]
-}
 export def test = {
   let a: ~_ = {}
+  let a_len = a.sizeof
   let b: ~_ = ~
+  let b_len = b.sizeof
   let c: ~_ = { d, b, b }
+  let c_len = c.sizeof
   let d: ~_ = [10]
+  let d_len = d.sizeof
   let e: ~_ = g([10], ~)
+  let e_len = e.sizeof
   let h: ~_ = poly_unify(4, 3)
+  let h_len = h.sizeof
   let k: ~_ = static_len(31)
-  let l: ~_ = g(dynamic, {})
+  let k_len = k.sizeof
 }
 
 ====[ binary 1 ]====
@@ -42,12 +45,18 @@ export def test = {
 
 ====[ output 1 ]====
 {
-  "a": "parser(0)",
-  "b": "parser(1)",
-  "c": "parser(12)",
-  "d": "parser(10)",
-  "e": "parser(21)",
-  "h": "parser(49)",
-  "k": "parser(73)",
-  "l": "parser"
+  "a": "parser",
+  "a_len": 0,
+  "b": "parser",
+  "b_len": 1,
+  "c": "parser",
+  "c_len": 12,
+  "d": "parser",
+  "d_len": 10,
+  "e": "parser",
+  "e_len": 21,
+  "h": "parser",
+  "h_len": 49,
+  "k": "parser",
+  "k_len": 73
 }

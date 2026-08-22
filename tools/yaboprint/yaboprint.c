@@ -115,15 +115,7 @@ int print_bit(DynValue *val, int indent, Stack stack) {
 }
 
 int print_parser(DynValue *val, int indent, Stack stack) {
-  struct ParserVTable *vtable = (struct ParserVTable *)val->vtable;
-  int64_t len;
-  int64_t ret = YABO_ACCESS_VPTR(vtable, len_impl)(&len, val->data,
-                                                   (const char *)stack.globals);
-  if (ret != YABO_STATUS_OK) {
-    return printf("\"parser\"");
-  } else {
-    return printf("\"parser(%" PRId64 ")\"", len);
-  }
+  return printf("\"parser\"");
 }
 
 int print_fun_args(DynValue *val, int indent, Stack stack) {

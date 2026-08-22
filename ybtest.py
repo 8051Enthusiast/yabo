@@ -254,11 +254,7 @@ def dictionarified_obj(obj):
     if isinstance(obj, yabo.ArrayValue):
         return [dictionarified_obj(obj[i]) for i in range(len(obj))]
     if isinstance(obj, yabo.ParserValue):
-        try:
-            length = obj.len()
-            return f"parser({length})"
-        except:
-            return "parser"
+        return "parser"
     if isinstance(obj, yabo.FunArgValue):
         return "fun_args"
     if isinstance(obj, yabo.UnitValue):

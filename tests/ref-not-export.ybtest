@@ -9,6 +9,6 @@ export def test = {
 10
 ====[ output 1 ]====
 {
-	"parser_with_invisible_thunk": "parser(1)",
+	"parser_with_invisible_thunk": "parser",
 	"x": 16
 }

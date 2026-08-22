@@ -245,6 +245,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 MonoLayout::ArrayParser(Some((inner_parser, Some(_)))) => {
                     self.register_parser_or_function(mono);
                     self.register_len(*inner_parser);
+                    self.register_len(mono.inner());
                 }
                 MonoLayout::Single | MonoLayout::Regex(..) => {
                     if self.parsers.insert(mono) && TRACE_COLLECTION {
@@ -822,16 +823,16 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             eprintln!("[collection] ---- starting collection ----");
         }
         self.proc_list()?;
-        self.lens.clone_from(&self.parsers);
-        for parser in self.parsers.iter() {
-            if let Some(parser) = self.parser_len_proc_entry(*parser) {
-                self.unprocessed.push(parser);
-            }
-        }
-        if TRACE_COLLECTION {
-            eprintln!("[collection] ---- starting len collection ----");
-        }
-        self.proc_list()?;
+        //self.lens.clone_from(&self.parsers);
+        //for parser in self.parsers.iter() {
+        //    if let Some(parser) = self.parser_len_proc_entry(*parser) {
+        //        self.unprocessed.push(parser);
+        //    }
+        //}
+        //if TRACE_COLLECTION {
+        //    eprintln!("[collection] ---- starting len collection ----");
+        //}
+        //self.proc_list()?;
         if TRACE_COLLECTION {
             eprintln!("[collection] ---- finished collection ----");
         }

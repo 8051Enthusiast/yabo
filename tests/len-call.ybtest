@@ -23,11 +23,11 @@ fun ~test = {
   {
     "a": 6,
     "b": 361,
-    "parser": "parser(4)"
+    "parser": "parser"
   },
   {
     "a": 7,
     "b": 361,
-    "parser": "parser(4)"
+    "parser": "parser"
   }
 ]

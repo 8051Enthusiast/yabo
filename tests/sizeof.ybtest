@@ -13,7 +13,7 @@ fun ~test = {
 
 ====[ output 1 ]====
 {
-  "parser": "parser(6)",
+  "parser": "parser",
   "a": [
     [0, 1],
     [2, 3],
