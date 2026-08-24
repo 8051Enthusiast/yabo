@@ -2,6 +2,7 @@
 # Test runner for yabo
 
 from collections import defaultdict
+import copy
 from dataclasses import dataclass
 import os
 import pathlib
@@ -12,9 +13,8 @@ import tempfile
 import subprocess
 import json
 import time
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Any, override
 from concurrent import futures
-import multiprocessing
 import yabo
 
 TARGET_RELEASE = 'debug'
@@ -54,7 +54,6 @@ compiler_env['RUST_BACKTRACE'] = '1'
 compiler_env['LD_PRELOAD'] = ''
 compiler_dir = current_script_dir / 'crates' / 'yaboc'
 compiler_bin = "yaboc"
-wasm_factory = None
 
 
 class ErrorLocation:
@@ -95,6 +94,41 @@ class ErrorLocation:
         )
 
 
+class TmpFile:
+    filename: str | None
+    def __init__(self, suffix: str = "", content: bytes | None = None):
+        fd, name = tempfile.mkstemp(suffix=suffix)
+        if content:
+            os.write(fd, content)
+        os.close(fd)
+        self.filename = name
+
+    def __enter__(self) -> "TmpFile":
+        if not self.filename:
+            raise ValueError("Tmp file already moved")
+        return self
+
+    def __exit__(self, _exc_type, _exc_value, _traceback):
+        self.close()
+
+    def move(self) -> "TmpFile":
+        if not self.filename:
+            raise ValueError("Tmp file already moved")
+        ret = copy.copy(self)
+        self.filename = None
+        return ret
+
+    def name(self) -> str:
+        if not self.filename:
+            raise ValueError("Tmp file already moved")
+        return self.filename
+
+    def close(self):
+        if self.filename:
+            os.remove(self.filename)
+            self.filename = None
+
+
 def build_compiler_binary():
     os.chdir(compiler_dir)
     with subprocess.Popen(
@@ -120,123 +154,105 @@ def run_compiler_unit_tests():
     cargo_test = subprocess.run(cargo_args, check=False, env=compiler_env)
     return cargo_test.returncode == 0
 
+def check_diagnostic_match(diagnostics: dict[int, list[ErrorLocation]], expected: ErrorLocation):
+    if expected.line not in diagnostics or len(diagnostics[expected.line]) == 0:
+        raise Exception(
+            f'Expected error {expected.code} on line {expected.line}, '
+            'but no error was found'
+        )
+    line_diagnostics = diagnostics[expected.line]
+    found = any(expected.is_contained_in(actual)
+                for actual in line_diagnostics)
+    if not found:
+        if len(line_diagnostics) == 1:
+            diag = line_diagnostics[0]
+            if diag.code != expected.code:
+                raise Exception(
+                    f'Expected error {expected.code} on line {expected.line}, '
+                    f'but found error {diag.code} instead'
+                )
+            else:
+                raise Exception(
+                    f'Expected error message "{expected.contained_message}" on '
+                    f'line {expected.line}, but found "{diag.contained_message}"'
+                )
+        raise Exception(
+            f'Expected error {expected.code} on line {expected.line}, '
+            'but none of the errors matched'
+        )
 
-class CompiledSource:
-    name: str
-    dir: str
-    compiled: str
-    source: str
-    stderr: str
+def expected_errors(source: str) -> list[ErrorLocation]:
+    expected: list[ErrorLocation] = []
+    for (linenum, current_line) in enumerate(source.splitlines()):
+        linenum = linenum + 1
+        match = error_comment.match(current_line)
+        if not match:
+            continue
+        expected += [ErrorLocation.from_match(match, linenum)]
 
-    def __init__(self, source: str | os.PathLike, name: str, wasm: bool):
-        tmp_dir = tempfile.mkdtemp()
-        if isinstance(source, os.PathLike):
-            with open(source, 'r', encoding='utf-8') as sourcefile:
-                self.source = sourcefile.read()
-        else:
-            self.source = source
-        self.dir = tmp_dir
-        self.name = name
+    return expected
+
+def check_errors(stderr: str, expected: list[ErrorLocation]) -> None:
+    diagnostics: dict[int, list[ErrorLocation]] = defaultdict(list)
+    for error in stderr.splitlines():
         try:
-            if wasm:
-                self.compiled = os.path.join(tmp_dir, 'target.o')
-            else:
-                self.compiled = os.path.join(tmp_dir, 'target.so')
+            error_json = json.loads(error)
+        except json.JSONDecodeError as e:
+            raise Exception(f'Error decoding {stderr}: {e}')
+        for (line, errors) in ErrorLocation.from_diagnostics(error_json).items():
+            diagnostics[line].extend(errors)
 
-            if isinstance(source, os.PathLike):
-                source_path = str(source)
-            else:
-                source_path = os.path.join(tmp_dir, name + '.yb')
-                with open(source_path, 'w', encoding='utf-8') as sourcefile:
-                    sourcefile.write(source)
-            if wasm:
-                proc = subprocess.Popen(
-                    [compiler_bin, "--output-json",
-                     "--target=wasm32-wasi", "--emit=object",
-                     "--target-features=+tail-call",
-                     "--module", f"core={core_path}",
-                     source_path, self.compiled],
-                    stderr=subprocess.PIPE,
-                    env=compiler_env
-                )
-            else:
-                args = [compiler_bin, "--output-json",
-                        "--module", f"core={core_path}"]
-                sanitize = os.environ.get('YABO_TEST_SANITIZE')
-                if sanitize:
-                    args.append(f'--sanitize={sanitize}')
-                proc = subprocess.Popen(
-                    args + [source_path, self.compiled],
-                    stderr=subprocess.PIPE,
-                    env=compiler_env
-                )
-            with proc as compiler:
-                self.stderr = compiler.communicate()[1].decode('utf-8')
-        except Exception as e:
-            shutil.rmtree(self.dir)
-            raise e
+    if len(expected) == 0:
+        raise Exception(
+            f'No error comments found in source but errors were found in stderr:\n{stderr}'
+        )
 
-    def check_diagnostic_match(self, diagnostics: dict[int, list[ErrorLocation]], expected: ErrorLocation):
-        if expected.line not in diagnostics or len(diagnostics[expected.line]) == 0:
-            raise Exception(
-                f'Expected error {expected.code} on line {expected.line}, '
-                'but no error was found'
-            )
-        line_diagnostics = diagnostics[expected.line]
-        found = any(expected.is_contained_in(actual)
-                    for actual in line_diagnostics)
-        if not found:
-            if len(line_diagnostics) == 1:
-                diag = line_diagnostics[0]
-                if diag.code != expected.code:
-                    raise Exception(
-                        f'Expected error {expected.code} on line {expected.line}, '
-                        f'but found error {diag.code} instead'
-                    )
-                else:
-                    raise Exception(
-                        f'Expected error message "{expected.contained_message}" on '
-                        f'line {expected.line}, but found "{diag.contained_message}"'
-                    )
-            raise Exception(
-                f'Expected error {expected.code} on line {expected.line}, '
-                'but none of the errors matched'
-            )
+class Runner:
+    def run(self, _input: bytes) -> Any:
+        raise NotImplementedError("run not implemented")
 
-    def check_errors(self) -> None:
-        diagnostics: dict[int, list[ErrorLocation]] = defaultdict(list)
-        total = 0
-        for error in self.stderr.splitlines():
-            try:
-                error_json = json.loads(error)
-            except json.JSONDecodeError as e:
-                raise Exception(f'Error decoding {self.stderr}: {e}')
-            #diagnostics.update(ErrorLocation.from_diagnostics(error_json))
-            for (line, errors) in ErrorLocation.from_diagnostics(error_json).items():
-                diagnostics[line].extend(errors)
+    #def is_same(self, _other: Runner) -> bool:
+    #    raise NotImplementedError("is_same not implemented")
 
-        for (linenum, current_line) in enumerate(self.source.splitlines()):
-            linenum = linenum + 1
-            match = error_comment.match(current_line)
-            if not match:
-                continue
-            total += 1
-            expected = ErrorLocation.from_match(match, linenum)
-            self.check_diagnostic_match(diagnostics, expected)
-
-        if total == 0:
-            raise Exception(
-                f'No error comments found in source but errors were found in stderr:\n{self.stderr}'
-            )
-
-    def has_errors(self) -> bool:
-        return len(self.stderr) > 0
-
-    def __enter__(self) -> "CompiledSource":
+    def __enter__(self) -> "Runner":
         return self
 
     def __exit__(self, _exc_type, _exc_value, _traceback):
-        shutil.rmtree(self.dir)
+        pass
+
+class CompilerError(Exception):
+    diagnostics: str
+
+    def __init__(self, diagnostics: str):
+        super().__init__(diagnostics)
+        self.diagnostics = diagnostics
+
+class Platform:
+    def name(self) -> str:
+        return "Abstract"
+
+    def compile(self, _source_path: str, _source_name: str) -> TmpFile:
+        raise NotImplementedError("compile not implemented")
+
+    def create_runner_for_file(self, _source_path: str, _source_name: str) -> Runner:
+        raise NotImplementedError("create_runner_for not implemented")
+
+    def create_runner_for_source(self, source: str, source_name: str) -> Runner:
+        with TmpFile(content=source.encode(), suffix=f"{source_name}.yb") as file:
+            return self.create_runner_for_file(file.name(), source_name)
+
+    def expect_compile_error_for(self, source: str, source_name: str, expected: list[ErrorLocation]) -> None:
+        try:
+            with self.create_runner_for_source(source, source_name):
+                raise Exception("Expected compiler error but no errors were found")
+        except CompilerError as e:
+            check_errors(e.diagnostics, expected)
+
+    def __enter__(self) -> "Platform":
+        return self
+
+    def __exit__(self, _exc_type, _exc_value, _traceback):
+        pass
 
 
 @dataclass
@@ -245,10 +261,9 @@ class InputOutputPair:
     output: str
 
 
-def dictionarified_obj(obj):
-    while isinstance(obj, (yabo.NominalValue, yabo.U8Value)):
+def dictionarified_obj(obj) -> Any:
+    if isinstance(obj, (yabo.NominalValue, yabo.U8Value)):
         obj = obj.deref()
-    ty = type(obj)
     if isinstance(obj, (int, str, bool)):
         return obj
     if isinstance(obj, yabo.ArrayValue):
@@ -336,7 +351,7 @@ class DiffHead:
 
 class DictHead:
     __slot__ = ['data']
-    data: dict
+    data: dict[str, Any]
 
     def __init__(self, data):
         self.data = data
@@ -353,7 +368,7 @@ class DictHead:
 
 class ListHead:
     __slot__ = ['data']
-    data: list
+    data: list[Any]
 
     def __init__(self, data):
         self.data = data
@@ -366,7 +381,7 @@ class ListHead:
         return wrap_maybe_field(out, indent, field)
 
 
-def diff(left, right) -> Tuple[MatchingHead | DiffHead | DictHead | ListHead, bool]:
+def diff(left: Any, right: Any) -> Tuple[MatchingHead | DiffHead | DictHead | ListHead, bool]:
     if isinstance(left, dict) and isinstance(right, dict):
         is_different = False
         ret = {}
@@ -395,63 +410,126 @@ def diff(left, right) -> Tuple[MatchingHead | DiffHead | DictHead | ListHead, bo
 
     return (MatchingHead(left), False)
 
+class NativeRunner(Runner):
+    libfile: TmpFile
 
-class WasmRunner:
-    exec: tempfile._TemporaryFileWrapper
+    def __init__(self, libfile: TmpFile):
+        self.libfile = libfile
 
-    def __init__(self, exec: tempfile._TemporaryFileWrapper):
+    @override
+    def run(self, input: bytes) -> Any:
+        buf = bytearray(input)
+        lib = yabo.YaboLib(self.libfile.name(), buf, autoderef=False)
+        obj = lib.parser('test').parse(buf)
+        dict_obj = dictionarified_obj(obj)
+        return dict_obj
+
+class Native(Platform):
+    def __init__(self):
+        pass
+
+    @override
+    def name(self) -> str:
+        return "Native"
+
+    @override
+    def compile(self, source_path: str, source_name: str) -> TmpFile:
+        with TmpFile(suffix=f".{source_name}.so") as libfile:
+            proc = subprocess.run(
+                [compiler_bin, "--output-json", "--module", f"core={core_path}", source_path, libfile.name()],
+                stderr=subprocess.PIPE,
+                env=compiler_env
+            )
+            if proc.returncode != 0:
+                raise CompilerError(proc.stderr.decode())
+
+            return libfile.move()
+
+    @override
+    def create_runner_for_file(self, source_path: str, source_name: str) -> NativeRunner:
+        with self.compile(source_path, source_name) as libfile:
+            return NativeRunner(libfile.move())
+
+
+class WasmRunner(Runner):
+    exec: TmpFile
+
+    def __init__(self, exec: TmpFile):
         self.exec = exec
 
-    def run(self, input: bytes) -> str:
+    @override
+    def run(self, input: bytes) -> Any:
         with tempfile.TemporaryDirectory() as tmpdir:
             inputpath = os.path.join(tmpdir, 'input')
             with open(inputpath, 'wb') as inputfile:
                 inputfile.write(input)
             proc = subprocess.run(['wasmtime', '--dir', tmpdir, '--wasm=tail-call',
-                                   self.exec.name, inputpath],
+                                   self.exec.name(), inputpath],
                                   stdout=subprocess.PIPE)
-            return proc.stdout.decode('utf-8')
+            return json.loads(proc.stdout.decode('utf-8'))
 
-    def __enter__(self):
-        return self
-
+    @override
     def __exit__(self, _exc_type, _exc_value, _traceback):
         self.exec.close()
+        super().__exit__(_exc_type, _exc_value, _traceback)
 
 
-class WasmRunnerFactory:
+class Wasm(Platform):
     cc: str
     sysroot: str
-    printer: tempfile._TemporaryFileWrapper
+    printer: TmpFile
 
     def __init__(self, wasi_sdk_path: str):
         self.cc = os.path.join(wasi_sdk_path, 'bin', 'clang')
         self.sysroot = os.path.join(wasi_sdk_path, 'share', 'wasi-sysroot')
-        self.printer = tempfile.NamedTemporaryFile(suffix='.o')
+        self.printer = TmpFile(suffix='.yaboprint.o')
         compiler_args = [
             self.cc, '--sysroot', self.sysroot, '-c',
             '-DSTATIC_PARSER=test',
             '-I', str(current_script_dir / 'include'),
             '-D_WASI_EMULATED_MMAN',
-            '-o', self.printer.name,
+            '-o', self.printer.name(),
             str(current_script_dir / 'tools' / 'yaboprint' / 'yaboprint.c')
         ]
         subprocess.run(compiler_args, check=True)
 
-    def new_runner(self, compiled: str) -> WasmRunner:
-        execpath = tempfile.NamedTemporaryFile()
-        compiler_args = [
-            self.cc, '--sysroot', self.sysroot,
-            '-lwasi-emulated-mman',
-            '-Wl,-z,stack-size=10000000',
-            '-o', execpath.name, compiled, self.printer.name
-        ]
-        try:
-            subprocess.run(compiler_args, check=True)
-        except Exception as e:
-            execpath.close()
-            raise e
-        return WasmRunner(execpath)
+    @override
+    def name(self) -> str:
+        return "Wasm"
+
+    @override
+    def compile(self, source_path: str, source_name: str) -> TmpFile:
+        with TmpFile(suffix=f'.{source_name}.o') as object:
+            proc = subprocess.run(
+                [compiler_bin, "--output-json",
+                    "--target=wasm32-wasi", "--emit=object",
+                    "--target-features=+tail-call",
+                    "--module", f"core={core_path}",
+                    source_path, object.name()],
+                stderr=subprocess.PIPE,
+                env=compiler_env,
+            )
+            if proc.returncode != 0:
+                raise CompilerError(proc.stderr.decode())
+            return object.move()
+
+    @override
+    def create_runner_for_file(self, source_path: str, source_name: str) -> WasmRunner:
+        with (self.compile(source_path, source_name) as object,
+              TmpFile(suffix=f'.{source_name}') as execpath):
+            clang_args = [
+                self.cc, '--sysroot', self.sysroot,
+                '-lwasi-emulated-mman',
+                '-Wl,-z,stack-size=10000000',
+                '-o', execpath.name(), self.printer.name(), object.name()
+            ]
+            subprocess.run(clang_args, check=True)
+            return WasmRunner(execpath.move())
+
+    @override
+    def __exit__(self, _exc_type, _exc_value, _traceback):
+        self.printer.close()
+        super().__exit__(_exc_type, _exc_value, _traceback)
 
 
 class TestFile:
@@ -503,14 +581,14 @@ class TestFile:
             raise Exception('Extra output cases: ' +
                             ', '.join(output_cases.keys()))
 
-    def check_errors(self, compiled_source: CompiledSource, output: str):
+    def check_errors(self, platform: Platform, expected: list[ErrorLocation], output: str) -> int:
         try:
-            compiled_source.check_errors()
+            platform.expect_compile_error_for(self.source, self.name, expected)
         except Exception as e:
             output += f'{RED} {e}{CLEAR}'
             print(output)
             return 1
-        if len(self.cases) > 0:
+        if self.cases:
             output += f'{RED} Expected no errors, but got some{CLEAR}'
             print(output)
             return 1
@@ -518,63 +596,37 @@ class TestFile:
         print(output)
         return 0
 
-    def run(self) -> int:
+    def run(self, platforms: list[Platform]) -> int:
         output: str = f'Running test {self.name}\n'
         failed_tests = 0
-        with CompiledSource(self.source, self.name, False) as compiled_source:
-            if compiled_source.has_errors():
-                return self.check_errors(compiled_source, output)
-            compiled = compiled_source.compiled
-            for (test_name, pair) in self.cases.items():
-                buf = bytearray(pair.input)
-                lib = yabo.YaboLib(compiled, buf, autoderef=False)
-                try:
-                    obj = lib.parser('test').parse(buf)
-                    parsed_json = json.loads(pair.output)
-                    dict_obj = dictionarified_obj(obj)
-                except Exception as e:
-                    output += f'{RED} Test {test_name} failed:{CLEAR}\n'
-                    output += f'{RED} {e}{CLEAR}\n'
-                    failed_tests += 1
-                    continue
-                (diffed, is_different) = diff(parsed_json, dict_obj)
-                if is_different:
-                    output += f'{RED} Test {test_name} failed:{CLEAR}\n'
-                    output += diffed.diff()
-                    failed_tests += 1
-                else:
-                    output += f'{GREEN} Test {test_name} passed{CLEAR}\n'
-        if not wasm_factory:
-            print(output, end='')
-            return failed_tests
-        with CompiledSource(self.source, self.name, True) as compiled_source:
-            if compiled_source.has_errors():
-                return self.check_errors(compiled_source, output)
-            compiled = compiled_source.compiled
-            with wasm_factory.new_runner(compiled) as wasm_runner:
+        expected_errs = expected_errors(self.source)
+        if expected_errs:
+            return self.check_errors(platforms[0], expected_errs, output)
+        for platform in platforms:
+            with platform.create_runner_for_source(self.source, self.name) as runner:
                 for (test_name, pair) in self.cases.items():
                     try:
-                        test_output = wasm_runner.run(pair.input)
+                        parsed_output = runner.run(pair.input)
                     except Exception as e:
-                        output += f'{RED} Wasm Test {test_name} failed:{CLEAR}\n'
+                        output += f'{RED} {platform.name()} Test {test_name} failed:{CLEAR}\n'
                         output += f'{RED} {e}{CLEAR}\n'
                         failed_tests += 1
                         continue
                     parsed_json = json.loads(pair.output)
-                    parsed_output = json.loads(test_output)
                     (diffed, is_different) = diff(parsed_json, parsed_output)
                     if is_different:
-                        output += f'{RED} Wasm Test {test_name} failed:{CLEAR}\n'
+                        output += f'{RED} {platform.name()} Test {test_name} failed:{CLEAR}\n'
                         output += diffed.diff()
                         failed_tests += 1
                     else:
-                        output += f'{GREEN} Wasm Test {test_name} passed{CLEAR}\n'
+                        output += f'{GREEN} {platform.name()} Test {test_name} passed{CLEAR}\n'
+
 
         print(output, end='')
         return failed_tests
 
 
-def run_test(spath: str) -> tuple[int, float]:
+def run_test(spath: str, platforms: list[Platform]) -> tuple[int, float]:
     path = pathlib.Path(spath)
     if path.suffix != '.ybtest':
         return (0, 0)
@@ -583,7 +635,7 @@ def run_test(spath: str) -> tuple[int, float]:
         starttime = time.time()
         testname = os.path.basename(path).removesuffix('.ybtest')
         test = TestFile(content, testname)
-        count = test.run()
+        count = test.run(platforms)
         endtime = time.time()
         elapsed = (endtime - starttime)
         return (count, elapsed)
@@ -605,14 +657,14 @@ def write_test_order_file(times: dict[str, float]):
     with open(test_order_path, 'w') as outfile:
         outfile.write('\n'.join(paths))
 
-def run_test_with_path_returned(file: str) -> tuple[str, int, float]:
-    return (file, *run_test(file))
+def run_test_with_path_returned(file: str, platforms: list[Platform]) -> tuple[str, int, float]:
+    return (file, *run_test(file, platforms))
 
 # goes through all files in the target directory ending in .ybtest
-def run_tests(files: list[str], collect: bool = True) -> int:
+def run_tests(files: list[str], platforms: list[Platform], collect: bool = True) -> int:
     try:
         with futures.ThreadPoolExecutor() as executor:
-            results = executor.map(run_test_with_path_returned, files)
+            results = executor.map(lambda file: run_test_with_path_returned(file, platforms), files)
             sum = 0
             times = dict()
             for (file, count, time) in results:
@@ -623,57 +675,50 @@ def run_tests(files: list[str], collect: bool = True) -> int:
                 write_test_order_file(times)
 
             return sum
-    except (futures.process.BrokenProcessPool, ValueError) as e:
+    except ValueError as e:
         print(f'Encountered error ({e}), running tests sequentially')
         total_failed = 0
         for file in files:
             print(f'Running {file}')
-            total_failed += run_test(file)[0]
+            total_failed += run_test(file, platforms)[0]
         return total_failed
 
 
-def compile_example(file: os.PathLike):
+def compile_example(file: os.PathLike[str], platforms: list[Platform]):
     output: str = f'Compiling example {file}\n'
     failed: int = 0
     name = os.path.basename(file)
-    with CompiledSource(file, name, False) as compiled:
-        if compiled.has_errors():
-            output += f'{RED} Native compilation failed{CLEAR}\n'
-            output += compiled.stderr
+    for platform in platforms:
+        try:
+            with platform.compile(str(file), name):
+                output += f'{GREEN} {platform.name()} compilation passed{CLEAR}\n'
+        except CompilerError as e:
+            output += f'{RED} {platform.name()} compilation failed{CLEAR}\n'
+            output += e.diagnostics
             failed += 1
-        else:
-            output += f'{GREEN} Native compilation passed{CLEAR}\n'
-    if wasm_factory:
-        with CompiledSource(file, name, True) as compiled:
-            if compiled.has_errors():
-                output += f'{RED} Wasm compilation failed{CLEAR}\n'
-                output += compiled.stderr
-                failed += 1
-            else:
-                output += f'{GREEN} Wasm compilation passed{CLEAR}\n'
+
     print(output, end='')
     return failed
 
 
-def compile_examples():
+def compile_examples(platforms: list[Platform]):
     total_failed = 0
     files = [example_path /
              x for x in os.listdir(example_path) if x.endswith('.yb')]
     with futures.ThreadPoolExecutor() as executor:
-        results = executor.map(compile_example, files)
+        results = executor.map(lambda file: compile_example(file, platforms), files)
         total_failed = sum(results)
     return total_failed
 
 
 def main(args):
-    global compiler_bin, wasm_factory
-    arg_list = [pathlib.Path(os.path.abspath(file)) for file in args]
+    global compiler_bin
+    arg_list = [os.path.abspath(file) for file in args]
     compiler_bin = build_compiler_binary()
+    platforms: list[Platform] = [Native()]
     wasi_sdk_path = os.environ.get('WASI_SDK_PATH')
     if wasi_sdk_path:
-        wasm_factory = WasmRunnerFactory(wasi_sdk_path)
-    else:
-        wasm_factory = None
+        platforms += [Wasm(wasi_sdk_path)]
     if len(arg_list) == 0:
         if not run_compiler_unit_tests():
             sys.exit(1)
@@ -681,11 +726,11 @@ def main(args):
         files = [str(target_dir / x) for x in os.listdir(target_dir)]
         files = get_test_order_list(files)
         with futures.ThreadPoolExecutor() as executor:
-            tests = executor.submit(run_tests, files)
-            compile = executor.submit(compile_examples)
+            tests = executor.submit(run_tests, files, platforms)
+            compile = executor.submit(compile_examples, platforms)
             total_failed = tests.result() + compile.result()
     else:
-        total_failed = run_tests(arg_list, collect=False)
+        total_failed = run_tests(arg_list, platforms, collect=False)
 
     if total_failed != 0:
         print(f'{total_failed} tests failed')
