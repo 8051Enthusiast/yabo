@@ -1633,6 +1633,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_parser_funs(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
         let collected_layouts = self.collected_layouts.clone();
         let mut visited = FxHashSet::default();
+        if self.collected_layouts.lens.contains(&layout) {
+            self.create_len_fun(layout)?;
+        }
         for &(from, meta) in collected_layouts
             .parser_slots
             .call_args
@@ -1671,12 +1674,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn create_funcalls(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
         let mut visited = FxHashSet::default();
-        for req in self
-            .collected_layouts
-            .eval_slots
-            .calls_from_layout(layout)
-            .keys()
-        {
+        let reqs = self.collected_layouts.eval_slots.calls_from_layout(layout);
+        let mut reqs = reqs.keys().collect::<Vec<_>>();
+        reqs.sort();
+        for req in reqs {
             if !visited.insert(req.req) {
                 continue;
             }
@@ -1841,9 +1842,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         for layout in collected_layouts.functions.iter() {
             self.create_funcalls(*layout)?;
-        }
-        for layout in collected_layouts.lens.iter() {
-            self.create_len_fun(*layout)?;
         }
         for layout in collected_layouts.primitives.iter() {
             self.create_primitive_funs(*layout)?;

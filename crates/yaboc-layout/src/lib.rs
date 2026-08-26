@@ -972,8 +972,24 @@ impl<'a> LayoutContext<'a> {
         self.intern(Layout::Mono(MonoLayout::Primitive(prim)))
     }
 
+    pub fn full_layout_hash(
+        &mut self,
+        db: &(impl Layouts + ?Sized),
+        layout: ILayout<'a>,
+    ) -> [u8; 32] {
+        self.hashes.hash(layout, db).try_into().unwrap()
+    }
+
     pub fn layout_hash(&mut self, db: &(impl Layouts + ?Sized), layout: ILayout<'a>) -> [u8; 8] {
         self.hashes.hash(layout, db)[..8].try_into().unwrap()
+    }
+
+    pub fn full_layout_slice_hash(
+        &mut self,
+        db: &(impl Layouts + ?Sized),
+        layout: &[ILayout<'a>],
+    ) -> [u8; 32] {
+        self.hashes.hash_multiple(layout, db).try_into().unwrap()
     }
 
     pub fn layout_slice_hash(
@@ -1352,7 +1368,7 @@ mod tests {
                     ),
                     &ctx.db
                 ),
-                "main$466398b15b97e804$parse_9dcf97a184f32623_lb_worker"
+                "main$1e9427ad6825c327$parse_9dcf97a184f32623_lb_worker",
             );
         }
         let main_block = outlayer.pd_result(&canon_2004).unwrap().returned;
@@ -1371,7 +1387,7 @@ mod tests {
                     ),
                     &ctx.db
                 ),
-                "block_6c872ebf06064930$ca296cd9ca93c0c5$parse_9dcf97a184f32623_vb"
+                "block_442653befeb9bd87$c4e960f08b7fab61$parse_9dcf97a184f32623_vb"
             );
         }
         let field = |name| FieldName::Ident(ctx.id(name));

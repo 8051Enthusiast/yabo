@@ -100,12 +100,12 @@ pub fn regex_single_req() -> LCallMeta {
 #[derive(Debug)]
 pub struct LayoutCollection<'a> {
     pub root: Vec<IMonoLayout<'a>>,
-    pub arrays: LayoutSet<'a>,
-    pub blocks: LayoutSet<'a>,
-    pub nominals: LayoutSet<'a>,
-    pub parsers: LayoutSet<'a>,
-    pub functions: LayoutSet<'a>,
-    pub primitives: LayoutSet<'a>,
+    pub arrays: Vec<IMonoLayout<'a>>,
+    pub blocks: Vec<IMonoLayout<'a>>,
+    pub nominals: Vec<IMonoLayout<'a>>,
+    pub parsers: Vec<IMonoLayout<'a>>,
+    pub functions: Vec<IMonoLayout<'a>>,
+    pub primitives: Vec<IMonoLayout<'a>>,
     pub lens: LayoutSet<'a>,
     pub globals: FxHashMap<ParserDefId, (IMonoLayout<'a>, ILayout<'a>)>,
     pub parser_slots: call_info::CallSlotResult<'a, (ILayout<'a>, LCallMeta)>,
@@ -839,10 +839,20 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         Ok(())
     }
 
+    fn sorted_layouts(ctx: &mut AbsLayoutCtx<'a>, set: &LayoutSet<'a>) -> Vec<IMonoLayout<'a>> {
+        let mut vec = set.into_iter().copied().collect::<Vec<_>>();
+        vec.sort_unstable_by(|a, b| {
+            ctx.dcx
+                .full_layout_hash(ctx.db, a.inner())
+                .cmp(&ctx.dcx.full_layout_hash(ctx.db, b.inner()))
+        });
+        vec
+    }
+
     pub fn into_results(mut self) -> Result<LayoutCollection<'a>, LayoutError> {
-        let parser_slots = self.parses.into_layout_vtable_offsets();
-        let funcall_slots = self.funcalls.into_layout_vtable_offsets();
-        let eval_slots = self.eval_slots.into_layout_vtable_offsets();
+        let parser_slots = self.parses.into_layout_vtable_offsets(self.ctx);
+        let funcall_slots = self.funcalls.into_layout_vtable_offsets(self.ctx);
+        let eval_slots = self.eval_slots.into_layout_vtable_offsets(self.ctx);
         let mut primitives = FxHashSet::default();
 
         for x in [
@@ -897,15 +907,15 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
 
         Ok(LayoutCollection {
             root,
-            arrays: self.arrays,
-            blocks: self.blocks,
-            nominals: self.nominals,
-            parsers: self.parsers,
-            functions: self.functions,
+            arrays: Self::sorted_layouts(self.ctx, &self.arrays),
+            blocks: Self::sorted_layouts(self.ctx, &self.blocks),
+            nominals: Self::sorted_layouts(self.ctx, &self.nominals),
+            parsers: Self::sorted_layouts(self.ctx, &self.parsers),
+            functions: Self::sorted_layouts(self.ctx, &self.functions),
             lens: self.lens,
             globals: self.globals,
             max_sa: self.max_sa,
-            primitives,
+            primitives: Self::sorted_layouts(self.ctx, &primitives),
             parser_slots,
             funcall_slots,
             eval_slots,

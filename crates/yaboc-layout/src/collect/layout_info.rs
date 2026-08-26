@@ -24,7 +24,8 @@ impl Length {
         }
     }
 }
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum EvalType {
     NoValue,
     Value,
@@ -39,7 +40,7 @@ impl EvalType {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct LCallReq {
     pub val: EvalType,
     pub len: bool,
@@ -103,7 +104,7 @@ impl LCallReq {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct LCallMeta {
     pub req: LCallReq,
     pub tail: bool,

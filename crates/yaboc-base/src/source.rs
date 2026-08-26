@@ -95,7 +95,10 @@ impl FileId {
 
 impl<DB: Files + ?Sized> StableHash<DB> for FileId {
     fn update_hash(&self, state: &mut sha2::Sha256, db: &DB) {
-        db.path(*self).update_hash(state, db)
+        // this doesn't guarantee reproducibility for incremental
+        // builds where new files get added or old ones removed,
+        // but it's still better than basing it on the path
+        self.0.update_hash(state, db)
     }
 }
 

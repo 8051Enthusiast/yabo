@@ -189,8 +189,14 @@ impl<'a> LayoutHasher<'a> {
             Layout::Multi(ml) => {
                 state.update([2]);
                 ml.layouts.len().update_hash(state, db);
-                for layout in &layout {
-                    self.hash_mono(state, layout.mono_layout(), db);
+                let mut sorted_layouts = layout.into_iter().enumerate().collect::<Vec<_>>();
+                let hashes = sorted_layouts
+                    .iter()
+                    .map(|(_, x)| self.hash(x.inner(), db))
+                    .collect::<Vec<_>>();
+                sorted_layouts.sort_by_key(|(i, _)| &hashes[*i]);
+                for (i, _) in sorted_layouts {
+                    state.update(hashes[i]);
                 }
             }
         }
