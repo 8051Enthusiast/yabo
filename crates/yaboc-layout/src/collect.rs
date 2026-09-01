@@ -823,16 +823,6 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             eprintln!("[collection] ---- starting collection ----");
         }
         self.proc_list()?;
-        //self.lens.clone_from(&self.parsers);
-        //for parser in self.parsers.iter() {
-        //    if let Some(parser) = self.parser_len_proc_entry(*parser) {
-        //        self.unprocessed.push(parser);
-        //    }
-        //}
-        //if TRACE_COLLECTION {
-        //    eprintln!("[collection] ---- starting len collection ----");
-        //}
-        //self.proc_list()?;
         if TRACE_COLLECTION {
             eprintln!("[collection] ---- finished collection ----");
         }
