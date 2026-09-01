@@ -1636,13 +1636,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         if self.collected_layouts.lens.contains(&layout) {
             self.create_len_fun(layout)?;
         }
-        for &(from, meta) in collected_layouts
+        for ((from, meta), _) in collected_layouts
             .parser_slots
-            .call_args
-            .get(&layout)
-            .cloned()
-            .unwrap_or_default()
-            .keys()
+            .calls_from_layout(layout)
+            .iter()
         {
             if !visited.insert((from, meta.req)) {
                 continue;
@@ -1666,8 +1663,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             if from.is_int() {
                 create_fun = Self::create_error_parse
             }
-            let fun = create_fun(self, from, layout, meta.req)?;
-            self.create_wrapper_parse(from, layout, meta.req, fun)?;
+            let fun = create_fun(self, *from, layout, meta.req)?;
+            self.create_wrapper_parse(*from, layout, meta.req, fun)?;
         }
         Ok(())
     }
@@ -1675,9 +1672,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_funcalls(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
         let mut visited = FxHashSet::default();
         let reqs = self.collected_layouts.eval_slots.calls_from_layout(layout);
-        let mut reqs = reqs.keys().collect::<Vec<_>>();
-        reqs.sort();
-        for req in reqs {
+        for (req, _) in reqs.iter() {
             if !visited.insert(req.req) {
                 continue;
             }
@@ -1685,13 +1680,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.create_wrapper_eval_fun(layout, req.req, inner)?;
         }
         let collected_layouts = self.collected_layouts.clone();
-        for args in collected_layouts
+        for (args, _) in collected_layouts
             .funcall_slots
-            .call_args
-            .get(&layout)
-            .cloned()
-            .unwrap_or_default()
-            .keys()
+            .calls_from_layout(layout)
+            .iter()
         {
             self.create_create_fun_args_fun(layout, args)?;
         }

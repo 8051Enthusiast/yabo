@@ -1,5 +1,3 @@
-use std::cmp::Ordering;
-
 use yaboc_layout::vtable::{CreateArgFun, EvalFunFun, LenFun};
 
 use super::*;
@@ -232,16 +230,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn gather_slots<F: TargetSized, M: Copy>(
         &mut self,
-        slots: &FxHashMap<M, Option<PSize>>,
+        slots: &Vec<(M, Option<PSize>)>,
         vtable: GlobalValue<'llvm>,
         size: PSize,
-        cmp: impl Fn(&mut AbsLayoutCtx<'comp>, &M, &M) -> Ordering,
         f: impl Fn(&mut Self, M) -> PointerValue<'llvm>,
     ) -> ArrayValue<'llvm> {
         let null = F::codegen_ty(self).into_pointer_type().const_null();
         let mut impls = vec![null; size as usize];
-        let mut slots = slots.iter().collect::<Vec<_>>();
-        slots.sort_by(|(m, _), (n, _)| cmp(self.layouts, m, n));
         for (arg, slot) in slots.into_iter() {
             let s = f(self, *arg);
             if let Some(slot) = slot {
@@ -256,14 +251,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_parser_vtable(&mut self, layout: IMonoLayout<'comp>) {
-        // it may be that a parser is not used at all, in which case we are already finished
         let slots = self
             .collected_layouts
             .parser_slots
             .calls_from_layout(layout);
+        // it may be that a parser is not used at all, in which case we are already finished
         let max = slots
-            .values()
-            .copied()
+            .iter()
+            .map(|(_, val)| *val)
             .max()
             .flatten()
             .map(|x| x + 1)
@@ -275,20 +270,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.create_resized_vtable::<vtable::ParserVTable<AbsPtr>>(layout, max as u32)
         };
         let vtable_header = self.vtable_header(layout, false, vtable);
-        let vtable_array = self.gather_slots::<ParserFun, _>(
-            &slots,
-            vtable,
-            max,
-            |layouts, lhs, rhs| {
-                lhs.1.cmp(&rhs.1).then(
-                    layouts
-                        .dcx
-                        .full_layout_hash(layouts.db, lhs.0)
-                        .cmp(&layouts.dcx.full_layout_hash(layouts.db, rhs.0)),
-                )
-            },
-            |this, (from, req)| this.parser_impl_struct_val(layout, from, req),
-        );
+        let vtable_array =
+            self.gather_slots::<ParserFun, _>(&slots, vtable, max, |this, (from, req)| {
+                this.parser_impl_struct_val(layout, from, req)
+            });
         let len_impl = if self.collected_layouts.lens.contains(&layout) {
             self.parser_len_fun_val(layout)
                 .as_global_value()
@@ -312,8 +297,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .funcall_slots
             .calls_from_layout(layout);
         let len = slots
-            .values()
-            .copied()
+            .iter()
+            .map(|(_, val)| *val)
             .max()
             .flatten()
             .map(|x| x + 1)
@@ -325,30 +310,16 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.create_resized_vtable::<vtable::FunctionVTable<AbsPtr>>(layout, len as u32)
         };
         let vtable_header = self.vtable_header(layout, false, vtable);
-        let vtable_array = self.gather_slots::<CreateArgFun, _>(
-            &slots,
-            vtable,
-            len,
-            |layouts, lhs, rhs| {
-                layouts
-                    .dcx
-                    .full_layout_slice_hash(layouts.db, &lhs.1)
-                    .cmp(&layouts.dcx.full_layout_slice_hash(layouts.db, &rhs.1))
-            },
-            |this, from| {
+        let vtable_array =
+            self.gather_slots::<CreateArgFun, _>(&slots, vtable, len, |this, from| {
                 this.function_create_args_fun_val(layout, from)
                     .as_global_value()
                     .as_pointer_value()
-            },
-        );
+            });
 
         let eval_slots = self.collected_layouts.eval_slots.calls_from_layout(layout);
-        let eval_funcs = self.gather_slots::<EvalFunFun, _>(
-            &eval_slots,
-            vtable,
-            3,
-            |_, lhs, rhs| lhs.cmp(rhs),
-            |this, meta| {
+        let eval_funcs =
+            self.gather_slots::<EvalFunFun, _>(&eval_slots, vtable, 3, |this, meta| {
                 if meta.tail {
                     this.eval_fun_fun_val_tail(layout, meta.req)
                 } else {
@@ -356,8 +327,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 }
                 .as_global_value()
                 .as_pointer_value()
-            },
-        );
+            });
 
         let vtable_ty = self.vtable_ty(layout);
         let vtable_val = vtable_ty.const_named_struct(&[

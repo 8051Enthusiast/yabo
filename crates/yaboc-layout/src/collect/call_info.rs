@@ -5,6 +5,7 @@ use crate::IMonoLayout;
 use fxhash::FxHashMap;
 use fxhash::FxHashSet;
 use petgraph::unionfind::UnionFind;
+use std::cmp::Ordering;
 use std::collections::hash_map::Entry;
 use std::rc::Rc;
 use yaboc_target::layout::PSize;
@@ -24,11 +25,11 @@ impl<Arg: std::hash::Hash + Eq + Copy> Default for CallInfo<'_, Arg> {
 #[derive(Debug)]
 pub struct CallSlotResult<'a, Arg> {
     pub layout_vtable_offsets: FxHashMap<(Arg, ILayout<'a>), PSize>,
-    pub call_args: FxHashMap<IMonoLayout<'a>, Rc<FxHashMap<Arg, Option<PSize>>>>,
+    pub(crate) call_args: FxHashMap<IMonoLayout<'a>, Rc<Vec<(Arg, Option<PSize>)>>>,
 }
 
 impl<'a, Arg: std::hash::Hash + Eq + Copy> CallSlotResult<'a, Arg> {
-    pub fn calls_from_layout(&self, layout: IMonoLayout<'a>) -> Rc<FxHashMap<Arg, Option<PSize>>> {
+    pub fn calls_from_layout(&self, layout: IMonoLayout<'a>) -> Rc<Vec<(Arg, Option<PSize>)>> {
         self.call_args.get(&layout).cloned().unwrap_or_default()
     }
 }
@@ -60,6 +61,7 @@ impl<'a, Arg: std::hash::Hash + Eq + Copy + std::fmt::Debug> CallInfo<'a, Arg> {
     pub fn into_layout_vtable_offsets(
         mut self,
         ctx: &mut AbsLayoutCtx<'a>,
+        mut cmp: impl FnMut(&mut AbsLayoutCtx<'a>, &Arg, &Arg) -> Ordering,
     ) -> CallSlotResult<'a, Arg> {
         let mut sorted_vecs = Vec::new();
         let mut layout_set_hashes = Vec::new();
@@ -113,7 +115,11 @@ impl<'a, Arg: std::hash::Hash + Eq + Copy + std::fmt::Debug> CallInfo<'a, Arg> {
         }
         let arc_call_args = call_args
             .into_iter()
-            .map(|(k, v)| (k, Rc::new(v)))
+            .map(|(k, v)| {
+                let mut vec = v.into_iter().collect::<Vec<_>>();
+                vec.sort_unstable_by(|(lhs, _), (rhs, _)| cmp(ctx, lhs, rhs));
+                (k, Rc::new(vec))
+            })
             .collect();
         CallSlotResult {
             layout_vtable_offsets,

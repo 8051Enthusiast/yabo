@@ -840,9 +840,25 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     }
 
     pub fn into_results(mut self) -> Result<LayoutCollection<'a>, LayoutError> {
-        let parser_slots = self.parses.into_layout_vtable_offsets(self.ctx);
-        let funcall_slots = self.funcalls.into_layout_vtable_offsets(self.ctx);
-        let eval_slots = self.eval_slots.into_layout_vtable_offsets(self.ctx);
+        let parser_slots = self
+            .parses
+            .into_layout_vtable_offsets(self.ctx, |this, lhs, rhs| {
+                lhs.1.cmp(&rhs.1).then(
+                    this.dcx
+                        .full_layout_hash(this.db, lhs.0)
+                        .cmp(&this.dcx.full_layout_hash(this.db, rhs.0)),
+                )
+            });
+        let funcall_slots = self
+            .funcalls
+            .into_layout_vtable_offsets(self.ctx, |this, lhs, rhs| {
+                this.dcx
+                    .full_layout_slice_hash(this.db, &lhs.1)
+                    .cmp(&this.dcx.full_layout_slice_hash(this.db, &rhs.1))
+            });
+        let eval_slots = self
+            .eval_slots
+            .into_layout_vtable_offsets(self.ctx, |_, lhs, rhs| lhs.cmp(rhs));
         let mut primitives = FxHashSet::default();
 
         for x in [
@@ -862,7 +878,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         let mut tail_sa = FxHashMap::default();
         let mut tail_collector = TailCollector::new(self.ctx, &mut self.layout_info);
         for (parser, froms) in parser_slots.call_args.iter() {
-            for (from, req) in froms.keys() {
+            for ((from, req), _) in froms.iter() {
                 let call_site = TailCallSite {
                     from: Some(*from),
                     func: *parser,
@@ -873,7 +889,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             }
         }
         for (fun, reqs) in eval_slots.call_args.iter() {
-            for meta in reqs.keys() {
+            for (meta, _) in reqs.iter() {
                 let call_site = TailCallSite {
                     from: None,
                     func: *fun,
