@@ -9,7 +9,7 @@ use crate::{
     mir_subst::function_substitute,
 };
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, Debug)]
 struct CallSiteVertex {
     index: usize,
     lowlink: usize,
@@ -84,6 +84,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
     fn for_each_tail_callsite(
         &mut self,
         site: TailCallSite<'comp>,
+        req: LCallReq,
         mut f: impl FnMut(&mut Self, TailCallSite<'comp>) -> Result<(), LayoutError>,
     ) -> Result<(), LayoutError> {
         let fun_kind = match site.func.mono_layout() {
@@ -100,13 +101,8 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
             MonoLayout::Lambda(lid, ..) => FunKind::Lambda(*lid),
             _ => return Ok(()),
         };
-        let fsub = function_substitute(
-            fun_kind,
-            site.req.as_mir_call(),
-            site.from,
-            site.func,
-            self.ctx,
-        )?;
+        let fsub =
+            function_substitute(fun_kind, req.as_mir_call(), site.from, site.func, self.ctx)?;
         let mut already_called = FxHashSet::default();
         for instr in fsub.f.iter_bb().flat_map(|(_, bb)| bb.ins()) {
             let (arg, fun, req) = match instr {
@@ -121,7 +117,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
                 let inner_site = TailCallSite {
                     from: arg.map(|a| fsub.place(a)),
                     func: inner_fun,
-                    req: req,
+                    req,
                 };
                 if already_called.insert(inner_site) {
                     f(self, inner_site)?;
@@ -133,13 +129,12 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
 
     fn calculate_tail_size(
         &mut self,
-        mut site: TailCallSite<'comp>,
+        site: TailCallSite<'comp>,
     ) -> Result<CallSiteVertex, LayoutError> {
         let sa = site.func.inner().size_align_without_vtable(self.ctx)?;
         let layout_info = self.info.get_info(site.func.inner());
         let (req, needs_lencheck) = layout_info.modify_reqs(site.req);
-        site.req = req;
-        let from = if site.req.len {
+        let from = if req.len {
             None
         } else {
             site.from.map(|x| x.size_align(self.ctx)).transpose()?
@@ -158,7 +153,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
 
         // we use tarjan's algorithm to find strongly connected components and
         // get the maximum size of the tail call storage
-        self.for_each_tail_callsite(site, |this, subsite| {
+        self.for_each_tail_callsite(site, req, |this, subsite| {
             current_vertex.has_tailsites = true;
             let (subsize, from) = if let Some(&subsite_vertex) = this.vertices.get(&subsite) {
                 if subsite_vertex.on_stack {
