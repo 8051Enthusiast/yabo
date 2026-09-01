@@ -84,6 +84,7 @@ impl<'a, Arg: std::hash::Hash + Eq + Copy + std::fmt::Debug> CallInfo<'a, Arg> {
             x.0.len()
                 .cmp(&y.0.len())
                 .then_with(|| layout_set_hashes[x.1].cmp(&layout_set_hashes[y.1]))
+                .then_with(|| cmp(ctx, &id_info[&x.1].0, &id_info[&y.1].0))
         });
         let mut slot_sets: Vec<ParserSlotStatus> = Vec::new();
         for vec in sorted_vecs.iter().rev() {
