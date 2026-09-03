@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # Test runner for yabo
 
+import argparse
 from collections import defaultdict
+from contextlib import ExitStack
 import copy
 from dataclasses import dataclass
 import os
@@ -47,14 +49,8 @@ core_path = current_script_dir / 'lib' / 'core.yb'
 lib_path = current_script_dir / 'lib'
 example_path = current_script_dir / 'examples'
 test_order_path = current_script_dir / 'test_order.txt'
-compiler_env = os.environ.copy()
-compiler_env['YABO_LIB_PATH'] = str(lib_path)
-compiler_env['RUST_BACKTRACE'] = '1'
-# filter out LD_PRELOAD from the environment
-compiler_env['LD_PRELOAD'] = ''
 compiler_dir = current_script_dir / 'crates' / 'yaboc'
-compiler_bin = "yaboc"
-
+config_path = current_script_dir / "tests" / "config"
 
 class ErrorLocation:
     contained_message: str
@@ -70,14 +66,14 @@ class ErrorLocation:
         return f'ErrorLocation({self.contained_message}, {self.line}, {self.code})'
 
     @staticmethod
-    def from_match(match: re.Match, line: int) -> 'ErrorLocation':
+    def from_match(match: re.Match[str], line: int) -> 'ErrorLocation':
         contained_message = match.group(3)
         line = line - (len(match.group(1)) - 1)
         code = int(match.group(2))
         return ErrorLocation(contained_message, line, code)
 
     @staticmethod
-    def from_diagnostics(diagnostic: dict) -> dict[int, list['ErrorLocation']]:
+    def from_diagnostics(diagnostic: dict[str, Any]) -> dict[int, list['ErrorLocation']]:
         code: int = diagnostic['code']
         ret = defaultdict(list)
         for msg in diagnostic['labels']:
@@ -132,13 +128,13 @@ class TmpFile:
 def build_compiler_binary():
     os.chdir(compiler_dir)
     with subprocess.Popen(
-            ['cargo', 'metadata', '--format-version=1'], stdout=subprocess.PIPE, env=compiler_env) as cargo_metadata:
+            ['cargo', 'metadata', '--format-version=1'], stdout=subprocess.PIPE) as cargo_metadata:
         cargo_metadata_output = json.loads(
             cargo_metadata.communicate()[0].decode('utf-8'))
         cargo_args = ['cargo', 'build']
         if TARGET_RELEASE == 'release':
             cargo_args.append('--release')
-        subprocess.run(cargo_args, check=True, env=compiler_env)
+        subprocess.run(cargo_args, check=True)
         return os.path.join(cargo_metadata_output['target_directory'], TARGET_RELEASE, BINARY_NAME)
 
 
@@ -151,7 +147,7 @@ def run_compiler_unit_tests():
     cargo_args.append('--workspace')
     if TARGET_RELEASE == 'release':
         cargo_args.append('--release')
-    cargo_test = subprocess.run(cargo_args, check=False, env=compiler_env)
+    cargo_test = subprocess.run(cargo_args, check=False)
     return cargo_test.returncode == 0
 
 def check_diagnostic_match(diagnostics: dict[int, list[ErrorLocation]], expected: ErrorLocation):
@@ -207,12 +203,18 @@ def check_errors(stderr: str, expected: list[ErrorLocation]) -> None:
             f'No error comments found in source but errors were found in stderr:\n{stderr}'
         )
 
+def files_are_same(file1: str, file2: str) -> bool:
+    with open(file1, "rb") as f1, open(file2, "rb") as f2:
+        c1 = f1.read()
+        c2 = f2.read()
+        return c1 == c2
+
 class Runner:
     def run(self, _input: bytes) -> Any:
         raise NotImplementedError("run not implemented")
 
-    #def is_same(self, _other: Runner) -> bool:
-    #    raise NotImplementedError("is_same not implemented")
+    def is_same(self, _other: Runner) -> bool:
+        raise NotImplementedError("is_same not implemented")
 
     def __enter__(self) -> "Runner":
         return self
@@ -228,18 +230,39 @@ class CompilerError(Exception):
         self.diagnostics = diagnostics
 
 class Platform:
+    yaboc: str
+    compiler_env: dict[str, str]
+    perturbed_env: dict[str, str]
+    platform_name: str | None
+
+    def __init__(self, compiler_path: str, compiler_env: dict[str, str], perturbed_env: dict[str, str], platform_name: str | None=None):
+        self.yaboc = compiler_path
+        self.compiler_env = compiler_env
+        self.perturbed_env = perturbed_env
+        self.platform_name = platform_name
+
     def name(self) -> str:
-        return "Abstract"
+        return self.platform_name or self.__class__.__name__
 
-    def compile(self, _source_path: str, _source_name: str) -> TmpFile:
-        raise NotImplementedError("compile not implemented")
+    def compile(self, source_path: str, source_name: str, extra_args: list[str], perturbed: bool = False) -> TmpFile:
+        with TmpFile(suffix=f".{source_name}.o") as libfile:
+            env = self.perturbed_env if perturbed else self.compiler_env
+            proc = subprocess.run(
+                [self.yaboc, "--output-json", "--module", f"core={core_path}", *extra_args, source_path, libfile.name()],
+                stderr=subprocess.PIPE,
+                env=env
+            )
+            if proc.returncode != 0:
+                raise CompilerError(proc.stderr.decode())
 
-    def create_runner_for_file(self, _source_path: str, _source_name: str) -> Runner:
+            return libfile.move()
+
+    def create_runner_for_file(self, _source_path: str, _source_name: str, _perturbed: bool = False) -> Runner:
         raise NotImplementedError("create_runner_for not implemented")
 
-    def create_runner_for_source(self, source: str, source_name: str) -> Runner:
+    def create_runner_for_source(self, source: str, source_name: str, perturbed: bool = False) -> Runner:
         with TmpFile(content=source.encode(), suffix=f"{source_name}.yb") as file:
-            return self.create_runner_for_file(file.name(), source_name)
+            return self.create_runner_for_file(file.name(), source_name, perturbed)
 
     def expect_compile_error_for(self, source: str, source_name: str, expected: list[ErrorLocation]) -> None:
         try:
@@ -256,12 +279,17 @@ class Platform:
 
 
 @dataclass
+class TestConfig:
+    platforms: list[Platform]
+    reproducibility: bool
+
+@dataclass
 class InputOutputPair:
     input: bytes
     output: str
 
 
-def dictionarified_obj(obj) -> Any:
+def dictionarified_obj(obj: object) -> object:
     if isinstance(obj, (yabo.NominalValue, yabo.U8Value)):
         obj = obj.deref()
     if isinstance(obj, (int, str, bool)):
@@ -281,7 +309,7 @@ def dictionarified_obj(obj) -> Any:
         return ret_dict
 
 
-def wrap_maybe_field(inner: str, indent: str, field: Optional[str] | list = None):
+def wrap_maybe_field(inner: str, indent: str, field: Optional[str] | list[object] = None):
     if isinstance(field, list):
         return f'{indent}{inner},\n'
     if field is None:
@@ -289,7 +317,7 @@ def wrap_maybe_field(inner: str, indent: str, field: Optional[str] | list = None
     return f'{indent}"{field}": {inner},\n'
 
 
-def dict_with_indent(d, indent: str, field=None) -> str:
+def dict_with_indent(d: object, indent: str, field=None) -> str:
     if isinstance(d, str):
         ret = f'"{d}"'
     elif isinstance(d, int):
@@ -417,6 +445,12 @@ class NativeRunner(Runner):
         self.libfile = libfile
 
     @override
+    def is_same(self, other: Runner) -> bool:
+        if isinstance(other, NativeRunner):
+            return files_are_same(self.libfile.name(), other.libfile.name())
+        return False
+
+    @override
     def run(self, input: bytes) -> Any:
         buf = bytearray(input)
         lib = yabo.YaboLib(self.libfile.name(), buf, autoderef=False)
@@ -424,38 +458,38 @@ class NativeRunner(Runner):
         dict_obj = dictionarified_obj(obj)
         return dict_obj
 
+    @override
+    def __exit__(self, _exc_type, _exc_value, _traceback):
+        self.libfile.close()
+        super().__exit__(_exc_type, _exc_value, _traceback)
+
 class Native(Platform):
-    def __init__(self):
-        pass
+    def __init__(self, **general):
+        super().__init__(**general)
 
     @override
-    def name(self) -> str:
-        return "Native"
+    def compile(self, source_path: str, source_name: str, extra_args: list[str], perturbed: bool = False) -> TmpFile:
+        return super().compile(source_path, source_name, extra_args, perturbed)
 
     @override
-    def compile(self, source_path: str, source_name: str) -> TmpFile:
-        with TmpFile(suffix=f".{source_name}.so") as libfile:
-            proc = subprocess.run(
-                [compiler_bin, "--output-json", "--module", f"core={core_path}", source_path, libfile.name()],
-                stderr=subprocess.PIPE,
-                env=compiler_env
-            )
-            if proc.returncode != 0:
-                raise CompilerError(proc.stderr.decode())
-
-            return libfile.move()
-
-    @override
-    def create_runner_for_file(self, source_path: str, source_name: str) -> NativeRunner:
-        with self.compile(source_path, source_name) as libfile:
+    def create_runner_for_file(self, source_path: str, source_name: str, perturbed: bool = False) -> NativeRunner:
+        with self.compile(source_path, source_name, [], perturbed) as libfile:
             return NativeRunner(libfile.move())
 
 
 class WasmRunner(Runner):
     exec: TmpFile
+    obj: TmpFile
 
-    def __init__(self, exec: TmpFile):
+    def __init__(self, exec: TmpFile, obj: TmpFile):
         self.exec = exec
+        self.obj = obj
+
+    @override
+    def is_same(self, other: Runner) -> bool:
+        if isinstance(other, WasmRunner):
+            return files_are_same(self.obj.name(), other.obj.name())
+        return False
 
     @override
     def run(self, input: bytes) -> Any:
@@ -471,6 +505,7 @@ class WasmRunner(Runner):
     @override
     def __exit__(self, _exc_type, _exc_value, _traceback):
         self.exec.close()
+        self.obj.close()
         super().__exit__(_exc_type, _exc_value, _traceback)
 
 
@@ -479,7 +514,8 @@ class Wasm(Platform):
     sysroot: str
     printer: TmpFile
 
-    def __init__(self, wasi_sdk_path: str):
+    def __init__(self, wasi_sdk_path: str, **general):
+        super().__init__(**general)
         self.cc = os.path.join(wasi_sdk_path, 'bin', 'clang')
         self.sysroot = os.path.join(wasi_sdk_path, 'share', 'wasi-sysroot')
         self.printer = TmpFile(suffix='.yaboprint.o')
@@ -494,28 +530,13 @@ class Wasm(Platform):
         subprocess.run(compiler_args, check=True)
 
     @override
-    def name(self) -> str:
-        return "Wasm"
+    def compile(self, source_path: str, source_name: str, extra_args: list[str], perturbed: bool = False) -> TmpFile:
+        return super().compile(source_path, source_name,
+            ["--target=wasm32-wasi", "--emit=object", "--target-features=+tail-call", *extra_args], perturbed)
 
     @override
-    def compile(self, source_path: str, source_name: str) -> TmpFile:
-        with TmpFile(suffix=f'.{source_name}.o') as object:
-            proc = subprocess.run(
-                [compiler_bin, "--output-json",
-                    "--target=wasm32-wasi", "--emit=object",
-                    "--target-features=+tail-call",
-                    "--module", f"core={core_path}",
-                    source_path, object.name()],
-                stderr=subprocess.PIPE,
-                env=compiler_env,
-            )
-            if proc.returncode != 0:
-                raise CompilerError(proc.stderr.decode())
-            return object.move()
-
-    @override
-    def create_runner_for_file(self, source_path: str, source_name: str) -> WasmRunner:
-        with (self.compile(source_path, source_name) as object,
+    def create_runner_for_file(self, source_path: str, source_name: str, perturbed: bool = False) -> WasmRunner:
+        with (self.compile(source_path, source_name, [], perturbed) as object,
               TmpFile(suffix=f'.{source_name}') as execpath):
             clang_args = [
                 self.cc, '--sysroot', self.sysroot,
@@ -524,13 +545,18 @@ class Wasm(Platform):
                 '-o', execpath.name(), self.printer.name(), object.name()
             ]
             subprocess.run(clang_args, check=True)
-            return WasmRunner(execpath.move())
+            return WasmRunner(execpath.move(), object.move())
 
     @override
     def __exit__(self, _exc_type, _exc_value, _traceback):
         self.printer.close()
         super().__exit__(_exc_type, _exc_value, _traceback)
 
+
+platforms = {
+    "Wasm": Wasm,
+    "Native": Native
+}
 
 class TestFile:
     source: str
@@ -596,14 +622,19 @@ class TestFile:
         print(output)
         return 0
 
-    def run(self, platforms: list[Platform]) -> int:
+    def run(self, test_config: TestConfig) -> int:
         output: str = f'Running test {self.name}\n'
         failed_tests = 0
         expected_errs = expected_errors(self.source)
         if expected_errs:
-            return self.check_errors(platforms[0], expected_errs, output)
-        for platform in platforms:
+            return self.check_errors(test_config.platforms[0], expected_errs, output)
+        for platform in test_config.platforms:
             with platform.create_runner_for_source(self.source, self.name) as runner:
+                if test_config.reproducibility:
+                    with platform.create_runner_for_source(self.source, self.name, perturbed=True) as perturbed:
+                        if not runner.is_same(perturbed):
+                             output += f'{RED} {platform.name()} reproducibility Test failed!{CLEAR}\n'
+                             failed_tests += 1
                 for (test_name, pair) in self.cases.items():
                     try:
                         parsed_output = runner.run(pair.input)
@@ -626,7 +657,7 @@ class TestFile:
         return failed_tests
 
 
-def run_test(spath: str, platforms: list[Platform]) -> tuple[int, float]:
+def run_test(spath: str, test_config: TestConfig) -> tuple[int, float]:
     path = pathlib.Path(spath)
     if path.suffix != '.ybtest':
         return (0, 0)
@@ -635,7 +666,7 @@ def run_test(spath: str, platforms: list[Platform]) -> tuple[int, float]:
         starttime = time.time()
         testname = os.path.basename(path).removesuffix('.ybtest')
         test = TestFile(content, testname)
-        count = test.run(platforms)
+        count = test.run(test_config)
         endtime = time.time()
         elapsed = (endtime - starttime)
         return (count, elapsed)
@@ -657,14 +688,14 @@ def write_test_order_file(times: dict[str, float]):
     with open(test_order_path, 'w') as outfile:
         outfile.write('\n'.join(paths))
 
-def run_test_with_path_returned(file: str, platforms: list[Platform]) -> tuple[str, int, float]:
-    return (file, *run_test(file, platforms))
+def run_test_with_path_returned(file: str, test_config: TestConfig) -> tuple[str, int, float]:
+    return (file, *run_test(file, test_config))
 
 # goes through all files in the target directory ending in .ybtest
-def run_tests(files: list[str], platforms: list[Platform], collect: bool = True) -> int:
+def run_tests(files: list[str], test_config: TestConfig, collect: bool = True) -> int:
     try:
         with futures.ThreadPoolExecutor() as executor:
-            results = executor.map(lambda file: run_test_with_path_returned(file, platforms), files)
+            results = executor.map(lambda file: run_test_with_path_returned(file, test_config), files)
             sum = 0
             times = dict()
             for (file, count, time) in results:
@@ -680,17 +711,17 @@ def run_tests(files: list[str], platforms: list[Platform], collect: bool = True)
         total_failed = 0
         for file in files:
             print(f'Running {file}')
-            total_failed += run_test(file, platforms)[0]
+            total_failed += run_test(file, test_config)[0]
         return total_failed
 
 
-def compile_example(file: os.PathLike[str], platforms: list[Platform]):
+def compile_example(file: os.PathLike[str], test_config: TestConfig):
     output: str = f'Compiling example {file}\n'
     failed: int = 0
     name = os.path.basename(file)
-    for platform in platforms:
+    for platform in test_config.platforms:
         try:
-            with platform.compile(str(file), name):
+            with platform.compile(str(file), name, []):
                 output += f'{GREEN} {platform.name()} compilation passed{CLEAR}\n'
         except CompilerError as e:
             output += f'{RED} {platform.name()} compilation failed{CLEAR}\n'
@@ -701,36 +732,77 @@ def compile_example(file: os.PathLike[str], platforms: list[Platform]):
     return failed
 
 
-def compile_examples(platforms: list[Platform]):
+def compile_examples(test_config: TestConfig):
     total_failed = 0
     files = [example_path /
              x for x in os.listdir(example_path) if x.endswith('.yb')]
     with futures.ThreadPoolExecutor() as executor:
-        results = executor.map(lambda file: compile_example(file, platforms), files)
+        results = executor.map(lambda file: compile_example(file, test_config), files)
         total_failed = sum(results)
     return total_failed
 
+def merge(orig: object, new: object) -> object:
+    match (orig, new):
+        case (dict() as odict, dict() as ndict):
+            return {k: merge(odict.get(k), ndict.get(k)) for k in odict.keys() | ndict.keys()}
+        case (x, None) | (_, x):
+            return x
 
-def main(args):
-    global compiler_bin
-    arg_list = [os.path.abspath(file) for file in args]
-    compiler_bin = build_compiler_binary()
-    platforms: list[Platform] = [Native()]
-    wasi_sdk_path = os.environ.get('WASI_SDK_PATH')
-    if wasi_sdk_path:
-        platforms += [Wasm(wasi_sdk_path)]
-    if len(arg_list) == 0:
-        if not run_compiler_unit_tests():
-            sys.exit(1)
-        target_dir = current_script_dir / 'tests'
-        files = [str(target_dir / x) for x in os.listdir(target_dir)]
-        files = get_test_order_list(files)
-        with futures.ThreadPoolExecutor() as executor:
-            tests = executor.submit(run_tests, files, platforms)
-            compile = executor.submit(compile_examples, platforms)
-            total_failed = tests.result() + compile.result()
-    else:
-        total_failed = run_tests(arg_list, platforms, collect=False)
+def init_generic_platform() -> dict[object, object]:
+    compiler_env = os.environ.copy()
+    compiler_env['YABO_LIB_PATH'] = str(lib_path)
+    compiler_env['RUST_BACKTRACE'] = '1'
+    perturbed_env: dict[str, str] = compiler_env.copy()
+    compiler_path = build_compiler_binary()
+    return {
+        "compiler_path": str(compiler_path),
+        "compiler_env": compiler_env,
+        "perturbed_env": perturbed_env
+    }
+
+def assemble_platform(platform_config: Any, generic_args: Any) -> Platform:
+    name = platform_config["kind"]
+    platform = platforms[name]
+    args = merge(generic_args, platform_config["args"])
+    return platform(**args)
+
+def get_config(name: str) -> pathlib.Path:
+    json_name = name + ".json"
+    user_config = config_path / "user" / json_name
+    if user_config.exists():
+        return user_config
+    return config_path / json_name
+
+def parse_args(args: list[str]):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-c", help="the test config to choose", type=str, default="default")
+    parser.add_argument("tests", nargs="*", type=str)
+    return parser.parse_args(args)
+
+def main(args: list[str]):
+    parsed_args = parse_args(args)
+    tests = [os.path.abspath(file) for file in parsed_args.tests]
+    config = json.load(open(get_config(parsed_args.c), "r"))
+    generic_platform = init_generic_platform()
+    with ExitStack() as stack:
+        platforms: list[Platform] = []
+        for platform_config in config["platforms"]:
+            platforms += [stack.enter_context(assemble_platform(platform_config, generic_platform))]
+
+        test_config = TestConfig(platforms=platforms, reproducibility=config.get("reproducibility") or False)
+
+        if len(tests) == 0:
+            if not run_compiler_unit_tests():
+                sys.exit(1)
+            target_dir = current_script_dir / 'tests'
+            files = [str(target_dir / x) for x in os.listdir(target_dir)]
+            files = get_test_order_list(files)
+            with futures.ThreadPoolExecutor() as executor:
+                tests = executor.submit(run_tests, files, test_config)
+                compile = executor.submit(compile_examples, test_config)
+                total_failed = tests.result() + compile.result()
+        else:
+            total_failed = run_tests(tests, test_config, collect=False)
 
     if total_failed != 0:
         print(f'{total_failed} tests failed')
