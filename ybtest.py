@@ -213,7 +213,7 @@ class Runner:
     def run(self, _input: bytes) -> Any:
         raise NotImplementedError("run not implemented")
 
-    def is_same(self, _other: Runner) -> bool:
+    def is_same(self, _other: "Runner") -> bool:
         raise NotImplementedError("is_same not implemented")
 
     def __enter__(self) -> "Runner":
