@@ -50,15 +50,15 @@ export def test = {
 }
 
 ====[ binary 2 ]====
-ff fe fd fc
+fe fd fc fb
 ====[ output 2 ]====
 {
   "a": {
-    "tag": 255,
-      "more": 254
+    "tag": 254,
+      "more": 253
   },
   "b": {
-    "tag": 253,
-    "more": 252
+    "tag": 252,
+    "more": 251
   }
 }
