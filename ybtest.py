@@ -282,6 +282,7 @@ class Platform:
 class TestConfig:
     platforms: list[Platform]
     reproducibility: bool
+    excludes: set[str]
 
 @dataclass
 class InputOutputPair:
@@ -725,6 +726,8 @@ def run_test(spath: str, test_config: TestConfig) -> tuple[int, float]:
     path = pathlib.Path(spath)
     if path.suffix != '.ybtest':
         return (0, 0)
+    if path.stem in test_config.excludes:
+        return (0, 0)
     with open(path, 'r', encoding='utf-8') as file:
         content = file.read()
         starttime = time.time()
@@ -853,7 +856,9 @@ def main(args: list[str]):
         for platform_config in config["platforms"]:
             platforms += [stack.enter_context(assemble_platform(platform_config, generic_platform))]
 
-        test_config = TestConfig(platforms=platforms, reproducibility=config.get("reproducibility") or False)
+        test_config = TestConfig(platforms=platforms,
+                                 reproducibility=config.get("reproducibility") or False,
+                                 excludes=set(config.get("excludes") or []))
 
         if len(tests) == 0:
             if not run_compiler_unit_tests():
