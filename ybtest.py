@@ -592,7 +592,9 @@ class LlubiRunner(Runner):
             _ = subprocess.run([str(link), execobj, self.obj.name(), '-o', exec])
 
             proc = subprocess.run([llubi, '--max-mem=100000000', '--max-stack-depth=10000', exec],
-                                  stdout=subprocess.PIPE)
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if proc.returncode != 0:
+                raise RuntimeError(f"llubi execution failed: {proc.stderr.decode()}")
             return json.loads(proc.stdout.decode('utf-8'))
 
     @override
