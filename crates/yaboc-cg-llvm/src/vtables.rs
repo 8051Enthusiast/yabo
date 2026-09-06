@@ -319,7 +319,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
         let eval_slots = self.collected_layouts.eval_slots.calls_from_layout(layout);
         let eval_funcs =
-            self.gather_slots::<EvalFunFun, _>(&eval_slots, vtable, 3, |this, meta| {
+            self.gather_slots::<EvalFunFun, _>(&eval_slots, vtable, 6, |this, meta| {
                 if meta.tail {
                     this.eval_fun_fun_val_tail(layout, meta.req)
                 } else {
