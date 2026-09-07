@@ -1,0 +1,64 @@
+====[ source code ]====
+export
+fun ~test = {
+  lhs: i64l
+  rhs: i64l
+  let return = (
+    let left = lhs << rhs
+    let right = lhs >> rhs
+  )
+}
+
+====[ binary 1 ]====
+01 00 00 00 00 00 00 00
+40 00 00 00 00 00 00 00
+
+====[ output 1 ]====
+{
+  "left": 0,
+  "right": 0
+}
+
+
+====[ binary 2 ]====
+00 00 00 00 00 00 00 80
+40 00 00 00 00 00 00 00
+
+====[ output 2 ]====
+{
+  "left": 0,
+  "right": -1
+}
+
+
+====[ binary 3 ]====
+00 00 00 00 00 00 00 80
+00 00 00 00 00 00 00 80
+
+====[ output 3 ]====
+{
+  "left": -1,
+  "right": 0
+}
+
+
+====[ binary 4 ]====
+02 00 00 00 00 00 00 00
+ff ff ff ff ff ff ff ff
+
+====[ output 4 ]====
+{
+  "left": 1,
+  "right": 4
+}
+
+
+====[ binary 5 ]====
+02 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+
+====[ output 5 ]====
+{
+  "left": 2,
+  "right": 2
+}

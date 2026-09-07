@@ -23,7 +23,7 @@ fun ~winning(lo: int, hi: int): int = {
   | ~, if /\|/, return: points(lo, hi, 1)
   | n: if wsnum
     let right = (n & 64) if 0 else 1
-    return: winning((1 ^ right) << n | lo, right << n | hi)
+    return: winning((1 ^ right) << (n & 63) | lo, right << (n & 63) | hi)
   \
 }
 

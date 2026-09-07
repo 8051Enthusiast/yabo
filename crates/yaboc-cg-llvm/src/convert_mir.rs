@@ -777,6 +777,79 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         )
     }
 
+    fn shift_left(
+        cg: &CodeGenCtx<'llvm, 'comp>,
+        lhs: IntValue<'llvm>,
+        rhs: IntValue<'llvm>,
+    ) -> IResult<IntValue<'llvm>> {
+        let is_above =
+            cg.builder
+                .build_int_compare(IntPredicate::UGE, rhs, cg.const_i64(64), "is_above")?;
+        let shifted = cg.builder.build_left_shift(lhs, rhs, "shl")?;
+        cg.builder
+            .build_select(is_above, cg.const_i64(0), shifted, "selected_shift")
+            .map(|x| x.into_int_value())
+    }
+
+    fn shift_right(
+        cg: &CodeGenCtx<'llvm, 'comp>,
+        lhs: IntValue<'llvm>,
+        rhs: IntValue<'llvm>,
+    ) -> IResult<IntValue<'llvm>> {
+        let is_above =
+            cg.builder
+                .build_int_compare(IntPredicate::UGE, rhs, cg.const_i64(63), "is_above")?;
+        let saturated_shift = cg
+            .builder
+            .build_select(is_above, cg.const_i64(63), rhs, "saturated_shift")?
+            .into_int_value();
+        cg.builder
+            .build_right_shift(lhs, saturated_shift, true, "shr")
+    }
+
+    fn shift(
+        &mut self,
+        is_right: bool,
+        lhs: IntValue<'llvm>,
+        rhs: IntValue<'llvm>,
+    ) -> Result<IntValue<'llvm>, inkwell::builder::BuilderError> {
+        let pos_block = self.cg.llvm.append_basic_block(self.llvm_fun, "pos");
+        let neg_block = self.cg.llvm.append_basic_block(self.llvm_fun, "neg");
+        let cont_block = self.cg.llvm.append_basic_block(self.llvm_fun, "cont");
+        type Fn<'a, 'b> =
+            fn(&CodeGenCtx<'a, 'b>, IntValue<'a>, IntValue<'a>) -> IResult<IntValue<'a>>;
+        let (mut pos, mut neg) = (
+            Self::shift_right as Fn<'llvm, 'comp>,
+            Self::shift_left as Fn<'llvm, 'comp>,
+        );
+        if !is_right {
+            std::mem::swap(&mut pos, &mut neg);
+        };
+        let is_nonnegative = self.cg.builder.build_int_compare(
+            IntPredicate::SGT,
+            rhs,
+            self.cg.const_i64(0),
+            "is_negative",
+        )?;
+        self.cg
+            .builder
+            .build_conditional_branch(is_nonnegative, pos_block, neg_block)?;
+        self.cg.builder.position_at_end(pos_block);
+        let pos_res = pos(self.cg, lhs, rhs)?;
+        self.cg.builder.build_unconditional_branch(cont_block)?;
+        self.cg.builder.position_at_end(neg_block);
+        let negative = self.cg.builder.build_int_neg(rhs, "negative")?;
+        let neg_res = neg(self.cg, lhs, negative)?;
+        self.cg.builder.build_unconditional_branch(cont_block)?;
+        self.cg.builder.position_at_end(cont_block);
+        let phi = self
+            .cg
+            .builder
+            .build_phi(pos_res.get_type(), "shift_result")?;
+        phi.add_incoming(&[(&pos_res, pos_block), (&neg_res, neg_block)]);
+        Ok(phi.as_basic_value().into_int_value())
+    }
+
     fn int_bin(
         &mut self,
         ret: PlaceRef,
@@ -791,8 +864,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             IntBinOp::And => b.build_and(lhs, rhs, "and"),
             IntBinOp::Xor => b.build_xor(lhs, rhs, "xor"),
             IntBinOp::Or => b.build_or(lhs, rhs, "or"),
-            IntBinOp::ShiftR => b.build_right_shift(lhs, rhs, true, "shr"),
-            IntBinOp::ShiftL => b.build_left_shift(lhs, rhs, "shl"),
+            IntBinOp::ShiftR | IntBinOp::ShiftL => self.shift(op == IntBinOp::ShiftR, lhs, rhs),
             IntBinOp::Minus => b.build_int_sub(lhs, rhs, "minus"),
             IntBinOp::Plus => b.build_int_add(lhs, rhs, "plus"),
             IntBinOp::Div => b.build_int_signed_div(lhs, rhs, "div"),
