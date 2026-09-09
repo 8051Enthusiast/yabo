@@ -242,7 +242,11 @@ impl<'a> StrictnessCtx<'a> {
                 } else if let Some(strictness) = out.map.get(f) {
                     *strictness
                 } else {
-                    return Ok(());
+                    Use {
+                        strictness: Strictness::Lazy,
+                        return_origin: false,
+                        always: true,
+                    }
                 };
                 out.insert(*g, strictness);
             }
