@@ -1,3 +1,4 @@
+#![allow(clippy::single_range_in_vec_init)]
 mod convert_mir;
 mod convert_regex;
 mod convert_thunk;
@@ -750,7 +751,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn block_info(&mut self, block: BlockId) -> PointerValue<'llvm> {
         let hash = self.compiler_database.db.def_hash(block.0);
-        let info_sym = format!("block_info${}", &truncated_hex(&hash));
+        let info_sym = format!("block_info${}", truncated_hex(&hash));
         if let Some(val) = self.module.get_global(&info_sym) {
             return val.as_pointer_value();
         }

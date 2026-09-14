@@ -209,7 +209,7 @@ fn eval_y(expr: &IdxExpression<Bivariate>, y: i64) -> IdxExpression<Univariate> 
                     ExprHead::Niladic(PartialEval::Uneval(Bivariate::X)) => {
                         return PartialEval::Uneval(ExprHead::new_niladic(PartialEval::Uneval(
                             Univariate::X,
-                        )))
+                        )));
                     }
                     ExprHead::Niladic(PartialEval::Uneval(Bivariate::Y)) => y,
                     ExprHead::Monadic(UnOp::Neg, inner) => {
@@ -289,5 +289,8 @@ fn partial_eval() {
 fn filter() {
     let expr = parse("4 * -3 * -y + x + --5");
     let new_expr = expr.expr.filter_monadic(|_| false);
-    assert_eq!(as_string(&new_expr.expr, bivariate_string), "4 * 3 * y + x + 5");
+    assert_eq!(
+        as_string(&new_expr.expr, bivariate_string),
+        "4 * 3 * y + x + 5"
+    );
 }

@@ -151,7 +151,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.add_entry_block(wrapper, layout);
         let Some((val, arg)) = self.setup_tail_fun_copy(None, fun_arg, req)? else {
             let res = self.build_tailcc_call_with_int_ret(
-                inner.into(),
+                inner,
                 &[
                     ret.ptr.into(),
                     fun_arg.ptr.into(),

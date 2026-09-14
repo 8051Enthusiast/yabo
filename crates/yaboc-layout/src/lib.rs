@@ -173,10 +173,10 @@ impl<'a> IMonoLayout<'a> {
     ) -> String {
         let name_prefix = match self.mono_layout() {
             MonoLayout::BlockParser(def, _) => {
-                format!("parse_block_{}", &truncated_hex(&db.def_hash(def.0)))
+                format!("parse_block_{}", truncated_hex(&db.def_hash(def.0)))
             }
             MonoLayout::Block(def, _) => {
-                format!("block_{}", &truncated_hex(&db.def_hash(def.0)))
+                format!("block_{}", truncated_hex(&db.def_hash(def.0)))
             }
             MonoLayout::Nominal(id, _, _) => {
                 dbformat!(db, "{}", &db.def_name(id.0).unwrap())
@@ -866,8 +866,8 @@ impl<'a> ILayout<'a> {
     }
 }
 
-pub fn pd_parser<'a, 'b>(
-    ctx: &'b mut AbsIntCtx<'a, ILayout<'a>>,
+pub fn pd_parser<'a>(
+    ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     pd: ParserDefId,
 ) -> Result<ILayout<'a>, LayoutError> {
     let parserdef = pd.lookup(ctx.db)?;
@@ -977,7 +977,7 @@ impl<'a> LayoutContext<'a> {
         db: &(impl Layouts + ?Sized),
         layout: ILayout<'a>,
     ) -> [u8; 32] {
-        self.hashes.hash(layout, db).try_into().unwrap()
+        self.hashes.hash(layout, db)
     }
 
     pub fn layout_hash(&mut self, db: &(impl Layouts + ?Sized), layout: ILayout<'a>) -> [u8; 8] {
@@ -989,7 +989,7 @@ impl<'a> LayoutContext<'a> {
         db: &(impl Layouts + ?Sized),
         layout: &[ILayout<'a>],
     ) -> [u8; 32] {
-        self.hashes.hash_multiple(layout, db).try_into().unwrap()
+        self.hashes.hash_multiple(layout, db)
     }
 
     pub fn layout_slice_hash(
@@ -1128,10 +1128,9 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
                         };
                         captures.insert(*capture, capture_value);
                     }
-                    let res = ctx
-                        .dcx
-                        .intern(Layout::Mono(MonoLayout::BlockParser(block_id, captures)));
-                    res
+
+                    ctx.dcx
+                        .intern(Layout::Mono(MonoLayout::BlockParser(block_id, captures)))
                 }
                 ResolvedAtom::Lambda(lambda_id) => {
                     let mut captures = BTreeMap::new();

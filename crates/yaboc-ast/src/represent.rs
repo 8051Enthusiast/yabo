@@ -2,7 +2,7 @@ use yaboc_base::{
     databased_display::DatabasedDisplay, dbwrite, hash::StableHash, interner::FieldName,
 };
 
-use crate::{expr::Atom, ArrayKind, Asts, ConstraintAtom};
+use crate::{ArrayKind, Asts, ConstraintAtom, expr::Atom};
 
 impl<DB: Asts + ?Sized> StableHash<DB> for ArrayKind {
     fn update_hash(&self, state: &mut sha2::Sha256, db: &DB) {

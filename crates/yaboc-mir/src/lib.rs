@@ -460,12 +460,10 @@ pub struct BasicBlock {
 
 impl BasicBlock {
     pub fn append_ins(&mut self, ins: MirInstr) {
-        if let Some(last_ins) = self.ins.last() {
-            if last_ins.is_terminator() {
-                panic!(
-                    "Cannot append instruction {ins:?} to a block with a terminator {last_ins:?}",
-                );
-            }
+        if let Some(last_ins) = self.ins.last()
+            && last_ins.is_terminator()
+        {
+            panic!("Cannot append instruction {ins:?} to a block with a terminator {last_ins:?}",);
         }
         self.ins.push(ins)
     }

@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_arguments)]
 use std::{
     collections::BTreeSet,
     convert::Infallible,
@@ -887,6 +888,7 @@ impl<'a> ConvertExpr<'a> {
         let place_ref = self.unwrap_or_stack(loc);
         // if the place is already there, it means that argument is not used
         let mut inner_results = Vec::with_capacity(arg_count);
+        #[allow(clippy::needless_range_loop)]
         for n in 1..=arg_count {
             let place = inner_locs[n].place;
             let res = ok_some!(recurse(self, place, n));
@@ -1055,10 +1057,9 @@ impl<'a> ConvertExpr<'a> {
 }
 
 pub(crate) fn bt_from_req(req: enumflags2::BitFlags<NeededBy, u8>) -> BtMarkKind {
-    let bt = if req.contains(NeededBy::Backtrack) {
+    if req.contains(NeededBy::Backtrack) {
         BtMarkKind::KeepBt
     } else {
         BtMarkKind::RemoveBt
-    };
-    bt
+    }
 }

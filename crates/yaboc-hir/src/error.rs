@@ -124,7 +124,7 @@ fn conversion_report(error: HirConversionError) -> Option<Report> {
                 Report::new(
                     DiagnosticKind::Error,
                     span.file,
-                    &format!("`let return` used on inline block"),
+                    "`let return` used on inline block",
                 )
                 .with_code(212)
                 .with_label(Label::new(span).with_message(

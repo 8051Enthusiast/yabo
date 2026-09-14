@@ -1,12 +1,12 @@
 use yaboc_base::{
     dbformat,
     error::{
-        diagnostic::{DiagnosticKind, Label},
         Report,
+        diagnostic::{DiagnosticKind, Label},
     },
     source::{IndirectSpan, Span, SpanIndex},
 };
-use yaboc_hir::{self as hir, walk::ChildIter, ExprId};
+use yaboc_hir::{self as hir, ExprId, walk::ChildIter};
 
 use super::{ResolveError, Resolves};
 
@@ -22,12 +22,11 @@ pub fn errors(db: &(impl Resolves + ?Sized)) -> Vec<Report> {
         );
         for node in ChildIter::new(module.0, db) {
             // let chains would make this so much prettier...
-            if let hir::HirNode::Expr(expr) = &node {
-                if let Err(e) = db.resolve_expr_error(expr.id) {
-                    if let Some(rep) = make_report(db, &e) {
-                        errors.push(rep);
-                    }
-                }
+            if let hir::HirNode::Expr(expr) = &node
+                && let Err(e) = db.resolve_expr_error(expr.id)
+                && let Some(rep) = make_report(db, &e)
+            {
+                errors.push(rep);
             }
         }
     }

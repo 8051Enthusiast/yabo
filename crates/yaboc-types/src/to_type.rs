@@ -1,9 +1,9 @@
 use std::{collections::HashMap, hash::Hash, sync::Arc};
 
 use crate::{
+    BlockTypeHead, TypeVarRef,
     connections::ConnectionMap,
     inference::{BlockInfHead, TRACING_ENABLED},
-    BlockTypeHead, TypeVarRef,
 };
 use yaboc_base::{
     dbeprintln, dbpanic,
@@ -12,9 +12,9 @@ use yaboc_base::{
 };
 
 use super::{
+    Type, TypeError, TypeId, TypeInterner,
     inference::{InfTypeId, InfTypeInterner, InferenceType},
     inference::{InferenceContext, TypeResolver},
-    Type, TypeError, TypeId, TypeInterner,
 };
 
 pub struct TyVars<'a, 'intern> {

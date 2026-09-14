@@ -210,7 +210,7 @@ impl<'intern> From<InfTypeId<'intern>> for InfTypeHead {
 
 impl<'intern> InfTypeId<'intern> {
     pub fn value(self) -> &'intern InferenceType<InfTypeId<'intern>> {
-        &self.0 .1
+        &self.0.1
     }
     pub fn child_arrays(self) -> InferenceType<Vec<Self>> {
         self.value()
@@ -796,7 +796,7 @@ impl<'intern, TR: TypeResolver<'intern>> InferenceContext<'intern, TR> {
         if let Some(&cached) = replace_map.get(&ty) {
             return cached;
         }
-        let res = if let InferenceType::Var(_) = ty.0 .1 {
+        let res = if let InferenceType::Var(_) = ty.0.1 {
             infvar_replace
         } else {
             ty.try_map_children(self, |this, child, _| -> Result<_, Infallible> {

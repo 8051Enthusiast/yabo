@@ -4,16 +4,16 @@ use yaboc_base::{
     databased_display::DatabasedDisplay, hash::StableHash, low_effort_interner::Uniq,
 };
 
-use crate::{inference::InfTypeHead, BlockTypeHead, Type, TypeId, TypeVarRef};
+use crate::{BlockTypeHead, Type, TypeId, TypeVarRef, inference::InfTypeHead};
 
-use super::{inference::InferenceType, InfTypeId, NominalKind, PrimitiveType, TypeInterner};
+use super::{InfTypeId, NominalKind, PrimitiveType, TypeInterner, inference::InferenceType};
 
 use yaboc_base::dbwrite;
 
 impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for InfTypeId<'_> {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self.value() {
-            InferenceType::Primitive(p) => write!(f, "{}", &p),
+            InferenceType::Primitive(p) => write!(f, "{}", p),
             InferenceType::TypeVarRef(TypeVarRef(loc, index)) => {
                 dbwrite!(f, db, "<Var Ref ({}, {})>", loc, index)
             }
@@ -144,7 +144,7 @@ impl std::fmt::Display for PrimitiveType {
 
 impl<DB: TypeInterner + ?Sized> DatabasedDisplay<DB> for TypeVarRef {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, _: &DB) -> std::fmt::Result {
-        write!(f, "'{}", &self.1)
+        write!(f, "'{}", self.1)
     }
 }
 

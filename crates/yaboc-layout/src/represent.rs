@@ -160,8 +160,8 @@ impl<'a> LayoutHasher<'a> {
         for layout in layouts {
             hasher.update(self.hash(*layout, db));
         }
-        let res = hasher.finalize().into();
-        res
+
+        hasher.finalize().into()
     }
 
     pub fn hash<DB: Layouts + ?Sized>(&mut self, layout: ILayout<'a>, db: &DB) -> [u8; 32] {
@@ -388,7 +388,7 @@ impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         match self {
             LayoutPart::Parse(reqs, kind, from) => {
-                write!(f, "parse_{}_", &truncated_hex(&from[..]))?;
+                write!(f, "parse_{}_", truncated_hex(&from[..]))?;
                 let v = match reqs.val {
                     EvalType::NoValue => "",
                     EvalType::Value => "v",

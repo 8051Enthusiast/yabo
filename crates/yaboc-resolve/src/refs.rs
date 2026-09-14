@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use hir::DefKind;
 use yaboc_ast::expr::Atom;
-use yaboc_hir::{walk, HirNode};
+use yaboc_hir::{HirNode, walk};
 
 use super::*;
 

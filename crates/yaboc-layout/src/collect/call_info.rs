@@ -143,7 +143,7 @@ impl<'a> ParserSlotStatus<'a> {
         }
     }
     pub(crate) fn try_insert(&mut self, parser_set: &LayoutSet<'a>, id: usize) -> bool {
-        if !self.used_parsers.is_disjoint(&parser_set) {
+        if !self.used_parsers.is_disjoint(parser_set) {
             return false;
         }
         self.used_parsers.extend(parser_set.iter());

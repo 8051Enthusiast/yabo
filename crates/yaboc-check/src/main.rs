@@ -1,7 +1,7 @@
 use clap::Parser;
 use yaboc_ast::import::Import;
-use yaboc_base::{source::AriadneCache, Context};
-use yaboc_database::{YabocDatabase, ERROR_FNS};
+use yaboc_base::{Context, source::AriadneCache};
+use yaboc_database::{ERROR_FNS, YabocDatabase};
 
 #[derive(Parser)]
 #[clap(author, version, about)]

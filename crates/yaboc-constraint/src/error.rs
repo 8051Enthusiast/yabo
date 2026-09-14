@@ -2,8 +2,8 @@ use fxhash::FxHashSet;
 use yaboc_backtrack::EffectError;
 use yaboc_base::{
     error::{
-        diagnostic::{Diagnostic, DiagnosticKind, Label},
         Report, SResult,
+        diagnostic::{Diagnostic, DiagnosticKind, Label},
     },
     source::IndirectSpan,
 };

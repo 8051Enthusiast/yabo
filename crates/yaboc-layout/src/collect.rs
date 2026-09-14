@@ -185,10 +185,8 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             if self.parsers.insert(mono) && TRACE_COLLECTION {
                 dbeprintln!(self.ctx.db, "[collection] registered parser {}", &mono);
             }
-        } else if self.functions.insert(mono) {
-            if TRACE_COLLECTION {
-                dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
-            }
+        } else if self.functions.insert(mono) && TRACE_COLLECTION {
+            dbeprintln!(self.ctx.db, "[collection] registered function {}", &mono);
         }
     }
 
@@ -448,13 +446,12 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 }
                 _ => None,
             };
-            if let Some(eval) = eval {
-                if self
+            if let Some(eval) = eval
+                && self
                     .processed_evals
                     .insert((mono, LCallMeta { req, ..meta }))
-                {
-                    self.unprocessed.push(eval(mono, req.as_mir_call()));
-                }
+            {
+                self.unprocessed.push(eval(mono, req.as_mir_call()));
             }
         }
     }
@@ -830,7 +827,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     }
 
     fn sorted_layouts(ctx: &mut AbsLayoutCtx<'a>, set: &LayoutSet<'a>) -> Vec<IMonoLayout<'a>> {
-        let mut vec = set.into_iter().copied().collect::<Vec<_>>();
+        let mut vec = set.iter().copied().collect::<Vec<_>>();
         vec.sort_unstable_by(|a, b| {
             ctx.dcx
                 .full_layout_hash(ctx.db, a.inner())

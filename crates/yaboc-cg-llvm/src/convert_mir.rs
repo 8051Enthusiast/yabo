@@ -710,7 +710,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let arg_layout_tuple = self.cg.layouts.dcx.intern_slice.intern_slice(&arg_layout);
         let fun = self.place_val(fun)?;
         let ret_val = self.return_val(ret)?;
-        self.cg.call_fun_create(ret_val, fun, &arg_layout_tuple)?;
+        self.cg.call_fun_create(ret_val, fun, arg_layout_tuple)?;
         let mut first_index = None;
         for layout in &fun.layout {
             let (available, used) = layout

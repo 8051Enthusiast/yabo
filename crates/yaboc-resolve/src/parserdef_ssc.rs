@@ -5,8 +5,8 @@ use std::{
 
 use hir::DefKind;
 use petgraph::{
-    visit::{DfsPostOrder, Walker},
     Graph,
+    visit::{DfsPostOrder, Walker},
 };
 
 use yaboc_base::error::{SResult, Silencable, SilencedError};
@@ -14,7 +14,7 @@ use yaboc_hir::{self as hir, HirIdWrapper};
 
 use crate::{ResolveError, ResolveErrors};
 
-use super::{refs, Resolves};
+use super::{Resolves, refs};
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub struct FunctionSscId(salsa::InternId);

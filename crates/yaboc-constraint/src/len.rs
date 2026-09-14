@@ -269,7 +269,7 @@ impl<'a> SizeTermBuilder<'a> {
                                     self.push_term(Term::OpaqueUn(inner), src)
                                 }
                                 otherwise => {
-                                    panic!("unexpected type for .sizeof: {:?}", &otherwise)
+                                    panic!("unexpected type for .sizeof: {:?}", otherwise)
                                 }
                             }
                         }

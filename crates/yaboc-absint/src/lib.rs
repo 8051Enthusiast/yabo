@@ -39,7 +39,7 @@ impl Epoch {
 
     fn update(&mut self) -> Self {
         *self = self.next();
-        return *self;
+        *self
     }
 }
 
@@ -236,7 +236,7 @@ impl<'a, Dom: AbstractDomain<'a> + DatabasedDisplay<Dom::DB>> AbsIntCtx<'a, Dom>
             .val_with_epoch(self.cache_epoch)?
             .as_ref()?;
         match result {
-            Evaluated::ParserDef(pd_evaluated) => Some(&pd_evaluated),
+            Evaluated::ParserDef(pd_evaluated) => Some(pd_evaluated),
             _ => panic!("Not a pd result!"),
         }
     }
@@ -248,7 +248,7 @@ impl<'a, Dom: AbstractDomain<'a> + DatabasedDisplay<Dom::DB>> AbsIntCtx<'a, Dom>
             .val_with_epoch(self.cache_epoch)?
             .as_ref()?;
         match result {
-            Evaluated::Block(block) => Some(&block),
+            Evaluated::Block(block) => Some(block),
             _ => panic!("Not a block result!"),
         }
     }
@@ -405,10 +405,10 @@ impl<'a, Dom: AbstractDomain<'a> + DatabasedDisplay<Dom::DB>> AbsIntCtx<'a, Dom>
 
     fn enter_eval(&mut self, input: EvaluationInput<'_>, site: CallSite<Dom>) -> Option<Dom> {
         let mut epoch = self.cache_epoch;
-        if let Some(val) = self.results.get(&site) {
-            if let Some(pd) = val.val_with_epoch(epoch) {
-                return Some(pd.as_ref()?.returned().clone());
-            }
+        if let Some(val) = self.results.get(&site)
+            && let Some(pd) = val.val_with_epoch(epoch)
+        {
+            return Some(pd.as_ref()?.returned().clone());
         }
         if let Some(&depth) = self.active_calls.get(&site) {
             if self.call_needs_fixpoint.is_empty() {
@@ -437,7 +437,7 @@ impl<'a, Dom: AbstractDomain<'a> + DatabasedDisplay<Dom::DB>> AbsIntCtx<'a, Dom>
     }
 
     fn do_eval(&mut self, input: EvaluationInput<'_>, site: CallSite<Dom>) -> Option<Dom> {
-        let result = self.eval_impl(input.clone());
+        let result = self.eval_impl(input);
         let result = self.strip_error(result);
 
         let mut ret = self.set_result(result, site.clone());

@@ -1,6 +1,6 @@
 use std::{convert::Infallible, marker::PhantomData};
 
-use crate::{shaped_data::IndexExpr, ExprIdx, ExprKind, TakeRef, ZipExpr};
+use crate::{ExprIdx, ExprKind, TakeRef, ZipExpr, shaped_data::IndexExpr};
 
 pub trait FetchData<K: ExprKind, Id: Copy, DB: ?Sized> {
     type Data;
@@ -39,7 +39,8 @@ impl<K: ExprKind> Iterator for Enumerated<K> {
 }
 
 impl<K: ExprKind> TakeRef for Enumerated<K> {
-    type Ref<'a> = Enumerated<K>
+    type Ref<'a>
+        = Enumerated<K>
     where
         Self: 'a;
     fn take_ref(&self) -> Self::Ref<'_> {
@@ -48,7 +49,8 @@ impl<K: ExprKind> TakeRef for Enumerated<K> {
 }
 
 impl<K: ExprKind> IndexExpr<K> for Enumerated<K> {
-    type Output<'a> = ExprIdx<K>
+    type Output<'a>
+        = ExprIdx<K>
     where
         Self: 'a;
 

@@ -772,7 +772,6 @@ impl From<Index> for DyadicExpr<AstValSpanned> {
     }
 }
 
-
 struct ParseCall {
     left: ValExpression,
     op: Option<Spanned<BtMarkKind>>,
@@ -826,8 +825,6 @@ impl From<AtCall> for DyadicExpr<AstValSpanned> {
         }
     }
 }
-
-
 
 fn wiggle_kind(db: &dyn Asts, fd: FileId, c: TreeCursor) -> ParseResult<WiggleKind> {
     let str = node_to_string(db, fd, c)?;

@@ -12,8 +12,8 @@ pub const VTABLE_BIT: u8 = 0;
 pub fn parser_type_at(db: &dyn TyHirs, id: DefId) -> SResult<TypeId> {
     let parent_pd = db.hir_parent_parserdef(id)?;
     let types = db.ssc_types(db.parser_ssc(parent_pd)?).silence()?;
-    let res = types.types.get(&id).copied().ok_or_else(SilencedError::new);
-    res
+
+    types.types.get(&id).copied().ok_or_else(SilencedError::new)
 }
 
 pub fn parser_expr_at(db: &dyn TyHirs, id: hir::ExprId) -> SResult<Arc<ExprTypeData>> {
@@ -88,7 +88,7 @@ pub fn ssc_types(db: &dyn TyHirs, id: FunctionSscId) -> Result<SscTypes, Spanned
             sig = ctx.infctx.parser(sig, from);
         }
         if let Some(args) = &args {
-            let arg_slice = ctx.infctx.intern_infty_slice(&args);
+            let arg_slice = ctx.infctx.intern_infty_slice(args);
             sig = ctx.infctx.function(sig, arg_slice, None);
         }
         argss.push(args);
@@ -148,7 +148,7 @@ pub fn ssc_types(db: &dyn TyHirs, id: FunctionSscId) -> Result<SscTypes, Spanned
     }
     for (id, ((args, from), ty_args)) in defs
         .iter()
-        .zip(argss.iter().zip(froms.iter()).zip(ty_argss.into_iter()))
+        .zip(argss.iter().zip(froms.iter()).zip(ty_argss))
     {
         converter.set_id(id.id.0);
         fn conv<'a, 'intern>(
@@ -288,9 +288,9 @@ mod tests {
     use crate::tests::HirTypesTestDatabase;
     use hir::Parser;
     use yaboc_ast::import::Import;
+    use yaboc_base::Context;
     use yaboc_base::databased_display::DatabasedDisplay;
     use yaboc_base::interner::PathComponent;
-    use yaboc_base::Context;
     use yaboc_types::TypeInterner;
 
     use super::*;

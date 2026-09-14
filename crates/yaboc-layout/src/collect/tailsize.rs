@@ -106,7 +106,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
         let mut already_called = FxHashSet::default();
         for instr in fsub.f.iter_bb().flat_map(|(_, bb)| bb.ins()) {
             let (arg, fun, req) = match instr {
-                MirInstr::ParseCall(.., _, arg, fun, None) => {
+                MirInstr::ParseCall(.., arg, fun, None) => {
                     (Some(arg), fun, fsub.get_call_meta(&instr).req)
                 }
                 MirInstr::EvalFun(.., fun, _, None) => (None, fun, fsub.get_call_meta(&instr).req),

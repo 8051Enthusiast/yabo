@@ -16,12 +16,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let head_disc = layout.head_kind(&self.compiler_database.db);
         let head_disc_val = self.const_i64(head_disc as i64);
         let deref = self.deref_fun_val(layout);
-        let mask;
-        if self.collected_layouts.publics.needs_mask_method(layout) {
-            mask = Some(self.mask_fun_val(layout));
+
+        let mask = if self.collected_layouts.publics.needs_mask_method(layout) {
+            Some(self.mask_fun_val(layout))
         } else {
-            mask = None;
-        }
+            None
+        };
         let size = self.const_size_t(size_align.after as i64);
         let align = self.const_size_t(size_align.align() as i64);
         let zst = self.const_zst();
@@ -55,8 +55,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         if let Some(vtable_ty) = self.module.get_struct_type(&vtable_ty_name) {
             return vtable_ty;
         }
-        let vtable_ty = self.llvm.opaque_struct_type(&vtable_ty_name);
-        vtable_ty
+
+        self.llvm.opaque_struct_type(&vtable_ty_name)
     }
 
     fn create_vtable<T: TargetSized>(&mut self, layout: IMonoLayout<'comp>) -> GlobalValue<'llvm> {
@@ -230,14 +230,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn gather_slots<F: TargetSized, M: Copy>(
         &mut self,
-        slots: &Vec<(M, Option<PSize>)>,
+        slots: &[(M, Option<PSize>)],
         vtable: GlobalValue<'llvm>,
         size: PSize,
         f: impl Fn(&mut Self, M) -> PointerValue<'llvm>,
     ) -> ArrayValue<'llvm> {
         let null = F::codegen_ty(self).into_pointer_type().const_null();
         let mut impls = vec![null; size as usize];
-        for (arg, slot) in slots.into_iter() {
+        for (arg, slot) in slots.iter() {
             let s = f(self, *arg);
             if let Some(slot) = slot {
                 impls[*slot as usize] = s;

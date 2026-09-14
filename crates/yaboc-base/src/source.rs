@@ -399,7 +399,7 @@ where
         &mut self,
         id: &FileId,
     ) -> Result<&ariadne::Source<Self::Storage>, impl std::fmt::Debug> {
-        self.fncache.fetch(&id.to_usize())
+        self.fncache.fetch(id.to_usize())
     }
 
     fn display<'b>(&self, id: &'b FileId) -> Option<impl std::fmt::Display + 'b> {

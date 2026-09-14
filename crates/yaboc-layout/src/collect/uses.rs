@@ -144,7 +144,7 @@ impl<'comp> UseCollections<'comp> {
             }
 
             MonoLayout::Lambda(_, captures, args) => {
-                for (_, arg) in captures {
+                for arg in captures.values() {
                     self.collect(ctx, publicity.internal_only(), *arg)?;
                 }
                 for capture in args.iter() {
@@ -163,7 +163,7 @@ impl<'comp> UseCollections<'comp> {
             }
             MonoLayout::ArrayParser(None) | MonoLayout::ArrayFillParser(None) => {}
             MonoLayout::BlockParser(_, captures) => {
-                for (_, capture) in captures.iter() {
+                for capture in captures.values() {
                     self.collect(ctx, publicity.internal_only(), *capture)?;
                 }
             }

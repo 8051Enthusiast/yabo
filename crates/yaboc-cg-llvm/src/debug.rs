@@ -110,7 +110,7 @@ impl<'llvm, 'comp> DebugBuilder<'llvm, 'comp> {
     }
     fn file(&mut self, file: FileId, db: &dyn Layouts) -> DIFile<'llvm> {
         match self.files.entry(file) {
-            Entry::Occupied(occupied_entry) => return *occupied_entry.get(),
+            Entry::Occupied(occupied_entry) => *occupied_entry.get(),
             Entry::Vacant(vacant_entry) => {
                 let filename = db
                     .path(file)
@@ -185,7 +185,7 @@ impl<'llvm, 'comp> DebugBuilder<'llvm, 'comp> {
                 return Some(loc);
             }
         }
-        return None;
+        None
     }
 
     fn span_info(&mut self, db: &dyn Layouts, span: IndirectSpan) -> DebugLocation<'llvm> {
@@ -264,20 +264,19 @@ impl<'llvm, 'comp> DebugBuilder<'llvm, 'comp> {
         db: &dyn Layouts,
         llvm_ctx: &'llvm Context,
         layout_ctx: &mut yaboc_absint::AbsIntCtx<'comp, ILayout<'comp>>,
-        inner: [ILayout<'comp>; N],
-        field_names: [&str; N],
+        fields: [(&str, ILayout<'comp>); N],
         name: &str,
     ) -> InkResult<DIType<'llvm>> {
-        let inner_sa = inner.map(|x| x.size_align(layout_ctx).unwrap());
+        let inner_sa = fields.map(|(_, x)| x.size_align(layout_ctx).unwrap());
         let offset = SizeAlign::offsets_bits(inner_sa);
         let self_sa = layout.inner().size_align(layout_ctx).unwrap();
         let mut inner_members = Vec::with_capacity(N);
         let DebugLocation { line, file, .. } = self.location_data_or_default(layout, db, llvm_ctx);
         for i in 0..N {
-            let inner_ty = self.debug_type_no_vtable(inner[i], db, llvm_ctx, layout_ctx)?;
+            let inner_ty = self.debug_type_no_vtable(fields[i].1, db, llvm_ctx, layout_ctx)?;
             let inner_member = self.builder.create_member_type(
                 file.as_debug_info_scope(),
-                field_names[i],
+                fields[i].0,
                 file,
                 line,
                 inner_sa[i].after_bits(),
@@ -412,8 +411,7 @@ impl<'llvm, 'comp> DebugBuilder<'llvm, 'comp> {
                 db,
                 llvm_ctx,
                 layout_ctx,
-                [*inner],
-                ["parser"],
+                [("parser", *inner)],
                 &name,
             ),
             MonoLayout::ArrayParser(None) => {
@@ -425,8 +423,7 @@ impl<'llvm, 'comp> DebugBuilder<'llvm, 'comp> {
                 db,
                 llvm_ctx,
                 layout_ctx,
-                [*parser],
-                ["parser"],
+                [("parser", *parser)],
                 &name,
             ),
             MonoLayout::ArrayParser(Some((parser, Some((length, _))))) => self.builtin_struct(
@@ -434,8 +431,7 @@ impl<'llvm, 'comp> DebugBuilder<'llvm, 'comp> {
                 db,
                 llvm_ctx,
                 layout_ctx,
-                [*parser, *length],
-                ["parser", "length"],
+                [("parser", *parser), ("length", *length)],
                 &name,
             ),
             MonoLayout::ArrayFillParser(None) => {
@@ -447,8 +443,7 @@ impl<'llvm, 'comp> DebugBuilder<'llvm, 'comp> {
                 db,
                 llvm_ctx,
                 layout_ctx,
-                [*parser],
-                ["parser"],
+                [("parser", *parser)],
                 &name,
             ),
             MonoLayout::Array { parser, slice } => self.builtin_struct(
@@ -456,8 +451,7 @@ impl<'llvm, 'comp> DebugBuilder<'llvm, 'comp> {
                 db,
                 llvm_ctx,
                 layout_ctx,
-                [*parser, *slice],
-                ["parser", "slice"],
+                [("parser", *parser), ("slice", *slice)],
                 &name,
             ),
 

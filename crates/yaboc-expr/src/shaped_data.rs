@@ -52,7 +52,8 @@ impl<K, D> ShapedData<Vec<D>, K> {
 }
 
 impl<K, D> TakeRef for ShapedData<Vec<D>, K> {
-    type Ref<'a> = ShapedData<&'a [D], K>
+    type Ref<'a>
+        = ShapedData<&'a [D], K>
     where
         Self: 'a;
     fn take_ref(&self) -> Self::Ref<'_> {
@@ -171,35 +172,50 @@ pub trait IndexExpr<K> {
 }
 
 impl<K, D> IndexExpr<K> for ShapedData<Vec<D>, K> {
-    type Output<'a> = &'a D where Self: 'a;
+    type Output<'a>
+        = &'a D
+    where
+        Self: 'a;
     fn index_expr(&self, idx: ExprIdx<K>) -> Self::Output<'_> {
         &self.data[idx.as_usize()]
     }
 }
 
 impl<K, D> IndexExpr<K> for ShapedData<&[D], K> {
-    type Output<'b> = &'b D where Self: 'b;
+    type Output<'b>
+        = &'b D
+    where
+        Self: 'b;
     fn index_expr(&self, idx: ExprIdx<K>) -> Self::Output<'_> {
         &self.data[idx.as_usize()]
     }
 }
 
 impl<K, D: IndexExpr<K>> IndexExpr<K> for std::sync::Arc<D> {
-    type Output<'a> = D::Output<'a> where Self: 'a;
+    type Output<'a>
+        = D::Output<'a>
+    where
+        Self: 'a;
     fn index_expr(&self, idx: ExprIdx<K>) -> Self::Output<'_> {
         self.as_ref().index_expr(idx)
     }
 }
 
 impl<K, D: IndexExpr<K>> IndexExpr<K> for std::rc::Rc<D> {
-    type Output<'a> = D::Output<'a> where Self: 'a;
+    type Output<'a>
+        = D::Output<'a>
+    where
+        Self: 'a;
     fn index_expr(&self, idx: ExprIdx<K>) -> Self::Output<'_> {
         self.as_ref().index_expr(idx)
     }
 }
 
 impl<K, D, F: Fn(ExprIdx<K>) -> D> IndexExpr<K> for F {
-    type Output<'a> = D where Self: 'a;
+    type Output<'a>
+        = D
+    where
+        Self: 'a;
     fn index_expr(&self, idx: ExprIdx<K>) -> Self::Output<'_> {
         self(idx)
     }

@@ -5,8 +5,8 @@ use yaboc_base::error::SResult;
 use yaboc_types::{BlockTypeHead, DefId, Type, TypeId, TypeInterner};
 
 use crate::{
-    matrix::{Matrix, MatrixArena, Rect, Row, TypeVarOccurence, VarRow},
     EffectSlot, TypeLookup,
+    matrix::{Matrix, MatrixArena, Rect, Row, TypeVarOccurence, VarRow},
 };
 
 pub struct TransformInfo<'a> {
@@ -174,11 +174,17 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
             [Type::Loop(_, inner), Type::Loop(_, subst_inner)] => {
                 self.typevar_positions_impl(inner, subst_inner, offset, res)?;
             }
-            [Type::ParserArg { result, .. }, Type::ParserArg {
-                result: subst_result,
-                ..
-            }]
-            | [Type::FunctionArg(result, _), Type::FunctionArg(subst_result, _)] => {
+            [
+                Type::ParserArg { result, .. },
+                Type::ParserArg {
+                    result: subst_result,
+                    ..
+                },
+            ]
+            | [
+                Type::FunctionArg(result, _),
+                Type::FunctionArg(subst_result, _),
+            ] => {
                 *offset += 1;
                 self.typevar_positions_impl(result, subst_result, offset, res)?;
             }
@@ -225,7 +231,7 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
         Ok(DefTypeSubstitution {
             ty: general_to,
             subst_ty: to,
-            bound: bound,
+            bound,
             subst_bound,
         })
     }
@@ -244,7 +250,7 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
         Ok(DefTypeSubstitution {
             ty: to,
             subst_ty: subst_to,
-            bound: bound,
+            bound,
             subst_bound,
         })
     }
@@ -364,7 +370,7 @@ impl<'short, 'arena: 'short, Info: TypeBtInfo> TypeMatrixCtx<'arena, Info> {
     ) -> SResult<(MatrixInfo<'short>, Row)> {
         let fun_ldt_type = self.db.lookup(fun.shape.ty);
         let Some((_, [arg_ty])) = fun_ty_parts(&fun_ldt_type) else {
-            panic!("Expected parser type, got {:?}", &fun_ldt_type);
+            panic!("Expected parser type, got {:?}", fun_ldt_type);
         };
         let arg_matrix = self.transform_and_change_bound(arg, to.with_ty(*arg_ty))?;
         let applied = self

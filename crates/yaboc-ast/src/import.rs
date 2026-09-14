@@ -2,10 +2,10 @@ use std::{path::PathBuf, sync::Arc};
 
 use fxhash::FxHashSet;
 use yaboc_base::{
+    Context,
     error::SilencedError,
     interner::{Identifier, IdentifierName},
     source::{FileId, FileResolver, LibKind},
-    Context,
 };
 
 use crate::Asts;

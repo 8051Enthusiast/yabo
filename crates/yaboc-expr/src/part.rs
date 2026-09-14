@@ -29,10 +29,10 @@ pub trait TransposablePart: ExprPart<Inner = Result<Self::InnerOutput, Self::Inn
     type InnerOutput;
     type InnerError;
     type Transposed: ExprPart<
-        K = Self::K,
-        Inner = Self::InnerOutput,
-        TransExpr<Self::K, Result<Self::InnerOutput, Self::InnerError>> = Self,
-    >;
+            K = Self::K,
+            Inner = Self::InnerOutput,
+            TransExpr<Self::K, Result<Self::InnerOutput, Self::InnerError>> = Self,
+        >;
     fn transpose(self) -> Result<Self::Transposed, Self::InnerError>;
 }
 
@@ -129,7 +129,8 @@ impl<K: ExprKind, Inner> ExprPart for ExprHead<K, Inner> {
         f(self)
     }
 
-    type AsRef<'a> = ExprHead<&'a K, &'a Inner>
+    type AsRef<'a>
+        = ExprHead<&'a K, &'a Inner>
     where
         K: 'a,
         Inner: 'a,
@@ -181,7 +182,8 @@ impl<Expr: ExprPart, Data> ExprPart for (Expr, Data) {
         (self.0.map_core_expr(f), self.1)
     }
 
-    type AsRef<'a> = (Expr::AsRef<'a>, &'a Data)
+    type AsRef<'a>
+        = (Expr::AsRef<'a>, &'a Data)
     where
         Self: 'a;
 

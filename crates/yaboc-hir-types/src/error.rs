@@ -3,8 +3,8 @@ use fxhash::FxHashSet;
 use yaboc_base::{
     dbformat,
     error::{
-        diagnostic::{DiagnosticKind, Label},
         Report, SResult,
+        diagnostic::{DiagnosticKind, Label},
     },
     interner::{DefId, Identifier},
     source::{IndirectSpan, Span},
@@ -127,7 +127,10 @@ fn make_type_error(
                 ),
             )
         }
-        TypeError::UnsupportedExportArgument { def_id: _, arg_name } => (
+        TypeError::UnsupportedExportArgument {
+            def_id: _,
+            arg_name,
+        } => (
             515,
             dbformat!(
                 db,
@@ -136,7 +139,7 @@ fn make_type_error(
             ),
         ),
         TypeError::NonInfer => (514, String::from("could not infer type")),
-        TypeError::NotSized => (515, String::from(".sizeof is invalid for this type"))
+        TypeError::NotSized => (515, String::from(".sizeof is invalid for this type")),
     };
     let mut rbuild = Report::new(DiagnosticKind::Error, spans[0].file, &message).with_code(code);
     for (i, span) in spans.iter().enumerate() {

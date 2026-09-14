@@ -222,12 +222,12 @@ impl<'a> ConvertCtx<'a> {
             let from_place = self.w.val_place_at_def(*from).unwrap();
             self.w.copy(from_place, to_place);
         }
-        if self.returns_self {
-            if let Some(ret) = self.w.f.fun.ret() {
-                for field in context_data.affected_discriminants {
-                    let has_field = context_data.field_ids.contains_key(&field);
-                    self.w.set_discriminant(ret, field, has_field);
-                }
+        if self.returns_self
+            && let Some(ret) = self.w.f.fun.ret()
+        {
+            for field in context_data.affected_discriminants {
+                let has_field = context_data.field_ids.contains_key(&field);
+                self.w.set_discriminant(ret, field, has_field);
             }
         }
         if let Some(to_place) = self.w.back_place_at_def(superchoice.0) {

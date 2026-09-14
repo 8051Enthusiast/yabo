@@ -52,7 +52,10 @@ impl<T> BinaryTree<T> {
     }
 
     pub fn iterate(self, mut f: impl FnMut(T)) {
-        self.try_iterate::<Infallible>(|element| Ok(f(element)));
+        self.try_iterate::<Infallible>(|element| {
+            f(element);
+            Ok(())
+        });
     }
 
     pub fn take(&mut self) -> Self {

@@ -136,7 +136,7 @@ impl Display for ExceptionRetreat {
         write!(
             f,
             "{{backtrack: {}, eof: {}, error: {}}}",
-            &self.backtrack, &self.eof, &self.error
+            self.backtrack, self.eof, self.error
         )
     }
 }
@@ -319,7 +319,7 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<DB> for Function {
             }
             write!(f, "define ")?;
             place_ref.db_fmt(f, &(self, db))?;
-            writeln!(f, ": {}", &place.eval)?;
+            writeln!(f, ": {}", place.eval)?;
         }
         for (bb_ref, bb) in self.iter_bb() {
             dbwrite!(f, db, "{}:\n", &bb_ref)?;

@@ -1,8 +1,8 @@
 use std::ops::Index;
 
 use crate::{
-    shaped_data::IndexExpr, ExprHead, ExprIdx, ExprKind, ExprRef, Expression, IdxExprRef,
-    InvariantLifetime, ReidxExpr, ShapedData, TakeRef, ZipExpr,
+    ExprHead, ExprIdx, ExprKind, ExprRef, Expression, IdxExprRef, InvariantLifetime, ReidxExpr,
+    ShapedData, TakeRef, ZipExpr, shaped_data::IndexExpr,
 };
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -62,10 +62,7 @@ impl<K: ExprKind> IdxExpression<K> {
         ZipExpr { expr: self, data }
     }
 
-    pub fn filter_monadic(
-        self,
-        mut f: impl for<'id> FnMut(&K::MonadicOp) -> bool,
-    ) -> ReidxExpr<K, K> {
+    pub fn filter_monadic(self, mut f: impl FnMut(&K::MonadicOp) -> bool) -> ReidxExpr<K, K> {
         type Part<K> = ExprHead<K, ExprIdx<K>>;
         let mut heads: Vec<Part<K>> = Vec::with_capacity(self.len());
         let mut old_to_new: Vec<ExprIdx<K>> = Vec::with_capacity(self.len());

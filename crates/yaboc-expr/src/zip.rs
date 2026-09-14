@@ -1,6 +1,6 @@
 use crate::{
-    fetch::FetchKindData, shaped_data::IndexExpr, ExprHead, ExprIdx, ExprKind, Expression,
-    IdxExprRef, IdxExpression, ShapedData, TakeRef,
+    ExprHead, ExprIdx, ExprKind, Expression, IdxExprRef, IdxExpression, ShapedData, TakeRef,
+    fetch::FetchKindData, shaped_data::IndexExpr,
 };
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
@@ -51,7 +51,10 @@ impl<'a, Expr, D: 'a, Data: IntoIterator<Item = &'a D>> ZipExpr<Expr, Data> {
 }
 
 impl<Expr: TakeRef, Data: TakeRef> TakeRef for ZipExpr<Expr, Data> {
-    type Ref<'a> = ZipExpr<Expr::Ref<'a>, Data::Ref<'a>> where Self: 'a;
+    type Ref<'a>
+        = ZipExpr<Expr::Ref<'a>, Data::Ref<'a>>
+    where
+        Self: 'a;
 
     fn take_ref(&self) -> Self::Ref<'_> {
         ZipExpr {
@@ -62,7 +65,8 @@ impl<Expr: TakeRef, Data: TakeRef> TakeRef for ZipExpr<Expr, Data> {
 }
 
 impl<K, Expr: IndexExpr<K>, Data: IndexExpr<K>> IndexExpr<K> for ZipExpr<Expr, Data> {
-    type Output<'a> = (Expr::Output<'a>, Data::Output<'a>)
+    type Output<'a>
+        = (Expr::Output<'a>, Data::Output<'a>)
     where
         Self: 'a;
 
@@ -131,7 +135,10 @@ where
 }
 
 impl<A: TakeRef, B: TakeRef> TakeRef for IntoZip<A, B> {
-    type Ref<'a> = IntoZip<A::Ref<'a>, B::Ref<'a>> where Self: 'a;
+    type Ref<'a>
+        = IntoZip<A::Ref<'a>, B::Ref<'a>>
+    where
+        Self: 'a;
 
     fn take_ref(&self) -> Self::Ref<'_> {
         IntoZip(self.0.take_ref(), self.1.take_ref())
@@ -139,7 +146,8 @@ impl<A: TakeRef, B: TakeRef> TakeRef for IntoZip<A, B> {
 }
 
 impl<K, A: IndexExpr<K>, B: IndexExpr<K>> IndexExpr<K> for IntoZip<A, B> {
-    type Output<'a> = (A::Output<'a>, B::Output<'a>)
+    type Output<'a>
+        = (A::Output<'a>, B::Output<'a>)
     where
         Self: 'a;
 

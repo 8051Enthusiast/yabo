@@ -576,7 +576,7 @@ impl<'a, Γ: Env> SizeCalcCtx<'a, Γ> {
                 }
                 Some(args)
             }
-            Val::Poly(rank, _, _, ..) => {
+            Val::Poly(rank, ..) => {
                 if !deps.is_empty() {
                     return None;
                 }

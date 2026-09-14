@@ -75,11 +75,10 @@ pub fn parser_args(db: &dyn TyHirs, id: hir::ParserDefId) -> SResult<Signature> 
 
 pub fn parser_signature(db: &dyn TyHirs, id: hir::ParserDefId) -> SResult<(TypeId, usize)> {
     let ssc_types = db.ssc_types(db.parser_ssc(id)?).silence()?;
-    let sig = ssc_types
+    let sig = *ssc_types
         .sigs
         .get(&id)
-        .unwrap_or_else(|| dbpanic!(db, "parser_args: no signature for parserdef {}", &id.0))
-        .clone();
+        .unwrap_or_else(|| dbpanic!(db, "parser_args: no signature for parserdef {}", &id.0));
     let args = db.parser_args(id)?;
     Ok((sig, args.ty_args.len()))
 }
@@ -89,8 +88,8 @@ mod tests {
     use crate::tests::HirTypesTestDatabase;
     use hir::Parser;
     use yaboc_ast::import::Import;
-    use yaboc_base::databased_display::DatabasedDisplay;
     use yaboc_base::Context;
+    use yaboc_base::databased_display::DatabasedDisplay;
 
     use super::*;
     #[test]

@@ -293,10 +293,10 @@ impl<'a> StrictnessCtx<'a> {
             for (i, ins) in block.ins.iter().rev().enumerate() {
                 self.ins_refs(&mut out, ins)?;
                 self.ins_kills(&mut kills, &mut out, ins);
-                if i == 0 {
-                    if let Some(fout) = &fallible_out {
-                        out = out.combine(fout)
-                    }
+                if i == 0
+                    && let Some(fout) = &fallible_out
+                {
+                    out = out.combine(fout)
                 }
             }
             let in_ = self.block_in[bb.as_index()].clone();

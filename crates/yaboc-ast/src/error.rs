@@ -1,9 +1,9 @@
 use yaboc_base::error::{
-    diagnostic::{DiagnosticKind, Label},
     Report,
+    diagnostic::{DiagnosticKind, Label},
 };
 
-use super::{convert::ParseError, Asts};
+use super::{Asts, convert::ParseError};
 
 pub fn errors(db: &(impl Asts + ?Sized)) -> Vec<Report> {
     let mut ret = Vec::new();

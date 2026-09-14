@@ -107,15 +107,13 @@ pub fn target(config: &Config, rt_path: &Path) -> Option<Target> {
         },
         _ => return None,
     };
-    if config.target_triple.starts_with("wasm32") {
-        if let Some(features) = config.target_features.as_ref() {
-            if features
-                .split(',')
-                .any(|f| matches!(f, "+tail-call" | "tail-call"))
-            {
-                conf.use_musttail = true;
-            }
-        }
+    if config.target_triple.starts_with("wasm32")
+        && let Some(features) = config.target_features.as_ref()
+        && features
+            .split(',')
+            .any(|f| matches!(f, "+tail-call" | "tail-call"))
+    {
+        conf.use_musttail = true;
     }
     if let Some(features) = config.target_features.as_ref() {
         conf.features = Cow::Owned(features.to_string());

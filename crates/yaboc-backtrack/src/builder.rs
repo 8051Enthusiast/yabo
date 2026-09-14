@@ -2,8 +2,8 @@ use yaboc_base::error::SResult;
 use yaboc_types::TypeId;
 
 use crate::{
-    transform::{fun_ty_parts, TypeCache},
     ExprNode, Instruction, TypeLookup,
+    transform::{TypeCache, fun_ty_parts},
 };
 
 pub struct ExpressionBuilder<'a, DB: ?Sized> {

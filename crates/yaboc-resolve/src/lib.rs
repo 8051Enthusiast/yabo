@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use fxhash::FxHashMap;
 use hir::ModuleId;
-use parserdef_ssc::{mod_parser_ssc, parser_ssc, ModuleOrder};
+use parserdef_ssc::{ModuleOrder, mod_parser_ssc, parser_ssc};
 use petgraph::Graph;
 
 use yaboc_base::error::SResult;
@@ -19,8 +19,8 @@ use yaboc_expr::{ExprHead, Expression, TakeRef};
 use yaboc_hir::walk::ChildIter;
 use yaboc_hir::{self as hir, ExprId, HirIdWrapper};
 
-use self::expr::resolve_expr_error;
 pub use self::expr::ResolvedExpr;
+use self::expr::resolve_expr_error;
 use self::parserdef_ssc::FunctionSscId;
 use self::refs::parserdef_ref;
 
@@ -36,7 +36,7 @@ pub trait Resolves: crate::hir::Hirs {
     fn captures(&self, id: hir::BlockId) -> Arc<BTreeSet<DefId>>;
     fn lambda_captures(&self, id: hir::LambdaId) -> Arc<BTreeSet<DefId>>;
     fn parserdef_ref(&self, loc: DefId, name: Vec<Identifier>)
-        -> SResult<Option<hir::ParserDefId>>;
+    -> SResult<Option<hir::ParserDefId>>;
     fn module_sequence(&self) -> Result<Arc<Vec<ModuleId>>, ResolveErrors>;
     fn global_sequence(&self) -> SResult<Arc<[hir::ParserDefId]>>;
 }
@@ -163,10 +163,10 @@ pub fn captures(db: &dyn Resolves, id: hir::BlockId) -> Arc<BTreeSet<DefId>> {
     for i in ChildIter::new(root_context.0, db)
         .without_kinds(hir::HirNodeKind::Block | hir::HirNodeKind::Lambda)
     {
-        if let hir::HirNode::Expr(expr) = i {
-            if expr_captures(db, expr.id, &mut ret, id.0).is_err() {
-                continue;
-            }
+        if let hir::HirNode::Expr(expr) = i
+            && expr_captures(db, expr.id, &mut ret, id.0).is_err()
+        {
+            continue;
         }
     }
     Arc::new(ret)
@@ -239,9 +239,9 @@ impl Silencable for ResolveErrors {
 mod tests {
     use super::*;
     use hir::Parser;
-    use yaboc_ast::{import::Import, AstDatabase};
+    use yaboc_ast::{AstDatabase, import::Import};
     use yaboc_base::{
-        config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase, Context,
+        Context, config::ConfigDatabase, interner::InternerDatabase, source::FileDatabase,
     };
     use yaboc_hir::HirDatabase;
     #[salsa::database(

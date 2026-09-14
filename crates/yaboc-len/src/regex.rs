@@ -54,7 +54,7 @@ pub fn regex_len(regex: &Hir) -> Option<i128> {
 
 #[cfg(test)]
 mod tests {
-    use super::{regex_len as regex_len_impl, RegexError};
+    use super::{RegexError, regex_len as regex_len_impl};
 
     fn regex_len(regex: &str) -> Result<Option<i128>, Box<RegexError>> {
         let regex = regex_syntax::ParserBuilder::new()

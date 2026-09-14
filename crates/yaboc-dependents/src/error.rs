@@ -2,8 +2,8 @@ use fxhash::FxHashSet;
 
 use yaboc_base::{
     error::{
-        diagnostic::{DiagnosticKind, Label},
         Report,
+        diagnostic::{DiagnosticKind, Label},
     },
     source::Span,
 };

@@ -112,7 +112,11 @@ pub struct LCallMeta {
 
 impl std::fmt::Display for LCallMeta {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let prefix = self.tail.then_some("tail ").unwrap_or_default();
+        let prefix = if self.tail {
+            "tail "
+        } else {
+            Default::default()
+        };
         write!(f, "{}{}", prefix, self.req)
     }
 }
@@ -214,7 +218,7 @@ impl<'a> LayoutInfoCollector<'a> {
         let root_val = &len_terms.fun_val;
         LayoutInfo {
             can_backtrack,
-            len: Length::from_val(&root_val),
+            len: Length::from_val(root_val),
         }
     }
 
@@ -227,7 +231,7 @@ impl<'a> LayoutInfoCollector<'a> {
                 let len_vals = self.db.len_vals(pd);
                 let len_terms = self.db.len_term(pd).unwrap();
                 let v = &len_vals.vals[len_terms.block_locs[&block]];
-                Length::from_val(&v)
+                Length::from_val(v)
             }
             yaboc_hir::BlockKind::Inline => Length::None,
         };

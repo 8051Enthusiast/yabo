@@ -299,8 +299,10 @@ impl<'arena, 'r, Trans: TypeBtInfo> EvalCtx<'arena, 'r, Trans> {
         let to_expr = &self.exprs[self.cursor.idx];
         let fun_expr = &self.exprs[fun as usize];
         let [p, f] = &mut self.rows;
-        let [(source_rows_present, target_rows_present), (source_rows_forbidden, target_rows_forbidden)] =
-            [p, f].map(|rows| rows.split_at_mut(to_expr.row_range.start));
+        let [
+            (source_rows_present, target_rows_present),
+            (source_rows_forbidden, target_rows_forbidden),
+        ] = [p, f].map(|rows| rows.split_at_mut(to_expr.row_range.start));
         let (source_rows, target_rows) = match slot {
             EffectSlot::Present => (&*source_rows_present, target_rows_present),
             EffectSlot::Forbidden => (&*source_rows_forbidden, target_rows_forbidden),
@@ -403,8 +405,10 @@ impl<'arena, 'r, Trans: TypeBtInfo> EvalCtx<'arena, 'r, Trans> {
         let arg_expr = &self.exprs[arg as usize];
         let to_expr = &self.exprs[self.cursor.idx];
         let [p, f] = &mut self.rows;
-        let [(source_rows_present, target_rows_present), (source_rows_forbidden, target_rows_forbidden)] =
-            [p, f].map(|rows| rows.split_at_mut(to_expr.row_range.start));
+        let [
+            (source_rows_present, target_rows_present),
+            (source_rows_forbidden, target_rows_forbidden),
+        ] = [p, f].map(|rows| rows.split_at_mut(to_expr.row_range.start));
         let (source_rows, target_rows) = match slot {
             EffectSlot::Present => (&*source_rows_present, target_rows_present),
             EffectSlot::Forbidden => (&*source_rows_forbidden, target_rows_forbidden),
@@ -534,7 +538,7 @@ impl<'arena, 'r, Trans: TypeBtInfo> EvalCtx<'arena, 'r, Trans> {
             Instruction::Array => {
                 let expr = &self.exprs[self.cursor.idx];
                 let matrix = self.trans.array_parser_combinator(expr.shape())?;
-                for (rows, matrix) in self.rows.iter_mut().zip(matrix.into_iter()) {
+                for (rows, matrix) in self.rows.iter_mut().zip(matrix) {
                     rows[expr.row_range.clone()].clone_from_slice(matrix.rows());
                 }
                 Ok(())

@@ -456,7 +456,7 @@ impl DependencyGraph {
                     between_parser_refs(db, &hir_node, self.block.id)?.map(|x| (x, DepType::Data)),
                 ),
                 SubValueKind::Back => {
-                    self.add_edges(db, sub_value, inner_parser_refs(db, &hir_node)?.into_iter())
+                    self.add_edges(db, sub_value, inner_parser_refs(db, &hir_node)?)
                 }
                 SubValueKind::Bt => self.add_edges(
                     db,
