@@ -688,9 +688,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let [arg] = get_fun_args(fun).map(|x| x.into_pointer_value());
         self.add_entry_block(fun, layout);
         let arg_ptr = self.build_cast::<*mut i64, _>(arg)?;
-        let ptr = self.build_ptr_load(arg_ptr, "load_ptr")?;
-        let inc = self.build_byte_gep(ptr, self.const_i64(1), "inc_ptr")?;
-        self.builder.build_store(arg, inc)?;
+        let int = self.build_i64_load(arg_ptr, "load_i64")?;
+        let inc_int = self
+            .builder
+            .build_int_add(int, self.const_i64(1), "inc_int")?;
+        self.builder.build_store(arg, inc_int)?;
         self.builder
             .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)))?;
         Ok(())
