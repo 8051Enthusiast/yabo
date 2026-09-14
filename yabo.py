@@ -559,11 +559,15 @@ class ArrayValue(YaboValue):
             pointer(self._val.get_vtable()), POINTER(ArrayVTable)
         )
         current_element_impl = array_vtable.contents.current_element_impl
-        return self._lib.new_val(
+        result = self._lib.new_val(
             lambda ret: current_element_impl(
                 ret, self._val.data_ptr(), self._lib.discriminant()
             )
         )
+
+        if self._lib._autoderef and isinstance(result, NominalValue):
+            result = result.deref()
+        return result
 
     def __getitem__(self, index: int):
         if len(self) <= index:
