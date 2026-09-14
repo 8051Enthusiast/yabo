@@ -9,8 +9,6 @@ pub struct Config {
     pub cc: Option<String>,
     pub dynamic_linker: Option<String>,
     pub output_json: bool,
-    pub asan: bool,
-    pub msan: bool,
     pub llubi: bool,
 }
 

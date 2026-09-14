@@ -105,8 +105,6 @@ pub struct CodeGenCtx<'llvm, 'comp> {
 #[derive(Clone)]
 pub struct CodeGenOptions {
     pub target: yaboc_target::Target,
-    pub asan: bool,
-    pub msan: bool,
     pub debug: bool,
     pub dynamic_linker: Option<String>,
 }
@@ -1144,20 +1142,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub fn object_file(self, outfile: &OsStr) -> Result<(), LLVMString> {
         self.module.verify()?;
-        let mut passes = String::from("always-inline,default<O3>");
-        if self.options.asan {
-            passes.push_str(",asan");
-        }
-        if self.options.msan {
-            passes.push_str(",msan");
-        }
         let pbo = PassBuilderOptions::create();
         pbo.set_loop_interleaving(true);
         pbo.set_loop_unrolling(true);
         pbo.set_merge_functions(true);
         pbo.set_loop_vectorization(true);
         pbo.set_loop_slp_vectorization(true);
-        self.module.run_passes(&passes, &self.target, pbo)?;
+        self.module
+            .run_passes("always-inline,default<O3>", &self.target, pbo)?;
         self.target
             .write_to_file(&self.module, FileType::Object, Path::new(outfile))?;
         Ok(())

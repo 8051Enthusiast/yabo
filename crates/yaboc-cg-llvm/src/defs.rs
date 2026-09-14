@@ -50,16 +50,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 fun.add_attribute(AttributeLoc::Param(i as u32), noalias_attr);
             }
         }
-        if self.options.asan {
-            let sanitize_address = Attribute::get_named_enum_kind_id("sanitize_address");
-            let sanitize_address_attr = self.llvm.create_enum_attribute(sanitize_address, 1);
-            fun.add_attribute(AttributeLoc::Function, sanitize_address_attr);
-        }
-        if self.options.msan {
-            let sanitize_memory = Attribute::get_named_enum_kind_id("sanitize_memory");
-            let sanitize_memory_attr = self.llvm.create_enum_attribute(sanitize_memory, 1);
-            fun.add_attribute(AttributeLoc::Function, sanitize_memory_attr);
-        }
         fun.as_global_value()
             .set_unnamed_address(UnnamedAddress::Global);
         if self.options.debug {

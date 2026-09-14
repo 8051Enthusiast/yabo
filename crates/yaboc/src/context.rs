@@ -51,8 +51,6 @@ impl Driver {
         let mut ctx = Context::<YabocDatabase>::default();
         let options = CodeGenOptions {
             target,
-            asan: config.asan,
-            msan: config.msan,
             debug: false,
             dynamic_linker: config.dynamic_linker.clone(),
         };

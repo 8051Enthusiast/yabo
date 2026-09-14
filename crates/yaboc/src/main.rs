@@ -20,12 +20,6 @@ enum EmitKind {
     SharedLib,
 }
 
-#[derive(Clone, PartialEq, Eq, clap::ValueEnum)]
-pub enum Sanitizer {
-    Address,
-    Memory,
-}
-
 #[derive(Parser)]
 #[clap(author, version, about)]
 struct Args {
@@ -46,9 +40,6 @@ struct Args {
     #[clap(long)]
     /// llvm target features
     target_features: Option<String>,
-    #[clap(long)]
-    /// sanitize (memory or address), mostly for debugging the compiler itself
-    sanitize: Option<Sanitizer>,
     #[clap(long)]
     /// Compatibility mode for the llvm llubi interpreter
     llubi: bool,
@@ -100,8 +91,6 @@ fn main() {
         target_features: args.target_features,
         sysroot: args.sysroot,
         cc: args.cc,
-        asan: args.sanitize == Some(Sanitizer::Address),
-        msan: args.sanitize == Some(Sanitizer::Memory),
         dynamic_linker: args.dynamic_linker,
         llubi: args.llubi,
     }) {
