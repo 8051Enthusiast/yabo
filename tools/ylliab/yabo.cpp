@@ -243,7 +243,7 @@ std::optional<YaboVal> YaboValCreator::deref(YaboVal val) {
     return {};
   }
 
-  auto impl = YABO_ACCESS_VPTR(val->vtable, typecast_impl);
+  auto impl = YABO_ACCESS_VPTR(val->vtable, deref_impl);
   auto context = get_context(val.file, EVAL_LEVEL | YABO_VTABLE);
   return storage.with_return_buf(val.file, [=](uint8_t *buf) {
     return catch_segfault(impl, segfault_err_code, (void *)buf,
@@ -299,8 +299,8 @@ std::optional<YaboVal> YaboValCreator::skip(YaboVal val, size_t offset) {
         if (status)
           return status;
 
-        auto typecast = YABO_ACCESS_VPTR(&vtable->head, typecast_impl);
-        return catch_segfault(typecast, segfault_err_code, (void *)buf,
+        auto deref = YABO_ACCESS_VPTR(&vtable->head, deref_impl);
+        return catch_segfault(deref, segfault_err_code, (void *)buf,
                               (const void *)val->data, context);
       });
 }
@@ -334,7 +334,7 @@ std::optional<ByteSpan> YaboValCreator::extent(YaboVal val) {
   if (val.kind() == YaboValKind::YABOARRAY) {
     return storage.tmp_buf_o_plenty<std::optional<ByteSpan>>(
         [=](DynValue *t1, DynValue *t2) -> std::optional<ByteSpan> {
-          YABO_ACCESS_VPTR(val->vtable, typecast_impl)
+          YABO_ACCESS_VPTR(val->vtable, deref_impl)
           (t1->data, val->data, context);
           return primary_slice(t1, t2, eval_context);
         });

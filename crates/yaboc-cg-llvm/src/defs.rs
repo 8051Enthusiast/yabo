@@ -189,10 +189,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         f
     }
 
-    pub(super) fn typecast_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
-        let f = self.fun_val::<_, vtable::TypecastFun>(
+    pub(super) fn deref_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
+        let f = self.fun_val::<_, vtable::DerefFun>(
             layout,
-            LayoutPart::Typecast,
+            LayoutPart::Deref,
             [None, Some(layout.inner()), None],
         );
         self.set_always_inline(f);

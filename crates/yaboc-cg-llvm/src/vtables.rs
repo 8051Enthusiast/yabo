@@ -15,7 +15,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .unwrap();
         let head_disc = layout.head_kind(&self.compiler_database.db);
         let head_disc_val = self.const_i64(head_disc as i64);
-        let typecast = self.typecast_fun_val(layout);
+        let deref = self.deref_fun_val(layout);
         let mask;
         if self.collected_layouts.publics.needs_mask_method(layout) {
             mask = Some(self.mask_fun_val(layout));
@@ -29,7 +29,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             let vtable_ty = vtable_global.get_value_type().into_struct_type();
             vtable_ty.const_named_struct(&[
                 head_disc_val.into(),
-                self.vtable_ptr_from_function(vtable_global, typecast),
+                self.vtable_ptr_from_function(vtable_global, deref),
                 self.vtable_ptr_maybe_from_function(vtable_global, mask),
                 size.into(),
                 align.into(),
@@ -39,7 +39,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.llvm.const_struct(
                 &[
                     head_disc_val.into(),
-                    self.vtable_ptr_from_function(vtable_global, typecast),
+                    self.vtable_ptr_from_function(vtable_global, deref),
                     self.vtable_ptr_maybe_from_function(vtable_global, mask),
                     size.into(),
                     align.into(),

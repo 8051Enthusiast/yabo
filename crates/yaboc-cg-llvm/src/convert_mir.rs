@@ -222,7 +222,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             }
         }
         let to = self.return_val(to)?;
-        let ret = self.cg.call_typecast_fun(to, from)?;
+        let ret = self.cg.call_deref_fun(to, from)?;
         self.controlflow_case(ret, ctrl)
     }
 
@@ -473,7 +473,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 tmp_bb,
             )?;
             self.cg.builder.position_at_end(tmp_bb);
-            let ret = self.cg.call_typecast_fun(ret_val, intermediate_val)?;
+            let ret = self.cg.call_deref_fun(ret_val, intermediate_val)?;
             self.controlflow_case(ret, ctrl)
         } else {
             let next = self.bb(ctrl.next);
@@ -561,7 +561,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 .build_alloca_value(layout, "temp_buf", self.debug_loc)?;
             self.cg.builder.build_store(alloc.ptr, value)?;
             let ret_val = self.return_val(ret)?;
-            self.cg.call_typecast_fun(ret_val, alloc)?;
+            self.cg.call_deref_fun(ret_val, alloc)?;
         } else {
             let ptr = self.build_typed_place_ptr(ret)?;
             self.cg.builder.build_store(ptr, value)?;
@@ -594,7 +594,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         };
         let ret_ptr = self.return_val(ret)?;
         self.cg.builder.build_store(alloc.ptr, llvm_val)?;
-        self.cg.call_typecast_fun(ret_ptr, alloc)?;
+        self.cg.call_deref_fun(ret_ptr, alloc)?;
         Ok(())
     }
 
@@ -620,7 +620,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         }?;
         self.cg.builder.build_store(alloc_second, bytes_end)?;
         let ret_val = self.return_val(ret)?;
-        self.cg.call_typecast_fun(ret_val, alloc)?;
+        self.cg.call_deref_fun(ret_val, alloc)?;
         Ok(())
     }
 

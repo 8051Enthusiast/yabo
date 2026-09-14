@@ -33,15 +33,15 @@ pub trait ThunkInfo<'comp, 'llvm> {
     fn target_layout(&self) -> IMonoLayout<'comp>;
 }
 
-pub struct TypecastThunk<'comp, 'llvm> {
+pub struct DerefThunk<'comp, 'llvm> {
     layout: IMonoLayout<'comp>,
     arg_copy: Option<CgValue<'comp, 'llvm>>,
     f: FunctionValue<'llvm>,
 }
 
-impl<'comp, 'llvm> TypecastThunk<'comp, 'llvm> {
+impl<'comp, 'llvm> DerefThunk<'comp, 'llvm> {
     pub fn new(cg: &mut CodeGenCtx<'llvm, 'comp>, layout: IMonoLayout<'comp>) -> IResult<Self> {
-        let f = cg.typecast_fun_val(layout);
+        let f = cg.deref_fun_val(layout);
         cg.add_entry_block(f, layout);
         let arg_copy = if let MonoLayout::Nominal(..) = layout.mono_layout() {
             let (from, _) = layout.unapply_nominal(cg.layouts);
@@ -58,7 +58,7 @@ impl<'comp, 'llvm> TypecastThunk<'comp, 'llvm> {
     }
 }
 
-impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TypecastThunk<'comp, 'llvm> {
+impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for DerefThunk<'comp, 'llvm> {
     fn function(&self, _cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
         self.f
     }
@@ -350,7 +350,7 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
     fn maybe_deref(&mut self) -> IResult<()> {
         if let MonoLayout::Nominal(..) | MonoLayout::Ptr = self.target_layout.mono_layout() {
             let no_deref = self.cg.build_check_ptr_bit_set(self.ret.head, THUNK_BIT)?;
-            let tail = self.typecast_tail(false, self.ret.ptr)?;
+            let tail = self.deref_tail(false, self.ret.ptr)?;
             let next_bb = self.cg.llvm.append_basic_block(self.fun, "head_match");
             self.cg
                 .builder
@@ -360,7 +360,7 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
         Ok(())
     }
 
-    fn typecast_tail(
+    fn deref_tail(
         &mut self,
         after_copy: bool,
         return_ptr: PointerValue<'llvm>,
@@ -369,7 +369,7 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
             return Ok(block);
         }
         let previous_bb = self.cg.builder.get_insert_block();
-        let current_bb = self.cg.llvm.append_basic_block(self.fun, "typecast_tail");
+        let current_bb = self.cg.llvm.append_basic_block(self.fun, "deref_tail");
         self.cg.builder.position_at_end(current_bb);
         self.cg.builder.build_return(Some(&self.cg.const_i64(0)))?;
         if let Some(bb) = previous_bb {
@@ -410,7 +410,7 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
             offset += sa.after;
             i += 1;
         }
-        let after = self.typecast_tail(true, self.ret.ptr)?;
+        let after = self.deref_tail(true, self.ret.ptr)?;
         self.cg.builder.build_unconditional_branch(after)?;
         Ok(())
     }

@@ -61,9 +61,9 @@ static inline int64_t dyn_deref(DynValue *ret, const DynValue *val,
                                 const struct Globals *globals) {
   const struct NominalVTable *vtable =
       (const struct NominalVTable *)val->vtable;
-  TypecastFun *typecast_impl = YABO_ACCESS_VPTR(&vtable->head, typecast_impl);
+  DerefFun *deref_impl = YABO_ACCESS_VPTR(&vtable->head, deref_impl);
   int64_t status =
-      typecast_impl(ret->data, val->data, (const char *)globals + YABO_VTABLE);
+      deref_impl(ret->data, val->data, (const char *)globals + YABO_VTABLE);
   if (status) {
     return dyn_invalidate(ret, status);
   }

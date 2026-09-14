@@ -167,19 +167,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.build_byte_gep(val.ptr, self.const_i64(-(sa.before as i64)), "start")
     }
 
-    pub(super) fn call_typecast_fun(
+    pub(super) fn call_deref_fun(
         &mut self,
         ret: CgReturnValue<'llvm>,
         arg: CgValue<'comp, 'llvm>,
     ) -> IResult<IntValue<'llvm>> {
-        let typecast = match arg.layout.maybe_mono() {
-            Some(mono) => self.typecast_fun_val(mono).into(),
-            None => self.vtable_callable::<vtable::VTableHeader<AbsPtr>, vtable::VTableHeader<RelPtr>, vtable::TypecastFun>(
+        let deref = match arg.layout.maybe_mono() {
+            Some(mono) => self.deref_fun_val(mono).into(),
+            None => self.vtable_callable::<vtable::VTableHeader<AbsPtr>, vtable::VTableHeader<RelPtr>, vtable::DerefFun>(
                 arg.ptr,
-                &[VTableHeaderFields::typecast_impl as i64],
+                &[VTableHeaderFields::deref_impl as i64],
             )?,
         };
-        self.build_call_with_int_ret(typecast, &[ret.ptr.into(), arg.ptr.into(), ret.head.into()])
+        self.build_call_with_int_ret(deref, &[ret.ptr.into(), arg.ptr.into(), ret.head.into()])
     }
 
     pub(super) fn call_field_access_fun(
@@ -769,7 +769,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let fun_arg_ptr = self.build_byte_gep(fun_any_ptr, offset, "")?;
         let ptr = self.build_byte_gep(globals, head, "tagged")?;
         let fun_arg = CgReturnValue::new(ptr, fun_arg_ptr);
-        self.call_typecast_fun(fun_arg, arg)
+        self.call_deref_fun(fun_arg, arg)
     }
 
     pub(super) fn call_len_fun(

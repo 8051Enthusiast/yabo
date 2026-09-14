@@ -2,13 +2,13 @@ use std::marker::PhantomData;
 
 use yaboc_target::{layout::VtablePointer, target_struct};
 
-pub type TypecastFun = fn(ret: *mut u8, from: *const u8, context: *const u8) -> i64;
+pub type DerefFun = fn(ret: *mut u8, from: *const u8, context: *const u8) -> i64;
 pub type MaskFun = fn(ret: *mut u8) -> usize;
 
 target_struct! {
     pub struct VTableHeader<T: VtablePointer> {
         pub head: i64,
-        pub typecast_impl: T::FPtr<TypecastFun>,
+        pub deref_impl: T::FPtr<DerefFun>,
         pub mask_impl: T::FPtr<MaskFun>,
         pub size: usize,
         pub align: usize,

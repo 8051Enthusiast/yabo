@@ -104,14 +104,14 @@ class VTable(Structure):
 class VTableHeader(VTable):
     __slots__ = [
         "head",
-        "typecast_impl",
+        "deref_impl",
         "mask_impl",
         "size",
         "align",
     ]
     _fields_ = [
         ("head", c_int64),
-        ("typecast_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p))),
+        ("deref_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p))),
         ("mask_impl", vptr(CFUNCTYPE(c_size_t, _voidptr))),
         ("size", c_size_t),
         ("align", c_size_t),
@@ -461,18 +461,21 @@ class YaboLib(ctypes.CDLL):
 class YaboValue:
     _val: DynValue
     _lib: YaboLib
-    _loc: threading.local
 
     def __init__(self, val: DynValue, lib: YaboLib):
         self._val = val
         self._lib = lib
 
-    def _typecast(self, typ: int):
-        typecast = self._val.get_vtable().typecast_impl
-        return self._lib.new_val(lambda ret: typecast(ret, self._val.data_ptr(), tag_pointer(self._lib._globals, typ)))
+    def _deref(self, typ: int):
+        deref = self._val.get_vtable().deref_impl
+        return self._lib.new_val(lambda ret: deref(ret, self._val.data_ptr(), tag_pointer(self._lib._globals, typ)))
 
     def __copy__(self):
-        return self._typecast(YABO_THUNK_BIT | YABO_VTABLE_BIT)
+        cls = type(self)
+        result = cls.__new__(cls)
+        result.__dict__.update(self.__dict__)
+        result._val = copy(self._val)
+        return result
 
     def __eq__(self, other):
         if not isinstance(other, YaboValue):
@@ -485,7 +488,7 @@ class YaboValue:
 
 class NominalValue(YaboValue):
     def deref(self):
-        return self._typecast(YABO_VTABLE_BIT)
+        return self._deref(YABO_VTABLE_BIT)
 
 
 class BlockValue(YaboValue):
@@ -603,7 +606,7 @@ class UnitValue(YaboValue):
 
 class U8Value(YaboValue):
     def deref(self):
-        return self._typecast(YABO_VTABLE_BIT)
+        return self._deref(YABO_VTABLE_BIT)
 
 def _new_value(val: DynValue, lib: YaboLib):
     val.mask()

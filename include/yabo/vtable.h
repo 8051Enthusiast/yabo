@@ -54,12 +54,12 @@ enum ReturnStatus {
   YABO_STATUS_BACKTRACK = 3,
 };
 
-typedef int64_t TypecastFun(void *, const void *, const char *);
+typedef int64_t DerefFun(void *, const void *, const char *);
 typedef size_t MaskFun(void *);
 
 struct VTableHeader {
   int64_t head;
-  YABO_VPTR(TypecastFun) typecast_impl;
+  YABO_VPTR(DerefFun) deref_impl;
   YABO_VPTR(MaskFun) mask_impl;
   size_t size;
   size_t align;
