@@ -203,6 +203,9 @@ def check_errors(stderr: str, expected: list[ErrorLocation]) -> None:
             f'No error comments found in source but errors were found in stderr:\n{stderr}'
         )
 
+    for expected_error in expected:
+        check_diagnostic_match(diagnostics, expected_error)
+
 def files_are_same(file1: str, file2: str) -> bool:
     with open(file1, "rb") as f1, open(file2, "rb") as f2:
         c1 = f1.read()
