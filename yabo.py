@@ -132,7 +132,7 @@ class BlockFields(VTable):
         return self.number_fields
 
     def __getitem__(self, index):
-        if index > len(self):
+        if index >= len(self):
             raise IndexError(index)
         ty = vptr(c_char_p)
         offset = BlockFields.fields.offset + index * ctypes.sizeof(ty)
@@ -159,7 +159,7 @@ class BlockVTable(VTable):
         return len(self.fields.contents)
 
     def __getitem__(self, index):
-        if index > len(self):
+        if index >= len(self):
             raise IndexError(index)
         ty = vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p))
         offset = BlockVTable.access_impl.offset + index * ctypes.sizeof(ty)
