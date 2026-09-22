@@ -51,12 +51,12 @@ use yaboc_database::YabocDatabase;
 use yaboc_hir::{BlockId, HirIdWrapper, Hirs, ParserDefId};
 use yaboc_layout::{
     AbsLayoutCtx, ILayout, IMonoLayout, MonoLayout,
-    collect::{LCallMeta, LayoutCollection, root_req},
+    collect::{LCallMeta, LayoutCollection, Slot, root_req},
     mir_subst::FunctionSubstitute,
     represent::{LayoutPart, truncated_hex},
     vtable::{
-        self, ArrayVTableFields, BlockVTableFields, FunctionVTableFields, ParserFun,
-        ParserVTableFields, VTableHeaderFields,
+        self, ArrayVTableFields, BlockVTableFields, FunctionVTableFields, ParserVTableFields,
+        VTableHeaderFields,
     },
 };
 use yaboc_mir::{Mirs, ReturnStatus};
@@ -1057,7 +1057,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let global = self.module.add_global(global_ty, None, &name);
 
         let mut vals = vec![];
-        let parser = self.parser_impl_struct_val(layout, from, root_req());
+        let parser = self.slot_impl_val(layout, Slot::Parser(from, root_req()));
         let parser = self.vtable_ptr_from_ptr(global, parser);
         for arg in args.iter() {
             let arg_val = arg.maybe_mono().unwrap();

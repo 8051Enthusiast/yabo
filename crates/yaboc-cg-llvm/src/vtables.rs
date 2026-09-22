@@ -1,4 +1,4 @@
-use yaboc_layout::vtable::{CreateArgFun, EvalFunFun, LenFun};
+use yaboc_layout::{collect::Slot, vtable::LenFun};
 
 use super::*;
 
@@ -228,18 +228,18 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         struct_ty.const_array(&arg_impls)
     }
 
-    fn gather_slots<F: TargetSized, M: Copy>(
+    fn gather_slots(
         &mut self,
-        slots: &[(M, Option<PSize>)],
+        slots: &[(Slot<'comp>, Option<PSize>)],
         vtable: GlobalValue<'llvm>,
         size: PSize,
-        f: impl Fn(&mut Self, M) -> PointerValue<'llvm>,
+        layout: IMonoLayout<'comp>,
     ) -> ArrayValue<'llvm> {
-        let null = F::codegen_ty(self).into_pointer_type().const_null();
+        let null = self.llvm.ptr_type(Default::default()).const_null();
         let mut impls = vec![null; size as usize];
-        for (arg, slot) in slots.iter() {
-            let s = f(self, *arg);
-            if let Some(slot) = slot {
+        for (arg, slot_number) in slots.iter() {
+            let s = self.slot_impl_val(layout, *arg);
+            if let Some(slot) = slot_number {
                 impls[*slot as usize] = s;
             }
         }
@@ -251,10 +251,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_parser_vtable(&mut self, layout: IMonoLayout<'comp>) {
-        let slots = self
-            .collected_layouts
-            .parser_slots
-            .calls_from_layout(layout);
+        let slots = self.collected_layouts.slots.calls_from_layout(layout);
         // it may be that a parser is not used at all, in which case we are already finished
         let max = slots
             .iter()
@@ -270,10 +267,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.create_resized_vtable::<vtable::ParserVTable<AbsPtr>>(layout, max as u32)
         };
         let vtable_header = self.vtable_header(layout, false, vtable);
-        let vtable_array =
-            self.gather_slots::<ParserFun, _>(&slots, vtable, max, |this, (from, req)| {
-                this.parser_impl_struct_val(layout, from, req)
-            });
+        let vtable_array = self.gather_slots(&slots, vtable, max, layout);
         let len_impl = if self.collected_layouts.lens.contains(&layout) {
             self.parser_len_fun_val(layout)
                 .as_global_value()
@@ -292,10 +286,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
 
     fn create_function_vtable(&mut self, layout: IMonoLayout<'comp>) {
-        let slots = self
-            .collected_layouts
-            .funcall_slots
-            .calls_from_layout(layout);
+        let slots = self.collected_layouts.slots.calls_from_layout(layout);
         let len = slots
             .iter()
             .map(|(_, val)| *val)
@@ -310,30 +301,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.create_resized_vtable::<vtable::FunctionVTable<AbsPtr>>(layout, len as u32)
         };
         let vtable_header = self.vtable_header(layout, false, vtable);
-        let vtable_array =
-            self.gather_slots::<CreateArgFun, _>(&slots, vtable, len, |this, from| {
-                this.function_create_args_fun_val(layout, from)
-                    .as_global_value()
-                    .as_pointer_value()
-            });
-
-        let eval_slots = self.collected_layouts.eval_slots.calls_from_layout(layout);
-        let eval_funcs =
-            self.gather_slots::<EvalFunFun, _>(&eval_slots, vtable, 6, |this, meta| {
-                if meta.tail {
-                    this.eval_fun_fun_val_tail(layout, meta.req)
-                } else {
-                    this.eval_fun_fun_val_wrapper(layout, meta.req)
-                }
-                .as_global_value()
-                .as_pointer_value()
-            });
+        let vtable_array = self.gather_slots(&slots, vtable, len, layout);
 
         let vtable_ty = self.vtable_ty(layout);
         let vtable_val = vtable_ty.const_named_struct(&[
             arg_impl_array.into(),
             vtable_header.into(),
-            eval_funcs.into(),
             vtable_array.into(),
         ]);
         vtable.set_initializer(&vtable_val)

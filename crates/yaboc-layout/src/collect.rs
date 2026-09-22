@@ -96,6 +96,12 @@ pub fn regex_single_req() -> LCallMeta {
         tail: false,
     }
 }
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
+pub enum Slot<'a> {
+    Parser(ILayout<'a>, LCallMeta),
+    FunCall(LayoutSlice<'a>),
+    Eval(LCallMeta),
+}
 
 #[derive(Debug)]
 pub struct LayoutCollection<'a> {
@@ -108,9 +114,7 @@ pub struct LayoutCollection<'a> {
     pub primitives: Vec<IMonoLayout<'a>>,
     pub lens: LayoutSet<'a>,
     pub globals: FxHashMap<ParserDefId, (IMonoLayout<'a>, ILayout<'a>)>,
-    pub parser_slots: call_info::CallSlotResult<'a, (ILayout<'a>, LCallMeta)>,
-    pub funcall_slots: call_info::CallSlotResult<'a, LayoutSlice<'a>>,
-    pub eval_slots: call_info::CallSlotResult<'a, LCallMeta>,
+    pub slots: call_info::CallSlotResult<'a, Slot<'a>>,
     pub tail_sa: FxHashMap<TailCallSite<'a>, TailInfo>,
     pub max_sa: SizeAlign,
     pub global_offsets: StructManifestation,
@@ -121,9 +125,7 @@ pub struct LayoutCollection<'a> {
 pub struct LayoutCollector<'a, 'b> {
     ctx: &'b mut AbsLayoutCtx<'a>,
     int: ILayout<'a>,
-    parses: call_info::CallInfo<'a, (ILayout<'a>, LCallMeta)>,
-    funcalls: call_info::CallInfo<'a, LayoutSlice<'a>>,
-    eval_slots: call_info::CallInfo<'a, LCallMeta>,
+    slots: call_info::CallInfo<'a, Slot<'a>>,
     arrays: LayoutSet<'a>,
     blocks: LayoutSet<'a>,
     nominals: LayoutSet<'a>,
@@ -160,9 +162,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         LayoutCollector {
             ctx,
             int,
-            parses: Default::default(),
-            funcalls: Default::default(),
-            eval_slots: Default::default(),
+            slots: Default::default(),
             arrays: Default::default(),
             blocks: Default::default(),
             nominals: Default::default(),
@@ -273,7 +273,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     }
 
     fn register_parse(&mut self, arg: ILayout<'a>, parser: ILayout<'a>, mut info: LCallMeta) {
-        self.parses.add_call((arg, info), parser);
+        self.slots.add_call(Slot::Parser(arg, info), parser);
         if info.req.is_empty() {
             return;
         }
@@ -372,7 +372,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 &arg_tuple.1
             );
         }
-        self.funcalls.add_call(arg_tuple, fun);
+        self.slots.add_call(Slot::FunCall(arg_tuple), fun);
         Ok(())
     }
 
@@ -411,7 +411,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     }
 
     fn register_eval(&mut self, fun: ILayout<'a>, meta: LCallMeta) {
-        self.eval_slots.add_call(meta, fun);
+        self.slots.add_call(Slot::Eval(meta), fun);
         if meta.req.is_empty() {
             return;
         }
@@ -837,25 +837,28 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     }
 
     pub fn into_results(mut self) -> Result<LayoutCollection<'a>, LayoutError> {
-        let parser_slots = self
-            .parses
-            .into_layout_vtable_offsets(self.ctx, |this, lhs, rhs| {
-                lhs.1.cmp(&rhs.1).then(
-                    this.dcx
-                        .full_layout_hash(this.db, lhs.0)
-                        .cmp(&this.dcx.full_layout_hash(this.db, rhs.0)),
-                )
+        let slots = self
+            .slots
+            .into_layout_vtable_offsets(self.ctx, |this, lhs, rhs| match (lhs, rhs) {
+                (Slot::Parser(lhs_layout, lhs_meta), Slot::Parser(rhs_layout, rhs_meta)) => {
+                    lhs_meta.cmp(&rhs_meta).then(
+                        this.dcx
+                            .full_layout_hash(this.db, *lhs_layout)
+                            .cmp(&this.dcx.full_layout_hash(this.db, *rhs_layout)),
+                    )
+                }
+                (Slot::FunCall(lhs_args), Slot::FunCall(rhs_args)) => this
+                    .dcx
+                    .full_layout_slice_hash(this.db, &lhs_args.1)
+                    .cmp(&this.dcx.full_layout_slice_hash(this.db, &rhs_args.1)),
+                (Slot::Eval(lhs), Slot::Eval(rhs)) => lhs.cmp(rhs),
+                (Slot::Parser(..), _) | (Slot::FunCall(_), Slot::Eval(_)) => {
+                    std::cmp::Ordering::Less
+                }
+                (Slot::Eval(_), _) | (Slot::FunCall(_), Slot::Parser(..)) => {
+                    std::cmp::Ordering::Greater
+                }
             });
-        let funcall_slots = self
-            .funcalls
-            .into_layout_vtable_offsets(self.ctx, |this, lhs, rhs| {
-                this.dcx
-                    .full_layout_slice_hash(this.db, &lhs.1)
-                    .cmp(&this.dcx.full_layout_slice_hash(this.db, &rhs.1))
-            });
-        let eval_slots = self
-            .eval_slots
-            .into_layout_vtable_offsets(self.ctx, |_, lhs, rhs| lhs.cmp(rhs));
         let mut primitives = FxHashSet::default();
 
         for x in [
@@ -874,23 +877,20 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
 
         let mut tail_sa = FxHashMap::default();
         let mut tail_collector = TailCollector::new(self.ctx, &mut self.layout_info);
-        for (parser, froms) in parser_slots.call_args.iter() {
-            for ((from, req), _) in froms.iter() {
-                let call_site = TailCallSite {
-                    from: Some(*from),
-                    func: *parser,
-                    req: req.req,
-                };
-                let sa = tail_collector.size(call_site)?;
-                tail_sa.insert(call_site, sa);
-            }
-        }
-        for (fun, reqs) in eval_slots.call_args.iter() {
-            for (meta, _) in reqs.iter() {
-                let call_site = TailCallSite {
-                    from: None,
-                    func: *fun,
-                    req: meta.req,
+        for (layout, froms) in slots.call_args.iter() {
+            for (slot, _) in froms.iter() {
+                let call_site = match slot {
+                    Slot::Parser(from, meta) => TailCallSite {
+                        from: Some(*from),
+                        func: *layout,
+                        req: meta.req,
+                    },
+                    Slot::FunCall(_) => continue,
+                    Slot::Eval(meta) => TailCallSite {
+                        from: None,
+                        func: *layout,
+                        req: meta.req,
+                    },
                 };
                 let sa = tail_collector.size(call_site)?;
                 tail_sa.insert(call_site, sa);
@@ -919,9 +919,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             globals: self.globals,
             max_sa: self.max_sa,
             primitives: Self::sorted_layouts(self.ctx, &primitives),
-            parser_slots,
-            funcall_slots,
-            eval_slots,
+            slots,
             tail_sa,
             global_offsets,
             layout_info: self.layout_info.collect(),

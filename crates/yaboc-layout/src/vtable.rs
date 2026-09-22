@@ -74,7 +74,6 @@ target_struct! {
     pub struct FunctionVTable<T: VtablePointer> {
         pub set_arg_info: [ArgDescriptor; 0],
         pub head: VTableHeader<T>,
-        pub eval_fun_impl: [Option<T::FPtr<EvalFunFun>>; 6],
         pub apply_table: [Option<T::FPtr<CreateArgFun>>; 0],
     }
 }

@@ -2,7 +2,7 @@ use inkwell::debug_info::AsDIScope;
 use inkwell::values::{CallSiteValue, LLVMTailCallKind};
 use yaboc_base::dbformat;
 use yaboc_hir_types::VTABLE_BIT;
-use yaboc_layout::collect::{LCallMeta, LCallReq};
+use yaboc_layout::collect::{LCallReq, Slot};
 use yaboc_layout::represent::ParserFunKind;
 use yaboc_layout::vtable;
 
@@ -392,20 +392,34 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.llvm.const_struct(&[head.into(), offset.into()], false)
     }
 
-    pub(super) fn parser_impl_struct_val(
+    pub(super) fn slot_impl_val(
         &mut self,
         layout: IMonoLayout<'comp>,
-        from: ILayout<'comp>,
-        info: LCallMeta,
+        slot: Slot<'comp>,
     ) -> PointerValue<'llvm> {
-        if info.tail {
-            self.parser_fun_val_tail(layout, from, info.req)
+        match slot {
+            Slot::Parser(from, info) => {
+                if info.tail {
+                    self.parser_fun_val_tail(layout, from, info.req)
+                        .as_global_value()
+                        .as_pointer_value()
+                } else {
+                    self.parser_fun_val_wrapper(layout, from, info.req)
+                        .as_global_value()
+                        .as_pointer_value()
+                }
+            }
+            Slot::FunCall(args) => self
+                .function_create_args_fun_val(layout, args)
                 .as_global_value()
-                .as_pointer_value()
-        } else {
-            self.parser_fun_val_wrapper(layout, from, info.req)
-                .as_global_value()
-                .as_pointer_value()
+                .as_pointer_value(),
+            Slot::Eval(meta) => if meta.tail {
+                self.eval_fun_fun_val_tail(layout, meta.req)
+            } else {
+                self.eval_fun_fun_val_wrapper(layout, meta.req)
+            }
+            .as_global_value()
+            .as_pointer_value(),
         }
     }
 

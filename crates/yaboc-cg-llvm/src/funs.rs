@@ -5,7 +5,7 @@ use yaboc_hir::BlockReturnKind;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{
     FuncLayoutKind, Layout, TailCallSite,
-    collect::{EvalType, LCallReq, array_val_req, pd_len_req, pd_val_req, static_val_req},
+    collect::{EvalType, LCallReq, Slot, array_val_req, pd_len_req, pd_val_req, static_val_req},
     mir_subst::function_substitute,
     represent::ParserFunKind,
 };
@@ -1632,62 +1632,69 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         Ok(())
     }
 
+    fn create_parser_fun(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+        from: ILayout<'comp>,
+        meta: LCallMeta,
+    ) -> IResult<()> {
+        let mut create_fun = match layout.mono_layout() {
+            MonoLayout::Single => Self::create_single_parse,
+            MonoLayout::NominalParser(..) => Self::create_pd_parse,
+            MonoLayout::BlockParser(..) => Self::create_block_parse,
+            MonoLayout::Regex(..) => Self::create_regex_parse,
+            MonoLayout::IfParser(..) => Self::create_if_parse,
+            MonoLayout::ArrayParser(..) => Self::create_array_parse,
+            MonoLayout::ArrayFillParser(..) => Self::create_array_parse,
+            _ => panic!("non-parser in parser layout collection"),
+        };
+        if from.is_int() {
+            create_fun = Self::create_error_parse
+        }
+        let fun = create_fun(self, from, layout, meta.req)?;
+        self.create_wrapper_parse(from, layout, meta.req, fun)?;
+        Ok(())
+    }
+
     fn create_parser_funs(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
-        let collected_layouts = self.collected_layouts.clone();
-        let mut visited = FxHashSet::default();
         if self.collected_layouts.lens.contains(&layout) {
             self.create_len_fun(layout)?;
-        }
-        for ((from, meta), _) in collected_layouts
-            .parser_slots
-            .calls_from_layout(layout)
-            .iter()
-        {
-            if !visited.insert((from, meta.req)) {
-                continue;
-            }
-            let mut create_fun = match layout.mono_layout() {
-                MonoLayout::Single => Self::create_single_parse,
-                MonoLayout::NominalParser(..) => Self::create_pd_parse,
-                MonoLayout::BlockParser(..) => Self::create_block_parse,
-                MonoLayout::Regex(..) => Self::create_regex_parse,
-                MonoLayout::IfParser(..) => Self::create_if_parse,
-                MonoLayout::ArrayParser(..) => Self::create_array_parse,
-                MonoLayout::ArrayFillParser(..) => Self::create_array_parse,
-                _ => panic!("non-parser in parser layout collection"),
-            };
-            // if the from arg is an integer, that means that we created a int parse during
-            // collection, which should only happen when a place that gets instantiated with
-            // an undefined value has a thunk layout.
-            // in this case the parse call gets created by the vtable even though the value
-            // actually never gets created, so we need to create a parse call that just returns
-            // an error
-            if from.is_int() {
-                create_fun = Self::create_error_parse
-            }
-            let fun = create_fun(self, *from, layout, meta.req)?;
-            self.create_wrapper_parse(*from, layout, meta.req, fun)?;
         }
         Ok(())
     }
 
-    fn create_funcalls(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
-        let mut visited = FxHashSet::default();
-        let reqs = self.collected_layouts.eval_slots.calls_from_layout(layout);
-        for (req, _) in reqs.iter() {
-            if !visited.insert(req.req) {
-                continue;
-            }
-            let inner = self.create_eval_fun_fun(layout, req.req)?;
-            self.create_wrapper_eval_fun(layout, req.req, inner)?;
+    fn create_eval_fun(&mut self, layout: IMonoLayout<'comp>, req: LCallMeta) -> IResult<()> {
+        let inner = self.create_eval_fun_fun(layout, req.req)?;
+        self.create_wrapper_eval_fun(layout, req.req, inner)?;
+        Ok(())
+    }
+
+    fn create_slot(&mut self, layout: IMonoLayout<'comp>, slot: &Slot<'comp>) -> IResult<()> {
+        match slot {
+            Slot::Parser(from, meta) => self.create_parser_fun(layout, *from, *meta),
+            Slot::FunCall(args) => self.create_create_fun_args_fun(layout, *args),
+            Slot::Eval(meta) => self.create_eval_fun(layout, *meta),
         }
+    }
+
+    fn create_all_slots(&mut self) -> IResult<()> {
         let collected_layouts = self.collected_layouts.clone();
-        for (args, _) in collected_layouts
-            .funcall_slots
-            .calls_from_layout(layout)
-            .iter()
+        let mut visited_parser = FxHashSet::default();
+        let mut visited_eval = FxHashSet::default();
+        for layout in [&collected_layouts.parsers, &collected_layouts.functions]
+            .into_iter()
+            .flatten()
         {
-            self.create_create_fun_args_fun(layout, args)?;
+            for (slot, _) in collected_layouts.slots.calls_from_layout(*layout).iter() {
+                if !match slot {
+                    Slot::Parser(from, meta) => visited_parser.insert((*layout, *from, meta.req)),
+                    Slot::FunCall(_) => true,
+                    Slot::Eval(meta) => visited_eval.insert((*layout, meta.req)),
+                } {
+                    continue;
+                }
+                self.create_slot(*layout, slot)?;
+            }
         }
         Ok(())
     }
@@ -1821,6 +1828,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub fn create_all_funs(&mut self) -> IResult<()> {
         let collected_layouts = self.collected_layouts.clone();
         self.create_all_header_funs()?;
+        self.create_all_slots()?;
         self.create_init_fun()?;
         for layout in collected_layouts.arrays.iter() {
             self.create_array_funs(*layout)?;
@@ -1833,9 +1841,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         for layout in collected_layouts.parsers.iter() {
             self.create_parser_funs(*layout)?;
-        }
-        for layout in collected_layouts.functions.iter() {
-            self.create_funcalls(*layout)?;
         }
         for layout in collected_layouts.primitives.iter() {
             self.create_primitive_funs(*layout)?;

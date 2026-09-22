@@ -2,7 +2,7 @@ use inkwell::{types::FunctionType, values::CallSiteValue};
 use yaboc_base::low_effort_interner::Uniq;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{
-    collect::{LCallMeta, LCallReq},
+    collect::{LCallMeta, LCallReq, Slot},
     represent::ParserFunKind,
 };
 
@@ -225,8 +225,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     req,
                     tail: fun_kind == ParserFunKind::TailWrapper,
                 };
-                let slot = self.collected_layouts.parser_slots.layout_vtable_offsets
-                    [&((arg.layout, meta), fun.layout)];
+                let slot = self.collected_layouts.slots.layout_vtable_offsets
+                    [&(Slot::Parser(arg.layout, meta), fun.layout)];
                 self.vtable_callable::<vtable::ParserVTable<AbsPtr>, vtable::ParserVTable<RelPtr>, vtable::ParserFun>(
                     fun.ptr,
                     &[ParserVTableFields::apply_table as i64, slot as i64],
@@ -356,8 +356,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     req: call_kind,
                     tail: true,
                 };
-                let slot = self.collected_layouts.parser_slots.layout_vtable_offsets
-                    [&((arg.layout, meta), fun.layout)];
+                let slot = self.collected_layouts.slots.layout_vtable_offsets
+                    [&(Slot::Parser(arg.layout, meta), fun.layout)];
                 self.vtable_callable::<vtable::ParserVTable<AbsPtr>, vtable::ParserVTable<RelPtr>, vtable::ParserFun>(
                     fun.ptr,
                     &[ParserVTableFields::apply_table as i64, slot as i64],
@@ -406,9 +406,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             None => {
                 let Some(slot) = self
                     .collected_layouts
-                    .funcall_slots
+                    .slots
                     .layout_vtable_offsets
-                    .get(&(args, fun.layout))
+                    .get(&(Slot::FunCall(args), fun.layout))
                     .copied()
                 else {
                     dbpanic!(
@@ -487,11 +487,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     tail: kind == ParserFunKind::TailWrapper,
                     req,
                 };
-                let slot =
-                    self.collected_layouts.eval_slots.layout_vtable_offsets[&(meta, fun.layout)];
+                let slot = self.collected_layouts.slots.layout_vtable_offsets
+                    [&(Slot::Eval(meta), fun.layout)];
                 self.vtable_callable::<vtable::FunctionVTable<AbsPtr>, vtable::FunctionVTable<RelPtr>, vtable::EvalFunFun>(
                 fun.ptr,
-                &[FunctionVTableFields::eval_fun_impl as i64, slot as i64],
+                &[FunctionVTableFields::apply_table as i64, slot as i64],
             )?
             }
         };
@@ -545,11 +545,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     req: call_kind,
                     tail: true,
                 };
-                let slot =
-                    self.collected_layouts.eval_slots.layout_vtable_offsets[&(meta, fun.layout)];
+                let slot = self.collected_layouts.slots.layout_vtable_offsets
+                    [&(Slot::Eval(meta), fun.layout)];
                 self.vtable_callable::<vtable::FunctionVTable<AbsPtr>, vtable::FunctionVTable<RelPtr>, vtable::EvalFunFunInternal>(
                     fun.ptr,
-                    &[FunctionVTableFields::eval_fun_impl as i64, slot as i64],
+                    &[FunctionVTableFields::apply_table as i64, slot as i64],
                 )?
             }
         };
