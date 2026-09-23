@@ -798,6 +798,20 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
     }
 
+    pub(super) fn build_copy(
+        &mut self,
+        dest: CgReturnValue<'llvm>,
+        src: CgValue<'comp, 'llvm>,
+    ) -> IResult<PointerValue<'llvm>> {
+        let sa = src.layout.size_align_without_vtable(self.layouts).unwrap();
+        let size = self.const_i64(sa.total_size() as i64);
+        let align = sa.start_alignment() as u32;
+        self.builder
+            .build_memcpy(dest.ptr, align, src.ptr, align, size)?;
+        self.write_vtable_if_tagged(dest, src)?;
+        Ok(dest.ptr)
+    }
+
     pub(super) fn build_array_parser_get(
         &mut self,
         array: CgMonoValue<'comp, 'llvm>,

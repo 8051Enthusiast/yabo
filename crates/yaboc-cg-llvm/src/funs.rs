@@ -45,6 +45,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         Ok(())
     }
 
+    fn terminate_tail_copy(
+        &mut self,
+        arg: CgValue<'comp, 'llvm>,
+        ret: CgReturnValue<'llvm>,
+    ) -> IResult<()> {
+        self.build_copy(ret, arg)?;
+        self.builder
+            .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)))?;
+        Ok(())
+    }
+
     fn wrap_direct_call(
         &mut self,
         fun: FunctionValue<'llvm>,
@@ -559,7 +570,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let no_ret = self.poison_ret(head);
         let ret = self.build_parser_call(no_ret, fun.into(), from_copy, pd_len_req())?;
         self.non_zero_early_return(ret)?;
-        self.terminate_tail_deref(from_copy, ret_val)
+        self.terminate_tail_copy(from_copy, ret_val)
     }
 
     fn create_pd_start(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
@@ -570,7 +581,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let ret = CgReturnValue::new(head, to);
         let nom = CgMonoValue::new(layout, nom);
         let (from, _) = self.build_nominal_components(nom)?;
-        self.terminate_tail_deref(from, ret)
+        self.terminate_tail_copy(from, ret)
     }
 
     fn get_slice_ptrs(&mut self, arg: PointerValue<'llvm>) -> IResult<[PointerValue<'llvm>; 2]> {
@@ -645,7 +656,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 .build_in_bounds_gep(ty, bufsl, &[self.const_i64(1)], "ret")?
         };
         self.builder.build_store(bufsl, end_val)?;
-        self.terminate_tail_deref(buf, ret)
+        self.terminate_tail_copy(buf, ret)
     }
 
     fn create_sliceptr_current_element(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
@@ -736,7 +747,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         );
         let i64_layout = self.layouts.dcx.int();
         let i64_val = CgValue::new(i64_layout, from.into_pointer_value());
-        self.terminate_tail_deref(i64_val, ret)
+        self.terminate_tail_copy(i64_val, ret)
     }
 
     fn create_u8_current_element(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
@@ -757,7 +768,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .build_int_z_extend(byte, self.llvm.i64_type(), "int")?;
         let bitcasted_buf = self.build_cast::<*mut i64, _>(int_buf.ptr)?;
         self.builder.build_store(bitcasted_buf, int)?;
-        self.terminate_tail_deref(int_buf.into(), ret)
+        self.terminate_tail_copy(int_buf.into(), ret)
     }
 
     fn build_array_item_len_get(
@@ -854,7 +865,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let globals = self.build_high_bit_mask(head)?;
         let buf_slice_ret = self.build_return_value(buf_slice, thunky, globals)?;
         self.call_span_fun(buf_slice_ret, start_slice, end_slice)?;
-        self.terminate_tail_deref(bufsl.into(), ret)?;
+        self.terminate_tail_copy(bufsl.into(), ret)?;
         Ok(())
     }
 
@@ -1265,7 +1276,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             let inner_slice_ret = self.build_return_value(inner_slice, deref_level, globals)?;
             let ret = self.call_span_fun(inner_slice_ret, arg_copy, arg)?;
             self.non_zero_early_return(ret)?;
-            self.terminate_tail_deref(ret_buf.into(), ret_val)?;
+            self.terminate_tail_copy(ret_buf.into(), ret_val)?;
         } else {
             self.builder
                 .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)))?;
