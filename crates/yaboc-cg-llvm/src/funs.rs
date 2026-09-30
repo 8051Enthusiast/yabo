@@ -14,7 +14,7 @@ use yaboc_resolve::Resolves;
 
 use crate::{
     convert_regex::RegexTranslator,
-    convert_thunk::{BlockThunk, DerefThunk, TransmuteCopyThunk},
+    convert_thunk::{BlockThunk, TransmuteCopyThunk},
 };
 
 use super::*;
@@ -32,16 +32,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             |this| this.builder.build_return(Some(&status)),
             |_| Ok(()),
         )?;
-        Ok(())
-    }
-
-    fn terminate_tail_deref(
-        &mut self,
-        arg: CgValue<'comp, 'llvm>,
-        ret: CgReturnValue<'llvm>,
-    ) -> IResult<()> {
-        let ret = self.call_deref_fun(ret, arg)?;
-        self.builder.build_return(Some(&ret))?;
         Ok(())
     }
 
@@ -310,14 +300,74 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         .unwrap()
     }
 
-    fn create_deref(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
-        if let MonoLayout::Nominal(..) = layout.mono_layout() {
-            let (from, fun) = layout.unapply_nominal(self.layouts);
-            self.create_pd_parse_impl(from, fun, pd_val_req().req)?;
-        }
-        let thunk_info = DerefThunk::new(self, layout)?;
-        ThunkContext::new(self, thunk_info).build()?;
+    fn create_deref_copy(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
+        let f = self.deref_fun_val(layout);
+        self.add_entry_block(f, layout);
+        let [return_ptr, from_ptr, head_ptr] = get_fun_args(f);
+        self.build_copy(
+            CgReturnValue::new(
+                head_ptr.into_pointer_value(),
+                return_ptr.into_pointer_value(),
+            ),
+            CgValue::new(layout.inner(), from_ptr.into_pointer_value()),
+        )?;
+        self.builder
+            .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)))?;
         Ok(())
+    }
+
+    fn create_u8_deref(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
+        let fun = self.deref_fun_val(layout);
+        self.set_always_inline(fun);
+        self.add_entry_block(fun, layout);
+        let int_buf = self.build_alloca_int("int_buf")?;
+        let [return_ptr, from, target_head] = get_fun_args(fun);
+        let from = self.build_cast::<*const *const u8, _>(from)?;
+        let ret = CgReturnValue::new(
+            target_head.into_pointer_value(),
+            return_ptr.into_pointer_value(),
+        );
+        let int_ptr = self.build_ptr_load(from, "load_ptr")?;
+        let byte = self.build_byte_load(int_ptr, "load_byte")?;
+        let int = self
+            .builder
+            .build_int_z_extend(byte, self.llvm.i64_type(), "int")?;
+        let bitcasted_buf = self.build_cast::<*mut i64, _>(int_buf.ptr)?;
+        self.builder.build_store(bitcasted_buf, int)?;
+        self.terminate_tail_copy(int_buf.into(), ret)
+    }
+
+    fn create_nominal_deref(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
+        let (from_layout, fun_layout) = layout.unapply_nominal(self.layouts);
+        self.create_pd_parse_impl(from_layout, fun_layout, pd_val_req().req)?;
+        let f = self.deref_fun_val(layout);
+        self.add_entry_block(f, layout);
+        let arg_copy = self.build_alloca_value(from_layout, "arg_copy", None)?;
+        let [return_ptr, thunk_ptr, target_level] = get_fun_args(f);
+        let [ret_ptr, thunk_ptr] = [return_ptr, thunk_ptr].map(|x| x.into_pointer_value());
+        let head_ptr = target_level.into_pointer_value();
+        let thunk = CgMonoValue::new(layout, thunk_ptr);
+        let ret = CgReturnValue::new(head_ptr, ret_ptr);
+
+        let (from, fun) = self.build_nominal_components(thunk)?;
+        self.build_copy_invariant(arg_copy, from)?;
+        let res = self.call_parser_fun_wrapper(ret, fun.into(), arg_copy, pd_val_req().req)?;
+        self.builder.build_return(Some(&res))?;
+        Ok(())
+    }
+
+    fn create_deref(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
+        match layout.mono_layout() {
+            MonoLayout::Nominal(..) => {
+                return self.create_nominal_deref(layout);
+            }
+            MonoLayout::Ptr => {
+                return self.create_u8_deref(layout);
+            }
+            _ => {
+                return self.create_deref_copy(layout);
+            }
+        }
     }
 
     fn create_mask_simple(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
@@ -705,7 +755,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             return_ptr.into_pointer_value(),
         );
         let from = CgValue::new(layout, from.into_pointer_value());
-        self.terminate_tail_deref(from, ret)
+        self.terminate_tail_copy(from, ret)
     }
 
     fn create_backtrack_inner_array(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
@@ -783,27 +833,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let i64_layout = self.layouts.dcx.int();
         let i64_val = CgValue::new(i64_layout, from.into_pointer_value());
         self.terminate_tail_copy(i64_val, ret)
-    }
-
-    fn create_u8_current_element(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
-        let fun = self.current_element_fun_val(layout);
-        self.set_always_inline(fun);
-        self.add_entry_block(fun, layout);
-        let int_buf = self.build_alloca_int("int_buf")?;
-        let [return_ptr, from, target_head] = get_fun_args(fun);
-        let from = self.build_cast::<*const *const u8, _>(from)?;
-        let ret = CgReturnValue::new(
-            target_head.into_pointer_value(),
-            return_ptr.into_pointer_value(),
-        );
-        let int_ptr = self.build_ptr_load(from, "load_ptr")?;
-        let byte = self.build_byte_load(int_ptr, "load_byte")?;
-        let int = self
-            .builder
-            .build_int_z_extend(byte, self.llvm.i64_type(), "int")?;
-        let bitcasted_buf = self.build_cast::<*mut i64, _>(int_buf.ptr)?;
-        self.builder.build_store(bitcasted_buf, int)?;
-        self.terminate_tail_copy(int_buf.into(), ret)
     }
 
     fn build_array_item_len_get(
@@ -911,8 +940,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let ret = CgReturnValue::new(head.into_pointer_value(), ret.into_pointer_value());
         let array = CgMonoValue::new(layout, from.into_pointer_value());
         let slice = self.build_array_slice_get(array)?;
-        let ret = self.call_deref_fun(ret, slice)?;
-        self.builder.build_return(Some(&ret))?;
+        self.build_copy(ret, slice)?;
+        self.builder
+            .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)))?;
         Ok(())
     }
 
@@ -1847,13 +1877,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         Ok(())
     }
 
-    fn create_primitive_funs(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
-        if let MonoLayout::Ptr = layout.mono_layout() {
-            self.create_u8_current_element(layout)?;
-        }
-        Ok(())
-    }
-
     fn create_nominal_funs(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
         if self.collected_layouts.publics.is_api_visible(layout) {
             self.create_pd_end(layout)?;
@@ -1927,9 +1950,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         for layout in collected_layouts.parsers.iter() {
             self.create_parser_funs(*layout)?;
-        }
-        for layout in collected_layouts.primitives.iter() {
-            self.create_primitive_funs(*layout)?;
         }
         Ok(())
     }

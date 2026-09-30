@@ -200,6 +200,39 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         Ok(())
     }
 
+    fn copy_from_val(
+        &mut self,
+        to: PlaceRef,
+        from: CgValue<'comp, 'llvm>,
+        ctrl: ControlFlow,
+    ) -> Result<(), inkwell::builder::BuilderError> {
+        if !self.is_ret_place(to) {
+            let to = self.place_val(to)?;
+            if from.layout == to.layout {
+                self.cg.build_copy_invariant(to, from)?;
+                self.cg
+                    .builder
+                    .build_unconditional_branch(self.bb(ctrl.next))?;
+                return Ok(());
+            }
+        }
+
+        Ok(match self.mir_fun.place_strictness(to) {
+            Strictness::Strict => {
+                let to = self.return_val(to)?;
+                let ret = self.cg.call_deref_fun(to, from)?;
+                self.controlflow_case(ret, ctrl)?;
+            }
+            Strictness::Lazy => {
+                let to = self.return_val(to)?;
+                self.cg.build_copy(to, from)?;
+                self.cg
+                    .builder
+                    .build_unconditional_branch(self.bb(ctrl.next))?;
+            }
+        })
+    }
+
     fn copy(&mut self, to: PlaceRef, from: PlaceRef, ctrl: ControlFlow) -> IResult<()> {
         if self.is_ret_place(to) && self.is_ret_place(from) {
             let block = self.bb(ctrl.next);
@@ -211,19 +244,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             self.cg.builder.build_unreachable()?;
             return Ok(());
         }
-        if !self.is_ret_place(to) {
-            let to = self.place_val(to)?;
-            if from.layout == to.layout {
-                self.cg.build_copy_invariant(to, from)?;
-                self.cg
-                    .builder
-                    .build_unconditional_branch(self.bb(ctrl.next))?;
-                return Ok(());
-            }
-        }
-        let to = self.return_val(to)?;
-        let ret = self.cg.call_deref_fun(to, from)?;
-        self.controlflow_case(ret, ctrl)
+        self.copy_from_val(to, from, ctrl)?;
+        Ok(())
     }
 
     fn get_tail_arg_pointer(&mut self, layout: ILayout<'comp>) -> IResult<CgValue<'comp, 'llvm>> {
@@ -452,18 +474,17 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let intermediate_ret =
             self.cg
                 .build_return_value(intermediate_val, self.cg.const_i64(0), self.globals)?;
-        let ret_val = self.return_val(ret)?;
         if let Some(x) = place_val.layout.into_iter().next() {
             let MonoLayout::Block(block, _) = x.mono_layout() else {
                 dbpanic!(&self.cg.compiler_database.db, "{} is not a block", &x);
             };
             let tmp_bb = self.cg.llvm.append_basic_block(self.llvm_fun, "intermed");
-            let ret = self
+            let res = self
                 .cg
                 .call_field_access_fun(intermediate_ret, place_val, *block, field)?;
             let is_bt = self.cg.builder.build_int_compare(
                 IntPredicate::EQ,
-                ret,
+                res,
                 self.cg.const_i64(ReturnStatus::Backtrack as i64),
                 "is_bt",
             )?;
@@ -473,8 +494,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 tmp_bb,
             )?;
             self.cg.builder.position_at_end(tmp_bb);
-            let ret = self.cg.call_deref_fun(ret_val, intermediate_val)?;
-            self.controlflow_case(ret, ctrl)
+            self.copy_from_val(ret, intermediate_val, ctrl)?;
+            Ok(())
         } else {
             let next = self.bb(ctrl.next);
             self.cg.builder.build_unconditional_branch(next)?;

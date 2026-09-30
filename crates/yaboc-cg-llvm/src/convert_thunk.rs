@@ -4,15 +4,12 @@ use inkwell::{
 };
 
 use yaboc_hir_types::THUNK_BIT;
-use yaboc_layout::{
-    ILayout, IMonoLayout, MonoLayout,
-    collect::{LCallReq, pd_val_req},
-};
+use yaboc_layout::{ILayout, IMonoLayout, MonoLayout, collect::LCallReq};
 use yaboc_target::layout::SizeAlign;
 
 use crate::{
-    IResult, get_fun_args, parser_values, tail_eval_fun_values,
-    val::{CgMonoValue, CgReturnValue, CgValue},
+    IResult, parser_values, tail_eval_fun_values,
+    val::{CgReturnValue, CgValue},
 };
 
 use super::CodeGenCtx;
@@ -31,95 +28,6 @@ pub trait ThunkInfo<'comp, 'llvm> {
         return_ptr: PointerValue<'llvm>,
     ) -> IResult<Option<BasicBlock<'llvm>>>;
     fn target_layout(&self) -> IMonoLayout<'comp>;
-}
-
-pub struct DerefThunk<'comp, 'llvm> {
-    layout: IMonoLayout<'comp>,
-    arg_copy: Option<CgValue<'comp, 'llvm>>,
-    f: FunctionValue<'llvm>,
-}
-
-impl<'comp, 'llvm> DerefThunk<'comp, 'llvm> {
-    pub fn new(cg: &mut CodeGenCtx<'llvm, 'comp>, layout: IMonoLayout<'comp>) -> IResult<Self> {
-        let f = cg.deref_fun_val(layout);
-        cg.add_entry_block(f, layout);
-        let arg_copy = if let MonoLayout::Nominal(..) = layout.mono_layout() {
-            let (from, _) = layout.unapply_nominal(cg.layouts);
-            let arg_copy = cg.build_alloca_value(from, "arg_copy", None)?;
-            Some(arg_copy)
-        } else {
-            None
-        };
-        Ok(Self {
-            layout,
-            arg_copy,
-            f,
-        })
-    }
-}
-
-impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for DerefThunk<'comp, 'llvm> {
-    fn function(&self, _cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
-        self.f
-    }
-
-    fn build_copy_region_ptr(
-        &self,
-        cg: &mut CodeGenCtx<'llvm, 'comp>,
-        idx: u8,
-    ) -> IResult<Option<(PointerValue<'llvm>, SizeAlign)>> {
-        if idx != 0 {
-            return Ok(None);
-        }
-        let ptr = cg
-            .current_function()
-            .get_nth_param(1)
-            .unwrap()
-            .into_pointer_value();
-        let sa = self.layout.inner().size_align(cg.layouts).unwrap();
-        Ok(Some((ptr, sa)))
-    }
-
-    fn target_layout(&self) -> IMonoLayout<'comp> {
-        self.layout
-    }
-
-    fn build_tail(
-        &self,
-        cg: &mut CodeGenCtx<'llvm, 'comp>,
-        after_copy: bool,
-        _return_ptr: PointerValue<'llvm>,
-    ) -> IResult<Option<BasicBlock<'llvm>>> {
-        if after_copy {
-            return Ok(None);
-        }
-        let previous_bb = cg.builder.get_insert_block();
-        let fun = cg.current_function();
-        let current_bb = cg.llvm.append_basic_block(fun, "tail");
-        cg.builder.position_at_end(current_bb);
-
-        let [return_ptr, thunk_ptr, target_level] = get_fun_args(fun);
-        let [ret_ptr, thunk_ptr] = [return_ptr, thunk_ptr].map(|x| x.into_pointer_value());
-        let target_level = target_level.into_pointer_value();
-        let thunk = CgMonoValue::new(self.layout, thunk_ptr);
-        let ret = CgReturnValue::new(target_level, ret_ptr);
-
-        if let MonoLayout::Ptr = thunk.layout.mono_layout() {
-            let ret = cg.call_current_element_fun(ret, thunk.into())?;
-            cg.builder.build_return(Some(&ret))?;
-        } else {
-            let arg_copy = self.arg_copy.unwrap();
-            let (from, fun) = cg.build_nominal_components(thunk)?;
-            cg.build_copy_invariant(arg_copy, from)?;
-            let res = cg.call_parser_fun_wrapper(ret, fun.into(), arg_copy, pd_val_req().req)?;
-            cg.builder.build_return(Some(&res))?;
-        };
-
-        if let Some(bb) = previous_bb {
-            cg.builder.position_at_end(bb);
-        }
-        Ok(Some(current_bb))
-    }
 }
 
 pub struct TransmuteCopyThunk<'comp, 'llvm> {
