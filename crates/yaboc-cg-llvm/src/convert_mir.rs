@@ -12,7 +12,7 @@ use yaboc_ast::ConstraintAtom;
 use yaboc_ast::expr::Atom;
 use yaboc_base::{dbpanic, interner::FieldName};
 use yaboc_hir::BlockId;
-use yaboc_hir_types::{THUNK_BIT, VTABLE_BIT};
+use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{
     ILayout, IMonoLayout, Layout, MonoLayout, collect::LCallMeta, mir_subst::FunctionSubstitute,
 };
@@ -159,12 +159,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         if self.mir_fun.f.place(place).place == mir::Place::Return {
             return Ok(self.ret.unwrap().head);
         }
-        let place_strictness = self.mir_fun.place_strictness(place);
-        let mut level = match place_strictness {
-            Strictness::Strict => 0,
-            Strictness::Lazy => 1 << THUNK_BIT,
-        };
-        level |= (place_layout.is_multi() as u64) << VTABLE_BIT;
+        let level = (place_layout.is_multi() as u64) << VTABLE_BIT;
         let c = self.cg.const_i64(level as i64);
         self.cg.build_byte_gep(self.globals, c, "tagged")
     }

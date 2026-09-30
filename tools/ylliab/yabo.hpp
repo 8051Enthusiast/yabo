@@ -196,7 +196,7 @@ template <> struct std::hash<YaboVal> {
   }
 };
 
-constexpr uint64_t DEFAULT_LEVEL = YABO_THUNK_BIT;
+constexpr uint64_t DEFAULT_LEVEL = 0;
 constexpr uint64_t EVAL_LEVEL = 0;
 class YaboValCreator {
 public:

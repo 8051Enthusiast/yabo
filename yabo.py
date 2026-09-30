@@ -43,7 +43,6 @@ YABO_UNIT = 0x800
 YABO_U8 = 0x900
 YABO_THUNK = 0xa00
 YABO_VTABLE_BIT = 1
-YABO_THUNK_BIT = 4
 
 YABO_GLOBAL_INIT_NAME = "yabo_global_init"
 YABO_GLOBAL_SIZE_NAME = "yabo_global_size"
@@ -412,7 +411,7 @@ class YaboLib(ctypes.CDLL):
             val = tag_pointer(self._globals, YABO_VTABLE_BIT)
             return val
         else:
-            val = tag_pointer(self._globals, YABO_THUNK_BIT | YABO_VTABLE_BIT)
+            val = tag_pointer(self._globals, YABO_VTABLE_BIT)
             return val
 
     def parser(self, name: str) -> Parser:

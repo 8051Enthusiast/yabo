@@ -3,8 +3,7 @@ use inkwell::{
     values::{FunctionValue, PointerValue},
 };
 
-use yaboc_hir_types::THUNK_BIT;
-use yaboc_layout::{ILayout, IMonoLayout, MonoLayout, collect::LCallReq};
+use yaboc_layout::{ILayout, IMonoLayout, collect::LCallReq};
 use yaboc_target::layout::SizeAlign;
 
 use crate::{
@@ -155,19 +154,6 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
         }
     }
 
-    fn maybe_deref(&mut self) -> IResult<()> {
-        if let MonoLayout::Nominal(..) | MonoLayout::Ptr = self.target_layout.mono_layout() {
-            let no_deref = self.cg.build_check_ptr_bit_set(self.ret.head, THUNK_BIT)?;
-            let tail = self.deref_tail(false, self.ret.ptr)?;
-            let next_bb = self.cg.llvm.append_basic_block(self.fun, "head_match");
-            self.cg
-                .builder
-                .build_conditional_branch(no_deref, next_bb, tail)?;
-            self.cg.builder.position_at_end(next_bb);
-        }
-        Ok(())
-    }
-
     fn deref_tail(
         &mut self,
         after_copy: bool,
@@ -231,7 +217,6 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
     }
 
     pub fn build(mut self) -> IResult<FunctionValue<'llvm>> {
-        self.maybe_deref()?;
         self.copy_to_target()?;
         Ok(self.fun)
     }

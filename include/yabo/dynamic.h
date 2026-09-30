@@ -49,7 +49,7 @@ static inline int64_t dyn_parse_bytes(DynValue *ret, struct Slice bytes,
                                       const struct Globals *globals) {
   int64_t status =
       parser(ret->data, args,
-             (const char *)globals + YABO_THUNK_BIT + YABO_VTABLE, &bytes);
+             (const char *)globals + YABO_VTABLE, &bytes);
   if (status) {
     return dyn_invalidate(ret, status);
   }
@@ -175,7 +175,7 @@ static inline int64_t dyn_array_current_element(DynValue *ret,
   const struct ArrayVTable *vtable = (const struct ArrayVTable *)array->vtable;
   uint64_t status = YABO_ACCESS_VPTR(vtable, current_element_impl)(
       ret->data, array->data,
-      (const char *)globals + YABO_THUNK_BIT + YABO_VTABLE);
+      (const char *)globals + YABO_VTABLE);
   if (status) {
     return dyn_invalidate(ret, status);
   }

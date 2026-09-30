@@ -2,7 +2,7 @@ use fxhash::FxHashSet;
 use yaboc_base::interner::{RegexData, RegexKind};
 use yaboc_constraint::Constraints;
 use yaboc_hir::BlockReturnKind;
-use yaboc_hir_types::{THUNK_BIT, VTABLE_BIT};
+use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{
     FuncLayoutKind, Layout, TailCallSite,
     collect::{EvalType, LCallReq, Slot, array_val_req, pd_len_req, pd_val_req, static_val_req},
@@ -1081,9 +1081,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                             this.build_alloca_value(res_layout, "array_val", None)?;
                         let mut intermediate_head = this.build_high_bit_mask(ret.head)?;
                         let bits = if res_layout.is_multi() {
-                            1 << VTABLE_BIT | 1 << THUNK_BIT
+                            1 << VTABLE_BIT
                         } else {
-                            1 << THUNK_BIT
+                            0
                         };
                         intermediate_head = this.build_const_offset_byte_gep(
                             intermediate_head,
