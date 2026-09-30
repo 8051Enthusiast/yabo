@@ -50,8 +50,4 @@ impl<'llvm> CgReturnValue<'llvm> {
     pub fn new(head: PointerValue<'llvm>, ptr: PointerValue<'llvm>) -> Self {
         Self { head, ptr }
     }
-
-    pub fn with_ptr(self, ptr: PointerValue<'llvm>) -> Self {
-        Self { ptr, ..self }
-    }
 }

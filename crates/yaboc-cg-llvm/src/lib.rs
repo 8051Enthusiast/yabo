@@ -1,7 +1,6 @@
 #![allow(clippy::single_range_in_vec_init)]
 mod convert_mir;
 mod convert_regex;
-mod convert_thunk;
 mod debug;
 mod defs;
 mod funs;
@@ -70,7 +69,7 @@ use crate::{
     getset::FunctionTy,
 };
 
-use self::{convert_mir::MirTranslator, convert_thunk::ThunkContext};
+use self::convert_mir::MirTranslator;
 
 pub type IResult<T> = Result<T, BuilderError>;
 
@@ -327,6 +326,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         self.builder.position_at_end(after);
         Ok(())
+    }
+    fn write_vtable_from_mono_if_tagged(
+        &mut self,
+        ret: CgReturnValue<'llvm>,
+        layout: IMonoLayout<'comp>,
+    ) -> IResult<()> {
+        self.write_vtable_if_tagged(
+            ret,
+            CgValue {
+                layout: layout.inner(),
+                ptr: self.invalid_ptr(),
+            },
+        )
     }
 
     fn const_size_t(&self, val: i64) -> IntValue<'llvm> {

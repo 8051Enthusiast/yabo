@@ -12,7 +12,7 @@ use yaboc_layout::{
 use yaboc_mir::{FunKind, MirKind};
 use yaboc_resolve::Resolves;
 
-use crate::{convert_regex::RegexTranslator, convert_thunk::BlockThunk};
+use crate::convert_regex::RegexTranslator;
 
 use super::*;
 
@@ -595,10 +595,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 self.build_const_offset_byte_gep(ret.ptr, fun_offset as i64, "fun_arg")?;
             self.build_copy_invariant(arg.with_ptr(ret_arg), arg)?;
             self.build_copy_invariant(CgValue::from(fun).with_ptr(ret_fun), fun.into())?;
-            self.write_vtable_if_tagged(
-                ret,
-                CgValue::new(return_layout.inner(), self.invalid_ptr()),
-            )?;
+            self.write_vtable_from_mono_if_tagged(ret, return_layout)?;
             ret = self.poison_ret(ret.head);
         }
         self.call_parser_fun_impl(ret, fun, arg, req)?;
@@ -991,14 +988,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .returned;
         let mono_layout = return_layout.maybe_mono().unwrap();
 
-        let block_data = BlockThunk {
-            from: Some(from),
-            fun: layout,
-            result: mono_layout,
-            req,
-        };
-
-        ThunkContext::new(self, block_data).build()
+        self.add_entry_block(llvm_fun, layout);
+        let (ret_val, fun_val, arg_val) = parser_values(llvm_fun, layout, from);
+        self.write_vtable_from_mono_if_tagged(ret_val, mono_layout)?;
+        self.call_parser_fun_impl(ret_val, fun_val, arg_val, req)?;
+        Ok(llvm_fun)
     }
 
     fn create_if_parse(
@@ -1577,9 +1571,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             Ok(())
         })?;
 
+        let llvm_fun = self.eval_fun_fun_val_tail(layout, req);
         // if the block function does not return itself, we do not need to write the block vtable
         if matches!(block.returns, BlockReturnKind::Returns) {
-            let llvm_fun = self.eval_fun_fun_val_tail(layout, req);
             self.wrap_direct_call(impl_fun, llvm_fun, false, layout)?;
             return Ok(llvm_fun);
         }
@@ -1591,14 +1585,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .returned;
         let mono_layout = return_layout.maybe_mono().unwrap();
 
-        let block_data = BlockThunk {
-            from: None,
-            fun: layout,
-            result: mono_layout,
-            req,
-        };
-
-        ThunkContext::new(self, block_data).build()
+        let (ret_val, fun_val, arg_ptr) = tail_eval_fun_values(llvm_fun, layout);
+        self.add_entry_block(llvm_fun, layout);
+        self.write_vtable_from_mono_if_tagged(ret_val, mono_layout)?;
+        let zst = self.layouts.dcx.primitive(yaboc_types::PrimitiveType::Unit);
+        let arg_val = CgValue::new(zst, arg_ptr);
+        self.call_eval_fun_fun_impl(ret_val, fun_val.into(), arg_val, req)?;
+        Ok(llvm_fun)
     }
 
     fn create_eval_pd_fun_fun_impl(
@@ -1636,9 +1629,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             CgValue::new(source.layout.inner(), target.ptr),
             CgValue::new(source.layout.inner(), source.ptr),
         )?;
-        self.write_vtable_if_tagged(
+        self.write_vtable_from_mono_if_tagged(
             CgReturnValue::new(context, target.ptr),
-            CgValue::new(target.layout.inner(), self.invalid_ptr()),
+            target.layout,
         )?;
         self.builder
             .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)))?;
