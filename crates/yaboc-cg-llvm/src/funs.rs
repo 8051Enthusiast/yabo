@@ -12,10 +12,7 @@ use yaboc_layout::{
 use yaboc_mir::{FunKind, MirKind};
 use yaboc_resolve::Resolves;
 
-use crate::{
-    convert_regex::RegexTranslator,
-    convert_thunk::{BlockThunk, TransmuteCopyThunk},
-};
+use crate::{convert_regex::RegexTranslator, convert_thunk::BlockThunk};
 
 use super::*;
 
@@ -1629,6 +1626,25 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         })
     }
 
+    fn transmute(
+        &mut self,
+        target: CgMonoValue<'comp, 'llvm>,
+        source: CgMonoValue<'comp, 'llvm>,
+        context: PointerValue<'llvm>,
+    ) -> IResult<()> {
+        self.build_copy_invariant(
+            CgValue::new(source.layout.inner(), target.ptr),
+            CgValue::new(source.layout.inner(), source.ptr),
+        )?;
+        self.write_vtable_if_tagged(
+            CgReturnValue::new(context, target.ptr),
+            CgValue::new(target.layout.inner(), self.invalid_ptr()),
+        )?;
+        self.builder
+            .build_return(Some(&self.const_i64(ReturnStatus::Ok as i64)))?;
+        Ok(())
+    }
+
     fn create_eval_fun_fun_copy(
         &mut self,
         layout: IMonoLayout<'comp>,
@@ -1642,12 +1658,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .unwrap();
         let f = self.eval_fun_fun_val_tail(layout, req);
         self.add_entry_block(f, layout);
-        let create_args_thunk = TransmuteCopyThunk {
-            from: layout,
-            to: target_layout,
-            f,
-        };
-        ThunkContext::new(self, create_args_thunk).build()?;
+        let [ret, fun, context] = get_fun_args(f).map(|x| x.into_pointer_value());
+        self.transmute(
+            CgMonoValue::new(target_layout, ret),
+            CgMonoValue::new(layout, fun),
+            context,
+        )?;
         Ok(f)
     }
 
@@ -1715,16 +1731,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let return_layout = result.maybe_mono().unwrap();
         let f = self.function_create_args_fun_val(layout, args);
         self.add_entry_block(f, layout);
-        ThunkContext::new(
-            self,
-            TransmuteCopyThunk {
-                from: layout,
-                to: return_layout,
-                f,
-            },
+        let [ret, fun, context] = get_fun_args(f).map(|x| x.into_pointer_value());
+        self.transmute(
+            CgMonoValue::new(return_layout, ret),
+            CgMonoValue::new(layout, fun),
+            context,
         )
-        .build()?;
-        Ok(())
     }
 
     fn create_all_header_funs(&mut self) -> IResult<()> {

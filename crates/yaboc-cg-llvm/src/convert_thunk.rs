@@ -29,46 +29,6 @@ pub trait ThunkInfo<'comp, 'llvm> {
     fn target_layout(&self) -> IMonoLayout<'comp>;
 }
 
-pub struct TransmuteCopyThunk<'comp, 'llvm> {
-    pub from: IMonoLayout<'comp>,
-    pub to: IMonoLayout<'comp>,
-    pub f: FunctionValue<'llvm>,
-}
-
-impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TransmuteCopyThunk<'comp, 'llvm> {
-    fn function(&self, _: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
-        self.f
-    }
-    fn build_copy_region_ptr(
-        &self,
-        cg: &mut CodeGenCtx<'llvm, 'comp>,
-        idx: u8,
-    ) -> IResult<Option<(PointerValue<'llvm>, SizeAlign)>> {
-        if idx != 0 {
-            return Ok(None);
-        }
-        let ptr = cg
-            .current_function()
-            .get_nth_param(1)
-            .unwrap()
-            .into_pointer_value();
-        let sa = self.from.inner().size_align(cg.layouts).unwrap();
-        Ok(Some((ptr, sa)))
-    }
-    fn target_layout(&self) -> IMonoLayout<'comp> {
-        self.to
-    }
-
-    fn build_tail(
-        &self,
-        _cg: &mut CodeGenCtx<'llvm, 'comp>,
-        _after_copy: bool,
-        _return_ptr: PointerValue<'llvm>,
-    ) -> IResult<Option<BasicBlock<'llvm>>> {
-        Ok(None)
-    }
-}
-
 pub struct BlockThunk<'comp> {
     pub from: Option<ILayout<'comp>>,
     pub fun: IMonoLayout<'comp>,
