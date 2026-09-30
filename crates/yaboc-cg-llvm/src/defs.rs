@@ -43,6 +43,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let fun = self
             .module
             .add_function(&sf_sym, sf_type, Some(Linkage::Internal));
+        fun.add_attribute(
+            AttributeLoc::Function,
+            self.llvm
+                .create_enum_attribute(Attribute::get_named_enum_kind_id("nounwind"), 0),
+        );
         let noalias = Attribute::get_named_enum_kind_id("noalias");
         let noalias_attr = self.llvm.create_enum_attribute(noalias, 0);
         for (i, ty) in sf_type.get_param_types().iter().enumerate() {
