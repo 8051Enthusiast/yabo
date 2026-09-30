@@ -29,13 +29,21 @@ impl Length {
 pub enum EvalType {
     NoValue,
     Value,
+    Force,
 }
 
 impl EvalType {
     pub fn is_val(self) -> bool {
         match self {
             EvalType::NoValue => false,
-            EvalType::Value => true,
+            EvalType::Value | EvalType::Force => true,
+        }
+    }
+
+    pub fn is_force(self) -> bool {
+        match self {
+            EvalType::Value | EvalType::NoValue => false,
+            EvalType::Force => true,
         }
     }
 }
@@ -52,6 +60,7 @@ impl std::fmt::Display for LCallReq {
         let val = match self.val {
             EvalType::NoValue => "_",
             EvalType::Value => "v",
+            EvalType::Force => "f",
         };
         let len = match self.len {
             false => "_",
@@ -125,41 +134,30 @@ impl std::fmt::Display for LCallMeta {
 pub struct LayoutInfo {
     can_backtrack: bool,
     len: Length,
+    is_thunky: bool,
 }
 
 impl LayoutInfo {
-    fn merge(&mut self, other: &Self) {
-        self.can_backtrack |= other.can_backtrack;
-        self.len = match (self.len, other.len) {
-            (a, Length::None) | (Length::None, a) => a,
-            (Length::Const(a), Length::Const(b)) => {
-                if a == b {
-                    Length::Const(a)
-                } else {
-                    Length::Unsized
-                }
-            }
-            (_, Length::Unsized) | (Length::Unsized, _) => Length::Unsized,
-        };
-    }
-
-    pub fn modify_reqs(&self, req: LCallReq) -> (LCallReq, Option<u64>) {
-        let req_no_bt = if !self.can_backtrack {
+    pub fn modify_reqs(&self, mut req: LCallReq) -> (LCallReq, Option<u64>) {
+        req = if !self.can_backtrack {
             req.remove_bt()
         } else {
             req
         };
         let mut needs_length_precheck = None;
-        let req_no_len = if let Length::Const(len) = self.len
-            && !req_no_bt.bt
-            && req_no_bt.len
+        req = if let Length::Const(len) = self.len
+            && !req.bt
+            && req.len
         {
             needs_length_precheck = Some(len);
-            req_no_bt.remove_len()
+            req.remove_len()
         } else {
-            req_no_bt
+            req
         };
-        (req_no_len, needs_length_precheck)
+        if self.is_thunky && !req.val.is_force() {
+            req = req.remove_val();
+        }
+        (req, needs_length_precheck)
     }
 }
 
@@ -196,16 +194,18 @@ impl<'a> LayoutInfoCollector<'a> {
 
     fn pd_fun_info(&mut self, pd: ParserDefId) -> LayoutInfo {
         let parserdef = pd.lookup(self.db).unwrap();
-        if parserdef.kind != DefKind::Static {
+        if parserdef.kind == DefKind::Static {
+            LayoutInfo {
+                can_backtrack: false,
+                len: Length::None,
+                is_thunky: false,
+            }
+        } else {
             let can_backtrack = self.get_bt_status(pd, |terms| terms.lookup_idx, 0);
             LayoutInfo {
                 can_backtrack,
                 len: Length::None,
-            }
-        } else {
-            LayoutInfo {
-                can_backtrack: false,
-                len: Length::None,
+                is_thunky: parserdef.kind.thunky(),
             }
         }
     }
@@ -219,6 +219,7 @@ impl<'a> LayoutInfoCollector<'a> {
         LayoutInfo {
             can_backtrack,
             len: Length::from_val(root_val),
+            is_thunky: parserdef.kind.thunky(),
         }
     }
 
@@ -235,7 +236,11 @@ impl<'a> LayoutInfoCollector<'a> {
             }
             yaboc_hir::BlockKind::Inline => Length::None,
         };
-        LayoutInfo { can_backtrack, len }
+        LayoutInfo {
+            can_backtrack,
+            len,
+            is_thunky: false,
+        }
     }
 
     fn lambda_info(&mut self, lambda: LambdaId) -> LayoutInfo {
@@ -244,6 +249,7 @@ impl<'a> LayoutInfoCollector<'a> {
         LayoutInfo {
             can_backtrack,
             len: Length::None,
+            is_thunky: false,
         }
     }
 
@@ -251,6 +257,7 @@ impl<'a> LayoutInfoCollector<'a> {
         LayoutInfo {
             can_backtrack: false,
             len: Length::Const(1),
+            is_thunky: false,
         }
     }
 
@@ -265,6 +272,7 @@ impl<'a> LayoutInfoCollector<'a> {
         LayoutInfo {
             can_backtrack: true,
             len,
+            is_thunky: false,
         }
     }
 
@@ -272,8 +280,16 @@ impl<'a> LayoutInfoCollector<'a> {
         let mut info = LayoutInfo {
             can_backtrack: true,
             len: Length::None,
+            is_thunky: false,
         };
-        info.merge(self.get_info(inner));
+        for mono in &inner {
+            let mono_info = self.get_mono_info(mono);
+            info.len = match (info.len, mono_info.len) {
+                (a, Length::None) | (Length::None, a) => a,
+                (Length::Const(a), Length::Const(b)) if a == b => Length::Const(a),
+                _ => Length::Unsized,
+            };
+        }
         info
     }
 
@@ -281,6 +297,7 @@ impl<'a> LayoutInfoCollector<'a> {
         LayoutInfo {
             can_backtrack: false,
             len: Length::Unsized,
+            is_thunky: false,
         }
     }
 
@@ -309,24 +326,6 @@ impl<'a> LayoutInfoCollector<'a> {
             self.info.insert(layout.inner(), info);
         }
         &self.info[&layout.inner()]
-    }
-
-    pub fn get_info(&mut self, layout: ILayout<'a>) -> &LayoutInfo {
-        if !self.info.contains_key(&layout) {
-            let mut res = LayoutInfo {
-                can_backtrack: false,
-                len: Length::None,
-            };
-            for mono in &layout {
-                let mono_info = self.get_mono_info(mono);
-                res.merge(mono_info);
-            }
-
-            if layout.is_multi() {
-                self.info.insert(layout, res);
-            }
-        }
-        &self.info[&layout]
     }
 
     pub fn collect(self) -> LayoutInfoCollection<'a> {

@@ -470,7 +470,7 @@ impl<'a> ILayout<'a> {
         .copied())
     }
 
-    fn array_primitive(
+    pub fn array_primitive(
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<ILayout<'a>, LayoutError> {

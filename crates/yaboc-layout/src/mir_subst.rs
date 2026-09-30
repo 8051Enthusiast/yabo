@@ -6,9 +6,7 @@ use yaboc_expr::{IndexExpr, ShapedData};
 use yaboc_hir::{
     ExprId, HirIdWrapper, HirNode, HirNodeKind, LambdaId, ParserDefId, walk::ChildIter,
 };
-use yaboc_mir::{
-    FunKind, Function, MirInstr, MirKind, Place, PlaceOrigin, PlaceRef, StackRef, Strictness,
-};
+use yaboc_mir::{FunKind, Function, MirInstr, MirKind, Place, PlaceOrigin, PlaceRef, Strictness};
 use yaboc_resolve::expr::Resolved;
 use yaboc_types::PrimitiveType;
 
@@ -28,6 +26,7 @@ impl<'a> FunctionSubstitute<'a> {
         strictness: &[Strictness],
         from: Option<ILayout<'a>>,
         block: IMonoLayout<'a>,
+        force: bool,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
         let (def, captures) = if let MonoLayout::BlockParser(def, captures) = block.mono_layout() {
@@ -64,6 +63,7 @@ impl<'a> FunctionSubstitute<'a> {
             int: ctx.dcx.int(),
             expr: expr_map,
             vals,
+            force,
         };
         let mut stack_layouts = sub_info.stack_layouts(&f);
         let place_layouts = sub_info.place_layouts(&f, &mut stack_layouts, strictness, ctx)?;
@@ -81,6 +81,7 @@ impl<'a> FunctionSubstitute<'a> {
         fun: IMonoLayout<'a>,
         evaluated: PdEvaluated<ILayout<'a>>,
         expr_id: ExprId,
+        force: bool,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<FunctionSubstitute<'a>, LayoutError> {
         let mut expr_map = FxHashMap::default();
@@ -94,6 +95,7 @@ impl<'a> FunctionSubstitute<'a> {
             ret: evaluated.returned,
             int: ctx.dcx.int(),
             expr: expr_map,
+            force,
             vals,
         };
         let mut stack_layouts = sub_info.stack_layouts(&f);
@@ -111,6 +113,7 @@ impl<'a> FunctionSubstitute<'a> {
         from: Option<ILayout<'a>>,
         fun: IMonoLayout<'a>,
         pd: ParserDefId,
+        force: bool,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
         let MonoLayout::NominalParser(..) = fun.mono_layout() else {
@@ -126,7 +129,7 @@ impl<'a> FunctionSubstitute<'a> {
             .pd_result(&lookup_layout)
             .ok_or_else(SilencedError::new)?
             .clone();
-        Self::new_from_fun(f, strictness, from, fun, evaluated, expr_id, ctx)
+        Self::new_from_fun(f, strictness, from, fun, evaluated, expr_id, force, ctx)
     }
 
     pub fn new_from_lambda(
@@ -134,6 +137,7 @@ impl<'a> FunctionSubstitute<'a> {
         strictness: &[Strictness],
         fun: IMonoLayout<'a>,
         lambda: LambdaId,
+        force: bool,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
         let MonoLayout::Lambda(..) = fun.mono_layout() else {
@@ -144,7 +148,16 @@ impl<'a> FunctionSubstitute<'a> {
             .lambda_result(&fun.0)
             .ok_or_else(SilencedError::new)?
             .clone();
-        Self::new_from_fun(f, strictness, None, fun, evaluated.into(), expr_id, ctx)
+        Self::new_from_fun(
+            f,
+            strictness,
+            None,
+            fun,
+            evaluated.into(),
+            expr_id,
+            force,
+            ctx,
+        )
     }
 
     pub fn new_from_if(
@@ -152,6 +165,7 @@ impl<'a> FunctionSubstitute<'a> {
         strictness: &[Strictness],
         from: ILayout<'a>,
         fun: IMonoLayout<'a>,
+        force: bool,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
         let MonoLayout::IfParser(inner, _) = fun.mono_layout() else {
@@ -166,6 +180,7 @@ impl<'a> FunctionSubstitute<'a> {
             ret: result,
             expr: exprs,
             int: ctx.dcx.int(),
+            force,
             vals,
         };
         let mut stack_layouts = sub_info.stack_layouts(&f);
@@ -185,10 +200,6 @@ impl<'a> FunctionSubstitute<'a> {
         self.place_layouts[place.as_index()].1
     }
 
-    pub fn stack(&self, stack: StackRef) -> ILayout<'a> {
-        self.stack_layouts[stack.as_index()]
-    }
-
     pub fn get_call_meta(&self, instr: &MirInstr) -> LCallMeta {
         let (tail, ret, len, bt) = match instr {
             MirInstr::EvalFun(ret, _, bt_mark_kind, control_flow) => {
@@ -202,7 +213,13 @@ impl<'a> FunctionSubstitute<'a> {
             }
         };
         let val = match ret {
-            Some(_) => EvalType::Value,
+            Some(ret_place) => {
+                if self.place_strictness(*ret_place) == Strictness::Strict {
+                    EvalType::Force
+                } else {
+                    EvalType::Value
+                }
+            }
             None => EvalType::NoValue,
         };
         LCallMeta {
@@ -221,20 +238,23 @@ pub fn function_substitute<'a>(
     req: MirKind,
     from: Option<ILayout<'a>>,
     fun: IMonoLayout<'a>,
+    force: bool,
     ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
 ) -> Result<FunctionSubstitute<'a>, LayoutError> {
     let mir = ctx.db.mir(fun_info, req)?;
     let strictness = ctx.db.strictness(fun_info, req)?;
     match fun_info {
-        FunKind::Block(_) => FunctionSubstitute::new_from_block(mir, &strictness, from, fun, ctx),
+        FunKind::Block(_) => {
+            FunctionSubstitute::new_from_block(mir, &strictness, from, fun, force, ctx)
+        }
         FunKind::ParserDef(pd) => {
-            FunctionSubstitute::new_from_pd(mir, &strictness, from, fun, pd, ctx)
+            FunctionSubstitute::new_from_pd(mir, &strictness, from, fun, pd, force, ctx)
         }
         FunKind::Lambda(lambda_id) => {
-            FunctionSubstitute::new_from_lambda(mir, &strictness, fun, lambda_id, ctx)
+            FunctionSubstitute::new_from_lambda(mir, &strictness, fun, lambda_id, force, ctx)
         }
         FunKind::If(_) => {
-            FunctionSubstitute::new_from_if(mir, &strictness, from.unwrap(), fun, ctx)
+            FunctionSubstitute::new_from_if(mir, &strictness, from.unwrap(), fun, force, ctx)
         }
     }
 }
@@ -247,6 +267,7 @@ struct SubInfo<T> {
     int: T,
     expr: FxHashMap<ExprId, ShapedData<Vec<T>, Resolved>>,
     vals: FxHashMap<DefId, T>,
+    force: bool,
 }
 
 impl<'intern> SubInfo<ILayout<'intern>> {
@@ -301,9 +322,12 @@ impl<'intern> SubInfo<ILayout<'intern>> {
                 Place::Undefined => ctx.dcx.intern(Layout::None),
             };
 
-            let strict = strictness[p.as_index()];
+            let mut strict = strictness[p.as_index()];
 
-            let cast_layout = if let Strictness::Strict = strict {
+            let cast_layout = if Strictness::Strict == strict
+                || place_info.place == Place::Return && self.force
+            {
+                strict = Strictness::Strict;
                 layout.evaluate(ctx)?.0
             } else {
                 layout

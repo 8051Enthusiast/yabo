@@ -64,6 +64,9 @@ impl SizeAlign {
     pub const fn align(&self) -> PSize {
         self.align_mask + 1
     }
+    pub fn before_align(&self) -> PSize {
+        1 << self.alogn().min(self.before.trailing_zeros())
+    }
     /// log2 of alignment
     pub const fn alogn(&self) -> u32 {
         self.align_mask.count_ones()
@@ -150,6 +153,14 @@ impl SizeAlign {
         let mut current = Self::ZST;
         layouts.map(|sa| {
             let offset = sa.next_offset(current.after);
+            current = current.cat(sa);
+            offset
+        })
+    }
+    pub fn begin_offsets<const N: usize>(layouts: [SizeAlign; N]) -> [PSize; N] {
+        let mut current = Self::ZST;
+        layouts.map(|sa| {
+            let offset = sa.next_offset(current.after) - sa.before;
             current = current.cat(sa);
             offset
         })

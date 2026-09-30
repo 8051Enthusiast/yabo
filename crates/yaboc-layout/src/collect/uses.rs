@@ -64,6 +64,12 @@ impl Publicity {
             })),
         }
     }
+    fn with_ty(&self, ty: PublicType) -> Self {
+        match self {
+            Publicity::Public(None) | Publicity::InsidePublic => *self,
+            Publicity::Public(Some(_)) => Publicity::Public(Some(ty)),
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -176,11 +182,13 @@ impl<'comp> UseCollections<'comp> {
                 }
             }
             MonoLayout::Range | MonoLayout::SlicePtr => {
-                if publicity.is_public() {
-                    let ptr = ctx.dcx.intern(Layout::Mono(MonoLayout::Ptr));
-                    let ptr_ty = PublicType::new_thunk(ctx.db.int());
-                    self.collect(ctx, Publicity::Public(Some(ptr_ty)), ptr)?;
-                }
+                let element_ty = PublicType::new_thunk(ctx.db.int());
+                let element_layout = if matches!(layout.mono_layout(), MonoLayout::SlicePtr) {
+                    ctx.dcx.intern(Layout::Mono(MonoLayout::Ptr))
+                } else {
+                    ctx.dcx.primitive(yaboc_types::PrimitiveType::Int)
+                };
+                self.collect(ctx, publicity.with_ty(element_ty), element_layout)?;
             }
             MonoLayout::Nominal(_, inner, args) => {
                 if let Some(inner) = inner {

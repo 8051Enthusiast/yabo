@@ -392,6 +392,7 @@ impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
                 let v = match reqs.val {
                     EvalType::NoValue => "",
                     EvalType::Value => "v",
+                    EvalType::Force => "f",
                 };
                 write!(f, "{}", v)?;
                 if reqs.len {
@@ -428,6 +429,7 @@ impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
                 let v = match reqs.val {
                     EvalType::NoValue => "",
                     EvalType::Value => "v",
+                    EvalType::Force => "f",
                 };
                 write!(f, "{}", v)?;
                 if reqs.bt {

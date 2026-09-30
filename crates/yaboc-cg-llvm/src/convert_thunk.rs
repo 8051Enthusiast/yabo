@@ -162,106 +162,6 @@ impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for TransmuteCopyThunk<'comp, 'llvm> 
     }
 }
 
-pub struct ValThunk<'comp> {
-    from: Option<ILayout<'comp>>,
-    fun: IMonoLayout<'comp>,
-    thunk: IMonoLayout<'comp>,
-    req: LCallReq,
-}
-
-impl<'comp> ValThunk<'comp> {
-    pub fn new(
-        from: Option<ILayout<'comp>>,
-        fun: IMonoLayout<'comp>,
-        thunk: IMonoLayout<'comp>,
-        req: LCallReq,
-    ) -> Self {
-        Self {
-            from,
-            fun,
-            thunk,
-            req,
-        }
-    }
-}
-
-impl<'comp, 'llvm> ThunkInfo<'comp, 'llvm> for ValThunk<'comp> {
-    fn function(&self, cg: &mut CodeGenCtx<'llvm, 'comp>) -> FunctionValue<'llvm> {
-        let f = if let Some(from) = self.from {
-            cg.parser_fun_val_tail(self.fun, from, self.req)
-        } else {
-            cg.eval_fun_fun_val_wrapper(self.fun, self.req)
-        };
-        cg.add_entry_block(f, self.fun);
-        f
-    }
-
-    fn build_copy_region_ptr(
-        &self,
-        cg: &mut CodeGenCtx<'llvm, 'comp>,
-        idx: u8,
-    ) -> IResult<Option<(PointerValue<'llvm>, SizeAlign)>> {
-        Ok(match (self.from, idx) {
-            (Some(from), 0) => {
-                let arg_ptr = cg
-                    .current_function()
-                    .get_nth_param(3)
-                    .unwrap()
-                    .into_pointer_value();
-                let sa = from.size_align(cg.layouts).unwrap();
-                Some((arg_ptr, sa))
-            }
-            (Some(_), 1) | (None, 0) => {
-                let fun_ptr = cg
-                    .current_function()
-                    .get_nth_param(1)
-                    .unwrap()
-                    .into_pointer_value();
-                let sa = self.fun.inner().size_align(cg.layouts).unwrap();
-                Some((fun_ptr, sa))
-            }
-            (Some(_), 2..) | (None, 1..) => None,
-        })
-    }
-
-    fn build_tail(
-        &self,
-        cg: &mut CodeGenCtx<'llvm, 'comp>,
-        after_copy: bool,
-        _return_ptr: PointerValue<'llvm>,
-    ) -> IResult<Option<BasicBlock<'llvm>>> {
-        let req = if after_copy {
-            self.req.remove_val()
-        } else {
-            self.req
-        };
-        if req.is_empty() {
-            return Ok(None);
-        }
-        let previous_bb = cg.builder.get_insert_block();
-        let fun = cg.current_function();
-        let current_bb = cg.llvm.append_basic_block(fun, "tail");
-        cg.builder.position_at_end(current_bb);
-        if let Some(from) = self.from {
-            let (ret, fun, arg) = parser_values(fun, self.fun, from);
-            cg.call_parser_fun_impl(ret, fun, arg, req)?
-        } else {
-            let (ret, fun, arg) = tail_eval_fun_values(fun, self.fun);
-            let zst = cg.layouts.dcx.primitive(yaboc_types::PrimitiveType::Unit);
-            let arg = CgValue::new(zst, arg);
-            cg.call_eval_fun_fun_impl(ret, fun.into(), arg, req)?
-        };
-        if let Some(bb) = previous_bb {
-            cg.builder.position_at_end(bb);
-        }
-        Ok(Some(current_bb))
-    }
-
-    fn target_layout(&self) -> IMonoLayout<'comp> {
-        self.thunk
-    }
-}
-
 pub struct BlockThunk<'comp> {
     pub from: Option<ILayout<'comp>>,
     pub fun: IMonoLayout<'comp>,
@@ -396,9 +296,6 @@ impl<'llvm, 'comp, 'r, Info: ThunkInfo<'comp, 'llvm>> ThunkContext<'llvm, 'comp,
                     "real_source",
                 )?;
                 let align = sa.start_alignment();
-                // it is nice to be able to pass an invalid pointer
-                // for ZSTs, but calling memcpy with a null pointer
-                // is UB, therefore we simply don't generate it for ZSTs
                 self.cg.builder.build_memcpy(
                     real_target,
                     align as u32,

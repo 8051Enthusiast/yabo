@@ -101,8 +101,14 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
             MonoLayout::Lambda(lid, ..) => FunKind::Lambda(*lid),
             _ => return Ok(()),
         };
-        let fsub =
-            function_substitute(fun_kind, req.as_mir_call(), site.from, site.func, self.ctx)?;
+        let fsub = function_substitute(
+            fun_kind,
+            req.as_mir_call(),
+            site.from,
+            site.func,
+            req.val.is_force(),
+            self.ctx,
+        )?;
         let mut already_called = FxHashSet::default();
         for instr in fsub.f.iter_bb().flat_map(|(_, bb)| bb.ins()) {
             let (arg, fun, req) = match instr {
@@ -132,7 +138,7 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
         site: TailCallSite<'comp>,
     ) -> Result<CallSiteVertex, LayoutError> {
         let sa = site.func.inner().size_align_without_vtable(self.ctx)?;
-        let layout_info = self.info.get_info(site.func.inner());
+        let layout_info = self.info.get_mono_info(site.func);
         let (req, needs_lencheck) = layout_info.modify_reqs(site.req);
         let from = if req.len {
             None

@@ -2,7 +2,7 @@ use fxhash::FxHashSet;
 use yaboc_base::interner::{RegexData, RegexKind};
 use yaboc_constraint::Constraints;
 use yaboc_hir::BlockReturnKind;
-use yaboc_hir_types::VTABLE_BIT;
+use yaboc_hir_types::{THUNK_BIT, VTABLE_BIT};
 use yaboc_layout::{
     FuncLayoutKind, Layout, TailCallSite,
     collect::{EvalType, LCallReq, Slot, array_val_req, pd_len_req, pd_val_req, static_val_req},
@@ -14,7 +14,7 @@ use yaboc_resolve::Resolves;
 
 use crate::{
     convert_regex::RegexTranslator,
-    convert_thunk::{BlockThunk, DerefThunk, TransmuteCopyThunk, ValThunk},
+    convert_thunk::{BlockThunk, DerefThunk, TransmuteCopyThunk},
 };
 
 use super::*;
@@ -199,13 +199,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
         let kind = FunKind::ParserDef(*pd);
-        let req = req.as_mir_call();
-        let mir = self.compiler_database.db.mir(kind, req).unwrap();
-        let strictness = self.compiler_database.db.strictness(kind, req).unwrap();
-        Ok(
-            FunctionSubstitute::new_from_pd(mir, &strictness, None, layout, *pd, self.layouts)
-                .unwrap(),
+        let mir_req = req.as_mir_call();
+        let mir = self.compiler_database.db.mir(kind, mir_req).unwrap();
+        let strictness = self.compiler_database.db.strictness(kind, mir_req).unwrap();
+        Ok(FunctionSubstitute::new_from_pd(
+            mir,
+            &strictness,
+            None,
+            layout,
+            *pd,
+            req.val.is_force(),
+            self.layouts,
         )
+        .unwrap())
     }
 
     fn mir_lambda_fun(
@@ -217,13 +223,18 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             panic!("mir_pd_len_fun has to be called with a lambda layout");
         };
         let kind = FunKind::Lambda(*ld);
-        let req = req.as_mir_call();
-        let mir = self.compiler_database.db.mir(kind, req).unwrap();
-        let strictness = self.compiler_database.db.strictness(kind, req).unwrap();
-        Ok(
-            FunctionSubstitute::new_from_lambda(mir, &strictness, layout, *ld, self.layouts)
-                .unwrap(),
+        let mir_req = req.as_mir_call();
+        let mir = self.compiler_database.db.mir(kind, mir_req).unwrap();
+        let strictness = self.compiler_database.db.strictness(kind, mir_req).unwrap();
+        Ok(FunctionSubstitute::new_from_lambda(
+            mir,
+            &strictness,
+            layout,
+            *ld,
+            req.val.is_force(),
+            self.layouts,
         )
+        .unwrap())
     }
 
     fn mir_pd_parser(
@@ -236,11 +247,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
         let kind = FunKind::ParserDef(*pd);
-        let req = req.as_mir_call();
-        let mir = self.compiler_database.db.mir(kind, req).unwrap();
-        let strictness = self.compiler_database.db.strictness(kind, req).unwrap();
-        FunctionSubstitute::new_from_pd(mir, &strictness, Some(from), layout, *pd, self.layouts)
-            .unwrap()
+        let mir_req = req.as_mir_call();
+        let mir = self.compiler_database.db.mir(kind, mir_req).unwrap();
+        let strictness = self.compiler_database.db.strictness(kind, mir_req).unwrap();
+        FunctionSubstitute::new_from_pd(
+            mir,
+            &strictness,
+            Some(from),
+            layout,
+            *pd,
+            req.val.is_force(),
+            self.layouts,
+        )
+        .unwrap()
     }
 
     fn mir_block(
@@ -252,11 +271,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let MonoLayout::BlockParser(bd, _) = layout.mono_layout() else {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
-        let req = req.as_mir_call();
+        let mir_req = req.as_mir_call();
         let kind = FunKind::Block(*bd);
-        let mir = self.compiler_database.db.mir(kind, req).unwrap();
-        let strictness = self.compiler_database.db.strictness(kind, req).unwrap();
-        FunctionSubstitute::new_from_block(mir, &strictness, from, layout, self.layouts).unwrap()
+        let mir = self.compiler_database.db.mir(kind, mir_req).unwrap();
+        let strictness = self.compiler_database.db.strictness(kind, mir_req).unwrap();
+        FunctionSubstitute::new_from_block(
+            mir,
+            &strictness,
+            from,
+            layout,
+            req.val.is_force(),
+            self.layouts,
+        )
+        .unwrap()
     }
 
     fn mir_if_fun(
@@ -269,10 +296,18 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             panic!("mir_pd_len_fun has to be called with a nominal parser layout");
         };
         let kind = FunKind::If(*cid);
-        let req = req.as_mir_call();
-        let mir = self.compiler_database.db.mir(kind, req).unwrap();
-        let strictness = self.compiler_database.db.strictness(kind, req).unwrap();
-        FunctionSubstitute::new_from_if(mir, &strictness, from, layout, self.layouts).unwrap()
+        let mir_req = req.as_mir_call();
+        let mir = self.compiler_database.db.mir(kind, mir_req).unwrap();
+        let strictness = self.compiler_database.db.strictness(kind, mir_req).unwrap();
+        FunctionSubstitute::new_from_if(
+            mir,
+            &strictness,
+            from,
+            layout,
+            req.val.is_force(),
+            self.layouts,
+        )
+        .unwrap()
     }
 
     fn create_deref(&mut self, layout: IMonoLayout<'comp>) -> IResult<()> {
@@ -485,25 +520,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
         let thunky = pd.lookup(&self.compiler_database.db).unwrap().kind.thunky();
 
-        if !req.val.is_val() || !thunky {
-            // just call impl_fun and return
-            let llvm_fun = self.parser_fun_val_tail(layout, from, req);
-            let (ret, fun, arg) = parser_values(llvm_fun, layout, from);
-            self.add_entry_block(llvm_fun, layout);
-            self.call_parser_fun_impl(ret, fun, arg, req)?;
-            return Ok(llvm_fun);
-        }
-
-        if req.bt || req.len {
-            self.create_pd_parse_impl(
-                from,
-                layout,
-                LCallReq {
-                    val: EvalType::NoValue,
-                    ..req
-                },
-            )?;
-        }
+        let llvm_fun = self.parser_fun_val_tail(layout, from, req);
+        let (mut ret, fun, arg) = parser_values(llvm_fun, layout, from);
+        self.add_entry_block(llvm_fun, layout);
 
         let mut map = FxHashMap::default();
         map.insert(Arg::From, from);
@@ -515,12 +534,28 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         for (idx, arg) in args.iter().enumerate() {
             map.insert(Arg::Named(parserdef_args[idx].0), *arg);
         }
-        let return_layout = ILayout::make_thunk(self.layouts, *pd, &map)
-            .unwrap()
-            .maybe_mono()
-            .unwrap();
-        let val_thunk_info = ValThunk::new(Some(from), layout, return_layout, req);
-        ThunkContext::new(self, val_thunk_info).build()
+        if thunky && req.val == EvalType::Value {
+            let return_layout = ILayout::make_thunk(self.layouts, *pd, &map)
+                .unwrap()
+                .maybe_mono()
+                .unwrap();
+            let arg_sa = arg.layout.size_align(self.layouts).unwrap();
+            let fun_sa = fun.layout.inner().size_align(self.layouts).unwrap();
+            let [arg_offset, fun_offset] = SizeAlign::offsets([arg_sa, fun_sa]);
+            let ret_arg =
+                self.build_const_offset_byte_gep(ret.ptr, arg_offset as i64, "ret_arg")?;
+            let ret_fun =
+                self.build_const_offset_byte_gep(ret.ptr, fun_offset as i64, "fun_arg")?;
+            self.build_copy_invariant(arg.with_ptr(ret_arg), arg)?;
+            self.build_copy_invariant(CgValue::from(fun).with_ptr(ret_fun), fun.into())?;
+            self.write_vtable_if_tagged(
+                ret,
+                CgValue::new(return_layout.inner(), self.invalid_ptr()),
+            )?;
+            ret = self.poison_ret(ret.head);
+        }
+        self.call_parser_fun_impl(ret, fun, arg, req)?;
+        Ok(llvm_fun)
     }
 
     fn create_pd_parse_impl(
@@ -974,6 +1009,75 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
         Ok(outer_fun)
     }
+    fn create_single_parse_impl(
+        &mut self,
+        from: ILayout<'comp>,
+        layout: IMonoLayout<'comp>,
+        llvm_fun: FunctionValue<'llvm>,
+        req: LCallReq,
+    ) -> IResult<()> {
+        self.set_always_inline(llvm_fun);
+        self.add_entry_block(llvm_fun, layout);
+        let (ret, _, arg) = parser_values(llvm_fun, layout, from);
+        let globals = self.build_high_bit_mask(ret.head)?;
+        let ptr_diff = self.call_array_len_fun(arg, globals)?;
+        let is_zero = self.builder.build_int_compare(
+            IntPredicate::EQ,
+            ptr_diff,
+            self.const_i64(0),
+            "is_zero",
+        )?;
+        self.branch(
+            is_zero,
+            |this| {
+                let ret = this.const_i64(ReturnStatus::Eof as i64);
+                this.builder.build_return(Some(&ret))
+            },
+            |this| {
+                match req.val {
+                    EvalType::Value => {
+                        let ret = this.call_current_element_fun(ret, arg)?;
+                        this.non_zero_early_return(ret)?;
+                    }
+                    EvalType::NoValue => {}
+                    EvalType::Force => {
+                        let res_layout = from
+                            .array_primitive(this.layouts)
+                            .unwrap()
+                            .normalize(this.layouts)
+                            .unwrap()
+                            .0;
+                        let intermediate_val =
+                            this.build_alloca_value(res_layout, "array_val", None)?;
+                        let mut intermediate_head = this.build_high_bit_mask(ret.head)?;
+                        let bits = if res_layout.is_multi() {
+                            1 << VTABLE_BIT | 1 << THUNK_BIT
+                        } else {
+                            1 << THUNK_BIT
+                        };
+                        intermediate_head = this.build_const_offset_byte_gep(
+                            intermediate_head,
+                            bits,
+                            "force_head",
+                        )?;
+                        let intermediate_ret =
+                            CgReturnValue::new(intermediate_head, intermediate_val.ptr);
+                        let res = this.call_current_element_fun(intermediate_ret, arg)?;
+                        this.non_zero_early_return(res)?;
+                        let res = this.call_deref_fun(ret, intermediate_val)?;
+                        this.non_zero_early_return(res)?;
+                    }
+                }
+                if req.len {
+                    let ret = this.call_single_forward_fun(arg, globals)?;
+                    this.builder.build_return(Some(&ret))
+                } else {
+                    this.builder.build_return(Some(&this.const_i64(0)))
+                }
+            },
+        )?;
+        Ok(())
+    }
 
     fn create_single_parse(
         &mut self,
@@ -984,37 +1088,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let outer_fun = self.parser_fun_val_tail(layout, from, req);
         let (inner_fun, needs_lencheck) =
             self.create_parser_worker(layout, from, req, |this, llvm_fun, req| {
-                this.set_always_inline(llvm_fun);
-                this.add_entry_block(llvm_fun, layout);
-                let (ret, _, arg) = parser_values(llvm_fun, layout, from);
-                let globals = this.build_high_bit_mask(ret.head)?;
-                let ptr_diff = this.call_array_len_fun(arg, globals)?;
-                let is_zero = this.builder.build_int_compare(
-                    IntPredicate::EQ,
-                    ptr_diff,
-                    this.const_i64(0),
-                    "is_zero",
-                )?;
-                this.branch(
-                    is_zero,
-                    |this| {
-                        let ret = this.const_i64(ReturnStatus::Eof as i64);
-                        this.builder.build_return(Some(&ret))
-                    },
-                    |this| {
-                        if req.val.is_val() {
-                            let ret = this.call_current_element_fun(ret, arg)?;
-                            this.non_zero_early_return(ret)?;
-                        }
-                        if req.len {
-                            let ret = this.call_single_forward_fun(arg, globals)?;
-                            this.builder.build_return(Some(&ret))
-                        } else {
-                            this.builder.build_return(Some(&this.const_i64(0)))
-                        }
-                    },
-                )?;
-                Ok(())
+                this.create_single_parse_impl(from, layout, llvm_fun, req)
             })?;
         let (ret, fun, arg) = parser_values(outer_fun, layout, from);
         self.add_entry_block(outer_fun, layout);
@@ -1405,6 +1479,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             MirKind::Len,
             Some(int_layout),
             layout,
+            true,
             self.layouts,
         )
         .unwrap();

@@ -12,7 +12,6 @@ use yaboc_base::dbeprintln;
 use yaboc_hir::{HirIdWrapper, ParserDefId};
 use yaboc_hir_types::HeadDiscriminant;
 use yaboc_mir::{MirInstr, MirKind, Place};
-use yaboc_req::NeededBy;
 use yaboc_target::layout::SizeAlign;
 use yaboc_types::PrimitiveType;
 
@@ -49,7 +48,7 @@ pub fn pd_len_req() -> LCallMeta {
 pub fn pd_val_req() -> LCallMeta {
     LCallMeta {
         req: LCallReq {
-            val: EvalType::Value,
+            val: EvalType::Force,
             len: false,
             bt: false,
         },
@@ -69,7 +68,7 @@ pub fn array_val_req() -> LCallMeta {
 pub fn static_val_req() -> LCallMeta {
     LCallMeta {
         req: LCallReq {
-            val: EvalType::Value,
+            val: EvalType::Force,
             len: false,
             bt: false,
         },
@@ -89,7 +88,7 @@ pub fn root_req() -> LCallMeta {
 pub fn regex_single_req() -> LCallMeta {
     LCallMeta {
         req: LCallReq {
-            val: EvalType::Value,
+            val: EvalType::Force,
             len: true,
             bt: true,
         },
@@ -144,12 +143,12 @@ pub struct LayoutCollector<'a, 'b> {
 
 #[derive(Debug)]
 pub enum UnprocessedCall<'a> {
-    NominalParser(ILayout<'a>, IMonoLayout<'a>, MirKind),
-    NominalEvalFun(IMonoLayout<'a>, MirKind),
-    LambdaEvalFun(IMonoLayout<'a>, MirKind),
-    BlockParser(ILayout<'a>, IMonoLayout<'a>, MirKind),
-    BlockEvalFun(IMonoLayout<'a>, MirKind),
-    IfParser(ILayout<'a>, IMonoLayout<'a>, MirKind),
+    NominalParser(ILayout<'a>, IMonoLayout<'a>, MirKind, EvalType),
+    NominalEvalFun(IMonoLayout<'a>, MirKind, EvalType),
+    LambdaEvalFun(IMonoLayout<'a>, MirKind, EvalType),
+    BlockParser(ILayout<'a>, IMonoLayout<'a>, MirKind, EvalType),
+    BlockEvalFun(IMonoLayout<'a>, MirKind, EvalType),
+    IfParser(ILayout<'a>, IMonoLayout<'a>, MirKind, EvalType),
 }
 
 impl<'a, 'b> LayoutCollector<'a, 'b> {
@@ -199,7 +198,14 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 self.max_sa = self.max_sa.union(sa);
             }
             match &mono.mono_layout() {
-                MonoLayout::SlicePtr | MonoLayout::Range => {
+                MonoLayout::SlicePtr => {
+                    if self.arrays.insert(mono) && TRACE_COLLECTION {
+                        dbeprintln!(self.ctx.db, "[collection] registered array {}", &mono);
+                        let u8 = self.ctx.dcx.intern(Layout::Mono(MonoLayout::Ptr));
+                        self.register_layouts(u8);
+                    }
+                }
+                MonoLayout::Range => {
                     if self.arrays.insert(mono) && TRACE_COLLECTION {
                         dbeprintln!(self.ctx.db, "[collection] registered array {}", &mono);
                     }
@@ -221,8 +227,6 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                         }
                         let (arg, parser) = mono.unapply_nominal(self.ctx);
                         let parser = parser.inner();
-                        // the original parser may have been backtracking, so we need to register
-                        // the corresponding non-backtracking parser as well
                         self.register_layouts(parser);
                         self.register_parse(arg, parser, pd_val_req());
                         if self.publics.is_api_visible(mono) {
@@ -272,27 +276,24 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         }
     }
 
-    fn register_parse(&mut self, arg: ILayout<'a>, parser: ILayout<'a>, mut info: LCallMeta) {
+    fn register_parse(&mut self, arg: ILayout<'a>, parser: ILayout<'a>, info: LCallMeta) {
         self.slots.add_call(Slot::Parser(arg, info), parser);
         if info.req.is_empty() {
             return;
         }
         let parser = parser.evaluate(self.ctx).unwrap().0;
         for mono in &parser {
-            let layout_info = self.layout_info.get_info(parser);
+            let layout_info = self.layout_info.get_mono_info(mono);
             let (req, _) = layout_info.modify_reqs(info.req);
-            if req.is_empty() {
-                continue;
-            }
-            info.req = req;
+            let modified_info = LCallMeta { req, ..info };
             match mono.mono_layout() {
                 MonoLayout::BlockParser(..) => {
-                    if self.processed_calls.insert((arg, mono, info)) {
+                    if self.processed_calls.insert((arg, mono, modified_info)) {
                         if TRACE_COLLECTION {
                             dbeprintln!(
                                 self.ctx.db,
                                 "[collection] registered block parse({}) {} ~> {}",
-                                &info,
+                                &modified_info,
                                 &arg,
                                 &mono
                             );
@@ -301,16 +302,17 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                             arg,
                             mono,
                             req.as_mir_call(),
+                            info.req.val,
                         ));
                     }
                 }
                 MonoLayout::NominalParser(..) => {
-                    if self.processed_calls.insert((arg, mono, info)) {
+                    if self.processed_calls.insert((arg, mono, modified_info)) {
                         if TRACE_COLLECTION {
                             dbeprintln!(
                                 self.ctx.db,
                                 "[collection] registered nominal parse({}) {} ~> {}",
-                                &info,
+                                &modified_info,
                                 &arg,
                                 &mono
                             );
@@ -319,6 +321,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                             arg,
                             mono,
                             req.as_mir_call(),
+                            info.req.val,
                         ));
                     }
                 }
@@ -328,12 +331,12 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     self.register_parse(arg, single.inner(), regex_single_req());
                 }
                 MonoLayout::IfParser(..) => {
-                    if self.processed_calls.insert((arg, mono, info)) {
+                    if self.processed_calls.insert((arg, mono, modified_info)) {
                         if TRACE_COLLECTION {
                             dbeprintln!(
                                 self.ctx.db,
                                 "[collection] registered if parse({}) {} ~> {}",
-                                &info,
+                                &modified_info,
                                 &arg,
                                 &mono
                             );
@@ -342,6 +345,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                             arg,
                             mono,
                             req.as_mir_call(),
+                            info.req.val,
                         ));
                     }
                 }
@@ -382,13 +386,20 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 self.int,
                 parser,
                 MirKind::Len,
+                EvalType::NoValue,
             )),
-            MonoLayout::IfParser(..) => {
-                Some(UnprocessedCall::IfParser(self.int, parser, MirKind::Len))
-            }
-            MonoLayout::BlockParser(..) => {
-                Some(UnprocessedCall::BlockParser(self.int, parser, MirKind::Len))
-            }
+            MonoLayout::IfParser(..) => Some(UnprocessedCall::IfParser(
+                self.int,
+                parser,
+                MirKind::Len,
+                EvalType::NoValue,
+            )),
+            MonoLayout::BlockParser(..) => Some(UnprocessedCall::BlockParser(
+                self.int,
+                parser,
+                MirKind::Len,
+                EvalType::NoValue,
+            )),
             _ => None,
         }
     }
@@ -435,14 +446,16 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     let parserdef = pd.lookup(self.ctx.db).unwrap();
                     let def_arg_count = parserdef.args.map(|x| x.len()).unwrap_or(0);
                     (args.len() == def_arg_count && parserdef.from.is_none())
-                        .then_some(UnprocessedCall::NominalEvalFun as fn(_, _) -> _)
+                        .then_some(UnprocessedCall::NominalEvalFun as fn(_, _, _) -> _)
                 }
-                MonoLayout::BlockParser(..) => Some(UnprocessedCall::BlockEvalFun as fn(_, _) -> _),
+                MonoLayout::BlockParser(..) => {
+                    Some(UnprocessedCall::BlockEvalFun as fn(_, _, _) -> _)
+                }
                 MonoLayout::Lambda(lambda_id, _, args, ..) => {
                     let lambda = lambda_id.lookup(self.ctx.db).unwrap();
                     let def_arg_count = lambda.args.len();
                     (args.len() == def_arg_count)
-                        .then_some(UnprocessedCall::LambdaEvalFun as fn(_, _) -> _)
+                        .then_some(UnprocessedCall::LambdaEvalFun as fn(_, _, _) -> _)
                 }
                 _ => None,
             };
@@ -451,7 +464,8 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     .processed_evals
                     .insert((mono, LCallMeta { req, ..meta }))
             {
-                self.unprocessed.push(eval(mono, req.as_mir_call()));
+                self.unprocessed
+                    .push(eval(mono, req.as_mir_call(), meta.req.val));
             }
         }
     }
@@ -528,6 +542,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         arg: ILayout<'a>,
         parser: IMonoLayout<'a>,
         info: MirKind,
+        eval: EvalType,
     ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
@@ -547,6 +562,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             info,
             Some(arg),
             parser,
+            eval.is_force(),
             self.ctx,
         )?;
         self.collect_mir(&fsub)?;
@@ -557,6 +573,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         &mut self,
         parser: IMonoLayout<'a>,
         info: MirKind,
+        eval: EvalType,
     ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
@@ -569,8 +586,14 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             panic!("unexpected non-block-parser layout");
         };
         parser.inner().eval_fun(self.ctx)?;
-        let fsub =
-            function_substitute(yaboc_mir::FunKind::Block(*id), info, None, parser, self.ctx)?;
+        let fsub = function_substitute(
+            yaboc_mir::FunKind::Block(*id),
+            info,
+            None,
+            parser,
+            eval.is_force(),
+            self.ctx,
+        )?;
         self.collect_mir(&fsub)?;
         Ok(())
     }
@@ -580,6 +603,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         arg: ILayout<'a>,
         parser: IMonoLayout<'a>,
         info: MirKind,
+        eval: EvalType,
     ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
@@ -612,28 +636,15 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         // instantiate info for thunk
         thunk.deref(self.ctx)?;
         let (arg_layout, parser_layout) = thunk.unapply_nominal(self.ctx);
-        // for each parse, it is possible that the value is not actually
-        // needed and just a thunk is returned, which means we also need
-        // to collect the parse that does not return the value
-        let val_info = if let MirKind::Call(req) = info {
-            if req.contains(NeededBy::Val) {
-                Some(MirKind::Call(req & !NeededBy::Val))
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        for info in std::iter::once(info).chain(val_info) {
-            let fsub = function_substitute(
-                yaboc_mir::FunKind::ParserDef(*pd),
-                info,
-                Some(arg_layout),
-                parser_layout,
-                self.ctx,
-            )?;
-            self.collect_mir(&fsub)?;
-        }
+        let fsub = function_substitute(
+            yaboc_mir::FunKind::ParserDef(*pd),
+            info,
+            Some(arg_layout),
+            parser_layout,
+            eval.is_force(),
+            self.ctx,
+        )?;
+        self.collect_mir(&fsub)?;
         Ok(())
     }
 
@@ -641,6 +652,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         &mut self,
         fun: IMonoLayout<'a>,
         info: MirKind,
+        eval: EvalType,
     ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
@@ -657,6 +669,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             info,
             None,
             fun,
+            eval.is_force(),
             self.ctx,
         )?;
         self.collect_mir(&fsub)?;
@@ -667,6 +680,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         &mut self,
         fun: IMonoLayout<'a>,
         info: MirKind,
+        eval: EvalType,
     ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
@@ -684,6 +698,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             info,
             None,
             fun,
+            eval.is_force(),
             self.ctx,
         )?;
         self.collect_mir(&fsub)?;
@@ -695,6 +710,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         arg: ILayout<'a>,
         parser: IMonoLayout<'a>,
         info: MirKind,
+        eval: EvalType,
     ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
@@ -715,6 +731,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             info,
             Some(arg),
             parser,
+            eval.is_force(),
             self.ctx,
         )?;
         self.collect_mir(&fsub)?;
@@ -725,9 +742,9 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     // whose return value gets ignored anyway
     fn skip_call(&self, call: &UnprocessedCall) -> bool {
         match call {
-            UnprocessedCall::NominalParser(t, _, MirKind::Call(_))
-            | UnprocessedCall::BlockParser(t, _, MirKind::Call(_))
-            | UnprocessedCall::IfParser(t, _, MirKind::Call(_)) => t,
+            UnprocessedCall::NominalParser(t, _, MirKind::Call(_), _)
+            | UnprocessedCall::BlockParser(t, _, MirKind::Call(_), _)
+            | UnprocessedCall::IfParser(t, _, MirKind::Call(_), _) => t,
             _ => return false,
         }
         .is_int()
@@ -739,21 +756,23 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 continue;
             }
             match mono {
-                UnprocessedCall::BlockParser(arg, parser, info) => {
-                    self.collect_block_parse(arg, parser, info)?
+                UnprocessedCall::BlockParser(arg, parser, info, eval) => {
+                    self.collect_block_parse(arg, parser, info, eval)?
                 }
-                UnprocessedCall::BlockEvalFun(fun, info) => self.collect_block_fun(fun, info)?,
-                UnprocessedCall::NominalParser(arg, parser, info) => {
-                    self.collect_nominal_parse(arg, parser, info)?
+                UnprocessedCall::BlockEvalFun(fun, info, eval) => {
+                    self.collect_block_fun(fun, info, eval)?
                 }
-                UnprocessedCall::NominalEvalFun(fun, info) => {
-                    self.collect_nominal_eval_fun(fun, info)?
+                UnprocessedCall::NominalParser(arg, parser, info, eval) => {
+                    self.collect_nominal_parse(arg, parser, info, eval)?
                 }
-                UnprocessedCall::LambdaEvalFun(fun, info) => {
-                    self.collect_lambda_eval_fun(fun, info)?
+                UnprocessedCall::NominalEvalFun(fun, info, eval) => {
+                    self.collect_nominal_eval_fun(fun, info, eval)?
                 }
-                UnprocessedCall::IfParser(from, parser, info) => {
-                    self.collect_if_parse(from, parser, info)?
+                UnprocessedCall::LambdaEvalFun(fun, info, eval) => {
+                    self.collect_lambda_eval_fun(fun, info, eval)?
+                }
+                UnprocessedCall::IfParser(from, parser, info, eval) => {
+                    self.collect_if_parse(from, parser, info, eval)?
                 }
             }
         }
