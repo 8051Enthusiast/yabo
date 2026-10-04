@@ -15,5 +15,6 @@ jobs:
     runs-on: debian-ci
     steps:
       - uses: actions/checkout@v6
+      - run: docker pull registry:5000/yphbt:dev || true
       - run: docker build -t registry:5000/yphbt:dev -f tools/yaboc-server/Dockerfile .
       - run: docker push registry:5000/yphbt:dev
