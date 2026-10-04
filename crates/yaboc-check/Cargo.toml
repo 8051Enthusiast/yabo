@@ -12,3 +12,5 @@ yaboc-base = { path = "../yaboc-base" }
 yaboc-database = { path = "../yaboc-database" }
 bumpalo = "3.16.0"
 clap = { version = "4.5.20", features = ["default", "derive"] }
+[lints]
+workspace = true

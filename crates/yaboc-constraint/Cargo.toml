@@ -19,3 +19,5 @@ yaboc-types = { path = "../yaboc-types" }
 yaboc-hir-types = { path = "../yaboc-hir-types" }
 yaboc-req = { path = "../yaboc-req" }
 fxhash = "0.2.1"
+[lints]
+workspace = true

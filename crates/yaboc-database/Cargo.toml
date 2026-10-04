@@ -18,3 +18,5 @@ yaboc-constraint = { path = "../yaboc-constraint" }
 yaboc-absint = { path = "../yaboc-absint" }
 yaboc-mir = { path = "../yaboc-mir" }
 yaboc-layout = { path = "../yaboc-layout" }
+[lints]
+workspace = true

@@ -14,3 +14,5 @@ bumpalo = "3.16.0"
 fxhash = "0.2.1"
 ena = "0.14.4"
 petgraph = { workspace = true }
+[lints]
+workspace = true

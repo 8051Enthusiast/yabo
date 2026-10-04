@@ -7,3 +7,5 @@ description.workspace = true
 
 [dependencies]
 smallvec = { workspace = true }
+[lints]
+workspace = true

@@ -9,3 +9,5 @@ description.workspace = true
 treereduce = { version="0.4.1", features=["cli"] }
 tree-sitter-yabo = { path = "../tree-sitter-yabo" }
 anyhow = "1"
+[lints]
+workspace = true

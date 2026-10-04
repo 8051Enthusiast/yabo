@@ -1,4 +1,3 @@
-#![allow(clippy::type_complexity)]
 mod fetch;
 mod idx_expression;
 mod part;
@@ -140,7 +139,6 @@ pub struct InvariantLifetime<'id>(PhantomData<*mut &'id ()>);
 pub struct ExprRef<'id, K>(ExprIdx<K>, InvariantLifetime<'id>);
 
 // expression should never be empty
-#[allow(clippy::len_without_is_empty)]
 pub trait Expression<K: ExprKind>: Sized {
     type Part: ExprPart<K = K, Inner = ExprIdx<K>>;
     type Iter: Iterator<Item = Self::Part>;

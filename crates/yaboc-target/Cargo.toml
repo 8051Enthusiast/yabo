@@ -9,3 +9,5 @@ license.workspace = true
 yaboc-base = { path = "../yaboc-base" }
 paste = "1.0.15"
 tempfile = "3.13.0"
+[lints]
+workspace = true

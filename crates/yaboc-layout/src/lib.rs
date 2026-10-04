@@ -1,4 +1,3 @@
-#![allow(clippy::type_complexity)]
 pub mod collect;
 pub mod mir_subst;
 pub mod represent;

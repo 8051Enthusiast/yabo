@@ -24,3 +24,8 @@ inherits = "release"
 strip = "debuginfo"
 lto = true
 codegen-units = 1
+
+[workspace.lints.clippy]
+all = { level = "allow", priority = -1 }
+correctness = "warn"
+perf = "warn"

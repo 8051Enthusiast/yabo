@@ -19,3 +19,5 @@ petgraph = { workspace = true }
 [dev-dependencies]
 yaboc-hir-types = { path = "../yaboc-hir-types" }
 yaboc-types = { path = "../yaboc-types" }
+[lints]
+workspace = true
