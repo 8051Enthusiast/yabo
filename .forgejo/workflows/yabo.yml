@@ -1,0 +1,19 @@
+---
+name: Test
+on:
+  - push
+  - pull_request
+jobs:
+  test:
+    name: Run tests
+    runs-on: debian-ci
+    steps:
+      - uses: actions/checkout@v6
+      - run: ci/test.sh
+  build-playground:
+    name: Build yabo playground
+    runs-on: debian-ci
+    steps:
+      - uses: actions/checkout@v6
+      - run: docker build -t registry:5000/yphbt:dev -f tools/yaboc-server/Dockerfile .
+      - run: docker push registry:5000/yphbt:dev
