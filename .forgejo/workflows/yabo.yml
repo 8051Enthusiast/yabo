@@ -13,6 +13,7 @@ jobs:
   build-playground:
     name: Build yabo playground
     runs-on: debian-ci
+    if: forgejo.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v6
       - run: docker pull registry:5000/yphbt:dev || true
