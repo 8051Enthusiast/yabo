@@ -7,9 +7,10 @@ RUN go build -o yaboc-server
 
 FROM rust:1-trixie AS compiler
 
-RUN apt-get update && apt-get install -y cmake lsb-release gnupg
-ADD https://apt.llvm.org/llvm.sh /llvm.sh
-RUN bash /llvm.sh 22
+ARG LLVM_VERSION=22
+ADD ci/apt.llvm.org.asc /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+RUN echo "deb [signed-by=/etc/apt/trusted.gpg.d/apt.llvm.org.asc] http://apt.llvm.org/trixie/ llvm-toolchain-trixie-$LLVM_VERSION main" > /etc/apt/sources.list.d/llvm.list
+RUN apt-get update && apt-get install -y cmake llvm-22
 
 COPY Cargo.toml Cargo.lock /src/yabo/
 ADD crates /src/yabo/crates/
@@ -95,9 +96,9 @@ RUN --mount=type=tmpfs,target=/build,size=6G bash -c '\
 
 FROM debian:trixie-slim
 
-RUN apt-get update && apt-get install -y python3 lsb-release wget gnupg
-ADD https://apt.llvm.org/llvm.sh /llvm.sh
-RUN bash /llvm.sh 22
+ADD ci/apt.llvm.org.asc /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+RUN echo "deb [signed-by=/etc/apt/trusted.gpg.d/apt.llvm.org.asc] http://apt.llvm.org/trixie/ llvm-toolchain-trixie-$LLVM_VERSION main" > /etc/apt/sources.list.d/llvm.list
+RUN apt-get update && apt-get install -y cmake llvm-22
 
 COPY tools/yaboc-server/build.sh /opt/bin/build.sh
 ADD ./lib /opt/lib
