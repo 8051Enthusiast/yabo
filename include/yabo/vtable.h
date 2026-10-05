@@ -20,7 +20,7 @@ extern "C" {
 #if YABO_RELATIVE_VPTR
 
 #define YABO_VPTR(x) struct { int32_t offset; __attribute__((packed)) x* phantom[0]; }
-#define YABO_ACCESS_VPTR(val, field) (!(val)->field.offset ? NULL : (typeof((val)->field.phantom[0]))((char*)(val) + (val)->field.offset))
+#define YABO_ACCESS_VPTR(val, field) ((val)->field.offset == -1 ? NULL : (typeof((val)->field.phantom[0]))((char*)(val) + (val)->field.offset))
 
 #else
 

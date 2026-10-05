@@ -83,7 +83,7 @@ def vptr(ty: type):
         pointer = ty
 
         def get_vptr(self, vtable_ptr: int):
-            if self.value == 0:
+            if self.value == -1:
                 return ctypes.cast(0, RelPtr.pointer)
             address = vtable_ptr + self.value
             return ctypes.cast(address, RelPtr.pointer)

@@ -664,7 +664,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         if self.options.target.relative_vptrs {
             let int_type = self.llvm.i32_type();
             if ptr.is_null() {
-                int_type.const_zero().into()
+                int_type.const_all_ones().into()
             } else {
                 let vtable_int = vtable.const_to_int(self.word_type());
                 let ptr_int = ptr.const_to_int(self.word_type());

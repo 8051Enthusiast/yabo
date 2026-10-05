@@ -1,0 +1,33 @@
+====[ source code ]====
+export
+def test = {
+  let l1 = {x: u8, let return = x + 1}
+  let l2 = {x: u8, let return = x + 2}
+  let l3 = {x: u8, let return = x + 3}
+  flag: u8
+  return: {
+    l12: flag if 1 then l2 else l1
+    l23: flag if 1 then l3 else l2
+    l31: flag if 1 then l1 else l3
+  }
+}
+
+====[ binary 1 ]====
+00 10 20 30
+
+====[ output 1 ]====
+{
+  "l12": 17,
+  "l23": 34,
+  "l31": 51
+}
+
+====[ binary 2 ]====
+01 10 20 30
+
+====[ output 2 ]====
+{
+  "l12": 18,
+  "l23": 35,
+  "l31": 49
+}
