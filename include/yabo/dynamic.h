@@ -40,7 +40,9 @@ static inline size_t dyn_val_size(const DynValue *val) {
   if (!val->vtable) {
     return sizeof(int64_t) + sizeof(struct VTableHeader *);
   }
-  return val->vtable->size + sizeof(struct VTableHeader *);
+  uint32_t size_align = val->vtable->size_align;
+  uint32_t size = (size_align & (size_align - 1)) >> 1;
+  return size + sizeof(struct VTableHeader *);
 }
 
 // calls the parser with the given bytes, and stores the result in ret

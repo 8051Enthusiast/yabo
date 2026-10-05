@@ -57,11 +57,10 @@ typedef int64_t DerefFun(void *, const void *, const char *);
 typedef size_t MaskFun(void *);
 
 struct VTableHeader {
-  int64_t head;
+  uint32_t head;
+  uint32_t size_align;
   YABO_VPTR(DerefFun) deref_impl;
   YABO_VPTR(MaskFun) mask_impl;
-  size_t size;
-  size_t align;
 };
 
 struct BlockFields {

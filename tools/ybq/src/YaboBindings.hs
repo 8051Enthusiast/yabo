@@ -65,7 +65,7 @@ ybqStatusFromWord64 0 = YbqStatusOk
 ybqStatusFromWord64 1 = YbqStatusError
 ybqStatusFromWord64 2 = YbqStatusEos
 ybqStatusFromWord64 3 = YbqStatusBacktrack
-ybqStatusFromWord64 _ = error "Unknown YaboReturnStatus"
+ybqStatusFromWord64 n = error ("Unknown YaboReturnStatus " ++ show n)
 
 newtype FieldName = FieldName CString deriving (Eq, Show, Ord)
 

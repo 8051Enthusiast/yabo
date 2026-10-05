@@ -4,7 +4,7 @@ pub trait CodegenTypeContext {
     type Type;
     fn int(&mut self, bits: u8, signed: bool) -> Self::Type;
     fn size(&mut self, signed: bool) -> Self::Type;
-    fn char(&mut self) -> Self::Type;
+    fn u32(&mut self) -> Self::Type;
     fn ptr(&mut self, inner: Self::Type) -> Self::Type;
     fn zst(&mut self) -> Self::Type;
     fn array(&mut self, ty: Self::Type, size: PSize) -> Self::Type;
@@ -180,6 +180,16 @@ impl SizeAlign {
     pub fn allocation_center_bits(&self) -> u64 {
         self.allocation_center_offset() * 8
     }
+
+    pub fn vtable_encoding(&self) -> u32 {
+        assert_eq!(self.before, 0);
+        let aligned = self.after_aligned();
+        // TODO(8051): check somewhere before that layouts
+        // are not unreasonably large so that we can emit
+        // a diagnostic
+        assert!(aligned.after < i32::MAX as PSize);
+        (aligned.after << 1) as u32 | aligned.align() as u32
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -189,7 +199,7 @@ pub struct TargetLayoutData {
     pub offset_sa: SizeAlign,
     pub byte_sa: SizeAlign,
     pub bit_sa: SizeAlign,
-    pub char_sa: SizeAlign,
+    pub u32_sa: SizeAlign,
 }
 
 pub trait TargetSized: Sized {
@@ -341,11 +351,21 @@ impl<T> TargetSized for PhantomData<T> {
 
 impl TargetSized for char {
     fn tsize(data: &TargetLayoutData) -> SizeAlign {
-        data.char_sa
+        data.u32_sa
     }
 
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
-        ctx.char()
+        ctx.u32()
+    }
+}
+
+impl TargetSized for u32 {
+    fn tsize(data: &TargetLayoutData) -> SizeAlign {
+        data.u32_sa
+    }
+
+    fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
+        ctx.u32()
     }
 }
 
@@ -494,7 +514,7 @@ pub const POINTER64: TargetLayoutData = TargetLayoutData {
     offset_sa: SizeAlign::int_sa(2),
     byte_sa: SizeAlign::int_sa(0),
     bit_sa: SizeAlign::int_sa(0),
-    char_sa: SizeAlign::int_sa(2),
+    u32_sa: SizeAlign::int_sa(2),
 };
 
 pub const POINTER32: TargetLayoutData = TargetLayoutData {
@@ -503,7 +523,7 @@ pub const POINTER32: TargetLayoutData = TargetLayoutData {
     offset_sa: SizeAlign::int_sa(2),
     byte_sa: SizeAlign::int_sa(0),
     bit_sa: SizeAlign::int_sa(0),
-    char_sa: SizeAlign::int_sa(2),
+    u32_sa: SizeAlign::int_sa(2),
 };
 
 #[cfg(test)]

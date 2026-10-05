@@ -250,7 +250,7 @@ impl<'llvm, 'comp> DebugBuilder<'llvm, 'comp> {
 
             PrimitiveType::Char => self.builder.create_basic_type(
                 "char",
-                target_info.char_sa.after_bits(),
+                target_info.u32_sa.after_bits(),
                 DwarfEncoding::Ucs as DwEnc,
                 0,
             ),

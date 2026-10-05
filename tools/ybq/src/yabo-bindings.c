@@ -37,7 +37,9 @@ size_t ybq_alloc_size(const struct DynValue *val) {
   if (!val->vtable) {
     return sizeof(int64_t) + offsetof(DynValue, data);
   }
-  return val->vtable->size + offsetof(DynValue, data);
+  uint32_t size_align = val->vtable->size_align;
+  uint32_t size = (size_align & (size_align - 1)) >> 1;
+  return size + offsetof(DynValue, data);
 }
 
 int64_t ybq_parse_bytes_with_args(struct DynValue *ret, const uint8_t *begin,

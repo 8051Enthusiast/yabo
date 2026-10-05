@@ -103,19 +103,19 @@ class VTable(Structure):
 class VTableHeader(VTable):
     __slots__ = [
         "head",
+        "size_align",
         "deref_impl",
         "mask_impl",
-        "size",
-        "align",
     ]
     _fields_ = [
-        ("head", c_int64),
+        ("head", c_uint32),
+        ("size_align", c_uint32),
         ("deref_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p))),
-        ("mask_impl", vptr(CFUNCTYPE(c_size_t, _voidptr))),
-        ("size", c_size_t),
-        ("align", c_size_t),
+        ("mask_impl", vptr(CFUNCTYPE(c_size_t, _voidptr)))
     ]
 
+    def val_size(self) -> int:
+        return (self.size_align & (self.size_align - 1)) >> 1
 
 class BlockFields(VTable):
     __slots__ = [
@@ -287,7 +287,10 @@ class DynValue(Structure):
 
     def mask(self):
         mask_impl = self.get_vtable().mask_impl
-        return mask_impl(self.data_ptr())
+        masked_size = mask_impl(self.data_ptr())
+        arr = self.data_array()
+        for i in range(masked_size, self.get_vtable().val_size()):
+            arr[0][i] = 0
 
 
 def sized_dyn_value(size: int):
@@ -304,7 +307,7 @@ def sized_dyn_value(size: int):
         ]
 
         def __copy__(self):
-            size = self.get_vtable().size
+            size = self.get_vtable().val_size()
             val_ty = sized_dyn_value(size)
             val = val_ty.from_buffer_copy(self)
             return val
@@ -435,7 +438,7 @@ class YaboLib(ctypes.CDLL):
             # invert all bytes in the buffer so that we can
             # test that the mask implementation properly
             # deletes the padding bytes
-            for i in range(ret_buf.get_vtable().size):
+            for i in range(ret_buf.get_vtable().val_size()):
                 ret_buf.data_array().contents[i] = (
                     ret_buf.data_array().contents[:][i] ^ 0xFF
                 )
@@ -445,11 +448,11 @@ class YaboLib(ctypes.CDLL):
             if isinstance(ret_val, YaboValue):
                 assert isinstance(second_val, YaboValue)
                 first_bytes = bytes(
-                    ret_val._val.data_array().contents[: ret_val._val.get_vtable().size]
+                    ret_val._val.data_array().contents[: ret_val._val.get_vtable().val_size()]
                 )
                 second_bytes = bytes(
                     second_val._val.data_array().contents[
-                        : second_val._val.get_vtable().size
+                        : second_val._val.get_vtable().val_size()
                     ]
                 )
                 if first_bytes != second_bytes:

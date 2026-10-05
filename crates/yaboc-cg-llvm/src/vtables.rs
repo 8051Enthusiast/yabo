@@ -14,7 +14,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .size_align_without_vtable(self.layouts)
             .unwrap();
         let head_disc = layout.head_kind(&self.compiler_database.db);
-        let head_disc_val = self.const_i64(head_disc as i64);
+        let head_disc_val = self.const_u32(head_disc as u32);
+        let size_align = self.const_u32(size_align.vtable_encoding());
         let deref = self.deref_fun_val(layout);
 
         let mask = if self.collected_layouts.publics.needs_mask_method(layout) {
@@ -22,27 +23,23 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         } else {
             None
         };
-        let size = self.const_size_t(size_align.after as i64);
-        let align = self.const_size_t(size_align.align() as i64);
         let zst = self.const_zst();
         if named {
             let vtable_ty = vtable_global.get_value_type().into_struct_type();
             vtable_ty.const_named_struct(&[
                 head_disc_val.into(),
+                size_align.into(),
                 self.vtable_ptr_from_function(vtable_global, deref),
                 self.vtable_ptr_maybe_from_function(vtable_global, mask),
-                size.into(),
-                align.into(),
                 zst.into(),
             ])
         } else {
             self.llvm.const_struct(
                 &[
                     head_disc_val.into(),
+                    size_align.into(),
                     self.vtable_ptr_from_function(vtable_global, deref),
                     self.vtable_ptr_maybe_from_function(vtable_global, mask),
-                    size.into(),
-                    align.into(),
                     zst.into(),
                 ],
                 false,

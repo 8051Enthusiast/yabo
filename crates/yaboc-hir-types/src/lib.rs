@@ -64,7 +64,7 @@ pub trait TyHirs: Hirs + yaboc_types::TypeInterner + resolve::Resolves {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-#[repr(i64)]
+#[repr(u32)]
 pub enum HeadDiscriminant {
     Int = 0x100,
     Bit = 0x200,

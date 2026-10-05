@@ -350,6 +350,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.llvm.i64_type().const_int(val as u64, true)
     }
 
+    fn const_u32(&self, val: u32) -> IntValue<'llvm> {
+        self.llvm.i32_type().const_int(val as u64, false)
+    }
+
     fn any_ptr(&self) -> PointerType<'llvm> {
         self.llvm.ptr_type(AddressSpace::default())
     }
@@ -1256,7 +1260,7 @@ impl<'llvm> CodegenTypeContext for CodeGenCtx<'llvm, '_> {
         self.llvm.ptr_sized_int_type(&self.target_data, None).into()
     }
 
-    fn char(&mut self) -> Self::Type {
+    fn u32(&mut self) -> Self::Type {
         self.llvm.i32_type().into()
     }
 
