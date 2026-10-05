@@ -1,0 +1,22 @@
+{
+  "platforms": [
+    {
+      "kind": "Native",
+      "args": {
+        "perturbed_env": {
+          "LD_PRELOAD": "libmimalloc.so.3"
+        }
+      }
+    },
+    {
+      "kind": "Wasm",
+      "args": {
+        "wasi_sdk_path": "/wasi",
+        "perturbed_env": {
+          "LD_PRELOAD": "libmimalloc.so.3"
+        }
+      }
+    }
+  ],
+  "reproducibility": true
+}
