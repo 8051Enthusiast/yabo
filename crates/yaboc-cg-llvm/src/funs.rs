@@ -4,7 +4,7 @@ use yaboc_constraint::Constraints;
 use yaboc_hir::BlockReturnKind;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{
-    FuncLayoutKind, Layout, TailCallSite,
+    FuncLayoutKind, Layout, LayoutSlice, TailCallSite,
     collect::{EvalType, LCallReq, Slot, array_val_req, pd_len_req, pd_val_req, static_val_req},
     mir_subst::function_substitute,
     represent::ParserFunKind,
@@ -1717,7 +1717,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn create_create_fun_args_fun(
         &mut self,
         layout: IMonoLayout<'comp>,
-        args: &[ILayout<'comp>],
+        args: LayoutSlice<'comp>,
     ) -> IResult<()> {
         let new_args = args.iter().copied();
         let result = layout.inner().apply_fun(self.layouts, new_args).unwrap();

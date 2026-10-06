@@ -185,11 +185,15 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         };
     }
 
-    fn sym(&mut self, layout: IMonoLayout<'comp>, part: LayoutPart) -> String {
+    fn sym(&mut self, layout: IMonoLayout<'comp>, part: LayoutPart<'comp>) -> String {
         layout.symbol(self.layouts, part, &self.compiler_database.db)
     }
 
-    fn sym_ptr(&mut self, layout: IMonoLayout<'comp>, part: LayoutPart) -> PointerValue<'llvm> {
+    fn sym_ptr(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+        part: LayoutPart<'comp>,
+    ) -> PointerValue<'llvm> {
         let sym = self.sym(layout, part);
         if let Some(f) = self.module.get_function(&sym) {
             return f.as_global_value().as_pointer_value();

@@ -1,7 +1,7 @@
 use inkwell::{types::FunctionType, values::CallSiteValue};
-use yaboc_base::low_effort_interner::Uniq;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{
+    LayoutSlice,
     collect::{LCallMeta, LCallReq, Slot},
     represent::ParserFunKind,
 };
@@ -399,7 +399,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         ret: CgReturnValue<'llvm>,
         fun: CgValue<'comp, 'llvm>,
-        args: &Uniq<[ILayout<'comp>]>,
+        args: LayoutSlice<'comp>,
     ) -> IResult<IntValue<'llvm>> {
         let create = match fun.layout.maybe_mono() {
             Some(mono) => self.function_create_args_fun_val(mono, args).into(),

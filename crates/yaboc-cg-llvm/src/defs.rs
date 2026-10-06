@@ -4,7 +4,7 @@ use yaboc_base::dbformat;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::collect::{LCallReq, Slot};
 use yaboc_layout::represent::ParserFunKind;
-use yaboc_layout::vtable;
+use yaboc_layout::{LayoutSlice, vtable};
 
 use crate::debug::SubroutineDebugType;
 
@@ -32,7 +32,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn fun_val<const N: usize, F: FunctionTy + SubroutineDebugType<N>>(
         &mut self,
         layout: IMonoLayout<'comp>,
-        part: LayoutPart,
+        part: LayoutPart<'comp>,
         arg_layouts: [Option<ILayout<'comp>>; N],
     ) -> FunctionValue<'llvm> {
         let sf_sym = self.sym(layout, part);
@@ -215,14 +215,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         from: ILayout<'comp>,
         req: LCallReq,
         kind: ParserFunKind,
-    ) -> LayoutPart {
-        let hash = self.layouts.dcx.layout_hash(self.layouts.db, from);
-        LayoutPart::Parse(req, kind, hash)
+    ) -> LayoutPart<'comp> {
+        LayoutPart::Parse(req, kind, from)
     }
 
-    pub(super) fn create_args_part(&mut self, from: &[ILayout<'comp>]) -> LayoutPart {
-        let hash = self.layouts.dcx.layout_slice_hash(self.layouts.db, from);
-        LayoutPart::CreateArgs(hash)
+    pub(super) fn create_args_part(&mut self, from: LayoutSlice<'comp>) -> LayoutPart<'comp> {
+        LayoutPart::CreateArgs(from)
     }
 
     pub(super) fn parser_fun_val(
@@ -431,7 +429,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub(super) fn function_create_args_fun_val(
         &mut self,
         layout: IMonoLayout<'comp>,
-        from: &[ILayout<'comp>],
+        from: LayoutSlice<'comp>,
     ) -> FunctionValue<'llvm> {
         let part = self.create_args_part(from);
         let f = self.fun_val::<_, vtable::CreateArgFun>(

@@ -218,11 +218,12 @@ impl<'a> IMonoLayout<'a> {
     pub fn symbol<DB: Layouts + ?Sized>(
         self,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
-        part: LayoutPart,
+        part: LayoutPart<'a>,
         db: &DB,
     ) -> String {
         let prefix = self.mangled_name(ctx, db);
-        dbformat!(db, "{}${}", &prefix, &part)
+        let suffix = part.symbol_str(ctx, db);
+        dbformat!(db, "{}${}", &prefix, &suffix)
     }
 
     pub fn deref(
@@ -925,7 +926,7 @@ impl IsSilenced for LayoutError {
 
 pub type AbsLayoutCtx<'a> = AbsIntCtx<'a, ILayout<'a>>;
 
-type LayoutSlice<'a> = &'a Uniq<[ILayout<'a>]>;
+pub type LayoutSlice<'a> = &'a Uniq<[ILayout<'a>]>;
 
 pub struct LayoutContext<'a> {
     pub intern: Interner<'a, InternedLayout<'a>>,
@@ -1346,7 +1347,6 @@ mod tests {
         let main = ctx.parser("main");
         collected_layouts(&mut outlayer, &[main]).unwrap();
         let from = IMonoLayout::u8_array(&mut outlayer);
-        let hash = outlayer.dcx.layout_hash(&ctx.db, from.inner());
         let canon_2004 = pd_parser(&mut outlayer, main)
             .unwrap()
             .apply_arg(&mut outlayer, from.inner())
@@ -1362,7 +1362,7 @@ mod tests {
                             bt: true
                         },
                         represent::ParserFunKind::Worker,
-                        hash
+                        from.inner()
                     ),
                     &ctx.db
                 ),
@@ -1381,7 +1381,7 @@ mod tests {
                             bt: true
                         },
                         represent::ParserFunKind::Wrapper,
-                        hash
+                        from.inner(),
                     ),
                     &ctx.db
                 ),

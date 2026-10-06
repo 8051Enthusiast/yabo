@@ -4,14 +4,14 @@ use std::{collections::BTreeMap, fmt::Write};
 
 use yaboc_base::{
     databased_display::DatabasedDisplay,
-    dbwrite,
+    dbformat, dbwrite,
     hash::StableHash,
     interner::{DefId, FieldName, Identifier, RegexKind},
 };
 use yaboc_target::layout::PSize;
 
 use crate::{
-    FuncLayoutKind, ILayout,
+    AbsLayoutCtx, FuncLayoutKind, ILayout, LayoutSlice,
     collect::{EvalType, LCallReq},
 };
 
@@ -355,16 +355,16 @@ impl<'a> LayoutHasher<'a> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum ParserFunKind {
     Wrapper,
     TailWrapper,
     Worker,
 }
 
-#[derive(Clone, Copy)]
-pub enum LayoutPart {
-    Parse(LCallReq, ParserFunKind, [u8; TRUNCATION_LENGTH]),
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
+pub enum LayoutPart<'comp> {
+    Parse(LCallReq, ParserFunKind, ILayout<'comp>),
     Field(Identifier),
     VTable,
     VTableTy,
@@ -377,70 +377,82 @@ pub enum LayoutPart {
     Skip,
     Span,
     InnerArray,
-    CreateArgs([u8; TRUNCATION_LENGTH]),
+    CreateArgs(LayoutSlice<'comp>),
     SetArg(PSize),
     Len,
     Mask,
     EvalFun(LCallReq, ParserFunKind),
 }
 
-impl<DB: Layouts + ?Sized> DatabasedDisplay<DB> for LayoutPart {
-    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
+impl<'comp> LayoutPart<'comp> {
+    pub fn symbol_str<DB: Layouts + ?Sized>(
+        &self,
+        ctx: &mut AbsLayoutCtx<'comp>,
+        db: &DB,
+    ) -> String {
         match self {
             LayoutPart::Parse(reqs, kind, from) => {
-                write!(f, "parse_{}_", truncated_hex(&from[..]))?;
+                let mut res = String::new();
+                res.push_str("parse_");
+                let hash = ctx.dcx.layout_hash(db, *from);
+                res.push_str(&truncated_hex(&hash));
                 let v = match reqs.val {
-                    EvalType::NoValue => "",
-                    EvalType::Value => "v",
-                    EvalType::Force => "f",
+                    EvalType::NoValue => "_",
+                    EvalType::Value => "_v",
+                    EvalType::Force => "_f",
                 };
-                write!(f, "{}", v)?;
+                res.push_str(v);
                 if reqs.len {
-                    write!(f, "l")?;
+                    res.push('l');
                 }
                 if reqs.bt {
-                    write!(f, "b")?;
+                    res.push('b');
                 }
                 match kind {
                     ParserFunKind::Wrapper => {}
-                    ParserFunKind::TailWrapper => write!(f, "_tail")?,
-                    ParserFunKind::Worker => write!(f, "_worker")?,
+                    ParserFunKind::TailWrapper => res.push_str("_tail"),
+                    ParserFunKind::Worker => res.push_str("_worker"),
                 }
-                Ok(())
+                res
             }
-            LayoutPart::Field(n) => dbwrite!(f, db, "field_{}", n),
-            LayoutPart::VTable => write!(f, "vtable"),
-            LayoutPart::VTableTy => write!(f, "vtable_ty"),
-            LayoutPart::Start => write!(f, "start"),
-            LayoutPart::End => write!(f, "end"),
-            LayoutPart::Deref => write!(f, "deref"),
-            LayoutPart::SingleForward => write!(f, "single_forward"),
-            LayoutPart::CurrentElement => write!(f, "current_element"),
-            LayoutPart::ArrayLen => write!(f, "array_len"),
-            LayoutPart::Skip => write!(f, "skip"),
-            LayoutPart::Span => write!(f, "span"),
-            LayoutPart::InnerArray => write!(f, "inner_array"),
-            LayoutPart::CreateArgs(p) => write!(f, "create_args_{}", truncated_hex(&p[..])),
-            LayoutPart::SetArg(idx) => write!(f, "set_arg_{idx}"),
-            LayoutPart::Len => write!(f, "len"),
-            LayoutPart::Mask => write!(f, "mask"),
+            LayoutPart::Field(n) => dbformat!(db, "field_{}", n),
+            LayoutPart::VTable => String::from("vtable"),
+            LayoutPart::VTableTy => String::from("vtable_ty"),
+            LayoutPart::Start => String::from("start"),
+            LayoutPart::End => String::from("end"),
+            LayoutPart::Deref => String::from("deref"),
+            LayoutPart::SingleForward => String::from("single_forward"),
+            LayoutPart::CurrentElement => String::from("current_element"),
+            LayoutPart::ArrayLen => String::from("array_len"),
+            LayoutPart::Skip => String::from("skip"),
+            LayoutPart::Span => String::from("span"),
+            LayoutPart::InnerArray => String::from("inner_array"),
+            LayoutPart::CreateArgs(p) => {
+                format!(
+                    "create_args_{}",
+                    truncated_hex(&ctx.dcx.layout_slice_hash(db, p))
+                )
+            }
+            LayoutPart::SetArg(idx) => format!("set_arg_{idx}"),
+            LayoutPart::Len => String::from("len"),
+            LayoutPart::Mask => String::from("mask"),
             LayoutPart::EvalFun(reqs, kind) => {
-                write!(f, "eval_fun_")?;
+                let mut res = String::from("eval_fun_");
                 let v = match reqs.val {
                     EvalType::NoValue => "",
                     EvalType::Value => "v",
                     EvalType::Force => "f",
                 };
-                write!(f, "{}", v)?;
+                res.push_str(v);
                 if reqs.bt {
-                    write!(f, "b")?;
+                    res.push('b');
                 }
                 match kind {
                     ParserFunKind::Wrapper => {}
-                    ParserFunKind::TailWrapper => write!(f, "_tail")?,
-                    ParserFunKind::Worker => write!(f, "_worker")?,
+                    ParserFunKind::TailWrapper => res.push_str("_tail"),
+                    ParserFunKind::Worker => res.push_str("_worker"),
                 }
-                Ok(())
+                res
             }
         }
     }
