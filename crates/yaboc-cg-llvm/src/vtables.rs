@@ -66,6 +66,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .add_global(vtable_ty, Some(AddressSpace::default()), &vtable_sym);
         vtable.set_linkage(Linkage::Internal);
         vtable.set_constant(true);
+        vtable.set_alignment(T::tsize(&self.options.target.data).align() as u32);
         vtable
     }
 

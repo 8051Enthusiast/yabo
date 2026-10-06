@@ -639,6 +639,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         global_value.set_initializer(&cstr);
         global_value.set_linkage(Linkage::Internal);
         global_value.set_constant(true);
+        global_value.set_unnamed_addr(true);
+        global_value.set_alignment(1);
         global_value.as_pointer_value().const_cast(self.any_ptr())
     }
 
@@ -657,6 +659,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         global_value.set_linkage(Linkage::Internal);
         global_value.set_constant(true);
         global_value.set_initializer(&cstr);
+        global_value.set_alignment(1);
         global_value.as_pointer_value().const_cast(self.any_ptr())
     }
 
