@@ -58,6 +58,7 @@ typedef size_t MaskFun(void *);
 
 struct VTableHeader {
   uint32_t head;
+  // encoded as size << 1 | align
   uint32_t size_align;
   YABO_VPTR(DerefFun) deref_impl;
   YABO_VPTR(MaskFun) mask_impl;
