@@ -20,7 +20,7 @@ pub struct RegexTranslator<'llvm, 'comp, 'r> {
     dfa: &'r DFA<Vec<u32>>,
     eof_fail: BasicBlock<'llvm>,
     succ: BasicBlock<'llvm>,
-    ret: CgReturnValue<'llvm>,
+    ret: CgReturnValue<'comp, 'llvm>,
     input_start: CgValue<'comp, 'llvm>,
     next_byte: CgValue<'comp, 'llvm>,
     next_byte_pos: CgValue<'comp, 'llvm>,
@@ -71,8 +71,8 @@ impl<'llvm, 'comp, 'r> RegexTranslator<'llvm, 'comp, 'r> {
         let succ = cg.llvm.append_basic_block(llvm_fun, "succ");
         let stateblock = FxHashMap::default();
         let new_states = Vec::new();
+        let ret = CgReturnValue::new(head, ret, retlen);
         let retlen = CgValue::new(retlen, arg);
-        let ret = CgReturnValue::new(head, ret);
         Ok(Self {
             cg,
             llvm_fun,

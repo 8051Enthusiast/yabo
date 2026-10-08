@@ -48,10 +48,10 @@ use yaboc_base::interner::{DefId, FieldName, Identifier, Interner};
 use yaboc_database::YabocDatabase;
 use yaboc_hir::{BlockId, HirIdWrapper, Hirs, ParserDefId};
 use yaboc_layout::{
-    AbsLayoutCtx, ILayout, IMonoLayout, MonoLayout,
-    collect::{LCallMeta, LayoutCollection, Slot, root_req},
+    AbsLayoutCtx, ILayout, IMonoLayout, Layout, MonoLayout,
+    collect::{LCallMeta, LCallReq, LayoutCollection, Slot, root_req},
     mir_subst::FunctionSubstitute,
-    represent::{LayoutPart, truncated_hex},
+    represent::{LayoutPart, ParserFunKind, truncated_hex},
     vtable::{
         self, ArrayVTableFields, BlockVTableFields, FunctionVTableFields, ParserVTableFields,
         VTableHeaderFields,
@@ -303,7 +303,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn write_vtable_if_tagged(
         &mut self,
-        ret: CgReturnValue<'llvm>,
+        ret: CgReturnValue<'comp, 'llvm>,
         layout: CgValue<'comp, 'llvm>,
     ) -> IResult<()> {
         let fun = self
@@ -332,7 +332,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     }
     fn write_vtable_from_mono_if_tagged(
         &mut self,
-        ret: CgReturnValue<'llvm>,
+        ret: CgReturnValue<'comp, 'llvm>,
         layout: IMonoLayout<'comp>,
     ) -> IResult<()> {
         self.write_vtable_if_tagged(
@@ -378,9 +378,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.llvm.i8_type().array_type(sa.allocation_size() as u32)
     }
 
-    fn poison_ret(&self, head: PointerValue<'llvm>) -> CgReturnValue<'llvm> {
+    fn poison_ret(&mut self, head: PointerValue<'llvm>) -> CgReturnValue<'comp, 'llvm> {
         let undef_ptr = self.invalid_ptr();
-        CgReturnValue::new(head, undef_ptr)
+        let empty_layout = self.layouts.dcx.intern(Layout::None);
+        CgReturnValue::new(head, undef_ptr, empty_layout)
     }
 
     fn build_center_gep(
@@ -579,7 +580,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn build_parser_call(
         &mut self,
-        ret: CgReturnValue<'llvm>,
+        ret: CgReturnValue<'comp, 'llvm>,
         fun: CgValue<'comp, 'llvm>,
         from: CgValue<'comp, 'llvm>,
         call_kind: LCallMeta,
@@ -1176,6 +1177,58 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .write_to_file(&self.module, FileType::Object, Path::new(outfile))?;
         Ok(())
     }
+
+    fn parser_values(
+        &mut self,
+        fun: FunctionValue<'llvm>,
+        fun_layout: IMonoLayout<'comp>,
+        arg_layout: ILayout<'comp>,
+        req: LCallReq,
+    ) -> (
+        CgReturnValue<'comp, 'llvm>,
+        CgMonoValue<'comp, 'llvm>,
+        CgValue<'comp, 'llvm>,
+    ) {
+        let (ret, fun, head, from) = parser_args(fun);
+        let part = LayoutPart::Parse(req, ParserFunKind::Wrapper, arg_layout);
+        let ret_layout = fun_layout.return_layout(part, self.layouts).unwrap();
+        let ret = CgReturnValue::new(head, ret, ret_layout);
+        let fun = CgMonoValue::new(fun_layout, fun);
+        let arg = CgValue::new(arg_layout, from);
+        (ret, fun, arg)
+    }
+
+    fn eval_fun_values(
+        &mut self,
+        fun: FunctionValue<'llvm>,
+        fun_layout: IMonoLayout<'comp>,
+        req: LCallReq,
+    ) -> (CgReturnValue<'comp, 'llvm>, CgMonoValue<'comp, 'llvm>) {
+        let (ret, fun, head) = eval_fun_args(fun);
+        let part = LayoutPart::EvalFun(req, ParserFunKind::Wrapper);
+        let ret_layout = fun_layout.return_layout(part, self.layouts).unwrap();
+        let ret = CgReturnValue::new(head, ret, ret_layout);
+        let fun = CgMonoValue::new(fun_layout, fun);
+        (ret, fun)
+    }
+
+    fn tail_eval_fun_values(
+        &mut self,
+        fun: FunctionValue<'llvm>,
+        fun_layout: IMonoLayout<'comp>,
+        req: LCallReq,
+    ) -> (
+        CgReturnValue<'comp, 'llvm>,
+        CgMonoValue<'comp, 'llvm>,
+        PointerValue<'llvm>,
+    ) {
+        let (ret, fun, head, arg) = tail_eval_fun_args(fun);
+        let part = LayoutPart::EvalFun(req, ParserFunKind::TailWrapper);
+        let ret_layout = fun_layout.return_layout(part, self.layouts).unwrap();
+        let ret = CgReturnValue::new(head, ret, ret_layout);
+        let fun = CgMonoValue::new(fun_layout, fun);
+        (ret, fun, arg)
+    }
 }
 
 fn get_fun_args<const N: usize>(fun: FunctionValue) -> [BasicValueEnum; N] {
@@ -1190,22 +1243,6 @@ fn parser_args(fun: FunctionValue) -> (PointerValue, PointerValue, PointerValue,
         head.into_pointer_value(),
         from.into_pointer_value(),
     )
-}
-
-fn parser_values<'comp, 'llvm>(
-    fun: FunctionValue<'llvm>,
-    fun_layout: IMonoLayout<'comp>,
-    arg_layout: ILayout<'comp>,
-) -> (
-    CgReturnValue<'llvm>,
-    CgMonoValue<'comp, 'llvm>,
-    CgValue<'comp, 'llvm>,
-) {
-    let (ret, fun, head, from) = parser_args(fun);
-    let ret = CgReturnValue::new(head, ret);
-    let fun = CgMonoValue::new(fun_layout, fun);
-    let arg = CgValue::new(arg_layout, from);
-    (ret, fun, arg)
 }
 
 fn eval_fun_args(fun: FunctionValue) -> (PointerValue, PointerValue, PointerValue) {
@@ -1227,30 +1264,6 @@ fn tail_eval_fun_args(
         head.into_pointer_value(),
         arg.into_pointer_value(),
     )
-}
-
-fn eval_fun_values<'comp, 'llvm>(
-    fun: FunctionValue<'llvm>,
-    fun_layout: IMonoLayout<'comp>,
-) -> (CgReturnValue<'llvm>, CgMonoValue<'comp, 'llvm>) {
-    let (ret, fun, head) = eval_fun_args(fun);
-    let ret = CgReturnValue::new(head, ret);
-    let fun = CgMonoValue::new(fun_layout, fun);
-    (ret, fun)
-}
-
-fn tail_eval_fun_values<'comp, 'llvm>(
-    fun: FunctionValue<'llvm>,
-    fun_layout: IMonoLayout<'comp>,
-) -> (
-    CgReturnValue<'llvm>,
-    CgMonoValue<'comp, 'llvm>,
-    PointerValue<'llvm>,
-) {
-    let (ret, fun, head, arg) = tail_eval_fun_args(fun);
-    let ret = CgReturnValue::new(head, ret);
-    let fun = CgMonoValue::new(fun_layout, fun);
-    (ret, fun, arg)
 }
 
 impl<'llvm> CodegenTypeContext for CodeGenCtx<'llvm, '_> {

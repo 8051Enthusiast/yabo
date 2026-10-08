@@ -169,7 +169,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub(super) fn call_deref_fun(
         &mut self,
-        ret: CgReturnValue<'llvm>,
+        ret: CgReturnValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
     ) -> IResult<IntValue<'llvm>> {
         let deref = match arg.layout.maybe_mono() {
@@ -184,7 +184,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub(super) fn call_field_access_fun(
         &mut self,
-        ret: CgReturnValue<'llvm>,
+        ret: CgReturnValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         block: BlockId,
         field: Identifier,
@@ -209,7 +209,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     fn call_parser_fun(
         &mut self,
-        ret: CgReturnValue<'llvm>,
+        ret: CgReturnValue<'comp, 'llvm>,
         fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         req: LCallReq,
@@ -287,7 +287,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub(super) fn call_parser_fun_impl_without_ret(
         &mut self,
-        ret: CgReturnValue<'llvm>,
+        ret: CgReturnValue<'comp, 'llvm>,
         fun: CgMonoValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         call_kind: LCallReq,
@@ -317,7 +317,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub(super) fn call_parser_fun_impl(
         &mut self,
-        ret: CgReturnValue<'llvm>,
+        ret: CgReturnValue<'comp, 'llvm>,
         fun: CgMonoValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         call_kind: LCallReq,
@@ -331,7 +331,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub(super) fn call_parser_fun_wrapper(
         &mut self,
-        ret: CgReturnValue<'llvm>,
+        ret: CgReturnValue<'comp, 'llvm>,
         fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         call_kind: LCallReq,
@@ -341,7 +341,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub(super) fn call_parser_fun_tail(
         &mut self,
-        ret: CgReturnValue<'llvm>,
+        ret: CgReturnValue<'comp, 'llvm>,
         fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         call_kind: LCallReq,
@@ -397,7 +397,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub(super) fn call_fun_create(
         &mut self,
-        ret: CgReturnValue<'llvm>,
+        ret: CgReturnValue<'comp, 'llvm>,
         fun: CgValue<'comp, 'llvm>,
         args: LayoutSlice<'comp>,
     ) -> IResult<IntValue<'llvm>> {
@@ -429,7 +429,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub(super) fn call_current_element_fun(
         &mut self,
-        ret: CgReturnValue<'llvm>,
+        ret: CgReturnValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
     ) -> IResult<IntValue<'llvm>> {
         let current = match arg.layout.maybe_mono() {
@@ -474,7 +474,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub(super) fn call_eval_fun_fun(
         &mut self,
-        ret: CgReturnValue<'llvm>,
+        ret: CgReturnValue<'comp, 'llvm>,
         fun: CgValue<'comp, 'llvm>,
         arg: Option<CgValue<'comp, 'llvm>>,
         kind: ParserFunKind,
@@ -520,7 +520,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub(super) fn call_eval_fun_fun_wrapper(
         &mut self,
-        ret: CgReturnValue<'llvm>,
+        ret: CgReturnValue<'comp, 'llvm>,
         fun: CgValue<'comp, 'llvm>,
         req: LCallReq,
     ) -> IResult<IntValue<'llvm>> {
@@ -530,7 +530,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub(super) fn call_eval_fun_fun_tail(
         &mut self,
-        ret: CgReturnValue<'llvm>,
+        ret: CgReturnValue<'comp, 'llvm>,
         fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         call_kind: LCallReq,
@@ -586,7 +586,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub(super) fn call_eval_fun_fun_impl(
         &mut self,
-        ret: CgReturnValue<'llvm>,
+        ret: CgReturnValue<'comp, 'llvm>,
         fun: CgValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         req: LCallReq,
@@ -648,7 +648,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub(super) fn call_span_fun(
         &mut self,
-        ret: CgReturnValue<'llvm>,
+        ret: CgReturnValue<'comp, 'llvm>,
         start: CgValue<'comp, 'llvm>,
         end: CgValue<'comp, 'llvm>,
     ) -> IResult<IntValue<'llvm>> {
@@ -675,13 +675,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         val: CgValue<'comp, 'llvm>,
         mut deref_level: IntValue<'llvm>,
         globals: PointerValue<'llvm>,
-    ) -> IResult<CgReturnValue<'llvm>> {
+    ) -> IResult<CgReturnValue<'comp, 'llvm>> {
         if val.layout.is_multi() {
             let tag = self.const_i64(1 << VTABLE_BIT);
             deref_level = self.builder.build_or(deref_level, tag, "vtable_tag")?;
         }
         let ptr = self.build_byte_gep(globals, deref_level, "tagged")?;
-        Ok(CgReturnValue::new(ptr, val.ptr))
+        Ok(CgReturnValue::new(ptr, val.ptr, val.layout))
     }
 
     pub(super) fn build_check_ptr_bit_set(
@@ -768,7 +768,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let fun_any_ptr = self.build_cast::<*mut u8, _>(fun.ptr)?;
         let fun_arg_ptr = self.build_byte_gep(fun_any_ptr, offset, "")?;
         let ptr = self.build_byte_gep(globals, head, "tagged")?;
-        let fun_arg = CgReturnValue::new(ptr, fun_arg_ptr);
+        let fun_arg = CgReturnValue::new(
+            ptr,
+            fun_arg_ptr,
+            arg.layout.evaluate(self.layouts).unwrap().0,
+        );
         self.call_deref_fun(fun_arg, arg)
     }
 
@@ -800,7 +804,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub(super) fn build_copy(
         &mut self,
-        dest: CgReturnValue<'llvm>,
+        dest: CgReturnValue<'comp, 'llvm>,
         src: CgValue<'comp, 'llvm>,
     ) -> IResult<PointerValue<'llvm>> {
         let sa = src.layout.size_align_without_vtable(self.layouts).unwrap();

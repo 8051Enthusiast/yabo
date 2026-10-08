@@ -362,7 +362,7 @@ pub enum ParserFunKind {
     Worker,
 }
 
-#[derive(Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub enum LayoutPart<'comp> {
     Parse(LCallReq, ParserFunKind, ILayout<'comp>),
     Field(Identifier),

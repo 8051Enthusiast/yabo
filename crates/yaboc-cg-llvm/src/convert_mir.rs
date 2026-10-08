@@ -39,7 +39,7 @@ pub struct MirTranslator<'llvm, 'comp, 'r> {
     stack: Vec<PointerValue<'llvm>>,
     fun: CgMonoValue<'comp, 'llvm>,
     arg: CgValue<'comp, 'llvm>,
-    ret: Option<CgReturnValue<'llvm>>,
+    ret: Option<CgReturnValue<'comp, 'llvm>>,
     undefined: BasicBlock<'llvm>,
     globals: PointerValue<'llvm>,
     debug_loc: Option<DebugLocation<'llvm>>,
@@ -92,7 +92,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         })
     }
 
-    pub fn with_ret_val(mut self, ret: CgReturnValue<'llvm>) -> Self {
+    pub fn with_ret_val(mut self, ret: CgReturnValue<'comp, 'llvm>) -> Self {
         self.ret = Some(ret);
         self
     }
@@ -164,10 +164,10 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         self.cg.build_byte_gep(self.globals, c, "tagged")
     }
 
-    fn return_val(&mut self, place: PlaceRef) -> IResult<CgReturnValue<'llvm>> {
-        let ptr = self.place_ptr(place)?;
+    fn return_val(&mut self, place: PlaceRef) -> IResult<CgReturnValue<'comp, 'llvm>> {
         let head = self.deref_level(place)?;
-        Ok(CgReturnValue::new(head, ptr))
+        let val = self.place_val(place)?;
+        Ok(CgReturnValue::new(head, val.ptr, val.layout))
     }
 
     fn controlflow_case(&mut self, ret: IntValue<'llvm>, ctrl: ControlFlow) -> IResult<()> {

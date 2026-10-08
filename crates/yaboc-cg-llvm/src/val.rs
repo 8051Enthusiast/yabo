@@ -41,13 +41,19 @@ impl<'comp, 'llvm> From<CgMonoValue<'comp, 'llvm>> for CgValue<'comp, 'llvm> {
 }
 
 #[derive(Clone, Copy)]
-pub struct CgReturnValue<'llvm> {
+pub struct CgReturnValue<'comp, 'llvm> {
     pub(crate) head: PointerValue<'llvm>,
     pub(crate) ptr: PointerValue<'llvm>,
+    #[allow(unused)]
+    pub(crate) layout: ILayout<'comp>,
 }
 
-impl<'llvm> CgReturnValue<'llvm> {
-    pub fn new(head: PointerValue<'llvm>, ptr: PointerValue<'llvm>) -> Self {
-        Self { head, ptr }
+impl<'comp, 'llvm> CgReturnValue<'comp, 'llvm> {
+    pub fn new(
+        head: PointerValue<'llvm>,
+        ptr: PointerValue<'llvm>,
+        layout: ILayout<'comp>,
+    ) -> Self {
+        Self { head, ptr, layout }
     }
 }

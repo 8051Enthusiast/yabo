@@ -25,6 +25,7 @@ use yaboc_resolve::expr::{Resolved, ResolvedAtom, ValBinOp, ValUnOp, ValVarOp};
 use yaboc_target::layout::{PSize, SizeAlign, TargetLayoutData, TargetSized, Zst};
 use yaboc_types::{PrimitiveType, Type, TypeId};
 
+use crate::collect::EvalType;
 use crate::represent::truncated_hex;
 
 pub use self::collect::{TailCallSite, TailInfo};
@@ -328,6 +329,53 @@ impl<'a> IMonoLayout<'a> {
         }
         let new_layout = Layout::Mono(MonoLayout::Nominal(id, from, args));
         Ok(IMonoLayout(ctx.dcx.intern(new_layout)))
+    }
+
+    pub fn return_layout(
+        self,
+        part: LayoutPart<'a>,
+        ctx: &mut AbsLayoutCtx<'a>,
+    ) -> Result<ILayout<'a>, LayoutError> {
+        match part {
+            LayoutPart::Parse(req, _, from) => match req.val {
+                EvalType::NoValue => Ok(ctx.dcx.intern(Layout::None)),
+                EvalType::Value => self.inner().apply_arg(ctx, from),
+                EvalType::Force => self
+                    .inner()
+                    .apply_arg(ctx, from)?
+                    .evaluate(ctx)
+                    .map(|x| x.0),
+            },
+            LayoutPart::Field(field) => self.inner().access_field(ctx, FieldName::Ident(field)),
+            LayoutPart::Start | LayoutPart::End => {
+                let MonoLayout::Nominal(_, Some(t), _) = self.mono_layout() else {
+                    dbpanic!(ctx.db, "{} is not a parser nominal layout", &self)
+                };
+                Ok(*t)
+            }
+            LayoutPart::Deref => self.inner().evaluate(ctx).map(|x| x.0),
+            LayoutPart::SingleForward | LayoutPart::Skip | LayoutPart::Span => Ok(self.inner()),
+            LayoutPart::CurrentElement => Ok(self.inner().array_primitive(ctx)?.normalize(ctx)?.0),
+            LayoutPart::ArrayLen => Ok(ctx.dcx.int()),
+            LayoutPart::InnerArray => match self.mono_layout() {
+                MonoLayout::SlicePtr | MonoLayout::Range => Ok(ctx.dcx.intern(Layout::None)),
+                MonoLayout::Array { slice, .. } => Ok(*slice),
+                _ => dbpanic!(ctx.db, "{} is not array", &self),
+            },
+            LayoutPart::CreateArgs(args) => self.inner().apply_fun(ctx, args.iter().copied()),
+            LayoutPart::EvalFun(req, _) => match req.val {
+                EvalType::NoValue => Ok(ctx.dcx.intern(Layout::None)),
+                EvalType::Value => self.inner().eval_fun(ctx),
+                EvalType::Force => Ok(self.inner().eval_fun(ctx)?.evaluate(ctx)?.0),
+            },
+            LayoutPart::VTable
+            | LayoutPart::VTableTy
+            | LayoutPart::SetArg(_)
+            | LayoutPart::Len
+            | LayoutPart::Mask => {
+                panic!("{part:?} part does not have return type")
+            }
+        }
     }
 }
 
