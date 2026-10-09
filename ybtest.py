@@ -561,10 +561,14 @@ class Wasm(Platform):
 class LlubiRunner(Runner):
     obj: TmpFile
     llvm_path: pathlib.Path
+    target: str | None
+    sysroot: str | None
 
-    def __init__(self, obj: TmpFile, llvm_path: pathlib.Path):
+    def __init__(self, obj: TmpFile, llvm_path: pathlib.Path, target: str | None, sysroot: str | None):
         self.obj = obj
         self.llvm_path = llvm_path
+        self.target = target
+        self.sysroot = sysroot
 
     @override
     def is_same(self, other: Runner) -> bool:
@@ -584,11 +588,17 @@ class LlubiRunner(Runner):
             with open(inputpath, 'wb') as inputfile:
                 inputfile.write(input)
 
+            more_args = []
+            if self.target:
+                more_args += [f"--target={self.target}"]
+            if self.sysroot:
+                more_args += ["--sysroot", self.sysroot]
+
             _ = subprocess.run([str(clang), '-std=c23',
                 '-DSTATIC_PARSER=test', '-DLLUBI_COMPATIBLE=1',
                 f'-DSTATIC_FILE="{inputpath}"',
                 '-I', str(current_script_dir / 'include'),
-                '-S', '-emit-llvm',
+                '-S', '-emit-llvm', *more_args,
                 str(current_script_dir / 'tools' / 'yaboprint' / 'yaboprint.c'),
                 '-o', execobj], check=True)
 
@@ -608,19 +618,26 @@ class LlubiRunner(Runner):
 
 class Llubi(Platform):
     llvm_path: pathlib.Path
+    target: str | None
+    sysroot: str | None
 
-    def __init__(self, llvm_path: str, **general):
+    def __init__(self, llvm_path: str, target: str | None=None, sysroot: str | None=None, **general):
         super().__init__(**general)
         self.llvm_path = pathlib.Path(llvm_path)
+        self.target = target
+        self.sysroot = sysroot
 
     @override
     def compile(self, source_path: str, source_name: str, extra_args: list[str], perturbed: bool = False, extension: str=".ll") -> TmpFile:
-        return super().compile(source_path, source_name, ["--emit=llvm", "--llubi", *extra_args], perturbed, extension)
+        target_arg = []
+        if self.target:
+            target_arg = [f"--target={self.target}"]
+        return super().compile(source_path, source_name, ["--emit=llvm", "--llubi", *target_arg, *extra_args], perturbed, extension)
 
     @override
     def create_runner_for_file(self, source_path: str, source_name: str, perturbed: bool = False) -> LlubiRunner:
         with self.compile(source_path, source_name, [], perturbed) as object:
-            return LlubiRunner(object.move(), self.llvm_path)
+            return LlubiRunner(object.move(), self.llvm_path, self.target, self.sysroot)
 
 platforms = {
     "Wasm": Wasm,
