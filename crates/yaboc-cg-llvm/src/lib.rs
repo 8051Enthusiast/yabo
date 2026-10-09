@@ -49,12 +49,12 @@ use yaboc_database::YabocDatabase;
 use yaboc_hir::{BlockId, HirIdWrapper, Hirs, ParserDefId};
 use yaboc_layout::{
     AbsLayoutCtx, ILayout, IMonoLayout, Layout, MonoLayout,
-    collect::{LCallMeta, LCallReq, LayoutCollection, Slot, root_req},
+    collect::{LCallMeta, LCallReq, LayoutCollection, root_req},
     mir_subst::FunctionSubstitute,
     represent::{LayoutPart, ParserFunKind, truncated_hex},
     vtable::{
-        self, ArrayVTableFields, BlockVTableFields, FunctionVTableFields, ParserVTableFields,
-        VTableHeaderFields,
+        self, ArgDescriptor, ArrayVTableFields, BlockVTableFields, FunctionInfo,
+        FunctionVTableFields, ParserVTableFields, VTableHeaderFields,
     },
 };
 use yaboc_mir::{Mirs, ReturnStatus};
@@ -193,15 +193,15 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         part: LayoutPart<'comp>,
-    ) -> PointerValue<'llvm> {
+    ) -> Option<PointerValue<'llvm>> {
         let sym = self.sym(layout, part);
         if let Some(f) = self.module.get_function(&sym) {
-            return f.as_global_value().as_pointer_value();
+            return Some(f.as_global_value().as_pointer_value());
         }
         if let Some(f) = self.module.get_global(&sym) {
-            return f.as_pointer_value();
+            return Some(f.as_pointer_value());
         }
-        panic!("could not find symbol {sym}");
+        None
     }
 
     fn add_entry_block(
@@ -272,33 +272,40 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     fn const_vtable_tag(
         &self,
         vtable: PointerValue<'llvm>,
-        vtable_ty: StructType<'llvm>,
+        layout: Option<IMonoLayout<'comp>>,
     ) -> PointerValue<'llvm> {
         // parsers and function have an extra array at the front of the vtable, which we will have to skip
-        let header = if matches!(
-            vtable_ty.get_field_type_at_index(0),
-            Some(BasicTypeEnum::ArrayType(_))
-        ) {
-            unsafe {
-                vtable.const_in_bounds_gep(
-                    vtable_ty,
-                    &[
-                        self.llvm.i32_type().const_int(0, false),
-                        self.llvm.i32_type().const_int(1, false),
-                    ],
-                )
-            }
+        if let Some(mono) = layout
+            && let Some((argnum, _)) = mono.arg_num(&self.compiler_database.db).unwrap()
+        {
+            let offset = ArgDescriptor::tsize(&self.options.target.data).stride() * argnum as u64;
+            let i8_ty = self.llvm.i8_type();
+            unsafe { vtable.const_in_bounds_gep(i8_ty, &[self.const_u32(offset as u32)]) }
         } else {
             vtable
-        };
-        header.const_cast(self.any_ptr())
+        }
     }
 
-    fn build_get_vtable_tag(&mut self, layout: IMonoLayout<'comp>) -> PointerValue<'llvm> {
+    fn create_vtable_symbol(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+        vtable_ty: StructType<'llvm>,
+    ) -> GlobalValue<'llvm> {
+        let sym = self.sym(layout, LayoutPart::VTable);
+        let global = self.module.add_global(vtable_ty, None, &sym);
+        global.set_constant(true);
+        global.set_linkage(Linkage::Internal);
+        global
+    }
+
+    fn get_vtable_tag(&mut self, layout: IMonoLayout<'comp>) -> PointerValue<'llvm> {
         let vtable = self.sym_ptr(layout, LayoutPart::VTable);
-        let vtable_ty_name = self.sym(layout, LayoutPart::VTableTy);
-        let vtable_ty = self.llvm.get_struct_type(&vtable_ty_name).unwrap();
-        self.const_vtable_tag(vtable, vtable_ty)
+        let vtable_ty = self.vtable_ty(layout);
+        let vtable = vtable.unwrap_or_else(|| {
+            self.create_vtable_symbol(layout, vtable_ty)
+                .as_pointer_value()
+        });
+        self.const_vtable_tag(vtable, Some(layout))
     }
 
     fn write_vtable_if_tagged(
@@ -692,11 +699,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &self,
         vtable: GlobalValue<'llvm>,
         ptr: PointerValue<'llvm>,
+        layout: Option<IMonoLayout<'comp>>,
     ) -> BasicValueEnum<'llvm> {
-        let vtable_ptr = self.const_vtable_tag(
-            vtable.as_pointer_value(),
-            vtable.get_value_type().into_struct_type(),
-        );
+        let vtable_ptr = self.const_vtable_tag(vtable.as_pointer_value(), layout);
         self.vtable_ptr(vtable_ptr, ptr)
     }
 
@@ -704,25 +709,28 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &self,
         vtable: GlobalValue<'llvm>,
         ptr: GlobalValue<'llvm>,
+        layout: IMonoLayout<'comp>,
     ) -> BasicValueEnum<'llvm> {
-        self.vtable_ptr_from_ptr(vtable, ptr.as_pointer_value())
+        self.vtable_ptr_from_ptr(vtable, ptr.as_pointer_value(), Some(layout))
     }
 
     fn vtable_ptr_from_function(
         &self,
         vtable: GlobalValue<'llvm>,
         ptr: FunctionValue<'llvm>,
+        layout: IMonoLayout<'comp>,
     ) -> BasicValueEnum<'llvm> {
-        self.vtable_ptr_from_global(vtable, ptr.as_global_value())
+        self.vtable_ptr_from_global(vtable, ptr.as_global_value(), layout)
     }
 
     fn vtable_ptr_maybe_from_function(
         &self,
         vtable: GlobalValue<'llvm>,
         ptr: Option<FunctionValue<'llvm>>,
+        layout: IMonoLayout<'comp>,
     ) -> BasicValueEnum<'llvm> {
         if let Some(ptr) = ptr {
-            self.vtable_ptr_from_function(vtable, ptr)
+            self.vtable_ptr_from_function(vtable, ptr, layout)
         } else {
             self.vtable_ptr(
                 vtable.as_pointer_value(),
@@ -747,6 +755,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.const_array(vtable_ptr_ty, vals)
     }
 
+    fn function_info_const_array(&mut self, vals: &[BasicValueEnum<'llvm>]) -> ArrayValue<'llvm> {
+        let info_ty = self.function_info_ty();
+        self.const_array(info_ty, vals)
+    }
+
     fn field_info(&mut self, name: Identifier) -> PointerValue<'llvm> {
         let name = self
             .compiler_database
@@ -761,6 +774,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             RelativeVPtr::<()>::codegen_ty(self)
         } else {
             <*const u8>::codegen_ty(self)
+        }
+    }
+
+    fn function_info_ty(&mut self) -> BasicTypeEnum<'llvm> {
+        if self.options.target.relative_vptrs {
+            FunctionInfo::<RelPtr, fn(i64) -> i64>::codegen_ty(self)
+        } else {
+            FunctionInfo::<AbsPtr, fn(i64) -> i64>::codegen_ty(self)
         }
     }
 
@@ -800,7 +821,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 FieldName::Return => panic!("return field should not be in fields"),
             };
             let name = self.field_info(*name);
-            field_info.push(self.vtable_ptr_from_ptr(global, name));
+            field_info.push(self.vtable_ptr_from_ptr(global, name, None));
         }
         let field_info_array = self.vtable_ptr_const_array(&field_info);
         let len = self.const_size_t(field_info.len() as i64);
@@ -1080,18 +1101,22 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let global = self.module.add_global(global_ty, None, &name);
 
         let mut vals = vec![];
-        let parser = self.slot_impl_val(layout, Slot::Parser(from, root_req()));
-        let parser = self.vtable_ptr_from_ptr(global, parser);
+        let parser = self.create_function_info(
+            layout,
+            LayoutPart::Parse(root_req().req, ParserFunKind::Wrapper, from),
+            global,
+        );
         for arg in args.iter() {
             let arg_val = arg.maybe_mono().unwrap();
-            let llvm_ptr = self.sym_ptr(arg_val, LayoutPart::VTable);
-            vals.push(self.vtable_ptr_from_ptr(global, llvm_ptr));
+            let llvm_ptr = self.get_vtable_tag(arg_val);
+            vals.push(self.vtable_ptr_from_ptr(global, llvm_ptr, None));
         }
-        vals.push(self.vtable_ptr_from_ptr(global, self.null_ptr()));
+        vals.push(self.vtable_ptr_from_ptr(global, self.null_ptr(), None));
         let val_array = self.vtable_ptr_const_array(&vals);
-        let struct_init = self
-            .llvm
-            .const_struct(&[parser, self.const_zst().into(), val_array.into()], false);
+        let struct_init = self.llvm.const_struct(
+            &[parser.into(), self.const_zst().into(), val_array.into()],
+            false,
+        );
         global.set_initializer(&struct_init);
         global.set_linkage(Linkage::External);
         global.set_constant(true);
@@ -1284,7 +1309,7 @@ impl<'llvm> CodegenTypeContext for CodeGenCtx<'llvm, '_> {
         self.llvm.i32_type().into()
     }
 
-    fn ptr(&mut self, _: Self::Type) -> Self::Type {
+    fn ptr(&mut self) -> Self::Type {
         self.llvm.ptr_type(AddressSpace::default()).into()
     }
 

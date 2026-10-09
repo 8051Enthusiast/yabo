@@ -2,7 +2,7 @@ use inkwell::debug_info::AsDIScope;
 use inkwell::values::{CallSiteValue, LLVMTailCallKind};
 use yaboc_base::dbformat;
 use yaboc_hir_types::VTABLE_BIT;
-use yaboc_layout::collect::{LCallReq, Slot};
+use yaboc_layout::collect::LCallReq;
 use yaboc_layout::represent::ParserFunKind;
 use yaboc_layout::{LayoutSlice, vtable};
 
@@ -395,37 +395,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.llvm.const_struct(&[head.into(), offset.into()], false)
     }
 
-    pub(super) fn slot_impl_val(
-        &mut self,
-        layout: IMonoLayout<'comp>,
-        slot: Slot<'comp>,
-    ) -> PointerValue<'llvm> {
-        match slot {
-            Slot::Parser(from, info) => {
-                if info.tail {
-                    self.parser_fun_val_tail(layout, from, info.req)
-                        .as_global_value()
-                        .as_pointer_value()
-                } else {
-                    self.parser_fun_val_wrapper(layout, from, info.req)
-                        .as_global_value()
-                        .as_pointer_value()
-                }
-            }
-            Slot::FunCall(args) => self
-                .function_create_args_fun_val(layout, args)
-                .as_global_value()
-                .as_pointer_value(),
-            Slot::Eval(meta) => if meta.tail {
-                self.eval_fun_fun_val_tail(layout, meta.req)
-            } else {
-                self.eval_fun_fun_val_wrapper(layout, meta.req)
-            }
-            .as_global_value()
-            .as_pointer_value(),
-        }
-    }
-
     pub(super) fn function_create_args_fun_val(
         &mut self,
         layout: IMonoLayout<'comp>,
@@ -439,6 +408,33 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         );
         self.set_always_inline(f);
         f
+    }
+
+    pub(super) fn layout_part_fun_val(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+        part: LayoutPart<'comp>,
+    ) -> FunctionValue<'llvm> {
+        match part {
+            LayoutPart::Parse(req, kind, from) => self.parser_fun_val(layout, from, req, kind),
+            LayoutPart::Field(name) => self.access_field_fun_val(layout, name),
+            LayoutPart::Start => self.start_fun_val(layout),
+            LayoutPart::End => self.end_fun_val(layout),
+            LayoutPart::Deref => self.deref_fun_val(layout),
+            LayoutPart::SingleForward => self.single_forward_fun_val(layout),
+            LayoutPart::CurrentElement => self.current_element_fun_val(layout),
+            LayoutPart::ArrayLen => self.array_len_fun_val(layout),
+            LayoutPart::Skip => self.skip_fun_val(layout),
+            LayoutPart::Span => self.span_fun_val(layout),
+            LayoutPart::InnerArray => self.inner_array_fun_val(layout),
+            LayoutPart::CreateArgs(from) => self.function_create_args_fun_val(layout, from),
+            LayoutPart::Len => self.parser_len_fun_val(layout),
+            LayoutPart::Mask => self.mask_fun_val(layout),
+            LayoutPart::EvalFun(req, kind) => self.eval_fun_fun_val(layout, req, kind),
+            LayoutPart::SetArg(_) | LayoutPart::VTable | LayoutPart::VTableTy => {
+                panic!("{:?} is not a function part", part)
+            }
+        }
     }
 
     pub(super) fn global_constant_init_fun_val(&mut self) -> FunctionValue<'llvm> {

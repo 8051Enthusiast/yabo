@@ -217,7 +217,7 @@ Executor::execute_parser(Meta meta, char const *func_name, size_t pos) {
   if (!parser_ptr) {
     return {};
   }
-  auto parser = YABO_ACCESS_VPTR(parser_ptr, parser);
+  auto parser = YABO_ACCESS_VPTR(parser_ptr, parser.func);
   auto span = file->segment_from(pos);
   if (!span.data()) {
     return {};

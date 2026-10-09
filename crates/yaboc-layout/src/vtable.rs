@@ -6,10 +6,17 @@ pub type DerefFun = fn(ret: *mut u8, from: *const u8, context: *const u8) -> i64
 pub type MaskFun = fn(ret: *mut u8) -> usize;
 
 target_struct! {
+    pub struct FunctionInfo<T: VtablePointer, F> {
+        pub fun_impl: T::FPtr<F>,
+        pub vtable: T::Ptr<VTableHeader<T>>,
+    }
+}
+
+target_struct! {
     pub struct VTableHeader<T: VtablePointer> {
         pub head: u32,
         pub size_align: u32,
-        pub deref_impl: T::FPtr<DerefFun>,
+        pub deref_impl: FunctionInfo<T, DerefFun>,
         pub mask_impl: T::FPtr<MaskFun>,
         pub phantom: PhantomData<T>,
     }
@@ -29,7 +36,7 @@ target_struct! {
     pub struct BlockVTable<T: VtablePointer> {
         pub head: VTableHeader<T>,
         pub fields: T::Ptr<BlockFields<T>>,
-        pub access_impl: [T::FPtr<BlockFieldFun>; 0],
+        pub access_impl: [FunctionInfo<T, BlockFieldFun>; 0],
     }
 }
 
@@ -40,8 +47,8 @@ target_struct! {
     pub struct NominalVTable<T: VtablePointer> {
         pub head: VTableHeader<T>,
         pub name: T::Ptr<u8>,
-        pub start_impl: T::FPtr<StartFun>,
-        pub end_impl: T::FPtr<EndFun>,
+        pub start_impl: FunctionInfo<T, StartFun>,
+        pub end_impl: FunctionInfo<T, EndFun>,
     }
 }
 
@@ -59,8 +66,8 @@ target_struct! {
     pub struct ParserVTable<T: VtablePointer> {
         pub set_arg_info: [ArgDescriptor; 0],
         pub head: VTableHeader<T>,
-        pub len_impl: Option<T::FPtr<LenFun>>,
-        pub apply_table: [Option<T::FPtr<ParserFun>>; 0],
+        pub len_impl: T::FPtr<Option<LenFun>>,
+        pub apply_table: [FunctionInfo<T, Option<ParserFun>>; 0],
     }
 }
 
@@ -73,7 +80,7 @@ target_struct! {
     pub struct FunctionVTable<T: VtablePointer> {
         pub set_arg_info: [ArgDescriptor; 0],
         pub head: VTableHeader<T>,
-        pub apply_table: [Option<T::FPtr<CreateArgFun>>; 0],
+        pub apply_table: [FunctionInfo<T, Option<CreateArgFun>>; 0],
     }
 }
 
@@ -88,17 +95,17 @@ target_struct! {
     pub struct ArrayVTable<T: VtablePointer> {
         pub head: VTableHeader<T>,
         pub single_forward_impl: T::FPtr<SingleForwardFun>,
-        pub current_element_impl: T::FPtr<CurrentElementFun>,
-        pub len_impl: Option<T::FPtr<ArrayLenFun>>,
-        pub skip_impl: Option<T::FPtr<SkipFun>>,
-        pub span_impl: Option<T::FPtr<SpanFun>>,
-        pub inner_array_impl: Option<T::FPtr<InnerArrayFun>>,
+        pub current_element_impl: FunctionInfo<T, CurrentElementFun>,
+        pub len_impl: T::FPtr<Option<ArrayLenFun>>,
+        pub skip_impl: T::FPtr<Option<SkipFun>>,
+        pub span_impl: T::FPtr<Option<SpanFun>>,
+        pub inner_array_impl: FunctionInfo<T, Option<InnerArrayFun>>,
     }
 }
 
 target_struct! {
     pub struct ParserExport<T: VtablePointer> {
-        pub parser: T::FPtr<ParserFun>,
+        pub parser: FunctionInfo<T, ParserFun>,
         pub phantom: PhantomData<T>,
         pub args: [T::Ptr<VTableHeader<T>>; 0],
     }
@@ -119,7 +126,7 @@ mod tests {
             VTableHeader::<AbsPtr>::tsize(&data),
             SizeAlign {
                 before: 0,
-                after: 24,
+                after: 32,
                 align_mask: 0b111
             }
         );
@@ -127,7 +134,7 @@ mod tests {
             BlockVTable::<AbsPtr>::tsize(&data),
             SizeAlign {
                 before: 0,
-                after: 32,
+                after: 40,
                 align_mask: 0b111,
             }
         );
@@ -135,7 +142,7 @@ mod tests {
             ParserVTable::<AbsPtr>::tsize(&data),
             SizeAlign {
                 before: 0,
-                after: 32,
+                after: 40,
                 align_mask: 0b111,
             }
         );
@@ -143,7 +150,7 @@ mod tests {
             ArrayVTable::<AbsPtr>::tsize(&data),
             SizeAlign {
                 before: 0,
-                after: 72,
+                after: 96,
                 align_mask: 0b111,
             }
         );

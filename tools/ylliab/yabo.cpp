@@ -221,7 +221,7 @@ YaboValCreator::access_field(YaboVal val, const char *name, bool eval) {
   }
   auto offset = *maybe_offset;
   auto vtable = reinterpret_cast<BlockVTable *>(val->vtable);
-  auto impl = YABO_ACCESS_VPTR(vtable, access_impl[offset]);
+  auto impl = YABO_ACCESS_VPTR(vtable, access_impl[offset].func);
   auto ret = storage.with_return_buf(val.file, [=](uint8_t *buf) {
     return catch_segfault(impl, segfault_err_code, (void *)buf,
                           (const void *)val->data, context);
@@ -243,7 +243,7 @@ std::optional<YaboVal> YaboValCreator::deref(YaboVal val) {
     return {};
   }
 
-  auto impl = YABO_ACCESS_VPTR(val->vtable, deref_impl);
+  auto impl = YABO_ACCESS_VPTR(val->vtable, deref_impl.func);
   auto context = get_context(val.file, EVAL_LEVEL | YABO_VTABLE);
   return storage.with_return_buf(val.file, [=](uint8_t *buf) {
     return catch_segfault(impl, segfault_err_code, (void *)buf,
@@ -277,7 +277,7 @@ std::optional<YaboVal> YaboValCreator::index(YaboVal val, size_t idx) {
         if (status)
           return status;
 
-        auto current_element = YABO_ACCESS_VPTR(vtable, current_element_impl);
+        auto current_element = YABO_ACCESS_VPTR(vtable, current_element_impl.func);
         return catch_segfault(current_element, segfault_err_code, (void *)buf,
                               (const void *)val->data, context);
       });
@@ -299,7 +299,7 @@ std::optional<YaboVal> YaboValCreator::skip(YaboVal val, size_t offset) {
         if (status)
           return status;
 
-        auto deref = YABO_ACCESS_VPTR(&vtable->head, deref_impl);
+        auto deref = YABO_ACCESS_VPTR(&vtable->head, deref_impl.func);
         return catch_segfault(deref, segfault_err_code, (void *)buf,
                               (const void *)val->data, context);
       });
@@ -310,7 +310,7 @@ static std::optional<ByteSpan> primary_slice(DynValue *array, DynValue *buf,
   auto cur = array, next = buf;
   while (cur->vtable->head != YABO_SLICEPTR) {
     auto vtable = reinterpret_cast<const ArrayVTable *>(cur->vtable);
-    auto inner_array = YABO_ACCESS_VPTR(vtable, inner_array_impl);
+    auto inner_array = YABO_ACCESS_VPTR(vtable, inner_array_impl.func);
     auto status =
         catch_segfault(inner_array, segfault_err_code, (void *)next->data,
                        (const void *)cur->data, context);
@@ -334,7 +334,7 @@ std::optional<ByteSpan> YaboValCreator::extent(YaboVal val) {
   if (val.kind() == YaboValKind::YABOARRAY) {
     return storage.tmp_buf_o_plenty<std::optional<ByteSpan>>(
         [=](DynValue *t1, DynValue *t2) -> std::optional<ByteSpan> {
-          YABO_ACCESS_VPTR(val->vtable, deref_impl)
+          YABO_ACCESS_VPTR(val->vtable, deref_impl.func)
           (t1->data, val->data, context);
           return primary_slice(t1, t2, eval_context);
         });
@@ -347,13 +347,13 @@ std::optional<ByteSpan> YaboValCreator::extent(YaboVal val) {
   return storage.tmp_buf_o_plenty<std::optional<ByteSpan>>(
       [=](DynValue *t1, DynValue *t2, DynValue *t3) -> std::optional<ByteSpan> {
         auto start = t1;
-        if (catch_segfault(YABO_ACCESS_VPTR(vtable, start_impl),
+        if (catch_segfault(YABO_ACCESS_VPTR(vtable, start_impl.func),
                            segfault_err_code, (void *)start->data,
                            (const void *)val->data, eval_context)) {
           return {};
         }
         auto end = t2;
-        if (catch_segfault(YABO_ACCESS_VPTR(vtable, end_impl),
+        if (catch_segfault(YABO_ACCESS_VPTR(vtable, end_impl.func),
                            segfault_err_code, (void *)end->data,
                            (const void *)val->data, without_vtable)) {
           return {};

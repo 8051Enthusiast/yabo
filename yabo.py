@@ -3,7 +3,7 @@ Python bindings to the dynamic interface of the yabo language.
 """
 
 import ctypes
-import tempfile
+from dataclasses import dataclass
 import threading
 from copy import copy
 from ctypes import (
@@ -26,8 +26,8 @@ from ctypes import (
     pointer,
     sizeof,
 )
-from shutil import copyfileobj
 from sys import byteorder
+from typing import Callable
 
 YABO_DISC_MASK = ((1 << 64) - 1) & ~0xFF
 
@@ -99,6 +99,27 @@ class VTable(Structure):
             return attr.get_vptr(vtable_ptr)
         return attr
 
+@dataclass
+class FunctionInfo:
+    func: ctypes._CFuncPtr
+    vtable: ctypes._Pointer[VTableHeader]
+
+def function_info(res_type, *arg_types) -> type[Structure]:
+    class FunctionInfoStruct(Structure):
+        __slots__ = [
+            "func",
+            "vtable",
+        ]
+        _fields_ = [
+            ("func", vptr(CFUNCTYPE(res_type, *arg_types))),
+            ("vtable", vptr(POINTER(VTableHeader))),
+        ]
+
+        def get_vptr(self, vtable_ptr: int) -> FunctionInfo:
+            return FunctionInfo(self.func.get_vptr(vtable_ptr),
+                                self.vtable.get_vptr(vtable_ptr))
+
+    return FunctionInfoStruct
 
 class VTableHeader(VTable):
     __slots__ = [
@@ -107,15 +128,16 @@ class VTableHeader(VTable):
         "deref_impl",
         "mask_impl",
     ]
-    _fields_ = [
-        ("head", c_uint32),
-        ("size_align", c_uint32),
-        ("deref_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p))),
-        ("mask_impl", vptr(CFUNCTYPE(c_size_t, _voidptr)))
-    ]
-
     def val_size(self) -> int:
         return (self.size_align & (self.size_align - 1)) >> 1
+
+VTableHeader._fields_ = [
+    ("head", c_uint32),
+    ("size_align", c_uint32),
+    ("deref_impl", function_info(c_int64, _voidptr, _voidptr, globals_p)),
+    ("mask_impl", vptr(CFUNCTYPE(c_size_t, _voidptr)))
+]
+
 
 class BlockFields(VTable):
     __slots__ = [
@@ -151,7 +173,7 @@ class BlockVTable(VTable):
     _fields_ = [
         ("head", VTableHeader),
         ("fields", vptr(POINTER(BlockFields))),
-        ("access_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p)) * 0),
+        ("access_impl", function_info(c_int64, _voidptr, _voidptr, globals_p) * 0),
     ]
 
     def __len__(self) -> int:
@@ -160,7 +182,7 @@ class BlockVTable(VTable):
     def __getitem__(self, index):
         if index >= len(self):
             raise IndexError(index)
-        ty = vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p))
+        ty = function_info(c_int64, _voidptr, _voidptr, globals_p)
         offset = BlockVTable.access_impl.offset + index * ctypes.sizeof(ty)
         vtable_ptr = addressof(self)
         addr = vtable_ptr + offset
@@ -177,24 +199,19 @@ class NominalVTable(VTable):
     _fields_ = [
         ("head", VTableHeader),
         ("name", vptr(c_char_p)),
-        ("start_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p))),
-        ("end_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p))),
+        ("start_impl", function_info(c_int64, _voidptr, _voidptr, globals_p)),
+        ("end_impl", function_info(c_int64, _voidptr, _voidptr, globals_p)),
     ]
 
-
-PARSER_TY = CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p, _voidptr)
-LEN_FUN_TY = CFUNCTYPE(c_int64, POINTER(c_int64), POINTER(c_ubyte), globals_p)
 
 class ParserVTable(VTable):
     __slots__ = [
         "head",
         "len_impl",
-        "apply_table",
     ]
     _fields_ = [
         ("head", VTableHeader),
-        ("len_impl", vptr(LEN_FUN_TY)),
-        ("apply_table", vptr(POINTER(PARSER_TY))),
+        ("len_impl", vptr(CFUNCTYPE(c_int64, POINTER(c_int64), POINTER(c_ubyte), globals_p))),
     ]
 
 
@@ -211,11 +228,11 @@ class ArrayVTable(VTable):
     _fields_ = [
         ("head", VTableHeader),
         ("single_forward_impl", vptr(CFUNCTYPE(c_int64, _voidptr, globals_p))),
-        ("current_element_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p))),
+        ("current_element_impl", function_info(c_int64, _voidptr, _voidptr, globals_p)),
         ("array_len_impl", vptr(CFUNCTYPE(c_int64, _voidptr, globals_p))),
         ("skip_impl", vptr(CFUNCTYPE(c_int64, _voidptr, c_uint64, globals_p))),
         ("span_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p, _voidptr))),
-        ("inner_array_impl", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p))),
+        ("inner_array_impl", function_info(c_int64, _voidptr, _voidptr, globals_p)),
     ]
 
 
@@ -225,7 +242,7 @@ class ParserExport(VTable):
         "args",
     ]
     _fields_ = [
-        ("parser", vptr(PARSER_TY)),
+        ("parser", function_info(c_int64, _voidptr, _voidptr, globals_p, _voidptr)),
         ("args", vptr(POINTER(VTableHeader)) * 0),
     ]
 
@@ -384,7 +401,7 @@ class Parser:
             args_void_ptr = ctypes.c_void_p()
 
         return self._lib.new_val(
-            lambda ret: parse(
+            lambda ret: parse.func(
                 ret, args_void_ptr, self._lib.discriminant(), byref(Slice(buf))
             )
         )
@@ -470,7 +487,7 @@ class YaboValue:
 
     def _deref(self, typ: int):
         deref = self._val.get_vtable().deref_impl
-        return self._lib.new_val(lambda ret: deref(ret, self._val.data_ptr(), tag_pointer(self._lib._globals, typ)))
+        return self._lib.new_val(lambda ret: deref.func(ret, self._val.data_ptr(), tag_pointer(self._lib._globals, typ)))
 
     def __copy__(self):
         cls = type(self)
@@ -520,7 +537,7 @@ class BlockValue(YaboValue):
             raise AttributeError(f"{name} is not a valid field")
         try:
             result = self._lib.new_val(
-                lambda ret: access(ret, self._val.data_ptr(), self._lib.discriminant())
+                lambda ret: access.func(ret, self._val.data_ptr(), self._lib.discriminant())
             )
 
         except BacktrackError:
@@ -565,7 +582,7 @@ class ArrayValue(YaboValue):
         )
         current_element_impl = array_vtable.contents.current_element_impl
         result = self._lib.new_val(
-            lambda ret: current_element_impl(
+            lambda ret: current_element_impl.func(
                 ret, self._val.data_ptr(), self._lib.discriminant()
             )
         )
@@ -590,7 +607,7 @@ class ArrayValue(YaboValue):
         )
         inner_array_impl = array_vtable.contents.inner_array_impl
         return self._lib.new_val(
-            lambda ret: inner_array_impl(
+            lambda ret: inner_array_impl.func(
                 ret, self._val.data_ptr(), self._lib.discriminant()
             )
         )

@@ -48,7 +48,8 @@ int64_t ybq_parse_bytes_with_args(struct DynValue *ret, const uint8_t *begin,
   const struct ParserExport *exported =
       (const struct ParserExport *)parser_export;
   struct Slice bytes = {begin, begin + len};
-  int64_t status = YABO_ACCESS_VPTR(exported, parser)(
+  ret->vtable = YABO_ACCESS_VPTR(exported, parser.vtable);
+  int64_t status = YABO_ACCESS_VPTR(exported, parser.func)(
       ret->data, args, (const char *)globals + YABO_VTABLE, &bytes);
   if (status) {
     return dyn_invalidate(ret, status);
@@ -101,7 +102,8 @@ int64_t ybq_array_access(struct DynValue *ret, struct DynValue *array,
     return dyn_invalidate(ret, status);
   }
   const struct ArrayVTable *vtable = (const struct ArrayVTable *)array->vtable;
-  status = YABO_ACCESS_VPTR(vtable, current_element_impl)(
+  ret->vtable = YABO_ACCESS_VPTR(vtable, current_element_impl.vtable);
+  status = YABO_ACCESS_VPTR(vtable, current_element_impl.func)(
       ret->data, array->data, (const char *)globals + YABO_VTABLE);
   if (status) {
     return dyn_invalidate(ret, status);

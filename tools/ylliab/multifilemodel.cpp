@@ -107,7 +107,7 @@ void MultiFileParser::new_library(QString lib_path) {
                    .arg(lib_path)
                    .arg(dlerror()));
   }
-  auto parse_fun = YABO_ACCESS_VPTR(parser_export, parser);
+  auto parse_fun = YABO_ACCESS_VPTR(parser_export, parser.func);
   vals = init_vals_from_lib(handle);
   fileIdxs.clear();
   for (const auto &file : *files) {

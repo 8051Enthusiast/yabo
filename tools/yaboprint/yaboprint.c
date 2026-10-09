@@ -583,7 +583,7 @@ int main(int argc, char *argv[argc]) {
     }
   }
 
-  ParseFun *parse = YABO_ACCESS_VPTR(lib.parser, parser);
+  ParseFun *parse = YABO_ACCESS_VPTR(lib.parser, parser.func);
   dyn_parse_bytes(stack.current, &file, lib.args, parse, stack.globals);
   print_recursive(0, &stack);
   free_stack(&stack);

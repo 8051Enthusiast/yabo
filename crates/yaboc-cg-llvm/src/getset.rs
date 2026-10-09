@@ -797,7 +797,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         val: CgValue<'comp, 'llvm>,
     ) -> IResult<PointerValue<'llvm>> {
         match val.layout.maybe_mono() {
-            Some(mono) => Ok(self.build_get_vtable_tag(mono)),
+            Some(mono) => Ok(self.get_vtable_tag(mono)),
             None => self.read_vtable_pointer::<u8>(val.ptr),
         }
     }

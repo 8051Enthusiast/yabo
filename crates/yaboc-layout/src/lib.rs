@@ -259,6 +259,26 @@ impl<'a> IMonoLayout<'a> {
         }
     }
 
+    pub fn is_function_or_parser(&self) -> bool {
+        match self.mono_layout() {
+            MonoLayout::Single
+            | MonoLayout::Regex(..)
+            | MonoLayout::IfParser(..)
+            | MonoLayout::ArrayParser(_)
+            | MonoLayout::ArrayFillParser(_)
+            | MonoLayout::NominalParser(..)
+            | MonoLayout::BlockParser(..)
+            | MonoLayout::Lambda(..) => true,
+            MonoLayout::Array { .. }
+            | MonoLayout::Block(..)
+            | MonoLayout::Nominal(..)
+            | MonoLayout::Primitive(..)
+            | MonoLayout::Ptr
+            | MonoLayout::SlicePtr
+            | MonoLayout::Range => false,
+        }
+    }
+
     pub fn head_kind<DB: Layouts + ?Sized>(&self, db: &DB) -> HeadDiscriminant {
         let mono = self.mono_layout();
         match mono {

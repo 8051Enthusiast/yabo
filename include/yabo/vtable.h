@@ -20,7 +20,9 @@ extern "C" {
 #if YABO_RELATIVE_VPTR
 
 #define YABO_VPTR(x) struct { int32_t offset; __attribute__((packed)) x* phantom[0]; }
-#define YABO_ACCESS_VPTR(val, field) ((val)->field.offset == -1 ? NULL : (typeof((val)->field.phantom[0]))((char*)(val) + (val)->field.offset))
+#define YABO_ACCESS_VPTR(val, field) ((val)->field.offset == -1                 \
+    ? NULL                                                                      \
+    : (typeof((val)->field.phantom[0]))((char*)(val) + (val)->field.offset))
 
 #else
 
@@ -28,6 +30,13 @@ extern "C" {
 #define YABO_ACCESS_VPTR(val, field) (val)->field
 
 #endif
+
+struct VTableHeader;
+
+#define FUNCTION_INFO_TY(x) struct {                    \
+    YABO_VPTR(x) func;                                  \
+    YABO_VPTR(struct VTableHeader) vtable;              \
+}
 
 enum YaboHead {
   YABO_INTEGER = 0x100,
@@ -60,7 +69,7 @@ struct VTableHeader {
   uint32_t head;
   // encoded as size << 1 | align
   uint32_t size_align;
-  YABO_VPTR(DerefFun) deref_impl;
+  FUNCTION_INFO_TY(DerefFun) deref_impl;
   YABO_VPTR(MaskFun) mask_impl;
 };
 
@@ -74,7 +83,7 @@ typedef int64_t AccessFun(void *, const void *, const char *);
 struct BlockVTable {
   struct VTableHeader head;
   YABO_VPTR(struct BlockFields) fields;
-  YABO_VPTR(AccessFun) access_impl[];
+  FUNCTION_INFO_TY(AccessFun) access_impl[];
 };
 
 typedef int64_t PositionFun(void *, const void *, const char *);
@@ -82,8 +91,8 @@ typedef int64_t PositionFun(void *, const void *, const char *);
 struct NominalVTable {
   struct VTableHeader head;
   YABO_VPTR(const char) name;
-  YABO_VPTR(PositionFun) start_impl;
-  YABO_VPTR(PositionFun) end_impl;
+  FUNCTION_INFO_TY(PositionFun) start_impl;
+  FUNCTION_INFO_TY(PositionFun) end_impl;
 };
 
 typedef int64_t ParseFun(void *, const void *, const char *, void *);
@@ -92,7 +101,7 @@ typedef int64_t LenFun(int64_t *, const void *, const char *);
 struct ParserVTable {
   struct VTableHeader head;
   YABO_VPTR(LenFun) len_impl;
-  YABO_VPTR(ParseFun) apply_table[];
+  FUNCTION_INFO_TY(ParseFun) apply_table[];
 };
 
 typedef int64_t SingleForwardFun(void *, const char *);
@@ -105,15 +114,15 @@ typedef int64_t InnerArrayFun(void *, const void *, const char *);
 struct ArrayVTable {
   struct VTableHeader head;
   YABO_VPTR(SingleForwardFun) single_forward_impl;
-  YABO_VPTR(CurrentElementFun) current_element_impl;
+  FUNCTION_INFO_TY(CurrentElementFun) current_element_impl;
   YABO_VPTR(ArrayLenFun) array_len_impl;
   YABO_VPTR(SkipFun) skip_impl;
   YABO_VPTR(SpanFun) span_impl;
-  YABO_VPTR(InnerArrayFun) inner_array_impl;
+  FUNCTION_INFO_TY(InnerArrayFun) inner_array_impl;
 };
 
 struct ParserExport {
-  YABO_VPTR(ParseFun) parser;
+  FUNCTION_INFO_TY(ParseFun) parser;
   YABO_VPTR(const struct VTableHeader) args[];
 };
 

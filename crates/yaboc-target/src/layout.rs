@@ -5,7 +5,7 @@ pub trait CodegenTypeContext {
     fn int(&mut self, bits: u8, signed: bool) -> Self::Type;
     fn size(&mut self, signed: bool) -> Self::Type;
     fn u32(&mut self) -> Self::Type;
-    fn ptr(&mut self, inner: Self::Type) -> Self::Type;
+    fn ptr(&mut self) -> Self::Type;
     fn zst(&mut self) -> Self::Type;
     fn array(&mut self, ty: Self::Type, size: PSize) -> Self::Type;
     fn fun_ptr(&mut self, args: &[Self::Type], ret: Self::Type) -> Self::Type;
@@ -214,14 +214,13 @@ pub trait TargetSized: Sized {
     }
 }
 
-impl<T: TargetSized> TargetSized for &T {
+impl<T> TargetSized for &T {
     fn tsize(data: &TargetLayoutData) -> SizeAlign {
         data.pointer_sa
     }
 
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
-        let inner = T::codegen_ty(ctx);
-        ctx.ptr(inner)
+        ctx.ptr()
     }
 }
 
@@ -235,36 +234,33 @@ impl<T> TargetSized for RelativeVPtr<T> {
     }
 }
 
-impl<T: TargetSized> TargetSized for *const T {
+impl<T> TargetSized for *const T {
     fn tsize(data: &TargetLayoutData) -> SizeAlign {
         data.pointer_sa
     }
 
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
-        let inner = T::codegen_ty(ctx);
-        ctx.ptr(inner)
+        ctx.ptr()
     }
 }
 
-impl<T: TargetSized> TargetSized for *mut T {
+impl<T> TargetSized for *mut T {
     fn tsize(data: &TargetLayoutData) -> SizeAlign {
         data.pointer_sa
     }
 
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
-        let inner = T::codegen_ty(ctx);
-        ctx.ptr(inner)
+        ctx.ptr()
     }
 }
 
-impl<T: TargetSized> TargetSized for Option<&T> {
+impl<T> TargetSized for Option<&T> {
     fn tsize(data: &TargetLayoutData) -> SizeAlign {
         <&T>::tsize(data)
     }
 
     fn codegen_ty<Ctx: CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
-        let inner = T::codegen_ty(ctx);
-        ctx.ptr(inner)
+        ctx.ptr()
     }
 }
 
@@ -442,11 +438,11 @@ impl<T: TargetSized, const N: usize> TargetSized for [T; N] {
 
 #[macro_export]
 macro_rules! target_struct {
-    {$pub:vis struct $name:ident <$($arg:ident : $arg_bound:path),*> {$($field_pub:vis $field:ident: $ty:ty),*$(,)?}} => {
+    {$pub:vis struct $name:ident <$($arg:ident $(: $arg_bound:path)?),*> {$($field_pub:vis $field:ident: $ty:ty),*$(,)?}} => {
         #[repr(C)]
-        $pub struct $name<$($arg : $arg_bound),*> {$($field_pub $field: $ty),*}
+        $pub struct $name<$($arg $(: $arg_bound)?),*> {$($field_pub $field: $ty),*}
 
-        impl<$($arg : $arg_bound),*> $crate::layout::TargetSized for $name<$($arg),*> where $($ty: $crate::layout::TargetSized),* {
+        impl<$($arg $(: $arg_bound)?),*> $crate::layout::TargetSized for $name<$($arg),*> where $($ty: $crate::layout::TargetSized),* {
             fn tsize(data: &$crate::layout::TargetLayoutData) -> $crate::layout::SizeAlign {
                 $crate::layout::Zst::tsize(data)
                 $(
@@ -455,7 +451,7 @@ macro_rules! target_struct {
             }
 
             fn codegen_ty<Ctx: $crate::layout::CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::Type {
-                $name::struct_type(ctx).into()
+                $name::<$($arg),*>::struct_type(ctx).into()
             }
 
             #[allow(unused_variables)]
@@ -481,7 +477,7 @@ macro_rules! target_struct {
             }
         }
 
-        impl<$($arg : $arg_bound),*> $name<$($arg),*> where $($ty: $crate::layout::TargetSized),* {
+        impl<$($arg $(: $arg_bound)?),*> $name<$($arg),*> where $($ty: $crate::layout::TargetSized),* {
             pub fn struct_type<Ctx: $crate::layout::CodegenTypeContext>(ctx: &mut Ctx) -> Ctx::StructType {
                 let arr = &[$(
                     <$ty as $crate::layout::TargetSized>::codegen_ty(ctx)
