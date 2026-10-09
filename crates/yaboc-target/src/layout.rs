@@ -526,6 +526,19 @@ pub const POINTER32: TargetLayoutData = TargetLayoutData {
     u32_sa: SizeAlign::int_sa(2),
 };
 
+pub const POINTER32_ALIGN_8_AS_4: TargetLayoutData = TargetLayoutData {
+    pointer_sa: SizeAlign::int_sa(2),
+    int_sa: SizeAlign {
+        before: 0,
+        after: 8,
+        align_mask: 3,
+    },
+    offset_sa: SizeAlign::int_sa(2),
+    byte_sa: SizeAlign::int_sa(0),
+    bit_sa: SizeAlign::int_sa(0),
+    u32_sa: SizeAlign::int_sa(2),
+};
+
 #[cfg(test)]
 mod tests {
     use crate::layout::{RelativeVPtr, SizeAlign};
