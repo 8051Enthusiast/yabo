@@ -137,12 +137,12 @@ class YaboValStorage {
 public:
   YaboValStorage(size_t max_s);
   YaboValStorage() = default;
-  YaboVal with_return_buf(FileIdx idx, std::function<uint64_t(uint8_t *ret)>);
+  YaboVal with_return_buf(FileIdx idx, std::function<uint64_t(DynValue *ret)>);
   YaboVal with_address_and_return_buf(
-      YaboVal addr, std::function<uint64_t(DynValue *addr, uint8_t *ret)>);
+      YaboVal addr, std::function<uint64_t(DynValue *addr, DynValue *ret)>);
   SpannedVal
   with_span_and_return_buf(ByteSpan span, FileIdx idx,
-                           std::function<uint64_t(void *addr, uint8_t *ret)>);
+                           std::function<uint64_t(void *addr, DynValue *ret)>);
   // all functions take at most 3 value arguments, so this should be enough for
   // most cases
   template <typename T>
@@ -196,8 +196,6 @@ template <> struct std::hash<YaboVal> {
   }
 };
 
-constexpr uint64_t DEFAULT_LEVEL = 0;
-constexpr uint64_t EVAL_LEVEL = 0;
 class YaboValCreator {
 public:
   YaboValCreator(YaboValStorage &&store) : storage(std::move(store)) {}
@@ -209,7 +207,7 @@ public:
   int64_t array_len(YaboVal val);
   std::optional<YaboVal> index(YaboVal val, size_t idx);
   std::optional<YaboVal> skip(YaboVal val, size_t offset);
-  std::optional<SpannedVal> parse(ParseFun parser, const void *args,
+  std::optional<SpannedVal> parse(const ParserFunctionInfo *parser, const void *args,
                                   ByteSpan buf, FileIdx file);
   std::optional<ByteSpan> extent(YaboVal val);
 

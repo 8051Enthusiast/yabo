@@ -121,8 +121,10 @@ struct ArrayVTable {
   FUNCTION_INFO_TY(InnerArrayFun) inner_array_impl;
 };
 
+typedef FUNCTION_INFO_TY(ParseFun) ParserFunctionInfo;
+
 struct ParserExport {
-  FUNCTION_INFO_TY(ParseFun) parser;
+  ParserFunctionInfo parser;
   YABO_VPTR(const struct VTableHeader) args[];
 };
 

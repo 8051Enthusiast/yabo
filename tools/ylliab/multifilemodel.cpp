@@ -11,7 +11,7 @@ extern "C" {
 }
 
 namespace {
-FileOffsets find_offsets(YaboValCreator &vals, ParseFun parse_fun,
+FileOffsets find_offsets(YaboValCreator &vals, const ParserFunctionInfo *parse_fun,
                          std::span<const FileInfo> files,
                          std::span<const FileIdx> idxs) {
   FileOffsets offsets;
@@ -107,7 +107,6 @@ void MultiFileParser::new_library(QString lib_path) {
                    .arg(lib_path)
                    .arg(dlerror()));
   }
-  auto parse_fun = YABO_ACCESS_VPTR(parser_export, parser.func);
   vals = init_vals_from_lib(handle);
   fileIdxs.clear();
   for (const auto &file : *files) {
@@ -116,7 +115,7 @@ void MultiFileParser::new_library(QString lib_path) {
     fileIdxs.push_back(idx);
   }
 
-  auto offsets = find_offsets(vals, parse_fun, *files, fileIdxs);
+  auto offsets = find_offsets(vals, &parser_export->parser, *files, fileIdxs);
   auto order = find_order(*files, offsets);
   FileUpdate update{.files = files, .offsets = offsets, .order = order};
   emit files_updated(std::make_shared<FileUpdate>(std::move(update)));

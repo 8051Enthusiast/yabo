@@ -104,6 +104,10 @@ class FunctionInfo:
     func: ctypes._CFuncPtr
     vtable: ctypes._Pointer[VTableHeader]
 
+    def invoke(self, ret: DynValue, *args):
+        ret._set_vtable(self.vtable)
+        return self.func(ret.data_ptr(), *args)
+
 def function_info(res_type, *arg_types) -> type[Structure]:
     class FunctionInfoStruct(Structure):
         __slots__ = [
@@ -295,6 +299,9 @@ class DynValue(Structure):
     def get_vtable(self):
         raise NotImplementedError
 
+    def _set_vtable(self, val: ctypes._Pointer[VTableHeader]):
+        raise NotImplementedError
+
     def data_array(self):
         raise NotImplementedError
 
@@ -334,6 +341,9 @@ def sized_dyn_value(size: int):
 
         def get_vtable(self):
             return self.vtable.contents
+
+        def _set_vtable(self, val: ctypes._Pointer[VTableHeader]):
+            self.vtable = val
 
         def data_array(self):
             offset = type(self).data.offset
@@ -401,9 +411,7 @@ class Parser:
             args_void_ptr = ctypes.c_void_p()
 
         return self._lib.new_val(
-            lambda ret: parse.func(
-                ret, args_void_ptr, self._lib.discriminant(), byref(Slice(buf))
-            )
+            lambda ret: parse.invoke(ret, args_void_ptr, self._lib.discriminant(), byref(Slice(buf)))
         )
 
 
@@ -448,7 +456,7 @@ class YaboLib(ctypes.CDLL):
 
     def new_val(self, f):
         ret_buf = self._ret_buf()
-        status = f(ret_buf.data_ptr())
+        status = f(ret_buf)
         _check_status(status)
         ret_val = _new_value(ret_buf, self)
         if MASK_TEST_MODE:
@@ -459,7 +467,7 @@ class YaboLib(ctypes.CDLL):
                 ret_buf.data_array().contents[i] = (
                     ret_buf.data_array().contents[:][i] ^ 0xFF
                 )
-            status = f(ret_buf.data_ptr())
+            status = f(ret_buf)
             _check_status(status)
             second_val = _new_value(ret_buf, self)
             if isinstance(ret_val, YaboValue):
@@ -487,7 +495,7 @@ class YaboValue:
 
     def _deref(self, typ: int):
         deref = self._val.get_vtable().deref_impl
-        return self._lib.new_val(lambda ret: deref.func(ret, self._val.data_ptr(), tag_pointer(self._lib._globals, typ)))
+        return self._lib.new_val(lambda ret: deref.invoke(ret, self._val.data_ptr(), tag_pointer(self._lib._globals, typ)))
 
     def __copy__(self):
         cls = type(self)
@@ -537,7 +545,7 @@ class BlockValue(YaboValue):
             raise AttributeError(f"{name} is not a valid field")
         try:
             result = self._lib.new_val(
-                lambda ret: access.func(ret, self._val.data_ptr(), self._lib.discriminant())
+                lambda ret: access.invoke(ret, self._val.data_ptr(), self._lib.discriminant())
             )
 
         except BacktrackError:
@@ -582,7 +590,7 @@ class ArrayValue(YaboValue):
         )
         current_element_impl = array_vtable.contents.current_element_impl
         result = self._lib.new_val(
-            lambda ret: current_element_impl.func(
+            lambda ret: current_element_impl.invoke(
                 ret, self._val.data_ptr(), self._lib.discriminant()
             )
         )
@@ -607,7 +615,7 @@ class ArrayValue(YaboValue):
         )
         inner_array_impl = array_vtable.contents.inner_array_impl
         return self._lib.new_val(
-            lambda ret: inner_array_impl.func(
+            lambda ret: inner_array_impl.invoke(
                 ret, self._val.data_ptr(), self._lib.discriminant()
             )
         )
@@ -615,7 +623,6 @@ class ArrayValue(YaboValue):
 
 class FunArgValue(YaboValue):
     pass
-
 
 class ParserValue(YaboValue):
     pass

@@ -47,11 +47,12 @@ static inline size_t dyn_val_size(const DynValue *val) {
 
 // calls the parser with the given bytes, and stores the result in ret
 static inline int64_t dyn_parse_bytes(DynValue *ret, struct Slice *bytes,
-                                      const void *args, ParseFun parser,
+                                      const void *args,
+                                      const ParserFunctionInfo *info,
                                       const struct Globals *globals) {
-  int64_t status =
-      parser(ret->data, args,
-             (const char *)globals + YABO_VTABLE, bytes);
+  ret->vtable = YABO_ACCESS_VPTR(info, vtable);
+  int64_t status = YABO_ACCESS_VPTR(info, func)(
+      ret->data, args, (const char *)globals + YABO_VTABLE, bytes);
   if (status) {
     return dyn_invalidate(ret, status);
   }
@@ -63,6 +64,7 @@ static inline int64_t dyn_deref(DynValue *ret, const DynValue *val,
                                 const struct Globals *globals) {
   const struct NominalVTable *vtable =
       (const struct NominalVTable *)val->vtable;
+  ret->vtable = YABO_ACCESS_VPTR(&vtable->head, deref_impl.vtable);
   DerefFun *deref_impl = YABO_ACCESS_VPTR(&vtable->head, deref_impl.func);
   int64_t status =
       deref_impl(ret->data, val->data, (const char *)globals + YABO_VTABLE);
@@ -117,6 +119,7 @@ static inline int64_t dyn_access_field_index(DynValue *ret,
     return dyn_invalidate(ret, YABO_STATUS_ERROR);
   }
 
+  ret->vtable = YABO_ACCESS_VPTR(vtable, access_impl[index].vtable);
   AccessFun *access_impl = YABO_ACCESS_VPTR(vtable, access_impl[index].func);
   int64_t status =
       access_impl(ret->data, block->data, (const char *)globals + YABO_VTABLE);
@@ -175,9 +178,9 @@ static inline int64_t dyn_array_current_element(DynValue *ret,
                                                 const DynValue *array,
                                                 const struct Globals *globals) {
   const struct ArrayVTable *vtable = (const struct ArrayVTable *)array->vtable;
+  ret->vtable = YABO_ACCESS_VPTR(vtable, current_element_impl.vtable);
   uint64_t status = YABO_ACCESS_VPTR(vtable, current_element_impl.func)(
-      ret->data, array->data,
-      (const char *)globals + YABO_VTABLE);
+      ret->data, array->data, (const char *)globals + YABO_VTABLE);
   if (status) {
     return dyn_invalidate(ret, status);
   }

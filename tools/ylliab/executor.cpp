@@ -217,7 +217,6 @@ Executor::execute_parser(Meta meta, char const *func_name, size_t pos) {
   if (!parser_ptr) {
     return {};
   }
-  auto parser = YABO_ACCESS_VPTR(parser_ptr, parser.func);
   auto span = file->segment_from(pos);
   if (!span.data()) {
     return {};
@@ -226,7 +225,7 @@ Executor::execute_parser(Meta meta, char const *func_name, size_t pos) {
   if (!args) {
     return {};
   }
-  auto ret = vals.parse(parser, args->data(), span, fileIndex);
+  auto ret = vals.parse(&parser_ptr->parser, args->data(), span, fileIndex);
   if (ret.has_value()) {
     auto normalized = normalize(ret.value(), ret->span);
     auto handle = SpannedHandle(normalized, file);
