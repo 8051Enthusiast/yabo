@@ -119,6 +119,20 @@ pub fn target(config: &Config, rt_path: &Path) -> Option<Target> {
             use_musttail: true,
             relative_vptrs: true,
         },
+        "arm-linux-gnueabihf" => Target {
+            data: layout::POINTER32,
+            linker: Arc::new(link::UnixClangLinker::new(
+                config.target_triple.clone(),
+                config.cc.as_deref().unwrap_or("clang").to_string(),
+                config.sysroot.as_ref().map(PathBuf::from),
+                rt_path.to_path_buf(),
+            )),
+            features: Cow::Borrowed(""),
+            cpu: Cow::Borrowed("generic"),
+            use_tailcc: true,
+            use_musttail: true,
+            relative_vptrs: true,
+        },
         _ => return None,
     };
     if config.target_triple.starts_with("wasm32")
