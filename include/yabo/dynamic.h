@@ -46,12 +46,12 @@ static inline size_t dyn_val_size(const DynValue *val) {
 }
 
 // calls the parser with the given bytes, and stores the result in ret
-static inline int64_t dyn_parse_bytes(DynValue *ret, struct Slice bytes,
+static inline int64_t dyn_parse_bytes(DynValue *ret, struct Slice *bytes,
                                       const void *args, ParseFun parser,
                                       const struct Globals *globals) {
   int64_t status =
       parser(ret->data, args,
-             (const char *)globals + YABO_VTABLE, &bytes);
+             (const char *)globals + YABO_VTABLE, bytes);
   if (status) {
     return dyn_invalidate(ret, status);
   }

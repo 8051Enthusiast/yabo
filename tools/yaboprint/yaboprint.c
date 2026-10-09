@@ -27,38 +27,35 @@ typedef struct {
 #define STACK_SIZE 1024 * 1024 * 16
 
 
-Stack init_stack(size_t max_dyn_size, size_t globals_size) {
-  Stack stack;
+void init_stack(size_t max_dyn_size, size_t globals_size, Stack *out) {
   if (max_dyn_size > STACK_SIZE) {
     eprintf("Max dyn size too large\n");
     exit(1);
   }
-  stack.current = malloc(STACK_SIZE);
-  if (!stack.current) {
+  out->current = malloc(STACK_SIZE);
+  if (!out->current) {
     eprintf("Could not allocate stack\n");
     exit(1);
   }
-  stack.limit = (char *)stack.current + STACK_SIZE;
-  stack.limit -= max_dyn_size;
-  stack.globals = malloc(globals_size);
-  return stack;
+  out->limit = (char *)out->current + STACK_SIZE;
+  out->limit -= max_dyn_size;
+  out->globals = malloc(globals_size);
 }
 
-void free_stack(Stack stack) {
-  free(stack.current);
-  free(stack.globals);
+void free_stack(Stack *stack) {
+  free(stack->current);
+  free(stack->globals);
 }
 
-Stack bump(Stack stack) {
-  size_t size = dyn_val_size(stack.current);
+void bump(Stack *stack) {
+  size_t size = dyn_val_size(stack->current);
   size_t aligned_size =
       (size + alignof(DynValue) - 1) & ~(alignof(DynValue) - 1);
-  if ((size_t)(stack.limit - (char *)stack.current) < aligned_size) {
+  if ((size_t)(stack->limit - (char *)stack->current) < aligned_size) {
     eprintf("Value stack overflow\n");
     exit(1);
   }
-  stack.current = (DynValue *)((char *)stack.current + aligned_size);
-  return stack;
+  stack->current = (DynValue *)((char *)stack->current + aligned_size);
 }
 
 #define fputc_ret(chr)                                                   \
@@ -74,9 +71,9 @@ static inline int print_indent(int indent) {
   return 0;
 }
 
-int print_recursive(int indent, Stack stack);
+int print_recursive(int indent, Stack *stack);
 
-int print_char(DynValue *val, int indent, Stack stack) {
+int print_char(DynValue *val, int indent, Stack *stack) {
   int32_t char_value = dyn_char(val);
   fputc_ret('"');
   if (char_value < 0x80) {
@@ -98,12 +95,12 @@ int print_char(DynValue *val, int indent, Stack stack) {
   return 0;
 }
 
-int print_int(DynValue *val, int indent, Stack stack) {
+int print_int(DynValue *val, int indent, Stack *stack) {
   int64_t int_value = dyn_int(val);
   return printf("%" PRId64, int_value);
 }
 
-int print_bit(DynValue *val, int indent, Stack stack) {
+int print_bit(DynValue *val, int indent, Stack *stack) {
   int8_t bit = dyn_bit(val);
   const char *text;
   if (bit) {
@@ -114,25 +111,25 @@ int print_bit(DynValue *val, int indent, Stack stack) {
   return printf("%s", text);
 }
 
-int print_parser(DynValue *val, int indent, Stack stack) {
+int print_parser(DynValue *val, int indent, Stack *stack) {
   return printf("\"parser\"");
 }
 
-int print_fun_args(DynValue *val, int indent, Stack stack) {
+int print_fun_args(DynValue *val, int indent, Stack *stack) {
   // not really much we can print
   return printf("\"fun_args\"");
 }
 
-int print_block(DynValue *val, int indent, Stack stack) {
+int print_block(DynValue *val, int indent, Stack *stack) {
   size_t count = dyn_block_field_count(val);
   if (puts("{") == EOF)
     return EOF;
 
   int first = 1;
   for (size_t i = 0; i < count; i++) {
-    DynValue *sub_value = (DynValue *)stack.current;
+    DynValue *sub_value = (DynValue *)stack->current;
     int64_t return_val =
-        dyn_access_field_index(sub_value, val, i, stack.globals);
+        dyn_access_field_index(sub_value, val, i, stack->globals);
     if (return_val == 3) {
       continue;
     }
@@ -166,13 +163,13 @@ int print_block(DynValue *val, int indent, Stack stack) {
   return 0;
 }
 
-int print_array(DynValue *val, int indent, Stack stack) {
-  int64_t len = dyn_array_len(val, stack.globals);
+int print_array(DynValue *val, int indent, Stack *stack) {
+  int64_t len = dyn_array_len(val, stack->globals);
   if (puts("[") == EOF)
     return EOF;
   for (int64_t i = 0; i < len; i++) {
-    DynValue *sub_value = stack.current;
-    dyn_array_current_element(sub_value, val, stack.globals);
+    DynValue *sub_value = stack->current;
+    dyn_array_current_element(sub_value, val, stack->globals);
     if (i) {
       if (puts(",") == EOF) {
         return EOF;
@@ -182,7 +179,7 @@ int print_array(DynValue *val, int indent, Stack stack) {
       return EOF;
     if (print_recursive(indent + 2, stack) < 0)
       return EOF;
-    dyn_array_single_forward(val, stack.globals);
+    dyn_array_single_forward(val, stack->globals);
   }
   if (puts("") == EOF) {
     return EOF;
@@ -193,13 +190,13 @@ int print_array(DynValue *val, int indent, Stack stack) {
   return 0;
 }
 
-int print_indirect(DynValue *val, int indent, Stack stack) {
-  DynValue *deref = stack.current;
-  dyn_deref(deref, val, stack.globals);
+int print_indirect(DynValue *val, int indent, Stack *stack) {
+  DynValue *deref = stack->current;
+  dyn_deref(deref, val, stack->globals);
   return print_recursive(indent, stack);
 }
 
-int print_error(DynValue *val, int indent, Stack stack) {
+int print_error(DynValue *val, int indent, Stack *stack) {
   switch (dyn_error(val)) {
   case YABO_STATUS_ERROR:
     return printf("\"ERROR\"");
@@ -212,40 +209,41 @@ int print_error(DynValue *val, int indent, Stack stack) {
   }
 }
 
-int print_recursive(int indent, Stack stack) {
+int print_recursive(int indent, Stack *stack) {
   int status;
-  DynValue *val = stack.current;
+  DynValue *val = stack->current;
   if (!val->vtable) {
     return print_error(val, indent, stack);
   }
   struct VTableHeader *vtable = val->vtable;
   dyn_mask(val);
   int64_t head = vtable->head & YABO_DISC_MASK;
-  Stack substack = bump(stack);
+  Stack substack = *stack;
+  bump(&substack);
   if (head == YABO_THUNK || head == YABO_U8) {
-    status = print_indirect(val, indent, substack);
+    status = print_indirect(val, indent, &substack);
   } else {
     switch (head) {
     case YABO_INTEGER:
-      status = print_int(val, indent, substack);
+      status = print_int(val, indent, &substack);
       break;
     case YABO_BIT:
-      status = print_bit(val, indent, substack);
+      status = print_bit(val, indent, &substack);
       break;
     case YABO_CHAR:
-      status = print_char(val, indent, substack);
+      status = print_char(val, indent, &substack);
       break;
     case YABO_LOOP:
-      status = print_array(val, indent, substack);
+      status = print_array(val, indent, &substack);
       break;
     case YABO_PARSER:
-      status = print_parser(val, indent, substack);
+      status = print_parser(val, indent, &substack);
       break;
     case YABO_FUN_ARGS:
-      status = print_fun_args(val, indent, substack);
+      status = print_fun_args(val, indent, &substack);
       break;
     case YABO_BLOCK:
-      status = print_block(val, indent, substack);
+      status = print_block(val, indent, &substack);
       break;
     case YABO_UNIT:
       status = printf("\"unit\"");
@@ -573,7 +571,8 @@ int main(int argc, char *argv[argc]) {
     exit(1);
   }
 
-  Stack stack = init_stack(lib.max_dyn_size, lib.global_size);
+  Stack stack = {0};
+  init_stack(lib.max_dyn_size, lib.global_size, &stack);
   if (lib.global_init) {
     int64_t status =
         lib.global_init(file.start, file.end, (char *)stack.globals);
@@ -585,8 +584,8 @@ int main(int argc, char *argv[argc]) {
   }
 
   ParseFun *parse = YABO_ACCESS_VPTR(lib.parser, parser);
-  dyn_parse_bytes(stack.current, file, lib.args, parse, stack.globals);
-  print_recursive(0, stack);
-  free_stack(stack);
+  dyn_parse_bytes(stack.current, &file, lib.args, parse, stack.globals);
+  print_recursive(0, &stack);
+  free_stack(&stack);
   puts("");
 }
