@@ -5,7 +5,7 @@ use yaboc_hir::BlockReturnKind;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{
     FuncLayoutKind, Layout, LayoutSlice, TailCallSite,
-    collect::{EvalType, LCallReq, Slot, array_val_req, pd_len_req, pd_val_req, static_val_req},
+    collect::{EvalType, LCallReq, array_val_req, pd_len_req, pd_val_req, static_val_req},
     mir_subst::function_substitute,
     represent::ParserFunKind,
 };
@@ -1774,7 +1774,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         from: ILayout<'comp>,
-        meta: LCallMeta,
+        req: LCallReq,
     ) -> IResult<()> {
         let mut create_fun = match layout.mono_layout() {
             MonoLayout::Single => Self::create_single_parse,
@@ -1789,8 +1789,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         if from.is_int() {
             create_fun = Self::create_error_parse
         }
-        let fun = create_fun(self, from, layout, meta.req)?;
-        self.create_wrapper_parse(from, layout, meta.req, fun)?;
+        let fun = create_fun(self, from, layout, req)?;
+        self.create_wrapper_parse(from, layout, req, fun)?;
         Ok(())
     }
 
@@ -1801,17 +1801,18 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         Ok(())
     }
 
-    fn create_eval_fun(&mut self, layout: IMonoLayout<'comp>, req: LCallMeta) -> IResult<()> {
-        let inner = self.create_eval_fun_fun(layout, req.req)?;
-        self.create_wrapper_eval_fun(layout, req.req, inner)?;
+    fn create_eval_fun(&mut self, layout: IMonoLayout<'comp>, req: LCallReq) -> IResult<()> {
+        let inner = self.create_eval_fun_fun(layout, req)?;
+        self.create_wrapper_eval_fun(layout, req, inner)?;
         Ok(())
     }
 
-    fn create_slot(&mut self, layout: IMonoLayout<'comp>, slot: &Slot<'comp>) -> IResult<()> {
+    fn create_slot(&mut self, layout: IMonoLayout<'comp>, slot: &LayoutPart<'comp>) -> IResult<()> {
         match slot {
-            Slot::Parser(from, meta) => self.create_parser_fun(layout, *from, *meta),
-            Slot::FunCall(args) => self.create_create_fun_args_fun(layout, *args),
-            Slot::Eval(meta) => self.create_eval_fun(layout, *meta),
+            LayoutPart::Parse(req, _, from) => self.create_parser_fun(layout, *from, *req),
+            LayoutPart::CreateArgs(args) => self.create_create_fun_args_fun(layout, *args),
+            LayoutPart::EvalFun(req, _) => self.create_eval_fun(layout, *req),
+            otherwise => panic!("Not a valid slot: {:?}", otherwise),
         }
     }
 
@@ -1825,9 +1826,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         {
             for (slot, _) in collected_layouts.slots.calls_from_layout(*layout).iter() {
                 if !match slot {
-                    Slot::Parser(from, meta) => visited_parser.insert((*layout, *from, meta.req)),
-                    Slot::FunCall(_) => true,
-                    Slot::Eval(meta) => visited_eval.insert((*layout, meta.req)),
+                    LayoutPart::Parse(req, _, from) => {
+                        visited_parser.insert((*layout, *from, *req))
+                    }
+                    LayoutPart::EvalFun(req, _) => visited_eval.insert((*layout, *req)),
+                    _ => true,
                 } {
                     continue;
                 }

@@ -355,14 +355,14 @@ impl<'a> LayoutHasher<'a> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub enum ParserFunKind {
     Wrapper,
     TailWrapper,
     Worker,
 }
 
-#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum LayoutPart<'comp> {
     Parse(LCallReq, ParserFunKind, ILayout<'comp>),
     Field(Identifier),

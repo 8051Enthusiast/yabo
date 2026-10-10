@@ -16,13 +16,14 @@ use yaboc_target::layout::SizeAlign;
 use yaboc_types::PrimitiveType;
 
 use crate::{
-    FuncLayoutKind, LayoutSlice, StructManifestation, UnfinishedManifestation,
+    FuncLayoutKind, StructManifestation, UnfinishedManifestation,
     collect::{
         layout_info::{LayoutInfoCollection, LayoutInfoCollector},
         uses::{PublicType, Publicity, UseCollections},
     },
     mir_subst::{FunctionSubstitute, function_substitute},
     pd_parser,
+    represent::{LayoutPart, ParserFunKind},
 };
 
 use self::tailsize::TailCollector;
@@ -95,12 +96,6 @@ pub fn regex_single_req() -> LCallMeta {
         tail: false,
     }
 }
-#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
-pub enum Slot<'a> {
-    Parser(ILayout<'a>, LCallMeta),
-    FunCall(LayoutSlice<'a>),
-    Eval(LCallMeta),
-}
 
 #[derive(Debug)]
 pub struct LayoutCollection<'a> {
@@ -113,7 +108,7 @@ pub struct LayoutCollection<'a> {
     pub primitives: Vec<IMonoLayout<'a>>,
     pub lens: LayoutSet<'a>,
     pub globals: FxHashMap<ParserDefId, (IMonoLayout<'a>, ILayout<'a>)>,
-    pub slots: call_info::CallSlotResult<'a, Slot<'a>>,
+    pub slots: call_info::CallSlotResult<'a, LayoutPart<'a>>,
     pub tail_sa: FxHashMap<TailCallSite<'a>, TailInfo>,
     pub max_sa: SizeAlign,
     pub global_offsets: StructManifestation,
@@ -124,7 +119,7 @@ pub struct LayoutCollection<'a> {
 pub struct LayoutCollector<'a, 'b> {
     ctx: &'b mut AbsLayoutCtx<'a>,
     int: ILayout<'a>,
-    slots: call_info::CallInfo<'a, Slot<'a>>,
+    slots: call_info::CallInfo<'a, LayoutPart<'a>>,
     arrays: LayoutSet<'a>,
     blocks: LayoutSet<'a>,
     nominals: LayoutSet<'a>,
@@ -277,7 +272,13 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     }
 
     fn register_parse(&mut self, arg: ILayout<'a>, parser: ILayout<'a>, info: LCallMeta) {
-        self.slots.add_call(Slot::Parser(arg, info), parser);
+        let fun_kind = if info.tail {
+            ParserFunKind::TailWrapper
+        } else {
+            ParserFunKind::Wrapper
+        };
+        self.slots
+            .add_call(LayoutPart::Parse(info.req, fun_kind, arg), parser);
         if info.req.is_empty() {
             return;
         }
@@ -376,7 +377,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 &arg_tuple.1
             );
         }
-        self.slots.add_call(Slot::FunCall(arg_tuple), fun);
+        self.slots.add_call(LayoutPart::CreateArgs(arg_tuple), fun);
         Ok(())
     }
 
@@ -422,7 +423,13 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
     }
 
     fn register_eval(&mut self, fun: ILayout<'a>, meta: LCallMeta) {
-        self.slots.add_call(Slot::Eval(meta), fun);
+        let fun_kind = if meta.tail {
+            ParserFunKind::TailWrapper
+        } else {
+            ParserFunKind::Wrapper
+        };
+        self.slots
+            .add_call(LayoutPart::EvalFun(meta.req, fun_kind), fun);
         if meta.req.is_empty() {
             return;
         }
@@ -859,24 +866,27 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         let slots = self
             .slots
             .into_layout_vtable_offsets(self.ctx, |this, lhs, rhs| match (lhs, rhs) {
-                (Slot::Parser(lhs_layout, lhs_meta), Slot::Parser(rhs_layout, rhs_meta)) => {
-                    lhs_meta.cmp(&rhs_meta).then(
+                (
+                    LayoutPart::Parse(lhs_req, lhs_kind, lhs_layout),
+                    LayoutPart::Parse(rhs_req, rhs_kind, rhs_layout),
+                ) => lhs_req
+                    .cmp(&rhs_req)
+                    .then(lhs_kind.cmp(&rhs_kind))
+                    .then_with(|| {
                         this.dcx
                             .full_layout_hash(this.db, *lhs_layout)
-                            .cmp(&this.dcx.full_layout_hash(this.db, *rhs_layout)),
-                    )
-                }
-                (Slot::FunCall(lhs_args), Slot::FunCall(rhs_args)) => this
+                            .cmp(&this.dcx.full_layout_hash(this.db, *rhs_layout))
+                    }),
+                (LayoutPart::CreateArgs(lhs_args), LayoutPart::CreateArgs(rhs_args)) => this
                     .dcx
                     .full_layout_slice_hash(this.db, &lhs_args.1)
                     .cmp(&this.dcx.full_layout_slice_hash(this.db, &rhs_args.1)),
-                (Slot::Eval(lhs), Slot::Eval(rhs)) => lhs.cmp(rhs),
-                (Slot::Parser(..), _) | (Slot::FunCall(_), Slot::Eval(_)) => {
-                    std::cmp::Ordering::Less
-                }
-                (Slot::Eval(_), _) | (Slot::FunCall(_), Slot::Parser(..)) => {
-                    std::cmp::Ordering::Greater
-                }
+                (LayoutPart::Field(lhs_name), LayoutPart::Field(rhs_name)) => this
+                    .db
+                    .lookup_intern_identifier(*lhs_name)
+                    .name
+                    .cmp(&this.db.lookup_intern_identifier(*rhs_name).name),
+                (lhs, rhs) => lhs.cmp(rhs),
             });
         let mut primitives = FxHashSet::default();
 
@@ -899,17 +909,17 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         for (layout, froms) in slots.call_args.iter() {
             for (slot, _) in froms.iter() {
                 let call_site = match slot {
-                    Slot::Parser(from, meta) => TailCallSite {
+                    LayoutPart::Parse(req, _, from) => TailCallSite {
                         from: Some(*from),
                         func: *layout,
-                        req: meta.req,
+                        req: *req,
                     },
-                    Slot::FunCall(_) => continue,
-                    Slot::Eval(meta) => TailCallSite {
+                    LayoutPart::EvalFun(req, _) => TailCallSite {
                         from: None,
                         func: *layout,
-                        req: meta.req,
+                        req: *req,
                     },
+                    _ => continue,
                 };
                 let sa = tail_collector.size(call_site)?;
                 tail_sa.insert(call_site, sa);

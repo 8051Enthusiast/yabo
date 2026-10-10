@@ -2,8 +2,8 @@ use inkwell::{types::FunctionType, values::CallSiteValue};
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{
     LayoutSlice,
-    collect::{LCallMeta, LCallReq, Slot},
-    represent::ParserFunKind,
+    collect::LCallReq,
+    represent::ParserFunKind::{self, TailWrapper},
 };
 
 use super::*;
@@ -218,15 +218,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let parser = match fun.layout.maybe_mono() {
             Some(mono) => self.parser_fun_val(mono, arg.layout, req, fun_kind).into(),
             None => {
-                if ParserFunKind::Worker == fun_kind {
-                    panic!("worker function must be monomorphized")
-                }
-                let meta = LCallMeta {
-                    req,
-                    tail: fun_kind == ParserFunKind::TailWrapper,
-                };
                 let slot = self.collected_layouts.slots.layout_vtable_offsets
-                    [&(Slot::Parser(arg.layout, meta), fun.layout)];
+                    [&(LayoutPart::Parse(req, fun_kind, arg.layout), fun.layout)];
                 self.vtable_callable::<vtable::ParserVTable<AbsPtr>, vtable::ParserVTable<RelPtr>, vtable::ParserFun>(
                     fun.ptr,
                     &[ParserVTableFields::apply_table as i64, slot as i64],
@@ -352,12 +345,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let parser = match fun.layout.maybe_mono() {
             Some(mono) => self.parser_fun_val_tail(mono, arg.layout, call_kind).into(),
             None => {
-                let meta = LCallMeta {
-                    req: call_kind,
-                    tail: true,
-                };
-                let slot = self.collected_layouts.slots.layout_vtable_offsets
-                    [&(Slot::Parser(arg.layout, meta), fun.layout)];
+                let slot = self.collected_layouts.slots.layout_vtable_offsets[&(
+                    LayoutPart::Parse(call_kind, ParserFunKind::TailWrapper, arg.layout),
+                    fun.layout,
+                )];
                 self.vtable_callable::<vtable::ParserVTable<AbsPtr>, vtable::ParserVTable<RelPtr>, vtable::ParserFun>(
                     fun.ptr,
                     &[ParserVTableFields::apply_table as i64, slot as i64],
@@ -408,7 +399,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     .collected_layouts
                     .slots
                     .layout_vtable_offsets
-                    .get(&(Slot::FunCall(args), fun.layout))
+                    .get(&(LayoutPart::CreateArgs(args), fun.layout))
                     .copied()
                 else {
                     dbpanic!(
@@ -483,12 +474,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let eval_fun = match fun.layout.maybe_mono() {
             Some(mono) => self.eval_fun_fun_val(mono, req, kind).into(),
             None => {
-                let meta = LCallMeta {
-                    tail: kind == ParserFunKind::TailWrapper,
-                    req,
-                };
                 let slot = self.collected_layouts.slots.layout_vtable_offsets
-                    [&(Slot::Eval(meta), fun.layout)];
+                    [&(LayoutPart::EvalFun(req, kind), fun.layout)];
                 self.vtable_callable::<vtable::FunctionVTable<AbsPtr>, vtable::FunctionVTable<RelPtr>, vtable::EvalFunFun>(
                 fun.ptr,
                 &[FunctionVTableFields::apply_table as i64, slot as i64],
@@ -541,12 +528,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let parser = match fun.layout.maybe_mono() {
             Some(mono) => self.eval_fun_fun_val_tail(mono, call_kind).into(),
             None => {
-                let meta = LCallMeta {
-                    req: call_kind,
-                    tail: true,
-                };
                 let slot = self.collected_layouts.slots.layout_vtable_offsets
-                    [&(Slot::Eval(meta), fun.layout)];
+                    [&(LayoutPart::EvalFun(call_kind, TailWrapper), fun.layout)];
                 self.vtable_callable::<vtable::FunctionVTable<AbsPtr>, vtable::FunctionVTable<RelPtr>, vtable::EvalFunFunInternal>(
                     fun.ptr,
                     &[FunctionVTableFields::apply_table as i64, slot as i64],

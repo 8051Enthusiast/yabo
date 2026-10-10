@@ -1,4 +1,4 @@
-use yaboc_layout::{collect::Slot, vtable::LenFun};
+use yaboc_layout::vtable::LenFun;
 
 use super::*;
 
@@ -261,30 +261,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         struct_ty.const_array(&arg_impls)
     }
 
-    fn slot_impl_part(slot: Slot<'comp>) -> LayoutPart<'comp> {
-        match slot {
-            Slot::Parser(from, info) => {
-                if info.tail {
-                    LayoutPart::Parse(info.req, ParserFunKind::TailWrapper, from)
-                } else {
-                    LayoutPart::Parse(info.req, ParserFunKind::Wrapper, from)
-                }
-            }
-
-            Slot::FunCall(args) => LayoutPart::CreateArgs(args),
-            Slot::Eval(meta) => {
-                if meta.tail {
-                    LayoutPart::EvalFun(meta.req, ParserFunKind::TailWrapper)
-                } else {
-                    LayoutPart::EvalFun(meta.req, ParserFunKind::Wrapper)
-                }
-            }
-        }
-    }
-
     fn gather_slots(
         &mut self,
-        slots: &[(Slot<'comp>, Option<PSize>)],
+        slots: &[(LayoutPart<'comp>, Option<PSize>)],
         vtable: GlobalValue<'llvm>,
         size: PSize,
         layout: IMonoLayout<'comp>,
@@ -294,7 +273,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .as_basic_value_enum();
         let mut impls = vec![null; size as usize];
         for (arg, slot_number) in slots.iter() {
-            let s = self.create_function_info(layout, Self::slot_impl_part(*arg), vtable);
+            let s = self.create_function_info(layout, *arg, vtable);
             if let Some(slot) = slot_number {
                 impls[*slot as usize] = s.as_basic_value_enum();
             }
