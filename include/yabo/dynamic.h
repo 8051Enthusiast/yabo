@@ -225,9 +225,12 @@ static inline uint64_t dyn_error(const DynValue *error) {
   return ret;
 }
 
-static inline size_t dyn_mask(DynValue *val) {
+static inline void dyn_mask(DynValue *val) {
   MaskFun *mask_impl = YABO_ACCESS_VPTR(val->vtable, mask_impl);
-  return mask_impl(val->data);
+  size_t masked_size = mask_impl(val->data);
+  size_t data_size = dyn_val_size(val) - sizeof(struct VTableHeader*);
+  size_t diff = data_size - masked_size;
+  memset(val->data + data_size - diff, 0, diff);
 }
 
 #ifdef __cplusplus
