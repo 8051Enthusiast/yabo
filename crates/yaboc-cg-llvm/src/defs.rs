@@ -374,13 +374,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let _ = layout.inner().size_align(self.layouts).unwrap();
         let manifestation = self.layouts.dcx.manifestation(layout.inner());
         let arg_defid = arg_defs[arg_index];
-        let mut field_offset = manifestation.field_offsets[&arg_defid.0];
-        if is_multi {
-            field_offset += arg_layout
-                .size_align(self.layouts)
-                .unwrap()
-                .allocation_center_offset();
-        }
+        let field_offset = manifestation.field_offsets[&arg_defid.0];
         (head, field_offset)
     }
 

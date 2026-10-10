@@ -1,0 +1,31 @@
+====[ source code ]====
+fun ev_10[T](g: (int) -> T) = g(10)
+fun ev_20[T](g: (int) -> T) = g(20)
+
+export
+fun ~test = {
+  x: ~
+  let f = <n> x if 0 then (<m> n - m) else (<m> n + m)
+  let g = <n> <m> n * m
+  let h = x if 0 or 1 then f else g
+  let return = ev_10(ev_20(h))
+  #let return = h(20)(10)
+}
+
+====[ binary 1 ]====
+00
+
+====[ output 1 ]====
+10
+
+====[ binary 2 ]====
+01
+
+====[ output 2 ]====
+30
+
+====[ binary 3 ]====
+02
+
+====[ output 3 ]====
+200
