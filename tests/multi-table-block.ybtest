@@ -1,0 +1,40 @@
+====[ source code ]====
+fun table[T](f: (bit) -> T) = (
+  let zero = f(false)
+  let one = f(true)
+)
+
+fun get_table(x: bit) = x if true then (
+    table(<c> c if true then (<t> t + 1) else (<t> t - 1))
+  ) else (
+    table(<c> <t> c if true then t * 2 else t / 2)
+  )
+
+export
+fun ~test = {
+  x: ~
+  y: ~
+  let tab = get_table(x != 0)
+  let return = (
+    let zero = tab.zero(y)
+    let one = tab.one(y)
+  )
+}
+
+====[ binary 1 ]====
+01 04
+
+====[ output 1 ]====
+{
+  "zero": 3,
+  "one": 5
+}
+
+====[ binary 2 ]====
+00 04
+
+====[ output 2 ]====
+{
+  "zero": 2,
+  "one": 8
+}
