@@ -1,0 +1,49 @@
+====[ source code ]====
+fun arr(x: bit) = when?(x) then ([..]u16l at 1) else ([..]u16b at 1)
+
+def add = {
+  a: ~
+  b: ~
+  let return = a + b
+}
+
+def mul = {
+  a: ~
+  b: ~
+  let return = a * b
+}
+
+fun op(x: int) = (x & 1) if 0 then add else mul
+
+fun apply[T](x: bit, f: []int ~> T) = arr(x) ~> f
+
+export
+fun ~test = {
+  x: ~
+  let s = x >= 2
+  let return = apply(s, op(x))
+}
+
+====[ binary 1 ]====
+00 00 10 00 20
+
+====[ output 1 ]====
+48
+
+====[ binary 2 ]====
+01 00 10 00 20
+
+====[ output 2 ]====
+512
+
+====[ binary 3 ]====
+02 10 00 30 00
+
+====[ output 3 ]====
+64
+
+====[ binary 4 ]====
+03 10 00 30 00
+
+====[ output 4 ]====
+768
