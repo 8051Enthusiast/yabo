@@ -54,8 +54,8 @@ target_struct! {
 
 target_struct! {
     pub struct ArgDescriptor {
-        pub head: i64,
-        pub offset: usize,
+        pub head: u32,
+        pub offset: u32,
     }
 }
 

@@ -323,17 +323,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         argnum: u64,
-    ) -> Option<(i64, u64)> {
+    ) -> Option<(u32, u32)> {
         match (layout.mono_layout(), argnum) {
             (MonoLayout::ArrayParser(Some((parser, _))), 1)
             | (MonoLayout::ArrayFillParser(Some((parser, _))), 0) => {
                 let offset = parser.size_align(self.layouts).unwrap().next_offset(0);
-                Some(((parser.is_multi() as i64) << VTABLE_BIT, offset))
+                Some(((parser.is_multi() as u32) << VTABLE_BIT, offset as u32))
             }
             (MonoLayout::ArrayParser(Some((_, Some((len_layout, _))))), 0) => {
                 let int_size = len_layout.size_align(self.layouts).unwrap().after;
                 let whole_size = layout.inner().size_align(self.layouts).unwrap().after;
-                Some((0, whole_size - int_size))
+                Some((0, (whole_size - int_size) as u32))
             }
             _ => None,
         }
@@ -343,7 +343,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         argnum: PSize,
-    ) -> (i64, PSize) {
+    ) -> (u32, u32) {
         if let Some(value) = self.array_arg_level_and_offset(layout, argnum) {
             return value;
         }
@@ -369,12 +369,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let arg_index = arg_defs.len() - argnum as usize - 1;
         let arg_layout = args[arg_index];
         let is_multi = arg_layout.is_multi();
-        let head = is_multi as i64;
+        let head = is_multi as u32;
         // needed so that the manifestation exists
         let _ = layout.inner().size_align(self.layouts).unwrap();
         let manifestation = self.layouts.dcx.manifestation(layout.inner());
         let arg_defid = arg_defs[arg_index];
-        let field_offset = manifestation.field_offsets[&arg_defid.0];
+        let field_offset = manifestation.field_offsets[&arg_defid.0] as u32;
         (head, field_offset)
     }
 
@@ -384,8 +384,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         argnum: PSize,
     ) -> StructValue<'llvm> {
         let (head, offset) = self.arg_level_and_offset(layout, argnum);
-        let head = self.const_i64(head);
-        let offset = self.const_size_t(offset as i64);
+        let head = self.const_u32(head);
+        let offset = self.const_u32(offset);
         self.llvm.const_struct(&[head.into(), offset.into()], false)
     }
 

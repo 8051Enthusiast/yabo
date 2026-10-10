@@ -620,13 +620,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         Ok(self.builder.build_load(ty, ptr, name)?.into_int_value())
     }
 
-    fn build_size_load(
-        &mut self,
-        ptr: PointerValue<'llvm>,
-        name: &str,
-    ) -> IResult<IntValue<'llvm>> {
-        let ptr = self.build_cast::<*const usize, _>(ptr)?;
-        let ty = self.llvm.ptr_sized_int_type(&self.target_data, None);
+    fn build_i32_load(&mut self, ptr: PointerValue<'llvm>, name: &str) -> IResult<IntValue<'llvm>> {
+        let ptr = self.build_cast::<*const i32, _>(ptr)?;
+        let ty = self.llvm.i32_type();
         Ok(self.builder.build_load(ty, ptr, name)?.into_int_value())
     }
 

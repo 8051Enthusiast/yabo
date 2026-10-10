@@ -746,8 +746,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 "",
             )?
         };
-        let head = self.build_i64_load(head_ptr, "")?;
-        let offset = self.build_size_load(offset_ptr, "")?;
+        let head = self.build_i32_load(head_ptr, "")?;
+        let offset = self.build_i32_load(offset_ptr, "")?;
         Ok((head, offset))
     }
 
@@ -761,7 +761,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let (head, offset) = match fun.layout.maybe_mono() {
             Some(mono) => {
                 let (head, offset) = self.arg_level_and_offset(mono, argnum);
-                (self.const_i64(head), self.const_size_t(offset as i64))
+                (self.const_u32(head), self.const_size_t(offset as i64))
             }
             None => self.build_vtable_arg_set_info_get(fun.ptr, argnum)?,
         };
