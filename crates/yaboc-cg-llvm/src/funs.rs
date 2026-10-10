@@ -7,7 +7,7 @@ use yaboc_layout::{
     FuncLayoutKind, Layout, LayoutSlice, TailCallSite,
     collect::{EvalType, LCallReq, array_val_req, pd_len_req, pd_val_req, static_val_req},
     mir_subst::function_substitute,
-    represent::ParserFunKind,
+    part::ParserFunKind,
 };
 use yaboc_mir::{FunKind, MirKind};
 use yaboc_resolve::Resolves;

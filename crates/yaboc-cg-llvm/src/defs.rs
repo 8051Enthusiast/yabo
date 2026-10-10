@@ -3,7 +3,7 @@ use inkwell::values::{CallSiteValue, LLVMTailCallKind};
 use yaboc_base::dbformat;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::collect::LCallReq;
-use yaboc_layout::represent::ParserFunKind;
+use yaboc_layout::part::ParserFunKind;
 use yaboc_layout::{LayoutSlice, vtable};
 
 use crate::debug::SubroutineDebugType;

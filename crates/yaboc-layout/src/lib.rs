@@ -1,5 +1,6 @@
 pub mod collect;
 pub mod mir_subst;
+pub mod part;
 pub mod represent;
 pub mod vtable;
 use std::cmp::Ordering;
@@ -29,7 +30,8 @@ use crate::collect::EvalType;
 use crate::represent::truncated_hex;
 
 pub use self::collect::{TailCallSite, TailInfo};
-use self::represent::{LayoutHasher, LayoutPart};
+use self::part::LayoutPart;
+use self::represent::LayoutHasher;
 
 #[derive(Clone, PartialEq, Eq, Default, Debug)]
 pub struct StructManifestation {
@@ -1387,6 +1389,7 @@ mod tests {
     impl salsa::Database for LayoutTestDatabase {}
 
     use crate::collect::{EvalType, LCallReq, collected_layouts};
+    use crate::part::ParserFunKind;
 
     use super::*;
 
@@ -1429,7 +1432,7 @@ mod tests {
                             len: true,
                             bt: true
                         },
-                        represent::ParserFunKind::Worker,
+                        ParserFunKind::Worker,
                         from.inner()
                     ),
                     &ctx.db
@@ -1448,7 +1451,7 @@ mod tests {
                             len: false,
                             bt: true
                         },
-                        represent::ParserFunKind::Wrapper,
+                        ParserFunKind::Wrapper,
                         from.inner(),
                     ),
                     &ctx.db

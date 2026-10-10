@@ -22,8 +22,8 @@ use crate::{
         uses::{PublicType, Publicity, UseCollections},
     },
     mir_subst::{FunctionSubstitute, function_substitute},
+    part::{LayoutPart, ParserFunKind},
     pd_parser,
-    represent::{LayoutPart, ParserFunKind},
 };
 
 use self::tailsize::TailCollector;

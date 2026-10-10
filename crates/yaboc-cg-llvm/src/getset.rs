@@ -3,7 +3,7 @@ use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{
     LayoutSlice,
     collect::LCallReq,
-    represent::ParserFunKind::{self, TailWrapper},
+    part::ParserFunKind::{self, TailWrapper},
 };
 
 use super::*;

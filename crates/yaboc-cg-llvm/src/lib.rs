@@ -51,7 +51,8 @@ use yaboc_layout::{
     AbsLayoutCtx, ILayout, IMonoLayout, Layout, MonoLayout,
     collect::{LCallMeta, LCallReq, LayoutCollection, root_req},
     mir_subst::FunctionSubstitute,
-    represent::{LayoutPart, ParserFunKind, truncated_hex},
+    part::{LayoutPart, ParserFunKind},
+    represent::truncated_hex,
     vtable::{
         self, ArgDescriptor, ArrayVTableFields, BlockVTableFields, FunctionInfo,
         FunctionVTableFields, ParserVTableFields, VTableHeaderFields,
