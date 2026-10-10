@@ -1,0 +1,27 @@
+====[ source code ]====
+export
+fun ~test = {
+  x: ~
+  let add = { a: ~, let return = x if 0 then { b: ~, let return = a + b } else { b: ~, let return = a - b }}
+  let mul = { a: ~, let return = { b: ~, let return = a * b }}
+  p: x if 0 or 1 then add else mul
+  return: p
+}
+
+====[ binary 1 ]====
+00 02 03
+
+====[ output 1 ]====
+5
+
+====[ binary 2 ]====
+01 02 03
+
+====[ output 2 ]====
+-1
+
+====[ binary 3 ]====
+02 02 03
+
+====[ output 3 ]====
+6

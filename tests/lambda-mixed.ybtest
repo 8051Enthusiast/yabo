@@ -9,7 +9,6 @@ fun ~test = {
   let g = <n> <m> n * m
   let h = x if 0 or 1 then f else g
   let return = ev_10(ev_20(h))
-  #let return = h(20)(10)
 }
 
 ====[ binary 1 ]====
