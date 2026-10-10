@@ -13,7 +13,6 @@ yaboc-ast = { path = "../yaboc-ast" }
 yaboc-hir = { path = "../yaboc-hir" }
 yaboc-resolve = { path = "../yaboc-resolve" }
 yaboc-types = { path = "../yaboc-types" }
-yaboc-hir-types = { path = "../yaboc-hir-types" }
 yaboc-dependents = { path = "../yaboc-dependents" }
 fxhash = "0.2.1"
 [lints]
