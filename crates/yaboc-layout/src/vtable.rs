@@ -113,6 +113,14 @@ target_struct! {
 
 pub type InitFun = fn(start: *const u8, end: *const u8, context: *const u8) -> i64;
 
+target_struct! {
+    pub struct YaboLibraryInfo<T: VtablePointer> {
+        pub max_buf_size: u32,
+        pub global_size: u32,
+        pub init: T::FPtr<InitFun>,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use yaboc_target::layout::{AbsPtr, SizeAlign, TargetSized};

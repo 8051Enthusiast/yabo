@@ -129,6 +129,12 @@ struct ParserExport {
 
 typedef int64_t InitFun(const uint8_t *, const uint8_t *, char *);
 
+struct YaboLibraryInfo {
+  uint32_t max_buf_size;
+  uint32_t global_size;
+  YABO_VPTR(InitFun) init;
+};
+
 #undef YABO_VPTR
 
 #ifdef __cplusplus

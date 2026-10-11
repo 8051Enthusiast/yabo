@@ -10,8 +10,7 @@
 #include <vector>
 
 #include <yabo/dynamic.h>
-constexpr const char *YABO_GLOBAL_INIT = "yabo_global_init";
-constexpr const char *YABO_GLOBAL_SIZE = "yabo_global_size";
+constexpr const char *YABO_INFO = "_yabo_info";
 
 enum class YaboValKind : int64_t {
   YABOINTEGER = 0x100,

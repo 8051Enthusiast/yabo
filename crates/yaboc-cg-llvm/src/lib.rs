@@ -64,7 +64,7 @@ use yaboc_target::layout::{
 
 use crate::{
     debug::{DebugBuilder, DebugLocation},
-    defs::{YABO_GLOBAL_SIZE, YABO_MAX_BUF_SIZE},
+    defs::YABO_LIBRARY_INFO,
     getset::FunctionTy,
 };
 
@@ -1127,27 +1127,47 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         Ok(())
     }
 
-    pub fn create_max_buf_size(&mut self) {
-        let size = self.const_size_t(self.collected_layouts.max_sa.total_size() as i64);
-        let buf_size = self
-            .module
-            .add_global(size.get_type(), None, YABO_MAX_BUF_SIZE);
-        buf_size.set_initializer(&size);
-        buf_size.set_linkage(Linkage::External);
-        buf_size.set_constant(true);
-        buf_size.set_visibility(GlobalVisibility::Protected);
-    }
+    pub fn create_yabo_info(&mut self) {
+        let max_buf_size = self.const_u32(
+            self.collected_layouts
+                .max_sa
+                .total_size()
+                .try_into()
+                .expect("max buf size may not exceed 2^32 bytes"),
+        );
+        let global_size = self.const_u32(
+            self.collected_layouts
+                .global_offsets
+                .size
+                .allocation_size()
+                .try_into()
+                .expect("globals may not exceed 2^32 bytes"),
+        );
+        let init = self.global_constant_init_fun_val();
 
-    pub fn create_global_size(&mut self) {
-        let size =
-            self.const_size_t(self.collected_layouts.global_offsets.size.allocation_size() as i64);
-        let buf_size = self
-            .module
-            .add_global(size.get_type(), None, YABO_GLOBAL_SIZE);
-        buf_size.set_initializer(&size);
-        buf_size.set_linkage(Linkage::External);
-        buf_size.set_constant(true);
-        buf_size.set_visibility(GlobalVisibility::Protected);
+        let global_sa = if self.options.target.relative_vptrs {
+            vtable::YaboLibraryInfo::<RelPtr>::tsize
+        } else {
+            vtable::YaboLibraryInfo::<AbsPtr>::tsize
+        }(&self.options.target.data);
+        let global_ty = if self.options.target.relative_vptrs {
+            vtable::YaboLibraryInfo::<RelPtr>::struct_type
+        } else {
+            vtable::YaboLibraryInfo::<AbsPtr>::struct_type
+        }(self);
+        let global = self.module.add_global(global_ty, None, YABO_LIBRARY_INFO);
+
+        let init_ptr =
+            self.vtable_ptr_from_ptr(global, init.as_global_value().as_pointer_value(), None);
+        let struct_init = self.llvm.const_struct(
+            &[max_buf_size.into(), global_size.into(), init_ptr.into()],
+            false,
+        );
+        global.set_alignment(global_sa.align() as u32);
+        global.set_initializer(&struct_init);
+        global.set_linkage(Linkage::External);
+        global.set_constant(true);
+        global.set_visibility(GlobalVisibility::Protected);
     }
 
     pub fn add_interpreter(&mut self, name: &str) {
@@ -1164,8 +1184,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.create_all_vtables();
         self.create_all_funs().expect("Codegen failed");
         self.create_pd_exports().expect("Codegen failed");
-        self.create_max_buf_size();
-        self.create_global_size();
+        self.create_yabo_info();
         if let Some(interp) = self.options.dynamic_linker.clone() {
             self.add_interpreter(&interp);
         } else if let Ok(interp) = std::env::var("YABO_ELF_INTERPRETER_PATH") {

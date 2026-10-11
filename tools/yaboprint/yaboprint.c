@@ -307,14 +307,11 @@ struct LibInfo {
 
 struct LibInfo static_lib() {
   struct LibInfo ret;
-  extern size_t yabo_max_buf_size;
-  extern size_t yabo_global_size;
-  __attribute__((weak)) extern struct Slice yabo_global_address;
-  extern InitFun yabo_global_init;
+  extern struct YaboLibraryInfo _yabo_info;
   extern struct ParserExport STATIC_PARSER;
-  ret.max_dyn_size = yabo_max_buf_size;
-  ret.global_size = yabo_global_size;
-  ret.global_init = yabo_global_init;
+  ret.max_dyn_size = _yabo_info.max_buf_size;
+  ret.global_size = _yabo_info.global_size;
+  ret.global_init = YABO_ACCESS_VPTR((&_yabo_info), init);
   ret.parser = &STATIC_PARSER;
   ret.args = NULL;
   return ret;
@@ -439,26 +436,19 @@ struct LibInfo exec_lib() {
   }
 
   struct LibInfo lib;
-  lib.global_init = lookup_gnu_hash(&info, "yabo_global_init", offset);
   lib.parser = lookup_gnu_hash(&info, "main", offset);
-  size_t *yabo_max_buf_size =
-      lookup_gnu_hash(&info, "yabo_max_buf_size", offset);
-  size_t *yabo_global_size =
-      lookup_gnu_hash(&info, "yabo_global_size", offset);
+  struct YaboLibraryInfo *yabo_info = lookup_gnu_hash(&info, "_yabo_info", offset);
   if (!lib.parser) {
     eprintf("could not find main function\n");
     exit(1);
   }
-  if (!yabo_max_buf_size) {
+  if (!yabo_info) {
     eprintf("could not find yabo_max_buf_size (is this a yabo library?)\n");
     exit(1);
   }
-  if (!yabo_global_size) {
-    eprintf("could not find yabo_global_size\n");
-    exit(1);
-  }
-  lib.max_dyn_size = *yabo_max_buf_size;
-  lib.global_size = *yabo_global_size;
+  lib.max_dyn_size = yabo_info->max_buf_size;
+  lib.global_size = yabo_info->global_size;
+  lib.global_init = YABO_ACCESS_VPTR(yabo_info, init);
   lib.args = NULL;
   return lib;
 }
@@ -506,19 +496,14 @@ struct LibInfo dynamic_lib(char *filename, char *parser_name) {
     eprintf("could not open library: %s", dlerror());
     exit(1);
   }
-  size_t *max_dyn_size_ptr = (size_t *)dlsym(lib, "yabo_max_buf_size");
-  if (!max_dyn_size_ptr) {
-    perror("could not find yabo_max_buf_size (is this a yabo library?)");
+  struct YaboLibraryInfo *yabo_info = dlsym(lib, "_yabo_info");
+  if (!yabo_info) {
+    perror("could not find _yabo_info (is this a yabo library?)");
     exit(1);
   }
-  size_t *global_size = (size_t *)dlsym(lib, "yabo_global_size");
-  if (!global_size) {
-    perror("could not find yabo_global_size");
-    exit(1);
-  }
-  ret.max_dyn_size = *max_dyn_size_ptr;
-  ret.global_size = *global_size;
-  ret.global_init = dlsym(lib, "yabo_global_init");
+  ret.max_dyn_size = yabo_info->max_buf_size;
+  ret.global_size = yabo_info->global_size;
+  ret.global_init = YABO_ACCESS_VPTR(yabo_info, init);
   ret.parser = get_export(lib, parser_name);
   if (ret.parser) {
     ret.args = export_args(ret.parser, parser_name);

@@ -48,6 +48,8 @@ import YaboBindings
     ybqDeref,
   )
 import GHC.ForeignPtr (mallocPlainForeignPtrAlignedBytes)
+import Data.Word (Word32)
+import Foreign.Ptr (plusPtr)
 
 data YaboVal
   = YaboNull
@@ -214,15 +216,13 @@ openLibrary :: String -> (ForeignPtr CChar, Int) -> IO (Maybe Library)
 openLibrary name file = runMaybeT $ do
   let file' = uncurry ByteFile file
   dl <- liftIO $ DL.dlopen name [DL.RTLD_LAZY, DL.RTLD_LOCAL]
-  bufSizeFunPtr <- liftIO $ DL.dlsym dl "yabo_max_buf_size"
-  bufSizePtr <- getPtr bufSizeFunPtr
-  maxBuf <- liftIO $ peek (bufSizePtr :: Ptr CSize)
-  globalsSizeFunPtr <- liftIO $ DL.dlsym dl "yabo_global_size"
-  globalsSizePtr <- getPtr globalsSizeFunPtr
-  globalsSize <- liftIO $ peek (globalsSizePtr :: Ptr CSize)
+  yaboInfoFunPtr <- liftIO $ DL.dlsym dl "_yabo_info"
+  yaboInfoPtr <- getPtr yaboInfoFunPtr
+  maxBuf <- liftIO $ peek (yaboInfoPtr :: Ptr Word32)
+  let globalsSizePtr = plusPtr yaboInfoPtr 4
+  globalsSize <- liftIO $ peek (globalsSizePtr :: Ptr Word32)
   globals <- liftIO $ mallocPlainForeignPtrAlignedBytes (fromIntegral globalsSize) 8
-  initFunPtr <- liftIO $ DL.dlsym dl "yabo_global_init"
-  initPtr <- getPtr initFunPtr
+  let initPtr = castPtr yaboInfoPtr
 
   status <- liftIO $ withForeignPtr globals $ \globalsPtr -> asPtrLen file' $ \(charptr, len) -> do
     let filePtr = castPtr charptr

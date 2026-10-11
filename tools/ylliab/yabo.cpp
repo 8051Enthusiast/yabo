@@ -397,19 +397,15 @@ std::optional<SpannedVal> YaboValCreator::parse(const ParserFunctionInfo *parser
 
 GlobalStorage create_globals(void *lib,
                              std::pair<const uint8_t *, const uint8_t *> span) {
-  auto global_size = reinterpret_cast<size_t *>(dlsym(lib, YABO_GLOBAL_SIZE));
-  if (!global_size) {
+  auto yabo_info = reinterpret_cast<YaboLibraryInfo *>(dlsym(lib, YABO_INFO));
+  if (!yabo_info) {
     throw std::runtime_error("Failed to get yabo_global_size from library");
   }
 
-  auto global_storage = GlobalStorage(*global_size);
+  auto global_storage = GlobalStorage(yabo_info->global_size);
 
   auto [start, end] = span;
-  auto global_init = reinterpret_cast<InitFun *>(dlsym(lib, YABO_GLOBAL_INIT));
-  if (!global_init) {
-    throw std::runtime_error("Failed to get yabo_global_init from library");
-  }
-  int64_t status = global_init(start, end, global_storage.mut());
+  int64_t status = YABO_ACCESS_VPTR(yabo_info, init)(start, end, global_storage.mut());
   if (status) {
     throw std::runtime_error("Failed to initialize global state");
   }
@@ -418,12 +414,12 @@ GlobalStorage create_globals(void *lib,
 }
 
 YaboValCreator init_vals_from_lib(void *lib) {
-  auto size = reinterpret_cast<size_t *>(dlsym(lib, "yabo_max_buf_size"));
-  if (!size) {
-    throw std::runtime_error("Failed to get yabo_max_buf_size from library");
+  auto info = reinterpret_cast<YaboLibraryInfo *>(dlsym(lib, YABO_INFO));
+  if (!info) {
+    throw std::runtime_error("Failed to get _yabo_info from library");
   }
 
-  return YaboValCreator(YaboValStorage(*size));
+  return YaboValCreator(YaboValStorage(info->max_buf_size));
 }
 
 const char *YaboValCreator::get_context(FileIdx idx) {

@@ -14,9 +14,8 @@ use crate::debug::SubroutineDebugType;
 
 use super::*;
 
-pub const YABO_GLOBAL_INIT: &str = "yabo_global_init";
-pub const YABO_GLOBAL_SIZE: &str = "yabo_global_size";
-pub const YABO_MAX_BUF_SIZE: &str = "yabo_max_buf_size";
+pub const YABO_LIBRARY_INFO: &str = "_yabo_info";
+pub const YABO_GLOBAL_INIT: &str = "_yabo_global_init";
 
 #[derive(Clone, Copy)]
 pub enum ArgLayout<'comp> {
@@ -541,9 +540,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             .fn_type(&[self.any_ptr().into(); 3], false);
         let f = self
             .module
-            .add_function(YABO_GLOBAL_INIT, fun_type, Some(Linkage::External));
-        f.as_global_value()
-            .set_visibility(GlobalVisibility::Protected);
+            .add_function(YABO_GLOBAL_INIT, fun_type, Some(Linkage::Internal));
         f
     }
 }

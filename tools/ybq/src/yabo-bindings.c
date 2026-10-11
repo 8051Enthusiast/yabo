@@ -2,9 +2,10 @@
 #include <yabo/dynamic.h>
 #include <yabo/vtable.h>
 
-int64_t ybq_call_init(const uint8_t *begin, size_t len, void *init_fun,
+int64_t ybq_call_init(const uint8_t *begin, size_t len, void *yabo_info,
                       void *globals) {
-  return ((InitFun *)init_fun)(begin, begin + len, (char *)globals);
+  struct YaboLibraryInfo *yabo_info_ptr = (struct YaboLibraryInfo *)yabo_info;
+  return YABO_ACCESS_VPTR(yabo_info_ptr, init)(begin, begin + len, (char *)globals);
 }
 
 int ybq_type(const struct DynValue *val) {

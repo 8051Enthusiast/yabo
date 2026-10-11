@@ -44,8 +44,7 @@ YABO_UNIT = 0x800
 YABO_U8 = 0x900
 YABO_THUNK = 0xa00
 
-YABO_GLOBAL_INIT_NAME = "yabo_global_init"
-YABO_GLOBAL_SIZE_NAME = "yabo_global_size"
+YABO_INFO_NAME = "_yabo_info"
 
 OK = 0
 ERROR = 1
@@ -274,6 +273,18 @@ class ParserExport(VTable):
             arg_types.append(head)
         return arg_types
 
+class YaboLibraryInfo(VTable):
+    __slots__ = [
+        "max_buf_size",
+        "global_size",
+        "init"
+    ]
+
+    _fields_ = [
+        ("max_buf_size", c_uint32),
+        ("global_size", c_uint32),
+        ("init", vptr(CFUNCTYPE(c_int64, _voidptr, _voidptr, globals_p)))
+    ]
 
 MAX_ALIGNMENT = max(alignment(_voidptr), alignment(c_int64))
 
@@ -419,14 +430,16 @@ class YaboLib(ctypes.CDLL):
     _loc: threading.local
     _autoderef: bool
     _globals: ctypes.Array
+    _max_buf_size: int
 
     def __init__(self, path: str, global_address: bytearray, autoderef: bool = True):
         super().__init__(path)
         self._autoderef = autoderef
         slice_addr = Slice(global_address)
-        size = c_size_t.in_dll(self, YABO_GLOBAL_SIZE_NAME).value
-        self._globals = (c_char * size)()
-        status = self[YABO_GLOBAL_INIT_NAME](slice_addr.start, slice_addr.end, self._globals)
+        yabo_info = YaboLibraryInfo.in_dll(self, YABO_INFO_NAME)
+        self._globals = (c_char * yabo_info.global_size)()
+        self._max_buf_size = yabo_info.max_buf_size
+        status = yabo_info.init(slice_addr.start, slice_addr.end, self._globals)
         _check_status(status)
 
         self._loc = threading.local()
@@ -442,7 +455,7 @@ class YaboLib(ctypes.CDLL):
         try:
             return self._loc.ret_buf
         except AttributeError:
-            size = c_size_t.in_dll(self, "yabo_max_buf_size").value
+            size = self._max_buf_size
             self._loc.ret_buf = sized_dyn_value(size)()
             return self._loc.ret_buf
 
