@@ -16,9 +16,8 @@ git = "https://github.com/salsa-rs/salsa"
 rev = "05b4e3ebdcdc47730cdd359e7e97fb2470527279"
 
 [workspace.dependencies.inkwell]
-features = ["llvm23-1-prefer-dynamic"]
-git = "https://github.com/TheDan64/inkwell"
-rev = "c9d9734ae17dbaf1d9902dab3b8ee9d2041781ff"
+features = ["llvm22-1-prefer-dynamic"]
+version = "0.10.0"
 
 [profile.dist]
 inherits = "release"
