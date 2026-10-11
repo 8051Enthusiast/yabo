@@ -79,17 +79,6 @@ withReturnBuf lib f = withLib lib $ \globals -> allocaBytes (maxBuf lib) $ \buf 
   res <- packCStringLen (castPtr buf, fromIntegral actualSize)
   return $ res <$ functored
 
-arrayIndex :: Library -> ShortByteString -> CSize -> IO YaboVal
-arrayIndex lib val idx = do
-  let accessElement globals retBuf = do
-        _ <- useAsCStringLen val $ \(charptr, _) -> do
-          let ptr = castPtr charptr
-          ybqArrayAccess retBuf ptr idx globals
-        return $ Identity ()
-
-  res <- withReturnBuf lib accessElement
-  intoYaboVal lib $ runIdentity res
-
 deref :: Library -> ShortByteString -> IO YaboVal
 deref lib val = useAsCStringLen val $ \(charptr, _) -> do
   let ptr = castPtr charptr
@@ -99,6 +88,16 @@ deref lib val = useAsCStringLen val $ \(charptr, _) -> do
   ret <- withReturnBuf lib derefVal
   intoYaboVal lib $ runIdentity ret
 
+arrayIndex :: Library -> ShortByteString -> CSize -> IO YaboVal
+arrayIndex lib val idx = do
+  let accessElement globals retBuf = do
+        _ <- useAsCStringLen val $ \(charptr, _) -> do
+          let ptr = castPtr charptr
+          ybqArrayAccess retBuf ptr idx globals
+        return $ Identity ()
+
+  res <- withReturnBuf lib accessElement
+  deref lib $ runIdentity res
 
 blockIndex :: Library -> ShortByteString -> CSize -> IO (Maybe (String, YaboVal))
 blockIndex lib val idx = useAsCStringLen val $ \(charptr, _) -> runMaybeT $ do
@@ -176,7 +175,7 @@ parseWithArgs (Parser lib (ParserExport parserExport)) offset args = do
             _ <- ybqParseBytesWithArgs retBuf filePtr (fromIntegral len) parserExport argsPtr globals
             return $ Identity ()
 
-          intoYaboVal lib $ runIdentity ret
+          deref lib $ runIdentity ret
 
 getPtr :: (Monad m) => FunPtr a -> MaybeT m (Ptr b)
 getPtr ptr = (MaybeT . return) $ if ptr == nullFunPtr then Nothing else Just (castFunPtrToPtr ptr)
