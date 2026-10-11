@@ -2,6 +2,7 @@
 Python bindings to the dynamic interface of the yabo language.
 """
 
+from __future__ import annotations
 import ctypes
 from dataclasses import dataclass
 import threading
