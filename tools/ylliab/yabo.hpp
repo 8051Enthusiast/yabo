@@ -50,9 +50,9 @@ public:
   explicit GlobalStorage(size_t size)
       : storage(std::make_unique<uint8_t[]>(size)) {}
 
-  const char *get(uint8_t tag) const {
+  const char *get() const {
     const char *b = reinterpret_cast<const char *>(storage.get());
-    return b + (tag & 0x7);
+    return b;
   };
 
   char *mut() { return reinterpret_cast<char *>(storage.get()); };
@@ -212,7 +212,7 @@ public:
   std::optional<ByteSpan> extent(YaboVal val);
 
 private:
-  const char *get_context(FileIdx idx, uint8_t tag);
+  const char *get_context(FileIdx idx);
   YaboValStorage storage;
   std::vector<GlobalStorage> file_slots;
 };

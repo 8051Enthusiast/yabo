@@ -213,7 +213,7 @@ YaboValCreator::access_field(YaboVal val, const char *name, bool eval) {
     return {};
   }
 
-  auto context = get_context(val.file, YABO_VTABLE);
+  auto context = get_context(val.file);
 
   auto maybe_offset = val.field_offset(name);
   if (!maybe_offset) {
@@ -247,7 +247,7 @@ std::optional<YaboVal> YaboValCreator::deref(YaboVal val) {
 
   auto ret_vtable = YABO_ACCESS_VPTR(val->vtable, deref_impl.vtable);
   auto impl = YABO_ACCESS_VPTR(val->vtable, deref_impl.func);
-  auto context = get_context(val.file, YABO_VTABLE);
+  auto context = get_context(val.file);
   return storage.with_return_buf(val.file, [=](DynValue *buf) {
     buf->vtable = ret_vtable;
     return catch_segfault(impl, segfault_err_code, (void *)buf->data,
@@ -260,7 +260,7 @@ int64_t YaboValCreator::array_len(YaboVal val) {
     return 0;
   }
 
-  auto globals = get_context(val.file, 0);
+  auto globals = get_context(val.file);
   auto vtable = reinterpret_cast<ArrayVTable *>(val->vtable);
   return YABO_ACCESS_VPTR(vtable, array_len_impl)(val->data, globals);
 }
@@ -270,8 +270,8 @@ std::optional<YaboVal> YaboValCreator::index(YaboVal val, size_t idx) {
     return {};
   }
 
-  auto context = get_context(val.file, YABO_VTABLE);
-  auto globals = get_context(val.file, 0);
+  auto context = get_context(val.file);
+  auto globals = get_context(val.file);
   return storage.with_address_and_return_buf(val, [=](DynValue *val,
                                                       DynValue *buf) {
     auto vtable = reinterpret_cast<ArrayVTable *>(val->vtable);
@@ -293,8 +293,8 @@ std::optional<YaboVal> YaboValCreator::skip(YaboVal val, size_t offset) {
     return {};
   }
 
-  auto context = get_context(val.file, YABO_VTABLE);
-  auto globals = get_context(val.file, 0);
+  auto context = get_context(val.file);
+  auto globals = get_context(val.file);
   return storage.with_address_and_return_buf(
       val, [=](DynValue *val, DynValue *buf) {
         auto vtable = reinterpret_cast<ArrayVTable *>(val->vtable);
@@ -336,8 +336,8 @@ std::optional<ByteSpan> YaboValCreator::extent(YaboVal val) {
     auto start = val.access_u8();
     return ByteSpan(start, 1);
   }
-  auto context = get_context(val.file, YABO_VTABLE);
-  auto eval_context = get_context(val.file, YABO_VTABLE);
+  auto context = get_context(val.file);
+  auto eval_context = get_context(val.file);
   if (val.kind() == YaboValKind::YABOARRAY) {
     return storage.tmp_buf_o_plenty<std::optional<ByteSpan>>(
         [=](DynValue *t1, DynValue *t2) -> std::optional<ByteSpan> {
@@ -350,7 +350,7 @@ std::optional<ByteSpan> YaboValCreator::extent(YaboVal val) {
   if (val.kind() != YaboValKind::YABOTHUNK) {
     return {};
   }
-  auto without_vtable = get_context(val.file, 0);
+  auto without_vtable = get_context(val.file);
   auto vtable = reinterpret_cast<const NominalVTable *>(val->vtable);
   return storage.tmp_buf_o_plenty<std::optional<ByteSpan>>(
       [=](DynValue *t1, DynValue *t2, DynValue *t3) -> std::optional<ByteSpan> {
@@ -385,7 +385,7 @@ std::optional<ByteSpan> YaboValCreator::extent(YaboVal val) {
 std::optional<SpannedVal> YaboValCreator::parse(const ParserFunctionInfo *parser_info,
                                                 const void *args, ByteSpan buf,
                                                 FileIdx file) {
-  auto context = get_context(file, YABO_VTABLE);
+  auto context = get_context(file);
   return storage.with_span_and_return_buf(
       buf, file, [=](void *addr, DynValue *ret) {
         auto parser = YABO_ACCESS_VPTR(parser_info, func);
@@ -426,6 +426,6 @@ YaboValCreator init_vals_from_lib(void *lib) {
   return YaboValCreator(YaboValStorage(*size));
 }
 
-const char *YaboValCreator::get_context(FileIdx idx, uint8_t tag) {
-  return file_slots[idx.index].get(tag);
+const char *YaboValCreator::get_context(FileIdx idx) {
+  return file_slots[idx.index].get();
 }

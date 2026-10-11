@@ -42,7 +42,6 @@ YABO_BLOCK = 0x700
 YABO_UNIT = 0x800
 YABO_U8 = 0x900
 YABO_THUNK = 0xa00
-YABO_VTABLE_BIT = 1
 
 YABO_GLOBAL_INIT_NAME = "yabo_global_init"
 YABO_GLOBAL_SIZE_NAME = "yabo_global_size"
@@ -415,9 +414,6 @@ class Parser:
         )
 
 
-def tag_pointer(ptr, tag):
-    return ctypes.cast(ctypes.addressof(ptr) | tag, c_char_p)
-
 class YaboLib(ctypes.CDLL):
     _loc: threading.local
     _autoderef: bool
@@ -435,12 +431,7 @@ class YaboLib(ctypes.CDLL):
         self._loc = threading.local()
 
     def discriminant(self):
-        if self._autoderef:
-            val = tag_pointer(self._globals, YABO_VTABLE_BIT)
-            return val
-        else:
-            val = tag_pointer(self._globals, YABO_VTABLE_BIT)
-            return val
+        return self._globals
 
     def parser(self, name: str) -> Parser:
         export_info = ParserExport.in_dll(self, name)
@@ -493,9 +484,9 @@ class YaboValue:
         self._val = val
         self._lib = lib
 
-    def _deref(self, typ: int):
+    def _deref(self):
         deref = self._val.get_vtable().deref_impl
-        return self._lib.new_val(lambda ret: deref.invoke(ret, self._val.data_ptr(), tag_pointer(self._lib._globals, typ)))
+        return self._lib.new_val(lambda ret: deref.invoke(ret, self._val.data_ptr(), self._lib._globals))
 
     def __copy__(self):
         cls = type(self)
@@ -515,7 +506,7 @@ class YaboValue:
 
 class NominalValue(YaboValue):
     def deref(self):
-        return self._deref(YABO_VTABLE_BIT)
+        return self._deref()
 
 
 class BlockValue(YaboValue):
@@ -632,7 +623,7 @@ class UnitValue(YaboValue):
 
 class U8Value(YaboValue):
     def deref(self):
-        return self._deref(YABO_VTABLE_BIT)
+        return self._deref()
 
 def _new_value(val: DynValue, lib: YaboLib):
     val.mask()

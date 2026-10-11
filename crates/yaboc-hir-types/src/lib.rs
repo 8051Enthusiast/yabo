@@ -42,7 +42,6 @@ use yaboc_hir::{self, BlockReturnKind, Hirs};
 pub struct FullTypeId;
 pub struct PubTypeId;
 
-pub use returns::VTABLE_BIT;
 use returns::{ParserDefType, SscTypes, parser_expr_at, parser_returns, parser_type_at, ssc_types};
 use signature::{bound_args, fun_arg_count, parser_args, parser_signature};
 

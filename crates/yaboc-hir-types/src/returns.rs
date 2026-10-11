@@ -6,8 +6,6 @@ use yaboc_types::{inference::InternedBlockHead, to_type::TypeConvertMemo};
 
 use super::*;
 
-pub const VTABLE_BIT: u8 = 0;
-
 pub fn parser_type_at(db: &dyn TyHirs, id: DefId) -> SResult<TypeId> {
     let parent_pd = db.hir_parent_parserdef(id)?;
     let types = db.ssc_types(db.parser_ssc(parent_pd)?).silence()?;

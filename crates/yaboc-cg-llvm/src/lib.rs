@@ -38,7 +38,6 @@ use inkwell::{
 };
 use smallvec::SmallVec;
 use std::fmt::Write;
-use yaboc_hir_types::VTABLE_BIT;
 
 use val::{CgMonoValue, CgReturnValue, CgValue};
 use yaboc_absint::{AbstractDomain, Arg};
@@ -58,7 +57,7 @@ use yaboc_layout::{
         FunctionVTableFields, ParserVTableFields, VTableHeaderFields,
     },
 };
-use yaboc_mir::{Mirs, ReturnStatus};
+use yaboc_mir::ReturnStatus;
 use yaboc_target::layout::{
     AbsPtr, CodegenTypeContext, PSize, RelPtr, RelativeVPtr, SizeAlign, TargetSized,
 };
@@ -314,18 +313,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret: CgReturnValue<'comp, 'llvm>,
         layout: CgValue<'comp, 'llvm>,
     ) -> IResult<()> {
-        let fun = self
-            .builder
-            .get_insert_block()
-            .unwrap()
-            .get_parent()
-            .unwrap();
-        let write_vtable_ptr = self.llvm.append_basic_block(fun, "write_vtable_ptr");
-        let after = self.llvm.append_basic_block(fun, "after");
-        let has_vtable = self.build_check_ptr_bit_set(ret.head, VTABLE_BIT)?;
-        self.builder
-            .build_conditional_branch(has_vtable, write_vtable_ptr, after)?;
-        self.builder.position_at_end(write_vtable_ptr);
+        if !ret.layout.is_multi() {
+            return Ok(());
+        }
         if let Some(mono) = layout.layout.maybe_mono()
             && !self.collected_layouts.publics.needs_vtable(mono)
         {
@@ -333,9 +323,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         } else {
             let vtable_pointer = self.build_vtable_get(layout)?;
             self.build_vtable_store(ret.ptr, vtable_pointer)?;
-            self.builder.build_unconditional_branch(after)?;
         }
-        self.builder.position_at_end(after);
         Ok(())
     }
     fn write_vtable_from_mono_if_tagged(

@@ -1,7 +1,6 @@
 use inkwell::debug_info::AsDIScope;
 use inkwell::values::{CallSiteValue, LLVMTailCallKind};
 use yaboc_base::dbformat;
-use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::collect::LCallReq;
 use yaboc_layout::part::ParserFunKind;
 use yaboc_layout::vtable::{
@@ -345,40 +344,36 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         argnum: u64,
-    ) -> Option<(u32, u32)> {
+    ) -> Option<u32> {
         match (layout.mono_layout(), argnum) {
             (MonoLayout::ArrayParser(Some((parser, _))), 1)
             | (MonoLayout::ArrayFillParser(Some((parser, _))), 0) => {
                 let offset = parser.size_align(self.layouts).unwrap().next_offset(0);
-                Some(((parser.is_multi() as u32) << VTABLE_BIT, offset as u32))
+                Some(offset as u32)
             }
             (MonoLayout::ArrayParser(Some((_, Some((len_layout, _))))), 0) => {
                 let int_size = len_layout.size_align(self.layouts).unwrap().after;
                 let whole_size = layout.inner().size_align(self.layouts).unwrap().after;
-                Some((0, (whole_size - int_size) as u32))
+                Some((whole_size - int_size) as u32)
             }
             _ => None,
         }
     }
 
-    pub(super) fn arg_level_and_offset(
-        &mut self,
-        layout: IMonoLayout<'comp>,
-        argnum: PSize,
-    ) -> (u32, u32) {
+    pub(super) fn arg_offset(&mut self, layout: IMonoLayout<'comp>, argnum: PSize) -> u32 {
         if let Some(value) = self.array_arg_level_and_offset(layout, argnum) {
             return value;
         }
-        let (arg_defs, args) = match layout.mono_layout() {
-            MonoLayout::NominalParser(pd, args, _) => {
+        let arg_defs = match layout.mono_layout() {
+            MonoLayout::NominalParser(pd, _, _) => {
                 let pd = pd.lookup(&self.compiler_database.db).unwrap();
                 let arg_defs = pd.args.unwrap();
-                (arg_defs, args)
+                arg_defs
             }
-            MonoLayout::Lambda(lambda_id, _, args, ..) => {
+            MonoLayout::Lambda(lambda_id, _, _, ..) => {
                 let lambda = lambda_id.lookup(&self.compiler_database.db).unwrap();
                 let arg_defs = lambda.args;
-                (arg_defs, args)
+                arg_defs
             }
             _ => {
                 dbpanic!(
@@ -389,15 +384,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             }
         };
         let arg_index = arg_defs.len() - argnum as usize - 1;
-        let arg_layout = args[arg_index];
-        let is_multi = arg_layout.is_multi();
-        let head = is_multi as u32;
         // needed so that the manifestation exists
         let _ = layout.inner().size_align(self.layouts).unwrap();
         let manifestation = self.layouts.dcx.manifestation(layout.inner());
         let arg_defid = arg_defs[arg_index];
         let field_offset = manifestation.field_offsets[&arg_defid.0] as u32;
-        (head, field_offset)
+        field_offset
     }
 
     pub(super) fn parser_set_arg_struct_val(
@@ -405,8 +397,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         layout: IMonoLayout<'comp>,
         argnum: PSize,
     ) -> StructValue<'llvm> {
-        let (head, offset) = self.arg_level_and_offset(layout, argnum);
-        let head = self.const_u32(head);
+        let offset = self.arg_offset(layout, argnum);
+        let head = self.const_u32(0);
         let offset = self.const_u32(offset);
         self.llvm.const_struct(&[head.into(), offset.into()], false)
     }

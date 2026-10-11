@@ -1,9 +1,9 @@
 use inkwell::{types::FunctionType, values::CallSiteValue};
-use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{
     LayoutSlice,
     collect::LCallReq,
     part::ParserFunKind::{self, TailWrapper},
+    vtable::FunctionInfoFields,
 };
 
 use super::*;
@@ -73,26 +73,6 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.get_intrinsic::<fn(ptr: *const u8, offset: RelativeVPtr<()>) -> *const u8>(
             "llvm.load.relative.%1",
         )
-    }
-
-    fn llvm_ptr_mask(&mut self) -> FunctionValue<'llvm> {
-        self.get_intrinsic::<fn(ptr: *const u8, mask: usize) -> *const u8>("llvm.ptrmask.%0.%1")
-    }
-
-    pub(crate) fn build_high_bit_mask(
-        &mut self,
-        ptr: PointerValue<'llvm>,
-    ) -> IResult<PointerValue<'llvm>> {
-        let ptr_mask = self.llvm_ptr_mask();
-        let ptrint = <usize>::codegen_ty(self).into_int_type();
-        let mask = ptrint.const_int(!7, true);
-        let masked = self
-            .builder
-            .build_call(ptr_mask, &[ptr.into(), mask.into()], "masked")?;
-        Ok(masked
-            .try_as_basic_value()
-            .unwrap_basic()
-            .into_pointer_value())
     }
 
     fn vtable_get_val_at_offset<Target: TargetSized>(
@@ -197,11 +177,69 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         Ok(return_status(self.dispatch::<Fun>(dispatchee, part, args)?))
     }
 
+    fn handle_vtable_copy(
+        &mut self,
+        ret: CgReturnValue<'comp, 'llvm>,
+        dispatchee: CgValue<'comp, 'llvm>,
+    ) -> IResult<()> {
+        if ret.layout.is_multi() {
+            let vtable_pointer = self.build_vtable_get(dispatchee)?;
+            self.build_vtable_store(ret.ptr, vtable_pointer)?;
+        }
+        Ok(())
+    }
+
+    fn get_return_vtable(
+        &mut self,
+        dispatchee: CgValue<'comp, 'llvm>,
+        part: LayoutPart<'comp>,
+    ) -> IResult<Option<PointerValue<'llvm>>> {
+        match dispatchee.layout.maybe_mono() {
+            Some(mono) => match mono.return_layout(part, self.layouts).unwrap().maybe_mono() {
+                Some(mono_ret) => Ok(Some(self.get_vtable_tag(mono_ret))),
+                None => Ok(None),
+            },
+            None => {
+                let data = &self.options.target.data;
+                let offset = if self.options.target.relative_vptrs {
+                    self.layout_part_vtable_offset::<RelPtr>(dispatchee.layout, part)
+                        + <FunctionInfo<RelPtr, fn(i64) -> i64>>::path_offset(
+                            data,
+                            &[FunctionInfoFields::vtable as i64],
+                        )
+                } else {
+                    self.layout_part_vtable_offset::<AbsPtr>(dispatchee.layout, part)
+                        + <FunctionInfo<AbsPtr, fn(i64) -> i64>>::path_offset(
+                            data,
+                            &[FunctionInfoFields::vtable as i64],
+                        )
+                };
+                self.vtable_get_ptr_from_offset(dispatchee.ptr, offset)
+                    .map(Some)
+            }
+        }
+    }
+
+    fn handle_vtable_return_write(
+        &mut self,
+        ret: CgReturnValue<'comp, 'llvm>,
+        dispatchee: CgValue<'comp, 'llvm>,
+        part: LayoutPart<'comp>,
+    ) -> IResult<()> {
+        if ret.layout.is_multi() {
+            if let Some(vtable_pointer) = self.get_return_vtable(dispatchee, part)? {
+                self.build_vtable_store(ret.ptr, vtable_pointer)?;
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn call_deref_fun(
         &mut self,
         ret: CgReturnValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
     ) -> IResult<IntValue<'llvm>> {
+        self.handle_vtable_return_write(ret, arg, LayoutPart::Deref)?;
         self.dispatch_int_ret::<vtable::DerefFun>(
             arg,
             LayoutPart::Deref,
@@ -215,25 +253,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         arg: CgValue<'comp, 'llvm>,
         field: Identifier,
     ) -> IResult<IntValue<'llvm>> {
+        self.handle_vtable_return_write(ret, arg, LayoutPart::Field(field))?;
         self.dispatch_int_ret::<vtable::BlockFieldFun>(
             arg,
             LayoutPart::Field(field),
             &[ret.ptr, arg.ptr, ret.head].map(|x| x.into()),
-        )
-    }
-
-    fn call_parser_fun(
-        &mut self,
-        ret: CgReturnValue<'comp, 'llvm>,
-        fun: CgValue<'comp, 'llvm>,
-        arg: CgValue<'comp, 'llvm>,
-        req: LCallReq,
-        fun_kind: ParserFunKind,
-    ) -> IResult<IntValue<'llvm>> {
-        self.dispatch_int_ret::<vtable::ParserFun>(
-            fun,
-            LayoutPart::Parse(req, fun_kind, arg.layout),
-            &[ret.ptr, fun.ptr, ret.head, arg.ptr].map(|x| x.into()),
         )
     }
 
@@ -289,8 +313,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let (call_kind, precheck) = info.modify_reqs(call_kind);
         let parser = self.parser_impl_fun_val(fun.layout, arg.layout, call_kind);
         let passed_arg = if let Some(len) = precheck {
-            let globals = self.build_high_bit_mask(ret.head)?;
-            self.consume_const_length(arg, fun, globals, len)?
+            self.consume_const_length(arg, fun, ret.head, len)?
         } else {
             arg
         };
@@ -329,7 +352,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         arg: CgValue<'comp, 'llvm>,
         call_kind: LCallReq,
     ) -> IResult<IntValue<'llvm>> {
-        self.call_parser_fun(ret, fun, arg, call_kind, ParserFunKind::Wrapper)
+        let part = LayoutPart::Parse(call_kind, ParserFunKind::Wrapper, arg.layout);
+        self.handle_vtable_return_write(ret, fun, part)?;
+        self.dispatch_int_ret::<vtable::ParserFun>(
+            fun,
+            part,
+            &[ret.ptr, fun.ptr, ret.head, arg.ptr].map(|x| x.into()),
+        )
     }
 
     pub(super) fn call_parser_fun_tail(
@@ -342,6 +371,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     ) -> IResult<IntValue<'llvm>> {
         let sa = fun.layout.size_align_without_vtable(self.layouts).unwrap();
         let size = self.const_i64(sa.after as i64);
+        let part = LayoutPart::Parse(call_kind, ParserFunKind::TailWrapper, arg.layout);
+        self.handle_vtable_return_write(ret, fun, part)?;
         let fun_copy = if let Some(parent_fun) = parent_fun {
             self.builder
                 .build_memcpy(
@@ -358,7 +389,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         };
         let call_ret = self.dispatch::<vtable::ParserFun>(
             fun,
-            LayoutPart::Parse(call_kind, ParserFunKind::TailWrapper, arg.layout),
+            part,
             &[ret.ptr, fun_copy.ptr, ret.head, arg.ptr].map(|x| x.into()),
         )?;
         self.set_tail_call(call_ret, true);
@@ -372,9 +403,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         fun: CgValue<'comp, 'llvm>,
         args: LayoutSlice<'comp>,
     ) -> IResult<IntValue<'llvm>> {
+        let part = LayoutPart::CreateArgs(args);
+        self.handle_vtable_return_write(ret, fun, part)?;
         self.dispatch_int_ret::<vtable::CreateArgFun>(
             fun,
-            LayoutPart::CreateArgs(args),
+            part,
             &[ret.ptr, fun.ptr, ret.head].map(|x| x.into()),
         )
     }
@@ -384,9 +417,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret: CgReturnValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
     ) -> IResult<IntValue<'llvm>> {
+        let part = LayoutPart::CurrentElement;
+        self.handle_vtable_return_write(ret, arg, part)?;
         self.dispatch_int_ret::<vtable::CurrentElementFun>(
             arg,
-            LayoutPart::CurrentElement,
+            part,
             &[ret.ptr, arg.ptr, ret.head].map(|x| x.into()),
         )
     }
@@ -423,17 +458,19 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         kind: ParserFunKind,
         req: LCallReq,
     ) -> IResult<CallSiteValue<'llvm>> {
+        let part = LayoutPart::EvalFun(req, kind);
+        self.handle_vtable_return_write(ret, fun, part)?;
         let call = if let Some(arg) = arg {
             assert_ne!(kind, ParserFunKind::Wrapper);
             self.dispatch::<vtable::EvalFunFunInternal>(
                 fun,
-                LayoutPart::EvalFun(req, kind),
+                part,
                 &[ret.ptr, fun.ptr, ret.head, arg.ptr].map(|x| x.into()),
             )?
         } else {
             self.dispatch::<vtable::EvalFunFun>(
                 fun,
-                LayoutPart::EvalFun(req, kind),
+                part,
                 &[ret.ptr, fun.ptr, ret.head].map(|x| x.into()),
             )?
         };
@@ -477,9 +514,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         } else {
             fun
         };
+        let part = LayoutPart::EvalFun(call_kind, TailWrapper);
+        self.handle_vtable_return_write(ret, fun, part)?;
         let call_ret = self.dispatch::<vtable::EvalFunFunInternal>(
             fun,
-            LayoutPart::EvalFun(call_kind, TailWrapper),
+            part,
             &[ret.ptr, fun_copy.ptr, ret.head, arg.ptr].map(|x| x.into()),
         )?;
         self.set_tail_call(call_ret, true);
@@ -546,6 +585,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         start: CgValue<'comp, 'llvm>,
         end: CgValue<'comp, 'llvm>,
     ) -> IResult<IntValue<'llvm>> {
+        self.handle_vtable_copy(ret, start)?;
         self.dispatch_int_ret::<vtable::SpanFun>(
             start,
             LayoutPart::Span,
@@ -561,66 +601,18 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub(super) fn build_return_value(
         &mut self,
         val: CgValue<'comp, 'llvm>,
-        mut deref_level: IntValue<'llvm>,
         globals: PointerValue<'llvm>,
     ) -> IResult<CgReturnValue<'comp, 'llvm>> {
-        if val.layout.is_multi() {
-            let tag = self.const_i64(1 << VTABLE_BIT);
-            deref_level = self.builder.build_or(deref_level, tag, "vtable_tag")?;
-        }
-        let ptr = self.build_byte_gep(globals, deref_level, "tagged")?;
-        Ok(CgReturnValue::new(ptr, val.ptr, val.layout))
+        Ok(CgReturnValue::new(globals, val.ptr, val.layout))
     }
 
-    pub(super) fn build_check_ptr_bit_set(
-        &mut self,
-        val: PointerValue<'llvm>,
-        bit: u8,
-    ) -> IResult<IntValue<'llvm>> {
-        let masked = self.build_high_bit_mask(val)?;
-        let u8 = u8::codegen_ty(self).into_int_type();
-        let diff = self.builder.build_ptr_diff(u8, val, masked, "ptrdiff")?;
-        let set_bit = self.const_i64(1 << bit);
-        let and = self.builder.build_and(set_bit, diff, "and")?;
-        let comp =
-            self.builder
-                .build_int_compare(IntPredicate::NE, and, self.const_i64(0), "comp")?;
-        Ok(comp)
-    }
-
-    pub(super) fn build_vtable_arg_set_info_get(
+    pub(super) fn build_vtable_arg_set_offset_get(
         &mut self,
         fun: PointerValue<'llvm>,
         argnum: PSize,
-    ) -> IResult<(IntValue<'llvm>, IntValue<'llvm>)> {
-        let arginfo_ptr_ptr = self.build_cast::<*const *const vtable::ArgDescriptor, _>(fun)?;
-        let arginfo_ptr_ty = <*const vtable::ArgDescriptor>::codegen_ty(self);
+    ) -> IResult<IntValue<'llvm>> {
+        let vtable_ptr = self.read_vtable_pointer(fun)?;
         let arginfo_ty = vtable::ArgDescriptor::codegen_ty(self);
-        let vtable_ptr_ptr = unsafe {
-            self.builder.build_in_bounds_gep(
-                arginfo_ptr_ty,
-                arginfo_ptr_ptr,
-                &[self.const_i64(-1)],
-                "vtable_ptr_ptr",
-            )?
-        };
-        let vtable_ptr = self
-            .builder
-            .build_load(arginfo_ptr_ty, vtable_ptr_ptr, "vtable_ptr")?
-            .into_pointer_value();
-        let head_ptr = unsafe {
-            self.builder.build_in_bounds_gep(
-                arginfo_ty,
-                vtable_ptr,
-                &[
-                    self.const_i64(-1 - argnum as i64),
-                    self.llvm
-                        .i32_type()
-                        .const_int(vtable::ArgDescriptorFields::head as u64, false),
-                ],
-                "",
-            )?
-        };
         let offset_ptr = unsafe {
             self.builder.build_in_bounds_gep(
                 arginfo_ty,
@@ -634,9 +626,8 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 "",
             )?
         };
-        let head = self.build_i32_load(head_ptr, "")?;
         let offset = self.build_i32_load(offset_ptr, "")?;
-        Ok((head, offset))
+        Ok(offset)
     }
 
     pub(super) fn build_arg_set(
@@ -646,18 +637,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         argnum: PSize,
         globals: PointerValue<'llvm>,
     ) -> IResult<IntValue<'llvm>> {
-        let (head, offset) = match fun.layout.maybe_mono() {
+        let offset = match fun.layout.maybe_mono() {
             Some(mono) => {
-                let (head, offset) = self.arg_level_and_offset(mono, argnum);
-                (self.const_u32(head), self.const_size_t(offset as i64))
+                let offset = self.arg_offset(mono, argnum);
+                self.const_u32(offset)
             }
-            None => self.build_vtable_arg_set_info_get(fun.ptr, argnum)?,
+            None => self.build_vtable_arg_set_offset_get(fun.ptr, argnum)?,
         };
         let fun_any_ptr = self.build_cast::<*mut u8, _>(fun.ptr)?;
         let fun_arg_ptr = self.build_byte_gep(fun_any_ptr, offset, "")?;
-        let ptr = self.build_byte_gep(globals, head, "tagged")?;
         let fun_arg = CgReturnValue::new(
-            ptr,
+            globals,
             fun_arg_ptr,
             arg.layout.evaluate(self.layouts).unwrap().0,
         );
@@ -666,14 +656,18 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
     pub(super) fn call_len_fun(
         &mut self,
-        ret: PointerValue<'llvm>,
+        ret: CgReturnValue<'comp, 'llvm>,
         fun: CgValue<'comp, 'llvm>,
-        globals: PointerValue<'llvm>,
     ) -> IResult<IntValue<'llvm>> {
+        if ret.layout.is_multi() {
+            let int_layout = self.layouts.dcx.int().maybe_mono().unwrap();
+            let int_vtable = self.get_vtable_tag(int_layout);
+            self.build_vtable_store(ret.ptr, int_vtable)?;
+        }
         self.dispatch_int_ret::<vtable::LenFun>(
             fun,
             LayoutPart::Len,
-            &[ret.into(), fun.ptr.into(), globals.into()],
+            &[ret.ptr.into(), fun.ptr.into(), ret.head.into()],
         )
     }
 
@@ -692,6 +686,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         dest: CgReturnValue<'comp, 'llvm>,
         src: CgValue<'comp, 'llvm>,
     ) -> IResult<PointerValue<'llvm>> {
+        self.handle_vtable_copy(dest, src)?;
         let sa = src.layout.size_align_without_vtable(self.layouts).unwrap();
         let size = self.const_i64(sa.total_size() as i64);
         let align = sa.start_alignment() as u32;

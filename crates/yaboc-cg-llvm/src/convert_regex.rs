@@ -66,7 +66,6 @@ impl<'llvm, 'comp, 'r> RegexTranslator<'llvm, 'comp, 'r> {
         cg.builder
             .build_store(has_no_match, cg.llvm.bool_type().const_int(1, false))?;
         let (ret, _, head, arg) = parser_args(llvm_fun);
-        let globals = cg.build_high_bit_mask(head)?;
         let eof_fail = cg.llvm.append_basic_block(llvm_fun, "eof_fail");
         let succ = cg.llvm.append_basic_block(llvm_fun, "succ");
         let stateblock = FxHashMap::default();
@@ -90,7 +89,7 @@ impl<'llvm, 'comp, 'r> RegexTranslator<'llvm, 'comp, 'r> {
             parser_fun,
             active_pos: from,
             retlen,
-            globals,
+            globals: head,
         })
     }
 

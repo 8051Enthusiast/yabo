@@ -50,7 +50,6 @@ enum YaboHead {
   YABO_UNIT = 0x800,
   YABO_U8 = 0x900,
   YABO_THUNK = 0xa00,
-  YABO_VTABLE = 1,
 };
 
 #define YABO_MAX_ALIGN (((alignof(int64_t) - 1) | (alignof(void *) - 1)) + 1)

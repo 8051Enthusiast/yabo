@@ -12,7 +12,6 @@ use yaboc_ast::ConstraintAtom;
 use yaboc_ast::expr::Atom;
 use yaboc_base::interner::FieldName;
 use yaboc_hir::BlockId;
-use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{
     ILayout, IMonoLayout, Layout, MonoLayout, collect::LCallMeta, mir_subst::FunctionSubstitute,
 };
@@ -62,7 +61,6 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         for (idx, layout) in mir_fun.stack_layouts.iter().enumerate() {
             stack.push(cg.build_layout_alloca(*layout, &format!("stack_{idx}"), debug_loc)?);
         }
-        let globals = cg.build_high_bit_mask(head)?;
         let mut blocks = Vec::new();
         for (bbref, _) in mir_fun.f.iter_bb() {
             let block = cg
@@ -86,7 +84,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             arg,
             ret: None,
             undefined,
-            globals,
+            globals: head,
             debug_loc,
             req,
         })
@@ -154,20 +152,9 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         Ok(CgValue::new(layout, ptr))
     }
 
-    fn deref_level(&mut self, place: PlaceRef) -> IResult<PointerValue<'llvm>> {
-        let place_layout = self.mir_fun.place(place);
-        if self.mir_fun.f.place(place).place == mir::Place::Return {
-            return Ok(self.ret.unwrap().head);
-        }
-        let level = (place_layout.is_multi() as u64) << VTABLE_BIT;
-        let c = self.cg.const_i64(level as i64);
-        self.cg.build_byte_gep(self.globals, c, "tagged")
-    }
-
     fn return_val(&mut self, place: PlaceRef) -> IResult<CgReturnValue<'comp, 'llvm>> {
-        let head = self.deref_level(place)?;
         let val = self.place_val(place)?;
-        Ok(CgReturnValue::new(head, val.ptr, val.layout))
+        Ok(CgReturnValue::new(self.globals, val.ptr, val.layout))
     }
 
     fn controlflow_case(&mut self, ret: IntValue<'llvm>, ctrl: ControlFlow) -> IResult<()> {
@@ -466,9 +453,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let intermediate_val =
             self.cg
                 .build_alloca_value(intermediate_layout, "intermediate", self.debug_loc)?;
-        let intermediate_ret =
-            self.cg
-                .build_return_value(intermediate_val, self.cg.const_i64(0), self.globals)?;
+        let intermediate_ret = self.cg.build_return_value(intermediate_val, self.globals)?;
         let tmp_bb = self.cg.llvm.append_basic_block(self.llvm_fun, "intermed");
         let res = self
             .cg
@@ -491,8 +476,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
 
     fn len_call(&mut self, ret: PlaceRef, fun: PlaceRef, ctrl: ControlFlow) -> IResult<()> {
         let len_val = self.place_val(fun)?;
-        let ret_val = self.return_val(ret)?.ptr;
-        let ret = self.cg.call_len_fun(ret_val, len_val, self.globals)?;
+        let ret_val = self.return_val(ret)?;
+        let ret = self.cg.call_len_fun(ret_val, len_val)?;
         self.controlflow_case(ret, ctrl)
     }
 

@@ -21,12 +21,13 @@ pub struct FunctionSubstitute<'a> {
 }
 
 impl<'a> FunctionSubstitute<'a> {
-    pub fn new_from_block(
+    fn new_from_block(
         f: Function,
         strictness: &[Strictness],
         from: Option<ILayout<'a>>,
         block: IMonoLayout<'a>,
         force: bool,
+        len: bool,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
         let (def, captures) = if let MonoLayout::BlockParser(def, captures) = block.mono_layout() {
@@ -34,6 +35,7 @@ impl<'a> FunctionSubstitute<'a> {
         } else {
             panic!("non-block-parser as argument")
         };
+        let int = ctx.dcx.int();
         let evaluated = ctx
             .block_result(&(from, block.0))
             .ok_or_else(SilencedError::new)?;
@@ -41,7 +43,7 @@ impl<'a> FunctionSubstitute<'a> {
         for (id, expr) in evaluated.expr_vals.iter() {
             expr_map.insert(*id, expr.clone());
         }
-        let ret = evaluated.returned;
+        let ret = if len { int } else { evaluated.returned };
         let mut vals = evaluated.vals.clone();
         vals.extend(captures.iter());
         let root_context = def.lookup(ctx.db)?.root_context.0;
@@ -60,7 +62,7 @@ impl<'a> FunctionSubstitute<'a> {
             fun: block.0,
             arg: from,
             ret,
-            int: ctx.dcx.int(),
+            int,
             expr: expr_map,
             vals,
             force,
@@ -82,9 +84,11 @@ impl<'a> FunctionSubstitute<'a> {
         evaluated: PdEvaluated<ILayout<'a>>,
         expr_id: ExprId,
         force: bool,
+        len: bool,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<FunctionSubstitute<'a>, LayoutError> {
         let mut expr_map = FxHashMap::default();
+        let int = ctx.dcx.int();
         if let Some(expr) = evaluated.expr_vals.as_ref() {
             expr_map.insert(expr_id, expr.clone());
         }
@@ -92,8 +96,8 @@ impl<'a> FunctionSubstitute<'a> {
         let sub_info = SubInfo {
             fun: fun.inner(),
             arg: from,
-            ret: evaluated.returned,
-            int: ctx.dcx.int(),
+            ret: if len { int } else { evaluated.returned },
+            int,
             expr: expr_map,
             force,
             vals,
@@ -107,13 +111,14 @@ impl<'a> FunctionSubstitute<'a> {
         })
     }
 
-    pub fn new_from_pd(
+    fn new_from_pd(
         f: Function,
         strictness: &[Strictness],
         from: Option<ILayout<'a>>,
         fun: IMonoLayout<'a>,
         pd: ParserDefId,
         force: bool,
+        len: bool,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
         let MonoLayout::NominalParser(..) = fun.mono_layout() else {
@@ -129,15 +134,18 @@ impl<'a> FunctionSubstitute<'a> {
             .pd_result(&lookup_layout)
             .ok_or_else(SilencedError::new)?
             .clone();
-        Self::new_from_fun(f, strictness, from, fun, evaluated, expr_id, force, ctx)
+        Self::new_from_fun(
+            f, strictness, from, fun, evaluated, expr_id, force, len, ctx,
+        )
     }
 
-    pub fn new_from_lambda(
+    fn new_from_lambda(
         f: Function,
         strictness: &[Strictness],
         fun: IMonoLayout<'a>,
         lambda: LambdaId,
         force: bool,
+        len: bool,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
         let MonoLayout::Lambda(..) = fun.mono_layout() else {
@@ -156,22 +164,29 @@ impl<'a> FunctionSubstitute<'a> {
             evaluated.into(),
             expr_id,
             force,
+            len,
             ctx,
         )
     }
 
-    pub fn new_from_if(
+    fn new_from_if(
         f: Function,
         strictness: &[Strictness],
         from: ILayout<'a>,
         fun: IMonoLayout<'a>,
         force: bool,
+        len: bool,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
         let MonoLayout::IfParser(inner, _) = fun.mono_layout() else {
             panic!("non-if-parser as argument")
         };
-        let result = inner.apply_arg(ctx, from)?;
+        let int = ctx.dcx.int();
+        let result = if len {
+            int
+        } else {
+            inner.apply_arg(ctx, from)?.normalize(ctx)?.0
+        };
         let exprs = FxHashMap::default();
         let vals = FxHashMap::default();
         let sub_info = SubInfo {
@@ -179,7 +194,7 @@ impl<'a> FunctionSubstitute<'a> {
             arg: Some(from),
             ret: result,
             expr: exprs,
-            int: ctx.dcx.int(),
+            int,
             force,
             vals,
         };
@@ -243,18 +258,19 @@ pub fn function_substitute<'a>(
 ) -> Result<FunctionSubstitute<'a>, LayoutError> {
     let mir = ctx.db.mir(fun_info, req)?;
     let strictness = ctx.db.strictness(fun_info, req)?;
+    let len = req == MirKind::Len;
     match fun_info {
         FunKind::Block(_) => {
-            FunctionSubstitute::new_from_block(mir, &strictness, from, fun, force, ctx)
+            FunctionSubstitute::new_from_block(mir, &strictness, from, fun, force, len, ctx)
         }
         FunKind::ParserDef(pd) => {
-            FunctionSubstitute::new_from_pd(mir, &strictness, from, fun, pd, force, ctx)
+            FunctionSubstitute::new_from_pd(mir, &strictness, from, fun, pd, force, len, ctx)
         }
         FunKind::Lambda(lambda_id) => {
-            FunctionSubstitute::new_from_lambda(mir, &strictness, fun, lambda_id, force, ctx)
+            FunctionSubstitute::new_from_lambda(mir, &strictness, fun, lambda_id, force, len, ctx)
         }
         FunKind::If(_) => {
-            FunctionSubstitute::new_from_if(mir, &strictness, from.unwrap(), fun, force, ctx)
+            FunctionSubstitute::new_from_if(mir, &strictness, from.unwrap(), fun, force, len, ctx)
         }
     }
 }

@@ -52,7 +52,7 @@ static inline int64_t dyn_parse_bytes(DynValue *ret, struct Slice *bytes,
                                       const struct Globals *globals) {
   ret->vtable = YABO_ACCESS_VPTR(info, vtable);
   int64_t status = YABO_ACCESS_VPTR(info, func)(
-      ret->data, args, (const char *)globals + YABO_VTABLE, bytes);
+      ret->data, args, (const char *)globals, bytes);
   if (status) {
     return dyn_invalidate(ret, status);
   }
@@ -67,7 +67,7 @@ static inline int64_t dyn_deref(DynValue *ret, const DynValue *val,
   ret->vtable = YABO_ACCESS_VPTR(&vtable->head, deref_impl.vtable);
   DerefFun *deref_impl = YABO_ACCESS_VPTR(&vtable->head, deref_impl.func);
   int64_t status =
-      deref_impl(ret->data, val->data, (const char *)globals + YABO_VTABLE);
+      deref_impl(ret->data, val->data, (const char *)globals);
   if (status) {
     return dyn_invalidate(ret, status);
   }
@@ -122,7 +122,7 @@ static inline int64_t dyn_access_field_index(DynValue *ret,
   ret->vtable = YABO_ACCESS_VPTR(vtable, access_impl[index].vtable);
   AccessFun *access_impl = YABO_ACCESS_VPTR(vtable, access_impl[index].func);
   int64_t status =
-      access_impl(ret->data, block->data, (const char *)globals + YABO_VTABLE);
+      access_impl(ret->data, block->data, (const char *)globals);
   if (status) {
     return dyn_invalidate(ret, status);
   }
@@ -180,7 +180,7 @@ static inline int64_t dyn_array_current_element(DynValue *ret,
   const struct ArrayVTable *vtable = (const struct ArrayVTable *)array->vtable;
   ret->vtable = YABO_ACCESS_VPTR(vtable, current_element_impl.vtable);
   uint64_t status = YABO_ACCESS_VPTR(vtable, current_element_impl.func)(
-      ret->data, array->data, (const char *)globals + YABO_VTABLE);
+      ret->data, array->data, (const char *)globals);
   if (status) {
     return dyn_invalidate(ret, status);
   }
