@@ -390,11 +390,7 @@ impl<'a> IMonoLayout<'a> {
                 EvalType::Value => self.inner().eval_fun(ctx),
                 EvalType::Force => Ok(self.inner().eval_fun(ctx)?.evaluate(ctx)?.0),
             },
-            LayoutPart::VTable
-            | LayoutPart::VTableTy
-            | LayoutPart::SetArg(_)
-            | LayoutPart::Len
-            | LayoutPart::Mask => {
+            LayoutPart::VTable | LayoutPart::Len | LayoutPart::Mask => {
                 panic!("{part:?} part does not have return type")
             }
         }

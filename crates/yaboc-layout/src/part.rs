@@ -1,5 +1,4 @@
 use yaboc_base::{dbformat, interner::Identifier};
-use yaboc_target::layout::PSize;
 
 use crate::{
     AbsLayoutCtx, ILayout, LayoutSlice, Layouts,
@@ -19,7 +18,6 @@ pub enum LayoutPart<'comp> {
     Parse(LCallReq, ParserFunKind, ILayout<'comp>),
     Field(Identifier),
     VTable,
-    VTableTy,
     Start,
     End,
     Deref,
@@ -30,7 +28,6 @@ pub enum LayoutPart<'comp> {
     Span,
     InnerArray,
     CreateArgs(LayoutSlice<'comp>),
-    SetArg(PSize),
     Len,
     Mask,
     EvalFun(LCallReq, ParserFunKind),
@@ -69,7 +66,6 @@ impl<'comp> LayoutPart<'comp> {
             }
             LayoutPart::Field(n) => dbformat!(db, "field_{}", n),
             LayoutPart::VTable => String::from("vtable"),
-            LayoutPart::VTableTy => String::from("vtable_ty"),
             LayoutPart::Start => String::from("start"),
             LayoutPart::End => String::from("end"),
             LayoutPart::Deref => String::from("deref"),
@@ -85,7 +81,6 @@ impl<'comp> LayoutPart<'comp> {
                     truncated_hex(&ctx.dcx.layout_slice_hash(db, p))
                 )
             }
-            LayoutPart::SetArg(idx) => format!("set_arg_{idx}"),
             LayoutPart::Len => String::from("len"),
             LayoutPart::Mask => String::from("mask"),
             LayoutPart::EvalFun(reqs, kind) => {

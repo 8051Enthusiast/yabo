@@ -10,7 +10,7 @@ use inkwell::{
 use mir::{ControlFlow, Place, Strictness};
 use yaboc_ast::ConstraintAtom;
 use yaboc_ast::expr::Atom;
-use yaboc_base::{dbpanic, interner::FieldName};
+use yaboc_base::interner::FieldName;
 use yaboc_hir::BlockId;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::{
@@ -469,33 +469,24 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let intermediate_ret =
             self.cg
                 .build_return_value(intermediate_val, self.cg.const_i64(0), self.globals)?;
-        if let Some(x) = place_val.layout.into_iter().next() {
-            let MonoLayout::Block(block, _) = x.mono_layout() else {
-                dbpanic!(&self.cg.compiler_database.db, "{} is not a block", &x);
-            };
-            let tmp_bb = self.cg.llvm.append_basic_block(self.llvm_fun, "intermed");
-            let res = self
-                .cg
-                .call_field_access_fun(intermediate_ret, place_val, *block, field)?;
-            let is_bt = self.cg.builder.build_int_compare(
-                IntPredicate::EQ,
-                res,
-                self.cg.const_i64(ReturnStatus::Backtrack as i64),
-                "is_bt",
-            )?;
-            self.cg.builder.build_conditional_branch(
-                is_bt,
-                self.bb(ctrl.backtrack.unwrap()),
-                tmp_bb,
-            )?;
-            self.cg.builder.position_at_end(tmp_bb);
-            self.copy_from_val(ret, intermediate_val, ctrl)?;
-            Ok(())
-        } else {
-            let next = self.bb(ctrl.next);
-            self.cg.builder.build_unconditional_branch(next)?;
-            Ok(())
-        }
+        let tmp_bb = self.cg.llvm.append_basic_block(self.llvm_fun, "intermed");
+        let res = self
+            .cg
+            .call_field_access_fun(intermediate_ret, place_val, field)?;
+        let is_bt = self.cg.builder.build_int_compare(
+            IntPredicate::EQ,
+            res,
+            self.cg.const_i64(ReturnStatus::Backtrack as i64),
+            "is_bt",
+        )?;
+        self.cg.builder.build_conditional_branch(
+            is_bt,
+            self.bb(ctrl.backtrack.unwrap()),
+            tmp_bb,
+        )?;
+        self.cg.builder.position_at_end(tmp_bb);
+        self.copy_from_val(ret, intermediate_val, ctrl)?;
+        Ok(())
     }
 
     fn len_call(&mut self, ret: PlaceRef, fun: PlaceRef, ctrl: ControlFlow) -> IResult<()> {

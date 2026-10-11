@@ -4,7 +4,12 @@ use yaboc_base::dbformat;
 use yaboc_hir_types::VTABLE_BIT;
 use yaboc_layout::collect::LCallReq;
 use yaboc_layout::part::ParserFunKind;
+use yaboc_layout::vtable::{
+    ArrayVTable, BlockVTable, FunctionVTable, NominalVTable, NominalVTableFields, ParserVTable,
+    VTableHeader,
+};
 use yaboc_layout::{LayoutSlice, vtable};
+use yaboc_target::layout::VtablePointer;
 
 use crate::debug::SubroutineDebugType;
 
@@ -425,8 +430,94 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             LayoutPart::Len => self.parser_len_fun_val(layout),
             LayoutPart::Mask => self.mask_fun_val(layout),
             LayoutPart::EvalFun(req, kind) => self.eval_fun_fun_val(layout, req, kind),
-            LayoutPart::SetArg(_) | LayoutPart::VTable | LayoutPart::VTableTy => {
+            LayoutPart::VTable => {
                 panic!("{:?} is not a function part", part)
+            }
+        }
+    }
+
+    pub(super) fn layout_part_vtable_offset<Ptr: VtablePointer>(
+        &self,
+        layout: ILayout<'comp>,
+        part: LayoutPart<'comp>,
+    ) -> i64
+    where
+        ParserVTable<Ptr>: TargetSized,
+        ArrayVTable<Ptr>: TargetSized,
+        BlockVTable<Ptr>: TargetSized,
+        NominalVTable<Ptr>: TargetSized,
+        FunctionVTable<Ptr>: TargetSized,
+        VTableHeader<Ptr>: TargetSized,
+    {
+        let data = &self.options.target.data;
+        match part {
+            LayoutPart::Parse(..) => {
+                let slot = self.collected_layouts.slots.layout_vtable_offsets[&(part, layout)];
+                <ParserVTable<Ptr>>::path_offset(
+                    data,
+                    &[ParserVTableFields::apply_table as i64, slot as i64],
+                )
+            }
+            LayoutPart::Field(field) => {
+                let Some(example_layout) = layout.into_iter().next() else {
+                    dbpanic!(&self.compiler_database.db, "layout {} empty", &layout)
+                };
+                let MonoLayout::Block(block, _) = example_layout.mono_layout() else {
+                    dbpanic!(&self.compiler_database.db, "layout {} not a block", &layout)
+                };
+                let index = self
+                    .compiler_database
+                    .db
+                    .sorted_field_index(*block, FieldName::Ident(field), false)
+                    .expect("failed to lookup field index")
+                    .expect("could not find field");
+                <BlockVTable<Ptr>>::path_offset(
+                    data,
+                    &[BlockVTableFields::access_impl as i64, index as i64],
+                )
+            }
+            LayoutPart::VTable => 0,
+            LayoutPart::Start => {
+                <NominalVTable<Ptr>>::path_offset(data, &[NominalVTableFields::start_impl as i64])
+            }
+            LayoutPart::End => {
+                <NominalVTable<Ptr>>::path_offset(data, &[NominalVTableFields::end_impl as i64])
+            }
+            LayoutPart::Deref => {
+                <VTableHeader<Ptr>>::path_offset(data, &[VTableHeaderFields::deref_impl as i64])
+            }
+            LayoutPart::SingleForward => <ArrayVTable<Ptr>>::path_offset(
+                data,
+                &[ArrayVTableFields::single_forward_impl as i64],
+            ),
+            LayoutPart::CurrentElement => <ArrayVTable<Ptr>>::path_offset(
+                data,
+                &[ArrayVTableFields::current_element_impl as i64],
+            ),
+            LayoutPart::ArrayLen => {
+                <ArrayVTable<Ptr>>::path_offset(data, &[ArrayVTableFields::len_impl as i64])
+            }
+            LayoutPart::Skip => {
+                <ArrayVTable<Ptr>>::path_offset(data, &[ArrayVTableFields::skip_impl as i64])
+            }
+            LayoutPart::Span => {
+                <ArrayVTable<Ptr>>::path_offset(data, &[ArrayVTableFields::span_impl as i64])
+            }
+            LayoutPart::InnerArray => {
+                <ArrayVTable<Ptr>>::path_offset(data, &[ArrayVTableFields::inner_array_impl as i64])
+            }
+            LayoutPart::EvalFun(..) | LayoutPart::CreateArgs(_) => {
+                let slot = self.collected_layouts.slots.layout_vtable_offsets[&(part, layout)];
+                <FunctionVTable<Ptr>>::path_offset(
+                    data,
+                    &[FunctionVTableFields::apply_table as i64, slot as i64],
+                )
+            }
+            LayoutPart::Len => {
+                <ParserVTable<Ptr>>::path_offset(data, &[ParserVTableFields::len_impl as i64])
+            }
+            LayoutPart::Mask => {
+                <VTableHeader<Ptr>>::path_offset(data, &[VTableHeaderFields::mask_impl as i64])
             }
         }
     }

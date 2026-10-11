@@ -51,7 +51,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
     ) -> inkwell::types::StructType<'llvm> {
-        let vtable_ty_name = self.sym(layout, LayoutPart::VTableTy);
+        let vtable_ty_name = self.sym(layout, LayoutPart::VTable) + "_ty";
         if let Some(vtable_ty) = self.module.get_struct_type(&vtable_ty_name) {
             return vtable_ty;
         }
