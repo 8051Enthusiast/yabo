@@ -417,6 +417,14 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         }
     }
 
+    fn return_layout(
+        &mut self,
+        layout: IMonoLayout<'comp>,
+        part: LayoutPart<'comp>,
+    ) -> ILayout<'comp> {
+        layout.return_layout(part, self.layouts).unwrap()
+    }
+
     fn build_sa_alloca(
         &mut self,
         sa: SizeAlign,

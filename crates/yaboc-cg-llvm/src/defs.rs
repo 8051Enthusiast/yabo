@@ -19,6 +19,15 @@ pub const YABO_GLOBAL_INIT: &str = "yabo_global_init";
 pub const YABO_GLOBAL_SIZE: &str = "yabo_global_size";
 pub const YABO_MAX_BUF_SIZE: &str = "yabo_max_buf_size";
 
+#[derive(Clone, Copy)]
+pub enum ArgLayout<'comp> {
+    Arg(ILayout<'comp>),
+    Return,
+    Undef,
+}
+
+use ArgLayout::*;
+
 impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
     pub(crate) fn tailcc(&self) -> u32 {
         if self.options.target.use_tailcc {
@@ -38,7 +47,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         &mut self,
         layout: IMonoLayout<'comp>,
         part: LayoutPart<'comp>,
-        arg_layouts: [Option<ILayout<'comp>>; N],
+        arg_layouts: [ArgLayout<'comp>; N],
     ) -> FunctionValue<'llvm> {
         let sf_sym = self.sym(layout, part);
         if let Some(x) = self.module.get_function(&sf_sym) {
@@ -67,14 +76,21 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 self.debug
                     .location_data_or_default(layout, &self.compiler_database.db, self.llvm);
             let mut param_types = F::subroutine_ty(self).unwrap();
-            for (i, layout) in arg_layouts.iter().enumerate() {
-                if let Some(layout) = layout {
+            let mut fundef = SmallVec::new();
+            for (i, arg_layout) in arg_layouts.iter().enumerate() {
+                let maybe_layout = match arg_layout {
+                    ArgLayout::Arg(layout) => Some(*layout),
+                    ArgLayout::Return => Some(self.return_layout(layout, part)),
+                    ArgLayout::Undef => None,
+                };
+                fundef.push(maybe_layout);
+                if let Some(layout) = maybe_layout {
                     let ty = self
                         .debug
-                        .debug_type(*layout, &self.compiler_database.db, self.llvm, self.layouts)
+                        .debug_type(layout, &self.compiler_database.db, self.llvm, self.layouts)
                         .unwrap();
                     let ptr_ty = self.debug.builder.create_pointer_type(
-                        &dbformat!(&self.compiler_database.db, "ptr to {}", layout),
+                        &dbformat!(&self.compiler_database.db, "ptr to {}", &layout),
                         ty,
                         self.options.target.data.pointer_sa.after_bits(),
                         self.options.target.data.pointer_sa.align_bits(),
@@ -100,9 +116,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 0,
                 true,
             );
+            self.fundefs.insert(fun, fundef);
             fun.set_subprogram(debuginfo);
         }
-        self.fundefs.insert(fun, SmallVec::from_slice(&arg_layouts));
         fun
     }
 
@@ -113,7 +129,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.fun_val::<_, vtable::SingleForwardFun>(
             layout,
             LayoutPart::SingleForward,
-            [Some(layout.inner()), None],
+            [Arg(layout.inner()), Undef],
         )
     }
 
@@ -121,13 +137,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.fun_val::<_, vtable::ArrayLenFun>(
             layout,
             LayoutPart::ArrayLen,
-            [Some(layout.inner()), None],
+            [Arg(layout.inner()), Undef],
         )
     }
 
     pub(super) fn span_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
-        let arg = Some(layout.inner());
-        self.fun_val::<_, vtable::SpanFun>(layout, LayoutPart::Span, [arg, arg, None, arg])
+        let arg = Arg(layout.inner());
+        self.fun_val::<_, vtable::SpanFun>(layout, LayoutPart::Span, [arg, arg, Undef, arg])
     }
 
     pub(super) fn inner_array_fun_val(
@@ -137,7 +153,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.fun_val::<_, vtable::InnerArrayFun>(
             layout,
             LayoutPart::InnerArray,
-            [None, Some(layout.inner()), None],
+            [Return, Arg(layout.inner()), Undef],
         )
     }
 
@@ -145,7 +161,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.fun_val::<_, vtable::StartFun>(
             layout,
             LayoutPart::Start,
-            [None, Some(layout.inner()), None],
+            [Return, Arg(layout.inner()), Undef],
         )
     }
 
@@ -153,7 +169,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.fun_val::<_, vtable::EndFun>(
             layout,
             LayoutPart::End,
-            [None, Some(layout.inner()), None],
+            [Return, Arg(layout.inner()), Undef],
         )
     }
 
@@ -164,7 +180,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.fun_val::<_, vtable::CurrentElementFun>(
             layout,
             LayoutPart::CurrentElement,
-            [None, Some(layout.inner()), None],
+            [Return, Arg(layout.inner()), Undef],
         )
     }
 
@@ -172,7 +188,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.fun_val::<_, vtable::SkipFun>(
             layout,
             LayoutPart::Skip,
-            [Some(layout.inner()), None, None],
+            [Arg(layout.inner()), Undef, Undef],
         )
     }
 
@@ -184,7 +200,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let f = self.fun_val::<_, vtable::BlockFieldFun>(
             layout,
             LayoutPart::Field(name),
-            [None, Some(layout.inner()), None],
+            [Return, Arg(layout.inner()), Undef],
         );
         self.set_always_inline(f);
         f
@@ -194,7 +210,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let f = self.fun_val::<_, vtable::DerefFun>(
             layout,
             LayoutPart::Deref,
-            [None, Some(layout.inner()), None],
+            [Return, Arg(layout.inner()), Undef],
         );
         self.set_always_inline(f);
         f
@@ -207,13 +223,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.fun_val::<_, vtable::LenFun>(
             layout,
             LayoutPart::Len,
-            [None, Some(layout.inner()), None],
+            [Return, Arg(layout.inner()), Undef],
         )
     }
 
     pub(super) fn mask_fun_val(&mut self, layout: IMonoLayout<'comp>) -> FunctionValue<'llvm> {
         // this function returns a usize instead of i64, so it's not a p_fun_val function
-        self.fun_val::<_, vtable::MaskFun>(layout, LayoutPart::Mask, [Some(layout.inner())])
+        self.fun_val::<_, vtable::MaskFun>(layout, LayoutPart::Mask, [Arg(layout.inner())])
     }
 
     pub(super) fn parser_layout_part(
@@ -240,7 +256,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let ret = self.fun_val::<_, vtable::ParserFun>(
             layout,
             part,
-            [None, Some(layout.inner()), None, Some(from)],
+            [Return, Arg(layout.inner()), Undef, Arg(from)],
         );
         if kind != ParserFunKind::Wrapper {
             ret.set_call_conventions(self.tailcc());
@@ -286,13 +302,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             self.fun_val::<_, vtable::EvalFunFunInternal>(
                 layout,
                 LayoutPart::EvalFun(req, kind),
-                [None, Some(layout.inner()), None, None],
+                [Return, Arg(layout.inner()), Undef, Undef],
             )
         } else {
             self.fun_val::<_, vtable::EvalFunFun>(
                 layout,
                 LayoutPart::EvalFun(req, kind),
-                [None, Some(layout.inner()), None],
+                [Return, Arg(layout.inner()), Undef],
             )
         };
         if kind != ParserFunKind::Wrapper {
@@ -404,7 +420,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         let f = self.fun_val::<_, vtable::CreateArgFun>(
             layout,
             part,
-            [None, Some(layout.inner()), None],
+            [Return, Arg(layout.inner()), Undef],
         );
         self.set_always_inline(f);
         f

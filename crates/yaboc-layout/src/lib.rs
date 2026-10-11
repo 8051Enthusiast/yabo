@@ -361,7 +361,11 @@ impl<'a> IMonoLayout<'a> {
         match part {
             LayoutPart::Parse(req, _, from) => match req.val {
                 EvalType::NoValue => Ok(ctx.dcx.intern(Layout::None)),
-                EvalType::Value => self.inner().apply_arg(ctx, from),
+                EvalType::Value => self
+                    .inner()
+                    .apply_arg(ctx, from)?
+                    .normalize(ctx)
+                    .map(|x| x.0),
                 EvalType::Force => self
                     .inner()
                     .apply_arg(ctx, from)?
@@ -378,7 +382,7 @@ impl<'a> IMonoLayout<'a> {
             LayoutPart::Deref => self.inner().evaluate(ctx).map(|x| x.0),
             LayoutPart::SingleForward | LayoutPart::Skip | LayoutPart::Span => Ok(self.inner()),
             LayoutPart::CurrentElement => Ok(self.inner().array_primitive(ctx)?.normalize(ctx)?.0),
-            LayoutPart::ArrayLen => Ok(ctx.dcx.int()),
+            LayoutPart::Len => Ok(ctx.dcx.int()),
             LayoutPart::InnerArray => match self.mono_layout() {
                 MonoLayout::SlicePtr | MonoLayout::Range => Ok(ctx.dcx.intern(Layout::None)),
                 MonoLayout::Array { slice, .. } => Ok(*slice),
@@ -387,10 +391,10 @@ impl<'a> IMonoLayout<'a> {
             LayoutPart::CreateArgs(args) => self.inner().apply_fun(ctx, args.iter().copied()),
             LayoutPart::EvalFun(req, _) => match req.val {
                 EvalType::NoValue => Ok(ctx.dcx.intern(Layout::None)),
-                EvalType::Value => self.inner().eval_fun(ctx),
+                EvalType::Value => Ok(self.inner().eval_fun(ctx)?.normalize(ctx)?.0),
                 EvalType::Force => Ok(self.inner().eval_fun(ctx)?.evaluate(ctx)?.0),
             },
-            LayoutPart::VTable | LayoutPart::Len | LayoutPart::Mask => {
+            LayoutPart::ArrayLen | LayoutPart::VTable | LayoutPart::Mask => {
                 panic!("{part:?} part does not have return type")
             }
         }
