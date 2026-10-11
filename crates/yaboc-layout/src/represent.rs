@@ -9,7 +9,10 @@ use yaboc_base::{
     interner::{DefId, FieldName, RegexKind},
 };
 
-use crate::{FuncLayoutKind, ILayout};
+use crate::{
+    FuncLayoutKind, ILayout,
+    part::{LayoutPart, ParserFunKind},
+};
 
 use super::{IMonoLayout, Layout, Layouts, MonoLayout};
 use yaboc_absint::AbsInt;
@@ -134,6 +137,45 @@ impl<DB: AbsInt + ?Sized> DatabasedDisplay<DB> for ILayout<'_> {
 impl<DB: AbsInt + ?Sized> DatabasedDisplay<DB> for IMonoLayout<'_> {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         self.0.db_fmt(f, db)
+    }
+}
+
+impl std::fmt::Display for ParserFunKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+impl<DB: AbsInt + ?Sized> DatabasedDisplay<DB> for LayoutPart<'_> {
+    fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
+        match self {
+            LayoutPart::Parse(req, kind, layout) => {
+                dbwrite!(f, db, "parse({}, {}, {})", req, kind, layout)
+            }
+            LayoutPart::Field(n) => dbwrite!(f, db, "field({})", n),
+            LayoutPart::VTable => dbwrite!(f, db, "vtable"),
+            LayoutPart::Start => dbwrite!(f, db, "start"),
+            LayoutPart::End => dbwrite!(f, db, "end"),
+            LayoutPart::Deref => dbwrite!(f, db, "deref"),
+            LayoutPart::SingleForward => dbwrite!(f, db, "single_forward"),
+            LayoutPart::CurrentElement => dbwrite!(f, db, "current_element"),
+            LayoutPart::ArrayLen => dbwrite!(f, db, "array_len"),
+            LayoutPart::Skip => dbwrite!(f, db, "skip"),
+            LayoutPart::Span => dbwrite!(f, db, "span"),
+            LayoutPart::InnerArray => dbwrite!(f, db, "inner_array"),
+            LayoutPart::CreateArgs(p) => {
+                write!(f, "create_args(")?;
+                for (i, arg) in p.iter().enumerate() {
+                    if i != 0 {
+                        write!(f, ", ")?;
+                    }
+                    arg.db_fmt(f, db)?;
+                }
+                write!(f, ")")
+            }
+            LayoutPart::Len => dbwrite!(f, db, "len"),
+            LayoutPart::Mask => dbwrite!(f, db, "mask"),
+            LayoutPart::EvalFun(reqs, kind) => dbwrite!(f, db, "eval_fun({}, {})", reqs, kind),
+        }
     }
 }
 

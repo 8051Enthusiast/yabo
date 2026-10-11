@@ -86,10 +86,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             let subprogram_ty = param_types
                 .as_subprogram_type(self, debug_info.file)
                 .unwrap();
+            let pretty_name = dbformat!(&self.compiler_database.db, "{} of {}", &part, &layout);
             let debuginfo = self.debug.builder.create_function(
                 debug_info.file.as_debug_info_scope(),
-                &sf_sym,
-                None,
+                &pretty_name,
+                Some(&sf_sym),
                 debug_info.file,
                 debug_info.line,
                 subprogram_ty,
