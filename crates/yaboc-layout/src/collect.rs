@@ -42,6 +42,7 @@ pub fn pd_len_req() -> LCallMeta {
             val: EvalType::NoValue,
             len: true,
             bt: false,
+            checked: true,
         },
         tail: false,
     }
@@ -52,6 +53,7 @@ pub fn pd_val_req() -> LCallMeta {
             val: EvalType::Force,
             len: false,
             bt: false,
+            checked: true,
         },
         tail: false,
     }
@@ -62,6 +64,7 @@ pub fn array_val_req() -> LCallMeta {
             val: EvalType::Value,
             len: false,
             bt: false,
+            checked: true,
         },
         tail: false,
     }
@@ -72,6 +75,7 @@ pub fn static_val_req() -> LCallMeta {
             val: EvalType::Force,
             len: false,
             bt: false,
+            checked: true,
         },
         tail: false,
     }
@@ -82,6 +86,7 @@ pub fn root_req() -> LCallMeta {
             val: EvalType::Value,
             len: true,
             bt: true,
+            checked: true,
         },
         tail: false,
     }
@@ -92,6 +97,7 @@ pub fn regex_single_req() -> LCallMeta {
             val: EvalType::Force,
             len: true,
             bt: true,
+            checked: true,
         },
         tail: false,
     }
@@ -136,14 +142,20 @@ pub struct LayoutCollector<'a, 'b> {
     publics: UseCollections<'a>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct EvalExtraInfo {
+    pub eval: EvalType,
+    pub checked: bool,
+}
+
 #[derive(Debug)]
 pub enum UnprocessedCall<'a> {
-    NominalParser(ILayout<'a>, IMonoLayout<'a>, MirKind, EvalType),
-    NominalEvalFun(IMonoLayout<'a>, MirKind, EvalType),
-    LambdaEvalFun(IMonoLayout<'a>, MirKind, EvalType),
-    BlockParser(ILayout<'a>, IMonoLayout<'a>, MirKind, EvalType),
-    BlockEvalFun(IMonoLayout<'a>, MirKind, EvalType),
-    IfParser(ILayout<'a>, IMonoLayout<'a>, MirKind, EvalType),
+    NominalParser(ILayout<'a>, IMonoLayout<'a>, MirKind, EvalExtraInfo),
+    NominalEvalFun(IMonoLayout<'a>, MirKind, EvalExtraInfo),
+    LambdaEvalFun(IMonoLayout<'a>, MirKind, EvalExtraInfo),
+    BlockParser(ILayout<'a>, IMonoLayout<'a>, MirKind, EvalExtraInfo),
+    BlockEvalFun(IMonoLayout<'a>, MirKind, EvalExtraInfo),
+    IfParser(ILayout<'a>, IMonoLayout<'a>, MirKind, EvalExtraInfo),
 }
 
 impl<'a, 'b> LayoutCollector<'a, 'b> {
@@ -303,7 +315,10 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                             arg,
                             mono,
                             req.as_mir_call(),
-                            info.req.val,
+                            EvalExtraInfo {
+                                eval: info.req.val,
+                                checked: req.checked,
+                            },
                         ));
                     }
                 }
@@ -322,7 +337,10 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                             arg,
                             mono,
                             req.as_mir_call(),
-                            info.req.val,
+                            EvalExtraInfo {
+                                eval: info.req.val,
+                                checked: req.checked,
+                            },
                         ));
                     }
                 }
@@ -346,7 +364,10 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                             arg,
                             mono,
                             req.as_mir_call(),
-                            info.req.val,
+                            EvalExtraInfo {
+                                eval: info.req.val,
+                                checked: req.checked,
+                            },
                         ));
                     }
                 }
@@ -387,19 +408,28 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 self.int,
                 parser,
                 MirKind::Len,
-                EvalType::NoValue,
+                EvalExtraInfo {
+                    eval: EvalType::NoValue,
+                    checked: true,
+                },
             )),
             MonoLayout::IfParser(..) => Some(UnprocessedCall::IfParser(
                 self.int,
                 parser,
                 MirKind::Len,
-                EvalType::NoValue,
+                EvalExtraInfo {
+                    eval: EvalType::NoValue,
+                    checked: true,
+                },
             )),
             MonoLayout::BlockParser(..) => Some(UnprocessedCall::BlockParser(
                 self.int,
                 parser,
                 MirKind::Len,
-                EvalType::NoValue,
+                EvalExtraInfo {
+                    eval: EvalType::NoValue,
+                    checked: true,
+                },
             )),
             _ => None,
         }
@@ -471,8 +501,14 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                     .processed_evals
                     .insert((mono, LCallMeta { req, ..meta }))
             {
-                self.unprocessed
-                    .push(eval(mono, req.as_mir_call(), meta.req.val));
+                self.unprocessed.push(eval(
+                    mono,
+                    req.as_mir_call(),
+                    EvalExtraInfo {
+                        eval: meta.req.val,
+                        checked: req.checked,
+                    },
+                ));
             }
         }
     }
@@ -504,7 +540,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
                 self.register_funcall(fun_layout, args)?;
                 Ok(())
             }
-            MirInstr::ParseCall(_, _, _, arg, fun, _) => {
+            MirInstr::ParseCall(_, _, _, _, arg, fun, _) => {
                 let fun_layout = mir.place(fun);
                 let arg_layout = mir.place(arg);
                 self.register_parse(arg_layout, fun_layout, mir.get_call_meta(&ins));
@@ -549,7 +585,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         arg: ILayout<'a>,
         parser: IMonoLayout<'a>,
         info: MirKind,
-        eval: EvalType,
+        eval: EvalExtraInfo,
     ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
@@ -569,7 +605,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             info,
             Some(arg),
             parser,
-            eval.is_force(),
+            eval,
             self.ctx,
         )?;
         self.collect_mir(&fsub)?;
@@ -580,7 +616,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         &mut self,
         parser: IMonoLayout<'a>,
         info: MirKind,
-        eval: EvalType,
+        eval: EvalExtraInfo,
     ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
@@ -598,7 +634,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             info,
             None,
             parser,
-            eval.is_force(),
+            eval,
             self.ctx,
         )?;
         self.collect_mir(&fsub)?;
@@ -610,7 +646,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         arg: ILayout<'a>,
         parser: IMonoLayout<'a>,
         info: MirKind,
-        eval: EvalType,
+        eval: EvalExtraInfo,
     ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
@@ -648,7 +684,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             info,
             Some(arg_layout),
             parser_layout,
-            eval.is_force(),
+            eval,
             self.ctx,
         )?;
         self.collect_mir(&fsub)?;
@@ -659,7 +695,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         &mut self,
         fun: IMonoLayout<'a>,
         info: MirKind,
-        eval: EvalType,
+        eval: EvalExtraInfo,
     ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
@@ -676,7 +712,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             info,
             None,
             fun,
-            eval.is_force(),
+            eval,
             self.ctx,
         )?;
         self.collect_mir(&fsub)?;
@@ -687,7 +723,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         &mut self,
         fun: IMonoLayout<'a>,
         info: MirKind,
-        eval: EvalType,
+        eval: EvalExtraInfo,
     ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
@@ -705,7 +741,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             info,
             None,
             fun,
-            eval.is_force(),
+            eval,
             self.ctx,
         )?;
         self.collect_mir(&fsub)?;
@@ -717,7 +753,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
         arg: ILayout<'a>,
         parser: IMonoLayout<'a>,
         info: MirKind,
-        eval: EvalType,
+        eval: EvalExtraInfo,
     ) -> Result<(), LayoutError> {
         if TRACE_COLLECTION {
             dbeprintln!(
@@ -738,7 +774,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             info,
             Some(arg),
             parser,
-            eval.is_force(),
+            eval,
             self.ctx,
         )?;
         self.collect_mir(&fsub)?;

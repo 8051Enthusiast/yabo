@@ -212,7 +212,7 @@ impl<'a> StrictnessCtx<'a> {
             | MirInstr::Comp(_, _, a, b)
             | MirInstr::Span(_, a, b, _)
             | MirInstr::Range(_, a, b, _)
-            | MirInstr::ParseCall(_, _, _, a, b, _) => {
+            | MirInstr::ParseCall(_, _, _, _, a, b, _) => {
                 insert(*a, Use::new_static(Strictness::Strict));
                 insert(*b, Use::new_static(Strictness::Strict));
             }

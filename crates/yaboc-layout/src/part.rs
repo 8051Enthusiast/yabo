@@ -57,6 +57,9 @@ impl<'comp> LayoutPart<'comp> {
                 if reqs.bt {
                     res.push('b');
                 }
+                if reqs.checked {
+                    res.push('c');
+                }
                 match kind {
                     ParserFunKind::Wrapper => {}
                     ParserFunKind::TailWrapper => res.push_str("_tail"),
@@ -93,6 +96,9 @@ impl<'comp> LayoutPart<'comp> {
                 res.push_str(v);
                 if reqs.bt {
                     res.push('b');
+                }
+                if reqs.checked {
+                    res.push('c');
                 }
                 match kind {
                     ParserFunKind::Wrapper => {}

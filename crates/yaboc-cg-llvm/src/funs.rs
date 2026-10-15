@@ -4,7 +4,9 @@ use yaboc_constraint::Constraints;
 use yaboc_hir::BlockReturnKind;
 use yaboc_layout::{
     FuncLayoutKind, Layout, LayoutSlice, TailCallSite,
-    collect::{EvalType, LCallReq, array_val_req, pd_len_req, pd_val_req, static_val_req},
+    collect::{
+        EvalExtraInfo, EvalType, LCallReq, array_val_req, pd_len_req, pd_val_req, static_val_req,
+    },
     mir_subst::function_substitute,
     part::ParserFunKind,
 };
@@ -189,7 +191,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             req.as_mir_call(),
             None,
             layout,
-            req.val.is_force(),
+            EvalExtraInfo {
+                eval: req.val,
+                checked: req.checked,
+            },
             self.layouts,
         )
         .unwrap())
@@ -208,7 +213,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             req.as_mir_call(),
             None,
             layout,
-            req.val.is_force(),
+            EvalExtraInfo {
+                eval: req.val,
+                checked: req.checked,
+            },
             self.layouts,
         )
         .unwrap())
@@ -228,7 +236,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             req.as_mir_call(),
             Some(from),
             layout,
-            req.val.is_force(),
+            EvalExtraInfo {
+                eval: req.val,
+                checked: req.checked,
+            },
             self.layouts,
         )
         .unwrap()
@@ -248,7 +259,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             req.as_mir_call(),
             from,
             layout,
-            req.val.is_force(),
+            EvalExtraInfo {
+                eval: req.val,
+                checked: req.checked,
+            },
             self.layouts,
         )
         .unwrap()
@@ -268,7 +282,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             req.as_mir_call(),
             Some(from),
             layout,
-            req.val.is_force(),
+            EvalExtraInfo {
+                eval: req.val,
+                checked: req.checked,
+            },
             self.layouts,
         )
         .unwrap()
@@ -1031,13 +1048,17 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         self.set_always_inline(llvm_fun);
         self.add_entry_block(llvm_fun, layout);
         let (ret, _, arg) = self.parser_values(llvm_fun, layout, from, req);
-        let ptr_diff = self.call_array_len_fun(arg, ret.head)?;
-        let is_zero = self.builder.build_int_compare(
-            IntPredicate::EQ,
-            ptr_diff,
-            self.const_i64(0),
-            "is_zero",
-        )?;
+        let is_zero = if req.checked {
+            let ptr_diff = self.call_array_len_fun(arg, ret.head)?;
+            self.builder.build_int_compare(
+                IntPredicate::EQ,
+                ptr_diff,
+                self.const_i64(0),
+                "is_zero",
+            )?
+        } else {
+            self.llvm.bool_type().const_zero()
+        };
         self.branch(
             is_zero,
             |this| {
@@ -1293,20 +1314,22 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 )?;
                 self.non_zero_early_return(status)?;
                 let full_len = self.build_i64_load(int_buf.ptr, "parser_len")?;
-                let is_out_of_bounds = self.builder.build_int_compare(
-                    IntPredicate::ULT,
-                    slice_len,
-                    full_len,
-                    "is_out_of_bounds",
-                )?;
-                self.branch(
-                    is_out_of_bounds,
-                    |this| {
-                        this.builder
-                            .build_return(Some(&this.const_i64(ReturnStatus::Eof as i64)))
-                    },
-                    |_| Ok(()),
-                )?;
+                if req.checked {
+                    let is_out_of_bounds = self.builder.build_int_compare(
+                        IntPredicate::ULT,
+                        slice_len,
+                        full_len,
+                        "is_out_of_bounds",
+                    )?;
+                    self.branch(
+                        is_out_of_bounds,
+                        |this| {
+                            this.builder
+                                .build_return(Some(&this.const_i64(ReturnStatus::Eof as i64)))
+                        },
+                        |_| Ok(()),
+                    )?;
+                }
                 (full_len, *inner_parser)
             }
             MonoLayout::ArrayFillParser(Some(_)) => {
@@ -1489,7 +1512,10 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             MirKind::Len,
             Some(int_layout),
             layout,
-            true,
+            EvalExtraInfo {
+                eval: EvalType::Force,
+                checked: true,
+            },
             self.layouts,
         )
         .unwrap();

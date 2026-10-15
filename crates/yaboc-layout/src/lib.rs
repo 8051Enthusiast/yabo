@@ -1430,14 +1430,15 @@ mod tests {
                         LCallReq {
                             val: EvalType::NoValue,
                             len: true,
-                            bt: true
+                            bt: true,
+                            checked: true
                         },
                         ParserFunKind::Worker,
                         from.inner()
                     ),
                     &ctx.db
                 ),
-                "main$1e9427ad6825c327$parse_9dcf97a184f32623_lb_worker",
+                "main$1e9427ad6825c327$parse_9dcf97a184f32623_lbc_worker",
             );
         }
         let main_block = outlayer.pd_result(&canon_2004).unwrap().returned;
@@ -1449,14 +1450,15 @@ mod tests {
                         LCallReq {
                             val: EvalType::Value,
                             len: false,
-                            bt: true
+                            bt: true,
+                            checked: true
                         },
                         ParserFunKind::Wrapper,
                         from.inner(),
                     ),
                     &ctx.db
                 ),
-                "block_442653befeb9bd87$c4e960f08b7fab61$parse_9dcf97a184f32623_vb"
+                "block_442653befeb9bd87$c4e960f08b7fab61$parse_9dcf97a184f32623_vbc"
             );
         }
         let field = |name| FieldName::Ident(ctx.id(name));

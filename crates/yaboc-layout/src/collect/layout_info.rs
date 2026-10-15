@@ -53,6 +53,7 @@ pub struct LCallReq {
     pub val: EvalType,
     pub len: bool,
     pub bt: bool,
+    pub checked: bool,
 }
 
 impl std::fmt::Display for LCallReq {
@@ -70,7 +71,11 @@ impl std::fmt::Display for LCallReq {
             false => "_",
             true => "b",
         };
-        write!(f, "{}{}{}", val, len, bt)
+        let check = match self.checked {
+            false => "_",
+            true => "c",
+        };
+        write!(f, "{}{}{}{}", val, len, bt, check)
     }
 }
 
@@ -86,6 +91,13 @@ impl LCallReq {
     pub fn remove_val(self) -> Self {
         LCallReq {
             val: EvalType::NoValue,
+            ..self
+        }
+    }
+
+    pub fn remove_check(self) -> Self {
+        LCallReq {
+            checked: false,
             ..self
         }
     }
@@ -147,10 +159,10 @@ impl LayoutInfo {
         let mut needs_length_precheck = None;
         req = if let Length::Const(len) = self.len
             && !req.bt
-            && req.len
+            && (req.len || req.checked)
         {
             needs_length_precheck = Some(len);
-            req.remove_len()
+            req.remove_len().remove_check()
         } else {
             req
         };

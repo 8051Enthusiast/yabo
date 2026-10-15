@@ -385,11 +385,11 @@ impl<'a> ConvertCtx<'a> {
             }
             self.w
                 .f
-                .tail_parse_call(bt, arg_place, ldt_parser_fun, ret, retlen);
+                .tail_parse_call_cocheck(bt, arg_place, ldt_parser_fun, ret, retlen);
         } else {
             self.w
                 .f
-                .parse_call(bt, addr, ldt_parser_fun, ret, retlen, self.w.retreat);
+                .parse_call_cocheck(bt, addr, ldt_parser_fun, ret, retlen, self.w.retreat);
         }
         Ok(())
     }
@@ -450,7 +450,7 @@ impl<'a> ConvertCtx<'a> {
         let bt = bt_from_req(req);
         self.w
             .f
-            .tail_parse_call(bt, addr, ldt_parser_fun, ret, retlen);
+            .tail_parse_call_cocheck(bt, addr, ldt_parser_fun, ret, retlen);
         Ok(())
     }
 
@@ -489,7 +489,7 @@ impl<'a> ConvertCtx<'a> {
         let tmp_place = self.w.f.new_stack_place(PlaceOrigin::Ret, true);
         let arg_place = self.w.f.fun.arg().unwrap();
         let arg_tmp_place = self.w.f.new_stack_place(PlaceOrigin::Arg, true);
-        let retlen = self.req.contains(NeededBy::Len).then_some(arg_place);
+        let retlen = (self.req.contains(NeededBy::Len) || constr.has_no_eof).then_some(arg_place);
         let fun_place = self.w.f.fun.cap();
         let inner_fun_place = self.w.f.add_place(PlaceInfo {
             place: Place::Front(fun_place),
@@ -499,14 +499,12 @@ impl<'a> ConvertCtx<'a> {
         // the following parse call might mutate the argument, therefore we make a copy
         self.w.copy(arg_place, arg_tmp_place);
 
-        let mut first_call_req = self.req | NeededBy::Val;
         let mut retreat = self.w.retreat;
         if constr.has_no_eof {
-            first_call_req |= NeededBy::Len;
             retreat.eof = retreat.backtrack;
         }
 
-        let bt = bt_from_req(first_call_req);
+        let bt = bt_from_req(self.req);
 
         self.w.f.parse_call(
             bt,

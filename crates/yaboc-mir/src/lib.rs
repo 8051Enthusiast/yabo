@@ -77,6 +77,12 @@ pub enum ReturnStatus {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Check {
+    Inherit,
+    Always,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum IntBinOp {
     And,
     Xor,
@@ -294,6 +300,7 @@ pub enum MirInstr {
         Option<PlaceRef>,
         Option<PlaceRef>,
         BtMarkKind,
+        Check,
         PlaceRef,
         PlaceRef,
         Option<ControlFlow>,
@@ -365,11 +372,12 @@ impl MirInstr {
             MirInstr::Field(place, val, field, control_flow) => {
                 MirInstr::Field(*place, *val, *field, control_flow.map_bb(f))
             }
-            MirInstr::ParseCall(ret, val, meta, parser, args, Some(control_flow)) => {
+            MirInstr::ParseCall(ret, val, bt, check, parser, args, Some(control_flow)) => {
                 MirInstr::ParseCall(
                     *ret,
                     *val,
-                    *meta,
+                    *bt,
+                    *check,
                     *parser,
                     *args,
                     Some(control_flow.map_bb(f)),
@@ -853,6 +861,31 @@ impl FunctionWriter {
                 ret,
                 retlen,
                 bt,
+                Check::Always,
+                arg,
+                fun,
+                Some(ControlFlow::new_with_exc(new_block, exc)),
+            ));
+        self.set_bb(new_block);
+    }
+
+    pub fn parse_call_cocheck(
+        &mut self,
+        bt: BtMarkKind,
+        arg: PlaceRef,
+        fun: PlaceRef,
+        ret: Option<PlaceRef>,
+        retlen: Option<PlaceRef>,
+        exc: ExceptionRetreat,
+    ) {
+        let new_block = self.new_bb();
+        self.fun
+            .bb_mut(self.current_bb)
+            .append_ins(MirInstr::ParseCall(
+                ret,
+                retlen,
+                bt,
+                Check::Inherit,
                 arg,
                 fun,
                 Some(ControlFlow::new_with_exc(new_block, exc)),
@@ -870,7 +903,37 @@ impl FunctionWriter {
     ) {
         self.fun
             .bb_mut(self.current_bb)
-            .append_ins(MirInstr::ParseCall(ret, retlen, bt, arg, fun, None));
+            .append_ins(MirInstr::ParseCall(
+                ret,
+                retlen,
+                bt,
+                Check::Always,
+                arg,
+                fun,
+                None,
+            ));
+        self.fun.success_returns.push(self.current_bb);
+    }
+
+    pub fn tail_parse_call_cocheck(
+        &mut self,
+        bt: BtMarkKind,
+        arg: PlaceRef,
+        fun: PlaceRef,
+        ret: Option<PlaceRef>,
+        retlen: Option<PlaceRef>,
+    ) {
+        self.fun
+            .bb_mut(self.current_bb)
+            .append_ins(MirInstr::ParseCall(
+                ret,
+                retlen,
+                bt,
+                Check::Inherit,
+                arg,
+                fun,
+                None,
+            ));
         self.fun.success_returns.push(self.current_bb);
     }
 

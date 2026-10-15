@@ -6,11 +6,13 @@ use yaboc_expr::{IndexExpr, ShapedData};
 use yaboc_hir::{
     ExprId, HirIdWrapper, HirNode, HirNodeKind, LambdaId, ParserDefId, walk::ChildIter,
 };
-use yaboc_mir::{FunKind, Function, MirInstr, MirKind, Place, PlaceOrigin, PlaceRef, Strictness};
+use yaboc_mir::{
+    Check, FunKind, Function, MirInstr, MirKind, Place, PlaceOrigin, PlaceRef, Strictness,
+};
 use yaboc_resolve::expr::Resolved;
 use yaboc_types::PrimitiveType;
 
-use crate::collect::{EvalType, LCallMeta, LCallReq};
+use crate::collect::{EvalExtraInfo, EvalType, LCallMeta, LCallReq};
 
 use super::{ILayout, IMonoLayout, Layout, LayoutError, MonoLayout};
 
@@ -18,6 +20,7 @@ pub struct FunctionSubstitute<'a> {
     pub f: Function,
     pub stack_layouts: Vec<ILayout<'a>>,
     pub place_layouts: Vec<(ILayout<'a>, Strictness)>,
+    pub checked: bool,
 }
 
 impl<'a> FunctionSubstitute<'a> {
@@ -26,7 +29,7 @@ impl<'a> FunctionSubstitute<'a> {
         strictness: &[Strictness],
         from: Option<ILayout<'a>>,
         block: IMonoLayout<'a>,
-        force: bool,
+        eval: EvalExtraInfo,
         len: bool,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
@@ -58,6 +61,7 @@ impl<'a> FunctionSubstitute<'a> {
             }
         }
         vals.insert(def.0, ret);
+        let force = eval.eval.is_force();
         let sub_info = SubInfo {
             fun: block.0,
             arg: from,
@@ -73,6 +77,7 @@ impl<'a> FunctionSubstitute<'a> {
             f,
             stack_layouts,
             place_layouts,
+            checked: eval.checked,
         })
     }
 
@@ -83,7 +88,7 @@ impl<'a> FunctionSubstitute<'a> {
         fun: IMonoLayout<'a>,
         evaluated: PdEvaluated<ILayout<'a>>,
         expr_id: ExprId,
-        force: bool,
+        eval: EvalExtraInfo,
         len: bool,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<FunctionSubstitute<'a>, LayoutError> {
@@ -93,6 +98,7 @@ impl<'a> FunctionSubstitute<'a> {
             expr_map.insert(expr_id, expr.clone());
         }
         let vals = FxHashMap::default();
+        let force = eval.eval.is_force();
         let sub_info = SubInfo {
             fun: fun.inner(),
             arg: from,
@@ -108,6 +114,7 @@ impl<'a> FunctionSubstitute<'a> {
             f,
             stack_layouts,
             place_layouts,
+            checked: eval.checked,
         })
     }
 
@@ -117,7 +124,7 @@ impl<'a> FunctionSubstitute<'a> {
         from: Option<ILayout<'a>>,
         fun: IMonoLayout<'a>,
         pd: ParserDefId,
-        force: bool,
+        eval: EvalExtraInfo,
         len: bool,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
@@ -134,9 +141,7 @@ impl<'a> FunctionSubstitute<'a> {
             .pd_result(&lookup_layout)
             .ok_or_else(SilencedError::new)?
             .clone();
-        Self::new_from_fun(
-            f, strictness, from, fun, evaluated, expr_id, force, len, ctx,
-        )
+        Self::new_from_fun(f, strictness, from, fun, evaluated, expr_id, eval, len, ctx)
     }
 
     fn new_from_lambda(
@@ -144,7 +149,7 @@ impl<'a> FunctionSubstitute<'a> {
         strictness: &[Strictness],
         fun: IMonoLayout<'a>,
         lambda: LambdaId,
-        force: bool,
+        eval: EvalExtraInfo,
         len: bool,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
@@ -163,7 +168,7 @@ impl<'a> FunctionSubstitute<'a> {
             fun,
             evaluated.into(),
             expr_id,
-            force,
+            eval,
             len,
             ctx,
         )
@@ -174,7 +179,7 @@ impl<'a> FunctionSubstitute<'a> {
         strictness: &[Strictness],
         from: ILayout<'a>,
         fun: IMonoLayout<'a>,
-        force: bool,
+        eval: EvalExtraInfo,
         len: bool,
         ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
     ) -> Result<Self, LayoutError> {
@@ -195,7 +200,7 @@ impl<'a> FunctionSubstitute<'a> {
             ret: result,
             expr: exprs,
             int,
-            force,
+            force: eval.eval.is_force(),
             vals,
         };
         let mut stack_layouts = sub_info.stack_layouts(&f);
@@ -204,6 +209,7 @@ impl<'a> FunctionSubstitute<'a> {
             f,
             stack_layouts,
             place_layouts,
+            checked: eval.checked,
         })
     }
 
@@ -216,13 +222,17 @@ impl<'a> FunctionSubstitute<'a> {
     }
 
     pub fn get_call_meta(&self, instr: &MirInstr) -> LCallMeta {
-        let (tail, ret, len, bt) = match instr {
+        let (tail, ret, len, bt, checked) = match instr {
             MirInstr::EvalFun(ret, _, bt_mark_kind, control_flow) => {
-                (control_flow.is_none(), ret, false, bt_mark_kind)
+                (control_flow.is_none(), ret, false, bt_mark_kind, true)
             }
-            MirInstr::ParseCall(ret, retlen, bt_mark_kind, _, _, control_flow) => {
-                (control_flow.is_none(), ret, retlen.is_some(), bt_mark_kind)
-            }
+            MirInstr::ParseCall(ret, retlen, bt_mark_kind, check, _, _, control_flow) => (
+                control_flow.is_none(),
+                ret,
+                retlen.is_some(),
+                bt_mark_kind,
+                matches!(check, Check::Always) || self.checked,
+            ),
             _ => {
                 panic!("Invalid instruction {:?}", instr)
             }
@@ -242,6 +252,7 @@ impl<'a> FunctionSubstitute<'a> {
                 val,
                 len,
                 bt: bt.can_backtrack(),
+                checked,
             },
             tail,
         }
@@ -253,7 +264,7 @@ pub fn function_substitute<'a>(
     req: MirKind,
     from: Option<ILayout<'a>>,
     fun: IMonoLayout<'a>,
-    force: bool,
+    eval: EvalExtraInfo,
     ctx: &mut AbsIntCtx<'a, ILayout<'a>>,
 ) -> Result<FunctionSubstitute<'a>, LayoutError> {
     let mir = ctx.db.mir(fun_info, req)?;
@@ -261,16 +272,16 @@ pub fn function_substitute<'a>(
     let len = req == MirKind::Len;
     match fun_info {
         FunKind::Block(_) => {
-            FunctionSubstitute::new_from_block(mir, &strictness, from, fun, force, len, ctx)
+            FunctionSubstitute::new_from_block(mir, &strictness, from, fun, eval, len, ctx)
         }
         FunKind::ParserDef(pd) => {
-            FunctionSubstitute::new_from_pd(mir, &strictness, from, fun, pd, force, len, ctx)
+            FunctionSubstitute::new_from_pd(mir, &strictness, from, fun, pd, eval, len, ctx)
         }
         FunKind::Lambda(lambda_id) => {
-            FunctionSubstitute::new_from_lambda(mir, &strictness, fun, lambda_id, force, len, ctx)
+            FunctionSubstitute::new_from_lambda(mir, &strictness, fun, lambda_id, eval, len, ctx)
         }
         FunKind::If(_) => {
-            FunctionSubstitute::new_from_if(mir, &strictness, from.unwrap(), fun, force, len, ctx)
+            FunctionSubstitute::new_from_if(mir, &strictness, from.unwrap(), fun, eval, len, ctx)
         }
     }
 }
@@ -329,7 +340,7 @@ impl<'intern> SubInfo<ILayout<'intern>> {
                     .unwrap(),
                 Place::Front(place) => place_layouts[place.as_index()].0.access_front(ctx),
                 Place::ModifiedBy(ins_ref) => match f.ins_at(ins_ref) {
-                    yaboc_mir::MirInstr::ParseCall(_, _, _, front, _, _) => {
+                    yaboc_mir::MirInstr::ParseCall(_, _, _, _, front, _, _) => {
                         place_layouts[front.as_index()].0
                     }
                     _ => unreachable!(),

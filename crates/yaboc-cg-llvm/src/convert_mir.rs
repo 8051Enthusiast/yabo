@@ -131,7 +131,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 self.cg.build_field_gep(a, outer, inner_layout)?.ptr
             }
             mir::Place::ModifiedBy(ins_ref) => {
-                let MirInstr::ParseCall(_, _, _, front, _, _) = self.mir_fun.f.ins_at(ins_ref)
+                let MirInstr::ParseCall(_, _, _, _, front, _, _) = self.mir_fun.f.ins_at(ins_ref)
                 else {
                     unreachable!()
                 };
@@ -953,7 +953,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::Comp(ret, op, left, right) => self.comp(ret, op, left, right),
             MirInstr::StoreVal(ret, val) => self.store_val(ret, val),
             MirInstr::StoreBytes(ret, str) => self.store_bytes(ret, &str),
-            MirInstr::ParseCall(ret, _, _, arg, fun, ctrl) => {
+            MirInstr::ParseCall(ret, _, _, _, arg, fun, ctrl) => {
                 self.parse_call(ret, self.mir_fun.get_call_meta(&ins), fun, arg, ctrl)
             }
             MirInstr::LenCall(ret, fun, ctrl) => self.len_call(ret, fun, ctrl),

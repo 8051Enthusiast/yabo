@@ -5,7 +5,10 @@ use yaboc_target::layout::SizeAlign;
 
 use crate::{
     AbsLayoutCtx, ILayout, IMonoLayout, LayoutError, MonoLayout,
-    collect::layout_info::{LCallReq, LayoutInfoCollector},
+    collect::{
+        EvalExtraInfo,
+        layout_info::{LCallReq, LayoutInfoCollector},
+    },
     mir_subst::function_substitute,
 };
 
@@ -106,7 +109,10 @@ impl<'comp, 'r> TailCollector<'comp, 'r> {
             req.as_mir_call(),
             site.from,
             site.func,
-            req.val.is_force(),
+            EvalExtraInfo {
+                eval: req.val,
+                checked: req.checked,
+            },
             self.ctx,
         )?;
         let mut already_called = FxHashSet::default();

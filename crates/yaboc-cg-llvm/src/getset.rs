@@ -267,39 +267,54 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         fun: CgMonoValue<'comp, 'llvm>,
         globals: PointerValue<'llvm>,
         length: u64,
+        req: LCallReq,
     ) -> IResult<CgValue<'comp, 'llvm>> {
-        let llvm_fun = self
-            .builder
-            .get_insert_block()
-            .unwrap()
-            .get_parent()
-            .unwrap();
-        let fail_bb = self.llvm.append_basic_block(llvm_fun, "eof");
-        let succ_bb = self.llvm.append_basic_block(llvm_fun, "succ");
-
-        let arg_size = arg
-            .layout
-            .size_align_without_vtable(self.layouts)
-            .unwrap()
-            .after_aligned()
-            .total_size();
-        let old_copy = self.build_const_offset_byte_gep(fun.ptr, -(arg_size as i64), "old_copy")?;
-        let old_copy = CgValue::new(arg.layout, old_copy);
-        self.build_copy_invariant(old_copy, arg)?;
+        let sub_arg = if req.len {
+            let arg_size = arg
+                .layout
+                .size_align_without_vtable(self.layouts)
+                .unwrap()
+                .after_aligned()
+                .total_size();
+            let old_copy =
+                self.build_const_offset_byte_gep(fun.ptr, -(arg_size as i64), "old_copy")?;
+            let old_copy = CgValue::new(arg.layout, old_copy);
+            self.build_copy_invariant(old_copy, arg)?;
+            old_copy
+        } else {
+            arg
+        };
 
         let ptr_diff = self.call_array_len_fun(arg, globals)?;
         let limit = self.const_i64(length as i64);
-        let eof_check =
+        if req.checked {
+            let llvm_fun = self
+                .builder
+                .get_insert_block()
+                .unwrap()
+                .get_parent()
+                .unwrap();
+            let fail_bb = self.llvm.append_basic_block(llvm_fun, "eof");
+            let succ_bb = self.llvm.append_basic_block(llvm_fun, "succ");
+
+            let eof_check =
+                self.builder
+                    .build_int_compare(IntPredicate::UGE, ptr_diff, limit, "eof_check")?;
             self.builder
-                .build_int_compare(IntPredicate::UGE, ptr_diff, limit, "eof_check")?;
-        self.builder
-            .build_conditional_branch(eof_check, succ_bb, fail_bb)?;
-        self.builder.position_at_end(fail_bb);
-        let eof = self.const_i64(ReturnStatus::Eof as i64);
-        self.builder.build_return(Some(&eof))?;
-        self.builder.position_at_end(succ_bb);
-        self.call_skip_fun(arg, limit, globals)?;
-        Ok(old_copy)
+                .build_conditional_branch(eof_check, succ_bb, fail_bb)?;
+            self.builder.position_at_end(fail_bb);
+            let eof = self.const_i64(if req.len {
+                ReturnStatus::Eof as i64
+            } else {
+                ReturnStatus::Error as i64
+            });
+            self.builder.build_return(Some(&eof))?;
+            self.builder.position_at_end(succ_bb);
+        }
+        if req.len {
+            self.call_skip_fun(arg, limit, globals)?;
+        }
+        Ok(sub_arg)
     }
 
     pub(super) fn call_parser_fun_impl_without_ret(
@@ -307,13 +322,13 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         ret: CgReturnValue<'comp, 'llvm>,
         fun: CgMonoValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
-        call_kind: LCallReq,
+        req: LCallReq,
     ) -> IResult<CallSiteValue<'llvm>> {
         let info = &self.collected_layouts.layout_info.info[&fun.layout.inner()];
-        let (call_kind, precheck) = info.modify_reqs(call_kind);
+        let (call_kind, precheck) = info.modify_reqs(req);
         let parser = self.parser_impl_fun_val(fun.layout, arg.layout, call_kind);
         let passed_arg = if let Some(len) = precheck {
-            self.consume_const_length(arg, fun, ret.head, len)?
+            self.consume_const_length(arg, fun, ret.head, len, req)?
         } else {
             arg
         };

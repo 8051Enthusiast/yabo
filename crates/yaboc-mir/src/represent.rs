@@ -9,7 +9,9 @@ use yaboc_base::{
 use yaboc_hir::{HirIdWrapper, HirNode, Hirs, Module, ParserDefId};
 use yaboc_req::{NeededBy, RequirementSet};
 
-use crate::{CallMeta, ControlFlow, FunKind, InsRef, MirKind, UninitVal, strictness::Strictness};
+use crate::{
+    CallMeta, Check, ControlFlow, FunKind, InsRef, MirKind, UninitVal, strictness::Strictness,
+};
 
 use super::{
     BBRef, Comp, ExceptionRetreat, Function, IntBinOp, IntUnOp, MirInstr, Mirs, Place, PlaceOrigin,
@@ -167,7 +169,7 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
                 dbwrite!(f, db, "{} = loadbytes ", target)?;
                 dbwrite!(f, db.1, "{}", &String::from_utf8_lossy(val))
             }
-            MirInstr::ParseCall(ret, retlen, kind, arg, fun, retreat) => {
+            MirInstr::ParseCall(ret, retlen, kind, check, arg, fun, retreat) => {
                 if let Some(ret) = ret {
                     dbwrite!(f, db, "{}, ", ret)?;
                 } else {
@@ -180,6 +182,9 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
                 }
                 if retreat.is_none() {
                     write!(f, "tail ")?;
+                }
+                if matches!(check, Check::Inherit) {
+                    write!(f, "cocheck ")?;
                 }
                 dbwrite!(f, db, "parse{} {}({})", &kind, fun, arg)?;
                 if let Some(retreat) = retreat {
