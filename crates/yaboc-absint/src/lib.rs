@@ -92,11 +92,6 @@ pub trait AbstractDomain<'a>:
         id: hir::BlockId,
         fields: &FxHashMap<FieldName, Self>,
     ) -> Result<Self, Self::Err>;
-    fn make_thunk(
-        ctx: &mut AbsIntCtx<'a, Self>,
-        id: hir::ParserDefId,
-        args: &FxHashMap<Arg, Self>,
-    ) -> Result<Self, Self::Err>;
     fn eval_expr(
         ctx: &mut AbsIntCtx<'a, Self>,
         expr: ExprHead<Resolved, &Self>,
@@ -656,22 +651,5 @@ impl<'a, Dom: AbstractDomain<'a> + DatabasedDisplay<Dom::DB>> AbsIntCtx<'a, Dom>
 
         self.leave_eval((None, lambda));
         ret
-    }
-
-    pub fn apply_thunk_arg(
-        &mut self,
-        pd_id: hir::ParserDefId,
-        from: Dom,
-        thunk_args: &[Dom],
-    ) -> Result<Dom, Dom::Err> {
-        let mut args = FxHashMap::default();
-        args.insert(Arg::From, from);
-        let pd = pd_id.lookup(self.db)?;
-        for (idx, arg) in thunk_args.iter().enumerate() {
-            let def = pd.args.as_ref().unwrap()[idx].0;
-            args.insert(Arg::Named(def), arg.clone());
-        }
-        let pd = Dom::make_thunk(self, pd_id, &args)?;
-        Ok(pd)
     }
 }

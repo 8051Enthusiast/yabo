@@ -564,9 +564,16 @@ impl<'a> ILayout<'a> {
         self.evaluate(ctx)?
             .0
             .try_map(ctx, |layout, ctx| match layout.mono_layout() {
-                MonoLayout::NominalParser(pd, args, FuncLayoutKind::Parse) => {
-                    let ret = ctx.apply_thunk_arg(*pd, from, args)?;
-                    Ok(ret)
+                MonoLayout::NominalParser(pd, thunk_args, FuncLayoutKind::Parse) => {
+                    let mut args = FxHashMap::default();
+                    args.insert(Arg::From, from);
+                    let pd = pd.lookup(ctx.db)?;
+                    for (idx, arg) in thunk_args.iter().enumerate() {
+                        let def = pd.args.as_ref().unwrap()[idx].0;
+                        args.insert(Arg::Named(def), arg.clone());
+                    }
+                    let thunk = IMonoLayout::make_thunk(pd.id, &args, ctx)?;
+                    Ok(thunk.inner())
                 }
                 MonoLayout::BlockParser(block_id, _) => {
                     let res = ctx
@@ -1332,14 +1339,6 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
         })
     }
 
-    fn make_thunk(
-        ctx: &mut AbsIntCtx<'a, Self>,
-        id: hir::ParserDefId,
-        fields: &FxHashMap<Arg, Self>,
-    ) -> Result<Self, Self::Err> {
-        Ok(IMonoLayout::make_thunk(id, fields, ctx)?.inner())
-    }
-
     fn bottom(ctx: &mut Self::DomainContext) -> Self {
         ctx.intern(Layout::None)
     }
@@ -1349,6 +1348,15 @@ impl<'a> AbstractDomain<'a> for ILayout<'a> {
     }
 }
 
+// let mut args = FxHashMap::default();
+// args.insert(Arg::From, from);
+// let pd = pd_id.lookup(self.db)?;
+// for (idx, arg) in thunk_args.iter().enumerate() {
+//     let def = pd.args.as_ref().unwrap()[idx].0;
+//     args.insert(Arg::Named(def), arg.clone());
+// }
+// let pd = Dom::make_thunk(self, pd_id, &args)?;
+// Ok(pd)
 #[cfg(test)]
 mod tests {
     use bumpalo::Bump;

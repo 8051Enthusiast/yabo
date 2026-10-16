@@ -582,10 +582,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             map.insert(Arg::Named(parserdef_args[idx].0), *arg);
         }
         if thunky && req.val == EvalType::Value {
-            let return_layout = ILayout::make_thunk(self.layouts, *pd, &map)
-                .unwrap()
-                .maybe_mono()
-                .unwrap();
+            let return_layout = IMonoLayout::make_thunk(*pd, &map, self.layouts).unwrap();
             let arg_sa = arg.layout.size_align(self.layouts).unwrap();
             let fun_sa = fun.layout.inner().size_align(self.layouts).unwrap();
             let [arg_offset, fun_offset] = SizeAlign::offsets([arg_sa, fun_sa]);
