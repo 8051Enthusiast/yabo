@@ -227,7 +227,7 @@ impl<'comp> UseCollections<'comp> {
                 }
             }
             MonoLayout::Array { parser, slice } => {
-                self.collect(ctx, publicity.internal_only(), *slice)?;
+                self.collect(ctx, publicity.internal_and_ffi(), *slice)?;
                 self.collect(ctx, publicity.internal_only(), *parser)?;
                 let result = parser.apply_arg(ctx, *slice)?;
                 if let Publicity::Public(Some(pub_ty)) = publicity {
