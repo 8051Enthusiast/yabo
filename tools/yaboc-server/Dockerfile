@@ -98,6 +98,7 @@ FROM debian:trixie-slim
 
 ARG LLVM_VERSION=23
 ADD ci/apt.llvm.org.asc /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+RUN apt-get update && apt-get install -y wget
 RUN echo "deb [signed-by=/etc/apt/trusted.gpg.d/apt.llvm.org.asc] http://apt.llvm.org/trixie/ llvm-toolchain-trixie-$LLVM_VERSION main" > /etc/apt/sources.list.d/llvm.list
 RUN apt-get update && apt-get install -y llvm-$LLVM_VERSION cmake
 
@@ -117,7 +118,7 @@ ENV HOME=/home/emscripten
 RUN bash -c '. /opt/emsdk/emsdk_env.sh \
  && emcc -O3 -c /opt/lib/rt.c -fvisibility=hidden -o /opt/lib/rt.o'
 
-RUN apt-get remove -y lsb-release wget gnupg
+RUN apt-get remove -y wget
 
 USER 1000:1000
 # initialize emcc's cache by running once

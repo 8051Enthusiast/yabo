@@ -15,5 +15,5 @@ jobs:
     if: forgejo.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v6
-      - run: docker build --no-cache -t registry:5000/yphbt:dev -f tools/yaboc-server/Dockerfile .
+      - run: docker build -t registry:5000/yphbt:dev -f tools/yaboc-server/Dockerfile .
       - run: docker push registry:5000/yphbt:dev
