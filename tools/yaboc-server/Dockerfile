@@ -10,7 +10,7 @@ FROM rust:1-trixie AS compiler
 ARG LLVM_VERSION=23
 ADD ci/apt.llvm.org.asc /etc/apt/trusted.gpg.d/apt.llvm.org.asc
 RUN echo "deb [signed-by=/etc/apt/trusted.gpg.d/apt.llvm.org.asc] http://apt.llvm.org/trixie/ llvm-toolchain-trixie-$LLVM_VERSION main" > /etc/apt/sources.list.d/llvm.list
-RUN apt-get update && apt-get install -y cmake llvm-23
+RUN apt-get update && apt-get install -y cmake llvm-$LLVM_VERSION
 
 COPY Cargo.toml Cargo.lock /src/yabo/
 ADD crates /src/yabo/crates/
@@ -96,9 +96,10 @@ RUN --mount=type=tmpfs,target=/build,size=6G bash -c '\
 
 FROM debian:trixie-slim
 
+ARG LLVM_VERSION=23
 ADD ci/apt.llvm.org.asc /etc/apt/trusted.gpg.d/apt.llvm.org.asc
 RUN echo "deb [signed-by=/etc/apt/trusted.gpg.d/apt.llvm.org.asc] http://apt.llvm.org/trixie/ llvm-toolchain-trixie-$LLVM_VERSION main" > /etc/apt/sources.list.d/llvm.list
-RUN apt-get update && apt-get install -y cmake llvm-23
+RUN apt-get update && apt-get install -y llvm-$LLVM_VERSION cmake
 
 COPY tools/yaboc-server/build.sh /opt/bin/build.sh
 ADD ./lib /opt/lib
