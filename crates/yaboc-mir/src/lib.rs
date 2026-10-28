@@ -5,6 +5,7 @@ mod represent;
 mod strictness;
 
 use std::num::NonZeroU32;
+use std::sync::Arc;
 
 use fxhash::FxHashMap;
 
@@ -20,10 +21,14 @@ use yaboc_base::{
 use yaboc_constraint::{Constraints, Origin};
 use yaboc_dependents::{Dependents, SubValue};
 use yaboc_expr::ExprIdx;
-use yaboc_hir::{BlockId, ExprId, HirConstraintId, HirIdWrapper, LambdaId, ParserDefId};
+use yaboc_hir::{
+    BlockId, ChoiceId, ContextId, ExprId, HirConstraintId, HirIdWrapper, LambdaId, ParserDefId,
+};
 use yaboc_req::{NeededBy, RequirementSet};
 use yaboc_resolve::expr::Resolved;
 use yaboc_resolve::expr::{ValBinOp, ValUnOp};
+
+pub use crate::convert::ContextData;
 
 use self::convert::ConvertCtx;
 
@@ -39,6 +44,17 @@ pub enum MirKind {
 pub trait Mirs: Dependents + Constraints {
     fn mir(&self, kind: FunKind, mir_kind: MirKind) -> SResult<Function>;
     fn strictness(&self, kind: FunKind, mir_kind: MirKind) -> SResult<Vec<Strictness>>;
+    fn build_context_tree(
+        &self,
+        context: ContextId,
+    ) -> SResult<Arc<FxHashMap<ContextId, ContextData>>>;
+}
+
+fn build_context_tree(
+    db: &dyn Mirs,
+    context: ContextId,
+) -> SResult<Arc<FxHashMap<ContextId, ContextData>>> {
+    ContextData::build_context_tree(db, context).map(Arc::new)
 }
 
 fn mir(db: &dyn Mirs, kind: FunKind, mir_kind: MirKind) -> SResult<Function> {
@@ -290,7 +306,7 @@ pub enum MirInstr {
     Comp(PlaceRef, Comp, PlaceRef, PlaceRef),
     StoreVal(PlaceRef, Val),
     StoreBytes(PlaceRef, Vec<u8>),
-    SetDiscriminant(PlaceRef, FieldName, bool),
+    SetDiscriminant(PlaceRef, ChoiceId, usize),
     Range(PlaceRef, PlaceRef, PlaceRef, ControlFlow),
     GetAddr(PlaceRef, PlaceRef, ControlFlow),
     ApplyArgs(PlaceRef, PlaceRef, Box<[(PlaceRef, bool)]>, ControlFlow),
@@ -1071,10 +1087,10 @@ impl FunctionWriter {
         self.set_bb(new_block);
     }
 
-    pub fn set_discriminant(&mut self, block: PlaceRef, field: FieldName, val: bool) {
+    pub fn set_discriminant(&mut self, block: PlaceRef, choice: ChoiceId, index: usize) {
         self.fun
             .bb_mut(self.current_bb)
-            .append_ins(MirInstr::SetDiscriminant(block, field, val));
+            .append_ins(MirInstr::SetDiscriminant(block, choice, index));
     }
 
     pub fn next_ins(&self) -> InsRef {

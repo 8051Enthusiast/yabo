@@ -207,9 +207,9 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
                 dbwrite!(f, db, "assert_val {}.", target)?;
                 dbwrite!(f, db.1, "{}, {}", sub, cont)
             }
-            MirInstr::SetDiscriminant(block, field, val) => {
-                dbwrite!(f, db, "set_discriminant {}.", block)?;
-                dbwrite!(f, db.1, "{}, {}", field, val)
+            MirInstr::SetDiscriminant(block, choice, index) => {
+                dbwrite!(f, db, "set_discriminant {}, ", block)?;
+                dbwrite!(f, db.1, "{}, {}", &choice.0, index)
             }
             MirInstr::Copy(target, origin, cont) => {
                 dbwrite!(f, db, "{} = copy {}, {}", target, origin, cont)

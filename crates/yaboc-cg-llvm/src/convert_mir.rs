@@ -1,4 +1,5 @@
-use std::rc::Rc;
+use fxhash::FxHashMap;
+use std::{rc::Rc, sync::Arc};
 use yaboc_absint::AbstractDomain;
 
 use inkwell::{
@@ -11,12 +12,13 @@ use mir::{ControlFlow, Place, Strictness};
 use yaboc_ast::ConstraintAtom;
 use yaboc_ast::expr::Atom;
 use yaboc_base::interner::FieldName;
-use yaboc_hir::BlockId;
+use yaboc_hir::{BlockId, ChoiceId, ContextId, HirIdWrapper};
 use yaboc_layout::{
     ILayout, IMonoLayout, Layout, MonoLayout, collect::LCallMeta, mir_subst::FunctionSubstitute,
 };
 use yaboc_mir::{
-    self as mir, BBRef, Comp, IntBinOp, IntUnOp, MirInstr, MirKind, PlaceRef, ReturnStatus, Val,
+    self as mir, BBRef, Comp, ContextData, IntBinOp, IntUnOp, MirInstr, MirKind, PlaceRef,
+    ReturnStatus, Val,
 };
 use yaboc_req::NeededBy;
 use yaboc_target::layout::TargetSized;
@@ -42,6 +44,7 @@ pub struct MirTranslator<'llvm, 'comp, 'r> {
     undefined: BasicBlock<'llvm>,
     globals: PointerValue<'llvm>,
     debug_loc: Option<DebugLocation<'llvm>>,
+    context_data: Arc<FxHashMap<ContextId, ContextData>>,
     req: MirKind,
 }
 
@@ -53,6 +56,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         fun: CgMonoValue<'comp, 'llvm>,
         arg: CgValue<'comp, 'llvm>,
         head: PointerValue<'llvm>,
+        context_data: Arc<FxHashMap<ContextId, ContextData>>,
         req: MirKind,
     ) -> IResult<Self> {
         cg.add_entry_block(llvm_fun, fun.layout);
@@ -86,6 +90,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             undefined,
             globals: head,
             debug_loc,
+            context_data,
             req,
         })
     }
@@ -326,7 +331,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         self.cg.build_discriminant_info(block_id, block, field)
     }
 
-    fn set_discriminant(&mut self, block: PlaceRef, field: FieldName, val: bool) -> IResult<()> {
+    fn set_flag(&mut self, block: PlaceRef, field: FieldName, val: bool) -> IResult<()> {
         let (byte_ptr, shifted_bit) = self
             .discriminant_info(block, field)?
             .expect("fields that are always present can not be set");
@@ -339,6 +344,21 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 .build_and(byte, shifted_bit.const_not(), "clrdisc")?
         };
         self.cg.builder.build_store(byte_ptr, modified_byte)?;
+        Ok(())
+    }
+
+    fn set_discriminant(&mut self, block: PlaceRef, choice: ChoiceId, index: usize) -> IResult<()> {
+        let context = choice
+            .lookup(&self.cg.compiler_database.db)
+            .unwrap()
+            .subcontexts[index]
+            .lookup(&self.cg.compiler_database.db)
+            .unwrap();
+        let context_data = &self.context_data.clone()[&context.id];
+        for field in context_data.affected_discriminants.iter() {
+            let val = context.vars.get(*field).is_some();
+            self.set_flag(block, *field, val)?;
+        }
         Ok(())
     }
 
@@ -960,8 +980,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::ArrayLenCall(ret, fun, ctrl) => self.array_len_call(ret, fun, ctrl),
             MirInstr::Field(ret, place, field, ctrl) => self.field(ret, place, field, ctrl),
             MirInstr::AssertVal(place, val, ctrl) => self.assert_value(place, val, ctrl),
-            MirInstr::SetDiscriminant(block, field, val) => {
-                self.set_discriminant(block, field, val)
+            MirInstr::SetDiscriminant(block, choice, index) => {
+                self.set_discriminant(block, choice, index)
             }
             MirInstr::EvalFun(to, from, _, ctrl) => {
                 self.eval_fun(to, from, self.mir_fun.get_call_meta(&ins), ctrl)

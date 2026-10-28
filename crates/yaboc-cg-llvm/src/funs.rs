@@ -10,7 +10,7 @@ use yaboc_layout::{
     mir_subst::function_substitute,
     part::ParserFunKind,
 };
-use yaboc_mir::{FunKind, MirKind};
+use yaboc_mir::{FunKind, MirKind, Mirs};
 use yaboc_resolve::Resolves;
 
 use crate::convert_regex::RegexTranslator;
@@ -622,6 +622,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 fun,
                 arg,
                 ret.head,
+                Default::default(),
                 req.as_mir_call(),
             )?;
             if req.val.is_val() {
@@ -959,6 +960,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
 
         self.create_parser_worker(layout, from, req, |this, impl_fun, req| {
             let mir_fun = Rc::new(this.mir_block(Some(from), layout, req));
+            let context_info = this
+                .compiler_database
+                .db
+                .build_context_tree(block.root_context)
+                .unwrap();
             let (ret, fun, arg) = this.parser_values(impl_fun, layout, from, req);
             let mut translator = MirTranslator::new(
                 this,
@@ -967,6 +973,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 fun,
                 arg,
                 ret.head,
+                context_info,
                 req.as_mir_call(),
             )?;
             if req.val.is_val() {
@@ -1018,6 +1025,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                     fun,
                     arg,
                     ret.head,
+                    Default::default(),
                     req.as_mir_call(),
                 )?;
                 if req.val.is_val() {
@@ -1523,6 +1531,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             fun_value,
             int_value,
             head,
+            Default::default(),
             MirKind::Len,
         )?
         .with_ret_val(ret_value)
@@ -1569,6 +1578,11 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
             let mir_fun = Rc::new(this.mir_block(None, layout, req));
             let (ret, fun, arg) = this.tail_eval_fun_values(impl_fun, layout, req);
             let arg = CgValue::new(zst, arg);
+            let context_info = this
+                .compiler_database
+                .db
+                .build_context_tree(block.root_context)
+                .unwrap();
             let mut translator = MirTranslator::new(
                 this,
                 mir_fun,
@@ -1576,6 +1590,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 fun,
                 arg,
                 ret.head,
+                context_info,
                 req.as_mir_call(),
             )?;
             translator = translator.with_ret_val(ret);
@@ -1623,6 +1638,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 fun,
                 arg,
                 ret.head,
+                Default::default(),
                 req.as_mir_call(),
             )?;
             translator = translator.with_ret_val(ret);
@@ -1689,6 +1705,7 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
                 fun,
                 arg,
                 ret.head,
+                Default::default(),
                 req.as_mir_call(),
             )?;
             translator = translator.with_ret_val(ret);

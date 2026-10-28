@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, hash_map::Entry},
+    ops::Deref,
     sync::Arc,
 };
 
@@ -45,14 +46,14 @@ pub struct ConvertCtx<'a> {
     returns_self: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ContextData {
-    field_ids: FxHashMap<FieldName, DefId>,
-    field_move_targets: FxHashMap<DefId, DefId>,
-    affected_discriminants: FxHashSet<FieldName>,
-    ends: Option<(DefId, DefId)>,
-    backtracks_to: Option<ContextId>,
-    parent_choice: Option<ChoiceId>,
+    pub field_ids: FxHashMap<FieldName, DefId>,
+    pub field_move_targets: FxHashMap<DefId, DefId>,
+    pub affected_discriminants: FxHashSet<FieldName>,
+    pub ends: Option<(DefId, DefId)>,
+    pub backtracks_to: Option<ContextId>,
+    pub parent_choice: Option<(ChoiceId, usize)>,
 }
 
 impl ContextData {
@@ -80,7 +81,7 @@ impl ContextData {
         ctx: ContextId,
         map: &mut FxHashMap<ContextId, ContextData>,
         parent_fields: &FxHashMap<FieldName, DefId>,
-        parent_choice: Option<ChoiceId>,
+        parent_choice: Option<(ChoiceId, usize)>,
         affected_discriminants: &FxHashSet<FieldName>,
         backtracks_to: Option<ContextId>,
     ) -> SResult<()> {
@@ -137,7 +138,7 @@ impl ContextData {
                     ctx,
                     map,
                     &field_map,
-                    Some(*choice),
+                    Some((*choice, i)),
                     &affected_discriminants,
                     next_context,
                 )?;
@@ -225,9 +226,8 @@ impl<'a> ConvertCtx<'a> {
         if self.returns_self
             && let Some(ret) = self.w.f.fun.ret()
         {
-            for field in context_data.affected_discriminants {
-                let has_field = context_data.field_ids.contains_key(&field);
-                self.w.set_discriminant(ret, field, has_field);
+            if let Some((choice, index)) = context_data.parent_choice {
+                self.w.set_discriminant(ret, choice, index);
             }
         }
         if let Some(to_place) = self.w.back_place_at_def(superchoice.0) {
@@ -285,13 +285,7 @@ impl<'a> ConvertCtx<'a> {
         &mut self,
         ctx: ContextId,
     ) -> SResult<FxHashMap<DefId, DefId>> {
-        let data = &self.context_data[&ctx];
-
         let block = self.w.f.fun.ret().unwrap();
-        for discriminant in &data.affected_discriminants {
-            let is_set = data.field_ids.contains_key(discriminant);
-            self.w.set_discriminant(block, *discriminant, is_set);
-        }
 
         let context = ctx.lookup(self.db)?;
         let mut field_move_targets = if let Some(parent) = context.parent_context {
@@ -301,6 +295,9 @@ impl<'a> ConvertCtx<'a> {
         };
 
         let data = &self.context_data[&ctx];
+        if let Some((choice, index)) = data.parent_choice {
+            self.w.set_discriminant(block, choice, index);
+        }
         for (from, to) in &data.field_move_targets {
             let transitive_to = field_move_targets.remove(to).unwrap_or(*to);
             field_move_targets.insert(*from, transitive_to);
@@ -592,7 +589,7 @@ impl<'a> ConvertCtx<'a> {
             ParserPredecessor::ChildOf(c) => {
                 let parent_choice = self.context_data[&c].parent_choice;
                 match parent_choice {
-                    Some(x) => self.w.front_place_at_def(x.0).unwrap(),
+                    Some((x, _)) => self.w.front_place_at_def(x.0).unwrap(),
                     None => self.w.f.fun.arg().unwrap(),
                 }
             }
@@ -731,8 +728,7 @@ impl<'a> ConvertCtx<'a> {
         }
         let retreat = top_level_retreat;
         let places = Self::block_places(db, &block, requirements, order, &mut f)?;
-        let context_data: FxHashMap<ContextId, ContextData> =
-            ContextData::build_context_tree(db, block.root_context)?;
+        let context_data = db.build_context_tree(block.root_context)?.deref().clone();
         let mut context_bb: FxHashMap<ContextId, (BBRef, BBRef)> = FxHashMap::default();
         context_bb.insert(block.root_context, (f.fun.entry(), f.fun.entry()));
         let current_context: Option<ContextId> = Some(block.root_context);
