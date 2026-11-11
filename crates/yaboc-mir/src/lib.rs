@@ -304,8 +304,8 @@ pub enum MirInstr {
     IntBin(PlaceRef, IntBinOp, PlaceRef, PlaceRef),
     IntUn(PlaceRef, IntUnOp, PlaceRef),
     Comp(PlaceRef, Comp, PlaceRef, PlaceRef),
-    StoreVal(PlaceRef, Val),
-    StoreBytes(PlaceRef, Vec<u8>),
+    ConstVal(PlaceRef, Val),
+    ConstBytes(PlaceRef, Vec<u8>),
     SetDiscriminant(PlaceRef, ChoiceId, usize),
     Range(PlaceRef, PlaceRef, PlaceRef, ControlFlow),
     GetAddr(PlaceRef, PlaceRef, ControlFlow),
@@ -371,8 +371,8 @@ impl MirInstr {
             MirInstr::IntBin(_, _, _, _)
             | MirInstr::IntUn(_, _, _)
             | MirInstr::Comp(_, _, _, _)
-            | MirInstr::StoreVal(_, _)
-            | MirInstr::StoreBytes(_, _)
+            | MirInstr::ConstVal(_, _)
+            | MirInstr::ConstBytes(_, _)
             | MirInstr::SetDiscriminant(_, _, _)
             | MirInstr::ParseCall(.., None)
             | MirInstr::EvalFun(.., None)
@@ -426,8 +426,8 @@ impl MirInstr {
             MirInstr::IntBin(_, _, _, _)
             | MirInstr::IntUn(_, _, _)
             | MirInstr::Comp(_, _, _, _)
-            | MirInstr::StoreVal(_, _)
-            | MirInstr::StoreBytes(_, _)
+            | MirInstr::ConstVal(_, _)
+            | MirInstr::ConstBytes(_, _)
             | MirInstr::SetDiscriminant(_, _, _)
             | MirInstr::Return(_)
             | MirInstr::EvalFun(.., None)
@@ -954,27 +954,27 @@ impl FunctionWriter {
     }
 
     pub fn load_int(&mut self, n: i64, place: PlaceRef) {
-        self.append_ins(MirInstr::StoreVal(place, Val::Int(n)));
+        self.append_ins(MirInstr::ConstVal(place, Val::Int(n)));
     }
 
     pub fn load_char(&mut self, c: u32, place: PlaceRef) {
-        self.append_ins(MirInstr::StoreVal(place, Val::Char(c)));
+        self.append_ins(MirInstr::ConstVal(place, Val::Char(c)));
     }
 
     pub fn load_bool(&mut self, b: bool, place: PlaceRef) {
-        self.append_ins(MirInstr::StoreVal(place, Val::Bool(b)));
+        self.append_ins(MirInstr::ConstVal(place, Val::Bool(b)));
     }
 
     pub fn load_uninit(&mut self, val: UninitVal, place: PlaceRef) {
-        self.append_ins(MirInstr::StoreVal(place, Val::Parser(val)));
+        self.append_ins(MirInstr::ConstVal(place, Val::Parser(val)));
     }
 
     pub fn load_undef(&mut self, place: PlaceRef) {
-        self.append_ins(MirInstr::StoreVal(place, Val::Undefined));
+        self.append_ins(MirInstr::ConstVal(place, Val::Undefined));
     }
 
     pub fn load_bytes(&mut self, s: Vec<u8>, place: PlaceRef) {
-        self.append_ins(MirInstr::StoreBytes(place, s));
+        self.append_ins(MirInstr::ConstBytes(place, s));
     }
 
     pub fn int_bin_op(&mut self, target: PlaceRef, op: IntBinOp, left: PlaceRef, right: PlaceRef) {

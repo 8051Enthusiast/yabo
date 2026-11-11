@@ -161,12 +161,12 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
             MirInstr::Comp(target, op, left, right) => {
                 dbwrite!(f, db, "{} = {} {}, {}", target, op, left, right)
             }
-            MirInstr::StoreVal(target, val) => {
-                dbwrite!(f, db, "{} = load ", target)?;
+            MirInstr::ConstVal(target, val) => {
+                dbwrite!(f, db, "{} = const ", target)?;
                 dbwrite!(f, db.1, "{}", val)
             }
-            MirInstr::StoreBytes(target, val) => {
-                dbwrite!(f, db, "{} = loadbytes ", target)?;
+            MirInstr::ConstBytes(target, val) => {
+                dbwrite!(f, db, "{} = constbytes ", target)?;
                 dbwrite!(f, db.1, "{}", &String::from_utf8_lossy(val))
             }
             MirInstr::ParseCall(ret, retlen, kind, check, arg, fun, retreat) => {

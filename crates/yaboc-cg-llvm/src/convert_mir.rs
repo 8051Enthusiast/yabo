@@ -971,8 +971,8 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::IntBin(ret, op, left, right) => self.int_bin(ret, op, left, right),
             MirInstr::IntUn(ret, op, right) => self.int_un(ret, op, right),
             MirInstr::Comp(ret, op, left, right) => self.comp(ret, op, left, right),
-            MirInstr::StoreVal(ret, val) => self.store_val(ret, val),
-            MirInstr::StoreBytes(ret, str) => self.store_bytes(ret, &str),
+            MirInstr::ConstVal(ret, val) => self.store_val(ret, val),
+            MirInstr::ConstBytes(ret, str) => self.store_bytes(ret, &str),
             MirInstr::ParseCall(ret, _, _, _, arg, fun, ctrl) => {
                 self.parse_call(ret, self.mir_fun.get_call_meta(&ins), fun, arg, ctrl)
             }
