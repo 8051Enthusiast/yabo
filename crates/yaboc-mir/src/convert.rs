@@ -6,7 +6,7 @@ use std::{
 
 use fxhash::{FxHashMap, FxHashSet};
 
-use hir::{HirConstraintId, HirNodeKind};
+use hir::HirConstraintId;
 use yaboc_base::{
     error::SResult,
     interner::{DefId, FieldName, PathComponent},
@@ -350,7 +350,6 @@ impl<'a> ConvertCtx<'a> {
 
     fn call_expr(&mut self, call_loc: DefId, expr: ExprId, call_info: CallMeta) -> SResult<()> {
         let parser_fun = self.w.val_place_at_def(expr.0).unwrap();
-        let arg_place = self.w.f.fun.arg().unwrap();
         let root = Resolved::fetch_expr(self.db, expr)?.root();
         let loc = ExpressionLoc {
             eval: true,
@@ -370,19 +369,16 @@ impl<'a> ConvertCtx<'a> {
             if call_info.tail {
                 self.w.f.fun.retlen()
             } else {
-                Some(self.w.create_current_ins_retlen_place(call_loc))
+                self.w.back_place_at_def(call_loc)
             }
         } else {
             None
         };
         let bt = bt_from_req(call_info.req);
         if call_info.tail {
-            if addr != arg_place {
-                self.w.copy(addr, arg_place);
-            }
             self.w
                 .f
-                .tail_parse_call_cocheck(bt, arg_place, ldt_parser_fun, ret, retlen);
+                .tail_parse_call_cocheck(bt, addr, ldt_parser_fun, ret, retlen);
         } else {
             self.w
                 .f
@@ -684,16 +680,12 @@ impl<'a> ConvertCtx<'a> {
                 continue;
             }
             let val = value.val;
-            let hirval = db.hir_node(val.id)?;
             if val.id == block.id.0
                 && val.kind == SubValueKind::Back
                 && requirements.contains(NeededBy::Len)
             {
                 places.insert(val, f.fun.retlen().unwrap());
             } else if matches!(val.kind, SubValueKind::Back | SubValueKind::Front) {
-                if val.kind == SubValueKind::Back && hirval.is_kind(HirNodeKind::Parse.into()) {
-                    continue;
-                }
                 let place = Place::Stack(f.new_stack_ref(PlaceOrigin::Ambient(block.id, val.id)));
                 let place_ref = f.add_place(PlaceInfo { place, eval: true });
                 places.insert(val, place_ref);

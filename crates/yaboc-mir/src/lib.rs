@@ -296,9 +296,6 @@ impl CallMeta {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct InsRef(pub BBRef, pub u32);
-
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum MirInstr {
     IntBin(PlaceRef, IntBinOp, PlaceRef, PlaceRef),
@@ -512,7 +509,6 @@ pub enum Place {
     Field(PlaceRef, DefId),
     Captured(PlaceRef, DefId),
     Front(PlaceRef),
-    ModifiedBy(InsRef),
     Global(ParserDefId),
     Undefined,
 }
@@ -597,10 +593,6 @@ impl Function {
 
     pub fn entry(&self) -> BBRef {
         BBRef(NonZeroU32::new(1).unwrap())
-    }
-
-    pub fn ins_at(&self, ins_ref: InsRef) -> MirInstr {
-        self.bb(ins_ref.0).ins[ins_ref.1 as usize].clone()
     }
 
     pub fn is_valid(&self) -> bool {
@@ -1091,12 +1083,6 @@ impl FunctionWriter {
         self.fun
             .bb_mut(self.current_bb)
             .append_ins(MirInstr::SetDiscriminant(block, choice, index));
-    }
-
-    pub fn next_ins(&self) -> InsRef {
-        let current_bb = self.current_bb;
-        let offset = self.fun.bb(current_bb).ins.len();
-        InsRef(current_bb, offset as u32)
     }
 
     pub fn make_place_ref(&mut self, place: Place, eval: bool) -> PlaceRef {

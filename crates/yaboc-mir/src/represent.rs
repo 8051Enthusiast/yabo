@@ -9,9 +9,7 @@ use yaboc_base::{
 use yaboc_hir::{HirIdWrapper, HirNode, Hirs, Module, ParserDefId};
 use yaboc_req::{NeededBy, RequirementSet};
 
-use crate::{
-    CallMeta, Check, ControlFlow, FunKind, InsRef, MirKind, UninitVal, strictness::Strictness,
-};
+use crate::{CallMeta, Check, ControlFlow, FunKind, MirKind, UninitVal, strictness::Strictness};
 
 use super::{
     BBRef, Comp, ExceptionRetreat, Function, IntBinOp, IntUnOp, MirInstr, Mirs, Place, PlaceOrigin,
@@ -49,9 +47,6 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for PlaceRef {
             Place::Front(inner) => {
                 inner.db_fmt(f, &(*fun, *db))?;
                 write!(f, ".from")
-            }
-            Place::ModifiedBy(ins_ref) => {
-                write!(f, "mod[{ins_ref}]")
             }
             Place::Global(pd) => {
                 let name = db.lookup_intern_identifier(pd.0.unwrap_name(*db)).name;
@@ -265,13 +260,6 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for MirInstr {
 impl Display for BBRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "bb_{}", self.0)
-    }
-}
-
-impl Display for InsRef {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let InsRef(bb, offset) = self;
-        write!(f, "bb_{}[{}]", bb.0, offset)
     }
 }
 

@@ -947,6 +947,9 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         offset: i64,
         name: &str,
     ) -> IResult<PointerValue<'llvm>> {
+        if offset == 0 {
+            return Ok(ptr);
+        }
         let offset = self.const_size_t(offset);
         byte_gep(&self.builder, self.llvm, ptr, offset, name)
     }
@@ -992,9 +995,12 @@ impl<'llvm, 'comp> CodeGenCtx<'llvm, 'comp> {
         dest: CgValue<'comp, 'llvm>,
         src: CgValue<'comp, 'llvm>,
     ) -> IResult<PointerValue<'llvm>> {
+        let dest_ptr = self.get_object_start(dest)?;
+        if dest.ptr == src.ptr {
+            return Ok(dest_ptr);
+        }
         let sa = dest.layout.size_align(self.layouts).unwrap();
         let src_ptr = self.get_object_start(src)?;
-        let dest_ptr = self.get_object_start(dest)?;
         let size = self.const_i64(sa.total_size() as i64);
         let align = sa.start_alignment() as u32;
         self.builder

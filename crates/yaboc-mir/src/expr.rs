@@ -179,15 +179,6 @@ impl<'a> ConvertExpr<'a> {
             .copied()
     }
 
-    pub fn create_current_ins_retlen_place(&mut self, call_loc: DefId) -> PlaceRef {
-        let place = self.f.add_place(PlaceInfo {
-            place: Place::ModifiedBy(self.f.next_ins()),
-            eval: true,
-        });
-        self.places.insert(SubValue::new_back(call_loc), place);
-        place
-    }
-
     pub fn unwrap_or_stack(&mut self, loc: ExpressionLoc) -> PlaceRef {
         loc.place
             .unwrap_or_else(|| self.f.new_stack_place(loc.origin, loc.eval))

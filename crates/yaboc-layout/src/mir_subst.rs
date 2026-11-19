@@ -339,12 +339,6 @@ impl<'intern> SubInfo<ILayout<'intern>> {
                     .get_captured(ctx, field)?
                     .unwrap(),
                 Place::Front(place) => place_layouts[place.as_index()].0.access_front(ctx),
-                Place::ModifiedBy(ins_ref) => match f.ins_at(ins_ref) {
-                    yaboc_mir::MirInstr::ParseCall(_, _, _, _, front, _, _) => {
-                        place_layouts[front.as_index()].0
-                    }
-                    _ => unreachable!(),
-                },
                 Place::Global(pd) => ctx.dcx.globals[&pd].1,
                 Place::Undefined => ctx.dcx.intern(Layout::None),
             };

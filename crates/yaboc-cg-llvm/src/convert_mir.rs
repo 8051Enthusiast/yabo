@@ -135,13 +135,6 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 let inner_layout = self.mir_fun.place(placeref);
                 self.cg.build_field_gep(a, outer, inner_layout)?.ptr
             }
-            mir::Place::ModifiedBy(ins_ref) => {
-                let MirInstr::ParseCall(_, _, _, _, front, _, _) = self.mir_fun.f.ins_at(ins_ref)
-                else {
-                    unreachable!()
-                };
-                self.place_ptr(front)?
-            }
             mir::Place::Global(pd) => {
                 let offset = self.cg.collected_layouts.global_offsets.field_offsets[&pd.0];
                 self.cg
@@ -516,6 +509,7 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
     fn parse_call(
         &mut self,
         ret: Option<PlaceRef>,
+        retlen: Option<PlaceRef>,
         call_kind: LCallMeta,
         fun: PlaceRef,
         arg: PlaceRef,
@@ -526,10 +520,21 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         let ret_val = ret
             .map(|r| self.return_val(r))
             .unwrap_or_else(|| Ok(self.cg.poison_ret(self.globals)))?;
-        if let Some(ctrl) = ctrl {
-            let ret = self
+        let retlen_val = match (retlen, ctrl.is_none()) {
+            (None, true) => self.get_tail_arg_pointer(arg_val.layout)?,
+            (Some(retlen), true) if Some(retlen) != self.mir_fun.f.retlen() => {
+                self.get_tail_arg_pointer(arg_val.layout)?
+            }
+            (None, false) => self
                 .cg
-                .call_parser_fun_wrapper(ret_val, fun_val, arg_val, call_kind.req)?;
+                .build_alloca_value(arg_val.layout, "retlen_slot", None)?,
+            (Some(retlen), _) => self.place_val(retlen)?,
+        };
+        self.cg.build_copy_invariant(retlen_val, arg_val)?;
+        if let Some(ctrl) = ctrl {
+            let ret =
+                self.cg
+                    .call_parser_fun_wrapper(ret_val, fun_val, retlen_val, call_kind.req)?;
             self.controlflow_case(ret, ctrl)?;
         } else {
             let parent_fun = if self.mir_fun.f.place(fun).place == Place::Captures {
@@ -539,17 +544,10 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             } else {
                 Some(self.fun)
             };
-            let arg_val = if Some(arg) != self.mir_fun.f.arg() {
-                let arg_tail = self.get_tail_arg_pointer(arg_val.layout)?;
-                self.cg.build_copy_invariant(arg_tail, arg_val)?;
-                arg_tail
-            } else {
-                arg_val
-            };
             let ret = self.cg.call_parser_fun_tail(
                 ret_val,
                 fun_val,
-                arg_val,
+                retlen_val,
                 call_kind.req,
                 parent_fun,
             )?;
@@ -973,9 +971,14 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             MirInstr::Comp(ret, op, left, right) => self.comp(ret, op, left, right),
             MirInstr::ConstVal(ret, val) => self.store_val(ret, val),
             MirInstr::ConstBytes(ret, str) => self.store_bytes(ret, &str),
-            MirInstr::ParseCall(ret, _, _, _, arg, fun, ctrl) => {
-                self.parse_call(ret, self.mir_fun.get_call_meta(&ins), fun, arg, ctrl)
-            }
+            MirInstr::ParseCall(ret, retlen, _, _, arg, fun, ctrl) => self.parse_call(
+                ret,
+                retlen,
+                self.mir_fun.get_call_meta(&ins),
+                fun,
+                arg,
+                ctrl,
+            ),
             MirInstr::LenCall(ret, fun, ctrl) => self.len_call(ret, fun, ctrl),
             MirInstr::ArrayLenCall(ret, fun, ctrl) => self.array_len_call(ret, fun, ctrl),
             MirInstr::Field(ret, place, field, ctrl) => self.field(ret, place, field, ctrl),
