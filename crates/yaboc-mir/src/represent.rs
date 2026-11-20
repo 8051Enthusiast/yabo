@@ -9,7 +9,9 @@ use yaboc_base::{
 use yaboc_hir::{HirIdWrapper, HirNode, Hirs, Module, ParserDefId};
 use yaboc_req::{NeededBy, RequirementSet};
 
-use crate::{CallMeta, Check, ControlFlow, FunKind, MirKind, UninitVal, strictness::Strictness};
+use crate::{
+    CallMeta, Check, ControlFlow, FunKind, MirKind, UninitVal, Value, strictness::Strictness,
+};
 
 use super::{
     BBRef, Comp, ExceptionRetreat, Function, IntBinOp, IntUnOp, MirInstr, Mirs, Place, PlaceOrigin,
@@ -30,11 +32,16 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for PlaceRef {
     ) -> std::fmt::Result {
         let place = fun.place(*self).place;
         match place {
-            Place::Captures => write!(f, "%cap"),
-            Place::Arg => write!(f, "%arg"),
-            Place::Return => write!(f, "%ret"),
-            Place::ReturnLen => write!(f, "%retlen"),
-            Place::Stack(s) => s.db_fmt(f, db),
+            Place::Value(Value::Captures) => write!(f, "%cap"),
+            Place::Value(Value::Arg) => write!(f, "%arg"),
+            Place::Value(Value::Return) => write!(f, "%ret"),
+            Place::Value(Value::ReturnLen) => write!(f, "%retlen"),
+            Place::Value(Value::Stack(s)) => s.db_fmt(f, db),
+            Place::Value(Value::Global(pd)) => {
+                let name = db.lookup_intern_identifier(pd.0.unwrap_name(*db)).name;
+                write!(f, "@{}", name)
+            }
+            Place::Value(Value::Undefined) => write!(f, "undef"),
             Place::Field(inner, field) => {
                 inner.db_fmt(f, &(*fun, *db))?;
                 let name = field.unwrap_name(*db);
@@ -48,11 +55,6 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<(&Function, &DB)> for PlaceRef {
                 inner.db_fmt(f, &(*fun, *db))?;
                 write!(f, ".from")
             }
-            Place::Global(pd) => {
-                let name = db.lookup_intern_identifier(pd.0.unwrap_name(*db)).name;
-                write!(f, "@{}", name)
-            }
-            Place::Undefined => write!(f, "undef"),
         }
     }
 }
@@ -307,7 +309,7 @@ impl<DB: Mirs + ?Sized> DatabasedDisplay<DB> for PlaceOrigin {
 impl<DB: Mirs + ?Sized> DatabasedDisplay<DB> for Function {
     fn db_fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &DB) -> std::fmt::Result {
         for (place_ref, place) in self.iter_places() {
-            if let Place::Stack(st) = self.place(place_ref).place {
+            if let Place::Value(Value::Stack(st)) = self.place(place_ref).place {
                 dbwrite!(f, db, "// origin: {}\n", &self.stack(st))?;
             }
             write!(f, "define ")?;

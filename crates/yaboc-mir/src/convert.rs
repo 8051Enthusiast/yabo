@@ -22,7 +22,7 @@ use yaboc_req::{NeededBy, RequirementMatrix, RequirementSet};
 use yaboc_resolve::expr::Resolved;
 
 use crate::{
-    CallMeta,
+    CallMeta, Value,
     expr::{ConvertExpr, ExpressionLoc, Tailcallability, bt_from_req},
 };
 
@@ -686,7 +686,9 @@ impl<'a> ConvertCtx<'a> {
             {
                 places.insert(val, f.fun.retlen().unwrap());
             } else if matches!(val.kind, SubValueKind::Back | SubValueKind::Front) {
-                let place = Place::Stack(f.new_stack_ref(PlaceOrigin::Ambient(block.id, val.id)));
+                let place = Place::Value(Value::Stack(
+                    f.new_stack_ref(PlaceOrigin::Ambient(block.id, val.id)),
+                ));
                 let place_ref = f.add_place(PlaceInfo { place, eval: true });
                 places.insert(val, place_ref);
             } else if matches!(val.kind, SubValueKind::Val) {
@@ -697,7 +699,7 @@ impl<'a> ConvertCtx<'a> {
                         Place::Field(f.fun.ret().unwrap(), val.id)
                     }
                 } else {
-                    Place::Stack(f.new_stack_ref(PlaceOrigin::Node(val.id)))
+                    Place::Value(Value::Stack(f.new_stack_ref(PlaceOrigin::Node(val.id))))
                 };
                 let place_ref = f.add_place(PlaceInfo { place, eval: false });
                 places.insert(val, place_ref);
@@ -759,7 +761,9 @@ impl<'a> ConvertCtx<'a> {
     ) -> SResult<FxHashMap<SubValue, PlaceRef>> {
         let mut places: FxHashMap<SubValue, PlaceRef> = FxHashMap::default();
         let expr = db.parser_expr_at(expr_id)?;
-        let expr_place = Place::Stack(f.new_stack_ref(PlaceOrigin::Expr(expr_id, expr.root())));
+        let expr_place = Place::Value(Value::Stack(
+            f.new_stack_ref(PlaceOrigin::Expr(expr_id, expr.root())),
+        ));
         let expr_place_ref = f.add_place(PlaceInfo {
             place: expr_place,
             eval: false,

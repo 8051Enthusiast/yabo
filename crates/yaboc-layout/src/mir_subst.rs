@@ -7,7 +7,7 @@ use yaboc_hir::{
     ExprId, HirIdWrapper, HirNode, HirNodeKind, LambdaId, ParserDefId, walk::ChildIter,
 };
 use yaboc_mir::{
-    Check, FunKind, Function, MirInstr, MirKind, Place, PlaceOrigin, PlaceRef, Strictness,
+    Check, FunKind, Function, MirInstr, MirKind, Place, PlaceOrigin, PlaceRef, Strictness, Value,
 };
 use yaboc_resolve::expr::Resolved;
 use yaboc_types::PrimitiveType;
@@ -321,10 +321,14 @@ impl<'intern> SubInfo<ILayout<'intern>> {
         let mut place_layouts: Vec<(ILayout<'intern>, Strictness)> = Vec::new();
         for (p, place_info) in f.iter_places() {
             let layout = match place_info.place {
-                Place::Captures => self.fun,
-                Place::Arg | Place::ReturnLen => self.arg.expect("used arg in non-parser"),
-                Place::Return => self.ret,
-                Place::Stack(idx) => stack_layouts[idx.as_index()],
+                Place::Value(Value::Captures) => self.fun,
+                Place::Value(Value::Arg | Value::ReturnLen) => {
+                    self.arg.expect("used arg in non-parser")
+                }
+                Place::Value(Value::Return) => self.ret,
+                Place::Value(Value::Stack(idx)) => stack_layouts[idx.as_index()],
+                Place::Value(Value::Global(pd)) => ctx.dcx.globals[&pd].1,
+                Place::Value(Value::Undefined) => ctx.dcx.intern(Layout::None),
                 Place::Field(place, field) => {
                     let field_name = ctx
                         .db
@@ -339,14 +343,12 @@ impl<'intern> SubInfo<ILayout<'intern>> {
                     .get_captured(ctx, field)?
                     .unwrap(),
                 Place::Front(place) => place_layouts[place.as_index()].0.access_front(ctx),
-                Place::Global(pd) => ctx.dcx.globals[&pd].1,
-                Place::Undefined => ctx.dcx.intern(Layout::None),
             };
 
             let mut strict = strictness[p.as_index()];
 
             let cast_layout = if Strictness::Strict == strict
-                || place_info.place == Place::Return && self.force
+                || place_info.place == Place::Value(Value::Return) && self.force
             {
                 strict = Strictness::Strict;
                 layout.evaluate(ctx)?.0
@@ -356,7 +358,7 @@ impl<'intern> SubInfo<ILayout<'intern>> {
             // we need to make sure that the stack layouts are casted to the right type, but
             // we didn't have that information when we created the stack layouts, so we cast
             // it if we encounter a stack place here
-            if let Place::Stack(idx) = place_info.place {
+            if let Place::Value(Value::Stack(idx)) = place_info.place {
                 stack_layouts[idx.as_index()] = cast_layout;
             }
             place_layouts.push((cast_layout, strict));

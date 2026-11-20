@@ -500,17 +500,22 @@ impl BasicBlock {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum Place {
+pub enum Value {
     Captures,
     Arg,
     Return,
     ReturnLen,
     Stack(StackRef),
+    Global(ParserDefId),
+    Undefined,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Place {
+    Value(Value),
     Field(PlaceRef, DefId),
     Captured(PlaceRef, DefId),
     Front(PlaceRef),
-    Global(ParserDefId),
-    Undefined,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -711,26 +716,26 @@ impl FunctionWriter {
             current_bb: BBRef(NonZeroU32::new(1).unwrap()),
         };
         builder.add_place(PlaceInfo {
-            place: Place::Captures,
+            place: Place::Value(Value::Captures),
             eval: true,
         });
         if has_from {
             let arg = builder.add_place(PlaceInfo {
-                place: Place::Arg,
+                place: Place::Value(Value::Arg),
                 eval: true,
             });
             builder.fun.arg = Some(arg);
         }
         if req.contains(NeededBy::Val) {
             let ret = builder.add_place(PlaceInfo {
-                place: Place::Return,
+                place: Place::Value(Value::Return),
                 eval: ret_eval,
             });
             builder.fun.ret = Some(ret);
         }
         if req.contains(NeededBy::Len) {
             let retlen = builder.add_place(PlaceInfo {
-                place: Place::ReturnLen,
+                place: Place::Value(Value::ReturnLen),
                 eval: true,
             });
             builder.fun.retlen = Some(retlen);
@@ -1091,7 +1096,7 @@ impl FunctionWriter {
     }
 
     pub fn new_stack_place(&mut self, origin: PlaceOrigin, eval: bool) -> PlaceRef {
-        let new_place = Place::Stack(self.new_stack_ref(origin));
+        let new_place = Place::Value(Value::Stack(self.new_stack_ref(origin)));
         self.make_place_ref(new_place, eval)
     }
 

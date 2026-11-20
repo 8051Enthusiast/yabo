@@ -1,7 +1,7 @@
 use fxhash::{FxHashMap, FxHashSet};
 use yaboc_base::error::SResult;
 
-use crate::{BBRef, BasicBlock, Function, MirInstr, Place, PlaceRef};
+use crate::{BBRef, BasicBlock, Function, MirInstr, Place, PlaceRef, Value};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Strictness {
@@ -119,7 +119,7 @@ impl<'a> StrictnessCtx<'a> {
                 continue;
             }
             match info.place {
-                Place::Stack(_) => continue,
+                Place::Value(Value::Stack(_)) => continue,
                 _ => fixed.map.insert(place, Use::new_static(Strictness::Lazy)),
             };
         }

@@ -108,6 +108,25 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
         Some(placeref) == self.mir_fun.f.ret()
     }
 
+    fn value_ptr(&mut self, val: &mir::Value) -> IResult<PointerValue<'llvm>> {
+        Ok(match val {
+            mir::Value::Arg | mir::Value::ReturnLen => self.arg.ptr,
+            mir::Value::Captures => self.fun.ptr,
+            mir::Value::Return => {
+                self.ret
+                    .expect("referenced return of non-returning function")
+                    .ptr
+            }
+            mir::Value::Stack(stack_ref) => self.stack[stack_ref.as_index()],
+            mir::Value::Global(pd) => {
+                let offset = self.cg.collected_layouts.global_offsets.field_offsets[&pd.0];
+                self.cg
+                    .build_byte_gep(self.globals, self.cg.const_i64(offset as i64), "global")?
+            }
+            mir::Value::Undefined => self.cg.invalid_ptr(),
+        })
+    }
+
     fn place_ptr(&mut self, placeref: mir::PlaceRef) -> IResult<PointerValue<'llvm>> {
         let place = self.mir_fun.f.place(placeref).place;
         if self.is_ret_place(placeref) {
@@ -117,30 +136,17 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                 .ptr);
         }
         Ok(match place {
-            mir::Place::Arg | mir::Place::ReturnLen => self.arg.ptr,
-            mir::Place::Captures => self.fun.ptr,
-            mir::Place::Return => {
-                self.ret
-                    .expect("referenced return of non-returning function")
-                    .ptr
-            }
+            mir::Place::Value(val) => self.value_ptr(&val)?,
             mir::Place::Front(outer) => {
                 let inner = self.place_ptr(outer)?;
                 self.cg
                     .build_center_gep(inner, self.mir_fun.place(placeref))?
             }
-            mir::Place::Stack(stack_ref) => self.stack[stack_ref.as_index()],
             mir::Place::Field(outer, a) | mir::Place::Captured(outer, a) => {
                 let outer = self.place_val(outer)?;
                 let inner_layout = self.mir_fun.place(placeref);
                 self.cg.build_field_gep(a, outer, inner_layout)?.ptr
             }
-            mir::Place::Global(pd) => {
-                let offset = self.cg.collected_layouts.global_offsets.field_offsets[&pd.0];
-                self.cg
-                    .build_byte_gep(self.globals, self.cg.const_i64(offset as i64), "global")?
-            }
-            mir::Place::Undefined => self.cg.invalid_ptr(),
         })
     }
 
@@ -282,13 +288,14 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
             let ret = self.cg.call_eval_fun_fun_wrapper(to, from_val, meta.req)?;
             self.controlflow_case(ret, ctrl)?;
         } else {
-            let parent_fun = if self.mir_fun.f.place(from).place == Place::Captures {
-                // don't copy in case it is already the arg since that would
-                // result in issues with memcpy
-                None
-            } else {
-                Some(self.fun)
-            };
+            let parent_fun =
+                if self.mir_fun.f.place(from).place == Place::Value(mir::Value::Captures) {
+                    // don't copy in case it is already the arg since that would
+                    // result in issues with memcpy
+                    None
+                } else {
+                    Some(self.fun)
+                };
             let zst = self
                 .cg
                 .layouts
@@ -537,13 +544,14 @@ impl<'llvm, 'comp, 'r> MirTranslator<'llvm, 'comp, 'r> {
                     .call_parser_fun_wrapper(ret_val, fun_val, retlen_val, call_kind.req)?;
             self.controlflow_case(ret, ctrl)?;
         } else {
-            let parent_fun = if self.mir_fun.f.place(fun).place == Place::Captures {
-                // don't copy in case it is already the arg since that would
-                // result in issues with memcpy
-                None
-            } else {
-                Some(self.fun)
-            };
+            let parent_fun =
+                if self.mir_fun.f.place(fun).place == Place::Value(mir::Value::Captures) {
+                    // don't copy in case it is already the arg since that would
+                    // result in issues with memcpy
+                    None
+                } else {
+                    Some(self.fun)
+                };
             let ret = self.cg.call_parser_fun_tail(
                 ret_val,
                 fun_val,

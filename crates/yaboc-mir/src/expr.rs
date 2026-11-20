@@ -25,7 +25,7 @@ use yaboc_types::{Type, TypeId};
 
 use crate::{
     BBRef, Comp, ExceptionRetreat, FunctionWriter, IntBinOp, IntUnOp, Place, PlaceInfo,
-    PlaceOrigin, PlaceRef, UninitVal,
+    PlaceOrigin, PlaceRef, UninitVal, Value,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -189,7 +189,7 @@ impl<'a> ConvertExpr<'a> {
             return place;
         }
         let place_info = PlaceInfo {
-            place: Place::Undefined,
+            place: Place::Value(Value::Undefined),
             eval: false,
         };
         self.f.add_place(place_info)
@@ -238,7 +238,7 @@ impl<'a> ConvertExpr<'a> {
 
     fn load_global(&mut self, pd: ParserDefId, loc: ExpressionLoc) -> SResult<PlaceRef> {
         let place_info = PlaceInfo {
-            place: Place::Global(pd),
+            place: Place::Value(Value::Global(pd)),
             eval: true,
         };
         let place_ref = self.f.add_place(place_info);

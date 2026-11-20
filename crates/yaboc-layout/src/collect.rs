@@ -11,7 +11,7 @@ use yaboc_absint::{AbstractDomain, Arg};
 use yaboc_base::dbeprintln;
 use yaboc_hir::{HirIdWrapper, ParserDefId};
 use yaboc_hir_types::HeadDiscriminant;
-use yaboc_mir::{MirInstr, MirKind, Place};
+use yaboc_mir::{MirInstr, MirKind, Place, Value};
 use yaboc_target::layout::SizeAlign;
 use yaboc_types::PrimitiveType;
 
@@ -568,7 +568,7 @@ impl<'a, 'b> LayoutCollector<'a, 'b> {
             self.register_layouts(*layout);
         }
         for (_, place) in mir.f.iter_places() {
-            if let Place::Global(pd) = &place.place {
+            if let Place::Value(Value::Global(pd)) = &place.place {
                 self.register_global(*pd);
             }
         }
